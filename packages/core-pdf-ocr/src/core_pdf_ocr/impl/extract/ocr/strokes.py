@@ -8,8 +8,8 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from typing import Any, ClassVar, NoReturn, Self, TypeAlias
 
-from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
-from core_pdf.impl._impl.model.geometry import (
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath
+from core_pdf.impl.model.geometry import (
     bbox_area,
     bbox_intersection_area,
     bbox_union,

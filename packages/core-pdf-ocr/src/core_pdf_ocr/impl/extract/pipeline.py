@@ -6,16 +6,16 @@ from collections.abc import Iterable
 from copy import replace
 from typing import TYPE_CHECKING, cast
 
-from core_pdf.impl._impl.extract.capture import internal_STRUCTURE_UNSET
-from core_pdf.impl._impl.extract.contracts import ObservationBatch
-from core_pdf.impl._impl.extract.pipeline import (
+from core_pdf.impl.extract.capture import internal_STRUCTURE_UNSET
+from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.extract.pipeline import (
     internal_PageExtraction as NativePageExtraction,
 )
-from core_pdf.impl._impl.extract.pipeline import (
+from core_pdf.impl.extract.pipeline import (
     internal_PageProducts,
 )
-from core_pdf.impl._impl.output.model import Page
-from core_pdf.impl._impl.runtime.execution import ExtractionScope
+from core_pdf.impl.output.model import Page
+from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf_ocr.impl.extract.capture import capture_page
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult, WorkPlan
@@ -24,10 +24,10 @@ from core_pdf_ocr.impl.extract.table_detection import extract_tables
 from core_pdf_ocr.impl.extract.table_reconcile import internal_remove_duplicate_tables
 
 if TYPE_CHECKING:
-    from core_pdf.impl._impl.document.page import PdfPage
-    from core_pdf.impl._impl.document.records import RawFormField
-    from core_pdf.impl._impl.document.structure import PageStructure
-    from core_pdf.impl._impl.extract.capture import internal_StructureUnset
+    from core_pdf.impl.document.page import PdfPage
+    from core_pdf.impl.document.records import RawFormField
+    from core_pdf.impl.document.structure import PageStructure
+    from core_pdf.impl.extract.capture import internal_StructureUnset
     from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextProfile
 
 

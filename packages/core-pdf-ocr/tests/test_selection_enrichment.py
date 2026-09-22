@@ -5,10 +5,10 @@ from typing import Any, cast
 
 import pytest
 
-from core_pdf.impl._impl.capture.program import CapturedProgram, PageProgram
-from core_pdf.impl._impl.extract.contracts import GlyphEvidence, ObservationBatch
-from core_pdf.impl._impl.model.glyphs import GlyphObservation
-from core_pdf.impl._impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
+from core_pdf.impl.capture.program import CapturedProgram, PageProgram
+from core_pdf.impl.extract.contracts import GlyphEvidence, ObservationBatch
+from core_pdf.impl.model.glyphs import GlyphObservation
+from core_pdf.impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
 from core_pdf_ocr.impl.extract import selection
 from core_pdf_ocr.impl.extract.contracts import (
     PageAnalysis,

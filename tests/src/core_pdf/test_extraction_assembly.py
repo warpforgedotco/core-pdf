@@ -5,9 +5,9 @@ from typing import Any, cast
 
 import pytest
 
-from core_pdf.impl._impl.extract.selection import internal_assemble_document
-from core_pdf.impl._impl.output.model import Diagnostic, Page
-from core_pdf.impl._impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
+from core_pdf.impl.extract.selection import internal_assemble_document
+from core_pdf.impl.output.model import Diagnostic, Page
+from core_pdf.impl.runtime.execution import ExtractionScope, internal_ExtractionCancelled
 
 
 @pytest.mark.parametrize("numbers", [(), (3, 1, 3)])

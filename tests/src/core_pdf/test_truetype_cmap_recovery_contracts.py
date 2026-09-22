@@ -6,7 +6,7 @@ import pytest
 
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf._vendor.fontTools.ttLib.tables._c_m_a_p import CmapSubtable, table__c_m_a_p
-from core_pdf.impl._impl.fonts import font_program_truetype as tt
+from core_pdf.impl.fonts import font_program_truetype as tt
 
 
 def internal_font(tables):

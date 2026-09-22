@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.capture.records import CapturedPath
-from core_pdf.impl._impl.render import target as target_module
-from core_pdf.impl._impl.render.model import DisplayListItem
-from core_pdf.impl._impl.render.target import internal_RasterTarget
+from core_pdf.impl.capture.records import CapturedPath
+from core_pdf.impl.render import target as target_module
+from core_pdf.impl.render.model import DisplayListItem
+from core_pdf.impl.render.target import internal_RasterTarget
 from tests.src.core_pdf.test_pattern_rendering import internal_target
 
 
@@ -131,9 +131,9 @@ def test_scope_failure_restores_clip_and_unwinds_all_groups(monkeypatch, failure
 @pytest.mark.parametrize("nested", [False, True])
 @pytest.mark.parametrize("blend", [None, "Multiply"])
 def test_tiling_patterns_repeat_inside_the_path_clip(nested, blend):
-    from core_pdf.impl._impl.capture.program import CapturedProgram
-    from core_pdf.impl._impl.capture.records import CapturedDrawing, TilingPattern
-    from core_pdf.impl._impl.render.display import DisplayList
+    from core_pdf.impl.capture.program import CapturedProgram
+    from core_pdf.impl.capture.records import CapturedDrawing, TilingPattern
+    from core_pdf.impl.render.display import DisplayList
 
     cell_path = CapturedPath()
     cell_path.rect(0, 0, 1, 1)

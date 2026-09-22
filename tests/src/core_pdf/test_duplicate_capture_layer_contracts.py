@@ -2,14 +2,14 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl._impl.extract.capture import (
+from core_pdf.impl.extract.capture import (
     internal_clip_bbox,
     internal_discard_duplicate_clipped_layers,
     internal_discard_duplicate_nested_layers,
     internal_glyphs_covered_by_extended_run,
 )
-from core_pdf.impl._impl.model.glyphs import GlyphCluster
-from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl.model.glyphs import GlyphCluster
+from core_pdf.impl.model.runs import TextRun
 
 
 def run(text: str, depth: int = 0, x: float = 0) -> TextRun:

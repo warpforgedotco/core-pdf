@@ -1,0 +1,292 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
+from contextlib import suppress
+from copy import replace
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Protocol, Self
+
+from core_pdf.impl.document.page_links import resolve_destination_value
+from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
+from core_pdf.impl.extract.capture import capture_page, internal_STRUCTURE_UNSET
+from core_pdf.impl.extract.contracts import (
+    ObservationBatch,
+    PageAnalysis,
+    ParsedBlock,
+    ReadingOrderEvidence,
+)
+from core_pdf.impl.extract.emit import (
+    assemble_page,
+)
+from core_pdf.impl.extract.table_detection import extract_tables
+from core_pdf.impl.output.model import (
+    Annotation,
+    Figure,
+    FormField,
+    Link,
+    Page,
+    Table,
+)
+from core_pdf.impl.runtime.execution import ExtractionScope
+
+if TYPE_CHECKING:
+    from core_pdf.impl.document.page import PdfPage
+    from core_pdf.impl.document.records import RawAnnotation, RawFormField
+    from core_pdf.impl.document.structure import PageStructure
+    from core_pdf.impl.extract.capture import internal_StructureUnset
+
+internal_frozen_setattr = object.__setattr__
+
+
+class internal_Layout(Protocol):
+    def __call__(
+        self,
+        observations: ObservationBatch,
+        *,
+        obstacles: tuple[tuple[float, float, float, float], ...],
+        use_xy_cut: bool,
+        rotation: int,
+        page_width: float,
+        page_height: float,
+    ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]: ...
+
+
+def internal_collected_records[internal_Record, internal_T](
+    fetch: Callable[[], Iterable[internal_Record]],
+    build: Callable[[int, internal_Record], internal_T],
+) -> tuple[internal_T, ...]:
+    records: Iterable[internal_Record]
+    try:
+        records = fetch()
+    except TypeError, ValueError:
+        records = ()
+    output: list[internal_T] = []
+    for index, record in enumerate(records):
+        try:
+            output.append(build(index, record))
+        except TypeError, ValueError:
+            continue
+    return tuple(output)
+
+
+class internal_PageProducts:
+    __slots__ = ("tables", "blocks", "order_evidence")
+
+    tables: tuple[Table, ...]
+    blocks: tuple[ParsedBlock, ...]
+    order_evidence: ReadingOrderEvidence
+
+    __fields__: ClassVar[tuple[str, ...]] = ("tables", "blocks", "order_evidence")
+    __match_args__ = ("tables", "blocks", "order_evidence")
+
+    def __init__(
+        self,
+        tables: tuple[Table, ...],
+        blocks: tuple[ParsedBlock, ...],
+        order_evidence: ReadingOrderEvidence,
+    ) -> None:
+        internal_frozen_setattr(self, "tables", tables)
+        internal_frozen_setattr(self, "blocks", blocks)
+        internal_frozen_setattr(self, "order_evidence", order_evidence)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"tables={self.tables!r}, "
+            f"blocks={self.blocks!r}, "
+            f"order_evidence={self.order_evidence!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.tables == other.tables
+            and self.blocks == other.blocks
+            and self.order_evidence == other.order_evidence
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.tables, self.blocks, self.order_evidence))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        tables = changes.pop("tables", self.tables)
+        blocks = changes.pop("blocks", self.blocks)
+        order_evidence = changes.pop("order_evidence", self.order_evidence)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(tables, blocks, order_evidence)
+
+
+class internal_PageExtraction:
+    internal_capture_page = staticmethod(capture_page)
+
+    @property
+    def internal_route(self) -> str:
+        return "native"
+
+    @property
+    def capture(self) -> PageAnalysis:
+        return self.internal_capture
+
+    def __init__(
+        self,
+        page: PdfPage,
+        *,
+        capture: PageAnalysis | None = None,
+        fields: Iterable[RawFormField] | None = None,
+        structure: PageStructure | None | internal_StructureUnset = internal_STRUCTURE_UNSET,
+        hidden_layers: frozenset[str] | None = None,
+    ) -> None:
+        self.page = page
+        self.internal_structure = structure
+        self.internal_hidden_layers = hidden_layers
+        field_records = tuple(fields) if fields is not None else None
+        if capture is not None:
+            self.internal_capture = (
+                replace(capture, fields=field_records) if field_records is not None else capture
+            )
+        else:
+            annotation_records: tuple[RawAnnotation, ...] | None
+            try:
+                annotation_records = tuple(page.get_annotations()) or None
+            except AttributeError, TypeError, ValueError:
+                annotation_records = None
+            self.internal_capture = self.internal_capture_page(
+                page,
+                structure=structure,
+                hidden_layers=hidden_layers,
+                fields=field_records,
+                annotations=annotation_records,
+            )
+
+    def run(self, context: ExtractionScope) -> internal_PageProducts:
+        context.raise_if_cancelled()
+        observations = self.capture.observations
+        return self.internal_layout_products(
+            observations,
+            extract_tables(self.capture, observations),
+        )
+
+    def internal_layout_products(
+        self,
+        observations: ObservationBatch,
+        tables: tuple[Table, ...],
+        *,
+        layout: internal_Layout = layout_blocks_with_evidence,
+    ) -> internal_PageProducts:
+        capture = self.capture
+        table_obstacles = tuple(table.bbox for table in tables if table.bbox is not None)
+        image_obstacles = tuple(
+            box
+            for box in capture.evidence.image_boxes
+            if 0.01 <= ((box[2] - box[0]) * (box[3] - box[1])) / capture.evidence.page_area < 0.65
+        )
+        use_xy_cut = not (
+            capture.evidence.image_count >= 8 and 0.05 <= capture.evidence.image_area_ratio < 0.65
+        )
+        blocks, order_evidence = layout(
+            observations,
+            obstacles=(*table_obstacles, *image_obstacles),
+            use_xy_cut=use_xy_cut,
+            rotation=capture.rotation,
+            page_width=capture.width,
+            page_height=capture.height,
+        )
+        return internal_PageProducts(tables, blocks, order_evidence)
+
+    def assembled_page(self, context: ExtractionScope) -> Page:
+        capture = self.capture
+        products = self.run(context)
+        blocks = products.blocks
+        order_evidence = products.order_evidence
+        figures = (
+            ()
+            if capture.evidence.full_page_image
+            else tuple(
+                Figure(order=index, bbox=box, kind="image", metadata={"source": "capture"})
+                for index, box in enumerate(capture.evidence.image_boxes)
+            )
+        )
+        assembled = assemble_page(
+            blocks,
+            page_number=int(self.page.page_number),
+            width=capture.width,
+            height=capture.height,
+            rotation=capture.rotation,
+            route=self.internal_route,
+            tables=products.tables,
+            figures=figures,
+            diagnostics=(("reading-order-ambiguous",) if order_evidence.ambiguous else ()),
+            full_page_image=capture.evidence.full_page_image,
+            drawings=capture.program.drawings,
+        )
+        resolver = self.page.document.resolver
+        raw_annotations = capture.annotations or ()
+        resolved_annotation_dicts = tuple(record.dict for record in raw_annotations)
+        annotations = internal_collected_records(
+            lambda: raw_annotations,
+            lambda _index, record: Annotation(
+                subtype=record.subtype,
+                bbox=record.rect,
+                contents=record.contents,
+                destination=resolve_destination_value(resolver, record.dest or record.action),
+            ),
+        )
+        links = internal_collected_records(
+            lambda: self.page.get_links(resolved_annotation_dicts),
+            lambda _index, record: Link(
+                bbox=record.bbox,
+                url=record.url,
+                link_type=record.link_type,
+                text="",
+            ),
+        )
+        source_fields = capture.fields
+        fetch_fields = self.page.get_fields if source_fields is None else lambda: source_fields
+        field_records = internal_collected_records(
+            fetch_fields,
+            lambda index, record: FormField(
+                name=record.name,
+                field_type=record.type,
+                value_text=record.value_text,
+                bbox=record.rect,
+                field_index=index,
+                required=record.is_required,
+                read_only=record.is_read_only,
+                no_export=record.no_export,
+                options=record.options,
+            ),
+        )
+        cropbox = assembled.cropbox
+        with suppress(TypeError, ValueError):
+            cropbox = self.page.crop_box
+        return replace(
+            assembled,
+            annotations=annotations,
+            links=links,
+            form_fields=field_records,
+            cropbox=cropbox,
+            user_unit=self.page.user_unit,
+        )
+
+
+def extract_page(page: PdfPage, context: ExtractionScope) -> Page:
+    return internal_PageExtraction(page).assembled_page(context)

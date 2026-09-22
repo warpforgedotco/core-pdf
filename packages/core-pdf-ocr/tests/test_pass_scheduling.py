@@ -2,8 +2,8 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl._impl.extract.contracts import ObservationBatch
-from core_pdf.impl._impl.render.model import RasterImage
+from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.render.model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import OcrPass, OcrPassScope, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.pipeline import internal_OcrPassState
 from core_pdf_ocr.impl.extract.ocr.types import internal_OcrTask
@@ -149,7 +149,7 @@ def test_pipeline_schedules_fallbacks_with_winning_task_provenance(
     ocr_capture: PageAnalysis,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from core_pdf.impl._impl.runtime.execution import ExtractionScope
+    from core_pdf.impl.runtime.execution import ExtractionScope
     from core_pdf_ocr.impl.extract.contracts import PageRoute, WorkPlan
     from core_pdf_ocr.impl.extract.ocr import pipeline
     from core_pdf_ocr.impl.extract.ocr.session import internal_OcrPassTasks
@@ -207,7 +207,7 @@ def test_weak_region_materialization_uses_native_observations_only_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
     seed_with_native: bool,
 ) -> None:
-    from core_pdf.impl._impl.runtime.execution import ExtractionScope
+    from core_pdf.impl.runtime.execution import ExtractionScope
     from core_pdf_ocr.impl.extract.contracts import PageRoute, WorkPlan
     from core_pdf_ocr.impl.extract.ocr import session
     from core_pdf_ocr.impl.extract.ocr.types import internal_Raster, internal_RasterRegion

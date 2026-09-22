@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, NoReturn, Self
 
-from core_pdf.impl._impl.render.model import RasterImage
+from core_pdf.impl.render.model import RasterImage
 
 internal_frozen_setattr = object.__setattr__
 

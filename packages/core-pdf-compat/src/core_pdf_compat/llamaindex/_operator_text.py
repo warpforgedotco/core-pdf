@@ -4,12 +4,12 @@ import math
 from collections.abc import Mapping
 from typing import Any, ClassVar, NoReturn, Self, cast
 
-from core_pdf.impl._impl.capture.recovery import iter_content_operations
-from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
-from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl._impl.fonts.decoder import FontDecoder
-from core_pdf.impl._impl.fonts.glyphs import glyph_name_to_unicode
-from core_pdf.impl._impl.pdf_names import recover_pdf_name
+from core_pdf.impl.capture.recovery import iter_content_operations
+from core_pdf.impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts.decoder import FontDecoder
+from core_pdf.impl.fonts.glyphs import glyph_name_to_unicode
+from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfString
 from core_pdf_compat._text_state import (
     internal_append_directional_text,

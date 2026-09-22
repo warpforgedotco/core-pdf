@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.runtime import codec_backends as codecs
+from core_pdf.impl.runtime import codec_backends as codecs
 
 
 @pytest.mark.parametrize(

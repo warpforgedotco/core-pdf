@@ -8,12 +8,12 @@ from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
-from core_pdf.impl._impl.capture.records import CapturedDrawing
-from core_pdf.impl._impl.extract.contracts import FULL_PAGE_IMAGE_COVERAGE
-from core_pdf.impl._impl.graphics.images import decode_image, decode_pdf_image
-from core_pdf.impl._impl.model.geometry import bbox_union
-from core_pdf.impl._impl.render.model import RasterImage
-from core_pdf.impl._impl.runtime.array_views import (
+from core_pdf.impl.capture.records import CapturedDrawing
+from core_pdf.impl.extract.contracts import FULL_PAGE_IMAGE_COVERAGE
+from core_pdf.impl.graphics.images import decode_image, decode_pdf_image
+from core_pdf.impl.model.geometry import bbox_union
+from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.runtime.array_views import (
     contiguous_bytes,
     uint8_image_view,
 )

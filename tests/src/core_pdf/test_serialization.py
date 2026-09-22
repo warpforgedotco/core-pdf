@@ -7,7 +7,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from core_pdf.impl._impl.output.model import (
+from core_pdf.impl.output.model import (
     Annotation,
     Block,
     BlockKind,
@@ -244,7 +244,7 @@ def test_json_table_without_associated_text_preserves_null_values() -> None:
 def test_element_dispatch_rejects_unknown_runtime_types() -> None:
     from typing import cast
 
-    from core_pdf.impl._impl.output.serialize import internal_map_page_element
+    from core_pdf.impl.output.serialize import internal_map_page_element
 
     with pytest.raises(TypeError, match="unsupported page element: object"):
         internal_map_page_element(

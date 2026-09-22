@@ -5,22 +5,22 @@ from __future__ import annotations
 from enum import IntEnum, StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self
 
-from core_pdf.impl._impl.extract.contracts import (
+from core_pdf.impl.extract.contracts import (
     GlyphEvidence,
     ObservationBatch,
     TextQualityStats,
 )
-from core_pdf.impl._impl.extract.contracts import (
+from core_pdf.impl.extract.contracts import (
     PageAnalysis as NativePageAnalysis,
 )
-from core_pdf.impl._impl.extract.contracts import (
+from core_pdf.impl.extract.contracts import (
     PageEvidence as NativePageEvidence,
 )
 
 if TYPE_CHECKING:
-    from core_pdf.impl._impl.capture.program import PageProgram
-    from core_pdf.impl._impl.document.page import PdfPage
-    from core_pdf.impl._impl.document.records import RawAnnotation, RawFormField
+    from core_pdf.impl.capture.program import PageProgram
+    from core_pdf.impl.document.page import PdfPage
+    from core_pdf.impl.document.records import RawAnnotation, RawFormField
 
 internal_frozen_setattr = object.__setattr__
 

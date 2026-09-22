@@ -7,8 +7,8 @@ from typing import Any, ClassVar, NoReturn, Self, cast
 
 import numpy
 
-from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
-from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath
+from core_pdf.impl.model.runs import TextRun
 from core_pdf_ocr._vendor.newstroke_data import NEWSTROKE_ASCII, NEWSTROKE_ASCII_ALTERNATES
 
 internal_frozen_setattr = object.__setattr__

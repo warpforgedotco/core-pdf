@@ -7,11 +7,11 @@ from typing import Any, ClassVar, NamedTuple, NoReturn, Self
 
 import numpy
 
-from core_pdf.impl._impl.extract.contracts import ObservationBatch
-from core_pdf.impl._impl.extract.quality import (
+from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.extract.quality import (
     TextAnalysis as TextAnalysis,
 )
-from core_pdf.impl._impl.extract.quality import (
+from core_pdf.impl.extract.quality import (
     internal_analyze_text as internal_analyze_text,
 )
 

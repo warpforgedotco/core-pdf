@@ -9,14 +9,14 @@ from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, cast
 
-from core_pdf.impl._impl.extract.contracts import ObservationBatch, internal_bbox_tuple
-from core_pdf.impl._impl.extract.selection import (
+from core_pdf.impl.extract.contracts import ObservationBatch, internal_bbox_tuple
+from core_pdf.impl.extract.selection import (
     internal_assemble_document,
     internal_prepare_document_pages,
 )
-from core_pdf.impl._impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
-from core_pdf.impl._impl.output.model import Document
-from core_pdf.impl._impl.runtime.execution import ExtractionScope
+from core_pdf.impl.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
+from core_pdf.impl.output.model import Document
+from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
     internal_capture_from_program,
@@ -30,8 +30,8 @@ from core_pdf_ocr.impl.extract.ocr.strokes import (
 from core_pdf_ocr.impl.extract.pipeline import internal_PageExtraction
 
 if TYPE_CHECKING:
-    from core_pdf.impl._impl.document.document import PdfDocument
-    from core_pdf.impl._impl.document.page import PdfPage
+    from core_pdf.impl.document.document import PdfDocument
+    from core_pdf.impl.document.page import PdfPage
 
 internal_frozen_setattr = object.__setattr__
 

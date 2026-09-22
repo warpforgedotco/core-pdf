@@ -6,10 +6,10 @@ from functools import partial
 from typing import Any, cast
 
 from core_pdf import PdfDocument, PdfPage
-from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
-from core_pdf.impl._impl.document.recovery.xref import XRefScanner
-from core_pdf.impl._impl.pdf_names import recover_pdf_name
+from core_pdf.impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl.document.recovery.xref import XRefScanner
 from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, merge_xref_sections

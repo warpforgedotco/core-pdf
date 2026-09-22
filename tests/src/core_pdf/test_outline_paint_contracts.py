@@ -3,13 +3,13 @@ from copy import replace
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.fonts.decoder import internal_outline_arrays
-from core_pdf.impl._impl.model.glyphs import GlyphObservation
-from core_pdf.impl._impl.render.commands import (
+from core_pdf.impl.fonts.decoder import internal_outline_arrays
+from core_pdf.impl.model.glyphs import GlyphObservation
+from core_pdf.impl.render.commands import (
     internal_append_glyph_paint,
     internal_glyph_outline_path,
 )
-from core_pdf.impl._impl.render.display import DisplayList
+from core_pdf.impl.render.display import DisplayList
 
 
 class ScalarOutline:

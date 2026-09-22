@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl._impl.output.model import Table, TableCell
+from core_pdf.impl.output.model import Table, TableCell
 from core_pdf_compat import pdfplumber as compat
 
 

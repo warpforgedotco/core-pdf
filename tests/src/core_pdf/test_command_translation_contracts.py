@@ -3,13 +3,13 @@ from copy import replace
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.capture.program import CapturedProgram
-from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSoftMask, CapturedSubpath
-from core_pdf.impl._impl.render.clipping import internal_ClipState
-from core_pdf.impl._impl.render.commands import translated_command
-from core_pdf.impl._impl.render.display import DisplayList
-from core_pdf.impl._impl.render.model import DisplayListItem, PathPaintItem
-from core_pdf.impl._impl.render.target import internal_RasterTarget
+from core_pdf.impl.capture.program import CapturedProgram
+from core_pdf.impl.capture.records import CapturedPath, CapturedSoftMask, CapturedSubpath
+from core_pdf.impl.render.clipping import internal_ClipState
+from core_pdf.impl.render.commands import translated_command
+from core_pdf.impl.render.display import DisplayList
+from core_pdf.impl.render.model import DisplayListItem, PathPaintItem
+from core_pdf.impl.render.target import internal_RasterTarget
 
 
 def internal_triangle_item():

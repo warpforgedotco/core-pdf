@@ -2,9 +2,9 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl._impl.capture.program import CapturedProgram, PageProgram
-from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedLine
-from core_pdf.impl._impl.extract.contracts import ObservationBatch
+from core_pdf.impl.capture.program import CapturedProgram, PageProgram
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine
+from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.contracts import OcrPass, OcrPassScope, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr import regions
 from core_pdf_ocr.impl.extract.ocr.types import internal_OcrRegion

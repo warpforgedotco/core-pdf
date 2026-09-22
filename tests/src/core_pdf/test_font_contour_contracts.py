@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.fonts import font_program_truetype as tt
+from core_pdf.impl.fonts import font_program_truetype as tt
 
 
 def internal_casteljau(points, t):

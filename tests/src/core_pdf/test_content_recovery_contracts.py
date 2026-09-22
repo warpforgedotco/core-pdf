@@ -2,7 +2,7 @@ from typing import cast
 
 import pytest
 
-from core_pdf.impl._impl.capture.recovery import (
+from core_pdf.impl.capture.recovery import (
     CaptureRecovery,
     iter_content_operations,
     recover_inline_image_data,

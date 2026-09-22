@@ -2,9 +2,9 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl._impl.extract.contracts import ObservationBatch
-from core_pdf.impl._impl.render.model import RasterImage
-from core_pdf.impl._impl.runtime.execution import ExtractionScope
+from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     OcrPass,
@@ -128,8 +128,8 @@ def test_adaptive_retry_selects_scope_and_preserves_best_content(
 def test_hidden_layer_verification_short_circuits_only_after_matching_preview(
     monkeypatch: pytest.MonkeyPatch, ocr_capture, verified: bool
 ) -> None:
-    from core_pdf.impl._impl.capture.program import CapturedProgram, PageProgram
-    from core_pdf.impl._impl.model.runs import TextRun
+    from core_pdf.impl.capture.program import CapturedProgram, PageProgram
+    from core_pdf.impl.model.runs import TextRun
 
     texts = tuple(f"word{i}" for i in range(24))
     hidden = ObservationBatch.from_columns(

@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.capture.program import CapturedProgram
-from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
-from core_pdf.impl._impl.render.soft_masks import internal_resolve_soft_mask
+from core_pdf.impl.capture.program import CapturedProgram
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
+from core_pdf.impl.render.soft_masks import internal_resolve_soft_mask
 from tests.src.core_pdf.test_pattern_rendering import internal_target
 
 

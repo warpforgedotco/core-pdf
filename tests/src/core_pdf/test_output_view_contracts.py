@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl._impl.output.model import (
+from core_pdf.impl.output.model import (
     Annotation,
     Block,
     BlockKind,

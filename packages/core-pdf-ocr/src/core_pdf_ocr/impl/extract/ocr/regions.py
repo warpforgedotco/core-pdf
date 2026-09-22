@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import numpy
 
-from core_pdf.impl._impl.extract.contracts import internal_bbox_tuple
-from core_pdf.impl._impl.extract.grids import (
+from core_pdf.impl.extract.contracts import internal_bbox_tuple
+from core_pdf.impl.extract.grids import (
     internal_axis_segments,
     internal_grid_components,
     internal_line_coordinate_columns,
     internal_split_grid_component,
 )
-from core_pdf.impl._impl.model.geometry import (
+from core_pdf.impl.model.geometry import (
     bbox_area,
     bbox_intersection_area,
     bbox_union,

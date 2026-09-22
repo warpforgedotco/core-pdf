@@ -1,8 +1,8 @@
 import pytest
 
-from core_pdf.impl._impl.fonts.cmap_decoder import CMapDecoder
-from core_pdf.impl._impl.fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl._impl.fonts.decoder import FontDecoder, single_code_mapping, split_code_bytes
+from core_pdf.impl.fonts.cmap_decoder import CMapDecoder
+from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts.decoder import FontDecoder, single_code_mapping, split_code_bytes
 
 
 def block(kind, records):

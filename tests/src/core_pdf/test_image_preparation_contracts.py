@@ -3,7 +3,7 @@ import zlib
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.graphics import images
+from core_pdf.impl.graphics import images
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
 

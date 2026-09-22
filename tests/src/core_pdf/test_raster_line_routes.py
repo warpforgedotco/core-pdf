@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl._impl.capture.records import CapturedPath, CapturedSubpath
-from core_pdf.impl._impl.render import path_stroke_target
+from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
+from core_pdf.impl.render import path_stroke_target
 from tests.src.core_pdf.test_pattern_rendering import internal_target
 
 

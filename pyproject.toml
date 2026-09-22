@@ -159,22 +159,22 @@ line-length = 100
 "packages/core-pdf-compat/src/core_pdf_compat/pdfminer/_capture.py" = ["ARG002"]
 # Stream filters share the FilterFn signature: (data, parms).
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_filters/codecs.py" = ["ARG001"]
-"src/core_pdf/impl/_impl/graphics/filter_recovery.py" = ["ARG001"]
-"src/core_pdf/impl/_impl/graphics/codec_dispatch.py" = ["ARG001"]
+"src/core_pdf/impl/graphics/filter_recovery.py" = ["ARG001"]
+"src/core_pdf/impl/graphics/codec_dispatch.py" = ["ARG001"]
 # Scanner callbacks share the (data, pos, ..., semantic_context) signature.
-"src/core_pdf/impl/_impl/document/recovery/xref.py" = ["ARG001", "ARG004"]
+"src/core_pdf/impl/document/recovery/xref.py" = ["ARG001", "ARG004"]
 # Content operator handlers and semantic-sink callbacks share fixed signatures.
-"src/core_pdf/impl/_impl/capture/tolerant_state.py" = ["ARG002"]
-"src/core_pdf/impl/_impl/capture/recording.py" = ["ARG002"]
+"src/core_pdf/impl/capture/tolerant_state.py" = ["ARG002"]
+"src/core_pdf/impl/capture/recording.py" = ["ARG002"]
 # Documented parsing extension hooks keep their signatures, in the strict base
 # and in the recovery overrides.
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/lexer.py" = ["ARG002"]
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/objects.py" = ["ARG002"]
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/resolver.py" = ["ARG002"]
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_content/streams.py" = ["ARG002"]
-"src/core_pdf/impl/_impl/document/recovery/lexer.py" = ["ARG002"]
-"src/core_pdf/impl/_impl/document/recovery/resolver.py" = ["ARG002"]
-"src/core_pdf/impl/_impl/fonts/cmap_tounicode.py" = ["ARG002"]
+"src/core_pdf/impl/document/recovery/lexer.py" = ["ARG002"]
+"src/core_pdf/impl/document/recovery/resolver.py" = ["ARG002"]
+"src/core_pdf/impl/fonts/cmap_tounicode.py" = ["ARG002"]
 [tool.ruff.lint.mccabe]
 max-complexity = 60
 
@@ -261,13 +261,13 @@ core_pdf = ["py.typed"]
 "core_pdf._vendor.fontTools" = ["LICENSE.txt", "LICENSE.external.txt"]
 "core_pdf._vendor.icc" = ["*.icc", "README.md"]
 "core_pdf._vendor.fontTools.ttLib.tables" = ["table_API_readme.txt"]
-"core_pdf.impl._impl.layout.data.wordlists" = [
+"core_pdf.impl.layout.data.wordlists" = [
     "*.txt.gz",
     "*.bin",
     "*.md",
     "LICENSE*",
 ]
-"core_pdf.impl._impl.fonts" = ["data/raster_fonts/**"]
+"core_pdf.impl.fonts" = ["data/raster_fonts/**"]
 
 [tool.importlinter]
 root_packages = [
@@ -303,7 +303,7 @@ source_modules = ["core_pdf_validate"]
 forbidden_modules = ["core_pdf.impl", "core_pdf_ocr", "core_pdf_compat"]
 allow_indirect_imports = true
 
-# The facades reach into core_pdf.impl._impl by design and pin the exact core
+# The facades reach into core_pdf.impl by design and pin the exact core
 # release; core, spec, and the other companions must never import or discover
 # them, so users opt in by installing core-pdf-compat.
 [[tool.importlinter.contracts]]
@@ -349,7 +349,7 @@ forbidden_modules = ["core_pdf_ocr.api"]
 [[tool.importlinter.contracts]]
 name = "Derived-processing spine"
 type = "layers"
-containers = ["core_pdf.impl._impl"]
+containers = ["core_pdf.impl"]
 layers = [
     "extract",
     "render",
@@ -360,17 +360,17 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "Serialization stays below processing and the specification"
 type = "forbidden"
-source_modules = ["core_pdf.impl._impl.output.serialize"]
-ignore_imports = ["core_pdf.impl._impl.model.geometry -> core_pdf_spec.s_08_graphics.geometry"]
+source_modules = ["core_pdf.impl.output.serialize"]
+ignore_imports = ["core_pdf.impl.model.geometry -> core_pdf_spec.s_08_graphics.geometry"]
 forbidden_modules = [
-    "core_pdf.impl._impl.document",
-    "core_pdf.impl._impl.capture",
-    "core_pdf.impl._impl.fonts",
-    "core_pdf.impl._impl.graphics",
-    "core_pdf.impl._impl.extract",
-    "core_pdf.impl._impl.layout",
-    "core_pdf.impl._impl.render",
-    "core_pdf.impl._impl.runtime",
+    "core_pdf.impl.document",
+    "core_pdf.impl.capture",
+    "core_pdf.impl.fonts",
+    "core_pdf.impl.graphics",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.render",
+    "core_pdf.impl.runtime",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
     "core_pdf_spec.s_07_filters",
@@ -422,38 +422,38 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "impl/_impl/runtime is the floor"
+name = "impl/runtime is the floor"
 type = "forbidden"
-source_modules = ["core_pdf.impl._impl.runtime"]
+source_modules = ["core_pdf.impl.runtime"]
 forbidden_modules = [
-    "core_pdf.impl._impl.document",
-    "core_pdf.impl._impl.capture",
-    "core_pdf.impl._impl.fonts",
-    "core_pdf.impl._impl.graphics",
-    "core_pdf.impl._impl.extract",
-    "core_pdf.impl._impl.layout",
-    "core_pdf.impl._impl.model",
-    "core_pdf.impl._impl.output",
-    "core_pdf.impl._impl.render",
+    "core_pdf.impl.document",
+    "core_pdf.impl.capture",
+    "core_pdf.impl.fonts",
+    "core_pdf.impl.graphics",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.model",
+    "core_pdf.impl.output",
+    "core_pdf.impl.render",
     "core_pdf_spec",
 ]
 
 [[tool.importlinter.contracts]]
 name = "The shared model depends on nothing above it"
 type = "forbidden"
-source_modules = ["core_pdf.impl._impl.model"]
+source_modules = ["core_pdf.impl.model"]
 # Spec's geometry module is a leaf (only core_pdf_spec.types); the model
 # re-exports its bbox helpers rather than duplicating them.
-ignore_imports = ["core_pdf.impl._impl.model.geometry -> core_pdf_spec.s_08_graphics.geometry"]
+ignore_imports = ["core_pdf.impl.model.geometry -> core_pdf_spec.s_08_graphics.geometry"]
 forbidden_modules = [
-    "core_pdf.impl._impl.document",
-    "core_pdf.impl._impl.capture",
-    "core_pdf.impl._impl.fonts",
-    "core_pdf.impl._impl.graphics",
-    "core_pdf.impl._impl.extract",
-    "core_pdf.impl._impl.layout",
-    "core_pdf.impl._impl.output",
-    "core_pdf.impl._impl.render",
+    "core_pdf.impl.document",
+    "core_pdf.impl.capture",
+    "core_pdf.impl.fonts",
+    "core_pdf.impl.graphics",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.output",
+    "core_pdf.impl.render",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
     "core_pdf_spec.s_07_filters",
@@ -476,10 +476,10 @@ name = "The COS layer depends only on filters, syntax primitives, and base modul
 type = "forbidden"
 source_modules = ["core_pdf_spec.s_07_syntax"]
 forbidden_modules = [
-    "core_pdf.impl._impl.document",
-    "core_pdf.impl._impl.capture",
-    "core_pdf.impl._impl.fonts",
-    "core_pdf.impl._impl.graphics",
+    "core_pdf.impl.document",
+    "core_pdf.impl.capture",
+    "core_pdf.impl.fonts",
+    "core_pdf.impl.graphics",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
     "core_pdf_spec.s_07_security",
@@ -487,11 +487,11 @@ forbidden_modules = [
     "core_pdf_spec.s_09_fonts",
     "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
-    "core_pdf.impl._impl.extract",
-    "core_pdf.impl._impl.layout",
-    "core_pdf.impl._impl.model",
-    "core_pdf.impl._impl.output",
-    "core_pdf.impl._impl.render",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.model",
+    "core_pdf.impl.output",
+    "core_pdf.impl.render",
     # Predictors and JBIG2 are reached through s_07_filters by design.
     "core_postscript",
     "core_pdf_crypto",
@@ -503,10 +503,10 @@ name = "Syntax primitives are the spec floor"
 type = "forbidden"
 source_modules = ["core_pdf_spec.s_07_syntax_primitives"]
 forbidden_modules = [
-    "core_pdf.impl._impl.document",
-    "core_pdf.impl._impl.capture",
-    "core_pdf.impl._impl.fonts",
-    "core_pdf.impl._impl.graphics",
+    "core_pdf.impl.document",
+    "core_pdf.impl.capture",
+    "core_pdf.impl.fonts",
+    "core_pdf.impl.graphics",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
     "core_pdf_spec.s_07_filters",
@@ -516,11 +516,11 @@ forbidden_modules = [
     "core_pdf_spec.s_09_fonts",
     "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
-    "core_pdf.impl._impl.extract",
-    "core_pdf.impl._impl.layout",
-    "core_pdf.impl._impl.model",
-    "core_pdf.impl._impl.output",
-    "core_pdf.impl._impl.render",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.model",
+    "core_pdf.impl.output",
+    "core_pdf.impl.render",
     "core_predictors",
     "core_postscript",
     "core_jbig2",
@@ -536,15 +536,15 @@ source_modules = [
     "core_pdf.impl.types",
 ]
 forbidden_modules = [
-    "core_pdf.impl._impl.document",
-    "core_pdf.impl._impl.capture",
-    "core_pdf.impl._impl.fonts",
-    "core_pdf.impl._impl.graphics",
-    "core_pdf.impl._impl.extract",
-    "core_pdf.impl._impl.layout",
-    "core_pdf.impl._impl.model",
-    "core_pdf.impl._impl.output",
-    "core_pdf.impl._impl.render",
+    "core_pdf.impl.document",
+    "core_pdf.impl.capture",
+    "core_pdf.impl.fonts",
+    "core_pdf.impl.graphics",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.model",
+    "core_pdf.impl.output",
+    "core_pdf.impl.render",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
     "core_pdf_spec.s_07_filters",
@@ -566,45 +566,45 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Font and graphics adapters stay below capture and document composition"
 type = "forbidden"
-source_modules = ["core_pdf.impl._impl.fonts", "core_pdf.impl._impl.graphics"]
+source_modules = ["core_pdf.impl.fonts", "core_pdf.impl.graphics"]
 forbidden_modules = [
-    "core_pdf.impl._impl.document",
-    "core_pdf.impl._impl.capture",
-    "core_pdf.impl._impl.extract",
-    "core_pdf.impl._impl.render",
-    "core_pdf.impl._impl.output",
-    "core_pdf.impl._impl.layout",
+    "core_pdf.impl.document",
+    "core_pdf.impl.capture",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.render",
+    "core_pdf.impl.output",
+    "core_pdf.impl.layout",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Capture stays below document composition and output processing"
 type = "forbidden"
-source_modules = ["core_pdf.impl._impl.capture"]
+source_modules = ["core_pdf.impl.capture"]
 forbidden_modules = [
-    "core_pdf.impl._impl.document.document",
-    "core_pdf.impl._impl.document.page",
-    "core_pdf.impl._impl.document.fields",
-    "core_pdf.impl._impl.document.metadata",
-    "core_pdf.impl._impl.document.structure",
-    "core_pdf.impl._impl.extract",
-    "core_pdf.impl._impl.render",
-    "core_pdf.impl._impl.output",
-    "core_pdf.impl._impl.layout",
+    "core_pdf.impl.document.document",
+    "core_pdf.impl.document.page",
+    "core_pdf.impl.document.fields",
+    "core_pdf.impl.document.metadata",
+    "core_pdf.impl.document.structure",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.render",
+    "core_pdf.impl.output",
+    "core_pdf.impl.layout",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Object recovery stays below content capture and document composition"
 type = "forbidden"
-source_modules = ["core_pdf.impl._impl.document.recovery"]
+source_modules = ["core_pdf.impl.document.recovery"]
 forbidden_modules = [
-    "core_pdf.impl._impl.document.document",
-    "core_pdf.impl._impl.document.page",
-    "core_pdf.impl._impl.capture",
-    "core_pdf.impl._impl.fonts",
-    "core_pdf.impl._impl.extract",
-    "core_pdf.impl._impl.render",
-    "core_pdf.impl._impl.output",
-    "core_pdf.impl._impl.layout",
+    "core_pdf.impl.document.document",
+    "core_pdf.impl.document.page",
+    "core_pdf.impl.capture",
+    "core_pdf.impl.fonts",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.render",
+    "core_pdf.impl.output",
+    "core_pdf.impl.layout",
 ]
 
 

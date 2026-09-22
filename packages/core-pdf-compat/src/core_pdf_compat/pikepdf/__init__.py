@@ -7,12 +7,12 @@ from os import PathLike
 from typing import Any, cast, overload
 
 from core_pdf import PdfDocument
-from core_pdf.impl._impl.document.metadata import resolve_info_metadata
-from core_pdf.impl._impl.document.page_tree import resolve_page_tree_node_type
-from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
-from core_pdf.impl._impl.output.model import Document
-from core_pdf.impl._impl.output.model import Page as StructuredPage
+from core_pdf.impl.document.metadata import resolve_info_metadata
+from core_pdf.impl.document.page_tree import resolve_page_tree_node_type
+from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.output.model import Document
+from core_pdf.impl.output.model import Page as StructuredPage
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat.pypdf import (
     PdfPageObject,

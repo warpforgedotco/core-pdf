@@ -1,0 +1,1447 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+from __future__ import annotations
+
+import contextlib
+import mmap
+import threading
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import AbstractContextManager
+from os import PathLike
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVar, cast
+
+from core_pdf.impl.document.document_xref import DocumentXRefMixin
+from core_pdf.impl.document.fields import collect_field_records
+from core_pdf.impl.document.metadata import MetadataRecord, resolve_metadata
+from core_pdf.impl.document.page import PAGE_INHERITED_KEYS, PdfPage
+from core_pdf.impl.document.page_labels import format_page_label
+from core_pdf.impl.document.page_tree import (
+    MAX_PAGE_TREE_DEPTH,
+    resolve_page_tree_node_type,
+)
+from core_pdf.impl.document.records import (
+    RawEmbeddedFile,
+    RawFormField,
+    RawNamedDestination,
+    RawOutlineItem,
+)
+from core_pdf.impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl.document.recovery.resolver import ObjectResolver
+from core_pdf.impl.document.recovery.security import create_recovered_security_handler
+from core_pdf.impl.document.recovery.trees import iter_name_tree_items, iter_number_tree_items
+from core_pdf.impl.document.standards import (
+    bootstrap_security_context,
+    discover_document_standards,
+    discover_header_standards,
+    discover_profile_claims,
+    preserve_historical_version,
+)
+from core_pdf.impl.document.structure import StructureTree
+from core_pdf.impl.exceptions import (
+    PdfDocumentClosedError,
+    PdfParseError,
+    PdfSourceError,
+    PdfUnsupportedError,
+)
+from core_pdf.impl.extract.selection import extract_document
+from core_pdf.impl.fonts.fallback import internal_RasterFontRepository
+from core_pdf.impl.model.page_selection import PageSelection, resolve_page_selection
+from core_pdf.impl.output.model import Document as StructuredDocument
+from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.runtime.execution import ExtractionScope
+from core_pdf.impl.types import (
+    ImageRecord,
+    PageScoped,
+    PathSource,
+    PdfByteBuffer,
+    PdfName,
+    PdfReference,
+    PdfSource,
+    SeekableBinaryReader,
+)
+from core_pdf_spec.s_07_document.page import PageNode as internal_PageNode
+from core_pdf_spec.s_07_document.page import iter_page_nodes
+from core_pdf_spec.s_07_security.document import initialize_document_security
+from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
+from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import (
+    CachedPdfObject,
+    Decipher,
+    InheritedValueMap,
+    PdfArray,
+    PdfDict,
+    PdfObject,
+)
+from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, key_for
+from core_pdf_spec.standards import DocumentStandards, PdfVersion, SemanticContext
+
+if TYPE_CHECKING:
+    from core_pdf.impl.fonts.fallback import (
+        RasterFontProviderLike,
+        internal_RasterFontRepository,
+    )
+
+
+internal_PageT = TypeVar("internal_PageT", bound=PdfPage, default=PdfPage)
+internal_LookupPageT = TypeVar("internal_LookupPageT", bound=PdfPage)
+
+
+class DocumentAdapter(Protocol):
+    def apply(self, document: StructuredDocument, /) -> StructuredDocument: ...
+
+
+class DocumentOperation(AbstractContextManager["DocumentOperation"]):
+    __slots__ = ("document", "released")
+
+    def __init__(self, document: PdfDocument[Any]) -> None:
+        self.document = document
+        self.released = False
+
+    @property
+    def cancelled(self) -> bool:
+        return self.document.internal_operation_cancelled.is_set()
+
+    def release(self) -> None:
+        if self.released:
+            return
+        self.released = True
+        self.document.internal_release_operation()
+
+    def __exit__(self, *internal_args: object) -> None:
+        self.release()
+
+
+class internal_PageLookup[internal_LookupPageT: PdfPage]:
+    __slots__ = (
+        "document",
+        "internal_nodes",
+        "internal_indexes",
+        "internal_pages",
+        "internal_names",
+    )
+
+    def __init__(self, document: PdfDocument[internal_LookupPageT]) -> None:
+        self.document = document
+        self.internal_nodes: tuple[internal_PageNode, ...] | None = None
+        self.internal_indexes: dict[int, int] = {}
+        self.internal_pages: tuple[internal_LookupPageT, ...] | None = None
+        self.internal_names: dict[str, RawNamedDestination] | None = None
+
+    @property
+    def nodes(self) -> tuple[internal_PageNode, ...]:
+        if self.internal_nodes is None:
+            self.internal_nodes = tuple(self.document.internal_iter_page_nodes())
+            for index, node in enumerate(self.internal_nodes):
+                self.internal_indexes.setdefault(id(node.dictionary), index)
+        return self.internal_nodes
+
+    @property
+    def pages(self) -> tuple[internal_LookupPageT, ...]:
+        if self.internal_pages is None:
+            self.internal_pages = self.document.internal_build_pages(self.nodes)
+        return self.internal_pages
+
+    def page_index_for(self, page_obj: object) -> int | None:
+        from core_pdf.impl.document.page import PdfPage
+
+        if isinstance(page_obj, PdfPage):
+            return page_obj.page_number - 1
+        if not isinstance(page_obj, dict):
+            return None
+        nodes = self.nodes
+        index = self.internal_indexes.get(id(page_obj))
+        if index is not None:
+            return index
+        page_struct_parents = page_obj.get("StructParents")
+        if page_struct_parents is not None:
+            for index, node in enumerate(nodes):
+                if node.dictionary.get("StructParents") == page_struct_parents:
+                    return index
+        for index, node in enumerate(nodes):
+            if node.dictionary == page_obj:
+                return index
+        signature = self.document.recovered_page_signature(cast(PdfDict, page_obj))
+        for index, node in enumerate(nodes):
+            if self.document.recovered_page_signature(node.dictionary) == signature:
+                return index
+        return None
+
+    def resolve_named_destination(self, name: str) -> RawNamedDestination | None:
+        if self.internal_names is None:
+            self.internal_names = self.document.named_destinations(internal_lookup=self)
+        return self.internal_names.get(name)
+
+
+def internal_unresolved_destination(name: str) -> RawNamedDestination:
+    return RawNamedDestination(page_index=None, type=None, args=[], raw=name)
+
+
+def internal_legacy_name_context(context: SemanticContext | None) -> bool:
+    return context is not None and context.version in {PdfVersion(1, 0), PdfVersion(1, 1)}
+
+
+def internal_check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
+    pending: list[tuple[dict, bool]] = [(trailer, True)]
+    seen: set[int] = set()
+    while pending:
+        dictionary, top = pending.pop()
+        if id(dictionary) in seen:
+            continue
+        seen.add(id(dictionary))
+        names: set[bytes] = set()
+        for key, value in dictionary.items():
+            raw_name = key.value if isinstance(key, PdfName) else key
+            lexer = PdfLexer(b"/" + raw_name.encode("latin-1"))
+            try:
+                name = bytes(lexer.read_name())
+            finally:
+                lexer.close()
+            if top and name not in {b"Encrypt", b"AuthCode", b"ID"}:
+                continue
+            if name in names:
+                raise PdfUnsupportedError("Ambiguous security dictionary name aliases")
+            names.add(name)
+            if top and name in {b"Encrypt", b"AuthCode"}:
+                security_resolver = ObjectResolver(
+                    resolver.data, resolver.xref, semantic_context=resolver.semantic_context
+                )
+                try:
+                    value = security_resolver.resolve(value)
+                finally:
+                    security_resolver.close()
+            if isinstance(value, dict):
+                pending.append((value, False))
+
+
+class PdfDocument(
+    DocumentXRefMixin,
+    Generic[internal_PageT],
+):
+    page_class: type | None = None
+
+    __slots__ = (
+        "source",
+        "raw_data",
+        "xref",
+        "trailer_dict",
+        "decipher",
+        "resolver",
+        "file_handle",
+        "xref_was_recovered",
+        "xref_recovery_reason",
+        "recovery_scan_all_revisions",
+        "raster_font_provider",
+        "page_tree_was_recovered",
+        "internal_closed",
+        "internal_closing",
+        "internal_operation_lock",
+        "internal_operation_cancelled",
+        "internal_active_operations",
+        "internal_standards",
+        "internal_standards_complete",
+        "internal_font_decoders",
+    )
+
+    source: PdfSource
+    raw_data: bytes | mmap.mmap
+    xref: dict[int, PdfXRefEntry]
+    trailer_dict: PdfDict
+    decipher: Decipher | None
+    resolver: ObjectResolver
+    file_handle: BinaryIO | None
+    xref_was_recovered: bool
+    xref_recovery_reason: str | None
+    recovery_scan_all_revisions: bool
+    raster_font_provider: RasterFontProviderLike | internal_RasterFontRepository | None
+    page_tree_was_recovered: bool
+    internal_closed: bool
+    internal_closing: bool
+    internal_operation_lock: threading.RLock
+    internal_operation_cancelled: threading.Event
+    internal_active_operations: int
+    internal_standards: DocumentStandards
+    internal_standards_complete: bool
+    internal_font_decoders: dict[object, object]
+
+    def __init__(
+        self,
+        source: PdfSource,
+        password: str = "",
+        *,
+        recovery_scan_all_revisions: bool = True,
+        raster_font_provider: RasterFontProviderLike | None = None,
+    ) -> None:
+        self.internal_closed = False
+        self.internal_closing = False
+        self.internal_operation_lock = threading.RLock()
+        self.internal_operation_cancelled = threading.Event()
+        self.internal_active_operations = 0
+        self.source = source
+        self.file_handle = None
+        self.raw_data = b""
+        self.decipher = None
+        self.xref = {}
+        self.trailer_dict = {}
+        self.xref_was_recovered = False
+        self.xref_recovery_reason = None
+        self.recovery_scan_all_revisions = recovery_scan_all_revisions
+        self.raster_font_provider = internal_RasterFontRepository(raster_font_provider)
+        self.page_tree_was_recovered = False
+        self.internal_standards = DocumentStandards()
+        self.internal_standards_complete = False
+        self.internal_font_decoders = {}
+        try:
+            self.raw_data = self.load_data(source)
+            self.internal_standards = discover_header_standards(self.raw_data)
+            header = self.internal_standards
+            context = header.context if internal_legacy_name_context(header.context) else None
+            self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=context)
+            self.scan_xref()
+            self.resolver.xref = self.xref
+            if internal_legacy_name_context(context):
+                selected = bootstrap_security_context(
+                    header, self.raw_data, self.xref, self.trailer_dict
+                )
+                if not internal_legacy_name_context(selected):
+                    internal_check_security_aliases(self.trailer_dict, self.resolver)
+                    self.resolver.semantic_context = selected
+                    self.scan_xref()
+                    self.resolver.xref = self.xref
+
+            for attempt in range(2):
+                self.init_security(password)
+                self.resolver.decipher = self.decipher
+                self.internal_standards = discover_document_standards(
+                    header, self.resolver, self.trailer_dict
+                )
+                self.internal_standards = preserve_historical_version(
+                    self.internal_standards,
+                    self.raw_data,
+                    self.trailer_dict,
+                    self.decipher,
+                    recovered=self.xref_was_recovered,
+                    trailer_context=self.resolver.semantic_context,
+                )
+                selected = self.internal_standards.context
+                if internal_legacy_name_context(selected) == internal_legacy_name_context(
+                    self.resolver.semantic_context
+                ):
+                    encrypt_ref = self.trailer_dict.get("Encrypt")
+                    encrypt_object = (
+                        self.resolver.resolve(encrypt_ref)
+                        if self.decipher is not None and isinstance(encrypt_ref, PdfReference)
+                        else None
+                    )
+                    self.resolver.semantic_context = selected
+                    if encrypt_object is not None and isinstance(encrypt_ref, PdfReference):
+                        self.resolver.objects[
+                            key_for(encrypt_ref.object_number, encrypt_ref.generation_number)
+                        ] = cast(CachedPdfObject, encrypt_object)
+                    break
+                if attempt:
+                    raise PdfUnsupportedError("Unstable security dictionary name semantics")
+                if not internal_legacy_name_context(selected):
+                    internal_check_security_aliases(self.trailer_dict, self.resolver)
+                self.resolver.close()
+                self.decipher = None
+                self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=selected)
+                self.scan_xref()
+                self.resolver.xref = self.xref
+        except BaseException:
+            self.close()
+            raise
+
+    @property
+    def internal_font_semantic_context(self) -> SemanticContext | None:
+        return self.resolver.semantic_context
+
+    @classmethod
+    def open(
+        cls,
+        source: PdfSource,
+        password: str = "",
+        *,
+        recovery_scan_all_revisions: bool = True,
+        raster_font_provider: RasterFontProviderLike | None = None,
+    ) -> Self:
+        return cls(
+            source,
+            password=password,
+            recovery_scan_all_revisions=recovery_scan_all_revisions,
+            raster_font_provider=raster_font_provider,
+        )
+
+    def __enter__(self) -> Self:
+        if self.closed:
+            raise PdfDocumentClosedError("PDF document is closed")
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    @property
+    def closed(self) -> bool:
+        return self.internal_closing or self.internal_closed
+
+    def acquire_operation(self) -> DocumentOperation:
+        with self.internal_operation_lock:
+            if self.closed:
+                raise PdfDocumentClosedError("PDF document is closed")
+            self.internal_active_operations += 1
+        return DocumentOperation(self)
+
+    def internal_release_operation(self) -> None:
+        should_close = False
+        with self.internal_operation_lock:
+            self.internal_active_operations = max(0, self.internal_active_operations - 1)
+            should_close = self.internal_closing and self.internal_active_operations == 0
+        if should_close:
+            self.internal_close_resources()
+
+    def close(self) -> None:
+        with self.internal_operation_lock:
+            if self.internal_closing or self.internal_closed:
+                return
+            self.internal_closing = True
+            self.internal_operation_cancelled.set()
+            if self.internal_active_operations:
+                return
+        self.internal_close_resources()
+
+    def internal_close_resources(self) -> None:
+        if self.internal_closed:
+            return
+        self.internal_closed = True
+        self.internal_font_decoders.clear()
+
+        resolver = getattr(self, "resolver", None)
+        if resolver is not None:
+            resolver.close()
+
+        raster_fonts = self.raster_font_provider
+        if isinstance(raster_fonts, internal_RasterFontRepository):
+            raster_fonts.close()
+
+        raw_data = self.raw_data
+        self.raw_data = b""
+        if isinstance(raw_data, mmap.mmap):
+            with contextlib.suppress(BufferError, OSError, ValueError):
+                raw_data.close()
+
+        if self.file_handle is not None:
+            with contextlib.suppress(OSError):
+                self.file_handle.close()
+            self.file_handle = None
+
+    def resolve(self, ref: object) -> object:
+        return self.resolver.resolve(ref)
+
+    def catalog(self) -> PdfDict:
+        root_ref = self.trailer_dict.get("Root")
+        if root_ref is None:
+            raise ValueError("missing catalog root")
+        root = self.resolve(root_ref)
+        if not isinstance(root, dict):
+            raise ValueError("invalid catalog root")
+        return cast(PdfDict, root)
+
+    def get_metadata(self) -> MetadataRecord:
+        return resolve_metadata(
+            self.resolver,
+            self.trailer_dict,
+            recover=self.recovery_enabled,
+        )
+
+    def get_standards(self) -> DocumentStandards:
+        with self.resolver.lock:
+            if not self.internal_standards_complete:
+                self.internal_standards = discover_profile_claims(
+                    self.internal_standards, self.resolver, self.trailer_dict
+                )
+                self.internal_standards_complete = True
+            return self.internal_standards
+
+    def internal_catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None:
+        value = self.resolver.resolve(self.catalog().get(key))
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return cast(PdfDict, value)
+        if recoverable and self.recovery_enabled:
+            return None
+        raise ValueError(f"invalid {key} dictionary")
+
+    @property
+    def structure(self) -> StructureTree | None:
+        root = self.internal_catalog_dict("StructTreeRoot")
+        return (
+            None
+            if root is None
+            else StructureTree(self, root, internal_lookup=internal_PageLookup(self))
+        )
+
+    @property
+    def recovery_enabled(self) -> bool:
+        return self.xref_was_recovered or self.page_tree_was_recovered
+
+    def load_data(self, source: PdfSource) -> PdfByteBuffer:
+        if isinstance(source, (str, PathLike)):
+            if isinstance(source, str) and source.startswith("%PDF"):
+                return source.encode("latin-1")
+            file_handle = open(cast(PathSource, source), "rb")  # noqa: SIM115
+            self.file_handle = file_handle
+            try:
+                return mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ)
+            except (OSError, ValueError) as exc:
+                try:
+                    is_empty = file_handle.seek(0, 2) == 0
+                except OSError:
+                    is_empty = False
+                file_handle.close()
+                self.file_handle = None
+                if is_empty:
+                    raise PdfSourceError("PDF source is empty") from exc
+                raise PdfSourceError(str(exc)) from exc
+        if isinstance(source, bytes):
+            return source
+        if isinstance(source, (memoryview, bytearray)):
+            return bytes(source)
+
+        mapped = self.try_mmap_reader(source)
+        if mapped is not None:
+            return mapped
+
+        read = getattr(source, "read", None)
+        if not callable(read):
+            raise PdfSourceError(f"PDF source type {type(source).__name__} is not supported")
+        reader = source
+        tell = getattr(source, "tell", None)
+        seek = getattr(source, "seek", None)
+        position: int | None = None
+        seekable: SeekableBinaryReader | None = None
+        if callable(tell) and callable(seek):
+            seekable = cast(SeekableBinaryReader, source)
+            try:
+                position = seekable.tell()
+                seekable.seek(0)
+            except OSError, TypeError, ValueError:
+                position = None
+                seekable = None
+        try:
+            raw = reader.read()
+        except OSError as exc:
+            raise PdfSourceError(str(exc)) from exc
+        finally:
+            if position is not None and seekable is not None:
+                seekable.seek(position)
+        return raw if isinstance(raw, bytes) else bytes(raw)
+
+    def try_mmap_reader(self, source: object) -> mmap.mmap | None:
+        fileno = getattr(source, "fileno", None)
+        if not callable(fileno):
+            return None
+        try:
+            fd = fileno()
+        except OSError, TypeError, ValueError:
+            return None
+        try:
+            return mmap.mmap(fd, 0, access=mmap.ACCESS_READ)
+        except ValueError as error:
+            raise PdfSourceError("PDF source is empty") from error
+        except OSError:
+            return None
+
+    def init_security(self, password: str) -> None:
+        trailer = self.trailer_dict
+        if trailer.get("Encrypt") is not None and trailer.get("ID") is None:
+            trailer = dict(trailer)
+            trailer["ID"] = [b""]
+        self.decipher = initialize_document_security(
+            self.raw_data,
+            trailer,
+            self.resolver,
+            password,
+            handler_factory=create_recovered_security_handler,
+        )
+
+    def internal_discover_page_nodes(self) -> Iterator[internal_PageNode]:
+        candidates: list[tuple[int, int, int, PdfDict]] = []
+        pages_nodes: list[tuple[int, int, int, PdfDict]] = []
+        seen_objects: set[int] = set()
+        for key, entry in sorted(
+            self.xref.items(),
+            key=lambda item: (
+                item[1].offset if item[1].object_stream is None else 0,
+                item[0] >> 16,
+            ),
+        ):
+            if not entry.in_use:
+                continue
+            try:
+                obj = self.resolver.resolve(PdfReference(key >> 16, key & 0xFFFF))
+            except Exception:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            obj = cast(PdfDict, obj)
+            marker = id(obj)
+            if marker in seen_objects:
+                continue
+            seen_objects.add(marker)
+            pages_score = self.pages_candidate_score(obj)
+            if pages_score > 0:
+                pages_nodes.append((pages_score, entry.offset, key >> 16, obj))
+            score = self.page_candidate_score(obj)
+            if score > 0:
+                candidates.append((score, entry.offset, key >> 16, obj))
+
+        candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
+        pages_nodes.sort(key=lambda item: (-item[0], item[1], item[2]))
+        inherited_sources = [node for _, _, _, node in pages_nodes]
+        seen_signatures: set[tuple[object, ...]] = set()
+        for _, _, _, page_dict in candidates:
+            signature = self.recovered_page_signature(page_dict)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+            yield internal_PageNode(
+                page_dict,
+                self.internal_recovered_page_values(page_dict, inherited_sources),
+            )
+
+    def page_candidate_score(self, obj: PdfDict) -> int:
+        node_type = resolve_page_tree_node_type(self.resolver, obj)
+        if node_type == "Pages" or node_type not in (None, "Page"):
+            return -100
+
+        explicit_type = recover_pdf_name(obj.get("Type"))
+        if explicit_type != "Page" and obj.get("Contents") is None and obj.get("Annots") is None:
+            return -100
+
+        score = 20 if node_type == "Page" else 0
+        if obj.get("Kids") is not None:
+            score -= 30
+        if obj.get("Contents") is not None:
+            score += 12
+        if obj.get("MediaBox") is not None:
+            score += 8
+        if obj.get("Resources") is not None:
+            score += 4
+        if obj.get("Parent") is not None:
+            score += 2
+        if obj.get("Annots") is not None:
+            score += 1
+        return score if score >= 16 else -100
+
+    def pages_candidate_score(self, obj: PdfDict) -> int:
+        if resolve_page_tree_node_type(self.resolver, obj) != "Pages":
+            return -100
+        score = 20
+        try:
+            kids = self.resolver.resolve(obj.get("Kids"))
+        except Exception:
+            kids = None
+        if isinstance(kids, list):
+            score += min(len(kids), 20)
+        try:
+            count = self.resolver.resolve(obj.get("Count"))
+        except Exception:
+            count = None
+        if type(count) is int and count >= 0:
+            score += min(count, 20)
+        if obj.get("Resources") is not None:
+            score += 5
+        if obj.get("MediaBox") is not None:
+            score += 5
+        return score
+
+    def internal_recovered_page_values(
+        self, page_dict: PdfDict, pages_nodes: list[PdfDict]
+    ) -> InheritedValueMap:
+        values = {
+            key: cast(CachedPdfObject, value)
+            for key in PAGE_INHERITED_KEYS
+            if (value := page_dict.get(key)) is not None
+        }
+        missing = [key for key in PAGE_INHERITED_KEYS if key not in values]
+        if not missing:
+            return values
+
+        sources: list[PdfDict] = []
+        parent = page_dict.get("Parent")
+        if parent is not None:
+            try:
+                parent_obj = self.resolver.resolve(parent)
+            except Exception:
+                parent_obj = None
+            if isinstance(parent_obj, dict):
+                sources.append(cast(PdfDict, parent_obj))
+        sources.extend(pages_nodes)
+        if not sources:
+            return values
+
+        for source in sources:
+            source_values = self.collect_inherited_values_from_node(source, missing)
+            values.update(source_values)
+            missing = [key for key in missing if key not in values]
+            if not missing:
+                break
+        return values
+
+    def collect_inherited_values_from_node(
+        self, node: PdfDict, keys: list[str]
+    ) -> InheritedValueMap:
+        def resolve_ref(value: object) -> object:
+            try:
+                return self.resolver.resolve(value)
+            except Exception:
+                return None
+
+        return collect_inherited_values(
+            node, tuple(keys), resolve_ref, stop_at_malformed_parent=True
+        )
+
+    def recovered_page_signature(self, page_dict: PdfDict) -> tuple[object, ...]:
+        contents = page_dict.get("Contents")
+        normalized_contents = self.normalized_reference_signature(contents)
+        if normalized_contents is not None:
+            return ("Contents", normalized_contents)
+        return (
+            "Shape",
+            self.normalized_reference_signature(page_dict.get("MediaBox")),
+            self.normalized_reference_signature(page_dict.get("Resources")),
+            id(page_dict),
+        )
+
+    def normalized_reference_signature(self, value: object) -> object:
+        if isinstance(value, PdfReference):
+            return ("R", value.object_number, value.generation_number)
+        if isinstance(value, (list, tuple)):
+            return tuple(self.normalized_reference_signature(item) for item in value)
+        if isinstance(value, dict):
+            return ("D", id(value))
+        if isinstance(value, PdfStream):
+            return ("S", id(value))
+        return value
+
+    def iter_page_dicts(self) -> Iterator[PdfDict]:
+        for page_node in self.internal_iter_page_nodes():
+            yield page_node.dictionary
+
+    def internal_recovered_page_nodes(self) -> list[internal_PageNode]:
+        discovered = list(self.internal_discover_page_nodes())
+        if discovered:
+            self.page_tree_was_recovered = True
+        return discovered
+
+    def internal_page_tree_root(self) -> PdfDict:
+        pages_ref = self.catalog().get("Pages")
+        if pages_ref is None:
+            raise ValueError("missing page tree root")
+        pages_node = self.resolver.resolve(pages_ref)
+        if not isinstance(pages_node, dict):
+            raise ValueError("invalid page tree root")
+        return pages_node
+
+    def internal_iter_page_nodes(self) -> Iterator[internal_PageNode]:
+        try:
+            pages_node = self.internal_page_tree_root()
+            page_dicts = list(
+                iter_page_nodes(
+                    pages_node,
+                    self.resolver.resolve,
+                    inherited_keys=PAGE_INHERITED_KEYS,
+                    node_type=lambda node: resolve_page_tree_node_type(self.resolver, node),
+                    on_invalid_child=lambda _node: True,
+                    max_depth=MAX_PAGE_TREE_DEPTH,
+                )
+            )
+            if page_dicts:
+                yield from page_dicts
+                return
+            discovered = self.internal_recovered_page_nodes()
+            if discovered:
+                yield from discovered
+                return
+        except PdfParseError, ValueError:
+            discovered = self.internal_recovered_page_nodes()
+            if discovered:
+                yield from discovered
+                return
+            return
+
+    def page_count(self) -> int:
+        if not self.page_tree_was_recovered:
+            try:
+                count = self.resolver.resolve(self.internal_page_tree_root().get("Count"))
+                if type(count) is int and count >= 0:
+                    return count
+            except PdfParseError, ValueError:
+                pass
+        return len(self.build_page_dicts())
+
+    def build_page_dicts(self) -> list[PdfDict]:
+        return list(self.iter_page_dicts())
+
+    @property
+    def metadata(self) -> dict[str, object]:
+        value = self.get_metadata()
+        return dict(value) if isinstance(value, dict) else {}
+
+    @property
+    def standards(self) -> DocumentStandards:
+        with self.acquire_operation():
+            return self.get_standards()
+
+    @property
+    def outlines(self) -> tuple[Any, ...]:
+        return tuple(self.iter_outlines())
+
+    def internal_scoped_pending[RecordT](
+        self,
+        pending: Iterable[tuple[int, RecordT]],
+    ) -> tuple[PageScoped[RecordT], ...]:
+        pending = tuple(pending)
+        if not pending:
+            return ()
+        labels = self.page_labels
+        return tuple(
+            PageScoped(
+                page_index=page_index,
+                page_number=page_index + 1,
+                page_label=labels[page_index] if labels is not None else None,
+                record=record,
+            )
+            for page_index, record in pending
+        )
+
+    def extract_form_fields(
+        self, *, pages: PageSelection | None = None
+    ) -> tuple[PageScoped[Any], ...]:
+        selected = tuple(self.iter_selected_pages(pages))
+        grouped = self.fields_by_page(tuple(page for _index, page in selected))
+        return self.internal_scoped_pending(
+            (page_index, record)
+            for page_index, _page in selected
+            for record in grouped.get(page_index, ())
+        )
+
+    def extract(
+        self,
+        *,
+        pages: PageSelection | None = None,
+        adapters: Iterable[DocumentAdapter] = (),
+    ) -> StructuredDocument:
+        with self.acquire_operation() as operation:
+            selected_pages = tuple(page for _index, page in self.iter_selected_pages(pages))
+            context = ExtractionScope(cancelled=lambda: operation.cancelled)
+            result = self.internal_extract_document(context, selected_pages)
+        for adapter in adapters:
+            result = adapter.apply(result)
+        return result
+
+    def internal_extract_document(
+        self, context: ExtractionScope, pages: Sequence[PdfPage]
+    ) -> StructuredDocument:
+        return extract_document(self, context, pages)
+
+    @property
+    def structured_document(self) -> StructuredDocument:
+        if self.page_count() == 0:
+            return StructuredDocument(metadata=self.metadata)
+        return self.extract()
+
+    def extract_images(
+        self,
+        *,
+        pages: PageSelection | None = None,
+        include_inline: bool = True,
+        include_xobjects: bool = True,
+    ) -> tuple[PageScoped[ImageRecord], ...]:
+        return self.internal_scoped_pending(
+            (page_index, record)
+            for page_index, page in self.iter_selected_pages(pages)
+            for record in page.extract_images(
+                include_inline=include_inline,
+                include_xobjects=include_xobjects,
+            )
+        )
+
+    @property
+    def pages(self) -> tuple[internal_PageT, ...]:
+        return self.internal_build_pages(self.internal_iter_page_nodes())
+
+    def internal_build_pages(
+        self, nodes: Iterable[internal_PageNode]
+    ) -> tuple[internal_PageT, ...]:
+        page_class = self.page_class
+        if page_class is None:
+            from core_pdf.impl.document.page import PdfPage
+
+            page_class = PdfPage
+        factory = cast(Callable[..., internal_PageT], page_class)
+        return tuple(
+            factory(
+                self,
+                page_node.dictionary,
+                page_number,
+                inherited_values=page_node.inherited_values,
+            )
+            for page_number, page_node in enumerate(nodes, 1)
+        )
+
+    @property
+    def page_labels(self) -> list[str] | None:
+        return self.build_page_labels()
+
+    def page_label(self, page_index: int) -> str | None:
+        labels = self.page_labels
+        if labels is None or page_index < 0 or page_index >= len(labels):
+            return None
+        return labels[page_index]
+
+    def build_page_labels(self, *, page_count: int | None = None) -> list[str] | None:
+        try:
+            labels_root = self.resolve(self.catalog().get("PageLabels"))
+        except ValueError:
+            if self.recovery_enabled:
+                return None
+            raise
+        if labels_root is None:
+            return None
+        if not isinstance(labels_root, dict):
+            raise ValueError("invalid PageLabels number tree")
+
+        specs = [
+            (page_index, cast(PdfDict, spec))
+            for page_index, spec in iter_number_tree_items(
+                labels_root,
+                self.resolve,
+                recover=self.recovery_enabled,
+            )
+            if isinstance(spec, dict)
+        ]
+        if not specs:
+            return None
+        specs.sort(key=lambda item: item[0])
+        if specs[0][0] != 0:
+            if not self.recovery_enabled:
+                raise ValueError("PageLabels is missing page index 0")
+            specs.insert(0, (0, {}))
+
+        if page_count is None:
+            page_count = len(self.build_page_dicts())
+        labels: list[str] = []
+        spec_pos = 0
+        current_index, current_spec = specs[0]
+        for page_index in range(page_count):
+            while spec_pos + 1 < len(specs) and page_index >= specs[spec_pos + 1][0]:
+                spec_pos += 1
+                current_index, current_spec = specs[spec_pos]
+            labels.append(format_page_label(current_spec, page_index - current_index, self.resolve))
+        return labels
+
+    def page_index_for(self, page_obj: object) -> int | None:
+        return internal_PageLookup(self).page_index_for(page_obj)
+
+    def iter_selected_pages(
+        self, pages: PageSelection | None = None
+    ) -> Iterator[tuple[int, internal_PageT]]:
+        page_objects = self.pages
+        for page_index in resolve_page_selection(pages, len(page_objects)):
+            yield page_index, page_objects[page_index]
+
+    def iter_outlines(self) -> list[RawOutlineItem]:
+        outlines = self.resolver.resolve(self.catalog().get("Outlines"))
+        if outlines is None:
+            return []
+        if not isinstance(outlines, dict):
+            raise ValueError("invalid Outlines dictionary")
+        first = self.resolver.resolve(outlines.get("First"))
+        if first is None:
+            return []
+        return self.walk_outlines(first, 0)
+
+    def walk_outlines(
+        self,
+        item: object,
+        level: int,
+        *,
+        internal_lookup: internal_PageLookup[internal_PageT] | None = None,
+    ) -> list[RawOutlineItem]:
+        if internal_lookup is None:
+            internal_lookup = internal_PageLookup(self)
+        recover_outlines = self.recovery_enabled
+        if level > 200:
+            raise ValueError("invalid outline depth")
+        if not isinstance(item, dict):
+            if recover_outlines:
+                return []
+            raise ValueError("invalid outline item")
+        result: list[RawOutlineItem] = []
+        current: object | None = item
+        seen: set[int] = set()
+        while current is not None:
+            current = self.resolver.resolve(current)
+            if not isinstance(current, dict):
+                if recover_outlines:
+                    break
+                raise ValueError("invalid outline item")
+            marker = id(current)
+            if marker in seen:
+                if recover_outlines:
+                    break
+                raise ValueError("outline cycle detected")
+            seen.add(marker)
+            title = self.resolver.resolve_str(current.get("Title"))
+            dest = current.get("Dest")
+            if dest is None:
+                action = self.resolver.resolve(current.get("A"))
+                if (
+                    isinstance(action, dict)
+                    and self.resolver.resolve_name(action.get("S")) == "GoTo"
+                ):
+                    dest = action.get("D")
+            try:
+                result.append(
+                    RawOutlineItem(
+                        title=title or "",
+                        level=level,
+                        dest=cast(PdfObject | str | None, dest),
+                        page_index=self.resolve_destination(dest, internal_lookup=internal_lookup),
+                        count=self.extract_outline_count(cast(PdfDict, current)),
+                    )
+                )
+            except ValueError:
+                if not recover_outlines:
+                    raise
+            first = current.get("First")
+            if first is not None:
+                first = self.resolver.resolve(first)
+                if not isinstance(first, dict):
+                    if recover_outlines:
+                        current = current.get("Next")
+                        continue
+                    raise ValueError("invalid outline child")
+                result.extend(self.walk_outlines(first, level + 1, internal_lookup=internal_lookup))
+            current = current.get("Next")
+        return result
+
+    @staticmethod
+    def validate_outline_count(value: object) -> int:
+        if type(value) is not int:
+            raise ValueError("invalid outline count")
+        return value
+
+    def extract_outline_count(self, current: PdfDict) -> int:
+        raw_count = current.get("Count")
+        if raw_count is None:
+            return 0
+        current_count = self.resolver.resolve_int(raw_count)
+        if current_count is None:
+            if self.recovery_enabled:
+                return 0
+            raise ValueError("invalid outline count")
+        return self.validate_outline_count(current_count)
+
+    def resolve_destination(
+        self, dest: object, *, internal_lookup: internal_PageLookup[internal_PageT] | None = None
+    ) -> int | None:
+        if dest is None:
+            return None
+        normalized = self.normalize_destination_value(dest, internal_lookup=internal_lookup)
+        if (
+            normalized.raw is None
+            and normalized.page_index is None
+            and normalized.type is None
+            and not normalized.args
+        ):
+            raise ValueError("invalid destination")
+        return normalized.page_index
+
+    def resolve_named_destination(self, name: str) -> RawNamedDestination | None:
+        return self.named_destinations().get(name)
+
+    def destination_from_list(
+        self,
+        resolved_list: PdfArray,
+        *,
+        internal_lookup: internal_PageLookup[internal_PageT] | None = None,
+    ) -> RawNamedDestination:
+        if not resolved_list:
+            raise ValueError("invalid destination array")
+        page_obj = self.resolver.resolve(resolved_list[0])
+        if page_obj is None:
+            raise ValueError("invalid destination page reference")
+        lookup = internal_PageLookup(self) if internal_lookup is None else internal_lookup
+        page_index = lookup.page_index_for(page_obj)
+        if page_index is None:
+            raise ValueError("invalid destination page reference")
+        dest_type = None
+        args: PdfArray = []
+        if len(resolved_list) >= 2:
+            raw_type = resolved_list[1]
+            dest_type = self.resolver.resolve_name_or_text(raw_type)
+            if dest_type is None:
+                raise ValueError("invalid destination type")
+            args = list(resolved_list[2:]) if len(resolved_list) > 2 else []
+        return RawNamedDestination(
+            page_index=page_index, type=dest_type, args=args, raw=resolved_list
+        )
+
+    def normalize_destination_value(
+        self,
+        val: object,
+        *,
+        internal_lookup: internal_PageLookup[internal_PageT] | None = None,
+    ) -> RawNamedDestination:
+        lookup = internal_PageLookup(self) if internal_lookup is None else internal_lookup
+        return self.internal_normalize_destination_value(
+            val, lookup.resolve_named_destination, lookup
+        )
+
+    def internal_normalize_destination_value(
+        self,
+        val: object,
+        resolve_name: Callable[[str], RawNamedDestination | None],
+        internal_lookup: internal_PageLookup[internal_PageT],
+    ) -> RawNamedDestination:
+        seen: set[int] = set()
+        resolved = self.resolver.resolve(val)
+        while isinstance(resolved, dict):
+            identity = id(resolved)
+            if identity in seen:
+                raise ValueError("cyclic destination dictionary")
+            seen.add(identity)
+            dest_value = resolved.get("D")
+            if dest_value is None:
+                break
+            val = dest_value
+            resolved = self.resolver.resolve(val)
+        resolved_list = val if isinstance(val, list) else resolved
+        if isinstance(resolved_list, tuple):
+            resolved_list = list(resolved_list)
+        if isinstance(resolved_list, list) and resolved_list:
+            return self.destination_from_list(
+                cast(PdfArray, resolved_list), internal_lookup=internal_lookup
+            )
+        if isinstance(resolved_list, list):
+            raise ValueError("invalid destination array")
+
+        name = self.resolver.resolve_name_like_value(resolved)
+        if name is not None:
+            nested = resolve_name(name)
+            if nested is not None:
+                return nested
+        raise ValueError("invalid destination")
+
+    def named_destinations(
+        self, *, internal_lookup: internal_PageLookup[internal_PageT] | None = None
+    ) -> dict[str, RawNamedDestination]:
+        lookup = internal_PageLookup(self) if internal_lookup is None else internal_lookup
+        targets: dict[str, object] = {}
+        dests = self.resolver.resolve(self.catalog().get("Dests"))
+        if isinstance(dests, dict):
+            for name, val in dests.items():
+                resolved_name = self.resolver.resolve_name(name)
+                if resolved_name is None:
+                    raise ValueError("invalid named destination key")
+                targets[resolved_name] = self.resolver.resolve(val)
+        names = self.resolver.resolve(self.catalog().get("Names"))
+        if isinstance(names, dict):
+            dests_tree = self.resolver.resolve(names.get("Dests"))
+            if isinstance(dests_tree, dict):
+                targets.update(
+                    iter_name_tree_items(
+                        dests_tree,
+                        self.resolver.resolve,
+                        self.resolver.resolve_str,
+                        recover=self.recovery_enabled,
+                    )
+                )
+
+        normalized: dict[str, RawNamedDestination] = {}
+        resolving: set[str] = set()
+
+        def normalize_name(name: str) -> RawNamedDestination:
+            cached = normalized.get(name)
+            if cached is not None:
+                return cached
+            if name in resolving:
+                return internal_unresolved_destination(name)
+            resolving.add(name)
+            try:
+                target = targets.get(name)
+                result = (
+                    internal_unresolved_destination(name)
+                    if target is None
+                    else self.internal_normalize_destination_value(target, normalize_name, lookup)
+                )
+                normalized[name] = result
+                return result
+            finally:
+                resolving.discard(name)
+
+        for name in targets:
+            try:
+                normalize_name(name)
+            except PdfParseError, ValueError:
+                normalized[name] = internal_unresolved_destination(name)
+        return normalized
+
+    @property
+    def acroform(self) -> PdfDict | None:
+        return self.internal_catalog_dict("AcroForm", recoverable=True)
+
+    def fields(self) -> list[RawFormField]:
+        af = self.acroform
+        records: list[RawFormField] = []
+        if af is not None:
+            field_list = af.get("Fields")
+            if field_list is None:
+                field_list = []
+            elif not isinstance(field_list, list):
+                if self.recovery_enabled:
+                    field_list = []
+                else:
+                    raise ValueError("invalid AcroForm Fields array")
+            for field in field_list:
+                field_obj = self.resolver.resolve(field)
+                records.extend(
+                    collect_field_records(self.resolver, field_obj, recover=self.recovery_enabled)
+                )
+        if not records or self.recovery_enabled:
+            records.extend(self.discover_widget_field_records(records))
+        return records
+
+    def fields_by_page(
+        self,
+        pages: Sequence[internal_PageT] | None = None,
+    ) -> dict[int, list[RawFormField]]:
+        from core_pdf.impl.document.page import PdfPage
+
+        page_sequence = self.pages if pages is None else tuple(pages)
+        page_indexes_by_dict = {
+            id(page.page_dict): page.page_number - 1
+            for page in page_sequence
+            if isinstance(page, PdfPage)
+        }
+        grouped: dict[int, list[RawFormField]] = {}
+        annot_page_index: dict[int, int] | None = None
+
+        def widget_page_index(widget: object) -> int | None:
+            nonlocal annot_page_index
+            pg_ref = widget.get("P") if isinstance(widget, dict) else None
+            if pg_ref is not None:
+                pg_obj = self.resolver.resolve(pg_ref)
+                return page_indexes_by_dict.get(id(pg_obj)) if isinstance(pg_obj, dict) else None
+            if annot_page_index is None:
+                annot_page_index = {
+                    id(annot): page.page_number - 1
+                    for page in page_sequence
+                    if isinstance(page, PdfPage)
+                    for annot in page.annotation_dicts()
+                }
+            return annot_page_index.get(id(widget))
+
+        for field in self.fields():
+            page_indexes: set[int] = set()
+            if field.widget:
+                if not isinstance(field.widget, dict):
+                    raise ValueError("invalid field widget entry")
+                page_index = widget_page_index(field.widget)
+                if page_index is not None:
+                    page_indexes.add(page_index)
+            elif field.kids:
+                if not isinstance(field.kids, list):
+                    raise ValueError("invalid field kids array")
+                for kid_ref in field.kids:
+                    kid = self.resolver.resolve(kid_ref)
+                    if (
+                        isinstance(kid, dict)
+                        and self.resolver.resolve_name(kid.get("Subtype")) == "Widget"
+                    ):
+                        page_index = widget_page_index(kid)
+                        if page_index is not None:
+                            page_indexes.add(page_index)
+            for page_index in page_indexes:
+                grouped.setdefault(page_index, []).append(field)
+        return grouped
+
+    def discover_widget_field_records(self, existing: list[RawFormField]) -> list[RawFormField]:
+        seen_widgets = {id(record.widget) for record in existing if isinstance(record.widget, dict)}
+        records: list[RawFormField] = []
+        for page_node in self.internal_iter_page_nodes():
+            raw_annots = self.resolver.resolve(page_node.inherited_values.get("Annots"))
+            if raw_annots is None:
+                continue
+            annots = raw_annots if isinstance(raw_annots, list) else [raw_annots]
+            for annot_ref in annots:
+                annot = self.resolver.resolve(annot_ref)
+                if not isinstance(annot, dict):
+                    continue
+                if id(annot) in seen_widgets:
+                    continue
+                subtype = self.resolver.resolve_name_or_text(annot.get("Subtype")) or ""
+                if subtype != "Widget":
+                    continue
+                root = self.internal_widget_field_root(cast(PdfDict, annot))
+                if id(root) in seen_widgets:
+                    continue
+                seen_widgets.add(id(root))
+                seen_widgets.add(id(annot))
+                records.extend(
+                    collect_field_records(self.resolver, root, recover=self.recovery_enabled)
+                )
+        return records
+
+    def internal_widget_field_root(self, annot: PdfDict) -> PdfDict:
+        node = annot
+        seen = {id(node)}
+        for _ in range(50):
+            parent = self.resolver.resolve(node.get("Parent"))
+            if not isinstance(parent, dict) or id(parent) in seen:
+                break
+            seen.add(id(parent))
+            node = cast(PdfDict, parent)
+        return node
+
+    def embedded_files(self) -> list[RawEmbeddedFile]:
+        names = self.resolver.resolve(self.catalog().get("Names"))
+        if not isinstance(names, dict):
+            return []
+        embedded_tree = self.resolver.resolve(names.get("EmbeddedFiles"))
+        if embedded_tree is None:
+            return []
+        if not isinstance(embedded_tree, dict):
+            raise ValueError("invalid EmbeddedFiles name tree")
+
+        recover = self.recovery_enabled
+        records: list[RawEmbeddedFile] = []
+        for name, value in iter_name_tree_items(
+            embedded_tree,
+            self.resolver.resolve,
+            self.resolver.resolve_str,
+            recover=recover,
+        ):
+            try:
+                record = self.embedded_file_record(name, value)
+            except ValueError:
+                if recover:
+                    continue
+                raise
+            records.append(record)
+        return records
+
+    def embedded_file_record(self, name: str, value: object) -> RawEmbeddedFile:
+        filespec = self.resolver.resolve(value)
+        if not isinstance(filespec, dict):
+            raise ValueError("invalid embedded file spec")
+        filespec = cast(PdfDict, filespec)
+        ef = self.resolver.resolve(filespec.get("EF"))
+        if not isinstance(ef, dict):
+            raise ValueError("invalid embedded file stream")
+        ef = cast(PdfDict, ef)
+        stream = self.resolver.resolve(ef.get("UF") or ef.get("F"))
+        if not isinstance(stream, PdfStream):
+            raise ValueError("invalid embedded file stream")
+        filename = (
+            self.resolver.resolve_str(filespec.get("UF"))
+            or self.resolver.resolve_str(filespec.get("F"))
+            or name
+        )
+        return RawEmbeddedFile(name, filename, filespec, stream, stream.data)
+
+    @staticmethod
+    def ocg_key(ref: object, resolved: object) -> tuple[int, int] | int | None:
+        if isinstance(ref, PdfReference):
+            return (ref.object_number, ref.generation_number)
+        if isinstance(resolved, dict):
+            return id(resolved)
+        return None
+
+    def oc_hidden_layers(self) -> frozenset[str]:
+        recover = self.recovery_enabled
+        try:
+            catalog = self.catalog()
+        except ValueError:
+            return frozenset()
+        oc = self.resolver.resolve(catalog.get("OCProperties"))
+        if oc is None:
+            return frozenset()
+        if not isinstance(oc, dict):
+            if recover:
+                return frozenset()
+            raise ValueError("invalid OCProperties dictionary")
+        ocgs = self.resolver.resolve(oc.get("OCGs"))
+        if ocgs is None:
+            return frozenset()
+        if not isinstance(ocgs, list):
+            if recover:
+                return frozenset()
+            raise ValueError("invalid OCProperties OCGs array")
+
+        on_layers: set[tuple[int, int] | int] = set()
+        default_config = self.resolver.resolve(oc.get("D"))
+        if default_config is not None and not isinstance(default_config, dict):
+            if recover:
+                default_config = None
+            else:
+                raise ValueError("invalid OCProperties D dictionary")
+        if default_config is not None:
+            base_state_value = default_config.get("BaseState")
+            base_state = (
+                self.resolver.resolve_name(base_state_value)
+                if base_state_value is not None
+                else None
+            )
+            if base_state_value is not None and base_state is None:
+                if not recover:
+                    raise ValueError("invalid OCProperties BaseState value")
+            elif base_state not in (None, "ON", "OFF", "Unchanged"):
+                if recover:
+                    base_state = None
+                else:
+                    raise ValueError("invalid OCProperties BaseState value")
+            if base_state != "OFF":
+                for ocg in ocgs:
+                    key = self.ocg_key(ocg, self.resolver.resolve(ocg))
+                    if key is not None:
+                        on_layers.add(key)
+
+            for override_name, update in (("ON", on_layers.add), ("OFF", on_layers.discard)):
+                refs = default_config.get(override_name)
+                if not isinstance(refs, list):
+                    continue
+                for ref in refs:
+                    ocg_resolved = self.resolver.resolve(ref)
+                    if not isinstance(ocg_resolved, dict):
+                        if recover:
+                            continue
+                        raise ValueError(f"invalid OCProperties {override_name} entry")
+                    key = self.ocg_key(ref, ocg_resolved)
+                    if key is not None:
+                        update(key)
+
+        hidden_layers: set[str] = set()
+        for ocg_ref in ocgs:
+            ocg_resolved = self.resolver.resolve(ocg_ref)
+            if not isinstance(ocg_resolved, dict):
+                if recover:
+                    continue
+                raise ValueError("invalid OCProperties OCG entry")
+            name = self.resolver.resolve_str(ocg_resolved.get("Name"))
+            if not name:
+                if recover:
+                    continue
+                raise ValueError("invalid OCProperties OCG name")
+            key = self.ocg_key(ocg_ref, ocg_resolved)
+            if key is None or key not in on_layers:
+                hidden_layers.add(name)
+        return frozenset(hidden_layers)

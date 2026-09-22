@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl._impl.layout import text_rules as rules
+from core_pdf.impl.layout import text_rules as rules
 
 
 @pytest.mark.parametrize(

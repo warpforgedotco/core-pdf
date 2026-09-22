@@ -4,9 +4,9 @@ from typing import Any
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl._impl.extract.contracts import ObservationBatch
-from core_pdf.impl._impl.output.model import Table, TableCell
-from core_pdf.impl._impl.runtime.execution import ExtractionScope
+from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.output.model import Table, TableCell
+from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract import pipeline
 from core_pdf_ocr.impl.extract.contracts import PageRoute, RecognitionResult, WorkPlan
 from core_pdf_ocr.impl.extract.table_reconcile import internal_remove_duplicate_tables

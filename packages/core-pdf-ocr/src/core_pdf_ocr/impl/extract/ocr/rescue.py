@@ -7,7 +7,7 @@ from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
-from core_pdf.impl._impl.extract.contracts import ObservationBatch
+from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_RESCUE_LARGE_TEXT_HEIGHT,
     OCR_RESCUE_MIN_CONFIDENCE,

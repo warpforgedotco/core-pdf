@@ -1,13 +1,13 @@
 import pytest
 
-from core_pdf.impl._impl.layout.reconstruction import (
+from core_pdf.impl.layout.reconstruction import (
     GlyphLineBuilder,
     LayoutLineTextAtom,
     is_superscript_metrics,
     reconstruct_layout_line_text,
 )
-from core_pdf.impl._impl.model.glyphs import GlyphCluster
-from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl.model.glyphs import GlyphCluster
+from core_pdf.impl.model.runs import TextRun
 
 
 def internal_run(text: str, x: float = 0, height: float = 10, baseline: float = 10) -> TextRun:

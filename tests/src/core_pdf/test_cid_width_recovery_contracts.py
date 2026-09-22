@@ -1,7 +1,7 @@
 import pytest
 
-from core_pdf.impl._impl.fonts.cmap_widths import parse_cid_widths
-from core_pdf.impl._impl.fonts.widths import parse_font_widths
+from core_pdf.impl.fonts.cmap_widths import parse_cid_widths
+from core_pdf.impl.fonts.widths import parse_font_widths
 
 
 @pytest.mark.parametrize(

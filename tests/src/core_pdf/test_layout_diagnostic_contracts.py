@@ -1,14 +1,14 @@
 import pytest
 
-from core_pdf.impl._impl.layout.lines import (
+from core_pdf.impl.layout.lines import (
     LayoutLine,
     layout_line_geometry_issues,
     page_layout_geometry_issues,
     page_layout_geometry_summary,
     text_run_geometry_issues,
 )
-from core_pdf.impl._impl.model.glyphs import GlyphCluster
-from core_pdf.impl._impl.model.runs import TextRun
+from core_pdf.impl.model.glyphs import GlyphCluster
+from core_pdf.impl.model.runs import TextRun
 
 
 def internal_run(text="A", bbox: tuple[float, float, float, float] = (0, 0, 10, 10), **kwargs):
