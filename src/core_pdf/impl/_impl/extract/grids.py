@@ -221,51 +221,42 @@ def internal_merge_grid_cells(
     if row_count == 0 or column_count == 0:
         return []
 
-    def boundary_present(
-        position: float,
-        start: float,
-        end: float,
+    def boundary_grid(
         segments: numpy.ndarray[Any, Any],
+        positions: numpy.ndarray[Any, Any],
+        span_starts: numpy.ndarray[Any, Any],
+        span_ends: numpy.ndarray[Any, Any],
         coordinate_indexes: tuple[int, int, int],
-    ) -> bool:
+    ) -> numpy.ndarray[Any, Any]:
         position_index, start_index, end_index = coordinate_indexes
-        return bool(
-            numpy.any(
-                (numpy.abs(segments[:, position_index] - position) <= AXIS_TOLERANCE)
-                & (segments[:, start_index] <= start + AXIS_TOLERANCE)
-                & (segments[:, end_index] >= end - AXIS_TOLERANCE)
-            )
+        near = numpy.abs(segments[None, :, position_index] - positions[:, None]) <= AXIS_TOLERANCE
+        spans = (segments[None, :, start_index] <= span_starts[:, None] + AXIS_TOLERANCE) & (
+            segments[None, :, end_index] >= span_ends[:, None] - AXIS_TOLERANCE
         )
-
-    def vertical_boundary_present(x: float, y0: float, y1: float) -> bool:
-        return boundary_present(
-            x,
-            y0,
-            y1,
-            vertical,
-            (0, 1, 2),
-        )
-
-    def horizontal_boundary_present(y: float, x0: float, x1: float) -> bool:
-        return boundary_present(
-            y,
-            x0,
-            x1,
-            horizontal,
-            (2, 0, 1),
-        )
+        return (spans.astype(numpy.int32) @ near.astype(numpy.int32).T) > 0
 
     disjoint = internal_DisjointSet(row_count * column_count)
+    vertical_present = boundary_grid(
+        vertical,
+        x_edges[1:column_count],
+        y_edges[1 : row_count + 1],
+        y_edges[0:row_count],
+        (0, 1, 2),
+    )
     for row in range(row_count):
-        y0, y1 = float(y_edges[row + 1]), float(y_edges[row])
         for column in range(column_count - 1):
-            if not vertical_boundary_present(float(x_edges[column + 1]), y0, y1):
+            if not vertical_present[row, column]:
                 disjoint.union(row * column_count + column, row * column_count + column + 1)
+    horizontal_present = boundary_grid(
+        horizontal,
+        y_edges[1:row_count],
+        x_edges[0:column_count],
+        x_edges[1 : column_count + 1],
+        (2, 0, 1),
+    ).T
     for row in range(row_count - 1):
-        y = float(y_edges[row + 1])
         for column in range(column_count):
-            x0, x1 = float(x_edges[column]), float(x_edges[column + 1])
-            if not horizontal_boundary_present(y, x0, x1):
+            if not horizontal_present[row, column]:
                 disjoint.union(row * column_count + column, (row + 1) * column_count + column)
 
     members: dict[int, list[tuple[int, int]]] = defaultdict(list)

@@ -499,12 +499,8 @@ def internal_contours_bbox(
     points = tuple(point for contour in contours for point in contour)
     if not points:
         return None
-    return (
-        min(point[0] for point in points),
-        min(point[1] for point in points),
-        max(point[0] for point in points),
-        max(point[1] for point in points),
-    )
+    xs, ys = zip(*points, strict=True)
+    return (min(xs), min(ys), max(xs), max(ys))
 
 
 def internal_feature_from_contours(
@@ -516,8 +512,7 @@ def internal_feature_from_contours(
     points = [point for contour in contours for point in contour]
     if not points:
         return EMPTY_FEATURE
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
+    xs, ys = zip(*points, strict=True)
     min_x, max_x = min(xs), max(xs)
     min_y, max_y = min(ys), max(ys)
     width = max(max_x - min_x, 1.0)

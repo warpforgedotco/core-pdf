@@ -510,12 +510,17 @@ def internal_compact_stream_table(
     if numpy.any(numpy.diff(anchors) < 30.0):
         return None
 
+    anchor_values: list[float] = anchors.tolist()
+    anchor_midpoints: list[float] = ((anchors[:-1] + anchors[1:]) * 0.5).tolist()
+    anchor_count = len(anchor_values)
+
     table_rows: list[tuple[TableCell, ...]] = []
     numeric_cells = 0
     for row in candidates:
-        cell_indexes: list[list[int]] = [[] for _ in anchors]
+        cell_indexes: list[list[int]] = [[] for _ in anchor_values]
         for index in row:
-            column = int(numpy.argmin(numpy.abs(anchors - all_x0[index])))
+            x0_value = all_x0[index]
+            column = min(range(anchor_count), key=lambda c: abs(anchor_values[c] - x0_value))
             cell_indexes[column].append(index)
         texts = [internal_cell_text(observations, indexes) for indexes in cell_indexes]
         if not any(texts):
@@ -528,7 +533,7 @@ def internal_compact_stream_table(
         y1 = max(all_y1[index] for index in row)
         edges = [
             min(all_x0[index] for index in row),
-            *(float((anchors[column] + anchors[column + 1]) * 0.5) for column in range(2)),
+            *anchor_midpoints,
             max(all_x1[index] for index in row),
         ]
         table_rows.append(

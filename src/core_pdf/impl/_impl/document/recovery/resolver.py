@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import mmap
-
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl._impl.document.recovery.objects import PdfObjectStream
 from core_pdf.impl._impl.document.recovery.text_strings import decode_pdf_text_string
@@ -18,43 +16,20 @@ from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver as SyntaxResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import Decipher
 from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
 )
-from core_pdf_spec.standards import SemanticContext
 
 
 class ObjectResolver(SyntaxResolver):
-    __slots__ = ("recover_missing",)
-
-    def __init__(
-        self,
-        data: bytes | bytearray | memoryview | mmap.mmap,
-        xref: dict[int, PdfXRefEntry],
-        *,
-        decipher: Decipher | None = None,
-        recover_missing: bool = False,
-        semantic_context: SemanticContext | None = None,
-    ) -> None:
-        super().__init__(data, xref, decipher=decipher, semantic_context=semantic_context)
-        self.recover_missing = recover_missing
+    __slots__ = ()
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
         entry = super().xref_entry(ref)
         if entry is None and ref.generation_number != 0:
             entry = self.xref.get(key_for(ref.object_number, 0))
         return entry
-
-    def missing_object(self, ref: PdfReference) -> object:
-        if not self.recover_missing:
-            return None
-        lexer = self.get_lexer()
-        try:
-            return self.recover_missing_indirect_object(lexer, ref)
-        finally:
-            self.release_lexer(lexer)
 
     def create_object_stream(self, stream: PdfStream) -> PdfObjectStream:
         return PdfObjectStream(stream, semantic_context=self.semantic_context)
@@ -93,15 +68,6 @@ class ObjectResolver(SyntaxResolver):
             semantic_context=self.semantic_context,
         )
 
-    def internal_recovery_offsets(self, lexer: SyntaxLexer) -> dict[int, tuple[int, ...]]:
-        offsets: dict[int, list[int]] = {}
-        for offset, object_number, generation_number in iter_indirect_object_headers(
-            lexer.raw_data, 0, len(lexer.raw_data), source_buffer=lexer.source_buffer
-        ):
-            key = key_for(object_number, generation_number)
-            offsets.setdefault(key, []).append(offset)
-        return {key: tuple(values) for key, values in offsets.items()}
-
     def recover_indirect_object(self, lexer: SyntaxLexer, offset: int) -> object:
         data = lexer.raw_data
         search_start = max(0, offset - 128)
@@ -116,18 +82,6 @@ class ObjectResolver(SyntaxResolver):
             raise PdfParseError("expected indirect object header")
         lexer.rewind(header[0])
         return lexer.parse_indirect_object()
-
-    def recover_missing_indirect_object(self, lexer: SyntaxLexer, ref: PdfReference) -> object:
-        key = key_for(ref.object_number, ref.generation_number)
-        for offset in reversed(self.internal_recovery_offsets(lexer).get(key, ())):
-            lexer.rewind(offset)
-            try:
-                return lexer.parse_indirect_object()
-            except PdfDecryptionError, PdfUnsupportedError:
-                raise
-            except Exception:
-                continue
-        return None
 
     def resolve_name_or_text(self, value: object, *, name_like: bool = False) -> str | None:
         text = self.resolve_name(value)

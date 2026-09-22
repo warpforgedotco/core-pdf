@@ -13,6 +13,7 @@ from functools import cache, lru_cache
 from importlib.resources import files
 from statistics import median_low
 
+from core_pdf.impl._impl.model.geometry import interval_overlap
 from core_pdf.impl._impl.model.runs import TextRun
 
 WORDLIST_PACKAGE = "core_pdf.impl._impl.layout.data.wordlists"
@@ -684,8 +685,7 @@ def stacked_formula_denominator(
         return False
     if numerator_height < denominator_height * 0.7 or numerator_height > denominator_height * 1.3:
         return False
-    overlap = min(denominator.x1, numerator.x1) - max(denominator.x0, numerator.x0)
-    if overlap <= 0.0:
+    if interval_overlap(denominator.x0, denominator.x1, numerator.x0, numerator.x1) <= 0.0:
         return False
     vertical_gap = numerator.y0 - denominator.y0
     return vertical_gap >= max(2.0, denominator_height * 0.18)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typing
 from dataclasses import dataclass
+from itertools import batched
 
 import numpy
 
@@ -149,9 +150,7 @@ def image_decode_is_identity(dictionary: object) -> bool:
         return True
     if not isinstance(decode, (list, tuple)) or len(decode) == 0 or len(decode) % 2:
         return False
-    for index in range(0, len(decode), 2):
-        lower = decode[index]
-        upper = decode[index + 1]
+    for lower, upper in batched(decode, 2, strict=True):
         if not isinstance(lower, (int, float)) or not isinstance(upper, (int, float)):
             return False
         if float(lower) != 0.0 or float(upper) != 1.0:

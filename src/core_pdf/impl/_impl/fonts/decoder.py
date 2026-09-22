@@ -448,7 +448,6 @@ class FontDecoder:
     font_name: str | None
     glyph_decode_table: tuple[str, ...] | None
     glyph_decode_table_authoritative: bool
-    type3_glyph_names: dict[int, str] | None
     cff_unicode_repair_index: CFFUnicodeRepairIndex | None
     cff_unicode_repairs: dict[bytes, str]
     font_program: FontProgram | None
@@ -473,7 +472,6 @@ class FontDecoder:
         self.semantic_context = semantic_context
         self.ligature_overrides = ligature_overrides if ligature_overrides is not None else {}
         self.raster_font_provider = raster_font_provider
-        self.type3_glyph_names = None
         self.internal_initialize()
 
     def internal_initialize(self) -> None:
@@ -626,10 +624,6 @@ class FontDecoder:
         subtype = recover_pdf_name(font.get("Subtype"))
         encoding_obj = font.get("Encoding")
         match encoding_obj:
-            case str():
-                base_encoding = recover_pdf_name(encoding_obj)
-                base_encoding_explicit = base_encoding is not None
-                cmap = self.internal_named_cmap(base_encoding)
             case PdfStream():
                 try:
                     cmap = CMapDecoder(

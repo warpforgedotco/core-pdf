@@ -37,13 +37,6 @@ def nearest_indices(output_count: int, source_count: int) -> numpy.ndarray[Any, 
     return readonly(result)
 
 
-def unit_sample_positions(output_count: int) -> numpy.ndarray[Any, Any]:
-    if output_count <= 0:
-        return numpy.empty(0, dtype=numpy.float64)
-    result = numpy.arange(output_count, dtype=numpy.float64) / output_count
-    return readonly(result)
-
-
 def contiguous_bytes(array: numpy.ndarray[Any, Any]) -> memoryview:
     return memoryview(numpy.ascontiguousarray(array)).cast("B")
 
@@ -77,5 +70,4 @@ __all__ = (
     "readonly",
     "uint8_image_view",
     "uint8_view",
-    "unit_sample_positions",
 )

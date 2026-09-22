@@ -17,7 +17,6 @@ dependencies = [
     "imagecodecs>=2026.6.26",
     "defusedxml>=0.7.1",
     "core-pdf-spec>=0.5.0,<0.6.0",
-    "pillow>=12.2.0",
     "core-predictors>=0.1.0,<0.2.0",
     "core-jbig2>=0.1.0,<0.2.0",
     "core-adobe-fonts>=0.1.0,<0.2.0",
@@ -64,6 +63,9 @@ unstructured = [
     "en-core-web-sm==3.8.0",
     "spacy>=3.8.15,<3.9.0",
 ]
+pdfplumber = [
+    "pillow>=12.2.0",
+]
 
 [dependency-groups]
 dev = [
@@ -78,6 +80,7 @@ lint = [
 ]
 test = [
     "coverage>=7.16.1",
+    "pillow>=12.2.0",
     "pytest >=8.4.0, <10.0.0",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",

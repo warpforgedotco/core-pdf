@@ -209,6 +209,8 @@ def glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSeman
 
 
 def glyph_text_has_unsupported_codepoint(text: str) -> bool:
+    if text.isascii() and text.isprintable():
+        return False
     for char in text:
         codepoint = ord(char)
         if char in {"\ufffd", "\ufffc"}:

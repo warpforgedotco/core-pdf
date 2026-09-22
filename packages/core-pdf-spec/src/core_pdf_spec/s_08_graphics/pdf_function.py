@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from bisect import bisect_right
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -279,9 +280,7 @@ def compile_pdf_function(
             if len(inputs) != 1:
                 raise ValueError("invalid stitching function input count")
             value = max(domain_min, min(domain_max, inputs[0]))
-            index = 0
-            while index < len(bounds) and value >= bounds[index]:
-                index += 1
+            index = bisect_right(bounds, value)
             low = bounds[index - 1] if index > 0 else domain_min
             high = bounds[index] if index < len(bounds) else domain_max
             enc0 = encode[index * 2]

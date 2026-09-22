@@ -8,7 +8,6 @@ from collections.abc import Callable, Mapping
 from csv import writer
 from html import escape
 from io import StringIO
-from typing import TypeVar
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from core_pdf.impl._impl.model.page_selection import PageSelection, resolve_page_selection
@@ -33,7 +32,6 @@ from core_pdf.impl._impl.output.model import (
     TextLine,
 )
 
-ElementResultT = TypeVar("ElementResultT")
 internal_LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•▪◦]|(?:\d+|[^\W_])[.)])[ \t]*")
 
 

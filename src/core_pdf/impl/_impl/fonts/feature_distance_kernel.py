@@ -23,39 +23,35 @@ def internal_cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int,
     if not cells:
         return ()
     limit = FEATURE_GRID_WIDTH + FEATURE_GRID_HEIGHT
-    distances = [limit] * (FEATURE_GRID_WIDTH * FEATURE_GRID_HEIGHT)
+    distances = numpy.full((FEATURE_GRID_HEIGHT, FEATURE_GRID_WIDTH), limit, dtype=numpy.int64)
     for x, y in cells:
         if 0 <= x < FEATURE_GRID_WIDTH and 0 <= y < FEATURE_GRID_HEIGHT:
-            distances[y * FEATURE_GRID_WIDTH + x] = 0
-    for y in range(FEATURE_GRID_HEIGHT):
-        row = y * FEATURE_GRID_WIDTH
-        for x in range(FEATURE_GRID_WIDTH):
-            index = row + x
-            best = distances[index]
-            if x:
-                candidate = distances[index - 1] + 1
-                if candidate < best:
-                    best = candidate
-            if y:
-                candidate = distances[index - FEATURE_GRID_WIDTH] + 1
-                if candidate < best:
-                    best = candidate
-            distances[index] = best
-    for y in range(FEATURE_GRID_HEIGHT - 1, -1, -1):
-        row = y * FEATURE_GRID_WIDTH
-        for x in range(FEATURE_GRID_WIDTH - 1, -1, -1):
-            index = row + x
-            best = distances[index]
-            if x + 1 < FEATURE_GRID_WIDTH:
-                candidate = distances[index + 1] + 1
-                if candidate < best:
-                    best = candidate
-            if y + 1 < FEATURE_GRID_HEIGHT:
-                candidate = distances[index + FEATURE_GRID_WIDTH] + 1
-                if candidate < best:
-                    best = candidate
-            distances[index] = best
-    return tuple(distances)
+            distances[y, x] = 0
+    # The two-pass 4-neighbour chamfer is the exact L1 distance transform, which is
+    # separable: one forward and one backward running minimum per axis. `limit` exceeds
+    # the largest achievable distance on this grid, so the all-unseeded case still
+    # returns `limit` everywhere exactly as the sequential scan did.
+    for axis, extent in ((1, FEATURE_GRID_WIDTH), (0, FEATURE_GRID_HEIGHT)):
+        offsets = numpy.arange(extent, dtype=numpy.int64)
+        if axis == 0:
+            offsets = offsets[:, None]
+        forward = numpy.minimum.accumulate(distances - offsets, axis=axis) + offsets
+        reversed_slice: tuple[Any, ...] = (
+            (slice(None, None, -1),)
+            if axis == 0
+            else (
+                slice(None),
+                slice(None, None, -1),
+            )
+        )
+        backward = (
+            numpy.minimum.accumulate((distances + offsets)[reversed_slice], axis=axis)[
+                reversed_slice
+            ]
+            - offsets
+        )
+        distances = numpy.minimum(forward, backward)
+    return tuple(distances.reshape(-1).tolist())
 
 
 def internal_average_nearest_distance(

@@ -12,7 +12,7 @@ from core_pdf.impl._impl.capture.records import (
 )
 from core_pdf.impl._impl.graphics.device_profiles import cmyk_floats_to_srgb
 from core_pdf.impl._impl.graphics.shading import PreparedShading, prepare_shading
-from core_pdf.impl._impl.model.geometry import rect_tuple
+from core_pdf.impl._impl.model.geometry import normalize_rect, rect_tuple
 from core_pdf.impl._impl.render.blend import (
     internal_clamp01,
     internal_color_component,
@@ -156,8 +156,7 @@ class internal_PatternTargetMixin:
             box = rect_tuple(data.get("bbox"))
         if box is None:
             box = (crop_x0, crop_y0, crop_x0 + width / scale, crop_y1)
-        x0, y0, x1, y1 = box
-        return min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)
+        return normalize_rect(box)
 
     def paint_shading(
         self: internal_RasterState, data: dict[str, Any], blend_mode: str | None
@@ -193,6 +192,14 @@ class internal_PatternTargetMixin:
         shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
         domain_span = domain[1] - domain[0]
         page_x_values = [crop_x0 + (px + 0.5) / scale for px in range(ix0, ix1)]
+        shading_t = axial_shading_t if shading_type == 2 else radial_shading_t
+        color_model = shading.color_model
+        evaluate = shading.evaluate
+        color_rendering = shading.color_rendering
+        # Every input to the colour is loop-invariant except `value`, and `value` repeats
+        # heavily across a gradient -- exactly so in the clamped extend regions. Memoising
+        # on the exact key keeps the result bit-identical to evaluating per pixel.
+        rgba_cache: dict[float, tuple[int, int, int, int]] = {}
         for py in range(iy0, iy1):
             page_y = crop_y1 - (py + 0.5) / scale
             row = py * width * 4
@@ -202,11 +209,7 @@ class internal_PatternTargetMixin:
             for span_start, span_end in visible_spans:
                 for px in range(max(ix0, span_start), min(ix1, span_end)):
                     page_x = page_x_values[px - ix0]
-                    unit_t = (
-                        axial_shading_t(coords, page_x, page_y)
-                        if shading_type == 2
-                        else radial_shading_t(coords, page_x, page_y)
-                    )
+                    unit_t = shading_t(coords, page_x, page_y)
                     if unit_t is None:
                         continue
                     if unit_t < 0.0:
@@ -218,14 +221,17 @@ class internal_PatternTargetMixin:
                             continue
                         unit_t = 1.0
                     value = domain[0] + unit_t * domain_span
-                    rgba = internal_shading_color_rgba(
-                        shading.color_model,
-                        shading.evaluate(value),
-                        fill_opacity,
-                        shading.color_rendering,
-                    )
-                    if shading_alpha is not None:
-                        rgba = internal_scale_rgba_alpha(rgba, shading_alpha)
+                    rgba = rgba_cache.get(value)
+                    if rgba is None:
+                        rgba = internal_shading_color_rgba(
+                            color_model,
+                            evaluate(value),
+                            fill_opacity,
+                            color_rendering,
+                        )
+                        if shading_alpha is not None:
+                            rgba = internal_scale_rgba_alpha(rgba, shading_alpha)
+                        rgba_cache[value] = rgba
                     if normal_fast:
                         blend_normal_pixel(row + px * 4, *rgba)
                     else:

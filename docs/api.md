@@ -117,8 +117,10 @@ and rejects unknown options. Table discovery and debugging share this normalizat
 
 `PageImage.show()` displays the current annotated page through Pillow's platform viewer.
 It uses the same PNG pixels as `save()` and `_repr_png_()`; viewer exceptions propagate.
-Pillow is a declared core dependency and is imported when display is requested. Display
-integration tests intercept the viewer call and verify image contents without opening windows.
+Pillow ships in the optional `pdfplumber` extra and is imported only when display is
+requested; without it `show()` raises `ImportError` naming `core-pdf[pdfplumber]`. Rendering,
+drawing, `save()`, and `_repr_png_()` do not require Pillow. Display integration tests
+intercept the viewer call and verify image contents without opening windows.
 
 Method-level differential tests cover geometry, cropping, shared object caches, attribute
 selection, basic table grids, image sizing, annotations, merging, and display routing.

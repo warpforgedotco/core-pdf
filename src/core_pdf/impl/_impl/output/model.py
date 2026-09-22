@@ -412,6 +412,16 @@ class Page:
     diagnostics: tuple[Diagnostic, ...] = ()
     cropbox: Rectangle | None = None
     user_unit: float = field(default=1.0, kw_only=True)
+    internal_elements: tuple[PageElement, ...] = field(
+        default=(), init=False, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "internal_elements",
+            tuple(sorted((*self.blocks, *self.tables, *self.figures), key=lambda item: item.order)),
+        )
 
     @property
     def width_points(self) -> float:
@@ -423,9 +433,7 @@ class Page:
 
     @property
     def elements(self) -> tuple[PageElement, ...]:
-        return tuple(
-            sorted((*self.blocks, *self.tables, *self.figures), key=lambda item: item.order)
-        )
+        return self.internal_elements
 
     @property
     def nodes(self) -> tuple[ContentNode, ...]:

@@ -36,6 +36,16 @@ uv sync --all-packages --all-groups --extra unstructured
 uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto
 ```
 
+The pdfplumber compatibility facade needs the `pdfplumber` extra only for
+`PageImage.show()`, which opens the rendered page in the platform image viewer:
+
+```sh
+pip install "core-pdf[pdfplumber]"
+```
+
+Without it `show()` raises `ImportError` naming the extra. Rendering, drawing, `save()`,
+and `_repr_png_()` work without Pillow, so the rest of the facade needs no extra.
+
 See [coverage and unused-code review](docs/coverage.md) for parallel coverage.py runs
 and guidance on distinguishing dead code from missing tests.
 
