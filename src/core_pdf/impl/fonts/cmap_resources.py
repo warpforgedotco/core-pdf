@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from core_adobe_fonts.cmap.resources import resolve_cmap_resource
-from core_pdf.impl.fonts.cmap_decoder import CMapDecoder
+from core_pdf.impl.fonts.cmap_tokenizer import CMapDecoder
 
 RESOURCE_PACKAGE = "core_adobe_fonts.cmap.data"
 CMapUnicodeSource = tuple[str, str, int]

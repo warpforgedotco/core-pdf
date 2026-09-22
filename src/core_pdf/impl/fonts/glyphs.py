@@ -9,9 +9,6 @@ from functools import lru_cache
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_adobe_fonts.agl.mapping import glyph_component_to_unicode
 from core_adobe_fonts.agl.zapf_dingbats import ZAPF_DINGBATS_GLYPHS
-from core_pdf.impl.fonts.data.glyph_aliases import (
-    MODIFIER_NAMES,
-)
 
 HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 ADOBE_PUA_GLYPH_ALIASES = {
@@ -257,3 +254,20 @@ def split_single_letter_modifier(name: str) -> tuple[str, str] | None:
     if not suffix.isalpha() or not suffix.islower() or not suffix.isascii():
         return None
     return base, suffix
+
+
+MODIFIER_NAMES: dict[str, str] = {
+    "acute": "ACUTE ACCENT",
+    "grave": "GRAVE ACCENT",
+    "circumflex": "CIRCUMFLEX ACCENT",
+    "dieresis": "DIAERESIS",
+    "tilde": "TILDE",
+    "macron": "MACRON",
+    "breve": "BREVE",
+    "dotaccent": "DOT ABOVE",
+    "ring": "RING ABOVE",
+    "cedilla": "CEDILLA",
+    "hungarumlaut": "DOUBLE ACUTE ACCENT",
+    "ogonek": "OGONEK",
+    "caron": "CARON",
+}

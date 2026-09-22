@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+import logging
+import re
+import struct
+import threading
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from io import BytesIO
 from math import inf, isfinite
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Self, TypeAlias
+
+import numpy
 
 from core_adobe_fonts.cff.charstrings import (
     cubic_extrema_times,
@@ -20,22 +27,39 @@ from core_adobe_fonts.cff.font import CFFFont as PdfCFFFont
 from core_adobe_fonts.cff.font import (
     cff_font_matrix as pdf_cff_font_matrix,
 )
+from core_adobe_fonts.type1.program import (
+    binary_entries,
+    decode_charstring,
+    decode_eexec_payload,
+    decrypt_type1,
+)
 from core_pdf._vendor.fontTools.cffLib import (
     cffExpertSubsetStrings,
     cffIExpertStrings,
     cffISOAdobeStrings,
 )
 from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
-from core_pdf.impl.fonts.feature_distance_kernel import feature_arrays
-from core_pdf.impl.fonts.feature_distance_kernel import (
-    feature_distance as compiled_feature_distance,
+from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
+from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
+from core_pdf._vendor.fontTools.pens.recordingPen import (
+    DecomposingRecordingPen,
+    RecordingPen,
 )
-from core_pdf.impl.fonts.feature_distance_kernel import (
-    feature_distance_matrix as compiled_feature_distance_matrix,
+from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
+from core_pdf._vendor.fontTools.ttLib import TTFont
+from core_pdf.impl.fonts.raster_kernel import (
+    Point,
+    rasterize_contours,
+    scale_contours,
+    transform_contours,
 )
-from core_pdf.impl.fonts.raster_kernel import rasterize_contours, transform_contours
+from core_pdf.impl.model.geometry import transform_bbox
 from core_pdf.impl.records import FrozenFields
 from core_pdf_spec.s_08_graphics.matrix import Matrix
+from core_pdf_spec.s_09_fonts.font_program_truetype import (
+    is_unicode_scalar,
+    symbol_character_code,
+)
 
 frozen_setattr = object.__setattr__
 
@@ -784,7 +808,7 @@ def type2_glyph_geometry_impl(  # noqa: C901
 
 
 def glyph_feature_distance(left: CFFGlyphFeature, right: CFFGlyphFeature) -> float:
-    return compiled_feature_distance(
+    return feature_distance(
         left.cells,
         left.bitmap,
         left.aspect,
@@ -934,7 +958,7 @@ class CFFUnicodeRepairIndex:
                 [feature.aspect for feature in candidate_features],
                 [feature.contours for feature in candidate_features],
             )
-            distance_matrix = compiled_feature_distance_matrix(
+            distance_matrix = feature_distance_matrix(
                 [feature.cells for feature in target_features],
                 [feature.bitmap for feature in target_features],
                 [feature.aspect for feature in target_features],
@@ -968,11 +992,1040 @@ class CFFUnicodeRepairIndex:
         return repairs
 
 
+FEATURE_GRID_WIDTH = 18
+FEATURE_GRID_HEIGHT = 24
+FeatureArrays: TypeAlias = tuple[
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+]
+
+
+def cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int, ...]:
+    if not cells:
+        return ()
+    limit = FEATURE_GRID_WIDTH + FEATURE_GRID_HEIGHT
+    distances = numpy.full((FEATURE_GRID_HEIGHT, FEATURE_GRID_WIDTH), limit, dtype=numpy.int64)
+    for x, y in cells:
+        if 0 <= x < FEATURE_GRID_WIDTH and 0 <= y < FEATURE_GRID_HEIGHT:
+            distances[y, x] = 0
+    # The two-pass 4-neighbour chamfer is the exact L1 distance transform, which is
+    # separable: one forward and one backward running minimum per axis. `limit` exceeds
+    # the largest achievable distance on this grid, so the all-unseeded case still
+    # returns `limit` everywhere exactly as the sequential scan did.
+    for axis, extent in ((1, FEATURE_GRID_WIDTH), (0, FEATURE_GRID_HEIGHT)):
+        offsets = numpy.arange(extent, dtype=numpy.int64)
+        if axis == 0:
+            offsets = offsets[:, None]
+        forward = numpy.minimum.accumulate(distances - offsets, axis=axis) + offsets
+        reversed_slice: tuple[Any, ...] = (
+            (slice(None, None, -1),)
+            if axis == 0
+            else (
+                slice(None),
+                slice(None, None, -1),
+            )
+        )
+        backward = (
+            numpy.minimum.accumulate((distances + offsets)[reversed_slice], axis=axis)[
+                reversed_slice
+            ]
+            - offsets
+        )
+        distances = numpy.minimum(forward, backward)
+    return tuple(distances.reshape(-1).tolist())
+
+
+def average_nearest_distance(
+    cells: tuple[tuple[int, int], ...], distance_map: tuple[int, ...]
+) -> float:
+    total = 0.0
+    count = 0
+    for x, y in cells:
+        if 0 <= x < FEATURE_GRID_WIDTH and 0 <= y < FEATURE_GRID_HEIGHT:
+            total += distance_map[y * FEATURE_GRID_WIDTH + x]
+            count += 1
+    return total / count if count else inf
+
+
+def bitmap_distance(left: tuple[int, ...], right: tuple[int, ...]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    intersection = 0
+    union = 0
+    for left_row, right_row in zip(left, right, strict=True):
+        intersection += (left_row & right_row).bit_count()
+        union += (left_row | right_row).bit_count()
+    if union == 0:
+        return 0.0
+    return 1.0 - intersection / union
+
+
+def feature_distance(
+    left_cells: tuple[tuple[int, int], ...],
+    left_bitmap: tuple[int, ...],
+    left_aspect: float,
+    left_contours: int,
+    right_cells: tuple[tuple[int, int], ...],
+    right_bitmap: tuple[int, ...],
+    right_aspect: float,
+    right_contours: int,
+) -> float:
+    if not left_cells or not right_cells:
+        return inf
+    left_map = cell_distance_map(left_cells)
+    right_map = cell_distance_map(right_cells)
+    return (
+        average_nearest_distance(left_cells, right_map)
+        + average_nearest_distance(right_cells, left_map)
+        + bitmap_distance(left_bitmap, right_bitmap) * 0.75
+        + abs(left_aspect - right_aspect) * 2.0
+        + abs(left_contours - right_contours) * 0.2
+    )
+
+
+def feature_arrays(
+    cells: Sequence[tuple[tuple[int, int], ...]],
+    bitmaps: Sequence[tuple[int, ...]],
+    aspects: Sequence[float],
+    contours: Sequence[int],
+) -> FeatureArrays:
+    count = len(cells)
+    masks = numpy.zeros((count, FEATURE_GRID_HEIGHT, FEATURE_GRID_WIDTH), dtype=numpy.float64)
+    distance_maps = numpy.zeros_like(masks)
+    valid_counts = numpy.zeros(count, dtype=numpy.float64)
+    for index, feature_cells in enumerate(cells):
+        valid_cells = tuple(
+            (x, y)
+            for x, y in feature_cells
+            if 0 <= x < FEATURE_GRID_WIDTH and 0 <= y < FEATURE_GRID_HEIGHT
+        )
+        if not valid_cells:
+            continue
+        valid_counts[index] = len(valid_cells)
+        for x, y in valid_cells:
+            masks[index, y, x] += 1.0
+        distance_maps[index] = numpy.asarray(
+            cell_distance_map(feature_cells), dtype=numpy.float64
+        ).reshape(FEATURE_GRID_HEIGHT, FEATURE_GRID_WIDTH)
+
+    bitmap_width = max((len(bitmap) for bitmap in bitmaps), default=0)
+    bitmap_rows = numpy.zeros((count, bitmap_width), dtype=numpy.uint64)
+    for index, bitmap in enumerate(bitmaps):
+        if bitmap:
+            bitmap_rows[index, : len(bitmap)] = bitmap
+    return (
+        masks,
+        distance_maps,
+        valid_counts,
+        numpy.asarray(aspects, dtype=numpy.float64),
+        numpy.asarray(contours, dtype=numpy.float64),
+        bitmap_rows,
+    )
+
+
+def feature_distance_matrix(
+    left_cells: Sequence[tuple[tuple[int, int], ...]],
+    left_bitmaps: Sequence[tuple[int, ...]],
+    left_aspects: Sequence[float],
+    left_contours: Sequence[int],
+    right_cells: Sequence[tuple[tuple[int, int], ...]],
+    right_bitmaps: Sequence[tuple[int, ...]],
+    right_aspects: Sequence[float],
+    right_contours: Sequence[int],
+    *,
+    right_arrays: FeatureArrays | None = None,
+) -> numpy.ndarray[Any, Any]:
+    (
+        left_masks,
+        left_maps,
+        left_counts,
+        left_aspects_array,
+        left_contours_array,
+        left_bitmap_rows,
+    ) = feature_arrays(left_cells, left_bitmaps, left_aspects, left_contours)
+    if right_arrays is None:
+        right_arrays = feature_arrays(right_cells, right_bitmaps, right_aspects, right_contours)
+    (
+        right_masks,
+        right_maps,
+        right_counts,
+        right_aspects_array,
+        right_contours_array,
+        right_bitmap_rows,
+    ) = right_arrays
+
+    distance = numpy.full((len(left_cells), len(right_cells)), numpy.inf, dtype=numpy.float64)
+    valid = (left_counts[:, None] > 0) & (right_counts[None, :] > 0)
+    if not numpy.any(valid):
+        return distance
+
+    left_to_right = numpy.einsum("lxy,rxy->lr", left_masks, right_maps)
+    left_to_right = numpy.divide(
+        left_to_right,
+        left_counts[:, None],
+        out=numpy.zeros_like(left_to_right),
+        where=left_counts[:, None] > 0,
+    )
+    right_to_left = numpy.einsum("rxy,lxy->rl", right_masks, left_maps).T
+    right_to_left = numpy.divide(
+        right_to_left,
+        right_counts[None, :],
+        out=numpy.zeros_like(right_to_left),
+        where=right_counts[None, :] > 0,
+    )
+
+    if left_bitmap_rows.shape[1] == 0 and right_bitmap_rows.shape[1] == 0:
+        bitmap_distance = numpy.zeros_like(distance)
+    else:
+        bitmap_width = max(left_bitmap_rows.shape[1], right_bitmap_rows.shape[1])
+        if left_bitmap_rows.shape[1] != bitmap_width:
+            left_bitmap_rows = numpy.pad(
+                left_bitmap_rows,
+                ((0, 0), (0, bitmap_width - left_bitmap_rows.shape[1])),
+            )
+        if right_bitmap_rows.shape[1] != bitmap_width:
+            right_bitmap_rows = numpy.pad(
+                right_bitmap_rows,
+                ((0, 0), (0, bitmap_width - right_bitmap_rows.shape[1])),
+            )
+        intersection = numpy.bitwise_count(
+            left_bitmap_rows[:, None, :] & right_bitmap_rows[None, :, :]
+        ).sum(axis=2)
+        union = numpy.bitwise_count(
+            left_bitmap_rows[:, None, :] | right_bitmap_rows[None, :, :]
+        ).sum(axis=2)
+        same_bitmap_shape = numpy.equal(
+            numpy.asarray([len(bitmap) for bitmap in left_bitmaps])[:, None],
+            numpy.asarray([len(bitmap) for bitmap in right_bitmaps])[None, :],
+        )
+        bitmap_ratio = numpy.divide(
+            intersection,
+            union,
+            out=numpy.zeros_like(intersection, dtype=numpy.float64),
+            where=union != 0,
+        )
+        bitmap_distance = numpy.where(
+            same_bitmap_shape & (union != 0),
+            1.0 - bitmap_ratio,
+            0.0,
+        )
+
+    combined = (
+        left_to_right
+        + right_to_left
+        + bitmap_distance * 0.75
+        + numpy.abs(left_aspects_array[:, None] - right_aspects_array[None, :]) * 2.0
+        + numpy.abs(left_contours_array[:, None] - right_contours_array[None, :]) * 0.2
+    )
+    distance[valid] = combined[valid]
+    return distance
+
+
+def parse_truetype_program(data: bytes) -> TTFont:
+    font = TTFont(BytesIO(data), lazy=True)
+    if not {"maxp", "glyf", "loca", "head"} <= set(font.keys()):
+        raise ValueError("invalid TrueType glyph tables")
+    return font
+
+
+def fonttools_bbox(
+    font: Any,
+    glyph_id: int,
+    scale: float,
+) -> tuple[float, float, float, float] | None:
+    glyph_name = font.getGlyphName(glyph_id)
+    glyph_set = font.getGlyphSet()
+    bounds_pen = BoundsPen(glyph_set)
+    glyph_set[glyph_name].draw(TransformPen(bounds_pen, (scale, 0.0, 0.0, scale, 0.0, 0.0)))
+    if bounds_pen.bounds is None:
+        return None
+    x_min, y_min, x_max, y_max = bounds_pen.bounds
+    return float(x_min), float(y_min), float(x_max), float(y_max)
+
+
+def glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float, float] | None:
+    glyph = glyf[glyph_name]
+    if glyph.numberOfContours == 0:
+        return None
+    if not all(hasattr(glyph, attr) for attr in ("xMin", "yMin", "xMax", "yMax")):
+        glyph.recalcBounds(glyf)
+    return (
+        float(glyph.xMin),
+        float(glyph.yMin),
+        float(glyph.xMax),
+        float(glyph.yMax),
+    )
+
+
+GLYPH_HEADER = struct.Struct(">hhhhh")
+
+
+def raw_glyph_locations(font: TTFont) -> tuple[Any, bytes]:
+    try:
+        locations = font["loca"]
+        reader = font.reader
+        glyph_data = bytes(reader["glyf"]) if reader is not None else b""
+    except FONT_PROGRAM_ERRORS:
+        return (), b""
+    return locations, glyph_data
+
+
+def glyph_header_bbox(
+    locations: Any, glyph_data: bytes, gid: int
+) -> tuple[float, float, float, float] | None:
+    if gid < 0 or gid + 1 >= len(locations):
+        return None
+    start = locations[gid]
+    end = locations[gid + 1]
+    if end - start < GLYPH_HEADER.size or end > len(glyph_data):
+        return None
+    contours, x_min, y_min, x_max, y_max = GLYPH_HEADER.unpack_from(glyph_data, start)
+    if contours == 0:
+        return None
+    return (float(x_min), float(y_min), float(x_max), float(y_max))
+
+
+FONT_PROGRAM_ERRORS = Exception
+
+
+def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+    glyph_name = font.getGlyphName(glyph_id)
+    glyph_set = font.getGlyphSet()
+    pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
+    glyph_set[glyph_name].draw(pen)
+    return tuple(tuple(contour) for contour in recording_to_contours(pen.value))
+
+
+class FontToolsOutlineAccess:
+    __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale")
+
+    def __init__(self, font: TTFont) -> None:
+        self.font = font
+        self.glyph_count = len(font.getGlyphOrder())
+        self.reverse_glyph_map = font.getReverseGlyphMap()
+        units_per_em = float(getattr(font["head"], "unitsPerEm", 1000) or 1000)
+        self.scale = 1000.0 / units_per_em if units_per_em else 1.0
+
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        return self.reverse_glyph_map.get(glyph_name)
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return 0 <= glyph_id < self.glyph_count
+
+    def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+        try:
+            contours = fonttools_contours(self.font, glyph_id)
+            return contours if self.scale == 1.0 else scale_contours(contours, self.scale)
+        except FONT_PROGRAM_ERRORS:
+            return ()
+
+    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+        try:
+            return fonttools_bbox(self.font, glyph_id, self.scale)
+        except FONT_PROGRAM_ERRORS:
+            return None
+
+    def glyph_bitmap_for_gid(
+        self, glyph_id: int, *, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
+        return rasterize_contours(
+            self.normalized_glyph_contours(glyph_id), width=width, height=height
+        )
+
+
+class RecoverableFontTableWarningFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return not (
+            message.endswith(
+                (
+                    "extra bytes in post.stringData array",
+                    " timestamp seems very low; regarding as unix timestamp",
+                )
+            )
+        )
+
+
+FONT_TABLE_WARNING_FILTER = RecoverableFontTableWarningFilter()
+for logger_name in (
+    "fontTools.ttLib.tables._p_o_s_t",
+    "fontTools.ttLib.tables._h_e_a_d",
+    "core_pdf._vendor.fontTools.ttLib.tables._p_o_s_t",
+    "core_pdf._vendor.fontTools.ttLib.tables._h_e_a_d",
+):
+    logging.getLogger(logger_name).addFilter(FONT_TABLE_WARNING_FILTER)
+
+
+class TrueTypeFontProgram:
+    __slots__ = (
+        "data",
+        "font",
+        "units_per_em",
+        "cid_to_gid",
+        "cmap",
+        "unicode_cmap",
+        "glyph_to_unicode",
+        "outlines",
+        "glyph_locations",
+        "glyph_table_data",
+        "composite_bbox_cache",
+    )
+
+    def __init__(
+        self,
+        data: bytes,
+        cid_to_gid: bytes | None = None,
+        *,
+        use_cmap: bool = False,
+    ) -> None:
+        self.data = data
+        self.composite_bbox_cache: dict[
+            int, tuple[tuple[float, float, float, float] | None, bool]
+        ] = {}
+        self.font = tt_font_from_data(data)
+        if not {"maxp", "glyf", "loca", "head"} <= set(self.font.keys()):
+            raise ValueError("invalid TrueType glyph tables")
+        ensure_glyph_order(self.font)
+        self.units_per_em = float(getattr(self.font["head"], "unitsPerEm", 1000) or 1000)
+        self.glyph_locations, self.glyph_table_data = raw_glyph_locations(self.font)
+        self.outlines = FontToolsOutlineAccess(self.font)
+        self.cid_to_gid = cid_to_gid
+        self.unicode_cmap = best_unicode_gid_cmap(self.font)
+        self.glyph_to_unicode = invert_unicode_cmap(self.unicode_cmap)
+        if use_cmap:
+            self.cmap = self.unicode_cmap or code_gid_cmap(self.font)
+        else:
+            self.cmap = {}
+
+    def variant(self, cid_to_gid: bytes | None, *, use_cmap: bool) -> TrueTypeFontProgram:
+        variant = object.__new__(TrueTypeFontProgram)
+        for name in TrueTypeFontProgram.__slots__:
+            setattr(variant, name, getattr(self, name))
+        variant.cid_to_gid = cid_to_gid
+        if use_cmap:
+            variant.cmap = self.unicode_cmap or code_gid_cmap(self.font)
+        else:
+            variant.cmap = {}
+        return variant
+
+    def glyph_id_for_code(self, code: int) -> int:
+        if self.cid_to_gid is not None:
+            pos = code * 2
+            if pos >= 0 and pos + 2 <= len(self.cid_to_gid):
+                return struct.unpack(">H", self.cid_to_gid[pos : pos + 2])[0]
+            return 0
+        if self.cmap:
+            return self.cmap.get(code, code)
+        return code
+
+    def glyph_id_for_unicode(self, codepoint: int) -> int:
+        if self.cmap:
+            return self.cmap.get(codepoint, 0)
+        return 0
+
+    def has_glyph_id(self, gid: int) -> bool:
+        return self.outlines.has_glyph_id(gid)
+
+    def unicode_for_gid(self, gid: int) -> str:
+        return self.glyph_to_unicode.get(gid, "")
+
+    def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
+        return self.glyph_bitmap_for_gid(self.glyph_id_for_code(code), width=width, height=height)
+
+    def glyph_bitmap_for_gid(
+        self, gid: int, *, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
+        return self.outlines.glyph_bitmap_for_gid(gid, width=width, height=height)
+
+    def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
+        return self.glyph_bbox_for_gid(self.glyph_id_for_code(code))
+
+    def glyph_bbox_for_gid(self, gid: int) -> tuple[float, float, float, float] | None:
+        bbox = glyph_header_bbox(self.glyph_locations, self.glyph_table_data, gid)
+        if bbox is None:
+            return None
+        scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
+        if scale == 1.0:
+            return bbox
+        x0, y0, x1, y1 = bbox
+        return (x0 * scale, y0 * scale, x1 * scale, y1 * scale)
+
+    def glyph_contours(self, gid: int) -> list[list[Point]]:
+        return [list(contour) for contour in self.glyph_contours_for_gid(gid)]
+
+    def normalized_glyph_contours(self, gid: int) -> tuple[tuple[Point, ...], ...]:
+        return self.outlines.normalized_glyph_contours(gid)
+
+    def glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
+        try:
+            return fonttools_contours(self.font, gid)
+        except FONT_PROGRAM_ERRORS:
+            return ()
+
+    def composite_body_bbox(
+        self, gid: int
+    ) -> tuple[tuple[float, float, float, float] | None, bool]:
+        cache = self.composite_bbox_cache
+        try:
+            return cache[gid]
+        except KeyError:
+            result = cache[gid] = self.composite_body_bbox_uncached(gid)
+            return result
+
+    def composite_body_bbox_uncached(
+        self, gid: int
+    ) -> tuple[tuple[float, float, float, float] | None, bool]:
+        try:
+            glyph_name = self.font.getGlyphName(gid)
+            glyf = self.font["glyf"]
+            glyph = glyf[glyph_name]
+            if not glyph.isComposite():
+                return (None, False)
+            body_bbox: tuple[float, float, float, float] | None = None
+            has_dot = False
+            for component in glyph.components:
+                component_name, transform = component.getComponentInfo()
+                bbox = glyph_bbox(glyf, component_name)
+                if bbox is None:
+                    continue
+                xx, xy, yx, yy, dx, dy = transform
+                xmin, ymin, xmax, ymax = transform_bbox(bbox, (xx, yx, xy, yy, dx, dy))
+                w, h = xmax - xmin, ymax - ymin
+                if h > 0 and h < 600 and 0.4 < w / h < 2.5 and ymin > 900:
+                    has_dot = True
+                else:
+                    body_bbox = (xmin, ymin, xmax, ymax)
+            return (body_bbox, has_dot)
+        except FONT_PROGRAM_ERRORS:
+            return (None, False)
+
+
+PROGRAM_CACHE_LIMIT = 64
+program_cache = threading.local()
+
+
+def cached_truetype_program(
+    data: bytes, cid_to_gid: bytes | None = None, *, use_cmap: bool = False
+) -> TrueTypeFontProgram:
+    programs: dict[object, TrueTypeFontProgram] | None = getattr(program_cache, "programs", None)
+    if programs is None:
+        programs = program_cache.programs = {}
+    key: object = (data, cid_to_gid, use_cmap)
+    program = programs.get(key)
+    if program is None:
+        base = programs.get(data)
+        if base is None:
+            if len(programs) >= PROGRAM_CACHE_LIMIT:
+                programs.clear()
+            base = programs[data] = TrueTypeFontProgram(data)
+        program = (
+            base
+            if cid_to_gid is None and not use_cmap
+            else base.variant(cid_to_gid, use_cmap=use_cmap)
+        )
+        programs[key] = program
+    return program
+
+
+def tt_font_from_data(data: bytes) -> TTFont:
+    try:
+        return parse_truetype_program(data)
+    except FONT_PROGRAM_ERRORS as exc:
+        raise ValueError("invalid TrueType font program") from exc
+
+
+def ensure_glyph_order(font: TTFont) -> None:
+    try:
+        font.getGlyphOrder()
+        return
+    except FONT_PROGRAM_ERRORS:
+        pass
+    try:
+        glyph_count = int(font["maxp"].numGlyphs)
+    except FONT_PROGRAM_ERRORS as exc:
+        raise ValueError("invalid TrueType glyph order") from exc
+    if glyph_count <= 0:
+        raise ValueError("invalid TrueType glyph order")
+    font.setGlyphOrder([".notdef", *(f"glyph{gid:05d}" for gid in range(1, glyph_count))])
+
+
+def best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
+    symbol_fallback = False
+    try:
+        cmap_table = font["cmap"]
+        name_cmap = cmap_table.getBestCmap()
+        if name_cmap is None:
+            symbol_cmap = cmap_table.getcmap(3, 0)
+            name_cmap = symbol_cmap.cmap if symbol_cmap is not None else {}
+            symbol_fallback = bool(name_cmap)
+        reverse_glyph_map = font.getReverseGlyphMap()
+    except FONT_PROGRAM_ERRORS:
+        return {}
+    mapping: dict[int, int] = {}
+    for codepoint, glyph_name in name_cmap.items():
+        if not is_unicode_scalar(codepoint):
+            continue
+        try:
+            gid = reverse_glyph_map[glyph_name]
+        except KeyError:
+            if not glyph_name.startswith("glyph"):
+                continue
+            try:
+                gid = int(glyph_name[5:])
+            except ValueError:
+                continue
+        if gid > 0:
+            mapping[codepoint] = gid
+            if symbol_fallback and 0xF000 <= codepoint <= 0xF2FF:
+                mapping.setdefault(symbol_character_code(codepoint), gid)
+    return mapping
+
+
+def code_gid_cmap(font: TTFont) -> dict[int, int]:
+    try:
+        cmap_table = font["cmap"]
+        reverse_glyph_map = font.getReverseGlyphMap()
+    except FONT_PROGRAM_ERRORS:
+        return {}
+
+    def gid_for(glyph_name: str) -> int:
+        try:
+            return int(reverse_glyph_map[glyph_name])
+        except KeyError:
+            if glyph_name.startswith("glyph"):
+                try:
+                    return int(glyph_name[5:])
+                except ValueError:
+                    return 0
+            return 0
+
+    for platform, encoding in ((3, 0), (1, 0)):
+        try:
+            subtable = cmap_table.getcmap(platform, encoding)
+        except FONT_PROGRAM_ERRORS:
+            continue
+        if subtable is None:
+            continue
+        mapping: dict[int, int] = {}
+        for code, glyph_name in subtable.cmap.items():
+            gid = gid_for(glyph_name)
+            if gid <= 0:
+                continue
+            mapping.setdefault(code, gid)
+            if platform == 3 and 0xF000 <= code <= 0xF0FF:
+                mapping.setdefault(code - 0xF000, gid)
+        if mapping:
+            return mapping
+    return {}
+
+
+def invert_unicode_cmap(cmap: dict[int, int]) -> dict[int, str]:
+    by_gid: dict[int, str] = {}
+    for codepoint, gid in cmap.items():
+        if gid <= 0 or not is_unicode_scalar(codepoint):
+            continue
+        char = chr(codepoint)
+        previous = by_gid.get(gid)
+        if previous is None or prefer_unicode_text(char, previous):
+            by_gid[gid] = char
+    return by_gid
+
+
+def prefer_unicode_text(candidate: str, current: str) -> bool:
+    candidate_score = unicode_text_score(candidate)
+    current_score = unicode_text_score(current)
+    if candidate_score != current_score:
+        return candidate_score > current_score
+    return ord(candidate) < ord(current)
+
+
+def unicode_text_score(char: str) -> int:
+    code = ord(char)
+    if char.isalnum():
+        return 5
+    if char.isprintable() and not char.isspace() and code < 0xE000:
+        return 4
+    if char.isspace():
+        return 3
+    if 0xE000 <= code <= 0xF8FF:
+        return 1
+    if code < 32:
+        return 0
+    return 2
+
+
+def recording_to_contours(
+    recording: list[tuple[str, tuple[Any, ...]]],
+) -> list[list[Point]]:
+    contours: list[list[Point]] = []
+    contour: list[Point] = []
+    current: Point | None = None
+    start: Point | None = None
+    for operator, operands in recording:
+        match operator:
+            case "moveTo":
+                if contour:
+                    contours.append(close_contour(contour))
+                start = make_point(operands[0])
+                current = start
+                contour = [start]
+            case "lineTo" if current is not None:
+                current = make_point(operands[0])
+                contour.append(current)
+            case "qCurveTo" if current is not None:
+                current = append_quadratic(contour, current, start, operands)
+            case "curveTo" if current is not None:
+                current = append_cubic(contour, current, operands)
+            case "closePath" | "endPath":
+                if contour:
+                    contours.append(close_contour(contour))
+                    contour = []
+                    current = None
+                    start = None
+    if contour:
+        contours.append(close_contour(contour))
+    return [contour for contour in contours if len(contour) >= 3]
+
+
+def make_point(value: Any) -> Point:
+    x, y = value
+    return (float(x), float(y))
+
+
+def append_quadratic(
+    contour: list[Point],
+    current: Point,
+    start: Point | None,
+    operands: tuple[Any, ...],
+) -> Point:
+    points = list(operands)
+    if not points:
+        return current
+    if points[-1] is None:
+        if start is None:
+            return current
+        controls = [make_point(point) for point in points[:-1]]
+        end = start
+    else:
+        controls = [make_point(point) for point in points[:-1]]
+        end = make_point(points[-1])
+    if not controls:
+        contour.append(end)
+        return end
+    segment_start = current
+    for index, control in enumerate(controls):
+        segment_end = (
+            end
+            if index == len(controls) - 1
+            else (
+                (control[0] + controls[index + 1][0]) * 0.5,
+                (control[1] + controls[index + 1][1]) * 0.5,
+            )
+        )
+        contour.extend(flatten_quadratic(segment_start, control, segment_end))
+        segment_start = segment_end
+    return end
+
+
+def append_cubic(contour: list[Point], current: Point, operands: tuple[Any, ...]) -> Point:
+    if len(operands) % 3:
+        return current
+    segment_start = current
+    for index in range(0, len(operands), 3):
+        c1 = make_point(operands[index])
+        c2 = make_point(operands[index + 1])
+        end = make_point(operands[index + 2])
+        contour.extend(flatten_cubic(segment_start, c1, c2, end))
+        segment_start = end
+    return segment_start
+
+
+def close_contour(contour: list[Point]) -> list[Point]:
+    if contour and contour[0] != contour[-1]:
+        return [*contour, contour[0]]
+    return contour
+
+
+def flatten_quadratic(p0: Point, p1: Point, p2: Point, segments: int = 6) -> list[Point]:
+    out: list[Point] = []
+    for i in range(1, segments + 1):
+        t = i / segments
+        mt = 1.0 - t
+        out.append(
+            (
+                mt * mt * p0[0] + 2.0 * mt * t * p1[0] + t * t * p2[0],
+                mt * mt * p0[1] + 2.0 * mt * t * p1[1] + t * t * p2[1],
+            )
+        )
+    return out
+
+
+def flatten_cubic(p0: Point, p1: Point, p2: Point, p3: Point, segments: int = 8) -> list[Point]:
+    out: list[Point] = []
+    for i in range(1, segments + 1):
+        t = i / segments
+        mt = 1.0 - t
+        out.append(
+            (
+                mt**3 * p0[0] + 3.0 * mt * mt * t * p1[0] + 3.0 * mt * t * t * p2[0] + t**3 * p3[0],
+                mt**3 * p0[1] + 3.0 * mt * mt * t * p1[1] + 3.0 * mt * t * t * p2[1] + t**3 * p3[1],
+            )
+        )
+    return out
+
+
+def parse_opentype_program(data: bytes) -> TTFont:
+    font = TTFont(BytesIO(data), lazy=True, recalcBBoxes=False, recalcTimestamp=False)
+    if not ({"CFF ", "CFF2"} & set(font.keys())):
+        raise ValueError("OpenType font has no CFF outline table")
+    return font
+
+
+class OpenTypeFontProgram:
+    __slots__ = (
+        "font",
+        "outlines",
+    )
+
+    def __init__(self, data: bytes) -> None:
+        try:
+            self.font = parse_opentype_program(data)
+            self.outlines = FontToolsOutlineAccess(self.font)
+            if "CFF2" in self.font and "fvar" in self.font:
+                del self.font["fvar"]
+        except FONT_PROGRAM_ERRORS as exc:
+            raise ValueError("invalid OpenType CFF font program") from exc
+
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        return self.outlines.glyph_id_for_name(glyph_name)
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return self.outlines.has_glyph_id(glyph_id)
+
+    def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+        return self.outlines.normalized_glyph_contours(glyph_id)
+
+    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+        return self.outlines.glyph_bbox_for_gid(glyph_id)
+
+    def glyph_bitmap_for_gid(
+        self, glyph_id: int, *, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
+        return self.outlines.glyph_bitmap_for_gid(glyph_id, width=width, height=height)
+
+
+LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
+FONT_MATRIX_RE = re.compile(
+    rb"/FontMatrix\s*\[\s*([-+.\dEe]+)\s+([-+.\dEe]+)\s+"
+    rb"([-+.\dEe]+)\s+([-+.\dEe]+)\s+([-+.\dEe]+)\s+([-+.\dEe]+)\s*\]"
+)
+SUBR_RE = re.compile(rb"\bdup\s+(\d+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
+CHARSTRING_RE = re.compile(rb"/([^\s/]+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
+HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
+MAX_SUBROUTINES = 4096
+
+
+class Type1FontProgramBase:
+    __slots__ = (
+        "charstrings",
+        "font_matrix",
+        "glyph_names",
+        "glyph_name_to_id",
+        "subrs",
+    )
+
+    def __init__(self, data: bytes, *, length1: int | None = None) -> None:
+        private = self.decode_private(data, length1)
+        len_iv_match = LEN_IV_RE.search(private)
+        len_iv = int(len_iv_match.group(1)) if len_iv_match is not None else 4
+        if len_iv < -1 or len_iv > 32:
+            raise ValueError("invalid Type 1 lenIV")
+
+        subr_data = {
+            int(index): payload for index, payload in self.binary_entries(private, SUBR_RE)
+        }
+        subr_count = max(subr_data, default=-1) + 1
+        if subr_count > MAX_SUBROUTINES:
+            raise ValueError("Type 1 subroutine index exceeds decoder limit")
+        empty = T1CharString(b"\x0b", subrs=[])
+        subrs = [empty for _ in range(subr_count)]
+        for index, encrypted in subr_data.items():
+            subrs[index] = self.prepare_charstring(encrypted, len_iv, subrs)
+        for subr in subrs:
+            subr.subrs = subrs
+        self.subrs = subrs
+
+        charstrings = {
+            name.decode("latin-1"): payload
+            for name, payload in self.binary_entries(private, CHARSTRING_RE)
+        }
+        self.charstrings = {
+            name: self.prepare_charstring(encrypted, len_iv, subrs)
+            for name, encrypted in charstrings.items()
+        }
+        if not self.charstrings:
+            raise ValueError("Type 1 CharStrings are missing")
+        self.glyph_names = tuple(self.charstrings)
+        self.glyph_name_to_id = {name: gid for gid, name in enumerate(self.glyph_names)}
+
+        matrix_match = FONT_MATRIX_RE.search(data)
+        self.font_matrix = (
+            tuple(float(value) for value in matrix_match.groups())
+            if matrix_match is not None
+            else (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
+        )
+
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        glyph_id = self.glyph_name_to_id.get(glyph_name)
+        if glyph_id is not None:
+            return glyph_id
+        return self.glyph_name_to_id.get(".notdef")
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return 0 <= glyph_id < len(self.glyph_names)
+
+    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+        if not self.has_glyph_id(glyph_id):
+            return None
+        glyph_name = self.glyph_names[glyph_id]
+        charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")
+        if charstring is None:
+            return None
+        bounds_pen = BoundsPen(self.charstrings)
+        a, b, c, d, e, f = self.font_matrix
+        normalized_pen = TransformPen(
+            bounds_pen,
+            (a * 1000.0, b * 1000.0, c * 1000.0, d * 1000.0, e * 1000.0, f * 1000.0),
+        )
+        charstring.draw(normalized_pen)
+        bounds = bounds_pen.bounds
+        if bounds is None:
+            return None
+        x_min, y_min, x_max, y_max = bounds
+        return (float(x_min), float(y_min), float(x_max), float(y_max))
+
+    @staticmethod
+    def binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> Iterator[tuple[bytes, bytes]]:
+        return binary_entries(data, pattern)
+
+    @staticmethod
+    def prepare_charstring(
+        encrypted: bytes, len_iv: int, subrs: list[T1CharString]
+    ) -> T1CharString:
+        return T1CharString(decode_charstring(encrypted, len_iv), subrs=subrs)
+
+    @staticmethod
+    def decode_private(data: bytes, length1: int | None) -> bytes:
+        return decode_eexec_payload(data, length1)
+
+
+def eexec_payload(data: bytes, length1: int | None) -> bytes:
+    if length1 is not None and 0 < length1 < len(data):
+        encrypted = data[length1:]
+    else:
+        marker = data.find(b"currentfile eexec")
+        if marker < 0:
+            raise ValueError("Type 1 eexec section is missing")
+        encrypted = data[marker + len(b"currentfile eexec") :].lstrip()
+    sample = encrypted[: min(len(encrypted), 512)]
+    if sample and all(byte in HEX_BYTES for byte in sample):
+        compact = bytes(byte for byte in encrypted if byte not in b" \t\r\n")
+        if len(compact) % 2:
+            compact = compact[:-1]
+        try:
+            encrypted = bytes.fromhex(compact.decode("ascii"))
+        except ValueError as exc:
+            raise ValueError("invalid hexadecimal Type 1 eexec section") from exc
+    decrypted = decrypt_type1(encrypted, 55665)
+    if len(decrypted) < 4:
+        raise ValueError("truncated Type 1 eexec section")
+    return decrypted[4:]
+
+
+class Type1FontProgram(Type1FontProgramBase):
+    __slots__ = ()
+
+    @staticmethod
+    def binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> Iterator[tuple[bytes, bytes]]:
+        for match in pattern.finditer(data):
+            length = int(match.group(2))
+            start = match.end()
+            if length >= 0 and start + length <= len(data):
+                yield match.group(1), data[start : start + length]
+
+    @staticmethod
+    def prepare_charstring(
+        encrypted: bytes, len_iv: int, subrs: list[T1CharString]
+    ) -> T1CharString:
+        decoded = decrypt_type1(encrypted, 4330)
+        return T1CharString(decoded[len_iv:] if len_iv >= 0 else decoded, subrs=subrs)
+
+    @staticmethod
+    def decode_private(data: bytes, length1: int | None) -> bytes:
+        return eexec_payload(data, length1)
+
+    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+        try:
+            return super().glyph_bbox_for_gid(glyph_id)
+        except Exception:
+            return None
+
+    def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+        if not self.has_glyph_id(glyph_id):
+            return ()
+        return self.glyph_contours(self.glyph_names[glyph_id])
+
+    def glyph_bitmap_for_gid(
+        self, glyph_id: int, *, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
+        return rasterize_contours(
+            self.normalized_glyph_contours(glyph_id), width=width, height=height
+        )
+
+    def glyph_contours(self, glyph_name: str) -> tuple[tuple[Point, ...], ...]:
+        charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")
+        if charstring is None:
+            return ()
+        try:
+            pen = RecordingPen()
+            charstring.draw(pen)
+            contours = recording_to_contours(pen.value)
+            return transform_contours(contours, self.font_matrix)
+        except Exception:
+            return ()
+
+
+TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+put\b")
+
+
+def parse_type1_font_program_encoding(font_program: bytes | memoryview) -> dict[int, str]:
+    data = bytes(font_program)
+    eexec_pos = data.find(b"currentfile eexec")
+    if eexec_pos >= 0:
+        data = data[:eexec_pos]
+
+    differences: dict[int, str] = {}
+    for match in TYPE1_ENCODING_ENTRY_RE.finditer(data):
+        code = int(match.group(1))
+        if 0 <= code <= 255:
+            differences[code] = match.group(2).decode("latin-1")
+    return differences
+
+
 __all__ = (
-    "STANDARD_GLYPH_SIDS",
     "CFFFont",
     "CFFGlyphFeature",
     "CFFUnicodeRepairIndex",
+    "OpenTypeFontProgram",
+    "Point",
+    "STANDARD_GLYPH_SIDS",
+    "TrueTypeFontProgram",
+    "cached_truetype_program",
     "glyph_feature_distance",
     "is_repairable_to_unicode_label",
+    "rasterize_contours",
 )

@@ -5,9 +5,11 @@ from __future__ import annotations
 import re
 import typing
 import unicodedata
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from copy import replace
+from functools import cache
 from io import BytesIO
 from typing import Any, ClassVar, Self
 
@@ -15,47 +17,40 @@ import numpy
 
 from core_adobe_fonts.cmap.ranges import (
     code_in_ranges,
+    iter_codespace_range,
 )
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.fonts.cid_unicode import resolve_cid_unicode_map
-from core_pdf.impl.fonts.cmap_decoder import CMapDecoder
-from core_pdf.impl.fonts.cmap_ranges import unicode_scalar_or_replacement
 from core_pdf.impl.fonts.cmap_resources import (
+    CID_COLLECTION_UNICODE_OVERRIDES,
+    CID_COLLECTION_UNICODE_SOURCES,
     predefined_cmap_unicode,
     resolve_cmap_decoder,
     resolve_cmap_resource,
+    unicode_candidate_preference,
+    unicode_scalar_from_cmap_code,
 )
-from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts.cmap_tokenizer import CMapDecoder
+from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap, unicode_scalar_or_replacement
 from core_pdf.impl.fonts.fallback import fallback_glyph_outline
 from core_pdf.impl.fonts.font_program import (
+    FONT_PROGRAM_ERRORS,
     LEGITIMATE_MULTI_CHAR_GLYPHS,
     CFFFont,
     CFFUnicodeRepairIndex,
-    is_repairable_to_unicode_label,
-)
-from core_pdf.impl.fonts.font_program_opentype import OpenTypeFontProgram
-from core_pdf.impl.fonts.font_program_truetype import (
-    FONT_PROGRAM_ERRORS,
+    OpenTypeFontProgram,
     TrueTypeFontProgram,
-    cached_truetype_program,
-)
-from core_pdf.impl.fonts.font_program_type1 import (
     Type1FontProgram,
+    cached_truetype_program,
+    is_repairable_to_unicode_label,
     parse_type1_font_program_encoding,
-)
-from core_pdf.impl.fonts.glyph_decode import (
-    build_glyph_decode_table,
-    has_invalid_unicode_mapping,
-    has_untrusted_unicode_semantics,
-    replace_unicode_from_glyph_names,
-    should_prefer_glyph_name_mapping,
 )
 from core_pdf.impl.fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.fonts.helpers import (
     build_decode_table,
     build_simple_encoding_glyph_names,
     parse_differences,
+    strip_subset_tag,
     unicode_for_glyph_name,
 )
 from core_pdf.impl.fonts.metrics import (
@@ -1432,3 +1427,306 @@ def dedupe_alternates(values: Iterable[str], selected: str) -> tuple[str, ...]:
         seen.add(value)
         alternates.append(value)
     return tuple(alternates)
+
+
+frozen_setattr = object.__setattr__
+
+
+class CompactCMap(Record):
+    __slots__ = ("effective_codes_by_cid",)
+
+    effective_codes_by_cid: dict[int, tuple[bytes, ...]]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("effective_codes_by_cid",)
+    __match_args__ = ("effective_codes_by_cid",)
+
+    def __init__(self, effective_codes_by_cid: dict[int, tuple[bytes, ...]]) -> None:
+        frozen_setattr(self, "effective_codes_by_cid", effective_codes_by_cid)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}(effective_codes_by_cid={self.effective_codes_by_cid!r})"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.effective_codes_by_cid == other.effective_codes_by_cid
+
+    def __hash__(self) -> int:
+        return hash((self.effective_codes_by_cid,))
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        effective_codes_by_cid = changes.pop("effective_codes_by_cid", self.effective_codes_by_cid)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(effective_codes_by_cid)
+
+    def codes_for_cid(self, cid: int) -> tuple[bytes, ...]:
+        return self.effective_codes_by_cid.get(cid, ())
+
+
+def compact_cmap_from_decoder(decoder: CMapDecoder) -> CompactCMap:
+    code_space_ranges = decoder.code_space_ranges
+
+    def code_is_decodable(code: bytes) -> bool:
+        return not code_space_ranges or code_in_ranges(code, code_space_ranges)
+
+    effective_codes_by_cid: defaultdict[int, list[bytes]] = defaultdict(list)
+    seen: set[bytes] = set()
+    for code, cid in decoder.cid_mappings.items():
+        if not code_is_decodable(code):
+            continue
+        seen.add(code)
+        effective_codes_by_cid[cid].append(code)
+    for cid_range in reversed(decoder.cid_ranges):
+        for offset, code in enumerate(iter_codespace_range(cid_range.start, cid_range.end)):
+            if code in seen or not code_is_decodable(code):
+                continue
+            seen.add(code)
+            effective_codes_by_cid[cid_range.first_cid + offset].append(code)
+    return CompactCMap(
+        {cid: tuple(codes) for cid, codes in effective_codes_by_cid.items()},
+    )
+
+
+@cache
+def compact_cmap(name: str) -> CompactCMap | None:
+    if resolve_cmap_resource(name) is None:
+        return None
+    decoder = resolve_cmap_decoder(name)
+    return compact_cmap_from_decoder(decoder) if decoder is not None else None
+
+
+def preferred_unicode_for_cid(cmap_name: str, codec: str, cid: int) -> str | None:
+    cmap = compact_cmap(cmap_name)
+    if cmap is None:
+        return None
+    candidates = {
+        text
+        for code in cmap.codes_for_cid(cid)
+        if (text := unicode_scalar_from_cmap_code(code, codec)) is not None
+    }
+    if not candidates:
+        return None
+    return max(candidates, key=lambda text: (unicode_candidate_preference(text), -ord(text)))
+
+
+class CIDUnicodeMap:
+    __slots__ = ("_cache", "ordering", "registry", "vertical")
+
+    def __init__(self, registry: str, ordering: str, vertical: bool) -> None:
+        self.registry = registry
+        self.ordering = ordering
+        self.vertical = vertical
+        self._cache: dict[int, str | None] = {}
+
+    def get(self, cid: int, default: str | None = None) -> str | None:
+        result = self.resolve(cid)
+        return default if result is None else result
+
+    def resolve(self, cid: int) -> str | None:
+        cache = self._cache
+        try:
+            return cache[cid]
+        except KeyError:
+            text = cache[cid] = self.vote(cid)
+            return text
+
+    def vote(self, cid: int) -> str | None:
+        override = CID_COLLECTION_UNICODE_OVERRIDES.get((self.registry, self.ordering), {}).get(cid)
+        if override is not None:
+            return override
+        collection = CID_COLLECTION_UNICODE_SOURCES.get((self.registry, self.ordering))
+        if collection is None:
+            return None
+        sources = collection[self.vertical]
+        opposite_sources = collection[not self.vertical]
+        candidates: Counter[str] = Counter()
+        for cmap_name, codec, weight in sources:
+            if weight <= 0:
+                continue
+            text = preferred_unicode_for_cid(cmap_name, codec, cid)
+            if text is not None:
+                candidates[text] += weight
+        if not candidates:
+            for cmap_name, codec, weight in opposite_sources:
+                if weight <= 0:
+                    continue
+                text = preferred_unicode_for_cid(cmap_name, codec, cid)
+                if text is not None:
+                    candidates[text] += weight
+        if not candidates:
+            for cmap_name, codec, weight in (*sources, *opposite_sources):
+                if weight > 0:
+                    continue
+                text = preferred_unicode_for_cid(cmap_name, codec, cid)
+                if text is not None:
+                    candidates[text] += 1
+        if not candidates:
+            return None
+        ranked = {
+            text: (weight, unicode_candidate_preference(text), -ord(text))
+            for text, weight in candidates.items()
+        }
+        return max(ranked, key=ranked.__getitem__)
+
+
+@cache
+def resolve_cid_unicode_map(
+    registry: str,
+    ordering: str,
+    *,
+    vertical: bool = False,
+) -> CIDUnicodeMap | None:
+    if (registry, ordering) not in CID_COLLECTION_UNICODE_SOURCES:
+        return None
+    return CIDUnicodeMap(registry, ordering, vertical)
+
+
+__all__ = ("CIDUnicodeMap", "resolve_cid_unicode_map")
+
+
+TEX_MATH_GLYPH_OVERRIDES: dict[str, dict[str, str]] = {
+    "TeX_Times_Math_Italic": {
+        "C14": "δ",
+    },
+    "TeX_Times_Math_Symbol": {
+        "C14": "°",
+    },
+}
+COMPUTER_MODERN_MATH_PREFIXES = (
+    "CMEX",
+    "CMMI",
+    "CMMIB",
+    "CMSY",
+)
+LIGATURE_GLYPH_TEXT = {
+    "ff": "ff",
+    "fi": "fi",
+    "fl": "fl",
+    "ffi": "ffi",
+    "ffl": "ffl",
+    "f_f": "ff",
+    "f_i": "fi",
+    "f_l": "fl",
+    "f_f_i": "ffi",
+    "f_f_l": "ffl",
+}
+
+
+def has_untrusted_unicode_semantics(text: str) -> bool:
+    if not text:
+        return True
+    for ch in text:
+        if ch == "\ufffd":
+            return True
+        if unicodedata.category(ch).startswith("C"):
+            return True
+    return False
+
+
+def has_invalid_unicode_mapping(text: str) -> bool:
+    return "\ufffd" in text or "\x00" in text
+
+
+def should_prefer_glyph_name_mapping(
+    current: str,
+    mapped: str,
+    *,
+    authoritative: bool,
+) -> bool:
+    if not mapped or current == mapped:
+        return False
+    if authoritative:
+        return True
+    if has_untrusted_unicode_semantics(current):
+        return True
+    return unicodedata.normalize("NFKC", mapped) == current
+
+
+def normalized_base_font_name(base_font_name: str | None) -> str | None:
+    if base_font_name is None:
+        return None
+    return strip_subset_tag(base_font_name)
+
+
+def build_glyph_decode_table(
+    base_font_name: str | None, differences: dict[int, str]
+) -> tuple[tuple[str, ...], bool] | None:
+    normalized = normalized_base_font_name(base_font_name)
+    if normalized is None:
+        return None
+    overrides = TEX_MATH_GLYPH_OVERRIDES.get(normalized, {})
+    is_computer_modern_math = normalized.startswith(COMPUTER_MODERN_MATH_PREFIXES)
+    if not overrides and not is_computer_modern_math and not differences:
+        return None
+    table: list[str | None] = [None] * 256
+    has_mapping = False
+    for code, glyph_name in differences.items():
+        mapped = overrides.get(glyph_name)
+        if mapped is None:
+            mapped = LIGATURE_GLYPH_TEXT.get(glyph_name)
+        if mapped is None:
+            mapped = glyph_name_to_unicode(glyph_name)
+            if mapped == glyph_name:
+                mapped = None
+        if mapped is not None and 0 <= code <= 255:
+            table[code] = mapped
+            has_mapping = True
+    if not has_mapping:
+        return None
+    return tuple(ch or "" for ch in table), bool(overrides or is_computer_modern_math)
+
+
+def replace_unicode_from_glyph_names(
+    text: str,
+    data: bytes,
+    glyph_decode_table: tuple[str, ...],
+    *,
+    authoritative: bool,
+    fallback_mapping: bool = False,
+) -> str:
+    if not text:
+        if authoritative or fallback_mapping or all(glyph_decode_table[code] for code in data):
+            return "".join(glyph_decode_table[code] for code in data)
+        return text
+    if len(text) != len(data):
+        return text
+    if len(data) == 1:
+        mapped = glyph_decode_table[data[0]]
+        if not mapped:
+            return text
+        if not (
+            fallback_mapping
+            or should_prefer_glyph_name_mapping(
+                text,
+                mapped,
+                authoritative=authoritative,
+            )
+        ):
+            return text
+        return mapped
+    out: list[str] | None = None
+    for index, code in enumerate(data):
+        mapped = glyph_decode_table[code]
+        if not mapped:
+            continue
+        current = text[index]
+        if current == mapped:
+            continue
+        if not (
+            fallback_mapping
+            or should_prefer_glyph_name_mapping(
+                current,
+                mapped,
+                authoritative=authoritative,
+            )
+        ):
+            continue
+        if out is None:
+            out = list(text)
+        out[index] = mapped
+    return text if out is None else "".join(out)
