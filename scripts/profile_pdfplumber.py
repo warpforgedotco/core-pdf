@@ -17,7 +17,7 @@ def main() -> None:
     if args.repeat < 1:
         parser.error("--repeat must be positive")
     module = importlib.import_module(
-        "core_pdf.api.compat.pdfplumber" if args.engine == "core" else "pdfplumber"
+        "core_pdf_compat.pdfplumber" if args.engine == "core" else "pdfplumber"
     )
     for path in args.pdfs:
         durations: list[float] = []

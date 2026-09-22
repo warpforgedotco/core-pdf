@@ -7,6 +7,14 @@ OCR and vector text recognition live in the separately installable uv workspace 
 The companion depends on the exact matching core version. Core must never import or discover
 it; users opt in through `core_pdf_ocr.PdfDocument` or the `core-pdf-ocr` command.
 
+Third-party compatibility facades (pdfminer, pdfplumber, pypdf, pikepdf, unstructured,
+llamaindex, x-ray) live in the workspace member `packages/core-pdf-compat/src/core_pdf_compat`,
+one subpackage per facade plus the `_shared`, `_text_state`, and `_strict_page_tree` helpers
+they share. The facades use `core_pdf.impl._impl` internals by design, so the package pins the
+exact matching core version like OCR; do not add a "public interfaces only" contract for it.
+Core, spec, OCR, and validate must never import or discover it. Bumping core's version now
+bumps `core-pdf-ocr` and `core-pdf-compat` with it.
+
 The independently versioned `core-pdf-spec` workspace member lives at
 `packages/core-pdf-spec/src/core_pdf_spec`. Core depends on its supported version range;
 spec must never import core or OCR, including type-only imports. Spec exposes low-level
@@ -30,13 +38,14 @@ Core, spec, and OCR must never import or discover it. Explicit validation uses o
 bytes; only declaration discovery depends on public core APIs. Validator execution, temporary
 files, and report normalization stay outside spec. See `docs/standards.md`.
 
-The Unstructured compatibility facade requires `core-pdf[unstructured]`, including the pinned
-`en_core_web_sm` model. Its import must fail clearly if the model cannot load; do not add lexical
-fallbacks or runtime model installation. The parent compatibility package stays lazy so native
-core and other facades remain usable without the extra. Use `--extra unstructured` for
-differential runs; ordinary `uv sync`/`uv run` commands may otherwise remove the model.
+The Unstructured compatibility facade requires `core-pdf-compat[unstructured]`, including the
+pinned `en_core_web_sm` model. Its import must fail clearly if the model cannot load; do not add
+lexical fallbacks or runtime model installation. The `core_pdf_compat` package root stays lazy so
+native core and other facades remain usable without the extra. Use `--all-packages --extra
+unstructured` for differential runs (the extra belongs to the compat member, so root-only
+commands cannot select it); ordinary `uv sync`/`uv run` commands may otherwise remove the model.
 
-This is a Python 3.14+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. The public `PdfDocument` and `PdfPage` classes are the engine classes in `impl/_impl/document/document.py` and `impl/_impl/document/page.py`, re-exported by `core_pdf/__init__.py` together with `DocumentAdapter`; third-party compatibility facades live in `src/core_pdf/api/compat`. Nothing under `impl/` may import from `api/`. Internal implementation is organized under `src/core_pdf/impl`:
+This is a Python 3.14+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. The public `PdfDocument` and `PdfPage` classes are the engine classes in `impl/_impl/document/document.py` and `impl/_impl/document/page.py`, re-exported by `core_pdf/__init__.py` together with `DocumentAdapter`. Internal implementation is organized under `src/core_pdf/impl`:
 
 - `packages/core-pdf-spec/src/core_pdf_spec/` contains PDF-defined semantics and referenced-standard algorithms, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …); code for a referenced external standard lives in the floor packages above and spec keeps only the PDF wrapper. Reader recovery, substitute fonts, Unicode guesses, capture products, selected device profiles, and raster preparation belong under `_impl/`. This boundary also applies to type-only imports.
 - `impl/_impl/document/` composes source/lifecycle, recovery adapters, page operations, and navigation/metadata/field/structure projections. `impl/_impl/capture/` records interpreter events into runs, glyph observations, page programs, and renderer commands. `impl/_impl/fonts/` owns font selection, Unicode recovery, raster adapters, and substitute font assets. `impl/_impl/graphics/` owns color output, raster preparation, codec selection, and tolerant filter/function adapters.
@@ -45,8 +54,8 @@ This is a Python 3.14+ PDF parsing engine using the `src` layout. Production cod
 - `impl/_impl/render/` rasterizes; `impl/_impl/output/model.py` defines structured output and `impl/_impl/output/serialize.py` emits markdown/HTML/JSON. Import these defining modules directly; `output/__init__.py` is not a facade. `impl/_impl/model/` owns shared geometry/text models, text primitives, and page-selection normalization, and `impl/_impl/layout/` separates block construction, region partitioning, reading order, and text reconstruction. `impl/_impl/runtime/` holds engine-independent infrastructure and must not import from `core_pdf_spec` or the derived-processing packages beside it; it may use the standards packages, which sit below spec.
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
-The authored test suite includes differential comparisons under
-`tests/src/core_pdf/api/compat/differential`, strict spec tests under
+The authored test suite includes facade tests and differential comparisons under
+`packages/core-pdf-compat/tests`, strict spec tests under
 `packages/core-pdf-spec/tests`, each standards package's tests under its own
 `packages/<name>/tests` (which import nothing from spec or core), and validation tests under
 `packages/core-pdf-validate/tests`. Reference corpora remain in
@@ -69,7 +78,7 @@ prek run --all-files                 # run repository hooks across all files
 ```
 
 Run the differential suite after changes affecting compatibility behavior. To focus a
-run, pass a facade's test file under `tests/src/core_pdf/api/compat/differential`.
+run, pass a facade's test file under `packages/core-pdf-compat/tests/differential`.
 The default matrix uses each facade's own reference corpus, with selected cross-corpus
 cases for x-ray. Run every facade against every fixture explicitly with:
 
@@ -119,7 +128,7 @@ Specification-defined defaults and prescribed fallback behavior remain in spec.
 
 Tests use pytest and pytest-xdist, and are named `test_*.py`, with test functions
 named `test_<behavior>`. Facade tests in
-`tests/src/core_pdf/api/compat/differential` compare a facade with its reference
+`packages/core-pdf-compat/tests/differential` compare a facade with its reference
 implementation over the same PDF. Strict tests in `packages/core-pdf-spec/tests` must
 run without core or OCR installed.
 Use spec citations for non-obvious mandated behavior and positive controls for valid defaults.
