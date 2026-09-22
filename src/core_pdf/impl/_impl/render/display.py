@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, ClassVar, Self, cast
 
 from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl._impl.graphics.color_spec import describe_color_space
@@ -101,14 +100,89 @@ def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...]
     return None
 
 
-@dataclass(slots=True)
 class DisplayList:
+    __slots__ = (
+        "width",
+        "height",
+        "items",
+        "preserve_object_boundaries",
+        "internal_shape_tracking_groups",
+        "internal_group_scope_floors",
+    )
+
     width: float
     height: float
-    items: list[DisplayItem] = field(default_factory=list)
-    preserve_object_boundaries: bool = field(default=False, kw_only=True)
-    internal_shape_tracking_groups: list[bool] = field(default_factory=list, init=False, repr=False)
-    internal_group_scope_floors: list[int] = field(default_factory=list, init=False, repr=False)
+    items: list[DisplayItem]
+    preserve_object_boundaries: bool
+    internal_shape_tracking_groups: list[bool]
+    internal_group_scope_floors: list[int]
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "width",
+        "height",
+        "items",
+        "preserve_object_boundaries",
+        "internal_shape_tracking_groups",
+        "internal_group_scope_floors",
+    )
+    __match_args__ = ("width", "height", "items")
+
+    def __init__(
+        self,
+        width: float,
+        height: float,
+        items: list[DisplayItem] | None = None,
+        *,
+        preserve_object_boundaries: bool = False,
+    ) -> None:
+        self.width = width
+        self.height = height
+        self.items = [] if items is None else items
+        self.preserve_object_boundaries = preserve_object_boundaries
+        self.internal_shape_tracking_groups = []
+        self.internal_group_scope_floors = []
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"width={self.width!r}, "
+            f"height={self.height!r}, "
+            f"items={self.items!r}, "
+            f"preserve_object_boundaries={self.preserve_object_boundaries!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.width == other.width
+            and self.height == other.height
+            and self.items == other.items
+            and self.preserve_object_boundaries == other.preserve_object_boundaries
+            and self.internal_shape_tracking_groups == other.internal_shape_tracking_groups
+            and self.internal_group_scope_floors == other.internal_group_scope_floors
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        width = changes.pop("width", self.width)
+        height = changes.pop("height", self.height)
+        items = changes.pop("items", self.items)
+        preserve_object_boundaries = changes.pop(
+            "preserve_object_boundaries", self.preserve_object_boundaries
+        )
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            width,
+            height,
+            items,
+            preserve_object_boundaries=preserve_object_boundaries,
+        )
 
     def internal_track_group_boundary(self, kind: str, data: dict[str, Any]) -> None:
         if kind == "scope-begin":

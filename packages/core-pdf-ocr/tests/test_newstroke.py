@@ -1,4 +1,4 @@
-from dataclasses import replace
+from copy import replace
 from typing import Any
 
 import numpy

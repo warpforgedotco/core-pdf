@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from dataclasses import FrozenInstanceError
 from typing import Any, cast
 
 import pytest
@@ -61,7 +60,7 @@ def test_nchannel_rgb_preserves_process_space_order_and_raw_attributes() -> None
     assert cast(dict[str, object], space.params["Attributes"])["MixingHints"] is hints
     with pytest.raises(TypeError):
         cast(Any, attributes.colorants)["Spot"] = parse_color_space(internal_spot("Spot"))
-    with pytest.raises(FrozenInstanceError):
+    with pytest.raises(AttributeError):
         cast(Any, attributes.process).components = ()
 
 

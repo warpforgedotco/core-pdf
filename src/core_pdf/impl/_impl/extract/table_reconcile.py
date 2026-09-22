@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from bisect import bisect_left
-from dataclasses import dataclass, replace
+from copy import replace
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
@@ -18,6 +19,8 @@ from core_pdf.impl._impl.model.spatial import SpatialFrame
 from core_pdf.impl._impl.model.text import collapse_ws, complete_text_covered, content_tokens
 from core_pdf.impl._impl.output.model import Block, Table, TableCell
 from core_pdf.impl.types import Rectangle
+
+internal_frozen_setattr = object.__setattr__
 
 
 def internal_remove_block_duplicate_table_rows(
@@ -85,19 +88,136 @@ def internal_remove_block_duplicate_table_rows(
     return tuple(filtered)
 
 
-@dataclass(frozen=True, slots=True)
 class internal_IndexedRow:
+    __slots__ = ("cells", "texts", "tokens", "frame_indexes")
+
     cells: tuple[TableCell, ...]
     texts: tuple[str, ...]
     tokens: tuple[tuple[str, ...], ...]
     frame_indexes: tuple[int, ...]
 
+    __fields__: ClassVar[tuple[str, ...]] = ("cells", "texts", "tokens", "frame_indexes")
+    __match_args__ = ("cells", "texts", "tokens", "frame_indexes")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        cells: tuple[TableCell, ...],
+        texts: tuple[str, ...],
+        tokens: tuple[tuple[str, ...], ...],
+        frame_indexes: tuple[int, ...],
+    ) -> None:
+        internal_frozen_setattr(self, "cells", cells)
+        internal_frozen_setattr(self, "texts", texts)
+        internal_frozen_setattr(self, "tokens", tokens)
+        internal_frozen_setattr(self, "frame_indexes", frame_indexes)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"cells={self.cells!r}, "
+            f"texts={self.texts!r}, "
+            f"tokens={self.tokens!r}, "
+            f"frame_indexes={self.frame_indexes!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.cells == other.cells
+            and self.texts == other.texts
+            and self.tokens == other.tokens
+            and self.frame_indexes == other.frame_indexes
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.cells, self.texts, self.tokens, self.frame_indexes))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        cells = changes.pop("cells", self.cells)
+        texts = changes.pop("texts", self.texts)
+        tokens = changes.pop("tokens", self.tokens)
+        frame_indexes = changes.pop("frame_indexes", self.frame_indexes)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(cells, texts, tokens, frame_indexes)
+
+
 class internal_TableIndex:
+    __slots__ = ("table", "rows", "frame")
+
     table: Table
     rows: tuple[internal_IndexedRow, ...]
     frame: SpatialFrame | None
+
+    __fields__: ClassVar[tuple[str, ...]] = ("table", "rows", "frame")
+    __match_args__ = ("table", "rows", "frame")
+
+    def __init__(
+        self,
+        table: Table,
+        rows: tuple[internal_IndexedRow, ...],
+        frame: SpatialFrame | None,
+    ) -> None:
+        internal_frozen_setattr(self, "table", table)
+        internal_frozen_setattr(self, "rows", rows)
+        internal_frozen_setattr(self, "frame", frame)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"table={self.table!r}, "
+            f"rows={self.rows!r}, "
+            f"frame={self.frame!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.table == other.table and self.rows == other.rows and self.frame == other.frame
+
+    def __hash__(self) -> int:
+        return hash((self.table, self.rows, self.frame))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        table = changes.pop("table", self.table)
+        rows = changes.pop("rows", self.rows)
+        frame = changes.pop("frame", self.frame)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(table, rows, frame)
 
     @classmethod
     def build(cls, table: Table) -> internal_TableIndex:

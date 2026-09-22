@@ -1,6 +1,6 @@
 import importlib
 import runpy
-from dataclasses import replace
+from copy import replace
 from pathlib import Path
 from typing import Any, cast
 

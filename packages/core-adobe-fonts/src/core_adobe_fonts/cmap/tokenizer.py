@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import binascii
 import typing
-from dataclasses import dataclass
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_adobe_fonts.cmap.lexical import (
     SEPARATOR_TABLE,
@@ -12,6 +12,8 @@ from core_adobe_fonts.cmap.lexical import (
     WS_TABLE,
     read_literal_string,
 )
+
+internal_frozen_setattr = object.__setattr__
 
 
 def decode_literal_string(data: bytes | bytearray | memoryview) -> bytes:
@@ -29,18 +31,116 @@ def decode_literal_string(data: bytes | bytearray | memoryview) -> bytes:
 CMapTokenKind = typing.Literal["array", "delimiter", "hex", "literal", "procedure", "word"]
 
 
-@dataclass(frozen=True, slots=True)
 class CMapToken:
+    __slots__ = ("value", "start", "end", "kind")
+
     value: bytes
     start: int
     end: int
     kind: CMapTokenKind
 
+    __fields__: ClassVar[tuple[str, ...]] = ("value", "start", "end", "kind")
+    __match_args__ = ("value", "start", "end", "kind")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(self, value: bytes, start: int, end: int, kind: CMapTokenKind) -> None:
+        internal_frozen_setattr(self, "value", value)
+        internal_frozen_setattr(self, "start", start)
+        internal_frozen_setattr(self, "end", end)
+        internal_frozen_setattr(self, "kind", kind)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"value={self.value!r}, "
+            f"start={self.start!r}, "
+            f"end={self.end!r}, "
+            f"kind={self.kind!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.value == other.value
+            and self.start == other.start
+            and self.end == other.end
+            and self.kind == other.kind
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.value, self.start, self.end, self.kind))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        value = changes.pop("value", self.value)
+        start = changes.pop("start", self.start)
+        end = changes.pop("end", self.end)
+        kind = changes.pop("kind", self.kind)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(value, start, end, kind)
+
+
 class CMapBlock:
+    __slots__ = ("data", "tokens")
+
     data: bytes
     tokens: tuple[CMapToken, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("data", "tokens")
+    __match_args__ = ("data", "tokens")
+
+    def __init__(self, data: bytes, tokens: tuple[CMapToken, ...]) -> None:
+        internal_frozen_setattr(self, "data", data)
+        internal_frozen_setattr(self, "tokens", tokens)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(data={self.data!r}, tokens={self.tokens!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.data == other.data and self.tokens == other.tokens
+
+    def __hash__(self) -> int:
+        return hash((self.data, self.tokens))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        data = changes.pop("data", self.data)
+        tokens = changes.pop("tokens", self.tokens)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(data, tokens)
 
     def token_values(
         self, *, include_arrays: bool = False, include_words: bool = False
@@ -50,10 +150,51 @@ class CMapBlock:
         )
 
 
-@dataclass(frozen=True, slots=True)
 class CMapProgram:
+    __slots__ = ("data", "tokens")
+
     data: bytes
     tokens: tuple[CMapToken, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("data", "tokens")
+    __match_args__ = ("data", "tokens")
+
+    def __init__(self, data: bytes, tokens: tuple[CMapToken, ...]) -> None:
+        internal_frozen_setattr(self, "data", data)
+        internal_frozen_setattr(self, "tokens", tokens)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(data={self.data!r}, tokens={self.tokens!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.data == other.data and self.tokens == other.tokens
+
+    def __hash__(self) -> int:
+        return hash((self.data, self.tokens))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        data = changes.pop("data", self.data)
+        tokens = changes.pop("tokens", self.tokens)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(data, tokens)
 
     @classmethod
     def parse(cls, data: bytes | bytearray | memoryview) -> CMapProgram:

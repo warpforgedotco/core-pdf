@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Self
+from copy import replace
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
@@ -56,15 +56,111 @@ from core_pdf_ocr.impl.extract.ocr.vector import (
 )
 from core_pdf_ocr.impl.extract.quality import internal_Candidate
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class internal_OcrPassState:
-    selected: internal_Candidate | None = None
-    selected_tasks: tuple[internal_OcrTask, ...] = ()
-    previous_region_additions: int = 0
-    seeded_region_selected: bool = False
+    __slots__ = (
+        "selected",
+        "selected_tasks",
+        "previous_region_additions",
+        "seeded_region_selected",
+    )
 
-    def prepare(self, ocr_pass: OcrPass, *, visible_native_characters: int) -> Self | None:
+    selected: internal_Candidate | None
+    selected_tasks: tuple[internal_OcrTask, ...]
+    previous_region_additions: int
+    seeded_region_selected: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "selected",
+        "selected_tasks",
+        "previous_region_additions",
+        "seeded_region_selected",
+    )
+    __match_args__ = (
+        "selected",
+        "selected_tasks",
+        "previous_region_additions",
+        "seeded_region_selected",
+    )
+
+    def __init__(
+        self,
+        selected: internal_Candidate | None = None,
+        selected_tasks: tuple[internal_OcrTask, ...] = (),
+        previous_region_additions: int = 0,
+        seeded_region_selected: bool = False,
+    ) -> None:
+        internal_frozen_setattr(self, "selected", selected)
+        internal_frozen_setattr(self, "selected_tasks", selected_tasks)
+        internal_frozen_setattr(self, "previous_region_additions", previous_region_additions)
+        internal_frozen_setattr(self, "seeded_region_selected", seeded_region_selected)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"selected={self.selected!r}, "
+            f"selected_tasks={self.selected_tasks!r}, "
+            f"previous_region_additions={self.previous_region_additions!r}, "
+            f"seeded_region_selected={self.seeded_region_selected!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.selected == other.selected
+            and self.selected_tasks == other.selected_tasks
+            and self.previous_region_additions == other.previous_region_additions
+            and self.seeded_region_selected == other.seeded_region_selected
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.selected,
+                self.selected_tasks,
+                self.previous_region_additions,
+                self.seeded_region_selected,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        selected = changes.pop("selected", self.selected)
+        selected_tasks = changes.pop("selected_tasks", self.selected_tasks)
+        previous_region_additions = changes.pop(
+            "previous_region_additions", self.previous_region_additions
+        )
+        seeded_region_selected = changes.pop("seeded_region_selected", self.seeded_region_selected)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            selected,
+            selected_tasks,
+            previous_region_additions,
+            seeded_region_selected,
+        )
+
+    def prepare(
+        self, ocr_pass: OcrPass, *, visible_native_characters: int
+    ) -> internal_OcrPassState | None:
         selected = self.selected
         if (
             selected is not None
@@ -127,7 +223,7 @@ class internal_OcrPassState:
         ocr_pass: OcrPass,
         candidate: internal_Candidate,
         candidate_source_tasks: tuple[internal_OcrTask, ...],
-    ) -> Self:
+    ) -> internal_OcrPassState:
         selected = self.selected
         if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
             used_native_seed = selected is None

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl._impl.layout import text_rules as rules
 from core_pdf.impl._impl.model.runs import (
@@ -31,13 +31,73 @@ SUPERSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶�
 SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 
 
-@dataclass(slots=True)
 class LayoutLineTextAtom:
+    __slots__ = ("text", "run", "advance_bbox", "baseline", "has_glyph_geometry")
+
     text: str
     run: TextRun
     advance_bbox: tuple[float, float, float, float]
     baseline: tuple[float, float, float, float] | None
     has_glyph_geometry: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "text",
+        "run",
+        "advance_bbox",
+        "baseline",
+        "has_glyph_geometry",
+    )
+    __match_args__ = ("text", "run", "advance_bbox", "baseline", "has_glyph_geometry")
+
+    def __init__(
+        self,
+        text: str,
+        run: TextRun,
+        advance_bbox: tuple[float, float, float, float],
+        baseline: tuple[float, float, float, float] | None,
+        has_glyph_geometry: bool,
+    ) -> None:
+        self.text = text
+        self.run = run
+        self.advance_bbox = advance_bbox
+        self.baseline = baseline
+        self.has_glyph_geometry = has_glyph_geometry
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"text={self.text!r}, "
+            f"run={self.run!r}, "
+            f"advance_bbox={self.advance_bbox!r}, "
+            f"baseline={self.baseline!r}, "
+            f"has_glyph_geometry={self.has_glyph_geometry!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.text == other.text
+            and self.run == other.run
+            and self.advance_bbox == other.advance_bbox
+            and self.baseline == other.baseline
+            and self.has_glyph_geometry == other.has_glyph_geometry
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        run = changes.pop("run", self.run)
+        advance_bbox = changes.pop("advance_bbox", self.advance_bbox)
+        baseline = changes.pop("baseline", self.baseline)
+        has_glyph_geometry = changes.pop("has_glyph_geometry", self.has_glyph_geometry)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(text, run, advance_bbox, baseline, has_glyph_geometry)
 
 
 def reconstruct_layout_line_text(

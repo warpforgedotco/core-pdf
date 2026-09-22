@@ -5,7 +5,7 @@ from __future__ import annotations
 import struct
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from dataclasses import replace
+from copy import replace
 from functools import partial
 from typing import cast
 

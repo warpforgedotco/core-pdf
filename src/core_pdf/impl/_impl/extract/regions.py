@@ -3,29 +3,165 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
 from core_pdf.impl._impl.runtime.array_views import finite_median
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class internal_LayoutRegion:
+    __slots__ = ("indexes", "x_start_order", "y_start_order", "y_center_order")
+
     indexes: numpy.ndarray
     x_start_order: numpy.ndarray
     y_start_order: numpy.ndarray
     y_center_order: numpy.ndarray
 
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "indexes",
+        "x_start_order",
+        "y_start_order",
+        "y_center_order",
+    )
+    __match_args__ = ("indexes", "x_start_order", "y_start_order", "y_center_order")
 
-@dataclass(slots=True)
+    def __init__(
+        self,
+        indexes: numpy.ndarray,
+        x_start_order: numpy.ndarray,
+        y_start_order: numpy.ndarray,
+        y_center_order: numpy.ndarray,
+    ) -> None:
+        internal_frozen_setattr(self, "indexes", indexes)
+        internal_frozen_setattr(self, "x_start_order", x_start_order)
+        internal_frozen_setattr(self, "y_start_order", y_start_order)
+        internal_frozen_setattr(self, "y_center_order", y_center_order)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"indexes={self.indexes!r}, "
+            f"x_start_order={self.x_start_order!r}, "
+            f"y_start_order={self.y_start_order!r}, "
+            f"y_center_order={self.y_center_order!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.indexes == other.indexes
+            and self.x_start_order == other.x_start_order
+            and self.y_start_order == other.y_start_order
+            and self.y_center_order == other.y_center_order
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.indexes, self.x_start_order, self.y_start_order, self.y_center_order))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        indexes = changes.pop("indexes", self.indexes)
+        x_start_order = changes.pop("x_start_order", self.x_start_order)
+        y_start_order = changes.pop("y_start_order", self.y_start_order)
+        y_center_order = changes.pop("y_center_order", self.y_center_order)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(indexes, x_start_order, y_start_order, y_center_order)
+
+
 class internal_LayoutGeometry:
+    __slots__ = ("boxes", "x_centers", "y_centers", "heights", "marks", "row_ids")
+
     boxes: numpy.ndarray
     x_centers: numpy.ndarray
     y_centers: numpy.ndarray
     heights: numpy.ndarray
     marks: numpy.ndarray
     row_ids: numpy.ndarray
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "boxes",
+        "x_centers",
+        "y_centers",
+        "heights",
+        "marks",
+        "row_ids",
+    )
+    __match_args__ = ("boxes", "x_centers", "y_centers", "heights", "marks", "row_ids")
+
+    def __init__(
+        self,
+        boxes: numpy.ndarray,
+        x_centers: numpy.ndarray,
+        y_centers: numpy.ndarray,
+        heights: numpy.ndarray,
+        marks: numpy.ndarray,
+        row_ids: numpy.ndarray,
+    ) -> None:
+        self.boxes = boxes
+        self.x_centers = x_centers
+        self.y_centers = y_centers
+        self.heights = heights
+        self.marks = marks
+        self.row_ids = row_ids
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"boxes={self.boxes!r}, "
+            f"x_centers={self.x_centers!r}, "
+            f"y_centers={self.y_centers!r}, "
+            f"heights={self.heights!r}, "
+            f"marks={self.marks!r}, "
+            f"row_ids={self.row_ids!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.boxes == other.boxes
+            and self.x_centers == other.x_centers
+            and self.y_centers == other.y_centers
+            and self.heights == other.heights
+            and self.marks == other.marks
+            and self.row_ids == other.row_ids
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        boxes = changes.pop("boxes", self.boxes)
+        x_centers = changes.pop("x_centers", self.x_centers)
+        y_centers = changes.pop("y_centers", self.y_centers)
+        heights = changes.pop("heights", self.heights)
+        marks = changes.pop("marks", self.marks)
+        row_ids = changes.pop("row_ids", self.row_ids)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(boxes, x_centers, y_centers, heights, marks, row_ids)
 
     @classmethod
     def create(cls, boxes: numpy.ndarray) -> internal_LayoutGeometry:

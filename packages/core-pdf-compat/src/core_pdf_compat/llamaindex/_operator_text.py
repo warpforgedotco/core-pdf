@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, NoReturn, Self, cast
 
 from core_pdf.impl._impl.capture.recovery import iter_content_operations
 from core_pdf.impl._impl.document.recovery.lexer import PdfLexer
@@ -26,6 +25,9 @@ from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     STANDARD_ENCODING,
 )
+
+internal_frozen_setattr = object.__setattr__
+
 
 internal_WIN_ANSI_ENCODING = tuple(internal_legacy_base_table("WinAnsiEncoding"))
 internal_MAC_ROMAN_ENCODING = tuple(internal_legacy_base_table("MacRomanEncoding"))
@@ -66,8 +68,17 @@ def internal_difference_text(glyph_name: str, code: int) -> str:
     return f"/{glyph_name}" if not mapped or mapped == glyph_name else mapped
 
 
-@dataclass(frozen=True, slots=True)
 class internal_Font:
+    __slots__ = (
+        "decoder",
+        "space_character",
+        "space_width",
+        "encoding",
+        "character_map",
+        "character_widths",
+        "default_width",
+    )
+
     decoder: FontDecoder
     space_character: str
     space_width: float
@@ -75,6 +86,117 @@ class internal_Font:
     character_map: Mapping[str, str]
     character_widths: Mapping[int, float]
     default_width: float
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "decoder",
+        "space_character",
+        "space_width",
+        "encoding",
+        "character_map",
+        "character_widths",
+        "default_width",
+    )
+    __match_args__ = (
+        "decoder",
+        "space_character",
+        "space_width",
+        "encoding",
+        "character_map",
+        "character_widths",
+        "default_width",
+    )
+
+    def __init__(
+        self,
+        decoder: FontDecoder,
+        space_character: str,
+        space_width: float,
+        encoding: tuple[str, ...] | str,
+        character_map: Mapping[str, str],
+        character_widths: Mapping[int, float],
+        default_width: float,
+    ) -> None:
+        internal_frozen_setattr(self, "decoder", decoder)
+        internal_frozen_setattr(self, "space_character", space_character)
+        internal_frozen_setattr(self, "space_width", space_width)
+        internal_frozen_setattr(self, "encoding", encoding)
+        internal_frozen_setattr(self, "character_map", character_map)
+        internal_frozen_setattr(self, "character_widths", character_widths)
+        internal_frozen_setattr(self, "default_width", default_width)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"decoder={self.decoder!r}, "
+            f"space_character={self.space_character!r}, "
+            f"space_width={self.space_width!r}, "
+            f"encoding={self.encoding!r}, "
+            f"character_map={self.character_map!r}, "
+            f"character_widths={self.character_widths!r}, "
+            f"default_width={self.default_width!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.decoder == other.decoder
+            and self.space_character == other.space_character
+            and self.space_width == other.space_width
+            and self.encoding == other.encoding
+            and self.character_map == other.character_map
+            and self.character_widths == other.character_widths
+            and self.default_width == other.default_width
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.decoder,
+                self.space_character,
+                self.space_width,
+                self.encoding,
+                self.character_map,
+                self.character_widths,
+                self.default_width,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        decoder = changes.pop("decoder", self.decoder)
+        space_character = changes.pop("space_character", self.space_character)
+        space_width = changes.pop("space_width", self.space_width)
+        encoding = changes.pop("encoding", self.encoding)
+        character_map = changes.pop("character_map", self.character_map)
+        character_widths = changes.pop("character_widths", self.character_widths)
+        default_width = changes.pop("default_width", self.default_width)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            decoder,
+            space_character,
+            space_width,
+            encoding,
+            character_map,
+            character_widths,
+            default_width,
+        )
 
     def encoded(self, data: bytes) -> str:
         if isinstance(self.encoding, str):

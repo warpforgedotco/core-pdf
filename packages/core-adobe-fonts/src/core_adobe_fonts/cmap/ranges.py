@@ -3,26 +3,131 @@
 from __future__ import annotations
 
 import typing
-from dataclasses import dataclass
+from typing import Any, ClassVar, NoReturn, Self
+
+internal_frozen_setattr = object.__setattr__
+
 
 CodeSpaceRanges = list[tuple[bytes, bytes]] | tuple[tuple[bytes, bytes], ...]
 
 
-@dataclass(frozen=True, slots=True)
 class CIDRange:
+    __slots__ = ("start", "end", "first_cid")
+
     start: bytes
     end: bytes
     first_cid: int
+
+    __fields__: ClassVar[tuple[str, ...]] = ("start", "end", "first_cid")
+    __match_args__ = ("start", "end", "first_cid")
+
+    def __init__(self, start: bytes, end: bytes, first_cid: int) -> None:
+        internal_frozen_setattr(self, "start", start)
+        internal_frozen_setattr(self, "end", end)
+        internal_frozen_setattr(self, "first_cid", first_cid)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"start={self.start!r}, "
+            f"end={self.end!r}, "
+            f"first_cid={self.first_cid!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.start == other.start
+            and self.end == other.end
+            and self.first_cid == other.first_cid
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.start, self.end, self.first_cid))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        start = changes.pop("start", self.start)
+        end = changes.pop("end", self.end)
+        first_cid = changes.pop("first_cid", self.first_cid)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(start, end, first_cid)
 
     def contains(self, code: bytes) -> bool:
         return code_in_range(code, self.start, self.end)
 
 
-@dataclass(frozen=True, slots=True)
 class NotdefRange:
+    __slots__ = ("start", "end", "cid")
+
     start: bytes
     end: bytes
     cid: int
+
+    __fields__: ClassVar[tuple[str, ...]] = ("start", "end", "cid")
+    __match_args__ = ("start", "end", "cid")
+
+    def __init__(self, start: bytes, end: bytes, cid: int) -> None:
+        internal_frozen_setattr(self, "start", start)
+        internal_frozen_setattr(self, "end", end)
+        internal_frozen_setattr(self, "cid", cid)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"start={self.start!r}, "
+            f"end={self.end!r}, "
+            f"cid={self.cid!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.start == other.start and self.end == other.end and self.cid == other.cid
+
+    def __hash__(self) -> int:
+        return hash((self.start, self.end, self.cid))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        start = changes.pop("start", self.start)
+        end = changes.pop("end", self.end)
+        cid = changes.pop("cid", self.cid)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(start, end, cid)
 
     def contains(self, code: bytes) -> bool:
         return code_in_range(code, self.start, self.end)

@@ -1,4 +1,4 @@
-from dataclasses import replace
+from copy import replace
 
 import numpy as np
 import pytest

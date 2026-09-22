@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.standards import PdfVersion, SemanticContext
+
+internal_frozen_setattr = object.__setattr__
+
 
 WHITESPACE = b"\x00\t\n\x0c\r "
 DELIMITERS = b"()<>[]/%"
@@ -16,20 +19,125 @@ SEPARATOR_TABLE = bytes([1 if i in WHITESPACE or i in DELIMITERS else 0 for i in
 WS_TABLE = bytes([1 if i in WHITESPACE else 0 for i in range(256)])
 
 
-@dataclass(frozen=True, slots=True)
 class LexicalRules:
+    __slots__ = (
+        "whitespace",
+        "name_escapes",
+        "delimiters",
+        "canonical_identifiers",
+        "whitespace_table",
+        "separator_table",
+        "separator_re",
+        "ignored_re",
+        "split_whitespace_compatible",
+        "content_token_re",
+    )
+
     whitespace: bytes
     name_escapes: bool
-    delimiters: bytes = DELIMITERS
-    canonical_identifiers: bool = True
-    whitespace_table: bytes = field(init=False, repr=False)
-    separator_table: bytes = field(init=False, repr=False)
-    separator_re: re.Pattern[bytes] = field(init=False, repr=False)
-    ignored_re: re.Pattern[bytes] = field(init=False, repr=False)
-    split_whitespace_compatible: bool = field(init=False, repr=False)
-    content_token_re: re.Pattern[bytes] = field(init=False, repr=False)
+    delimiters: bytes
+    canonical_identifiers: bool
+    whitespace_table: bytes
+    separator_table: bytes
+    separator_re: re.Pattern[bytes]
+    ignored_re: re.Pattern[bytes]
+    split_whitespace_compatible: bool
+    content_token_re: re.Pattern[bytes]
 
-    def __post_init__(self) -> None:
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "whitespace",
+        "name_escapes",
+        "delimiters",
+        "canonical_identifiers",
+        "whitespace_table",
+        "separator_table",
+        "separator_re",
+        "ignored_re",
+        "split_whitespace_compatible",
+        "content_token_re",
+    )
+    __match_args__ = ("whitespace", "name_escapes", "delimiters", "canonical_identifiers")
+
+    def __init__(
+        self,
+        whitespace: bytes,
+        name_escapes: bool,
+        delimiters: bytes = DELIMITERS,
+        canonical_identifiers: bool = True,
+    ) -> None:
+        internal_frozen_setattr(self, "whitespace", whitespace)
+        internal_frozen_setattr(self, "name_escapes", name_escapes)
+        internal_frozen_setattr(self, "delimiters", delimiters)
+        internal_frozen_setattr(self, "canonical_identifiers", canonical_identifiers)
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"whitespace={self.whitespace!r}, "
+            f"name_escapes={self.name_escapes!r}, "
+            f"delimiters={self.delimiters!r}, "
+            f"canonical_identifiers={self.canonical_identifiers!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.whitespace == other.whitespace
+            and self.name_escapes == other.name_escapes
+            and self.delimiters == other.delimiters
+            and self.canonical_identifiers == other.canonical_identifiers
+            and self.whitespace_table == other.whitespace_table
+            and self.separator_table == other.separator_table
+            and self.separator_re == other.separator_re
+            and self.ignored_re == other.ignored_re
+            and self.split_whitespace_compatible == other.split_whitespace_compatible
+            and self.content_token_re == other.content_token_re
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.whitespace,
+                self.name_escapes,
+                self.delimiters,
+                self.canonical_identifiers,
+                self.whitespace_table,
+                self.separator_table,
+                self.separator_re,
+                self.ignored_re,
+                self.split_whitespace_compatible,
+                self.content_token_re,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        whitespace = changes.pop("whitespace", self.whitespace)
+        name_escapes = changes.pop("name_escapes", self.name_escapes)
+        delimiters = changes.pop("delimiters", self.delimiters)
+        canonical_identifiers = changes.pop("canonical_identifiers", self.canonical_identifiers)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(whitespace, name_escapes, delimiters, canonical_identifiers)
+
+    def _post_init(self) -> None:
         object.__setattr__(
             self, "whitespace_table", bytes(int(i in self.whitespace) for i in range(256))
         )

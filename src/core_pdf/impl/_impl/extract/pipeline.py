@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from contextlib import suppress
-from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Protocol
+from copy import replace
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Protocol, Self
 
 from core_pdf.impl._impl.document.page_links import resolve_destination_value
 from core_pdf.impl._impl.extract.block_layout import layout_blocks_with_evidence
@@ -35,6 +35,8 @@ if TYPE_CHECKING:
     from core_pdf.impl._impl.document.records import RawAnnotation, RawFormField
     from core_pdf.impl._impl.document.structure import PageStructure
     from core_pdf.impl._impl.extract.capture import internal_StructureUnset
+
+internal_frozen_setattr = object.__setattr__
 
 
 class internal_Layout(Protocol):
@@ -68,11 +70,69 @@ def internal_collected_records[internal_Record, internal_T](
     return tuple(output)
 
 
-@dataclass(frozen=True, slots=True)
 class internal_PageProducts:
+    __slots__ = ("tables", "blocks", "order_evidence")
+
     tables: tuple[Table, ...]
     blocks: tuple[ParsedBlock, ...]
     order_evidence: ReadingOrderEvidence
+
+    __fields__: ClassVar[tuple[str, ...]] = ("tables", "blocks", "order_evidence")
+    __match_args__ = ("tables", "blocks", "order_evidence")
+
+    def __init__(
+        self,
+        tables: tuple[Table, ...],
+        blocks: tuple[ParsedBlock, ...],
+        order_evidence: ReadingOrderEvidence,
+    ) -> None:
+        internal_frozen_setattr(self, "tables", tables)
+        internal_frozen_setattr(self, "blocks", blocks)
+        internal_frozen_setattr(self, "order_evidence", order_evidence)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"tables={self.tables!r}, "
+            f"blocks={self.blocks!r}, "
+            f"order_evidence={self.order_evidence!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.tables == other.tables
+            and self.blocks == other.blocks
+            and self.order_evidence == other.order_evidence
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.tables, self.blocks, self.order_evidence))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        tables = changes.pop("tables", self.tables)
+        blocks = changes.pop("blocks", self.blocks)
+        order_evidence = changes.pop("order_evidence", self.order_evidence)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(tables, blocks, order_evidence)
 
 
 class internal_PageExtraction:

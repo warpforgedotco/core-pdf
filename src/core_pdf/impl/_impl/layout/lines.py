@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from copy import replace
 from itertools import islice
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl._impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
 from core_pdf.impl._impl.model.glyphs import glyph_text_has_unsupported_codepoint
@@ -16,6 +16,8 @@ if TYPE_CHECKING:
         LayoutLineText,
         LayoutLineTextSegment,
     )
+
+internal_frozen_setattr = object.__setattr__
 
 
 class LayoutLine:
@@ -157,25 +159,231 @@ def layout_line_segment_char_bbox(
     return (char_x0, y0, char_x0 + step, y1)
 
 
-@dataclass(frozen=True, slots=True)
 class LayoutGeometryIssue:
+    __slots__ = ("code", "severity", "subject", "bbox", "message", "details", "repairable")
+
     code: str
     severity: str
     subject: str
-    bbox: Rectangle | None = None
-    message: str = ""
-    details: tuple[tuple[str, object], ...] = ()
-    repairable: bool = False
+    bbox: Rectangle | None
+    message: str
+    details: tuple[tuple[str, object], ...]
+    repairable: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "code",
+        "severity",
+        "subject",
+        "bbox",
+        "message",
+        "details",
+        "repairable",
+    )
+    __match_args__ = ("code", "severity", "subject", "bbox", "message", "details", "repairable")
+
+    def __init__(
+        self,
+        code: str,
+        severity: str,
+        subject: str,
+        bbox: Rectangle | None = None,
+        message: str = "",
+        details: tuple[tuple[str, object], ...] = (),
+        repairable: bool = False,
+    ) -> None:
+        internal_frozen_setattr(self, "code", code)
+        internal_frozen_setattr(self, "severity", severity)
+        internal_frozen_setattr(self, "subject", subject)
+        internal_frozen_setattr(self, "bbox", bbox)
+        internal_frozen_setattr(self, "message", message)
+        internal_frozen_setattr(self, "details", details)
+        internal_frozen_setattr(self, "repairable", repairable)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"code={self.code!r}, "
+            f"severity={self.severity!r}, "
+            f"subject={self.subject!r}, "
+            f"bbox={self.bbox!r}, "
+            f"message={self.message!r}, "
+            f"details={self.details!r}, "
+            f"repairable={self.repairable!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.code == other.code
+            and self.severity == other.severity
+            and self.subject == other.subject
+            and self.bbox == other.bbox
+            and self.message == other.message
+            and self.details == other.details
+            and self.repairable == other.repairable
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.code,
+                self.severity,
+                self.subject,
+                self.bbox,
+                self.message,
+                self.details,
+                self.repairable,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        code = changes.pop("code", self.code)
+        severity = changes.pop("severity", self.severity)
+        subject = changes.pop("subject", self.subject)
+        bbox = changes.pop("bbox", self.bbox)
+        message = changes.pop("message", self.message)
+        details = changes.pop("details", self.details)
+        repairable = changes.pop("repairable", self.repairable)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(code, severity, subject, bbox, message, details, repairable)
 
 
-@dataclass(frozen=True, slots=True)
 class LayoutGeometrySummary:
+    __slots__ = (
+        "issue_count",
+        "error_count",
+        "warning_count",
+        "repairable_count",
+        "text_run_count",
+        "line_count",
+    )
+
     issue_count: int
     error_count: int
     warning_count: int
     repairable_count: int
     text_run_count: int
     line_count: int
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "issue_count",
+        "error_count",
+        "warning_count",
+        "repairable_count",
+        "text_run_count",
+        "line_count",
+    )
+    __match_args__ = (
+        "issue_count",
+        "error_count",
+        "warning_count",
+        "repairable_count",
+        "text_run_count",
+        "line_count",
+    )
+
+    def __init__(
+        self,
+        issue_count: int,
+        error_count: int,
+        warning_count: int,
+        repairable_count: int,
+        text_run_count: int,
+        line_count: int,
+    ) -> None:
+        internal_frozen_setattr(self, "issue_count", issue_count)
+        internal_frozen_setattr(self, "error_count", error_count)
+        internal_frozen_setattr(self, "warning_count", warning_count)
+        internal_frozen_setattr(self, "repairable_count", repairable_count)
+        internal_frozen_setattr(self, "text_run_count", text_run_count)
+        internal_frozen_setattr(self, "line_count", line_count)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"issue_count={self.issue_count!r}, "
+            f"error_count={self.error_count!r}, "
+            f"warning_count={self.warning_count!r}, "
+            f"repairable_count={self.repairable_count!r}, "
+            f"text_run_count={self.text_run_count!r}, "
+            f"line_count={self.line_count!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.issue_count == other.issue_count
+            and self.error_count == other.error_count
+            and self.warning_count == other.warning_count
+            and self.repairable_count == other.repairable_count
+            and self.text_run_count == other.text_run_count
+            and self.line_count == other.line_count
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.issue_count,
+                self.error_count,
+                self.warning_count,
+                self.repairable_count,
+                self.text_run_count,
+                self.line_count,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        issue_count = changes.pop("issue_count", self.issue_count)
+        error_count = changes.pop("error_count", self.error_count)
+        warning_count = changes.pop("warning_count", self.warning_count)
+        repairable_count = changes.pop("repairable_count", self.repairable_count)
+        text_run_count = changes.pop("text_run_count", self.text_run_count)
+        line_count = changes.pop("line_count", self.line_count)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            issue_count,
+            error_count,
+            warning_count,
+            repairable_count,
+            text_run_count,
+            line_count,
+        )
 
 
 def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:

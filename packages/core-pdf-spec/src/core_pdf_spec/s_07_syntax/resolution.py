@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import cast
+from typing import Any, ClassVar, Self, cast
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.types import PdfReference
@@ -25,13 +24,67 @@ def resolve_reference_chain(value: object, resolve: Callable[[object], object]) 
     return value
 
 
-@dataclass(slots=True)
 class internal_ResolutionNode:
+    __slots__ = ("original", "values", "keys", "parents", "changed")
+
     original: object
-    values: list[object] = field(default_factory=list)
-    keys: tuple[object, ...] = ()
-    parents: set[int] = field(default_factory=set)
-    changed: bool = False
+    values: list[object]
+    keys: tuple[object, ...]
+    parents: set[int]
+    changed: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = ("original", "values", "keys", "parents", "changed")
+    __match_args__ = ("original", "values", "keys", "parents", "changed")
+
+    def __init__(
+        self,
+        original: object,
+        values: list[object] | None = None,
+        keys: tuple[object, ...] = (),
+        parents: set[int] | None = None,
+        changed: bool = False,
+    ) -> None:
+        self.original = original
+        self.values = [] if values is None else values
+        self.keys = keys
+        self.parents = set() if parents is None else parents
+        self.changed = changed
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"original={self.original!r}, "
+            f"values={self.values!r}, "
+            f"keys={self.keys!r}, "
+            f"parents={self.parents!r}, "
+            f"changed={self.changed!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.original == other.original
+            and self.values == other.values
+            and self.keys == other.keys
+            and self.parents == other.parents
+            and self.changed == other.changed
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        original = changes.pop("original", self.original)
+        values = changes.pop("values", self.values)
+        keys = changes.pop("keys", self.keys)
+        parents = changes.pop("parents", self.parents)
+        changed = changes.pop("changed", self.changed)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(original, values, keys, parents, changed)
 
 
 def internal_resolve_object_graph(value: object, resolve: Callable[[object], object]) -> object:

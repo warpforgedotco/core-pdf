@@ -1,5 +1,5 @@
 import math
-from dataclasses import replace
+from copy import replace
 from types import SimpleNamespace
 from typing import Any
 

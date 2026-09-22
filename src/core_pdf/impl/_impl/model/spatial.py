@@ -3,18 +3,60 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
 from core_pdf.impl.types import Rectangle
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class SpatialFrame:
+    __slots__ = ("boxes", "areas")
+
     boxes: numpy.ndarray[Any, Any]
     areas: numpy.ndarray[Any, Any]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("boxes", "areas")
+    __match_args__ = ("boxes", "areas")
+
+    def __init__(self, boxes: numpy.ndarray[Any, Any], areas: numpy.ndarray[Any, Any]) -> None:
+        internal_frozen_setattr(self, "boxes", boxes)
+        internal_frozen_setattr(self, "areas", areas)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(boxes={self.boxes!r}, areas={self.areas!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.boxes == other.boxes and self.areas == other.areas
+
+    def __hash__(self) -> int:
+        return hash((self.boxes, self.areas))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        boxes = changes.pop("boxes", self.boxes)
+        areas = changes.pop("areas", self.areas)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(boxes, areas)
 
     @classmethod
     def from_boxes(cls, boxes: Iterable[Rectangle]) -> SpatialFrame:

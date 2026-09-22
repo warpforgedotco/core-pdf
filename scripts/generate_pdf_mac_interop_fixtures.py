@@ -11,11 +11,13 @@ import logging
 import os
 import re
 import secrets
-from dataclasses import asdict, dataclass
 from importlib import import_module, metadata
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, NoReturn, Self, cast
 from unittest.mock import patch
+
+internal_frozen_setattr = object.__setattr__
+
 
 internal_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 internal_SECURITY_FIXTURES = internal_REPOSITORY_ROOT / "tests" / "fixtures" / "security_interop"
@@ -38,8 +40,18 @@ internal_TAMPER_CHECKS = (
 )
 
 
-@dataclass(frozen=True, slots=True)
 class internal_FixtureSpec:
+    __slots__ = (
+        "filename",
+        "algorithm",
+        "crypt_filter_method",
+        "version",
+        "revision",
+        "owner_password",
+        "user_password",
+        "use_gcm",
+    )
+
     filename: str
     algorithm: str
     crypt_filter_method: str
@@ -48,6 +60,126 @@ class internal_FixtureSpec:
     owner_password: str
     user_password: str
     use_gcm: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "filename",
+        "algorithm",
+        "crypt_filter_method",
+        "version",
+        "revision",
+        "owner_password",
+        "user_password",
+        "use_gcm",
+    )
+    __match_args__ = (
+        "filename",
+        "algorithm",
+        "crypt_filter_method",
+        "version",
+        "revision",
+        "owner_password",
+        "user_password",
+        "use_gcm",
+    )
+
+    def __init__(
+        self,
+        filename: str,
+        algorithm: str,
+        crypt_filter_method: str,
+        version: int,
+        revision: int,
+        owner_password: str,
+        user_password: str,
+        use_gcm: bool,
+    ) -> None:
+        internal_frozen_setattr(self, "filename", filename)
+        internal_frozen_setattr(self, "algorithm", algorithm)
+        internal_frozen_setattr(self, "crypt_filter_method", crypt_filter_method)
+        internal_frozen_setattr(self, "version", version)
+        internal_frozen_setattr(self, "revision", revision)
+        internal_frozen_setattr(self, "owner_password", owner_password)
+        internal_frozen_setattr(self, "user_password", user_password)
+        internal_frozen_setattr(self, "use_gcm", use_gcm)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"filename={self.filename!r}, "
+            f"algorithm={self.algorithm!r}, "
+            f"crypt_filter_method={self.crypt_filter_method!r}, "
+            f"version={self.version!r}, "
+            f"revision={self.revision!r}, "
+            f"owner_password={self.owner_password!r}, "
+            f"user_password={self.user_password!r}, "
+            f"use_gcm={self.use_gcm!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.filename == other.filename
+            and self.algorithm == other.algorithm
+            and self.crypt_filter_method == other.crypt_filter_method
+            and self.version == other.version
+            and self.revision == other.revision
+            and self.owner_password == other.owner_password
+            and self.user_password == other.user_password
+            and self.use_gcm == other.use_gcm
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.filename,
+                self.algorithm,
+                self.crypt_filter_method,
+                self.version,
+                self.revision,
+                self.owner_password,
+                self.user_password,
+                self.use_gcm,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        filename = changes.pop("filename", self.filename)
+        algorithm = changes.pop("algorithm", self.algorithm)
+        crypt_filter_method = changes.pop("crypt_filter_method", self.crypt_filter_method)
+        version = changes.pop("version", self.version)
+        revision = changes.pop("revision", self.revision)
+        owner_password = changes.pop("owner_password", self.owner_password)
+        user_password = changes.pop("user_password", self.user_password)
+        use_gcm = changes.pop("use_gcm", self.use_gcm)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            filename,
+            algorithm,
+            crypt_filter_method,
+            version,
+            revision,
+            owner_password,
+            user_password,
+            use_gcm,
+        )
 
 
 internal_FIXTURES = (
@@ -281,7 +413,7 @@ def internal_generate(source: Path, output_directory: Path) -> None:
     for fixture in internal_FIXTURES:
         destination = output_directory / fixture.filename
         internal_generate_fixture(source, destination, fixture, writer, pdf_reader, generic)
-        record = asdict(fixture)
+        record = {name: getattr(fixture, name) for name in fixture.__fields__}
         record.pop("use_gcm")
         record.update(
             {

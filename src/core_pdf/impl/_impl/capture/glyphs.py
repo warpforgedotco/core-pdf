@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from math import ceil
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl._impl.capture.marked_content import min_optional_confidence
 from core_pdf.impl._impl.fonts.decoder import DecodedGlyph, FontDecoder
@@ -16,6 +16,9 @@ from core_pdf.impl._impl.model.glyphs import (
     glyph_unicode_confidence,
 )
 from core_pdf.impl.types import Rectangle
+
+internal_frozen_setattr = object.__setattr__
+
 
 TextBasis = tuple[float, float, float, float, float, float]
 
@@ -194,8 +197,23 @@ class RunGeometry:
         self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
-@dataclass(frozen=True, slots=True)
 class TextGeometry:
+    __slots__ = (
+        "basis",
+        "font_size",
+        "font_scale",
+        "font_ascent",
+        "font_descent",
+        "advance_scale",
+        "char_space",
+        "word_space",
+        "horizontal_scale",
+        "rise",
+        "rotation_angle",
+        "effective_font_size",
+        "effective_font_height",
+    )
+
     basis: TextBasis
     font_size: float
     font_scale: float
@@ -210,9 +228,192 @@ class TextGeometry:
     effective_font_size: float
     effective_font_height: float
 
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "basis",
+        "font_size",
+        "font_scale",
+        "font_ascent",
+        "font_descent",
+        "advance_scale",
+        "char_space",
+        "word_space",
+        "horizontal_scale",
+        "rise",
+        "rotation_angle",
+        "effective_font_size",
+        "effective_font_height",
+    )
+    __match_args__ = (
+        "basis",
+        "font_size",
+        "font_scale",
+        "font_ascent",
+        "font_descent",
+        "advance_scale",
+        "char_space",
+        "word_space",
+        "horizontal_scale",
+        "rise",
+        "rotation_angle",
+        "effective_font_size",
+        "effective_font_height",
+    )
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        basis: TextBasis,
+        font_size: float,
+        font_scale: float,
+        font_ascent: float,
+        font_descent: float,
+        advance_scale: float,
+        char_space: float,
+        word_space: float,
+        horizontal_scale: float,
+        rise: float,
+        rotation_angle: int,
+        effective_font_size: float,
+        effective_font_height: float,
+    ) -> None:
+        internal_frozen_setattr(self, "basis", basis)
+        internal_frozen_setattr(self, "font_size", font_size)
+        internal_frozen_setattr(self, "font_scale", font_scale)
+        internal_frozen_setattr(self, "font_ascent", font_ascent)
+        internal_frozen_setattr(self, "font_descent", font_descent)
+        internal_frozen_setattr(self, "advance_scale", advance_scale)
+        internal_frozen_setattr(self, "char_space", char_space)
+        internal_frozen_setattr(self, "word_space", word_space)
+        internal_frozen_setattr(self, "horizontal_scale", horizontal_scale)
+        internal_frozen_setattr(self, "rise", rise)
+        internal_frozen_setattr(self, "rotation_angle", rotation_angle)
+        internal_frozen_setattr(self, "effective_font_size", effective_font_size)
+        internal_frozen_setattr(self, "effective_font_height", effective_font_height)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"basis={self.basis!r}, "
+            f"font_size={self.font_size!r}, "
+            f"font_scale={self.font_scale!r}, "
+            f"font_ascent={self.font_ascent!r}, "
+            f"font_descent={self.font_descent!r}, "
+            f"advance_scale={self.advance_scale!r}, "
+            f"char_space={self.char_space!r}, "
+            f"word_space={self.word_space!r}, "
+            f"horizontal_scale={self.horizontal_scale!r}, "
+            f"rise={self.rise!r}, "
+            f"rotation_angle={self.rotation_angle!r}, "
+            f"effective_font_size={self.effective_font_size!r}, "
+            f"effective_font_height={self.effective_font_height!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.basis == other.basis
+            and self.font_size == other.font_size
+            and self.font_scale == other.font_scale
+            and self.font_ascent == other.font_ascent
+            and self.font_descent == other.font_descent
+            and self.advance_scale == other.advance_scale
+            and self.char_space == other.char_space
+            and self.word_space == other.word_space
+            and self.horizontal_scale == other.horizontal_scale
+            and self.rise == other.rise
+            and self.rotation_angle == other.rotation_angle
+            and self.effective_font_size == other.effective_font_size
+            and self.effective_font_height == other.effective_font_height
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.basis,
+                self.font_size,
+                self.font_scale,
+                self.font_ascent,
+                self.font_descent,
+                self.advance_scale,
+                self.char_space,
+                self.word_space,
+                self.horizontal_scale,
+                self.rise,
+                self.rotation_angle,
+                self.effective_font_size,
+                self.effective_font_height,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        basis = changes.pop("basis", self.basis)
+        font_size = changes.pop("font_size", self.font_size)
+        font_scale = changes.pop("font_scale", self.font_scale)
+        font_ascent = changes.pop("font_ascent", self.font_ascent)
+        font_descent = changes.pop("font_descent", self.font_descent)
+        advance_scale = changes.pop("advance_scale", self.advance_scale)
+        char_space = changes.pop("char_space", self.char_space)
+        word_space = changes.pop("word_space", self.word_space)
+        horizontal_scale = changes.pop("horizontal_scale", self.horizontal_scale)
+        rise = changes.pop("rise", self.rise)
+        rotation_angle = changes.pop("rotation_angle", self.rotation_angle)
+        effective_font_size = changes.pop("effective_font_size", self.effective_font_size)
+        effective_font_height = changes.pop("effective_font_height", self.effective_font_height)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            basis,
+            font_size,
+            font_scale,
+            font_ascent,
+            font_descent,
+            advance_scale,
+            char_space,
+            word_space,
+            horizontal_scale,
+            rise,
+            rotation_angle,
+            effective_font_size,
+            effective_font_height,
+        )
+
+
 class GlyphPaint:
+    __slots__ = (
+        "clip_bbox",
+        "page_clip",
+        "fill",
+        "render_mode",
+        "fill_opacity",
+        "stroke_color",
+        "stroke_opacity",
+        "line_width",
+        "line_cap",
+        "line_join",
+        "dash_pattern",
+        "blend_mode",
+        "group_alpha",
+        "clip_glyph",
+        "alpha_is_shape",
+        "graphics_soft_mask",
+    )
+
     clip_bbox: Rectangle | None
     page_clip: Rectangle | None
     fill: tuple[float, ...] | None
@@ -226,17 +427,258 @@ class GlyphPaint:
     dash_pattern: tuple[list[float], float] | None
     blend_mode: str | None
     group_alpha: float | None
-    clip_glyph: bool = False
-    alpha_is_shape: bool = False
-    graphics_soft_mask: object | None = None
+    clip_glyph: bool
+    alpha_is_shape: bool
+    graphics_soft_mask: object | None
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "clip_bbox",
+        "page_clip",
+        "fill",
+        "render_mode",
+        "fill_opacity",
+        "stroke_color",
+        "stroke_opacity",
+        "line_width",
+        "line_cap",
+        "line_join",
+        "dash_pattern",
+        "blend_mode",
+        "group_alpha",
+        "clip_glyph",
+        "alpha_is_shape",
+        "graphics_soft_mask",
+    )
+    __match_args__ = (
+        "clip_bbox",
+        "page_clip",
+        "fill",
+        "render_mode",
+        "fill_opacity",
+        "stroke_color",
+        "stroke_opacity",
+        "line_width",
+        "line_cap",
+        "line_join",
+        "dash_pattern",
+        "blend_mode",
+        "group_alpha",
+        "clip_glyph",
+        "alpha_is_shape",
+        "graphics_soft_mask",
+    )
+
+    def __init__(
+        self,
+        clip_bbox: Rectangle | None,
+        page_clip: Rectangle | None,
+        fill: tuple[float, ...] | None,
+        render_mode: int,
+        fill_opacity: float | None,
+        stroke_color: tuple[float, ...] | None,
+        stroke_opacity: float | None,
+        line_width: float,
+        line_cap: int,
+        line_join: int,
+        dash_pattern: tuple[list[float], float] | None,
+        blend_mode: str | None,
+        group_alpha: float | None,
+        clip_glyph: bool = False,
+        alpha_is_shape: bool = False,
+        graphics_soft_mask: object | None = None,
+    ) -> None:
+        internal_frozen_setattr(self, "clip_bbox", clip_bbox)
+        internal_frozen_setattr(self, "page_clip", page_clip)
+        internal_frozen_setattr(self, "fill", fill)
+        internal_frozen_setattr(self, "render_mode", render_mode)
+        internal_frozen_setattr(self, "fill_opacity", fill_opacity)
+        internal_frozen_setattr(self, "stroke_color", stroke_color)
+        internal_frozen_setattr(self, "stroke_opacity", stroke_opacity)
+        internal_frozen_setattr(self, "line_width", line_width)
+        internal_frozen_setattr(self, "line_cap", line_cap)
+        internal_frozen_setattr(self, "line_join", line_join)
+        internal_frozen_setattr(self, "dash_pattern", dash_pattern)
+        internal_frozen_setattr(self, "blend_mode", blend_mode)
+        internal_frozen_setattr(self, "group_alpha", group_alpha)
+        internal_frozen_setattr(self, "clip_glyph", clip_glyph)
+        internal_frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
+        internal_frozen_setattr(self, "graphics_soft_mask", graphics_soft_mask)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"clip_bbox={self.clip_bbox!r}, "
+            f"page_clip={self.page_clip!r}, "
+            f"fill={self.fill!r}, "
+            f"render_mode={self.render_mode!r}, "
+            f"fill_opacity={self.fill_opacity!r}, "
+            f"stroke_color={self.stroke_color!r}, "
+            f"stroke_opacity={self.stroke_opacity!r}, "
+            f"line_width={self.line_width!r}, "
+            f"line_cap={self.line_cap!r}, "
+            f"line_join={self.line_join!r}, "
+            f"dash_pattern={self.dash_pattern!r}, "
+            f"blend_mode={self.blend_mode!r}, "
+            f"group_alpha={self.group_alpha!r}, "
+            f"clip_glyph={self.clip_glyph!r}, "
+            f"alpha_is_shape={self.alpha_is_shape!r}, "
+            f"graphics_soft_mask={self.graphics_soft_mask!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.clip_bbox == other.clip_bbox
+            and self.page_clip == other.page_clip
+            and self.fill == other.fill
+            and self.render_mode == other.render_mode
+            and self.fill_opacity == other.fill_opacity
+            and self.stroke_color == other.stroke_color
+            and self.stroke_opacity == other.stroke_opacity
+            and self.line_width == other.line_width
+            and self.line_cap == other.line_cap
+            and self.line_join == other.line_join
+            and self.dash_pattern == other.dash_pattern
+            and self.blend_mode == other.blend_mode
+            and self.group_alpha == other.group_alpha
+            and self.clip_glyph == other.clip_glyph
+            and self.alpha_is_shape == other.alpha_is_shape
+            and self.graphics_soft_mask == other.graphics_soft_mask
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.clip_bbox,
+                self.page_clip,
+                self.fill,
+                self.render_mode,
+                self.fill_opacity,
+                self.stroke_color,
+                self.stroke_opacity,
+                self.line_width,
+                self.line_cap,
+                self.line_join,
+                self.dash_pattern,
+                self.blend_mode,
+                self.group_alpha,
+                self.clip_glyph,
+                self.alpha_is_shape,
+                self.graphics_soft_mask,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        clip_bbox = changes.pop("clip_bbox", self.clip_bbox)
+        page_clip = changes.pop("page_clip", self.page_clip)
+        fill = changes.pop("fill", self.fill)
+        render_mode = changes.pop("render_mode", self.render_mode)
+        fill_opacity = changes.pop("fill_opacity", self.fill_opacity)
+        stroke_color = changes.pop("stroke_color", self.stroke_color)
+        stroke_opacity = changes.pop("stroke_opacity", self.stroke_opacity)
+        line_width = changes.pop("line_width", self.line_width)
+        line_cap = changes.pop("line_cap", self.line_cap)
+        line_join = changes.pop("line_join", self.line_join)
+        dash_pattern = changes.pop("dash_pattern", self.dash_pattern)
+        blend_mode = changes.pop("blend_mode", self.blend_mode)
+        group_alpha = changes.pop("group_alpha", self.group_alpha)
+        clip_glyph = changes.pop("clip_glyph", self.clip_glyph)
+        alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
+        graphics_soft_mask = changes.pop("graphics_soft_mask", self.graphics_soft_mask)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            clip_bbox,
+            page_clip,
+            fill,
+            render_mode,
+            fill_opacity,
+            stroke_color,
+            stroke_opacity,
+            line_width,
+            line_cap,
+            line_join,
+            dash_pattern,
+            blend_mode,
+            group_alpha,
+            clip_glyph,
+            alpha_is_shape,
+            graphics_soft_mask,
+        )
 
 
-@dataclass(slots=True)
 class GlyphCapture:
-    glyphs: list[GlyphObservation] = field(default_factory=list)
-    clusters: list[GlyphCluster] = field(default_factory=list)
-    cluster_count: int = 0
-    geometry: RunGeometry = field(default_factory=RunGeometry)
+    __slots__ = ("glyphs", "clusters", "cluster_count", "geometry")
+
+    glyphs: list[GlyphObservation]
+    clusters: list[GlyphCluster]
+    cluster_count: int
+    geometry: RunGeometry
+
+    __fields__: ClassVar[tuple[str, ...]] = ("glyphs", "clusters", "cluster_count", "geometry")
+    __match_args__ = ("glyphs", "clusters", "cluster_count", "geometry")
+
+    def __init__(
+        self,
+        glyphs: list[GlyphObservation] | None = None,
+        clusters: list[GlyphCluster] | None = None,
+        cluster_count: int = 0,
+        geometry: RunGeometry | None = None,
+    ) -> None:
+        self.glyphs = [] if glyphs is None else glyphs
+        self.clusters = [] if clusters is None else clusters
+        self.cluster_count = cluster_count
+        self.geometry = RunGeometry() if geometry is None else geometry
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"glyphs={self.glyphs!r}, "
+            f"clusters={self.clusters!r}, "
+            f"cluster_count={self.cluster_count!r}, "
+            f"geometry={self.geometry!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.glyphs == other.glyphs
+            and self.clusters == other.clusters
+            and self.cluster_count == other.cluster_count
+            and self.geometry == other.geometry
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        glyphs = changes.pop("glyphs", self.glyphs)
+        clusters = changes.pop("clusters", self.clusters)
+        cluster_count = changes.pop("cluster_count", self.cluster_count)
+        geometry = changes.pop("geometry", self.geometry)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(glyphs, clusters, cluster_count, geometry)
 
 
 def capture_glyphs(

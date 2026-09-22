@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import typing
-from dataclasses import dataclass
 from itertools import batched
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
@@ -31,17 +31,78 @@ from core_pdf.impl._impl.graphics.image_models import DecodedImage
 from core_pdf.impl._impl.graphics.stream_decoding import decode_one_filter, decode_stream_data
 from core_pdf.impl._impl.pdf_names import recover_pdf_name
 
+internal_frozen_setattr = object.__setattr__
+
+
 internal_NATIVE_ARRAY_DECODERS = {
     "jpeg": decode_jpeg_image,
     "jpx": decode_jpx_image,
 }
 
 
-@dataclass(frozen=True, slots=True)
 class internal_NativeImagePlan:
+    __slots__ = ("decoder", "params", "output_shape")
+
     decoder: FilterDecoder
     params: object
     output_shape: tuple[int, ...] | None
+
+    __fields__: ClassVar[tuple[str, ...]] = ("decoder", "params", "output_shape")
+    __match_args__ = ("decoder", "params", "output_shape")
+
+    def __init__(
+        self,
+        decoder: FilterDecoder,
+        params: object,
+        output_shape: tuple[int, ...] | None,
+    ) -> None:
+        internal_frozen_setattr(self, "decoder", decoder)
+        internal_frozen_setattr(self, "params", params)
+        internal_frozen_setattr(self, "output_shape", output_shape)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"decoder={self.decoder!r}, "
+            f"params={self.params!r}, "
+            f"output_shape={self.output_shape!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.decoder == other.decoder
+            and self.params == other.params
+            and self.output_shape == other.output_shape
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.decoder, self.params, self.output_shape))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        decoder = changes.pop("decoder", self.decoder)
+        params = changes.pop("params", self.params)
+        output_shape = changes.pop("output_shape", self.output_shape)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(decoder, params, output_shape)
 
 
 def internal_prepare_native_image(dictionary: object) -> internal_NativeImagePlan | None:

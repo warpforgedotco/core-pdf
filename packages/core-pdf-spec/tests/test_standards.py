@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import pytest
 
 from core_pdf_spec.exceptions import PdfUnsupportedError
@@ -185,7 +183,7 @@ def test_declaration_projection_is_immutable_and_preserves_claim_properties() ->
     assert document.context.version == PdfVersion(2, 0)
     assert document.context.baseline == PDF_2_0_BASELINE
     assert len(PDF_2_0_BASELINE.errata_revision or "") == 40
-    with pytest.raises(FrozenInstanceError):
+    with pytest.raises(AttributeError):
         setattr(document, "effective_version", PdfVersion(1, 7))  # noqa: B010
 
 

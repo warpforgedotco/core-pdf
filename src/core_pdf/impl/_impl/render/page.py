@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
 from math import isfinite
-from typing import Any, Protocol, cast
+from typing import Any, ClassVar, Protocol, Self, cast
 
 import numpy
 
@@ -65,16 +64,113 @@ def internal_pixel_dimension(length: float, scale: float) -> int:
     return max(1, int(round(pixels)))
 
 
-@dataclass(slots=True)
 class RenderedPage:
+    __slots__ = (
+        "page_number",
+        "width",
+        "height",
+        "rotate",
+        "display_list",
+        "metadata",
+        "semantic_context",
+        "user_unit",
+    )
+
     page_number: int
     width: float
     height: float
     rotate: int
     display_list: DisplayList
-    metadata: dict[str, Any] = field(default_factory=dict)
-    semantic_context: SemanticContext | None = field(default=None, kw_only=True)
-    user_unit: float = field(default=1.0, kw_only=True)
+    metadata: dict[str, Any]
+    semantic_context: SemanticContext | None
+    user_unit: float
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "page_number",
+        "width",
+        "height",
+        "rotate",
+        "display_list",
+        "metadata",
+        "semantic_context",
+        "user_unit",
+    )
+    __match_args__ = ("page_number", "width", "height", "rotate", "display_list", "metadata")
+
+    def __init__(
+        self,
+        page_number: int,
+        width: float,
+        height: float,
+        rotate: int,
+        display_list: DisplayList,
+        metadata: dict[str, Any] | None = None,
+        *,
+        semantic_context: SemanticContext | None = None,
+        user_unit: float = 1.0,
+    ) -> None:
+        self.page_number = page_number
+        self.width = width
+        self.height = height
+        self.rotate = rotate
+        self.display_list = display_list
+        self.metadata = {} if metadata is None else metadata
+        self.semantic_context = semantic_context
+        self.user_unit = user_unit
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"page_number={self.page_number!r}, "
+            f"width={self.width!r}, "
+            f"height={self.height!r}, "
+            f"rotate={self.rotate!r}, "
+            f"display_list={self.display_list!r}, "
+            f"metadata={self.metadata!r}, "
+            f"semantic_context={self.semantic_context!r}, "
+            f"user_unit={self.user_unit!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.page_number == other.page_number
+            and self.width == other.width
+            and self.height == other.height
+            and self.rotate == other.rotate
+            and self.display_list == other.display_list
+            and self.metadata == other.metadata
+            and self.semantic_context == other.semantic_context
+            and self.user_unit == other.user_unit
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        page_number = changes.pop("page_number", self.page_number)
+        width = changes.pop("width", self.width)
+        height = changes.pop("height", self.height)
+        rotate = changes.pop("rotate", self.rotate)
+        display_list = changes.pop("display_list", self.display_list)
+        metadata = changes.pop("metadata", self.metadata)
+        semantic_context = changes.pop("semantic_context", self.semantic_context)
+        user_unit = changes.pop("user_unit", self.user_unit)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            page_number,
+            width,
+            height,
+            rotate,
+            display_list,
+            metadata,
+            semantic_context=semantic_context,
+            user_unit=user_unit,
+        )
 
     def internal_render_items(
         self,

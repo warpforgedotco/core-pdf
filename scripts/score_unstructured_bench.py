@@ -11,14 +11,16 @@ import unicodedata
 from collections import Counter
 from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import asdict, dataclass, field
 from functools import partial
 from pathlib import Path
 from random import Random
 from time import perf_counter
-from typing import Any, cast
+from typing import Any, ClassVar, NoReturn, Self, cast
 
 from core_pdf import PdfDocument
+
+internal_frozen_setattr = object.__setattr__
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCORE_BENCH_ROOT = ROOT / "tests" / "fixtures" / "SCORE-Bench"
@@ -28,15 +30,62 @@ PARTITION_SALT = "core-pdf-precision-v1\0"
 SCORING_SCHEMA_VERSION = "2"
 
 
-@dataclass(frozen=True)
 class ScoreBenchCase:
     stem: str
     pdf: Path
     content_gt: Path
     table_gt: Path
 
+    __fields__: ClassVar[tuple[str, ...]] = ("stem", "pdf", "content_gt", "table_gt")
+    __match_args__ = ("stem", "pdf", "content_gt", "table_gt")
 
-@dataclass(frozen=True)
+    def __init__(self, stem: str, pdf: Path, content_gt: Path, table_gt: Path) -> None:
+        internal_frozen_setattr(self, "stem", stem)
+        internal_frozen_setattr(self, "pdf", pdf)
+        internal_frozen_setattr(self, "content_gt", content_gt)
+        internal_frozen_setattr(self, "table_gt", table_gt)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"stem={self.stem!r}, "
+            f"pdf={self.pdf!r}, "
+            f"content_gt={self.content_gt!r}, "
+            f"table_gt={self.table_gt!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.stem == other.stem
+            and self.pdf == other.pdf
+            and self.content_gt == other.content_gt
+            and self.table_gt == other.table_gt
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.stem, self.pdf, self.content_gt, self.table_gt))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        stem = changes.pop("stem", self.stem)
+        pdf = changes.pop("pdf", self.pdf)
+        content_gt = changes.pop("content_gt", self.content_gt)
+        table_gt = changes.pop("table_gt", self.table_gt)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(stem, pdf, content_gt, table_gt)
+
+
 class CaseScore:
     stem: str
     status: str
@@ -48,29 +97,349 @@ class CaseScore:
     predicted_tokens: int
     matched_tokens: int
     elapsed_seconds: float
-    scoring_schema_version: str = SCORING_SCHEMA_VERSION
-    content_f1: float = 0.0
-    order_gap: float = 0.0
-    cer: float | None = None
-    wer: float | None = None
-    table_structure_f1: float | None = None
-    table_content_f1: float | None = None
-    table_expected: int = 0
-    table_predicted: int = 0
-    table_matched: int = 0
-    open_elapsed_seconds: float = 0.0
-    text_elapsed_seconds: float = 0.0
-    table_elapsed_seconds: float = 0.0
-    evaluation_elapsed_seconds: float = 0.0
-    error: str | None = None
-    missing_top: list[tuple[str, int]] | None = None
-    extra_top: list[tuple[str, int]] | None = None
+    scoring_schema_version: str
+    content_f1: float
+    order_gap: float
+    cer: float | None
+    wer: float | None
+    table_structure_f1: float | None
+    table_content_f1: float | None
+    table_expected: int
+    table_predicted: int
+    table_matched: int
+    open_elapsed_seconds: float
+    text_elapsed_seconds: float
+    table_elapsed_seconds: float
+    evaluation_elapsed_seconds: float
+    error: str | None
+    missing_top: list[tuple[str, int]] | None
+    extra_top: list[tuple[str, int]] | None
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "stem",
+        "status",
+        "cct",
+        "percent_tokens_found",
+        "percent_tokens_added",
+        "precision",
+        "gt_tokens",
+        "predicted_tokens",
+        "matched_tokens",
+        "elapsed_seconds",
+        "scoring_schema_version",
+        "content_f1",
+        "order_gap",
+        "cer",
+        "wer",
+        "table_structure_f1",
+        "table_content_f1",
+        "table_expected",
+        "table_predicted",
+        "table_matched",
+        "open_elapsed_seconds",
+        "text_elapsed_seconds",
+        "table_elapsed_seconds",
+        "evaluation_elapsed_seconds",
+        "error",
+        "missing_top",
+        "extra_top",
+    )
+    __match_args__ = (
+        "stem",
+        "status",
+        "cct",
+        "percent_tokens_found",
+        "percent_tokens_added",
+        "precision",
+        "gt_tokens",
+        "predicted_tokens",
+        "matched_tokens",
+        "elapsed_seconds",
+        "scoring_schema_version",
+        "content_f1",
+        "order_gap",
+        "cer",
+        "wer",
+        "table_structure_f1",
+        "table_content_f1",
+        "table_expected",
+        "table_predicted",
+        "table_matched",
+        "open_elapsed_seconds",
+        "text_elapsed_seconds",
+        "table_elapsed_seconds",
+        "evaluation_elapsed_seconds",
+        "error",
+        "missing_top",
+        "extra_top",
+    )
+
+    def __init__(
+        self,
+        stem: str,
+        status: str,
+        cct: float,
+        percent_tokens_found: float,
+        percent_tokens_added: float,
+        precision: float,
+        gt_tokens: int,
+        predicted_tokens: int,
+        matched_tokens: int,
+        elapsed_seconds: float,
+        scoring_schema_version: str = SCORING_SCHEMA_VERSION,
+        content_f1: float = 0.0,
+        order_gap: float = 0.0,
+        cer: float | None = None,
+        wer: float | None = None,
+        table_structure_f1: float | None = None,
+        table_content_f1: float | None = None,
+        table_expected: int = 0,
+        table_predicted: int = 0,
+        table_matched: int = 0,
+        open_elapsed_seconds: float = 0.0,
+        text_elapsed_seconds: float = 0.0,
+        table_elapsed_seconds: float = 0.0,
+        evaluation_elapsed_seconds: float = 0.0,
+        error: str | None = None,
+        missing_top: list[tuple[str, int]] | None = None,
+        extra_top: list[tuple[str, int]] | None = None,
+    ) -> None:
+        internal_frozen_setattr(self, "stem", stem)
+        internal_frozen_setattr(self, "status", status)
+        internal_frozen_setattr(self, "cct", cct)
+        internal_frozen_setattr(self, "percent_tokens_found", percent_tokens_found)
+        internal_frozen_setattr(self, "percent_tokens_added", percent_tokens_added)
+        internal_frozen_setattr(self, "precision", precision)
+        internal_frozen_setattr(self, "gt_tokens", gt_tokens)
+        internal_frozen_setattr(self, "predicted_tokens", predicted_tokens)
+        internal_frozen_setattr(self, "matched_tokens", matched_tokens)
+        internal_frozen_setattr(self, "elapsed_seconds", elapsed_seconds)
+        internal_frozen_setattr(self, "scoring_schema_version", scoring_schema_version)
+        internal_frozen_setattr(self, "content_f1", content_f1)
+        internal_frozen_setattr(self, "order_gap", order_gap)
+        internal_frozen_setattr(self, "cer", cer)
+        internal_frozen_setattr(self, "wer", wer)
+        internal_frozen_setattr(self, "table_structure_f1", table_structure_f1)
+        internal_frozen_setattr(self, "table_content_f1", table_content_f1)
+        internal_frozen_setattr(self, "table_expected", table_expected)
+        internal_frozen_setattr(self, "table_predicted", table_predicted)
+        internal_frozen_setattr(self, "table_matched", table_matched)
+        internal_frozen_setattr(self, "open_elapsed_seconds", open_elapsed_seconds)
+        internal_frozen_setattr(self, "text_elapsed_seconds", text_elapsed_seconds)
+        internal_frozen_setattr(self, "table_elapsed_seconds", table_elapsed_seconds)
+        internal_frozen_setattr(self, "evaluation_elapsed_seconds", evaluation_elapsed_seconds)
+        internal_frozen_setattr(self, "error", error)
+        internal_frozen_setattr(self, "missing_top", missing_top)
+        internal_frozen_setattr(self, "extra_top", extra_top)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"stem={self.stem!r}, "
+            f"status={self.status!r}, "
+            f"cct={self.cct!r}, "
+            f"percent_tokens_found={self.percent_tokens_found!r}, "
+            f"percent_tokens_added={self.percent_tokens_added!r}, "
+            f"precision={self.precision!r}, "
+            f"gt_tokens={self.gt_tokens!r}, "
+            f"predicted_tokens={self.predicted_tokens!r}, "
+            f"matched_tokens={self.matched_tokens!r}, "
+            f"elapsed_seconds={self.elapsed_seconds!r}, "
+            f"scoring_schema_version={self.scoring_schema_version!r}, "
+            f"content_f1={self.content_f1!r}, "
+            f"order_gap={self.order_gap!r}, "
+            f"cer={self.cer!r}, "
+            f"wer={self.wer!r}, "
+            f"table_structure_f1={self.table_structure_f1!r}, "
+            f"table_content_f1={self.table_content_f1!r}, "
+            f"table_expected={self.table_expected!r}, "
+            f"table_predicted={self.table_predicted!r}, "
+            f"table_matched={self.table_matched!r}, "
+            f"open_elapsed_seconds={self.open_elapsed_seconds!r}, "
+            f"text_elapsed_seconds={self.text_elapsed_seconds!r}, "
+            f"table_elapsed_seconds={self.table_elapsed_seconds!r}, "
+            f"evaluation_elapsed_seconds={self.evaluation_elapsed_seconds!r}, "
+            f"error={self.error!r}, "
+            f"missing_top={self.missing_top!r}, "
+            f"extra_top={self.extra_top!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.stem == other.stem
+            and self.status == other.status
+            and self.cct == other.cct
+            and self.percent_tokens_found == other.percent_tokens_found
+            and self.percent_tokens_added == other.percent_tokens_added
+            and self.precision == other.precision
+            and self.gt_tokens == other.gt_tokens
+            and self.predicted_tokens == other.predicted_tokens
+            and self.matched_tokens == other.matched_tokens
+            and self.elapsed_seconds == other.elapsed_seconds
+            and self.scoring_schema_version == other.scoring_schema_version
+            and self.content_f1 == other.content_f1
+            and self.order_gap == other.order_gap
+            and self.cer == other.cer
+            and self.wer == other.wer
+            and self.table_structure_f1 == other.table_structure_f1
+            and self.table_content_f1 == other.table_content_f1
+            and self.table_expected == other.table_expected
+            and self.table_predicted == other.table_predicted
+            and self.table_matched == other.table_matched
+            and self.open_elapsed_seconds == other.open_elapsed_seconds
+            and self.text_elapsed_seconds == other.text_elapsed_seconds
+            and self.table_elapsed_seconds == other.table_elapsed_seconds
+            and self.evaluation_elapsed_seconds == other.evaluation_elapsed_seconds
+            and self.error == other.error
+            and self.missing_top == other.missing_top
+            and self.extra_top == other.extra_top
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.stem,
+                self.status,
+                self.cct,
+                self.percent_tokens_found,
+                self.percent_tokens_added,
+                self.precision,
+                self.gt_tokens,
+                self.predicted_tokens,
+                self.matched_tokens,
+                self.elapsed_seconds,
+                self.scoring_schema_version,
+                self.content_f1,
+                self.order_gap,
+                self.cer,
+                self.wer,
+                self.table_structure_f1,
+                self.table_content_f1,
+                self.table_expected,
+                self.table_predicted,
+                self.table_matched,
+                self.open_elapsed_seconds,
+                self.text_elapsed_seconds,
+                self.table_elapsed_seconds,
+                self.evaluation_elapsed_seconds,
+                self.error,
+                self.missing_top,
+                self.extra_top,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        stem = changes.pop("stem", self.stem)
+        status = changes.pop("status", self.status)
+        cct = changes.pop("cct", self.cct)
+        percent_tokens_found = changes.pop("percent_tokens_found", self.percent_tokens_found)
+        percent_tokens_added = changes.pop("percent_tokens_added", self.percent_tokens_added)
+        precision = changes.pop("precision", self.precision)
+        gt_tokens = changes.pop("gt_tokens", self.gt_tokens)
+        predicted_tokens = changes.pop("predicted_tokens", self.predicted_tokens)
+        matched_tokens = changes.pop("matched_tokens", self.matched_tokens)
+        elapsed_seconds = changes.pop("elapsed_seconds", self.elapsed_seconds)
+        scoring_schema_version = changes.pop("scoring_schema_version", self.scoring_schema_version)
+        content_f1 = changes.pop("content_f1", self.content_f1)
+        order_gap = changes.pop("order_gap", self.order_gap)
+        cer = changes.pop("cer", self.cer)
+        wer = changes.pop("wer", self.wer)
+        table_structure_f1 = changes.pop("table_structure_f1", self.table_structure_f1)
+        table_content_f1 = changes.pop("table_content_f1", self.table_content_f1)
+        table_expected = changes.pop("table_expected", self.table_expected)
+        table_predicted = changes.pop("table_predicted", self.table_predicted)
+        table_matched = changes.pop("table_matched", self.table_matched)
+        open_elapsed_seconds = changes.pop("open_elapsed_seconds", self.open_elapsed_seconds)
+        text_elapsed_seconds = changes.pop("text_elapsed_seconds", self.text_elapsed_seconds)
+        table_elapsed_seconds = changes.pop("table_elapsed_seconds", self.table_elapsed_seconds)
+        evaluation_elapsed_seconds = changes.pop(
+            "evaluation_elapsed_seconds", self.evaluation_elapsed_seconds
+        )
+        error = changes.pop("error", self.error)
+        missing_top = changes.pop("missing_top", self.missing_top)
+        extra_top = changes.pop("extra_top", self.extra_top)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            stem,
+            status,
+            cct,
+            percent_tokens_found,
+            percent_tokens_added,
+            precision,
+            gt_tokens,
+            predicted_tokens,
+            matched_tokens,
+            elapsed_seconds,
+            scoring_schema_version,
+            content_f1,
+            order_gap,
+            cer,
+            wer,
+            table_structure_f1,
+            table_content_f1,
+            table_expected,
+            table_predicted,
+            table_matched,
+            open_elapsed_seconds,
+            text_elapsed_seconds,
+            table_elapsed_seconds,
+            evaluation_elapsed_seconds,
+            error,
+            missing_top,
+            extra_top,
+        )
 
 
-@dataclass(frozen=True)
 class NumberedCaseScore:
     case_number: int
     score: CaseScore
+
+    __fields__: ClassVar[tuple[str, ...]] = ("case_number", "score")
+    __match_args__ = ("case_number", "score")
+
+    def __init__(self, case_number: int, score: CaseScore) -> None:
+        internal_frozen_setattr(self, "case_number", case_number)
+        internal_frozen_setattr(self, "score", score)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}(case_number={self.case_number!r}, score={self.score!r})"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.case_number == other.case_number and self.score == other.score
+
+    def __hash__(self) -> int:
+        return hash((self.case_number, self.score))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        case_number = changes.pop("case_number", self.case_number)
+        score = changes.pop("score", self.score)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(case_number, score)
 
 
 def score_failure_bucket(score: CaseScore) -> str:
@@ -866,20 +1235,137 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
-@dataclass
 class ScoreBench:
-    document_class: type[PdfDocument] = field(default=PdfDocument, repr=False, kw_only=True)
-    root: Path = SCORE_BENCH_ROOT
-    limit: int | None = None
-    case_filters: tuple[str, ...] = ()
-    json_output: Path | None = None
-    html_output: Path | None = DEFAULT_HTML_OUTPUT
-    full_results: bool = False
-    report_limit: int = 25
-    partition: str = "all"
-    fail_on_errors: bool = False
-    total_cases: int = field(init=False, default=0)
-    started_at: float = field(init=False, default=0.0)
+    document_class: type[PdfDocument]
+    root: Path
+    limit: int | None
+    case_filters: tuple[str, ...]
+    json_output: Path | None
+    html_output: Path | None
+    full_results: bool
+    report_limit: int
+    partition: str
+    fail_on_errors: bool
+    total_cases: int
+    started_at: float
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "document_class",
+        "root",
+        "limit",
+        "case_filters",
+        "json_output",
+        "html_output",
+        "full_results",
+        "report_limit",
+        "partition",
+        "fail_on_errors",
+        "total_cases",
+        "started_at",
+    )
+    __match_args__ = (
+        "root",
+        "limit",
+        "case_filters",
+        "json_output",
+        "html_output",
+        "full_results",
+        "report_limit",
+        "partition",
+        "fail_on_errors",
+    )
+
+    def __init__(
+        self,
+        root: Path = SCORE_BENCH_ROOT,
+        limit: int | None = None,
+        case_filters: tuple[str, ...] = (),
+        json_output: Path | None = None,
+        html_output: Path | None = DEFAULT_HTML_OUTPUT,
+        full_results: bool = False,
+        report_limit: int = 25,
+        partition: str = "all",
+        fail_on_errors: bool = False,
+        *,
+        document_class: type[PdfDocument] = PdfDocument,
+    ) -> None:
+        self.document_class = document_class
+        self.root = root
+        self.limit = limit
+        self.case_filters = case_filters
+        self.json_output = json_output
+        self.html_output = html_output
+        self.full_results = full_results
+        self.report_limit = report_limit
+        self.partition = partition
+        self.fail_on_errors = fail_on_errors
+        self.total_cases = 0
+        self.started_at = 0.0
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"root={self.root!r}, "
+            f"limit={self.limit!r}, "
+            f"case_filters={self.case_filters!r}, "
+            f"json_output={self.json_output!r}, "
+            f"html_output={self.html_output!r}, "
+            f"full_results={self.full_results!r}, "
+            f"report_limit={self.report_limit!r}, "
+            f"partition={self.partition!r}, "
+            f"fail_on_errors={self.fail_on_errors!r}, "
+            f"total_cases={self.total_cases!r}, "
+            f"started_at={self.started_at!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.document_class == other.document_class
+            and self.root == other.root
+            and self.limit == other.limit
+            and self.case_filters == other.case_filters
+            and self.json_output == other.json_output
+            and self.html_output == other.html_output
+            and self.full_results == other.full_results
+            and self.report_limit == other.report_limit
+            and self.partition == other.partition
+            and self.fail_on_errors == other.fail_on_errors
+            and self.total_cases == other.total_cases
+            and self.started_at == other.started_at
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        document_class = changes.pop("document_class", self.document_class)
+        root = changes.pop("root", self.root)
+        limit = changes.pop("limit", self.limit)
+        case_filters = changes.pop("case_filters", self.case_filters)
+        json_output = changes.pop("json_output", self.json_output)
+        html_output = changes.pop("html_output", self.html_output)
+        full_results = changes.pop("full_results", self.full_results)
+        report_limit = changes.pop("report_limit", self.report_limit)
+        partition = changes.pop("partition", self.partition)
+        fail_on_errors = changes.pop("fail_on_errors", self.fail_on_errors)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            root,
+            limit,
+            case_filters,
+            json_output,
+            html_output,
+            full_results,
+            report_limit,
+            partition,
+            fail_on_errors,
+            document_class=document_class,
+        )
 
     @classmethod
     def from_cli(cls, argv: list[str] | None = None) -> ScoreBench:
@@ -1101,7 +1587,14 @@ class ScoreBench:
             return
         self.json_output.parent.mkdir(parents=True, exist_ok=True)
         self.json_output.write_text(
-            json.dumps([asdict(result.score) for result in results], indent=2) + "\n",
+            json.dumps(
+                [
+                    {name: getattr(result.score, name) for name in result.score.__fields__}
+                    for result in results
+                ],
+                indent=2,
+            )
+            + "\n",
             encoding="utf-8",
         )
 

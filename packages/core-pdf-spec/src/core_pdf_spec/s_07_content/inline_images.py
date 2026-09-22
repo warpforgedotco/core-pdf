@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_filters.decode_spec import (
@@ -25,6 +25,9 @@ from core_pdf_spec.s_07_syntax_primitives.scanning import (
 from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfName
+
+internal_frozen_setattr = object.__setattr__
+
 
 INLINE_IMAGE_KEY_MAP = {
     "BPC": "BitsPerComponent",
@@ -59,10 +62,51 @@ def internal_normalize_inline_color_space(value: PdfObject) -> PdfObject:
     return value
 
 
-@dataclass(frozen=True, slots=True)
 class InlineImage:
+    __slots__ = ("dictionary", "data")
+
     dictionary: PdfDict
     data: bytes
+
+    __fields__: ClassVar[tuple[str, ...]] = ("dictionary", "data")
+    __match_args__ = ("dictionary", "data")
+
+    def __init__(self, dictionary: PdfDict, data: bytes) -> None:
+        internal_frozen_setattr(self, "dictionary", dictionary)
+        internal_frozen_setattr(self, "data", data)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(dictionary={self.dictionary!r}, data={self.data!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.dictionary == other.dictionary and self.data == other.data
+
+    def __hash__(self) -> int:
+        return hash((self.dictionary, self.data))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        dictionary = changes.pop("dictionary", self.dictionary)
+        data = changes.pop("data", self.data)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(dictionary, data)
 
 
 class InlineImageDataLengthError(PdfParseError):

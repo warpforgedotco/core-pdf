@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
+from copy import replace
 from io import BytesIO
 from os import PathLike
 from typing import Any, cast

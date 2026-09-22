@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import replace
+from copy import replace
 from statistics import fmean
 
 from core_pdf.impl._impl.capture.records import CapturedDrawing

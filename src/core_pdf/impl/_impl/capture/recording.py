@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from math import hypot
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
 from core_pdf.impl._impl.capture.paths import flatten_path
 from core_pdf.impl._impl.capture.program import CapturedProgram
@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from core_pdf.impl._impl.capture.interpreter import TextState
     from core_pdf_spec.s_07_content.inline_images import InlineImage
 
-from dataclasses import dataclass
 
 from core_pdf.impl._impl.capture.glyphs import (
     GlyphCapture,
@@ -79,11 +78,55 @@ from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
 
 
-@dataclass(slots=True)
 class CaptureGraphicsSave:
+    __slots__ = ("clip_bbox", "group_alpha", "clip_scope_emitted")
+
     clip_bbox: Rectangle | None
     group_alpha: float | None
-    clip_scope_emitted: bool = False
+    clip_scope_emitted: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = ("clip_bbox", "group_alpha", "clip_scope_emitted")
+    __match_args__ = ("clip_bbox", "group_alpha", "clip_scope_emitted")
+
+    def __init__(
+        self,
+        clip_bbox: Rectangle | None,
+        group_alpha: float | None,
+        clip_scope_emitted: bool = False,
+    ) -> None:
+        self.clip_bbox = clip_bbox
+        self.group_alpha = group_alpha
+        self.clip_scope_emitted = clip_scope_emitted
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"clip_bbox={self.clip_bbox!r}, "
+            f"group_alpha={self.group_alpha!r}, "
+            f"clip_scope_emitted={self.clip_scope_emitted!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.clip_bbox == other.clip_bbox
+            and self.group_alpha == other.group_alpha
+            and self.clip_scope_emitted == other.clip_scope_emitted
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        clip_bbox = changes.pop("clip_bbox", self.clip_bbox)
+        group_alpha = changes.pop("group_alpha", self.group_alpha)
+        clip_scope_emitted = changes.pop("clip_scope_emitted", self.clip_scope_emitted)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(clip_bbox, group_alpha, clip_scope_emitted)
 
 
 MATRIX_TOLERANCE = 0.1

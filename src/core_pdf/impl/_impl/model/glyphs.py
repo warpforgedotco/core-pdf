@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl._impl.model.geometry import bbox_union
 from core_pdf.impl.types import Rectangle
@@ -68,51 +68,418 @@ class GlyphUnicodeSemantics(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
-@dataclass(slots=True, eq=False)
 class GlyphObservation:
+    __slots__ = (
+        "text",
+        "ink_bbox",
+        "advance_bbox",
+        "seqno",
+        "code_bytes",
+        "char_code",
+        "cid",
+        "gid",
+        "font_name",
+        "font_size",
+        "baseline",
+        "rotation_angle",
+        "fill",
+        "visible",
+        "confidence",
+        "unicode_source",
+        "alternates",
+        "bitmap",
+        "bitmap_width",
+        "bitmap_height",
+        "bitmap_code",
+        "font_decoder",
+        "effective_font_size",
+        "effective_font_height",
+        "provenance",
+        "glyph_transform",
+        "text_render_mode",
+        "fill_opacity",
+        "stroke_color",
+        "stroke_opacity",
+        "line_width",
+        "blend_mode",
+        "soft_mask_alpha",
+        "paint_glyph",
+        "text_object_id",
+        "line_cap",
+        "line_join",
+        "dash_pattern",
+        "cluster_key",
+        "clip_glyph",
+        "alpha_is_shape",
+        "paint_from_program",
+        "graphics_soft_mask",
+    )
+
     text: str
     ink_bbox: Rectangle
     advance_bbox: Rectangle
     seqno: int
-    code_bytes: bytes = b""
-    char_code: int | None = None
-    cid: int | None = None
-    gid: int | None = None
-    font_name: str | None = None
-    font_size: float = 0.0
-    baseline: Rectangle | None = None
-    rotation_angle: int = 0
-    fill: tuple[float, ...] | None = None
-    visible: bool = True
-    confidence: float | None = None
-    unicode_source: str = ""
-    alternates: tuple[str, ...] = ()
-    bitmap: tuple[int, ...] = ()
-    bitmap_width: int = 0
-    bitmap_height: int = 0
-    bitmap_code: int | None = None
-    font_decoder: object | None = None
-    effective_font_size: float = 0.0
-    effective_font_height: float = 0.0
-    provenance: tuple[tuple[str, object], ...] = ()
-    glyph_transform: Matrix6 | None = None
-    text_render_mode: int = 0
-    fill_opacity: float | None = None
-    stroke_color: tuple[float, ...] | None = None
-    stroke_opacity: float | None = None
-    line_width: float = 1.0
-    blend_mode: str | None = None
-    soft_mask_alpha: float | None = None
-    paint_glyph: bool = True
-    text_object_id: int = 0
-    line_cap: int = 0
-    line_join: int = 0
-    dash_pattern: tuple[list[float], float] | None = None
-    cluster_key: tuple[int, int] | None = None
-    clip_glyph: bool = False
-    alpha_is_shape: bool = False
-    paint_from_program: bool = False
-    graphics_soft_mask: object | None = None
+    code_bytes: bytes
+    char_code: int | None
+    cid: int | None
+    gid: int | None
+    font_name: str | None
+    font_size: float
+    baseline: Rectangle | None
+    rotation_angle: int
+    fill: tuple[float, ...] | None
+    visible: bool
+    confidence: float | None
+    unicode_source: str
+    alternates: tuple[str, ...]
+    bitmap: tuple[int, ...]
+    bitmap_width: int
+    bitmap_height: int
+    bitmap_code: int | None
+    font_decoder: object | None
+    effective_font_size: float
+    effective_font_height: float
+    provenance: tuple[tuple[str, object], ...]
+    glyph_transform: Matrix6 | None
+    text_render_mode: int
+    fill_opacity: float | None
+    stroke_color: tuple[float, ...] | None
+    stroke_opacity: float | None
+    line_width: float
+    blend_mode: str | None
+    soft_mask_alpha: float | None
+    paint_glyph: bool
+    text_object_id: int
+    line_cap: int
+    line_join: int
+    dash_pattern: tuple[list[float], float] | None
+    cluster_key: tuple[int, int] | None
+    clip_glyph: bool
+    alpha_is_shape: bool
+    paint_from_program: bool
+    graphics_soft_mask: object | None
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "text",
+        "ink_bbox",
+        "advance_bbox",
+        "seqno",
+        "code_bytes",
+        "char_code",
+        "cid",
+        "gid",
+        "font_name",
+        "font_size",
+        "baseline",
+        "rotation_angle",
+        "fill",
+        "visible",
+        "confidence",
+        "unicode_source",
+        "alternates",
+        "bitmap",
+        "bitmap_width",
+        "bitmap_height",
+        "bitmap_code",
+        "font_decoder",
+        "effective_font_size",
+        "effective_font_height",
+        "provenance",
+        "glyph_transform",
+        "text_render_mode",
+        "fill_opacity",
+        "stroke_color",
+        "stroke_opacity",
+        "line_width",
+        "blend_mode",
+        "soft_mask_alpha",
+        "paint_glyph",
+        "text_object_id",
+        "line_cap",
+        "line_join",
+        "dash_pattern",
+        "cluster_key",
+        "clip_glyph",
+        "alpha_is_shape",
+        "paint_from_program",
+        "graphics_soft_mask",
+    )
+    __match_args__ = (
+        "text",
+        "ink_bbox",
+        "advance_bbox",
+        "seqno",
+        "code_bytes",
+        "char_code",
+        "cid",
+        "gid",
+        "font_name",
+        "font_size",
+        "baseline",
+        "rotation_angle",
+        "fill",
+        "visible",
+        "confidence",
+        "unicode_source",
+        "alternates",
+        "bitmap",
+        "bitmap_width",
+        "bitmap_height",
+        "bitmap_code",
+        "font_decoder",
+        "effective_font_size",
+        "effective_font_height",
+        "provenance",
+        "glyph_transform",
+        "text_render_mode",
+        "fill_opacity",
+        "stroke_color",
+        "stroke_opacity",
+        "line_width",
+        "blend_mode",
+        "soft_mask_alpha",
+        "paint_glyph",
+        "text_object_id",
+        "line_cap",
+        "line_join",
+        "dash_pattern",
+        "cluster_key",
+        "clip_glyph",
+        "alpha_is_shape",
+        "paint_from_program",
+        "graphics_soft_mask",
+    )
+
+    def __init__(
+        self,
+        text: str,
+        ink_bbox: Rectangle,
+        advance_bbox: Rectangle,
+        seqno: int,
+        code_bytes: bytes = b"",
+        char_code: int | None = None,
+        cid: int | None = None,
+        gid: int | None = None,
+        font_name: str | None = None,
+        font_size: float = 0.0,
+        baseline: Rectangle | None = None,
+        rotation_angle: int = 0,
+        fill: tuple[float, ...] | None = None,
+        visible: bool = True,
+        confidence: float | None = None,
+        unicode_source: str = "",
+        alternates: tuple[str, ...] = (),
+        bitmap: tuple[int, ...] = (),
+        bitmap_width: int = 0,
+        bitmap_height: int = 0,
+        bitmap_code: int | None = None,
+        font_decoder: object | None = None,
+        effective_font_size: float = 0.0,
+        effective_font_height: float = 0.0,
+        provenance: tuple[tuple[str, object], ...] = (),
+        glyph_transform: Matrix6 | None = None,
+        text_render_mode: int = 0,
+        fill_opacity: float | None = None,
+        stroke_color: tuple[float, ...] | None = None,
+        stroke_opacity: float | None = None,
+        line_width: float = 1.0,
+        blend_mode: str | None = None,
+        soft_mask_alpha: float | None = None,
+        paint_glyph: bool = True,
+        text_object_id: int = 0,
+        line_cap: int = 0,
+        line_join: int = 0,
+        dash_pattern: tuple[list[float], float] | None = None,
+        cluster_key: tuple[int, int] | None = None,
+        clip_glyph: bool = False,
+        alpha_is_shape: bool = False,
+        paint_from_program: bool = False,
+        graphics_soft_mask: object | None = None,
+    ) -> None:
+        self.text = text
+        self.ink_bbox = ink_bbox
+        self.advance_bbox = advance_bbox
+        self.seqno = seqno
+        self.code_bytes = code_bytes
+        self.char_code = char_code
+        self.cid = cid
+        self.gid = gid
+        self.font_name = font_name
+        self.font_size = font_size
+        self.baseline = baseline
+        self.rotation_angle = rotation_angle
+        self.fill = fill
+        self.visible = visible
+        self.confidence = confidence
+        self.unicode_source = unicode_source
+        self.alternates = alternates
+        self.bitmap = bitmap
+        self.bitmap_width = bitmap_width
+        self.bitmap_height = bitmap_height
+        self.bitmap_code = bitmap_code
+        self.font_decoder = font_decoder
+        self.effective_font_size = effective_font_size
+        self.effective_font_height = effective_font_height
+        self.provenance = provenance
+        self.glyph_transform = glyph_transform
+        self.text_render_mode = text_render_mode
+        self.fill_opacity = fill_opacity
+        self.stroke_color = stroke_color
+        self.stroke_opacity = stroke_opacity
+        self.line_width = line_width
+        self.blend_mode = blend_mode
+        self.soft_mask_alpha = soft_mask_alpha
+        self.paint_glyph = paint_glyph
+        self.text_object_id = text_object_id
+        self.line_cap = line_cap
+        self.line_join = line_join
+        self.dash_pattern = dash_pattern
+        self.cluster_key = cluster_key
+        self.clip_glyph = clip_glyph
+        self.alpha_is_shape = alpha_is_shape
+        self.paint_from_program = paint_from_program
+        self.graphics_soft_mask = graphics_soft_mask
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"text={self.text!r}, "
+            f"ink_bbox={self.ink_bbox!r}, "
+            f"advance_bbox={self.advance_bbox!r}, "
+            f"seqno={self.seqno!r}, "
+            f"code_bytes={self.code_bytes!r}, "
+            f"char_code={self.char_code!r}, "
+            f"cid={self.cid!r}, "
+            f"gid={self.gid!r}, "
+            f"font_name={self.font_name!r}, "
+            f"font_size={self.font_size!r}, "
+            f"baseline={self.baseline!r}, "
+            f"rotation_angle={self.rotation_angle!r}, "
+            f"fill={self.fill!r}, "
+            f"visible={self.visible!r}, "
+            f"confidence={self.confidence!r}, "
+            f"unicode_source={self.unicode_source!r}, "
+            f"alternates={self.alternates!r}, "
+            f"bitmap={self.bitmap!r}, "
+            f"bitmap_width={self.bitmap_width!r}, "
+            f"bitmap_height={self.bitmap_height!r}, "
+            f"bitmap_code={self.bitmap_code!r}, "
+            f"font_decoder={self.font_decoder!r}, "
+            f"effective_font_size={self.effective_font_size!r}, "
+            f"effective_font_height={self.effective_font_height!r}, "
+            f"provenance={self.provenance!r}, "
+            f"glyph_transform={self.glyph_transform!r}, "
+            f"text_render_mode={self.text_render_mode!r}, "
+            f"fill_opacity={self.fill_opacity!r}, "
+            f"stroke_color={self.stroke_color!r}, "
+            f"stroke_opacity={self.stroke_opacity!r}, "
+            f"line_width={self.line_width!r}, "
+            f"blend_mode={self.blend_mode!r}, "
+            f"soft_mask_alpha={self.soft_mask_alpha!r}, "
+            f"paint_glyph={self.paint_glyph!r}, "
+            f"text_object_id={self.text_object_id!r}, "
+            f"line_cap={self.line_cap!r}, "
+            f"line_join={self.line_join!r}, "
+            f"dash_pattern={self.dash_pattern!r}, "
+            f"cluster_key={self.cluster_key!r}, "
+            f"clip_glyph={self.clip_glyph!r}, "
+            f"alpha_is_shape={self.alpha_is_shape!r}, "
+            f"paint_from_program={self.paint_from_program!r}, "
+            f"graphics_soft_mask={self.graphics_soft_mask!r}"
+            ")"
+        )
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        ink_bbox = changes.pop("ink_bbox", self.ink_bbox)
+        advance_bbox = changes.pop("advance_bbox", self.advance_bbox)
+        seqno = changes.pop("seqno", self.seqno)
+        code_bytes = changes.pop("code_bytes", self.code_bytes)
+        char_code = changes.pop("char_code", self.char_code)
+        cid = changes.pop("cid", self.cid)
+        gid = changes.pop("gid", self.gid)
+        font_name = changes.pop("font_name", self.font_name)
+        font_size = changes.pop("font_size", self.font_size)
+        baseline = changes.pop("baseline", self.baseline)
+        rotation_angle = changes.pop("rotation_angle", self.rotation_angle)
+        fill = changes.pop("fill", self.fill)
+        visible = changes.pop("visible", self.visible)
+        confidence = changes.pop("confidence", self.confidence)
+        unicode_source = changes.pop("unicode_source", self.unicode_source)
+        alternates = changes.pop("alternates", self.alternates)
+        bitmap = changes.pop("bitmap", self.bitmap)
+        bitmap_width = changes.pop("bitmap_width", self.bitmap_width)
+        bitmap_height = changes.pop("bitmap_height", self.bitmap_height)
+        bitmap_code = changes.pop("bitmap_code", self.bitmap_code)
+        font_decoder = changes.pop("font_decoder", self.font_decoder)
+        effective_font_size = changes.pop("effective_font_size", self.effective_font_size)
+        effective_font_height = changes.pop("effective_font_height", self.effective_font_height)
+        provenance = changes.pop("provenance", self.provenance)
+        glyph_transform = changes.pop("glyph_transform", self.glyph_transform)
+        text_render_mode = changes.pop("text_render_mode", self.text_render_mode)
+        fill_opacity = changes.pop("fill_opacity", self.fill_opacity)
+        stroke_color = changes.pop("stroke_color", self.stroke_color)
+        stroke_opacity = changes.pop("stroke_opacity", self.stroke_opacity)
+        line_width = changes.pop("line_width", self.line_width)
+        blend_mode = changes.pop("blend_mode", self.blend_mode)
+        soft_mask_alpha = changes.pop("soft_mask_alpha", self.soft_mask_alpha)
+        paint_glyph = changes.pop("paint_glyph", self.paint_glyph)
+        text_object_id = changes.pop("text_object_id", self.text_object_id)
+        line_cap = changes.pop("line_cap", self.line_cap)
+        line_join = changes.pop("line_join", self.line_join)
+        dash_pattern = changes.pop("dash_pattern", self.dash_pattern)
+        cluster_key = changes.pop("cluster_key", self.cluster_key)
+        clip_glyph = changes.pop("clip_glyph", self.clip_glyph)
+        alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
+        paint_from_program = changes.pop("paint_from_program", self.paint_from_program)
+        graphics_soft_mask = changes.pop("graphics_soft_mask", self.graphics_soft_mask)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            text,
+            ink_bbox,
+            advance_bbox,
+            seqno,
+            code_bytes,
+            char_code,
+            cid,
+            gid,
+            font_name,
+            font_size,
+            baseline,
+            rotation_angle,
+            fill,
+            visible,
+            confidence,
+            unicode_source,
+            alternates,
+            bitmap,
+            bitmap_width,
+            bitmap_height,
+            bitmap_code,
+            font_decoder,
+            effective_font_size,
+            effective_font_height,
+            provenance,
+            glyph_transform,
+            text_render_mode,
+            fill_opacity,
+            stroke_color,
+            stroke_opacity,
+            line_width,
+            blend_mode,
+            soft_mask_alpha,
+            paint_glyph,
+            text_object_id,
+            line_cap,
+            line_join,
+            dash_pattern,
+            cluster_key,
+            clip_glyph,
+            alpha_is_shape,
+            paint_from_program,
+            graphics_soft_mask,
+        )
 
     @property
     def has_paint(self) -> bool:
@@ -144,8 +511,17 @@ class GlyphObservation:
         return resolver(code, width=self.bitmap_width, height=self.bitmap_height)
 
 
-@dataclass(slots=True, eq=False)
 class GlyphCluster:
+    __slots__ = (
+        "cluster_id",
+        "text",
+        "glyphs",
+        "advance_bbox",
+        "ink_bbox",
+        "baseline",
+        "confidence",
+    )
+
     cluster_id: int
     text: str
     glyphs: tuple[GlyphObservation, ...]
@@ -153,6 +529,76 @@ class GlyphCluster:
     ink_bbox: Rectangle
     baseline: Rectangle | None
     confidence: float | None
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "cluster_id",
+        "text",
+        "glyphs",
+        "advance_bbox",
+        "ink_bbox",
+        "baseline",
+        "confidence",
+    )
+    __match_args__ = (
+        "cluster_id",
+        "text",
+        "glyphs",
+        "advance_bbox",
+        "ink_bbox",
+        "baseline",
+        "confidence",
+    )
+
+    def __init__(
+        self,
+        cluster_id: int,
+        text: str,
+        glyphs: tuple[GlyphObservation, ...],
+        advance_bbox: Rectangle,
+        ink_bbox: Rectangle,
+        baseline: Rectangle | None,
+        confidence: float | None,
+    ) -> None:
+        self.cluster_id = cluster_id
+        self.text = text
+        self.glyphs = glyphs
+        self.advance_bbox = advance_bbox
+        self.ink_bbox = ink_bbox
+        self.baseline = baseline
+        self.confidence = confidence
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"cluster_id={self.cluster_id!r}, "
+            f"text={self.text!r}, "
+            f"glyphs={self.glyphs!r}, "
+            f"advance_bbox={self.advance_bbox!r}, "
+            f"ink_bbox={self.ink_bbox!r}, "
+            f"baseline={self.baseline!r}, "
+            f"confidence={self.confidence!r}"
+            ")"
+        )
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        cluster_id = changes.pop("cluster_id", self.cluster_id)
+        text = changes.pop("text", self.text)
+        glyphs = changes.pop("glyphs", self.glyphs)
+        advance_bbox = changes.pop("advance_bbox", self.advance_bbox)
+        ink_bbox = changes.pop("ink_bbox", self.ink_bbox)
+        baseline = changes.pop("baseline", self.baseline)
+        confidence = changes.pop("confidence", self.confidence)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            cluster_id,
+            text,
+            glyphs,
+            advance_bbox,
+            ink_bbox,
+            baseline,
+            confidence,
+        )
 
 
 internal_CONFIDENCE_CACHE: dict[tuple[str, str, tuple[str, ...]], float] = {}

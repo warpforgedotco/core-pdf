@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar, NoReturn, Self
+
+internal_frozen_setattr = object.__setattr__
 
 
 class ElementMetadata(dict[str, Any]):
@@ -15,12 +16,56 @@ class ElementMetadata(dict[str, Any]):
         return dict(self)
 
 
-@dataclass(frozen=True, slots=True)
 class Element:
-    text: str
-    metadata: ElementMetadata = field(default_factory=ElementMetadata)
+    __slots__ = ("text", "metadata")
 
-    def __post_init__(self) -> None:
+    text: str
+    metadata: ElementMetadata
+
+    __fields__: ClassVar[tuple[str, ...]] = ("text", "metadata")
+    __match_args__ = ("text", "metadata")
+
+    def __init__(self, text: str, metadata: ElementMetadata | None = None) -> None:
+        internal_frozen_setattr(self, "text", text)
+        internal_frozen_setattr(
+            self, "metadata", ElementMetadata() if metadata is None else metadata
+        )
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(text={self.text!r}, metadata={self.metadata!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.text == other.text and self.metadata == other.metadata
+
+    def __hash__(self) -> int:
+        return hash((self.text, self.metadata))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        metadata = changes.pop("metadata", self.metadata)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(text, metadata)
+
+    def _post_init(self) -> None:
         if not isinstance(self.metadata, ElementMetadata):
             object.__setattr__(self, "metadata", ElementMetadata(self.metadata))
 

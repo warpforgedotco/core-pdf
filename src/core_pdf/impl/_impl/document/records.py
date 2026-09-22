@@ -2,37 +2,118 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl.types import PdfName, PdfString, Rectangle
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 
 
-@dataclass(slots=True, eq=False, repr=False)
 class RawOutlineItem:
+    __slots__ = ("title", "level", "dest", "page_index", "count")
+
     title: str
     level: int
     dest: PdfObject | str | None
     page_index: int | None
     count: int
 
+    __fields__: ClassVar[tuple[str, ...]] = ("title", "level", "dest", "page_index", "count")
+    __match_args__ = ("title", "level", "dest", "page_index", "count")
 
-@dataclass(slots=True, eq=False, repr=False)
+    def __init__(
+        self,
+        title: str,
+        level: int,
+        dest: PdfObject | str | None,
+        page_index: int | None,
+        count: int,
+    ) -> None:
+        self.title = title
+        self.level = level
+        self.dest = dest
+        self.page_index = page_index
+        self.count = count
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        title = changes.pop("title", self.title)
+        level = changes.pop("level", self.level)
+        dest = changes.pop("dest", self.dest)
+        page_index = changes.pop("page_index", self.page_index)
+        count = changes.pop("count", self.count)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(title, level, dest, page_index, count)
+
+
 class RawNamedDestination:
+    __slots__ = ("page_index", "type", "args", "raw")
+
     page_index: int | None
     type: str | None
     args: PdfArray
     raw: PdfObject | str
 
+    __fields__: ClassVar[tuple[str, ...]] = ("page_index", "type", "args", "raw")
+    __match_args__ = ("page_index", "type", "args", "raw")
 
-@dataclass(slots=True, eq=False, repr=False)
+    def __init__(
+        self,
+        page_index: int | None,
+        type: str | None,
+        args: PdfArray,
+        raw: PdfObject | str,
+    ) -> None:
+        self.page_index = page_index
+        self.type = type
+        self.args = args
+        self.raw = raw
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        page_index = changes.pop("page_index", self.page_index)
+        type = changes.pop("type", self.type)
+        args = changes.pop("args", self.args)
+        raw = changes.pop("raw", self.raw)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(page_index, type, args, raw)
+
+
 class RawEmbeddedFile:
+    __slots__ = ("name", "filename", "filespec", "stream", "data")
+
     name: str
     filename: str
     filespec: PdfDict
     stream: PdfStream
     data: bytes
+
+    __fields__: ClassVar[tuple[str, ...]] = ("name", "filename", "filespec", "stream", "data")
+    __match_args__ = ("name", "filename", "filespec", "stream", "data")
+
+    def __init__(
+        self,
+        name: str,
+        filename: str,
+        filespec: PdfDict,
+        stream: PdfStream,
+        data: bytes,
+    ) -> None:
+        self.name = name
+        self.filename = filename
+        self.filespec = filespec
+        self.stream = stream
+        self.data = data
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        name = changes.pop("name", self.name)
+        filename = changes.pop("filename", self.filename)
+        filespec = changes.pop("filespec", self.filespec)
+        stream = changes.pop("stream", self.stream)
+        data = changes.pop("data", self.data)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(name, filename, filespec, stream, data)
 
 
 class RawAnnotation:

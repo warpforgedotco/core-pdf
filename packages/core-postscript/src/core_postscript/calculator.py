@@ -5,7 +5,10 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass
+from typing import Any, ClassVar, NoReturn, Self
+
+internal_frozen_setattr = object.__setattr__
+
 
 STACK_LIMIT = 100
 NESTING_LIMIT = 255
@@ -62,10 +65,60 @@ type internal_Operand = int | float | bool
 type internal_Instruction = internal_Operand | str | internal_Conditional
 
 
-@dataclass(frozen=True, slots=True)
 class internal_Conditional:
+    __slots__ = ("when_true", "when_false")
+
     when_true: tuple[internal_Instruction, ...]
-    when_false: tuple[internal_Instruction, ...] = ()
+    when_false: tuple[internal_Instruction, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("when_true", "when_false")
+    __match_args__ = ("when_true", "when_false")
+
+    def __init__(
+        self,
+        when_true: tuple[internal_Instruction, ...],
+        when_false: tuple[internal_Instruction, ...] = (),
+    ) -> None:
+        internal_frozen_setattr(self, "when_true", when_true)
+        internal_frozen_setattr(self, "when_false", when_false)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"when_true={self.when_true!r}, "
+            f"when_false={self.when_false!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.when_true == other.when_true and self.when_false == other.when_false
+
+    def __hash__(self) -> int:
+        return hash((self.when_true, self.when_false))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        when_true = changes.pop("when_true", self.when_true)
+        when_false = changes.pop("when_false", self.when_false)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(when_true, when_false)
 
 
 def internal_tokens(source: bytes) -> Iterator[bytes]:

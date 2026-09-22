@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, Self, cast
 
 from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
 from core_pdf.impl._impl.fonts.cmap_resources import resolve_cmap_decoder
@@ -33,14 +32,103 @@ def _mapping_value(mapping: object, name: str) -> object | None:
     return next((value for key, value in mapping.items() if str(key) == name), None)
 
 
-@dataclass(slots=True)
 class _FontProjection:
+    __slots__ = (
+        "font",
+        "values",
+        "has_widths",
+        "legacy_widths",
+        "first_char",
+        "recovered_malformed_token",
+    )
+
     font: dict[Any, Any]
     values: dict[str, Any]
     has_widths: bool
     legacy_widths: list[float] | None
     first_char: int
     recovered_malformed_token: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "font",
+        "values",
+        "has_widths",
+        "legacy_widths",
+        "first_char",
+        "recovered_malformed_token",
+    )
+    __match_args__ = (
+        "font",
+        "values",
+        "has_widths",
+        "legacy_widths",
+        "first_char",
+        "recovered_malformed_token",
+    )
+
+    def __init__(
+        self,
+        font: dict[Any, Any],
+        values: dict[str, Any],
+        has_widths: bool,
+        legacy_widths: list[float] | None,
+        first_char: int,
+        recovered_malformed_token: bool,
+    ) -> None:
+        self.font = font
+        self.values = values
+        self.has_widths = has_widths
+        self.legacy_widths = legacy_widths
+        self.first_char = first_char
+        self.recovered_malformed_token = recovered_malformed_token
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"font={self.font!r}, "
+            f"values={self.values!r}, "
+            f"has_widths={self.has_widths!r}, "
+            f"legacy_widths={self.legacy_widths!r}, "
+            f"first_char={self.first_char!r}, "
+            f"recovered_malformed_token={self.recovered_malformed_token!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.font == other.font
+            and self.values == other.values
+            and self.has_widths == other.has_widths
+            and self.legacy_widths == other.legacy_widths
+            and self.first_char == other.first_char
+            and self.recovered_malformed_token == other.recovered_malformed_token
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        font = changes.pop("font", self.font)
+        values = changes.pop("values", self.values)
+        has_widths = changes.pop("has_widths", self.has_widths)
+        legacy_widths = changes.pop("legacy_widths", self.legacy_widths)
+        first_char = changes.pop("first_char", self.first_char)
+        recovered_malformed_token = changes.pop(
+            "recovered_malformed_token", self.recovered_malformed_token
+        )
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            font,
+            values,
+            has_widths,
+            legacy_widths,
+            first_char,
+            recovered_malformed_token,
+        )
 
 
 internal_FONT_PROJECTION_CACHE_MAX_ENTRIES = 128

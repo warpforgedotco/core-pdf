@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from dataclasses import replace
+from copy import replace
 from typing import Any
 
 import numpy

@@ -2,16 +2,76 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl._impl.extract.contracts import TextQualityStats
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class TextAnalysis:
-    quality: TextQualityStats = field(default_factory=TextQualityStats)
-    characters: int = 0
-    suspicious_characters: int = 0
+    __slots__ = ("quality", "characters", "suspicious_characters")
+
+    quality: TextQualityStats
+    characters: int
+    suspicious_characters: int
+
+    __fields__: ClassVar[tuple[str, ...]] = ("quality", "characters", "suspicious_characters")
+    __match_args__ = ("quality", "characters", "suspicious_characters")
+
+    def __init__(
+        self,
+        quality: TextQualityStats | None = None,
+        characters: int = 0,
+        suspicious_characters: int = 0,
+    ) -> None:
+        internal_frozen_setattr(self, "quality", TextQualityStats() if quality is None else quality)
+        internal_frozen_setattr(self, "characters", characters)
+        internal_frozen_setattr(self, "suspicious_characters", suspicious_characters)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"quality={self.quality!r}, "
+            f"characters={self.characters!r}, "
+            f"suspicious_characters={self.suspicious_characters!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.quality == other.quality
+            and self.characters == other.characters
+            and self.suspicious_characters == other.suspicious_characters
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.quality, self.characters, self.suspicious_characters))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        quality = changes.pop("quality", self.quality)
+        characters = changes.pop("characters", self.characters)
+        suspicious_characters = changes.pop("suspicious_characters", self.suspicious_characters)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(quality, characters, suspicious_characters)
 
 
 internal_ASCII_VOWELS = frozenset("aeiouAEIOU")

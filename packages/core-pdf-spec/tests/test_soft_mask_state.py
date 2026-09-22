@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from dataclasses import FrozenInstanceError
 from typing import Any, cast
 
 import pytest
@@ -91,7 +90,7 @@ def test_alpha_descriptor_preserves_group_identity_without_decoding_or_resource_
     assert descriptor.subtype == "Alpha"
     assert descriptor.transfer is descriptor.backdrop_color is descriptor.color_space is None
     assert state.graphics.fill_opacity == 0.4
-    with pytest.raises(FrozenInstanceError):
+    with pytest.raises(AttributeError):
         cast(Any, descriptor).ctm = Matrix(2, 0, 0, 2, 0, 0)
 
 

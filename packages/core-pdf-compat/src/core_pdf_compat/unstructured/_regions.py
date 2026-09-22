@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
@@ -18,12 +17,72 @@ from ._elements import (
     ListItem,
 )
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class internal_TextRegion:
+    __slots__ = ("text", "bbox", "element_class")
+
     text: str
     bbox: tuple[float, float, float, float]
-    element_class: type[Element] | None = None
+    element_class: type[Element] | None
+
+    __fields__: ClassVar[tuple[str, ...]] = ("text", "bbox", "element_class")
+    __match_args__ = ("text", "bbox", "element_class")
+
+    def __init__(
+        self,
+        text: str,
+        bbox: tuple[float, float, float, float],
+        element_class: type[Element] | None = None,
+    ) -> None:
+        internal_frozen_setattr(self, "text", text)
+        internal_frozen_setattr(self, "bbox", bbox)
+        internal_frozen_setattr(self, "element_class", element_class)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"text={self.text!r}, "
+            f"bbox={self.bbox!r}, "
+            f"element_class={self.element_class!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.text == other.text
+            and self.bbox == other.bbox
+            and self.element_class == other.element_class
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.text, self.bbox, self.element_class))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        bbox = changes.pop("bbox", self.bbox)
+        element_class = changes.pop("element_class", self.element_class)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(text, bbox, element_class)
 
 
 def internal_clean_text(text: str) -> str:

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import fields as dataclass_fields
-from dataclasses import replace
+from copy import replace
 from typing import Any, cast
 
 import numpy
@@ -453,10 +452,7 @@ def internal_enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
         for filter_name in declared_filter_names(image.dictionary.get("Filter"))
     )
     evidence = PageEvidence(
-        **{
-            field.name: getattr(native.evidence, field.name)
-            for field in dataclass_fields(native.evidence)
-        },
+        **{name: getattr(native.evidence, name) for name in native.evidence.__fields__},
         vector_complexity=internal_vector_complexity(program.drawings, program.lines),
         image_filters=image_filters,
         uncovered_vector_area=internal_uncovered_vector_area(
