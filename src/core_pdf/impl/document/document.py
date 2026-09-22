@@ -250,11 +250,6 @@ class PdfDocument(Generic[PageT]):
         "_standards",
         "standards_complete",
         "font_decoders",
-        # DocumentXRefMixin carried no __slots__, so instances have always had a
-        # __dict__ and the compat facades patch methods onto them. Declared here
-        # now that the mixin is gone, so the layout is a choice rather than an
-        # accident of a base class.
-        "__dict__",
     )
 
     source: PdfSource
