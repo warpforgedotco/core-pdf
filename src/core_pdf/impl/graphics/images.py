@@ -5,7 +5,7 @@ from __future__ import annotations
 import typing
 from contextlib import suppress
 from itertools import batched
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 import numpy
 
@@ -88,16 +88,6 @@ class DecodedRaster(Record):
         frozen_setattr(self, "height", height)
         frozen_setattr(self, "channels", channels)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"data={self.data!r}, "
-            f"width={self.width!r}, "
-            f"height={self.height!r}, "
-            f"channels={self.channels!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -112,15 +102,6 @@ class DecodedRaster(Record):
 
     def __hash__(self) -> int:
         return hash((self.data, self.width, self.height, self.channels))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        data = changes.pop("data", self.data)
-        width = changes.pop("width", self.width)
-        height = changes.pop("height", self.height)
-        channels = changes.pop("channels", self.channels)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(data, width, height, channels)
 
 
 class ImageRaster(Record):
@@ -137,11 +118,6 @@ class ImageRaster(Record):
         frozen_setattr(self, "color_model", color_model)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}(array={self.array!r}, color_model={self.color_model!r})"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -151,13 +127,6 @@ class ImageRaster(Record):
 
     def __hash__(self) -> int:
         return hash((self.array, self.color_model))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        array = changes.pop("array", self.array)
-        color_model = changes.pop("color_model", self.color_model)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(array, color_model)
 
     def _post_init(self) -> None:
         array = numpy.asarray(self.array, dtype=numpy.uint8)
@@ -214,15 +183,6 @@ class PreparedImage(Record):
         frozen_setattr(self, "is_stencil", is_stencil)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"raster={self.raster!r}, "
-            f"soft_mask={self.soft_mask!r}, "
-            f"is_stencil={self.is_stencil!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -236,14 +196,6 @@ class PreparedImage(Record):
 
     def __hash__(self) -> int:
         return hash((self.raster, self.soft_mask, self.is_stencil))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        raster = changes.pop("raster", self.raster)
-        soft_mask = changes.pop("soft_mask", self.soft_mask)
-        is_stencil = changes.pop("is_stencil", self.is_stencil)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(raster, soft_mask, is_stencil)
 
     def _post_init(self) -> None:
         soft_mask = self.soft_mask
@@ -650,9 +602,6 @@ class DecodedImage(Record):
         frozen_setattr(self, "source", source)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(array={self.array!r}, source={self.source!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -662,13 +611,6 @@ class DecodedImage(Record):
 
     def __hash__(self) -> int:
         return hash((self.array, self.source))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        array = changes.pop("array", self.array)
-        source = changes.pop("source", self.source)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(array, source)
 
     def _post_init(self) -> None:
         if self.array.ndim not in {2, 3}:
@@ -722,15 +664,6 @@ class NativeImagePlan(Record):
         frozen_setattr(self, "params", params)
         frozen_setattr(self, "output_shape", output_shape)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"decoder={self.decoder!r}, "
-            f"params={self.params!r}, "
-            f"output_shape={self.output_shape!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -744,14 +677,6 @@ class NativeImagePlan(Record):
 
     def __hash__(self) -> int:
         return hash((self.decoder, self.params, self.output_shape))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        decoder = changes.pop("decoder", self.decoder)
-        params = changes.pop("params", self.params)
-        output_shape = changes.pop("output_shape", self.output_shape)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(decoder, params, output_shape)
 
 
 def prepare_native_image(dictionary: object) -> NativeImagePlan | None:

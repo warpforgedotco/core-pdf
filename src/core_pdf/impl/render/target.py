@@ -450,6 +450,27 @@ class RasterTarget:
         "elementary_scratch",
     )
 
+    def blend_coverage_pixel(
+        self,
+        offset: int,
+        rgba: tuple[int, int, int, int],
+        covered: int,
+        sample_total: int,
+        *,
+        track_shape: bool,
+        normal_fast: bool,
+        blend_resolved_mode: str | None,
+    ) -> None:
+        """Paint one antialiased pixel: coverage fraction to alpha, then blend."""
+        alpha = max(0, min(255, round(rgba[3] * covered / sample_total)))
+        shape = round(255 * covered / sample_total) if track_shape else 255
+        if normal_fast:
+            self.blend_normal_pixel(offset, rgba[0], rgba[1], rgba[2], alpha, shape=shape)
+        else:
+            self.blend_px(
+                offset, (rgba[0], rgba[1], rgba[2], alpha), blend_resolved_mode, shape=shape
+            )
+
     def __init__(
         self,
         pixels: bytearray,
@@ -2126,8 +2147,6 @@ class RasterTarget:
     ) -> None:
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
-        blend_normal_pixel = self.blend_normal_pixel
-        blend_px = self.blend_px
         blend_resolved_mode = self.resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_regions = clip.regions
@@ -2318,22 +2337,15 @@ class RasterTarget:
                 if covered:
                     if not rectangular_clip and not pixel_in_clip(px, py):
                         continue
-                    alpha = max(
-                        0,
-                        min(255, round(rgba[3] * covered / (samples * samples))),
+                    self.blend_coverage_pixel(
+                        row + px * 4,
+                        rgba,
+                        covered,
+                        samples * samples,
+                        track_shape=track_shape,
+                        normal_fast=normal_fast,
+                        blend_resolved_mode=blend_resolved_mode,
                     )
-                    shape = round(255 * covered / (samples * samples)) if track_shape else 255
-                    if normal_fast:
-                        blend_normal_pixel(
-                            row + px * 4, rgba[0], rgba[1], rgba[2], alpha, shape=shape
-                        )
-                    else:
-                        blend_px(
-                            row + px * 4,
-                            (rgba[0], rgba[1], rgba[2], alpha),
-                            blend_resolved_mode,
-                            shape=shape,
-                        )
 
     def fill_line(
         self,
@@ -2348,8 +2360,6 @@ class RasterTarget:
     ) -> None:
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
-        blend_normal_pixel = self.blend_normal_pixel
-        blend_px = self.blend_px
         blend_resolved_mode = self.resolved_blend(blend_mode)
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
@@ -2515,19 +2525,15 @@ class RasterTarget:
                                 if end_x * end_x + end_y * end_y <= half2:
                                     covered += 1
                 if covered:
-                    alpha = max(0, min(255, round(rgba[3] * covered / sample_total)))
-                    shape = round(255 * covered / sample_total) if track_shape else 255
-                    if normal_fast:
-                        blend_normal_pixel(
-                            row + px * 4, rgba[0], rgba[1], rgba[2], alpha, shape=shape
-                        )
-                    else:
-                        blend_px(
-                            row + px * 4,
-                            (rgba[0], rgba[1], rgba[2], alpha),
-                            blend_resolved_mode,
-                            shape=shape,
-                        )
+                    self.blend_coverage_pixel(
+                        row + px * 4,
+                        rgba,
+                        covered,
+                        sample_total,
+                        track_shape=track_shape,
+                        normal_fast=normal_fast,
+                        blend_resolved_mode=blend_resolved_mode,
+                    )
 
     def fill_join(
         self,

@@ -7,7 +7,7 @@ from bisect import bisect_left
 from collections.abc import Iterable
 from copy import replace
 from statistics import fmean
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 import numpy
 
@@ -412,16 +412,6 @@ class IndexedRow(Record):
         frozen_setattr(self, "tokens", tokens)
         frozen_setattr(self, "frame_indexes", frame_indexes)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"cells={self.cells!r}, "
-            f"texts={self.texts!r}, "
-            f"tokens={self.tokens!r}, "
-            f"frame_indexes={self.frame_indexes!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -436,15 +426,6 @@ class IndexedRow(Record):
 
     def __hash__(self) -> int:
         return hash((self.cells, self.texts, self.tokens, self.frame_indexes))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        cells = changes.pop("cells", self.cells)
-        texts = changes.pop("texts", self.texts)
-        tokens = changes.pop("tokens", self.tokens)
-        frame_indexes = changes.pop("frame_indexes", self.frame_indexes)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(cells, texts, tokens, frame_indexes)
 
 
 class TableIndex(Record):
@@ -467,15 +448,6 @@ class TableIndex(Record):
         frozen_setattr(self, "rows", rows)
         frozen_setattr(self, "frame", frame)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"table={self.table!r}, "
-            f"rows={self.rows!r}, "
-            f"frame={self.frame!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -485,14 +457,6 @@ class TableIndex(Record):
 
     def __hash__(self) -> int:
         return hash((self.table, self.rows, self.frame))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        table = changes.pop("table", self.table)
-        rows = changes.pop("rows", self.rows)
-        frame = changes.pop("frame", self.frame)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(table, rows, frame)
 
     @classmethod
     def build(cls, table: Table) -> TableIndex:
@@ -651,9 +615,6 @@ class SpatialFrame(Record):
         frozen_setattr(self, "boxes", boxes)
         frozen_setattr(self, "areas", areas)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(boxes={self.boxes!r}, areas={self.areas!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -663,13 +624,6 @@ class SpatialFrame(Record):
 
     def __hash__(self) -> int:
         return hash((self.boxes, self.areas))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        boxes = changes.pop("boxes", self.boxes)
-        areas = changes.pop("areas", self.areas)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(boxes, areas)
 
     @classmethod
     def from_boxes(cls, boxes: Iterable[Rectangle]) -> SpatialFrame:

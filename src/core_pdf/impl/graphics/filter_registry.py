@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, ClassVar, Self
+from typing import ClassVar
 
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.records import Record
@@ -58,15 +58,6 @@ class NativeImageSpec(Record):
         frozen_setattr(self, "color_names", color_names)
         frozen_setattr(self, "bits", bits)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"channels={self.channels!r}, "
-            f"color_names={self.color_names!r}, "
-            f"bits={self.bits!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -80,14 +71,6 @@ class NativeImageSpec(Record):
 
     def __hash__(self) -> int:
         return hash((self.channels, self.color_names, self.bits))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        channels = changes.pop("channels", self.channels)
-        color_names = changes.pop("color_names", self.color_names)
-        bits = changes.pop("bits", self.bits)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(channels, color_names, bits)
 
 
 RAW_SAMPLE_IMAGE = NativeImageSpec(

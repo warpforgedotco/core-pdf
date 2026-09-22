@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 
 from core_pdf.impl.model.geometry import bbox_union, normalize_rect, points_bbox
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, ReplaceFields, ReprFields
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
@@ -43,23 +43,6 @@ class CapturedSoftMask(Record):
         frozen_setattr(self, "transfer", transfer)
         frozen_setattr(self, "offset", offset)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"program={self.program!r}, "
-            f"transfer={self.transfer!r}, "
-            f"offset={self.offset!r}"
-            ")"
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        program = changes.pop("program", self.program)
-        transfer = changes.pop("transfer", self.transfer)
-        offset = changes.pop("offset", self.offset)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(program, transfer, offset)
-
 
 class CapturedTextBoundary(Record):
     __slots__ = ("seqno", "kind", "knockout")
@@ -81,15 +64,6 @@ class CapturedTextBoundary(Record):
         frozen_setattr(self, "kind", kind)
         frozen_setattr(self, "knockout", knockout)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"seqno={self.seqno!r}, "
-            f"kind={self.kind!r}, "
-            f"knockout={self.knockout!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -104,16 +78,8 @@ class CapturedTextBoundary(Record):
     def __hash__(self) -> int:
         return hash((self.seqno, self.kind, self.knockout))
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        seqno = changes.pop("seqno", self.seqno)
-        kind = changes.pop("kind", self.kind)
-        knockout = changes.pop("knockout", self.knockout)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(seqno, kind, knockout)
 
-
-class CapturedLine:
+class CapturedLine(ReplaceFields):
     __slots__ = ("x0", "y0", "x1", "y1", "line_width")
 
     x0: float
@@ -131,16 +97,6 @@ class CapturedLine:
         self.x1 = x1
         self.y1 = y1
         self.line_width = line_width
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        x0 = changes.pop("x0", self.x0)
-        y0 = changes.pop("y0", self.y0)
-        x1 = changes.pop("x1", self.x1)
-        y1 = changes.pop("y1", self.y1)
-        line_width = changes.pop("line_width", self.line_width)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(x0, y0, x1, y1, line_width)
 
 
 class CapturedInlineImage(Record):
@@ -247,27 +203,6 @@ class CapturedInlineImage(Record):
         frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
         frozen_setattr(self, "graphics_soft_mask", graphics_soft_mask)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"seqno={self.seqno!r}, "
-            f"dictionary={self.dictionary!r}, "
-            f"data={self.data!r}, "
-            f"image_source={self.image_source!r}, "
-            f"image_clip={self.image_clip!r}, "
-            f"ctm={self.ctm!r}, "
-            f"xobject_depth={self.xobject_depth!r}, "
-            f"blend_mode={self.blend_mode!r}, "
-            f"soft_mask_alpha={self.soft_mask_alpha!r}, "
-            f"stream_order={self.stream_order!r}, "
-            f"fill={self.fill!r}, "
-            f"fill_opacity={self.fill_opacity!r}, "
-            f"paints={self.paints!r}, "
-            f"alpha_is_shape={self.alpha_is_shape!r}, "
-            f"graphics_soft_mask={self.graphics_soft_mask!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -310,42 +245,6 @@ class CapturedInlineImage(Record):
                 self.alpha_is_shape,
                 self.graphics_soft_mask,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        seqno = changes.pop("seqno", self.seqno)
-        dictionary = changes.pop("dictionary", self.dictionary)
-        data = changes.pop("data", self.data)
-        image_source = changes.pop("image_source", self.image_source)
-        image_clip = changes.pop("image_clip", self.image_clip)
-        ctm = changes.pop("ctm", self.ctm)
-        xobject_depth = changes.pop("xobject_depth", self.xobject_depth)
-        blend_mode = changes.pop("blend_mode", self.blend_mode)
-        soft_mask_alpha = changes.pop("soft_mask_alpha", self.soft_mask_alpha)
-        stream_order = changes.pop("stream_order", self.stream_order)
-        fill = changes.pop("fill", self.fill)
-        fill_opacity = changes.pop("fill_opacity", self.fill_opacity)
-        paints = changes.pop("paints", self.paints)
-        alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
-        graphics_soft_mask = changes.pop("graphics_soft_mask", self.graphics_soft_mask)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            seqno,
-            dictionary,
-            data,
-            image_source,
-            image_clip,
-            ctm,
-            xobject_depth,
-            blend_mode,
-            soft_mask_alpha,
-            stream_order,
-            fill,
-            fill_opacity,
-            paints,
-            alpha_is_shape,
-            graphics_soft_mask,
         )
 
 
@@ -500,7 +399,7 @@ StrokeStyleKey = tuple[
 ]
 
 
-class CapturedDrawing:
+class CapturedDrawing(ReplaceFields, ReprFields):
     __slots__ = (
         "seqno",
         "fill",
@@ -707,44 +606,6 @@ class CapturedDrawing:
         self.graphics_soft_mask = graphics_soft_mask
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"seqno={self.seqno!r}, "
-            f"fill={self.fill!r}, "
-            f"fill_opacity={self.fill_opacity!r}, "
-            f"fill_pattern={self.fill_pattern!r}, "
-            f"stroke_color={self.stroke_color!r}, "
-            f"stroke_pattern={self.stroke_pattern!r}, "
-            f"stroke_opacity={self.stroke_opacity!r}, "
-            f"line_width={self.line_width!r}, "
-            f"line_cap={self.line_cap!r}, "
-            f"line_join={self.line_join!r}, "
-            f"dash_pattern={self.dash_pattern!r}, "
-            f"fill_rule={self.fill_rule!r}, "
-            f"blend_mode={self.blend_mode!r}, "
-            f"soft_mask_alpha={self.soft_mask_alpha!r}, "
-            f"raw_data={self.raw_data!r}, "
-            f"dictionary={self.dictionary!r}, "
-            f"image_source={self.image_source!r}, "
-            f"image_clip={self.image_clip!r}, "
-            f"kind={self.kind!r}, "
-            f"items={self.items!r}, "
-            f"path={self.path!r}, "
-            f"bbox={self.bbox!r}, "
-            f"stream_order={self.stream_order!r}, "
-            f"xobject_depth={self.xobject_depth!r}, "
-            f"color_rendering={self.color_rendering!r}, "
-            f"paints={self.paints!r}, "
-            f"fill_paints={self.fill_paints!r}, "
-            f"stroke_paints={self.stroke_paints!r}, "
-            f"group_isolated={self.group_isolated!r}, "
-            f"group_knockout={self.group_knockout!r}, "
-            f"alpha_is_shape={self.alpha_is_shape!r}, "
-            f"graphics_soft_mask={self.graphics_soft_mask!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -786,76 +647,6 @@ class CapturedDrawing:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        seqno = changes.pop("seqno", self.seqno)
-        fill = changes.pop("fill", self.fill)
-        fill_opacity = changes.pop("fill_opacity", self.fill_opacity)
-        fill_pattern = changes.pop("fill_pattern", self.fill_pattern)
-        stroke_color = changes.pop("stroke_color", self.stroke_color)
-        stroke_pattern = changes.pop("stroke_pattern", self.stroke_pattern)
-        stroke_opacity = changes.pop("stroke_opacity", self.stroke_opacity)
-        line_width = changes.pop("line_width", self.line_width)
-        line_cap = changes.pop("line_cap", self.line_cap)
-        line_join = changes.pop("line_join", self.line_join)
-        dash_pattern = changes.pop("dash_pattern", self.dash_pattern)
-        fill_rule = changes.pop("fill_rule", self.fill_rule)
-        blend_mode = changes.pop("blend_mode", self.blend_mode)
-        soft_mask_alpha = changes.pop("soft_mask_alpha", self.soft_mask_alpha)
-        raw_data = changes.pop("raw_data", self.raw_data)
-        dictionary = changes.pop("dictionary", self.dictionary)
-        image_source = changes.pop("image_source", self.image_source)
-        image_clip = changes.pop("image_clip", self.image_clip)
-        kind = changes.pop("kind", self.kind)
-        items = changes.pop("items", self.items)
-        path = changes.pop("path", self.path)
-        bbox = changes.pop("bbox", self.bbox)
-        stream_order = changes.pop("stream_order", self.stream_order)
-        xobject_depth = changes.pop("xobject_depth", self.xobject_depth)
-        color_rendering = changes.pop("color_rendering", self.color_rendering)
-        paints = changes.pop("paints", self.paints)
-        fill_paints = changes.pop("fill_paints", self.fill_paints)
-        stroke_paints = changes.pop("stroke_paints", self.stroke_paints)
-        group_isolated = changes.pop("group_isolated", self.group_isolated)
-        group_knockout = changes.pop("group_knockout", self.group_knockout)
-        alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
-        graphics_soft_mask = changes.pop("graphics_soft_mask", self.graphics_soft_mask)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            seqno,
-            fill,
-            fill_opacity,
-            fill_pattern,
-            stroke_color,
-            stroke_pattern,
-            stroke_opacity,
-            line_width,
-            line_cap,
-            line_join,
-            dash_pattern,
-            fill_rule,
-            blend_mode,
-            soft_mask_alpha,
-            raw_data,
-            dictionary,
-            image_source,
-            image_clip,
-            kind,
-            items,
-            path,
-            bbox,
-            stream_order,
-            xobject_depth,
-            color_rendering,
-            paints,
-            fill_paints,
-            stroke_paints,
-            group_isolated,
-            group_knockout,
-            alpha_is_shape,
-            graphics_soft_mask,
-        )
 
     def _post_init(self) -> None:
         if not self.items:
@@ -935,14 +726,6 @@ class ShadingPattern(Record):
         frozen_setattr(self, "dictionary", dictionary)
         frozen_setattr(self, "color_rendering", color_rendering)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"dictionary={self.dictionary!r}, "
-            f"color_rendering={self.color_rendering!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -952,13 +735,6 @@ class ShadingPattern(Record):
 
     def __hash__(self) -> int:
         return hash((self.dictionary, self.color_rendering))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        dictionary = changes.pop("dictionary", self.dictionary)
-        color_rendering = changes.pop("color_rendering", self.color_rendering)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(dictionary, color_rendering)
 
 
 class TilingPattern(Record):
@@ -984,16 +760,6 @@ class TilingPattern(Record):
         frozen_setattr(self, "y_step", y_step)
         frozen_setattr(self, "program", program)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"bbox={self.bbox!r}, "
-            f"x_step={self.x_step!r}, "
-            f"y_step={self.y_step!r}, "
-            f"program={self.program!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1008,15 +774,6 @@ class TilingPattern(Record):
 
     def __hash__(self) -> int:
         return hash((self.bbox, self.x_step, self.y_step, self.program))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        bbox = changes.pop("bbox", self.bbox)
-        x_step = changes.pop("x_step", self.x_step)
-        y_step = changes.pop("y_step", self.y_step)
-        program = changes.pop("program", self.program)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(bbox, x_step, y_step, program)
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern

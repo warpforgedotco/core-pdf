@@ -7,7 +7,7 @@ import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from io import BytesIO
 from math import inf, isfinite
-from typing import Any, ClassVar, Self, TypeAlias
+from typing import Any, ClassVar, TypeAlias
 
 import numpy
 
@@ -54,17 +54,28 @@ from core_pdf.impl.fonts.raster_kernel import (
     transform_contours,
 )
 from core_pdf.impl.model.geometry import transform_bbox
-from core_pdf.impl.records import FrozenFields
+from core_pdf.impl.records import FrozenFields, ReplaceFields, ReprFields
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.font_program_truetype import (
     is_unicode_scalar,
     symbol_character_code,
 )
 
+MALFORMED_CFF_TABLE = (IndexError, OverflowError, TypeError, ValueError)
+
+
+def with_recovery[T](strict: Callable[..., T], repair: Callable[..., T], /, *args: Any) -> T:
+    """Read a CFF table strictly; rebuild it from the raw bytes if that fails."""
+    try:
+        return strict(*args)
+    except MALFORMED_CFF_TABLE:
+        return repair(*args)
+
+
 frozen_setattr = object.__setattr__
 
 
-class CFFGlyphFeature(FrozenFields):
+class CFFGlyphFeature(FrozenFields, ReplaceFields, ReprFields):
     cells: tuple[tuple[int, int], ...]
     aspect: float
     contours: int
@@ -85,16 +96,6 @@ class CFFGlyphFeature(FrozenFields):
         frozen_setattr(self, "contours", contours)
         frozen_setattr(self, "bitmap", bitmap)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"cells={self.cells!r}, "
-            f"aspect={self.aspect!r}, "
-            f"contours={self.contours!r}, "
-            f"bitmap={self.bitmap!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -109,15 +110,6 @@ class CFFGlyphFeature(FrozenFields):
 
     def __hash__(self) -> int:
         return hash((self.cells, self.aspect, self.contours, self.bitmap))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        cells = changes.pop("cells", self.cells)
-        aspect = changes.pop("aspect", self.aspect)
-        contours = changes.pop("contours", self.contours)
-        bitmap = changes.pop("bitmap", self.bitmap)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(cells, aspect, contours, bitmap)
 
 
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
@@ -177,10 +169,7 @@ class CFFFont(PdfCFFFont):
         return entries
 
     def read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
-        try:
-            return super().read_charset(pos, glyph_count)
-        except IndexError, TypeError, ValueError:
-            return self.recover_read_charset(pos, glyph_count)
+        return with_recovery(super().read_charset, self.recover_read_charset, pos, glyph_count)
 
     def recover_read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
         if glyph_count <= 0:
@@ -244,10 +233,7 @@ class CFFFont(PdfCFFFont):
         return cid_to_gid
 
     def read_encoding_codes(self, pos: int) -> dict[int, int]:
-        try:
-            return super().read_encoding_codes(pos)
-        except IndexError, TypeError, ValueError:
-            return self.recover_read_encoding_codes(pos)
+        return with_recovery(super().read_encoding_codes, self.recover_read_encoding_codes, pos)
 
     def recover_read_encoding_codes(self, pos: int) -> dict[int, int]:
         data = self.data
@@ -351,10 +337,7 @@ class CFFFont(PdfCFFFont):
     def read_fd_select(self) -> tuple[int, ...]:
         if not self.is_cid_keyed and (12, 37) in self.top_dict:
             return self.recover_read_fd_select()
-        try:
-            return super().read_fd_select()
-        except IndexError, TypeError, ValueError:
-            return self.recover_read_fd_select()
+        return with_recovery(super().read_fd_select, self.recover_read_fd_select)
 
     def recover_read_fd_select(self) -> tuple[int, ...]:
         glyph_count = len(self.charstrings)
@@ -396,10 +379,7 @@ class CFFFont(PdfCFFFont):
     def read_font_dicts(
         self,
     ) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
-        try:
-            return super().read_font_dicts()
-        except IndexError, OverflowError, TypeError, ValueError:
-            return self.recover_read_font_dicts()
+        return with_recovery(super().read_font_dicts, self.recover_read_font_dicts)
 
     def recover_read_font_dicts(
         self,
@@ -430,10 +410,7 @@ class CFFFont(PdfCFFFont):
     def read_private_subrs(
         self, font_dict: dict[int | tuple[int, int], list[float]]
     ) -> list[bytes]:
-        try:
-            return super().read_private_subrs(font_dict)
-        except IndexError, TypeError, ValueError:
-            return self.recover_read_private_subrs(font_dict)
+        return with_recovery(super().read_private_subrs, self.recover_read_private_subrs, font_dict)
 
     def recover_read_private_subrs(
         self, font_dict: dict[int | tuple[int, int], list[float]]
@@ -459,10 +436,9 @@ class CFFFont(PdfCFFFont):
         return subrs
 
     def local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:
-        try:
-            return super().local_subrs_for_glyph(glyph_id)
-        except IndexError, TypeError, ValueError:
-            return self.recover_local_subrs_for_glyph(glyph_id)
+        return with_recovery(
+            super().local_subrs_for_glyph, self.recover_local_subrs_for_glyph, glyph_id
+        )
 
     def recover_local_subrs_for_glyph(self, glyph_id: int) -> tuple[bytes, ...]:
         fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0
@@ -471,10 +447,11 @@ class CFFFont(PdfCFFFont):
         return ()
 
     def font_matrix(self, glyph_id: int) -> CffFontMatrix:
-        try:
-            return super().font_matrix(glyph_id)
-        except IndexError, TypeError, ValueError:
-            return CffFontMatrix(*self.recover_font_matrix(glyph_id))
+        return with_recovery(
+            super().font_matrix,
+            lambda gid: CffFontMatrix(*self.recover_font_matrix(gid)),
+            glyph_id,
+        )
 
     def recover_font_matrix(self, glyph_id: int) -> Matrix:
         fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0

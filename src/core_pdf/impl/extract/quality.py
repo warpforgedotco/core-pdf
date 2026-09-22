@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Self
+from typing import ClassVar
 
 from core_pdf.impl.extract.contracts import TextQualityStats
 from core_pdf.impl.records import Record
@@ -30,15 +30,6 @@ class TextAnalysis(Record):
         frozen_setattr(self, "characters", characters)
         frozen_setattr(self, "suspicious_characters", suspicious_characters)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"quality={self.quality!r}, "
-            f"characters={self.characters!r}, "
-            f"suspicious_characters={self.suspicious_characters!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -52,14 +43,6 @@ class TextAnalysis(Record):
 
     def __hash__(self) -> int:
         return hash((self.quality, self.characters, self.suspicious_characters))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        quality = changes.pop("quality", self.quality)
-        characters = changes.pop("characters", self.characters)
-        suspicious_characters = changes.pop("suspicious_characters", self.suspicious_characters)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(quality, characters, suspicious_characters)
 
 
 ASCII_VOWELS = frozenset("aeiouAEIOU")

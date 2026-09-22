@@ -11,7 +11,7 @@ from collections.abc import Iterator, Mapping
 from functools import cache, lru_cache
 from importlib.resources import files
 from statistics import median_low
-from typing import Any, ClassVar, Self
+from typing import ClassVar
 
 from core_pdf.impl.model.geometry import interval_overlap
 from core_pdf.impl.model.runs import TextRun
@@ -42,9 +42,6 @@ class WordFrequency(Record):
         frozen_setattr(self, "count", count)
         frozen_setattr(self, "rank", rank)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(count={self.count!r}, rank={self.rank!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -54,13 +51,6 @@ class WordFrequency(Record):
 
     def __hash__(self) -> int:
         return hash((self.count, self.rank))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        count = changes.pop("count", self.count)
-        rank = changes.pop("rank", self.rank)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(count, rank)
 
 
 class WordRankIndex(Mapping[str, int]):

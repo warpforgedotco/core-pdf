@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import cache
 from importlib.resources import files
-from typing import Any, ClassVar, Protocol, Self, cast
+from typing import ClassVar, Protocol, cast
 
 from core_pdf.impl.fonts.font_program import TrueTypeFontProgram
 from core_pdf.impl.fonts.helpers import strip_subset_tag
@@ -57,18 +57,6 @@ class PdfRasterFontRequest(Record):
         frozen_setattr(self, "cid_registry", cid_registry)
         frozen_setattr(self, "cid_ordering", cid_ordering)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"font_name={self.font_name!r}, "
-            f"text={self.text!r}, "
-            f"is_cid_font={self.is_cid_font!r}, "
-            f"is_vertical={self.is_vertical!r}, "
-            f"cid_registry={self.cid_registry!r}, "
-            f"cid_ordering={self.cid_ordering!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -95,17 +83,6 @@ class PdfRasterFontRequest(Record):
             )
         )
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        font_name = changes.pop("font_name", self.font_name)
-        text = changes.pop("text", self.text)
-        is_cid_font = changes.pop("is_cid_font", self.is_cid_font)
-        is_vertical = changes.pop("is_vertical", self.is_vertical)
-        cid_registry = changes.pop("cid_registry", self.cid_registry)
-        cid_ordering = changes.pop("cid_ordering", self.cid_ordering)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(font_name, text, is_cid_font, is_vertical, cid_registry, cid_ordering)
-
 
 class PdfRasterFontFace(Record):
     __slots__ = ("identifier", "data")
@@ -120,9 +97,6 @@ class PdfRasterFontFace(Record):
         frozen_setattr(self, "identifier", identifier)
         frozen_setattr(self, "data", data)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(identifier={self.identifier!r}, data={self.data!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -132,13 +106,6 @@ class PdfRasterFontFace(Record):
 
     def __hash__(self) -> int:
         return hash((self.identifier, self.data))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        identifier = changes.pop("identifier", self.identifier)
-        data = changes.pop("data", self.data)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(identifier, data)
 
 
 class PdfRasterFontProvider(Protocol):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from math import hypot
-from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from core_pdf.impl.capture.program import CapturedProgram
 
@@ -57,6 +57,7 @@ from core_pdf.impl.model.glyphs import (
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.model.text import normalize_extracted_text
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.records import ReplaceFields, ReprFields
 from core_pdf.impl.types import (
     PdfName,
     Rectangle,
@@ -89,7 +90,7 @@ from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
 
 
-class CaptureGraphicsSave:
+class CaptureGraphicsSave(ReplaceFields, ReprFields):
     __slots__ = ("clip_bbox", "group_alpha", "clip_scope_emitted")
 
     clip_bbox: Rectangle | None
@@ -109,15 +110,6 @@ class CaptureGraphicsSave:
         self.group_alpha = group_alpha
         self.clip_scope_emitted = clip_scope_emitted
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"clip_bbox={self.clip_bbox!r}, "
-            f"group_alpha={self.group_alpha!r}, "
-            f"clip_scope_emitted={self.clip_scope_emitted!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -130,14 +122,6 @@ class CaptureGraphicsSave:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        clip_bbox = changes.pop("clip_bbox", self.clip_bbox)
-        group_alpha = changes.pop("group_alpha", self.group_alpha)
-        clip_scope_emitted = changes.pop("clip_scope_emitted", self.clip_scope_emitted)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(clip_bbox, group_alpha, clip_scope_emitted)
 
 
 MATRIX_TOLERANCE = 0.1

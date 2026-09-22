@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import Any, ClassVar, Self, cast
+from typing import ClassVar, cast
 
+from core_pdf.impl.records import ReplaceFields, ReprFields
 from core_pdf.impl.types import PdfString
 
 
@@ -26,7 +27,7 @@ def coerce_to_bytes(value: object) -> bytes:
     raise TypeError(f"cannot coerce {type(value).__name__} to bytes")
 
 
-class CoercionFrame:
+class CoercionFrame(ReplaceFields, ReprFields):
     __slots__ = ("original", "entries", "values", "pending", "changed")
 
     original: object
@@ -52,17 +53,6 @@ class CoercionFrame:
         self.pending = pending
         self.changed = changed
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"original={self.original!r}, "
-            f"entries={self.entries!r}, "
-            f"values={self.values!r}, "
-            f"pending={self.pending!r}, "
-            f"changed={self.changed!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -77,16 +67,6 @@ class CoercionFrame:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        original = changes.pop("original", self.original)
-        entries = changes.pop("entries", self.entries)
-        values = changes.pop("values", self.values)
-        pending = changes.pop("pending", self.pending)
-        changed = changes.pop("changed", self.changed)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(original, entries, values, pending, changed)
 
     def add(self, key: object, original: object, coerced: object) -> None:
         self.values.append((key, coerced))

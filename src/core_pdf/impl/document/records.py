@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Self
+from typing import ClassVar
 
+from core_pdf.impl.records import ReplaceFields
 from core_pdf.impl.types import PdfName, PdfString, Rectangle
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 
 
-class RawOutlineItem:
+class RawOutlineItem(ReplaceFields):
     __slots__ = ("title", "level", "dest", "page_index", "count")
 
     title: str
@@ -35,18 +36,8 @@ class RawOutlineItem:
         self.page_index = page_index
         self.count = count
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        title = changes.pop("title", self.title)
-        level = changes.pop("level", self.level)
-        dest = changes.pop("dest", self.dest)
-        page_index = changes.pop("page_index", self.page_index)
-        count = changes.pop("count", self.count)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(title, level, dest, page_index, count)
 
-
-class RawNamedDestination:
+class RawNamedDestination(ReplaceFields):
     __slots__ = ("page_index", "type", "args", "raw")
 
     page_index: int | None
@@ -69,17 +60,8 @@ class RawNamedDestination:
         self.args = args
         self.raw = raw
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        page_index = changes.pop("page_index", self.page_index)
-        type = changes.pop("type", self.type)
-        args = changes.pop("args", self.args)
-        raw = changes.pop("raw", self.raw)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(page_index, type, args, raw)
 
-
-class RawEmbeddedFile:
+class RawEmbeddedFile(ReplaceFields):
     __slots__ = ("name", "filename", "filespec", "stream", "data")
 
     name: str
@@ -104,16 +86,6 @@ class RawEmbeddedFile:
         self.filespec = filespec
         self.stream = stream
         self.data = data
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        name = changes.pop("name", self.name)
-        filename = changes.pop("filename", self.filename)
-        filespec = changes.pop("filespec", self.filespec)
-        stream = changes.pop("stream", self.stream)
-        data = changes.pop("data", self.data)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(name, filename, filespec, stream, data)
 
 
 class RawAnnotation:

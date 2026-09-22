@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from bisect import bisect_left
 from collections.abc import Callable
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.records import Record
@@ -86,17 +86,6 @@ class ClipRegion(Record):
         frozen_setattr(self, "rows", rows)
         frozen_setattr(self, "rows_origin", rows_origin)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"box={self.box!r}, "
-            f"pixel_box={self.pixel_box!r}, "
-            f"rectangular={self.rectangular!r}, "
-            f"rows={self.rows!r}, "
-            f"rows_origin={self.rows_origin!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -112,16 +101,6 @@ class ClipRegion(Record):
 
     def __hash__(self) -> int:
         return hash((self.box, self.pixel_box, self.rectangular, self.rows, self.rows_origin))
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        box = changes.pop("box", self.box)
-        pixel_box = changes.pop("pixel_box", self.pixel_box)
-        rectangular = changes.pop("rectangular", self.rectangular)
-        rows = changes.pop("rows", self.rows)
-        rows_origin = changes.pop("rows_origin", self.rows_origin)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(box, pixel_box, rectangular, rows, rows_origin)
 
     @property
     def empty(self) -> bool:

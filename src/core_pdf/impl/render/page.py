@@ -14,6 +14,7 @@ from core_pdf.impl.capture.records import (
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.geometry import rect_tuple
+from core_pdf.impl.records import ReprFields
 from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.commands import append_captured_program
 from core_pdf.impl.render.display import (
@@ -64,7 +65,7 @@ def pixel_dimension(length: float, scale: float) -> int:
     return max(1, int(round(pixels)))
 
 
-class RenderedPage:
+class RenderedPage(ReprFields):
     __slots__ = (
         "page_number",
         "width",
@@ -117,20 +118,6 @@ class RenderedPage:
         self.metadata = {} if metadata is None else metadata
         self.semantic_context = semantic_context
         self.user_unit = user_unit
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page_number={self.page_number!r}, "
-            f"width={self.width!r}, "
-            f"height={self.height!r}, "
-            f"rotate={self.rotate!r}, "
-            f"display_list={self.display_list!r}, "
-            f"metadata={self.metadata!r}, "
-            f"semantic_context={self.semantic_context!r}, "
-            f"user_unit={self.user_unit!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:

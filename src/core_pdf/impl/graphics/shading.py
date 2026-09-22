@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import lru_cache
-from typing import Any, ClassVar, Self
+from typing import ClassVar
 
 from core_pdf.impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import parse_color_space, raw_color_space_paints
@@ -130,30 +130,6 @@ class PreparedShading(Record):
                 self.bbox,
                 self.color_rendering,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        shading_type = changes.pop("shading_type", self.shading_type)
-        coords = changes.pop("coords", self.coords)
-        domain = changes.pop("domain", self.domain)
-        extend_start = changes.pop("extend_start", self.extend_start)
-        extend_end = changes.pop("extend_end", self.extend_end)
-        color_model = changes.pop("color_model", self.color_model)
-        bbox = changes.pop("bbox", self.bbox)
-        evaluator = changes.pop("evaluator", self.evaluator)
-        color_rendering = changes.pop("color_rendering", self.color_rendering)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            shading_type,
-            coords,
-            domain,
-            extend_start,
-            extend_end,
-            color_model,
-            bbox,
-            evaluator,
-            color_rendering,
         )
 
     def evaluate(self, value: float) -> tuple[float, ...]:

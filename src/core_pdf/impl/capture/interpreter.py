@@ -115,8 +115,6 @@ class TextState(RecordingMethods):
 
     @staticmethod
     def as_int(value: Any) -> int:
-        if type(value) is int:
-            return value
         return parse_int_strict(value, "invalid numeric operand")
 
 

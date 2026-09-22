@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from math import ceil
-from typing import Any, ClassVar, Self
+from typing import ClassVar
 
 from core_pdf.impl.capture.marked_content import min_optional_confidence
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
@@ -15,7 +15,7 @@ from core_pdf.impl.model.glyphs import (
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, ReplaceFields, ReprFields
 from core_pdf.impl.types import Rectangle
 
 frozen_setattr = object.__setattr__
@@ -288,25 +288,6 @@ class TextGeometry(Record):
         frozen_setattr(self, "effective_font_size", effective_font_size)
         frozen_setattr(self, "effective_font_height", effective_font_height)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"basis={self.basis!r}, "
-            f"font_size={self.font_size!r}, "
-            f"font_scale={self.font_scale!r}, "
-            f"font_ascent={self.font_ascent!r}, "
-            f"font_descent={self.font_descent!r}, "
-            f"advance_scale={self.advance_scale!r}, "
-            f"char_space={self.char_space!r}, "
-            f"word_space={self.word_space!r}, "
-            f"horizontal_scale={self.horizontal_scale!r}, "
-            f"rise={self.rise!r}, "
-            f"rotation_angle={self.rotation_angle!r}, "
-            f"effective_font_size={self.effective_font_size!r}, "
-            f"effective_font_height={self.effective_font_height!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -345,38 +326,6 @@ class TextGeometry(Record):
                 self.effective_font_size,
                 self.effective_font_height,
             )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        basis = changes.pop("basis", self.basis)
-        font_size = changes.pop("font_size", self.font_size)
-        font_scale = changes.pop("font_scale", self.font_scale)
-        font_ascent = changes.pop("font_ascent", self.font_ascent)
-        font_descent = changes.pop("font_descent", self.font_descent)
-        advance_scale = changes.pop("advance_scale", self.advance_scale)
-        char_space = changes.pop("char_space", self.char_space)
-        word_space = changes.pop("word_space", self.word_space)
-        horizontal_scale = changes.pop("horizontal_scale", self.horizontal_scale)
-        rise = changes.pop("rise", self.rise)
-        rotation_angle = changes.pop("rotation_angle", self.rotation_angle)
-        effective_font_size = changes.pop("effective_font_size", self.effective_font_size)
-        effective_font_height = changes.pop("effective_font_height", self.effective_font_height)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            basis,
-            font_size,
-            font_scale,
-            font_ascent,
-            font_descent,
-            advance_scale,
-            char_space,
-            word_space,
-            horizontal_scale,
-            rise,
-            rotation_angle,
-            effective_font_size,
-            effective_font_height,
         )
 
 
@@ -490,28 +439,6 @@ class GlyphPaint(Record):
         frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
         frozen_setattr(self, "graphics_soft_mask", graphics_soft_mask)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"clip_bbox={self.clip_bbox!r}, "
-            f"page_clip={self.page_clip!r}, "
-            f"fill={self.fill!r}, "
-            f"render_mode={self.render_mode!r}, "
-            f"fill_opacity={self.fill_opacity!r}, "
-            f"stroke_color={self.stroke_color!r}, "
-            f"stroke_opacity={self.stroke_opacity!r}, "
-            f"line_width={self.line_width!r}, "
-            f"line_cap={self.line_cap!r}, "
-            f"line_join={self.line_join!r}, "
-            f"dash_pattern={self.dash_pattern!r}, "
-            f"blend_mode={self.blend_mode!r}, "
-            f"group_alpha={self.group_alpha!r}, "
-            f"clip_glyph={self.clip_glyph!r}, "
-            f"alpha_is_shape={self.alpha_is_shape!r}, "
-            f"graphics_soft_mask={self.graphics_soft_mask!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -558,46 +485,8 @@ class GlyphPaint(Record):
             )
         )
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        clip_bbox = changes.pop("clip_bbox", self.clip_bbox)
-        page_clip = changes.pop("page_clip", self.page_clip)
-        fill = changes.pop("fill", self.fill)
-        render_mode = changes.pop("render_mode", self.render_mode)
-        fill_opacity = changes.pop("fill_opacity", self.fill_opacity)
-        stroke_color = changes.pop("stroke_color", self.stroke_color)
-        stroke_opacity = changes.pop("stroke_opacity", self.stroke_opacity)
-        line_width = changes.pop("line_width", self.line_width)
-        line_cap = changes.pop("line_cap", self.line_cap)
-        line_join = changes.pop("line_join", self.line_join)
-        dash_pattern = changes.pop("dash_pattern", self.dash_pattern)
-        blend_mode = changes.pop("blend_mode", self.blend_mode)
-        group_alpha = changes.pop("group_alpha", self.group_alpha)
-        clip_glyph = changes.pop("clip_glyph", self.clip_glyph)
-        alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
-        graphics_soft_mask = changes.pop("graphics_soft_mask", self.graphics_soft_mask)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            clip_bbox,
-            page_clip,
-            fill,
-            render_mode,
-            fill_opacity,
-            stroke_color,
-            stroke_opacity,
-            line_width,
-            line_cap,
-            line_join,
-            dash_pattern,
-            blend_mode,
-            group_alpha,
-            clip_glyph,
-            alpha_is_shape,
-            graphics_soft_mask,
-        )
 
-
-class GlyphCapture:
+class GlyphCapture(ReplaceFields, ReprFields):
     __slots__ = ("glyphs", "clusters", "cluster_count", "geometry")
 
     glyphs: list[GlyphObservation]
@@ -620,16 +509,6 @@ class GlyphCapture:
         self.cluster_count = cluster_count
         self.geometry = RunGeometry() if geometry is None else geometry
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"glyphs={self.glyphs!r}, "
-            f"clusters={self.clusters!r}, "
-            f"cluster_count={self.cluster_count!r}, "
-            f"geometry={self.geometry!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -643,15 +522,6 @@ class GlyphCapture:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        glyphs = changes.pop("glyphs", self.glyphs)
-        clusters = changes.pop("clusters", self.clusters)
-        cluster_count = changes.pop("cluster_count", self.cluster_count)
-        geometry = changes.pop("geometry", self.geometry)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(glyphs, clusters, cluster_count, geometry)
 
 
 def capture_glyphs(

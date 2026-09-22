@@ -6,7 +6,7 @@ from bisect import bisect_right
 from collections import Counter, defaultdict
 from copy import replace
 from itertools import combinations
-from typing import Any, ClassVar, Self
+from typing import ClassVar
 
 import numpy
 
@@ -94,20 +94,6 @@ class ObservationCoordinates(Record):
         frozen_setattr(self, "heights", heights)
         frozen_setattr(self, "sequences", sequences)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"x0={self.x0!r}, "
-            f"y0={self.y0!r}, "
-            f"x1={self.x1!r}, "
-            f"y1={self.y1!r}, "
-            f"y_centers={self.y_centers!r}, "
-            f"widths={self.widths!r}, "
-            f"heights={self.heights!r}, "
-            f"sequences={self.sequences!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -137,19 +123,6 @@ class ObservationCoordinates(Record):
                 self.sequences,
             )
         )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        x0 = changes.pop("x0", self.x0)
-        y0 = changes.pop("y0", self.y0)
-        x1 = changes.pop("x1", self.x1)
-        y1 = changes.pop("y1", self.y1)
-        y_centers = changes.pop("y_centers", self.y_centers)
-        widths = changes.pop("widths", self.widths)
-        heights = changes.pop("heights", self.heights)
-        sequences = changes.pop("sequences", self.sequences)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(x0, y0, x1, y1, y_centers, widths, heights, sequences)
 
     @classmethod
     def from_observations(cls, observations: ObservationBatch) -> ObservationCoordinates:
@@ -204,17 +177,6 @@ class TableAnalysis(Record):
         frozen_setattr(self, "row_centers", row_centers)
         frozen_setattr(self, "candidate_columns", candidate_columns)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"observations={self.observations!r}, "
-            f"coordinates={self.coordinates!r}, "
-            f"text_rows={self.text_rows!r}, "
-            f"row_centers={self.row_centers!r}, "
-            f"candidate_columns={self.candidate_columns!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -238,16 +200,6 @@ class TableAnalysis(Record):
                 self.candidate_columns,
             )
         )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        observations = changes.pop("observations", self.observations)
-        coordinates = changes.pop("coordinates", self.coordinates)
-        text_rows = changes.pop("text_rows", self.text_rows)
-        row_centers = changes.pop("row_centers", self.row_centers)
-        candidate_columns = changes.pop("candidate_columns", self.candidate_columns)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(observations, coordinates, text_rows, row_centers, candidate_columns)
 
     @classmethod
     def build(cls, observations: ObservationBatch, page_width: float) -> TableAnalysis:
