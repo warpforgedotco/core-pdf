@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
+
+from core_pdf.impl.records import internal_Record
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.glyphs import GlyphCluster
@@ -10,7 +12,7 @@ if TYPE_CHECKING:
 internal_frozen_setattr = object.__setattr__
 
 
-class LayoutLineTextSegment:
+class LayoutLineTextSegment(internal_Record):
     __slots__ = ("text", "separator_before", "advance_bbox", "rotation_angle")
 
     text: str
@@ -63,19 +65,6 @@ class LayoutLineTextSegment:
     def __hash__(self) -> int:
         return hash((self.text, self.separator_before, self.advance_bbox, self.rotation_angle))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
         separator_before = changes.pop("separator_before", self.separator_before)
@@ -86,7 +75,7 @@ class LayoutLineTextSegment:
         return self.__class__(text, separator_before, advance_bbox, rotation_angle)
 
 
-class LayoutLineText:
+class LayoutLineText(internal_Record):
     __slots__ = ("text", "segments")
 
     text: str
@@ -111,19 +100,6 @@ class LayoutLineText:
 
     def __hash__(self) -> int:
         return hash((self.text, self.segments))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)

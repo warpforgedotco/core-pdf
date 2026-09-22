@@ -5,15 +5,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import cache
 from importlib.resources import files
-from typing import Any, ClassVar, NoReturn, Protocol, Self, cast
+from typing import Any, ClassVar, Protocol, Self, cast
 
 from core_pdf.impl.fonts.font_program_truetype import TrueTypeFontProgram
 from core_pdf.impl.fonts.helpers import strip_subset_tag
+from core_pdf.impl.records import internal_Record
 
 internal_frozen_setattr = object.__setattr__
 
 
-class PdfRasterFontRequest:
+class PdfRasterFontRequest(internal_Record):
     __slots__ = ("font_name", "text", "is_cid_font", "is_vertical", "cid_registry", "cid_ordering")
 
     font_name: str | None
@@ -94,19 +95,6 @@ class PdfRasterFontRequest:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         font_name = changes.pop("font_name", self.font_name)
         text = changes.pop("text", self.text)
@@ -119,7 +107,7 @@ class PdfRasterFontRequest:
         return self.__class__(font_name, text, is_cid_font, is_vertical, cid_registry, cid_ordering)
 
 
-class PdfRasterFontFace:
+class PdfRasterFontFace(internal_Record):
     __slots__ = ("identifier", "data")
 
     identifier: str
@@ -144,19 +132,6 @@ class PdfRasterFontFace:
 
     def __hash__(self) -> int:
         return hash((self.identifier, self.data))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         identifier = changes.pop("identifier", self.identifier)

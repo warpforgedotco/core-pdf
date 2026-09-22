@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from bisect import bisect_left
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture.records import CapturedPath
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.render.kernels import internal_make_page_geometry
 from core_pdf.impl.render.paths import (
     internal_fill_path_crossing_spans,
@@ -20,7 +21,7 @@ internal_RowSpans = tuple[internal_PixelSpan, ...]
 internal_EMPTY_CLIP_BOX = (0.0, 0.0, 0.0, 0.0)
 
 
-class internal_ClipRegion:
+class internal_ClipRegion(internal_Record):
     __slots__ = ("box", "pixel_box", "rectangular", "rows", "rows_origin")
 
     box: tuple[float, float, float, float] | None
@@ -78,19 +79,6 @@ class internal_ClipRegion:
 
     def __hash__(self) -> int:
         return hash((self.box, self.pixel_box, self.rectangular, self.rows, self.rows_origin))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         box = changes.pop("box", self.box)

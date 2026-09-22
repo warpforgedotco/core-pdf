@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from copy import replace
 from itertools import islice
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
 from core_pdf.impl.model.glyphs import glyph_text_has_unsupported_codepoint
 from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.types import Rectangle, TextWord
 
 if TYPE_CHECKING:
@@ -159,7 +160,7 @@ def layout_line_segment_char_bbox(
     return (char_x0, y0, char_x0 + step, y1)
 
 
-class LayoutGeometryIssue:
+class LayoutGeometryIssue(internal_Record):
     __slots__ = ("code", "severity", "subject", "bbox", "message", "details", "repairable")
 
     code: str
@@ -240,19 +241,6 @@ class LayoutGeometryIssue:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         code = changes.pop("code", self.code)
         severity = changes.pop("severity", self.severity)
@@ -266,7 +254,7 @@ class LayoutGeometryIssue:
         return self.__class__(code, severity, subject, bbox, message, details, repairable)
 
 
-class LayoutGeometrySummary:
+class LayoutGeometrySummary(internal_Record):
     __slots__ = (
         "issue_count",
         "error_count",
@@ -353,19 +341,6 @@ class LayoutGeometrySummary:
                 self.line_count,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         issue_count = changes.pop("issue_count", self.issue_count)

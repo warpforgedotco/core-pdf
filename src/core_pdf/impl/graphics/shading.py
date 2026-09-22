@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import lru_cache
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import internal_color_space_paints, parse_color_space
@@ -12,6 +12,7 @@ from core_pdf.impl.graphics.functions import (
     internal_compile_pdf_function,
     internal_number_array,
 )
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.runtime.scalars import parse_int
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.shading import parse_shading
@@ -19,7 +20,7 @@ from core_pdf_spec.s_08_graphics.shading import parse_shading
 internal_frozen_setattr = object.__setattr__
 
 
-class PreparedShading:
+class PreparedShading(internal_Record):
     __slots__ = (
         "shading_type",
         "coords",
@@ -130,19 +131,6 @@ class PreparedShading:
                 self.color_rendering,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         shading_type = changes.pop("shading_type", self.shading_type)

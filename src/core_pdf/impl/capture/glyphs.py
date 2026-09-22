@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from math import ceil
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture.marked_content import min_optional_confidence
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
@@ -15,6 +15,7 @@ from core_pdf.impl.model.glyphs import (
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.types import Rectangle
 
 internal_frozen_setattr = object.__setattr__
@@ -197,7 +198,7 @@ class RunGeometry:
         self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
-class TextGeometry:
+class TextGeometry(internal_Record):
     __slots__ = (
         "basis",
         "font_size",
@@ -348,19 +349,6 @@ class TextGeometry:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         basis = changes.pop("basis", self.basis)
         font_size = changes.pop("font_size", self.font_size)
@@ -394,7 +382,7 @@ class TextGeometry:
         )
 
 
-class GlyphPaint:
+class GlyphPaint(internal_Record):
     __slots__ = (
         "clip_bbox",
         "page_clip",
@@ -571,19 +559,6 @@ class GlyphPaint:
                 self.graphics_soft_mask,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         clip_bbox = changes.pop("clip_bbox", self.clip_bbox)

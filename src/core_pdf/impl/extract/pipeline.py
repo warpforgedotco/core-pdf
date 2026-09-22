@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from copy import replace
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Protocol, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self
 
 from core_pdf.impl.document.page_links import resolve_destination_value
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
@@ -28,6 +28,7 @@ from core_pdf.impl.output.model import (
     Page,
     Table,
 )
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.runtime.execution import ExtractionScope
 
 if TYPE_CHECKING:
@@ -70,7 +71,7 @@ def internal_collected_records[internal_Record, internal_T](
     return tuple(output)
 
 
-class internal_PageProducts:
+class internal_PageProducts(internal_Record):
     __slots__ = ("tables", "blocks", "order_evidence")
 
     tables: tuple[Table, ...]
@@ -112,19 +113,6 @@ class internal_PageProducts:
 
     def __hash__(self) -> int:
         return hash((self.tables, self.blocks, self.order_evidence))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         tables = changes.pop("tables", self.tables)

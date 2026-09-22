@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 import numpy
 
 from core_pdf.impl.capture.records import CapturedSoftMask, PatternPaint
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.render.blend import internal_clamp01
 from core_pdf.impl.runtime.array_views import uint8_image_view
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
@@ -638,7 +639,7 @@ class ImagePaintItem:
 DisplayItem = DisplayListItem | ImagePaintItem | PathPaintItem
 
 
-class internal_RasterGroup:
+class internal_RasterGroup(internal_Record):
     __slots__ = (
         "pixels",
         "composite_alpha",
@@ -752,19 +753,6 @@ class internal_RasterGroup:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         pixels = changes.pop("pixels", self.pixels)
         composite_alpha = changes.pop("composite_alpha", self.composite_alpha)
@@ -812,7 +800,7 @@ class internal_RasterGroup:
             window[:] = y0, y1, x0, x1
 
 
-class RasterImage:
+class RasterImage(internal_Record):
     __slots__ = ("pixels", "width", "height", "channels")
 
     pixels: bytes | bytearray | memoryview | numpy.ndarray[Any, Any]
@@ -860,19 +848,6 @@ class RasterImage:
 
     def __hash__(self) -> int:
         return hash((self.pixels, self.width, self.height, self.channels))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         pixels = changes.pop("pixels", self.pixels)

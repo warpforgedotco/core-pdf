@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from os import PathLike
-from typing import Any, ClassVar, NoReturn, Protocol, Self, TypeAlias, TypeVar
+from typing import Any, ClassVar, Protocol, Self, TypeAlias, TypeVar
 
+from core_pdf.impl.records import internal_Record
 from core_pdf_spec.types import (
     MISSING,
     MissingObject,
@@ -40,7 +41,7 @@ PdfSource: TypeAlias = (
 RecordT = TypeVar("RecordT")
 
 
-class PageScoped[RecordT]:
+class PageScoped[RecordT](internal_Record):
     __slots__ = ("page_index", "page_number", "page_label", "record")
 
     page_index: int
@@ -88,19 +89,6 @@ class PageScoped[RecordT]:
     def __hash__(self) -> int:
         return hash((self.page_index, self.page_number, self.page_label, self.record))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         page_index = changes.pop("page_index", self.page_index)
         page_number = changes.pop("page_number", self.page_number)
@@ -111,7 +99,7 @@ class PageScoped[RecordT]:
         return self.__class__(page_index, page_number, page_label, record)
 
 
-class TextWord:
+class TextWord(internal_Record):
     __slots__ = ("text", "bbox", "line_index", "word_index", "block_index", "page_number", "source")
 
     text: str
@@ -200,19 +188,6 @@ class TextWord:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
         bbox = changes.pop("bbox", self.bbox)
@@ -226,7 +201,7 @@ class TextWord:
         return self.__class__(text, bbox, line_index, word_index, block_index, page_number, source)
 
 
-class DrawingRecord:
+class DrawingRecord(internal_Record):
     __slots__ = (
         "kind",
         "seqno",
@@ -458,19 +433,6 @@ class DrawingRecord:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         kind = changes.pop("kind", self.kind)
         seqno = changes.pop("seqno", self.seqno)
@@ -531,7 +493,7 @@ class DrawingRecord:
 internal_DRAWING_FIELD_NAMES: tuple[str, ...] = DrawingRecord.__fields__
 
 
-class ImageMetadata:
+class ImageMetadata(internal_Record):
     __slots__ = (
         "width",
         "height",
@@ -645,19 +607,6 @@ class ImageMetadata:
                 self.clipping,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         width = changes.pop("width", self.width)

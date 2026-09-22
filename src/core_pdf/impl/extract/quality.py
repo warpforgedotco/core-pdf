@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl.extract.contracts import TextQualityStats
+from core_pdf.impl.records import internal_Record
 
 internal_frozen_setattr = object.__setattr__
 
 
-class TextAnalysis:
+class TextAnalysis(internal_Record):
     __slots__ = ("quality", "characters", "suspicious_characters")
 
     quality: TextQualityStats
@@ -51,19 +52,6 @@ class TextAnalysis:
 
     def __hash__(self) -> int:
         return hash((self.quality, self.characters, self.suspicious_characters))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         quality = changes.pop("quality", self.quality)

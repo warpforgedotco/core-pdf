@@ -9,7 +9,7 @@ from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from copy import replace
 from io import BytesIO
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 import numpy
 
@@ -69,6 +69,7 @@ from core_pdf.impl.fonts.widths import (
 )
 from core_pdf.impl.model.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.types import PdfString, Rectangle
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int_strict
@@ -427,7 +428,7 @@ internal_UNRESOLVED_UNICODE_SOURCES = frozenset(
 )
 
 
-class UnicodeChoice:
+class UnicodeChoice(internal_Record):
     __slots__ = ("text", "source", "alternates")
 
     text: str
@@ -464,19 +465,6 @@ class UnicodeChoice:
 
     def __hash__(self) -> int:
         return hash((self.text, self.source, self.alternates))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from functools import cache
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_adobe_fonts.cmap.ranges import (
     code_in_ranges,
@@ -19,11 +19,12 @@ from core_pdf.impl.fonts.cmap_resources import (
     unicode_candidate_preference,
     unicode_scalar_from_cmap_code,
 )
+from core_pdf.impl.records import internal_Record
 
 internal_frozen_setattr = object.__setattr__
 
 
-class CompactCMap:
+class CompactCMap(internal_Record):
     __slots__ = ("effective_codes_by_cid",)
 
     effective_codes_by_cid: dict[int, tuple[bytes, ...]]
@@ -48,19 +49,6 @@ class CompactCMap:
 
     def __hash__(self) -> int:
         return hash((self.effective_codes_by_cid,))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         effective_codes_by_cid = changes.pop("effective_codes_by_cid", self.effective_codes_by_cid)

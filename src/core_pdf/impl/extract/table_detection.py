@@ -6,7 +6,7 @@ from bisect import bisect_right
 from collections import Counter, defaultdict
 from copy import replace
 from itertools import combinations
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 import numpy
 
@@ -39,6 +39,7 @@ from core_pdf.impl.extract.table_cleanup import (
 from core_pdf.impl.extract.table_facts import internal_numeric_cell, internal_TableFacts
 from core_pdf.impl.model.geometry import bbox_union, interval_overlap, overlap_ratio_min
 from core_pdf.impl.output.model import Table, TableCell
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.runtime.array_views import finite_median
 
 internal_frozen_setattr = object.__setattr__
@@ -48,7 +49,7 @@ def internal_table_vertical_sort_key(table: Table) -> float:
     return -(table.bbox or (0.0, 0.0, 0.0, 0.0))[3]
 
 
-class internal_ObservationCoordinates:
+class internal_ObservationCoordinates(internal_Record):
     __slots__ = ("x0", "y0", "x1", "y1", "y_centers", "widths", "heights", "sequences")
 
     x0: list[float]
@@ -136,19 +137,6 @@ class internal_ObservationCoordinates:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         x0 = changes.pop("x0", self.x0)
         y0 = changes.pop("y0", self.y0)
@@ -177,7 +165,7 @@ class internal_ObservationCoordinates:
         )
 
 
-class internal_TableAnalysis:
+class internal_TableAnalysis(internal_Record):
     __slots__ = ("observations", "coordinates", "text_rows", "row_centers", "candidate_columns")
 
     observations: ObservationBatch
@@ -249,19 +237,6 @@ class internal_TableAnalysis:
                 self.candidate_columns,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         observations = changes.pop("observations", self.observations)

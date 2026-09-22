@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from functools import cached_property
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl.output.model import TableCell
+from core_pdf.impl.records import internal_FrozenFields
 
 internal_frozen_setattr = object.__setattr__
 
@@ -25,7 +26,7 @@ def internal_character_spaced_cell(text: str) -> bool:
     return single_character / len(tokens) >= 0.50
 
 
-class internal_TableFacts:
+class internal_TableFacts(internal_FrozenFields):
     row_count: int
     nonempty_rows: int
     populated_rows: int
@@ -119,12 +120,6 @@ class internal_TableFacts:
                 self.filled_texts,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
 
     def __replace__(self, /, **changes: Any) -> Self:
         row_count = changes.pop("row_count", self.row_count)

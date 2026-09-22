@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typing
 from itertools import batched
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 import numpy
 
@@ -30,6 +30,7 @@ from core_pdf.impl.graphics.filter_registry import (
 from core_pdf.impl.graphics.image_models import DecodedImage
 from core_pdf.impl.graphics.stream_decoding import decode_one_filter, decode_stream_data
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.records import internal_Record
 
 internal_frozen_setattr = object.__setattr__
 
@@ -40,7 +41,7 @@ internal_NATIVE_ARRAY_DECODERS = {
 }
 
 
-class internal_NativeImagePlan:
+class internal_NativeImagePlan(internal_Record):
     __slots__ = ("decoder", "params", "output_shape")
 
     decoder: FilterDecoder
@@ -82,19 +83,6 @@ class internal_NativeImagePlan:
 
     def __hash__(self) -> int:
         return hash((self.decoder, self.params, self.output_shape))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         decoder = changes.pop("decoder", self.decoder)

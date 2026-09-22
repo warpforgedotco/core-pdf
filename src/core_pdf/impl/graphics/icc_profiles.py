@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from functools import cache, lru_cache
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 import imagecodecs
 import numpy
 
+from core_pdf.impl.records import internal_Record
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
     ColorRendering,
@@ -60,7 +61,7 @@ def internal_srgb_profile() -> bytes:
     return bytes(imagecodecs.cms_profile("srgb"))
 
 
-class IccTransform:
+class IccTransform(internal_Record):
     __slots__ = ("profile", "color_space", "input_channels")
 
     profile: bytes
@@ -83,19 +84,6 @@ class IccTransform:
             f"input_channels={self.input_channels!r}"
             ")"
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         profile = changes.pop("profile", self.profile)
