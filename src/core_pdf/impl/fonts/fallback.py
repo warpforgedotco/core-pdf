@@ -7,7 +7,7 @@ from functools import cache
 from importlib.resources import files
 from typing import Any, ClassVar, Protocol, Self, cast
 
-from core_pdf.impl.fonts.font_program_truetype import TrueTypeFontProgram
+from core_pdf.impl.fonts.font_program import TrueTypeFontProgram
 from core_pdf.impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl.records import Record
 

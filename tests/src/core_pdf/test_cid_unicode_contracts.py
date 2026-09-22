@@ -1,8 +1,8 @@
 import pytest
 
-from core_pdf.impl.fonts import cid_unicode as cid
-from core_pdf.impl.fonts.cmap_decoder import CMapDecoder
+from core_pdf.impl.fonts import decoder as cid
 from core_pdf.impl.fonts.cmap_resources import unicode_scalar_from_cmap_code
+from core_pdf.impl.fonts.cmap_tokenizer import CMapDecoder
 
 
 @pytest.mark.parametrize("codespace", [b"", b"1 begincodespacerange <41> <43> endcodespacerange"])

@@ -6,7 +6,8 @@ import contextlib
 from collections.abc import Mapping
 from typing import Any
 
-from core_pdf.impl.fonts.data.metrics import FONT_DATA, METRIC_RECORD_NAMES
+from core_adobe_fonts.afm.core14 import FONT_DATA as PDF_FONT_DATA
+from core_adobe_fonts.afm.core14 import Core14FontMetrics
 from core_pdf.impl.fonts.helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.fonts.widths import get_descendant
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict
@@ -93,3 +94,36 @@ def adjust_type3_widths(
     if abs(width_scale - 1.0) > 1e-6:
         return {code: width * width_scale for code, width in widths.items()}
     return widths
+
+
+METRIC_RECORD_NAMES: dict[str, str] = {
+    "Arial": "Helvetica",
+    "Arial,Bold": "Helvetica-Bold",
+    "Arial,BoldItalic": "Helvetica-BoldOblique",
+    "Arial,Italic": "Helvetica-Oblique",
+    "Courier": "Courier",
+    "Courier-Bold": "Courier-Bold",
+    "Courier-BoldOblique": "Courier-BoldOblique",
+    "Courier-Oblique": "Courier-Oblique",
+    "CourierNew": "Courier",
+    "CourierNew,Bold": "Courier-Bold",
+    "CourierNew,BoldItalic": "Courier-BoldOblique",
+    "CourierNew,Italic": "Courier-Oblique",
+    "Helvetica": "Helvetica",
+    "Helvetica-Bold": "Helvetica-Bold",
+    "Helvetica-BoldOblique": "Helvetica-BoldOblique",
+    "Helvetica-Oblique": "Helvetica-Oblique",
+    "Symbol": "Symbol",
+    "Times-Bold": "Times-Bold",
+    "Times-BoldItalic": "Times-BoldItalic",
+    "Times-Italic": "Times-Italic",
+    "Times-Roman": "Times-Roman",
+    "TimesNewRoman": "Times-Roman",
+    "TimesNewRoman,Bold": "Times-Bold",
+    "TimesNewRoman,BoldItalic": "Times-BoldItalic",
+    "TimesNewRoman,Italic": "Times-Italic",
+    "ZapfDingbats": "ZapfDingbats",
+}
+FONT_DATA: dict[str, Core14FontMetrics] = {
+    name: PDF_FONT_DATA[record] for name, record in METRIC_RECORD_NAMES.items()
+}
