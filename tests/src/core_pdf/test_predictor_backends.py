@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.graphics import predictor_backends as reader
+from core_pdf.impl.graphics import stream_decoding as reader
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 
 

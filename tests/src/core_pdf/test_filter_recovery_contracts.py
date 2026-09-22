@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.graphics import filter_recovery as recovery
+from core_pdf.impl.graphics import stream_decoding as recovery
 from core_pdf.impl.graphics.decode_compat import FilterParams
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 
