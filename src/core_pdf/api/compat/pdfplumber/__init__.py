@@ -1764,7 +1764,13 @@ class PageImage:
         return stream.getvalue()
 
     def show(self) -> None:
-        from PIL import Image
+        try:
+            from PIL import Image
+        except ImportError as error:
+            raise ImportError(
+                "PageImage.show() requires Pillow. Install it with: "
+                "python -m pip install 'core-pdf[pdfplumber]'"
+            ) from error
 
         with Image.open(BytesIO(self._repr_png_())) as image:
             image.show()
