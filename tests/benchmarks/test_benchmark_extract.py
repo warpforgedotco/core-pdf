@@ -36,9 +36,8 @@ def open_document(data: bytes) -> int:
         return len(document.pages)
 
 
-def extract_pages(data: bytes, limit: int) -> int:
-    with PdfDocument(data) as document:
-        return sum(len(page.extract().blocks) for page in document.pages[:limit])
+def extract_pages(document: PdfDocument, limit: int) -> int:
+    return sum(len(page.extract().blocks) for page in document.pages[:limit])
 
 
 @pytest.mark.parametrize("sample", OPEN_SAMPLES, ids=lambda sample: sample.id)
@@ -49,11 +48,15 @@ def test_open_document(benchmark, sample):
 
 @pytest.mark.parametrize("sample", EXTRACT_SAMPLES, ids=lambda sample: sample.id)
 def test_extract_first_page(benchmark, sample):
-    data = sample_bytes(sample)
-    benchmark(extract_pages, data, 1)
+    # Opening is measured by test_open_document and is left outside the
+    # measured region here. Keeping it inside made this benchmark mostly a
+    # document-open measurement for samples with an expensive xref: the
+    # billionaires_page sample spent 8.3 s of its 10.6 s opening the file.
+    with PdfDocument(sample_bytes(sample)) as document:
+        benchmark(extract_pages, document, 1)
 
 
 @pytest.mark.parametrize("sample", SLICE_SAMPLES, ids=lambda sample: sample.id)
 def test_extract_page_slice(benchmark, sample):
-    data = sample_bytes(sample)
-    benchmark(extract_pages, data, SLICE_PAGES)
+    with PdfDocument(sample_bytes(sample)) as document:
+        benchmark(extract_pages, document, SLICE_PAGES)
