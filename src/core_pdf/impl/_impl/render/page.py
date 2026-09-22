@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any, Protocol, cast
 
+import numpy
+
 from core_pdf.impl._impl.capture.program import PageProgram
 from core_pdf.impl._impl.capture.records import (
     CapturedPath,
@@ -198,24 +200,9 @@ class RenderedPage:
         while len(raster_target.buffer_stack) > 1:
             raster_target.composite_group(raster_target.pop_group())
         if rotate in {90, 180, 270}:
-            rotated = bytearray(background_bytes * (width * height))
-            source_pixels = memoryview(raster_target.pixels).cast("I")
-            rotated_pixels = memoryview(rotated).cast("I")
-            if rotate == 90:
-                for x in range(width):
-                    start = x * height
-                    rotated_pixels[start : start + height] = source_pixels[x::width][::-1]
-            elif rotate == 270:
-                for x in range(width):
-                    start = (width - 1 - x) * height
-                    rotated_pixels[start : start + height] = source_pixels[x::width]
-            else:
-                for y in range(height):
-                    source = y * width
-                    target = (height - 1 - y) * width
-                    rotated_pixels[target : target + width] = source_pixels[
-                        source : source + width
-                    ][::-1]
+            quarter_turns = {90: -1, 180: 2, 270: 1}[rotate]
+            source_view = uint8_image_view(raster_target.pixels, (height, width, 4))
+            rotated = bytearray(numpy.ascontiguousarray(numpy.rot90(source_view, k=quarter_turns)))
             result = RasterImage(
                 rotated,
                 height if rotate in {90, 270} else width,

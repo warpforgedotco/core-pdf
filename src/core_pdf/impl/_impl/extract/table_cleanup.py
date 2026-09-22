@@ -480,10 +480,10 @@ def internal_annotate_table_associations(
     x0, _y0, x1, y1 = table.bbox
     candidates: list[tuple[float, tuple[int, ...]]] = []
     for row in text_rows:
-        boxes = [observations.bbox[index] for index in row]
-        row_x0 = min(float(box[0]) for box in boxes)
-        row_x1 = max(float(box[2]) for box in boxes)
-        row_y0 = min(float(box[1]) for box in boxes)
+        boxes = observations.bbox[list(row)]
+        row_x0 = float(boxes[:, 0].min())
+        row_x1 = float(boxes[:, 2].max())
+        row_y0 = float(boxes[:, 1].min())
         overlap = interval_overlap(x0, x1, row_x0, row_x1)
         if overlap / max(1.0, min(x1 - x0, row_x1 - row_x0)) < 0.60:
             continue
@@ -494,13 +494,14 @@ def internal_annotate_table_associations(
         _gap, title_row = min(candidates, key=lambda item: item[0])
         text = internal_cell_text(observations, list(title_row))
         if text:
+            title_boxes = observations.bbox[list(title_row)]
             title = TableAssociatedText(
                 text,
                 (
-                    min(float(observations.bbox[index, 0]) for index in title_row),
-                    min(float(observations.bbox[index, 1]) for index in title_row),
-                    max(float(observations.bbox[index, 2]) for index in title_row),
-                    max(float(observations.bbox[index, 3]) for index in title_row),
+                    float(title_boxes[:, 0].min()),
+                    float(title_boxes[:, 1].min()),
+                    float(title_boxes[:, 2].max()),
+                    float(title_boxes[:, 3].max()),
                 ),
                 kind="title",
             )

@@ -89,13 +89,12 @@ def internal_projection_segments(
     if not len(boxes):
         return []
     length = max(0, int(numpy.max(boxes[:, axis::2])))
-    intervals: list[tuple[int, int]] = []
-    for box in boxes:
-        start, end, _step = slice(int(box[axis]), int(box[axis + 2])).indices(length)
-        if start < end:
-            intervals.append((start, end))
+    starts = numpy.minimum(boxes[:, axis].astype(numpy.int64), length)
+    ends = numpy.minimum(boxes[:, axis + 2].astype(numpy.int64), length)
+    keep = starts < ends
+    intervals = sorted(zip(starts[keep].tolist(), ends[keep].tolist(), strict=True))
     segments: list[tuple[int, int]] = []
-    for start, end in sorted(intervals):
+    for start, end in intervals:
         if segments and start <= segments[-1][1]:
             previous_start, previous_end = segments[-1]
             segments[-1] = (previous_start, max(previous_end, end))
