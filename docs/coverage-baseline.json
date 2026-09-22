@@ -12,11 +12,11 @@
     "packages/core-adobe-fonts/src/core_adobe_fonts"
   ],
   "statements": {
-    "covered": 43569,
-    "total": 46641
+    "covered": 41584,
+    "total": 44592
   },
   "branches": {
-    "covered": 14204,
-    "total": 16492
+    "covered": 13890,
+    "total": 16152
   }
 }
