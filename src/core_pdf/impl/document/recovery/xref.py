@@ -7,9 +7,8 @@ import zlib
 from collections.abc import Iterator
 from typing import cast
 
-from core_pdf.impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl.document.recovery.lexer import PdfLexer, matches_keyword_with_one_substitution
 from core_pdf.impl.document.recovery.objects import PdfObjectStream
-from core_pdf.impl.document.recovery.scanning import matches_keyword_with_one_substitution
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics.stream_decoding import decode_stream_data
 from core_pdf.impl.pdf_names import recover_pdf_name

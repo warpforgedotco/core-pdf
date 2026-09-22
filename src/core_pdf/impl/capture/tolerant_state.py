@@ -6,7 +6,7 @@ import typing
 from typing import Any
 
 from core_pdf.impl.capture.recovery import CaptureRecovery
-from core_pdf.impl.document.recovery.resources import (
+from core_pdf.impl.document.recovery.resolver import (
     resolve_resource_dict as recover_resources,
 )
 from core_pdf.impl.fonts.helpers import strip_subset_tag

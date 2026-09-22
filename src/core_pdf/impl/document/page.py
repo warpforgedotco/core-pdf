@@ -17,9 +17,10 @@ from core_pdf.impl.document.page_links import (
     link_target_direct,
     link_target_resolved,
     resolve_annotation_dict,
+    resolve_destination_value,
 )
 from core_pdf.impl.document.records import RawAnnotation, RawLink
-from core_pdf.impl.document.recovery.resources import resolve_resource_dict
+from core_pdf.impl.document.recovery.resolver import resolve_resource_dict
 from core_pdf.impl.document.structure import PageStructure
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.extract.pipeline import extract_page
@@ -35,7 +36,12 @@ from core_pdf.impl.output.model import Page as StructuredPage
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
 from core_pdf.impl.runtime.execution import ExtractionScope
-from core_pdf.impl.types import DrawingRecord, ImageMetadata, ImageRecord, PdfReference
+from core_pdf.impl.types import (
+    DrawingRecord,
+    ImageMetadata,
+    ImageRecord,
+    PdfReference,
+)
 from core_pdf_spec.s_07_document.page import page_clip, page_rotation, page_user_unit
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -516,3 +522,11 @@ class PdfPage:
             annotations=annotations,
             semantic_context=self.document.resolver.semantic_context,
         )
+
+
+__all__ = (
+    "link_target_direct",
+    "link_target_resolved",
+    "resolve_annotation_dict",
+    "resolve_destination_value",
+)

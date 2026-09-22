@@ -6,13 +6,18 @@ from contextlib import suppress
 from math import hypot
 from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
-from core_pdf.impl.capture.paths import flatten_path
 from core_pdf.impl.capture.program import CapturedProgram
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.interpreter import TextState
     from core_pdf_spec.s_07_content.inline_images import InlineImage
 
+
+from copy import copy
+from math import ceil
+from typing import TYPE_CHECKING
+
+import numpy
 
 from core_pdf.impl.capture.glyphs import (
     GlyphCapture,
@@ -21,7 +26,6 @@ from core_pdf.impl.capture.glyphs import (
     TextGeometry,
     capture_glyphs,
 )
-from core_pdf.impl.capture.images import image_source_from_stream
 from core_pdf.impl.capture.marked_content import MarkedContentEntry
 from core_pdf.impl.capture.records import (
     CapturedDrawing,
@@ -37,7 +41,6 @@ from core_pdf.impl.capture.records import (
     TilingPattern,
     marker_drawing,
 )
-from core_pdf.impl.capture.soft_masks import capture_graphics_soft_mask
 from core_pdf.impl.capture.text_runs import (
     RunAccumulator,
     is_garbage_text,
@@ -58,6 +61,7 @@ from core_pdf.impl.types import (
     PdfName,
     Rectangle,
 )
+from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES, GraphicsState, PdfPath
 from core_pdf_spec.s_07_content.model import (
     MarkedContentEntry as SemanticMarkedContentEntry,
@@ -68,11 +72,18 @@ from core_pdf_spec.s_07_content.streams import (
     ContentStreamFrame,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 from core_pdf_spec.s_08_graphics.color import color_space_paints
-from core_pdf_spec.s_08_graphics.color_rendering import ColorRendering, override_color_rendering
+from core_pdf_spec.s_08_graphics.color_rendering import (
+    DEFAULT_COLOR_RENDERING,
+    ColorRendering,
+    override_color_rendering,
+)
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
+from core_pdf_spec.s_08_graphics.image_spec import (
+    image_source_from_stream as resolve_image_source,
+)
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
@@ -1082,3 +1093,132 @@ class RecordingMethods(RecoveringTextState):
         if allow_text:
             return cast(str | None, resolver.resolve_name_or_text(value))
         return cast(str | None, resolver.resolve_name_like_value(value))
+
+
+def image_source_from_stream(
+    stream: PdfStream,
+    resolver: PdfValueResolver,
+    *,
+    color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+) -> tuple[ImageSource, float | None]:
+    source = resolve_image_source(
+        stream,
+        resolver,
+        semantic_context=getattr(resolver, "semantic_context", None),
+        color_rendering=color_rendering,
+    )
+    mask_alpha = None
+    mask = source.soft_mask
+    if mask is not None:
+        width = resolver.resolve_int(mask.dictionary.get("Width")) or 0
+        height = resolver.resolve_int(mask.dictionary.get("Height")) or 0
+        data = mask.raw
+        if width > 0 and height > 0 and data:
+            total = min(len(data), width * height)
+            mask_sum = numpy.frombuffer(data, numpy.uint8, count=total).sum(dtype=numpy.uint64)
+            mask_alpha = int(mask_sum) / (255.0 * total)
+    return source, mask_alpha
+
+
+def flatten_path(source: PdfPath) -> CapturedPath:
+    path = CapturedPath()
+    for command in source.commands:
+        values = command.operands
+        match command.operator:
+            case "m":
+                path.move_to(*values)
+            case "l":
+                path.line_to(*values)
+            case "h":
+                path.close()
+            case "re":
+                path.rect(*values)
+            case "c":
+                x0, y0, x1, y1, x2, y2, x3, y3 = values
+                matrix = command.ctm
+                scale = max(hypot(matrix.a, matrix.b), hypot(matrix.c, matrix.d), 1.0)
+                control_len = (
+                    hypot(x1 - x0, y1 - y0) + hypot(x2 - x1, y2 - y1) + hypot(x3 - x2, y3 - y2)
+                )
+                flatness = max(0.1, command.flatness or 0.25)
+                segments = max(4, min(128, ceil(control_len * scale / (flatness * 8.0))))
+                previous_x, previous_y = x0, y0
+                segment_step = 1.0 / segments
+                for i in range(1, segments + 1):
+                    t = i * segment_step
+                    mt = 1.0 - t
+                    mt2 = mt * mt
+                    t2 = t * t
+                    b0, b1, b2, b3 = mt2 * mt, 3.0 * mt2 * t, 3.0 * mt * t2, t2 * t
+                    x = b0 * x0 + b1 * x1 + b2 * x2 + b3 * x3
+                    y = b0 * y0 + b1 * y1 + b2 * y2 + b3 * y3
+                    if not path.subpaths:
+                        path.move_to(previous_x, previous_y)
+                    path.line_to(x, y)
+                    previous_x, previous_y = x, y
+    return path
+
+
+GRAPHICS_STATE_FIELDS = GraphicsState.__fields__
+
+
+def state_key(value: object) -> object:
+    if isinstance(value, tuple):
+        return tuple(state_key(part) for part in value)
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return (type(value), value)
+    return ("identity", id(value))
+
+
+def capture_graphics_soft_mask(state: RecordingMethods) -> CapturedSoftMask | None:
+    mask = state.graphics.soft_mask
+    if mask is None:
+        return None
+    graphics = copy(state.graphics)
+    graphics.ctm = mask.ctm
+    graphics.soft_mask = None
+    graphics.fill_opacity = graphics.stroke_opacity = 1.0
+    graphics.blend_mode = None
+    key = (
+        id(mask),
+        tuple(state_key(getattr(graphics, name)) for name in GRAPHICS_STATE_FIELDS),
+    )
+    cached = state.capture_soft_masks.get(key)
+    if cached is not None:
+        return cached[2]
+    state.capture_soft_masks[key] = (mask, graphics, None)
+    group_key = id(mask.group)
+    if mask.subtype != "Alpha" or group_key in state.capture_active_mask_groups:
+        return None
+    if len(state.capture_active_mask_groups) >= 10:
+        return None
+    state.capture_active_mask_groups.add(group_key)
+    try:
+        nested = state.nested_capture_state()
+        nested.graphics = copy(graphics)
+        scope = state.capture_mask_resources.get(id(mask))
+        nested.resources = scope[1] if scope is not None else state.resources
+        frame = nested.append_form_xobject(mask.group, 0)
+        if frame is None:
+            return None
+        nested.stream_executor.consume_frame(frame)
+        nested.run_accumulator.flush()
+        if not nested.text_boundaries:
+            return None
+        result = CapturedSoftMask(
+            CapturedProgram(
+                runs=tuple(nested.runs),
+                glyphs=tuple(nested.glyphs),
+                drawings=tuple(nested.drawings),
+                inline_images=tuple(nested.inline_images),
+                lines=tuple(nested.lines),
+                text_boundaries=tuple(nested.text_boundaries),
+            ),
+            mask.transfer,
+        )
+        state.capture_soft_masks[key] = (mask, graphics, result)
+        return result
+    except PdfParseError, TypeError, ValueError, ArithmeticError:
+        return None
+    finally:
+        state.capture_active_mask_groups.remove(group_key)

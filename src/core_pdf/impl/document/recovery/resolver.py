@@ -15,7 +15,9 @@ from core_pdf_spec.s_07_filters.pipeline import decode_stream_data as decode_spe
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver as SyntaxResolver
+from core_pdf_spec.s_07_syntax.resources import resolve_resource_dict as resolve_spec_resources
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
@@ -126,3 +128,10 @@ class ObjectResolver(SyntaxResolver):
 
     def decode_text(self, data: bytes) -> str:
         return decode_pdf_text_string(data, context=self.semantic_context)
+
+
+def resolve_resource_dict(value: object, resolver: PdfValueResolver) -> PdfDict | None:
+    try:
+        return resolve_spec_resources(value, resolver)
+    except PdfParseError:
+        return None

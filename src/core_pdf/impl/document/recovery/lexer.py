@@ -9,10 +9,9 @@ from collections.abc import Callable
 from copy import replace
 from typing import Any
 
-from core_pdf.impl.document.recovery.scanning import matches_keyword_with_one_substitution
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics.stream_decoding import decode_stream_data
-from core_pdf.impl.types import PdfName, PdfReference
+from core_pdf.impl.types import PdfByteBuffer, PdfName, PdfReference
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecoder
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.types import Decipher
@@ -470,3 +469,18 @@ class PdfLexer(SyntaxLexer):
             raise PdfParseError("expected keyword 'endobj'")
         self.pos = keyword[1]
         return obj
+
+
+def matches_keyword_with_one_substitution(
+    data: PdfByteBuffer | memoryview, pos: int, keyword: bytes
+) -> bool:
+    end = pos + len(keyword)
+    if end > len(data):
+        return False
+    mismatches = 0
+    for index, expected in enumerate(keyword):
+        if data[pos + index] != expected:
+            mismatches += 1
+            if mismatches > 1:
+                return False
+    return mismatches == 1

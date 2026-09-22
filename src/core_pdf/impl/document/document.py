@@ -4,20 +4,21 @@ from __future__ import annotations
 
 import contextlib
 import mmap
+import struct
 import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import AbstractContextManager
+from functools import partial
 from os import PathLike
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVar, cast
 
-from core_pdf.impl.document.document_xref import DocumentXRefMixin
 from core_pdf.impl.document.fields import collect_field_records
 from core_pdf.impl.document.metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.document.page import PAGE_INHERITED_KEYS, PdfPage
-from core_pdf.impl.document.page_labels import format_page_label
 from core_pdf.impl.document.page_tree import (
     MAX_PAGE_TREE_DEPTH,
+    infer_page_tree_node_type,
     resolve_page_tree_node_type,
 )
 from core_pdf.impl.document.records import (
@@ -28,8 +29,9 @@ from core_pdf.impl.document.records import (
 )
 from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.document.recovery.resolver import ObjectResolver
-from core_pdf.impl.document.recovery.security import create_recovered_security_handler
+from core_pdf.impl.document.recovery.text_strings import parse_text_string
 from core_pdf.impl.document.recovery.trees import iter_name_tree_items, iter_number_tree_items
+from core_pdf.impl.document.recovery.xref import XRefScanner, iter_indirect_object_headers
 from core_pdf.impl.document.standards import (
     bootstrap_security_context,
     discover_document_standards,
@@ -60,9 +62,17 @@ from core_pdf.impl.types import (
     PdfSource,
     SeekableBinaryReader,
 )
+from core_pdf_spec.s_07_document.document_labels import PageLabelStyle
+from core_pdf_spec.s_07_document.document_labels import (
+    format_page_label as format_spec_page_label,
+)
 from core_pdf_spec.s_07_document.page import PageNode as PageNode
 from core_pdf_spec.s_07_document.page import iter_page_nodes
 from core_pdf_spec.s_07_security.document import initialize_document_security
+from core_pdf_spec.s_07_security.standard import (
+    StandardSecurityHandler,
+    create_standard_security_handler,
+)
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import (
@@ -72,8 +82,15 @@ from core_pdf_spec.s_07_syntax.types import (
     PdfArray,
     PdfDict,
     PdfObject,
+    ResolvedObjectCache,
 )
-from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, key_for
+from core_pdf_spec.s_07_syntax.xref import (
+    PdfXRefEntry,
+    iter_xref_revisions,
+    key_for,
+    merge_xref_sections,
+)
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf_spec.standards import DocumentStandards, PdfVersion, SemanticContext
 
 if TYPE_CHECKING:
@@ -214,10 +231,7 @@ def check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
                 pending.append((value, False))
 
 
-class PdfDocument(
-    DocumentXRefMixin,
-    Generic[PageT],
-):
+class PdfDocument(Generic[PageT]):
     page_class: type | None = None
 
     __slots__ = (
@@ -241,6 +255,11 @@ class PdfDocument(
         "_standards",
         "standards_complete",
         "font_decoders",
+        # DocumentXRefMixin carried no __slots__, so instances have always had a
+        # __dict__ and the compat facades patch methods onto them. Declared here
+        # now that the mixin is gone, so the layout is a choice rather than an
+        # accident of a base class.
+        "__dict__",
     )
 
     source: PdfSource
@@ -1437,3 +1456,557 @@ class PdfDocument(
             if key is None or key not in on_layers:
                 hidden_layers.add(name)
         return frozenset(hidden_layers)
+
+    @property
+    def xref_context(self) -> SemanticContext | None:
+        resolver: ObjectResolver | None = getattr(self, "resolver", None)
+        return None if resolver is None else resolver.semantic_context
+
+    def strict_xref_validation_error(self) -> str | None:
+        start = XRefScanner.find_startxref(self.raw_data, semantic_context=self.xref_context)
+        if start is None:
+            return None
+        try:
+            read_section = partial(
+                XRefScanner.recover_section_at,
+                self.raw_data,
+                recover_malformed_objects=False,
+                semantic_context=self.xref_context,
+            )
+            for _revision in iter_xref_revisions(start, read_section):
+                pass
+        except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
+            return str(error)
+        return None
+
+    def brute_force_xref(self) -> dict[int, PdfXRefEntry]:
+        return XRefScanner.brute_force_scan(
+            self.raw_data,
+            stop_at_first_trailer=not self.recovery_scan_all_revisions,
+            semantic_context=self.xref_context,
+        )
+
+    def scan_xref(self) -> None:
+        data = self.raw_data
+        try:
+            start = XRefScanner.find_startxref(data, semantic_context=self.xref_context)
+        except ValueError as exc:
+            raise PdfParseError("invalid xref section") from exc
+        if start is None and b"startxref" in data:
+            raise PdfParseError("missing startxref")
+        if start is not None and start < 0:
+            raise PdfParseError("invalid xref section")
+
+        recovery_reason = None
+        if start is not None:
+            try:
+                read_section = partial(
+                    XRefScanner.recover_section_at,
+                    data,
+                    semantic_context=self.xref_context,
+                )
+                revisions = list(iter_xref_revisions(start, read_section))
+                self.xref = merge_xref_sections(revision.entries for revision in revisions)
+                self.trailer_dict = revisions[0].trailer
+                self.repair_stale_xref_offsets()
+                self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
+                root_ref = self.trailer_dict.get("Root")
+                if root_ref is None or not self.is_valid_catalog_root(root_ref):
+                    self.xref.update(self.brute_force_xref())
+                    self.xref_was_recovered = True
+                    catalog_ref = self.infer_catalog_root()
+                    if catalog_ref is not None:
+                        self.trailer_dict = dict(self.trailer_dict)
+                        self.trailer_dict["Root"] = catalog_ref
+                    self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
+            except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
+                recovery_reason = str(error)
+            else:
+                return
+
+        self.xref = self.brute_force_xref()
+        self.xref_was_recovered = True
+        if recovery_reason is not None:
+            self.xref_recovery_reason = recovery_reason
+        if not self.xref:
+            self.trailer_dict = {}
+            return
+        catalog_ref = self.infer_catalog_root()
+        self.trailer_dict = {"Root": catalog_ref} if catalog_ref is not None else {}
+        self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
+
+    def repair_stale_xref_offsets(self) -> None:
+        header_offset = self.pdf_header_offset()
+        recovered_xref: dict[int, PdfXRefEntry] | None = None
+        repaired = False
+        for key, entry in list(self.xref.items()):
+            if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
+                continue
+            if self.xref_entry_matches_header(key, entry):
+                continue
+            if header_offset and self.xref_entry_matches_header(
+                key,
+                PdfXRefEntry(
+                    entry.offset + header_offset,
+                    entry.generation,
+                    entry.in_use,
+                    object_stream=entry.object_stream,
+                    index_in_stream=entry.index_in_stream,
+                ),
+            ):
+                entry.offset += header_offset
+                repaired = True
+                continue
+            if header_offset:
+                shifted_offset = self.find_xref_entry_header(
+                    key,
+                    entry.offset + header_offset,
+                )
+                if shifted_offset is not None:
+                    entry.offset = shifted_offset
+                    repaired = True
+                    continue
+            if recovered_xref is None:
+                recovered_xref = self.brute_force_xref()
+            replacement = recovered_xref.get(key)
+            if (
+                replacement is None
+                or not replacement.in_use
+                or replacement.object_stream is not None
+            ):
+                continue
+            if replacement.offset != entry.offset:
+                self.xref[key] = replacement
+                repaired = True
+
+        if repaired:
+            self.xref_was_recovered = True
+
+    def pdf_header_offset(self) -> int:
+        data = self.raw_data
+        offset = data.find(b"%PDF-", 0, min(len(data), 1024))
+        return max(0, offset)
+
+    def find_xref_entry_header(self, key: int, offset: int) -> int | None:
+        data = self.raw_data
+        expected_object_number = key >> 16
+        expected_generation_number = key & 0xFFFF
+        search_start = max(0, offset - 1024)
+        search_end = min(len(data), offset + 1024)
+        for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
+            data,
+            search_start,
+            search_end,
+            allow_prefix_before_start=True,
+            semantic_context=self.xref_context,
+        ):
+            if (
+                object_number == expected_object_number
+                and generation_number == expected_generation_number
+            ):
+                return parsed_offset
+        return None
+
+    def xref_entry_matches_header(self, key: int, entry: PdfXRefEntry) -> bool:
+        data = self.raw_data
+        offset = entry.offset
+        data_len = len(data)
+        if offset < 0 or offset >= data_len:
+            return False
+
+        expected_object_number = key >> 16
+        expected_generation_number = key & 0xFFFF
+
+        pos = offset
+        if pos < data_len and 48 <= data[pos] <= 57:
+            obj_num = 0
+            while pos < data_len and 48 <= data[pos] <= 57:
+                obj_num = obj_num * 10 + (data[pos] - 48)
+                pos += 1
+            if pos < data_len and data[pos] in (0, 9, 10, 12, 13, 32):
+                while pos < data_len and data[pos] in (0, 9, 10, 12, 13, 32):
+                    pos += 1
+                if pos < data_len and 48 <= data[pos] <= 57:
+                    gen_num = 0
+                    while pos < data_len and 48 <= data[pos] <= 57:
+                        gen_num = gen_num * 10 + (data[pos] - 48)
+                        pos += 1
+                    if (
+                        pos < data_len
+                        and data[pos] in (0, 9, 10, 12, 13, 32)
+                        and obj_num == expected_object_number
+                        and gen_num == expected_generation_number
+                    ):
+                        while pos < data_len and data[pos] in (0, 9, 10, 12, 13, 32):
+                            pos += 1
+                        if (
+                            pos + 3 <= data_len
+                            and data[pos : pos + 3] == b"obj"
+                            and (pos + 3 == data_len or data[pos + 3] in (0, 9, 10, 12, 13, 32))
+                        ):
+                            return True
+
+        search_end = min(data_len, offset + 64)
+        for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
+            data,
+            offset,
+            search_end,
+            allow_prefix_before_start=True,
+            semantic_context=self.xref_context,
+        ):
+            return (
+                parsed_offset == offset
+                and object_number == expected_object_number
+                and generation_number == expected_generation_number
+            )
+        return False
+
+    def is_valid_catalog_root(self, root_ref: object) -> bool:
+        resolver = ObjectResolver(
+            self.raw_data,
+            self.xref,
+            semantic_context=self.xref_context,
+        )
+        try:
+            root = resolver.resolve(root_ref)
+            if not isinstance(root, dict):
+                return False
+            if recover_pdf_name(root.get("Type")) != "Catalog":
+                return False
+            pages = resolver.resolve(root.get("Pages"))
+            if not isinstance(pages, dict):
+                return False
+            pages = cast(PdfDict, pages)
+            node_type = resolve_page_tree_node_type(resolver, pages)
+            if node_type != "Pages":
+                return False
+            kids = resolver.resolve(pages.get("Kids"))
+            count = resolver.resolve(pages.get("Count"))
+            return isinstance(kids, list) or (type(count) is int and count >= 0)
+        except Exception:
+            return False
+        finally:
+            resolver.close()
+
+    def infer_catalog_root(self) -> PdfReference | None:
+        data = self.raw_data
+        object_cache: ResolvedObjectCache = {}
+        resolver = ObjectResolver(
+            self.raw_data,
+            self.xref,
+            semantic_context=self.xref_context,
+        )
+        lexer = PdfLexer(data, semantic_context=self.xref_context)
+        entries_by_ref = {
+            (k >> 16, k & 0xFFFF): entry for k, entry in self.xref.items() if entry.in_use
+        }
+
+        def resolve_for_inference(value: object, depth: int = 0) -> object:
+            if depth > 12:
+                return None
+            if not isinstance(value, PdfReference):
+                return value
+            key = (value.object_number, value.generation_number)
+            if key in object_cache:
+                return object_cache[key]
+            entry = entries_by_ref.get(key)
+            if entry is None and value.generation_number != 0:
+                key = (value.object_number, 0)
+                entry = entries_by_ref.get(key)
+            if entry is None:
+                return None
+            if entry.object_stream is not None:
+                try:
+                    resolved = resolver.resolve(value)
+                except Exception:
+                    return None
+                object_cache[key] = cast(CachedPdfObject, resolved)
+                return resolved
+            lexer.rewind(entry.offset)
+            try:
+                resolved = lexer.parse_indirect_object()
+            except Exception:
+                return None
+            object_cache[key] = cast(CachedPdfObject, resolved)
+            return resolved
+
+        def page_tree_score(node: object, depth: int = 0, seen: set[int] | None = None) -> int:
+            if depth > MAX_PAGE_TREE_DEPTH:
+                return -1000
+            if seen is None:
+                seen = set()
+            node = resolve_for_inference(node, depth)
+            if not isinstance(node, dict):
+                return -100
+            marker = id(node)
+            if marker in seen:
+                return -100
+            seen.add(marker)
+            node_type = recover_pdf_name(resolve_for_inference(node.get("Type"), depth + 1))
+            if node_type is None:
+                node_type = infer_page_tree_node_type(cast(PdfDict, node))
+            if node_type == "Page":
+                score = 10
+                if node.get("Contents") is not None:
+                    score += 3
+                if node.get("MediaBox") is not None:
+                    score += 2
+                return score
+            if node_type != "Pages":
+                return -50
+            kids = resolve_for_inference(node.get("Kids"), depth + 1)
+            count = resolve_for_inference(node.get("Count"), depth + 1)
+            score = 15
+            if type(count) is int and count >= 0:
+                score += min(count, 20)
+            if not isinstance(kids, list) or not kids:
+                return score - 20
+            child_scores = [page_tree_score(kid, depth + 1, seen.copy()) for kid in kids[:32]]
+            valid_children = [child_score for child_score in child_scores if child_score > 0]
+            if not valid_children:
+                return score - 30
+            return score + sum(valid_children)
+
+        def catalog_score(obj: object) -> int:
+            if not isinstance(obj, dict):
+                return -1000
+            type_name = recover_pdf_name(obj.get("Type"))
+            pages = obj.get("Pages")
+            score = 0
+            if type_name == "Catalog":
+                score += 100
+            elif pages is not None:
+                score += 25
+            else:
+                return -100
+            if pages is not None:
+                pages_score = page_tree_score(pages)
+                if pages_score <= 0:
+                    score -= 150
+                else:
+                    score += pages_score
+            for key in ("Outlines", "Names", "Dests", "AcroForm", "PageLabels"):
+                if obj.get(key) is not None:
+                    score += 2
+            return score
+
+        def select_catalog_root() -> PdfReference | None:
+            candidates = sorted(
+                {
+                    (
+                        k >> 16,
+                        k & 0xFFFF,
+                        entry.offset if entry.object_stream is None else 0,
+                        entry.object_stream is not None,
+                    )
+                    for k, entry in self.xref.items()
+                    if entry.in_use
+                    and (
+                        (entry.object_stream is None and entry.offset >= 0)
+                        or entry.object_stream is not None
+                    )
+                },
+                key=lambda item: (item[3], item[2], item[0]),
+            )
+            scored: list[tuple[int, int, int, int]] = []
+            for obj_num, gen_num, offset, compressed in candidates:
+                if compressed:
+                    try:
+                        obj = resolver.resolve(PdfReference(obj_num, gen_num))
+                    except Exception:
+                        continue
+                else:
+                    lexer.rewind(offset)
+                    try:
+                        obj = lexer.parse_indirect_object()
+                    except Exception:
+                        continue
+                object_cache[(obj_num, gen_num)] = cast(CachedPdfObject, obj)
+                score = catalog_score(obj)
+                if score > -100:
+                    scored.append((score, -offset, obj_num, gen_num))
+            if not scored:
+                return None
+            scored.sort(reverse=True)
+            ignored, ignored, obj_num, gen_num = scored[0]
+            return PdfReference(obj_num, gen_num)
+
+        try:
+            return select_catalog_root()
+        finally:
+            object_cache.clear()
+            lexer.close()
+            resolver.close()
+
+    def merge_recovered_trailer_metadata(self, trailer: PdfDict) -> PdfDict:
+        missing_keys = [key for key in TRAILER_METADATA_KEYS if trailer.get(key) is None]
+        if not missing_keys:
+            return trailer
+        if not getattr(self, "xref_was_recovered", False) and not any(
+            self.raw_data.find(b"/" + key.encode("ascii")) >= 0 for key in missing_keys
+        ):
+            return trailer
+        if missing_keys == ["Encrypt"] and not getattr(self, "xref_was_recovered", False):
+            return trailer
+        if missing_keys == ["Encrypt"] and self.raw_data.find(b"Encrypt") < 0:
+            return trailer
+        recovered = self.infer_trailer_metadata()
+        if not recovered:
+            return trailer
+        merged = dict(trailer)
+        for key, value in recovered.items():
+            if merged.get(key) is None:
+                merged[key] = cast(PdfObject, value)
+        return merged
+
+    def infer_trailer_metadata(self) -> dict[str, object]:
+        metadata: dict[str, object] = {}
+
+        for candidate in self.iter_literal_trailer_dictionaries():
+            for key in TRAILER_METADATA_KEYS:
+                if key not in candidate:
+                    continue
+                value = candidate[key]
+                if self.is_valid_trailer_metadata_value(key, value):
+                    metadata[key] = value
+
+        missing_keys = [key for key in TRAILER_METADATA_KEYS if key not in metadata]
+        if not missing_keys:
+            return metadata
+        if missing_keys == ["Encrypt"] and metadata and self.raw_data.find(b"Encrypt") < 0:
+            return metadata
+
+        for candidate in self.iter_recoverable_xref_stream_dictionaries():
+            for key in missing_keys:
+                if key not in candidate:
+                    continue
+                value = candidate[key]
+                if self.is_valid_trailer_metadata_value(key, value):
+                    metadata[key] = value
+        return metadata
+
+    def iter_literal_trailer_dictionaries(self) -> Iterator[PdfDict]:
+        data = self.raw_data
+        lexer = PdfLexer(data, semantic_context=self.xref_context)
+        try:
+            search_from = 0
+            while True:
+                marker = data.find(b"trailer", search_from)
+                if marker < 0:
+                    break
+                search_from = marker + len(b"trailer")
+                dict_start = data.find(b"<<", search_from, search_from + 4096)
+                if dict_start < 0:
+                    continue
+                lexer.rewind(dict_start)
+                try:
+                    candidate = lexer.parse_dictionary()
+                except Exception:
+                    continue
+                yield candidate
+        finally:
+            lexer.close()
+
+    def iter_recoverable_xref_stream_dictionaries(self) -> Iterator[PdfDict]:
+        lexer = PdfLexer(self.raw_data, semantic_context=self.xref_context)
+        try:
+            for key, entry in sorted(self.xref.items()):
+                if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
+                    continue
+                lexer.rewind(entry.offset)
+                try:
+                    obj = lexer.parse_indirect_object()
+                except Exception:
+                    continue
+                if not isinstance(obj, PdfStream):
+                    continue
+                dictionary = obj.dictionary
+                if recover_pdf_name(dictionary.get("Type")) == "XRef" or (
+                    dictionary.get("W") is not None and dictionary.get("Size") is not None
+                ):
+                    yield cast(PdfDict, dictionary)
+        finally:
+            lexer.close()
+
+    def is_valid_trailer_metadata_value(self, key: str, value: object) -> bool:
+        if key == "Info":
+            return isinstance(value, (PdfReference, dict))
+        if key == "ID":
+            return isinstance(value, (list, tuple)) and len(value) > 0
+        if key == "Encrypt":
+            return value is not None
+        return key == "AuthCode"
+
+
+def format_page_label(spec: PdfDict, page_offset: int, resolve: Callable[[object], object]) -> str:
+    style = recover_pdf_name(resolve(spec.get("S")))
+    prefix = parse_text_string(resolve(spec.get("P"))) or ""
+    start = resolve(spec.get("St"))
+    normalized: PdfDict = {
+        "P": cast(PdfObject, prefix),
+        "St": start if type(start) is int and start > 0 else 1,
+    }
+    if style is not None and style in PageLabelStyle:
+        normalized["S"] = PdfName.of(style)
+    return format_spec_page_label(normalized, page_offset, lambda value: value)
+
+
+def normalize_values(
+    values: PdfDict, integer_fields: tuple[str, ...], name_fields: tuple[str, ...]
+) -> PdfDict:
+    normalized = values
+    for name in integer_fields:
+        value = values.get(name)
+        number = parse_int(value)
+        if number is not None and type(value) is not int:
+            if normalized is values:
+                normalized = dict(values)
+            normalized[name] = number
+    for name in name_fields:
+        value = values.get(name)
+        decoded = recover_pdf_name(value)
+        if decoded is not None and not isinstance(value, PdfName) and decoded != value:
+            if normalized is values:
+                normalized = dict(values)
+            normalized[name] = PdfName.of(decoded)
+    return normalized
+
+
+def create_recovered_security_handler(
+    document_id: Sequence[object], params: PdfDict, password: str = ""
+) -> StandardSecurityHandler:
+    normalized = normalize_values(
+        params, ("V", "R", "P", "Length"), ("Filter", "StmF", "StrF", "EFF")
+    )
+    filters = params.get("CF")
+    if isinstance(filters, dict):
+        normalized_filters = filters
+        for key, value in filters.items():
+            name = recover_pdf_name(key)
+            normalized_value = value
+            if name == "StdCF" and isinstance(value, dict):
+                normalized_value = normalize_values(
+                    value, ("Length",), ("Type", "CFM", "AuthEvent")
+                )
+            normalized_key = (
+                PdfName.of(name)
+                if name is not None and not isinstance(key, PdfName) and name != key
+                else key
+            )
+            if normalized_key != key or normalized_value is not value:
+                if normalized_filters is filters:
+                    normalized_filters = dict(filters)
+                if normalized_key != key:
+                    del normalized_filters[key]
+                normalized_filters[normalized_key] = normalized_value
+        if normalized_filters is not filters:
+            if normalized is params:
+                normalized = dict(params)
+            normalized["CF"] = cast(PdfDict, normalized_filters)
+    return create_standard_security_handler(document_id, normalized, password)
+
+
+TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
+
+
+__all__ = ("MAX_PAGE_TREE_DEPTH", "TRAILER_METADATA_KEYS")

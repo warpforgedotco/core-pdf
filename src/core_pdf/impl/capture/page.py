@@ -8,7 +8,7 @@ from typing import Any, cast
 from core_pdf.impl.capture.interpreter import TextState
 from core_pdf.impl.capture.program import AppearanceProgram, CapturedProgram, PageProgram
 from core_pdf.impl.document.records import RawAnnotation, RawFormField
-from core_pdf.impl.document.recovery.resources import resolve_resource_dict
+from core_pdf.impl.document.recovery.resolver import resolve_resource_dict
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.model.geometry import normalize_rect, transform_bbox
 from core_pdf_spec.s_07_document.annotation_appearance import (
