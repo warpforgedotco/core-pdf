@@ -1,0 +1,75 @@
+name: CodSpeed
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Lets CodSpeed trigger a backtest of historical commits.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push supersedes the previous run for the same pull request.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmarks:
+    name: CodSpeed / Python 3.14
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OpenID Connect authentication with CodSpeed
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      # Only the submodules tests/benchmarks/corpus.py draws samples from. The
+      # full set is well over a gigabyte and three of them hold no sample. The
+      # SCORE-Bench sample is a plain git object rather than an LFS one, so the
+      # LFS pull is not needed here.
+      - name: Restore fixture submodules
+        uses: ./.github/actions/cache-submodules
+        with:
+          lfs: "false"
+          paths: >-
+            tests/fixtures/PyMuPDF
+            tests/fixtures/SCORE-Bench
+            tests/fixtures/llama_index
+            tests/fixtures/pdf20examples
+            tests/fixtures/pdfminer.six
+            tests/fixtures/pypdf
+            tests/fixtures/unstructured
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.17"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install workspace packages and benchmark tools
+        run: uv sync --locked --all-packages --group test --group benchmark
+
+      # Simulation mode counts instructions under valgrind rather than timing
+      # the run, so results do not depend on how loaded the runner is.
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@88472375d0a4572cf70a9f1fe3a4e0ab8da1b924 # v5.0.1
+        env:
+          # Fail rather than skip if a corpus file is missing, so a broken
+          # submodule checkout cannot pass as a run that measured nothing.
+          CORE_PDF_BENCHMARK_REQUIRE_FIXTURES: "1"
+        with:
+          mode: simulation
+          # The group flags are load-bearing: a bare `uv run` syncs the default
+          # groups and would uninstall pytest-codspeed before pytest starts.
+          run: >-
+            uv run --locked --all-packages --group test --group benchmark
+            pytest tests/benchmarks --codspeed
+
+      - name: Prune uv cache
+        run: uv cache prune --ci

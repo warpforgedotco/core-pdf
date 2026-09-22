@@ -32,9 +32,12 @@ jobs:
         run: uv lock --check
 
       # vendor-test supplies the reference libraries the compat differential
-      # tests import at module level, which ty must resolve.
+      # tests import at module level, which ty must resolve. benchmark does the
+      # same for pytest-codspeed, which tests/benchmarks imports.
       - name: Install workspace packages and quality tools
-        run: uv sync --locked --all-packages --group lint --group test --group vendor-test
+        run: >-
+          uv sync --locked --all-packages
+          --group lint --group test --group vendor-test --group benchmark
 
       - name: Run strict spec, standards, and validation tests
         run: >-
