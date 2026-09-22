@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
-from typing import Any
+from copy import replace
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl._impl.extract.contracts import ObservationBatch
 from core_pdf.impl._impl.model.geometry import rect_tuple
@@ -60,6 +60,9 @@ from core_pdf_ocr.impl.extract.ocr.vector import (
 )
 from core_pdf_ocr.impl.extract.quality import internal_Candidate
 
+internal_frozen_setattr = object.__setattr__
+
+
 internal_PageBox = tuple[float, float, float, float]
 
 internal_OCR_IMAGE_REGIONS_MAX_AXIS_DEVIATION = 0.01
@@ -93,11 +96,69 @@ def internal_region_tasks(
     )
 
 
-@dataclass(frozen=True, slots=True)
 class internal_OcrPassTasks:
+    __slots__ = ("ocr_pass", "tasks", "packed_stroked")
+
     ocr_pass: OcrPass
-    tasks: tuple[internal_OcrTask, ...] = ()
-    packed_stroked: internal_PackedStrokedTextRaster | None = None
+    tasks: tuple[internal_OcrTask, ...]
+    packed_stroked: internal_PackedStrokedTextRaster | None
+
+    __fields__: ClassVar[tuple[str, ...]] = ("ocr_pass", "tasks", "packed_stroked")
+    __match_args__ = ("ocr_pass", "tasks", "packed_stroked")
+
+    def __init__(
+        self,
+        ocr_pass: OcrPass,
+        tasks: tuple[internal_OcrTask, ...] = (),
+        packed_stroked: internal_PackedStrokedTextRaster | None = None,
+    ) -> None:
+        internal_frozen_setattr(self, "ocr_pass", ocr_pass)
+        internal_frozen_setattr(self, "tasks", tasks)
+        internal_frozen_setattr(self, "packed_stroked", packed_stroked)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"ocr_pass={self.ocr_pass!r}, "
+            f"tasks={self.tasks!r}, "
+            f"packed_stroked={self.packed_stroked!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.ocr_pass == other.ocr_pass
+            and self.tasks == other.tasks
+            and self.packed_stroked == other.packed_stroked
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.ocr_pass, self.tasks, self.packed_stroked))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        ocr_pass = changes.pop("ocr_pass", self.ocr_pass)
+        tasks = changes.pop("tasks", self.tasks)
+        packed_stroked = changes.pop("packed_stroked", self.packed_stroked)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(ocr_pass, tasks, packed_stroked)
 
 
 class internal_OcrSession:

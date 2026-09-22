@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
 from itertools import batched
-from typing import Literal, Protocol, cast
+from typing import Any, ClassVar, Literal, NoReturn, Protocol, Self, cast
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -19,6 +18,8 @@ from core_pdf_spec.s_07_syntax_primitives.numbers import parse_identifier_tokens
 from core_pdf_spec.s_07_syntax_primitives.tokens import lexical_rules
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfByteBuffer
+
+internal_frozen_setattr = object.__setattr__
 
 
 class PdfXRefEntry:
@@ -48,19 +49,135 @@ class PdfXRefEntry:
 XRefTable = dict[int, PdfXRefEntry]
 
 
-@dataclass(frozen=True, slots=True)
 class ParsedXRefSection:
+    __slots__ = ("offset", "kind", "entries", "trailer")
+
     offset: int
     kind: Literal["table", "stream"]
     entries: XRefTable
     trailer: PdfDict
 
+    __fields__: ClassVar[tuple[str, ...]] = ("offset", "kind", "entries", "trailer")
+    __match_args__ = ("offset", "kind", "entries", "trailer")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        offset: int,
+        kind: Literal["table", "stream"],
+        entries: XRefTable,
+        trailer: PdfDict,
+    ) -> None:
+        internal_frozen_setattr(self, "offset", offset)
+        internal_frozen_setattr(self, "kind", kind)
+        internal_frozen_setattr(self, "entries", entries)
+        internal_frozen_setattr(self, "trailer", trailer)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"offset={self.offset!r}, "
+            f"kind={self.kind!r}, "
+            f"entries={self.entries!r}, "
+            f"trailer={self.trailer!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.offset == other.offset
+            and self.kind == other.kind
+            and self.entries == other.entries
+            and self.trailer == other.trailer
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.offset, self.kind, self.entries, self.trailer))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        offset = changes.pop("offset", self.offset)
+        kind = changes.pop("kind", self.kind)
+        entries = changes.pop("entries", self.entries)
+        trailer = changes.pop("trailer", self.trailer)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(offset, kind, entries, trailer)
+
+
 class XRefRevision:
+    __slots__ = ("offset", "entries", "trailer")
+
     offset: int
     entries: XRefTable
     trailer: PdfDict
+
+    __fields__: ClassVar[tuple[str, ...]] = ("offset", "entries", "trailer")
+    __match_args__ = ("offset", "entries", "trailer")
+
+    def __init__(self, offset: int, entries: XRefTable, trailer: PdfDict) -> None:
+        internal_frozen_setattr(self, "offset", offset)
+        internal_frozen_setattr(self, "entries", entries)
+        internal_frozen_setattr(self, "trailer", trailer)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"offset={self.offset!r}, "
+            f"entries={self.entries!r}, "
+            f"trailer={self.trailer!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.offset == other.offset
+            and self.entries == other.entries
+            and self.trailer == other.trailer
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.offset, self.entries, self.trailer))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        offset = changes.pop("offset", self.offset)
+        entries = changes.pop("entries", self.entries)
+        trailer = changes.pop("trailer", self.trailer)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(offset, entries, trailer)
 
 
 class XRefSectionReader(Protocol):

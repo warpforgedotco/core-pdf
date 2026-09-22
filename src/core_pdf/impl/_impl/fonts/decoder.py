@@ -7,9 +7,9 @@ import typing
 import unicodedata
 from collections.abc import Iterable, Mapping
 from contextlib import suppress
-from dataclasses import dataclass, replace
+from copy import replace
 from io import BytesIO
-from typing import Any
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
@@ -86,6 +86,8 @@ from core_pdf_spec.standards import SemanticContext
 
 if typing.TYPE_CHECKING:
     from core_pdf.impl._impl.fonts.fallback import RasterFontProviderLike
+
+internal_frozen_setattr = object.__setattr__
 
 
 FontProgram = CFFFont | TrueTypeFontProgram | Type1FontProgram | OpenTypeFontProgram
@@ -286,12 +288,138 @@ def internal_font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | No
     return None
 
 
-@dataclass(frozen=True, slots=True)
 class DecodedGlyph(DecodedFontGlyph):
+    __slots__ = ("unicode_source", "alternates", "bitmap_code", "split_unicode")
+
     unicode_source: str
     alternates: tuple[str, ...]
     bitmap_code: int
-    split_unicode: bool = False
+    split_unicode: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "code_bytes",
+        "char_code",
+        "cid",
+        "gid",
+        "unicode",
+        "width_code",
+        "unicode_source",
+        "alternates",
+        "bitmap_code",
+        "split_unicode",
+    )
+    __match_args__ = (
+        "code_bytes",
+        "char_code",
+        "cid",
+        "gid",
+        "unicode",
+        "width_code",
+        "unicode_source",
+        "alternates",
+        "bitmap_code",
+        "split_unicode",
+    )
+
+    def __init__(
+        self,
+        code_bytes: bytes,
+        char_code: int,
+        cid: int,
+        gid: int | None,
+        unicode: str,
+        width_code: int,
+        unicode_source: str,
+        alternates: tuple[str, ...],
+        bitmap_code: int,
+        split_unicode: bool = False,
+    ) -> None:
+        internal_frozen_setattr(self, "code_bytes", code_bytes)
+        internal_frozen_setattr(self, "char_code", char_code)
+        internal_frozen_setattr(self, "cid", cid)
+        internal_frozen_setattr(self, "gid", gid)
+        internal_frozen_setattr(self, "unicode", unicode)
+        internal_frozen_setattr(self, "width_code", width_code)
+        internal_frozen_setattr(self, "unicode_source", unicode_source)
+        internal_frozen_setattr(self, "alternates", alternates)
+        internal_frozen_setattr(self, "bitmap_code", bitmap_code)
+        internal_frozen_setattr(self, "split_unicode", split_unicode)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"code_bytes={self.code_bytes!r}, "
+            f"char_code={self.char_code!r}, "
+            f"cid={self.cid!r}, "
+            f"gid={self.gid!r}, "
+            f"unicode={self.unicode!r}, "
+            f"width_code={self.width_code!r}, "
+            f"unicode_source={self.unicode_source!r}, "
+            f"alternates={self.alternates!r}, "
+            f"bitmap_code={self.bitmap_code!r}, "
+            f"split_unicode={self.split_unicode!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.code_bytes == other.code_bytes
+            and self.char_code == other.char_code
+            and self.cid == other.cid
+            and self.gid == other.gid
+            and self.unicode == other.unicode
+            and self.width_code == other.width_code
+            and self.unicode_source == other.unicode_source
+            and self.alternates == other.alternates
+            and self.bitmap_code == other.bitmap_code
+            and self.split_unicode == other.split_unicode
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.code_bytes,
+                self.char_code,
+                self.cid,
+                self.gid,
+                self.unicode,
+                self.width_code,
+                self.unicode_source,
+                self.alternates,
+                self.bitmap_code,
+                self.split_unicode,
+            )
+        )
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        code_bytes = changes.pop("code_bytes", self.code_bytes)
+        char_code = changes.pop("char_code", self.char_code)
+        cid = changes.pop("cid", self.cid)
+        gid = changes.pop("gid", self.gid)
+        unicode = changes.pop("unicode", self.unicode)
+        width_code = changes.pop("width_code", self.width_code)
+        unicode_source = changes.pop("unicode_source", self.unicode_source)
+        alternates = changes.pop("alternates", self.alternates)
+        bitmap_code = changes.pop("bitmap_code", self.bitmap_code)
+        split_unicode = changes.pop("split_unicode", self.split_unicode)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            code_bytes,
+            char_code,
+            cid,
+            gid,
+            unicode,
+            width_code,
+            unicode_source,
+            alternates,
+            bitmap_code,
+            split_unicode,
+        )
 
 
 internal_UNRESOLVED_UNICODE_SOURCES = frozenset(
@@ -299,11 +427,64 @@ internal_UNRESOLVED_UNICODE_SOURCES = frozenset(
 )
 
 
-@dataclass(frozen=True, slots=True)
 class UnicodeChoice:
+    __slots__ = ("text", "source", "alternates")
+
     text: str
     source: UnicodeSource
-    alternates: tuple[str, ...] = ()
+    alternates: tuple[str, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("text", "source", "alternates")
+    __match_args__ = ("text", "source", "alternates")
+
+    def __init__(self, text: str, source: UnicodeSource, alternates: tuple[str, ...] = ()) -> None:
+        internal_frozen_setattr(self, "text", text)
+        internal_frozen_setattr(self, "source", source)
+        internal_frozen_setattr(self, "alternates", alternates)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"text={self.text!r}, "
+            f"source={self.source!r}, "
+            f"alternates={self.alternates!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.text == other.text
+            and self.source == other.source
+            and self.alternates == other.alternates
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.text, self.source, self.alternates))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        source = changes.pop("source", self.source)
+        alternates = changes.pop("alternates", self.alternates)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(text, source, alternates)
 
 
 SINGLE_BYTES = tuple(bytes((value,)) for value in range(256))
@@ -418,8 +599,47 @@ def internal_outline_arrays(
     )
 
 
-@dataclass(init=False, repr=False, eq=False, slots=True, match_args=False)
 class FontDecoder:
+    __slots__ = (
+        "font",
+        "semantic_context",
+        "ligature_overrides",
+        "to_unicode",
+        "cmap",
+        "cid_registry",
+        "cid_ordering",
+        "base_encoding",
+        "differences",
+        "encoding_differences",
+        "simple_encoding_glyph_names",
+        "encoding_decode_table",
+        "is_cid_font",
+        "is_type3",
+        "byte_decode_table",
+        "widths",
+        "default_width",
+        "internal_width_fallback",
+        "internal_space_width_fallback",
+        "default_vertical_displacement_y",
+        "default_vertical_origin_y",
+        "vertical_metrics",
+        "is_vertical",
+        "ascent",
+        "descent",
+        "font_name",
+        "glyph_decode_table",
+        "glyph_decode_table_authoritative",
+        "cff_unicode_repair_index",
+        "cff_unicode_repairs",
+        "font_program",
+        "raster_font_provider",
+        "internal_glyph_bbox_cache",
+        "internal_glyph_outline_cache",
+        "internal_glyph_outline_array_cache",
+        "internal_glyph_id_cache",
+        "internal_unicode_choice_cache",
+    )
+
     font: dict[str, Any]
     semantic_context: SemanticContext | None
     ligature_overrides: dict[int, str]
@@ -459,6 +679,46 @@ class FontDecoder:
     internal_glyph_outline_array_cache: dict[tuple[int, int | None, str], GlyphOutlineArrays | None]
     internal_glyph_id_cache: dict[int, int | None]
     internal_unicode_choice_cache: dict[tuple[bytes, int, int | None], UnicodeChoice]
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "font",
+        "semantic_context",
+        "ligature_overrides",
+        "to_unicode",
+        "cmap",
+        "cid_registry",
+        "cid_ordering",
+        "base_encoding",
+        "differences",
+        "encoding_differences",
+        "simple_encoding_glyph_names",
+        "encoding_decode_table",
+        "is_cid_font",
+        "is_type3",
+        "byte_decode_table",
+        "widths",
+        "default_width",
+        "internal_width_fallback",
+        "internal_space_width_fallback",
+        "default_vertical_displacement_y",
+        "default_vertical_origin_y",
+        "vertical_metrics",
+        "is_vertical",
+        "ascent",
+        "descent",
+        "font_name",
+        "glyph_decode_table",
+        "glyph_decode_table_authoritative",
+        "cff_unicode_repair_index",
+        "cff_unicode_repairs",
+        "font_program",
+        "raster_font_provider",
+        "internal_glyph_bbox_cache",
+        "internal_glyph_outline_cache",
+        "internal_glyph_outline_array_cache",
+        "internal_glyph_id_cache",
+        "internal_unicode_choice_cache",
+    )
 
     def __init__(
         self,

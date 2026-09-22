@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
-from typing import cast
+from typing import Any, ClassVar, Self, cast
 
 from core_pdf.impl.types import PdfString
 
@@ -27,13 +26,67 @@ def coerce_to_bytes(value: object) -> bytes:
     raise TypeError(f"cannot coerce {type(value).__name__} to bytes")
 
 
-@dataclass(slots=True)
 class internal_CoercionFrame:
+    __slots__ = ("original", "entries", "values", "pending", "changed")
+
     original: object
     entries: Iterator[tuple[object, object]]
-    values: list[tuple[object, object]] = field(default_factory=list)
-    pending: tuple[object, object] | None = None
-    changed: bool = False
+    values: list[tuple[object, object]]
+    pending: tuple[object, object] | None
+    changed: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = ("original", "entries", "values", "pending", "changed")
+    __match_args__ = ("original", "entries", "values", "pending", "changed")
+
+    def __init__(
+        self,
+        original: object,
+        entries: Iterator[tuple[object, object]],
+        values: list[tuple[object, object]] | None = None,
+        pending: tuple[object, object] | None = None,
+        changed: bool = False,
+    ) -> None:
+        self.original = original
+        self.entries = entries
+        self.values = [] if values is None else values
+        self.pending = pending
+        self.changed = changed
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"original={self.original!r}, "
+            f"entries={self.entries!r}, "
+            f"values={self.values!r}, "
+            f"pending={self.pending!r}, "
+            f"changed={self.changed!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.original == other.original
+            and self.entries == other.entries
+            and self.values == other.values
+            and self.pending == other.pending
+            and self.changed == other.changed
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        original = changes.pop("original", self.original)
+        entries = changes.pop("entries", self.entries)
+        values = changes.pop("values", self.values)
+        pending = changes.pop("pending", self.pending)
+        changed = changes.pop("changed", self.changed)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(original, entries, values, pending, changed)
 
     def add(self, key: object, original: object, coerced: object) -> None:
         self.values.append((key, coerced))

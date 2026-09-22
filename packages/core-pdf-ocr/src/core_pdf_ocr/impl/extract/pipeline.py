@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import replace
+from copy import replace
 from typing import TYPE_CHECKING, cast
 
 from core_pdf.impl._impl.extract.capture import internal_STRUCTURE_UNSET

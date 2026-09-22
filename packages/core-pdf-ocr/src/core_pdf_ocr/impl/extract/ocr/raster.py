@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
@@ -21,6 +20,9 @@ from core_pdf.impl._impl.runtime.array_views import (
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_bilinear, resample_nearest
 from core_pdf_ocr.impl.extract.ocr.types import internal_Raster
+
+internal_frozen_setattr = object.__setattr__
+
 
 DIRECT_OCR_TARGET_RESOLUTION = 400
 
@@ -154,10 +156,59 @@ OCR_IMAGE_TEXT_STRONG_HORIZONTAL_EDGES = 0.09
 OCR_IMAGE_TEXT_MIN_HORIZONTAL_EDGE_SHARE = 0.85
 
 
-@dataclass(frozen=True, slots=True)
 class internal_RasterTextSignal:
+    __slots__ = ("likely_text", "horizontal_edge_ratio")
+
     likely_text: bool
     horizontal_edge_ratio: float
+
+    __fields__: ClassVar[tuple[str, ...]] = ("likely_text", "horizontal_edge_ratio")
+    __match_args__ = ("likely_text", "horizontal_edge_ratio")
+
+    def __init__(self, likely_text: bool, horizontal_edge_ratio: float) -> None:
+        internal_frozen_setattr(self, "likely_text", likely_text)
+        internal_frozen_setattr(self, "horizontal_edge_ratio", horizontal_edge_ratio)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"likely_text={self.likely_text!r}, "
+            f"horizontal_edge_ratio={self.horizontal_edge_ratio!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.likely_text == other.likely_text
+            and self.horizontal_edge_ratio == other.horizontal_edge_ratio
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.likely_text, self.horizontal_edge_ratio))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        likely_text = changes.pop("likely_text", self.likely_text)
+        horizontal_edge_ratio = changes.pop("horizontal_edge_ratio", self.horizontal_edge_ratio)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(likely_text, horizontal_edge_ratio)
 
 
 def internal_raster_text_signal(image: RasterImage) -> internal_RasterTextSignal:

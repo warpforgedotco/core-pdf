@@ -3,15 +3,79 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from typing import Any, ClassVar, NoReturn, Self
+
+internal_frozen_setattr = object.__setattr__
 
 
-@dataclass(frozen=True, order=True, slots=True)
 class PdfVersion:
+    __slots__ = ("major", "minor")
+
     major: int
     minor: int
 
-    def __post_init__(self) -> None:
+    __fields__: ClassVar[tuple[str, ...]] = ("major", "minor")
+    __match_args__ = ("major", "minor")
+
+    def __init__(self, major: int, minor: int) -> None:
+        internal_frozen_setattr(self, "major", major)
+        internal_frozen_setattr(self, "minor", minor)
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(major={self.major!r}, minor={self.minor!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.major == other.major and self.minor == other.minor
+
+    def __hash__(self) -> int:
+        return hash((self.major, self.minor))
+
+    def __lt__(self, other: object) -> bool:
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (self.major, self.minor) < (other.major, other.minor)
+
+    def __le__(self, other: object) -> bool:
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (self.major, self.minor) <= (other.major, other.minor)
+
+    def __gt__(self, other: object) -> bool:
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (self.major, self.minor) > (other.major, other.minor)
+
+    def __ge__(self, other: object) -> bool:
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (self.major, self.minor) >= (other.major, other.minor)
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        major = changes.pop("major", self.major)
+        minor = changes.pop("minor", self.minor)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(major, minor)
+
+    def _post_init(self) -> None:
         if type(self.major) is not int or type(self.minor) is not int:
             raise ValueError("PDF version components must be integers")
         if self.major < 0 or self.minor < 0:
@@ -31,12 +95,80 @@ class PdfVersion:
         return f"{self.major}.{self.minor}"
 
 
-@dataclass(frozen=True, slots=True)
 class SpecificationBaseline:
+    __slots__ = ("edition", "reference_url", "errata_revision", "errata_url")
+
     edition: str
     reference_url: str
-    errata_revision: str | None = None
-    errata_url: str | None = None
+    errata_revision: str | None
+    errata_url: str | None
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "edition",
+        "reference_url",
+        "errata_revision",
+        "errata_url",
+    )
+    __match_args__ = ("edition", "reference_url", "errata_revision", "errata_url")
+
+    def __init__(
+        self,
+        edition: str,
+        reference_url: str,
+        errata_revision: str | None = None,
+        errata_url: str | None = None,
+    ) -> None:
+        internal_frozen_setattr(self, "edition", edition)
+        internal_frozen_setattr(self, "reference_url", reference_url)
+        internal_frozen_setattr(self, "errata_revision", errata_revision)
+        internal_frozen_setattr(self, "errata_url", errata_url)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"edition={self.edition!r}, "
+            f"reference_url={self.reference_url!r}, "
+            f"errata_revision={self.errata_revision!r}, "
+            f"errata_url={self.errata_url!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.edition == other.edition
+            and self.reference_url == other.reference_url
+            and self.errata_revision == other.errata_revision
+            and self.errata_url == other.errata_url
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.edition, self.reference_url, self.errata_revision, self.errata_url))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        edition = changes.pop("edition", self.edition)
+        reference_url = changes.pop("reference_url", self.reference_url)
+        errata_revision = changes.pop("errata_revision", self.errata_revision)
+        errata_url = changes.pop("errata_url", self.errata_url)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(edition, reference_url, errata_revision, errata_url)
 
 
 PDF_2_0_BASELINE = SpecificationBaseline(
@@ -50,60 +182,528 @@ PDF_2_0_BASELINE = SpecificationBaseline(
 )
 
 
-@dataclass(frozen=True, slots=True)
 class PdfExtension:
+    __slots__ = ("prefix", "base_version", "extension_level", "url", "extension_revision")
+
     prefix: str
     base_version: PdfVersion
     extension_level: int
-    url: str | None = None
-    extension_revision: str | None = None
+    url: str | None
+    extension_revision: str | None
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "prefix",
+        "base_version",
+        "extension_level",
+        "url",
+        "extension_revision",
+    )
+    __match_args__ = ("prefix", "base_version", "extension_level", "url", "extension_revision")
+
+    def __init__(
+        self,
+        prefix: str,
+        base_version: PdfVersion,
+        extension_level: int,
+        url: str | None = None,
+        extension_revision: str | None = None,
+    ) -> None:
+        internal_frozen_setattr(self, "prefix", prefix)
+        internal_frozen_setattr(self, "base_version", base_version)
+        internal_frozen_setattr(self, "extension_level", extension_level)
+        internal_frozen_setattr(self, "url", url)
+        internal_frozen_setattr(self, "extension_revision", extension_revision)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"prefix={self.prefix!r}, "
+            f"base_version={self.base_version!r}, "
+            f"extension_level={self.extension_level!r}, "
+            f"url={self.url!r}, "
+            f"extension_revision={self.extension_revision!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.prefix == other.prefix
+            and self.base_version == other.base_version
+            and self.extension_level == other.extension_level
+            and self.url == other.url
+            and self.extension_revision == other.extension_revision
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.prefix,
+                self.base_version,
+                self.extension_level,
+                self.url,
+                self.extension_revision,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        prefix = changes.pop("prefix", self.prefix)
+        base_version = changes.pop("base_version", self.base_version)
+        extension_level = changes.pop("extension_level", self.extension_level)
+        url = changes.pop("url", self.url)
+        extension_revision = changes.pop("extension_revision", self.extension_revision)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(prefix, base_version, extension_level, url, extension_revision)
 
 
-@dataclass(frozen=True, slots=True)
 class ProfileClaim:
+    __slots__ = ("identifier", "family", "source", "properties")
+
     identifier: str | None
     family: str
     source: str
-    properties: tuple[tuple[str, str], ...] = ()
+    properties: tuple[tuple[str, str], ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("identifier", "family", "source", "properties")
+    __match_args__ = ("identifier", "family", "source", "properties")
+
+    def __init__(
+        self,
+        identifier: str | None,
+        family: str,
+        source: str,
+        properties: tuple[tuple[str, str], ...] = (),
+    ) -> None:
+        internal_frozen_setattr(self, "identifier", identifier)
+        internal_frozen_setattr(self, "family", family)
+        internal_frozen_setattr(self, "source", source)
+        internal_frozen_setattr(self, "properties", properties)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"identifier={self.identifier!r}, "
+            f"family={self.family!r}, "
+            f"source={self.source!r}, "
+            f"properties={self.properties!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.identifier == other.identifier
+            and self.family == other.family
+            and self.source == other.source
+            and self.properties == other.properties
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.identifier, self.family, self.source, self.properties))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        identifier = changes.pop("identifier", self.identifier)
+        family = changes.pop("family", self.family)
+        source = changes.pop("source", self.source)
+        properties = changes.pop("properties", self.properties)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(identifier, family, source, properties)
 
 
-@dataclass(frozen=True, slots=True)
 class StandardsDiagnostic:
+    __slots__ = ("code", "message", "source")
+
     code: str
     message: str
     source: str
 
+    __fields__: ClassVar[tuple[str, ...]] = ("code", "message", "source")
+    __match_args__ = ("code", "message", "source")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(self, code: str, message: str, source: str) -> None:
+        internal_frozen_setattr(self, "code", code)
+        internal_frozen_setattr(self, "message", message)
+        internal_frozen_setattr(self, "source", source)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"code={self.code!r}, "
+            f"message={self.message!r}, "
+            f"source={self.source!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.code == other.code
+            and self.message == other.message
+            and self.source == other.source
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.code, self.message, self.source))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        code = changes.pop("code", self.code)
+        message = changes.pop("message", self.message)
+        source = changes.pop("source", self.source)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(code, message, source)
+
+
 class SemanticContext:
+    __slots__ = ("version", "extensions", "baseline")
+
     version: PdfVersion | None
-    extensions: tuple[PdfExtension, ...] = ()
-    baseline: SpecificationBaseline = PDF_2_0_BASELINE
+    extensions: tuple[PdfExtension, ...]
+    baseline: SpecificationBaseline
+
+    __fields__: ClassVar[tuple[str, ...]] = ("version", "extensions", "baseline")
+    __match_args__ = ("version", "extensions", "baseline")
+
+    def __init__(
+        self,
+        version: PdfVersion | None,
+        extensions: tuple[PdfExtension, ...] = (),
+        baseline: SpecificationBaseline = PDF_2_0_BASELINE,
+    ) -> None:
+        internal_frozen_setattr(self, "version", version)
+        internal_frozen_setattr(self, "extensions", extensions)
+        internal_frozen_setattr(self, "baseline", baseline)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"version={self.version!r}, "
+            f"extensions={self.extensions!r}, "
+            f"baseline={self.baseline!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.version == other.version
+            and self.extensions == other.extensions
+            and self.baseline == other.baseline
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.version, self.extensions, self.baseline))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        version = changes.pop("version", self.version)
+        extensions = changes.pop("extensions", self.extensions)
+        baseline = changes.pop("baseline", self.baseline)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(version, extensions, baseline)
 
 
-@dataclass(frozen=True, slots=True)
 class DocumentStandards:
-    header_version: PdfVersion | None = None
-    catalog_version: PdfVersion | None = None
-    effective_version: PdfVersion | None = None
-    header_declaration: str | None = None
-    catalog_declaration: str | None = None
-    extensions: tuple[PdfExtension, ...] = ()
-    profile_claims: tuple[ProfileClaim, ...] = ()
-    diagnostics: tuple[StandardsDiagnostic, ...] = ()
+    __slots__ = (
+        "header_version",
+        "catalog_version",
+        "effective_version",
+        "header_declaration",
+        "catalog_declaration",
+        "extensions",
+        "profile_claims",
+        "diagnostics",
+    )
+
+    header_version: PdfVersion | None
+    catalog_version: PdfVersion | None
+    effective_version: PdfVersion | None
+    header_declaration: str | None
+    catalog_declaration: str | None
+    extensions: tuple[PdfExtension, ...]
+    profile_claims: tuple[ProfileClaim, ...]
+    diagnostics: tuple[StandardsDiagnostic, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "header_version",
+        "catalog_version",
+        "effective_version",
+        "header_declaration",
+        "catalog_declaration",
+        "extensions",
+        "profile_claims",
+        "diagnostics",
+    )
+    __match_args__ = (
+        "header_version",
+        "catalog_version",
+        "effective_version",
+        "header_declaration",
+        "catalog_declaration",
+        "extensions",
+        "profile_claims",
+        "diagnostics",
+    )
+
+    def __init__(
+        self,
+        header_version: PdfVersion | None = None,
+        catalog_version: PdfVersion | None = None,
+        effective_version: PdfVersion | None = None,
+        header_declaration: str | None = None,
+        catalog_declaration: str | None = None,
+        extensions: tuple[PdfExtension, ...] = (),
+        profile_claims: tuple[ProfileClaim, ...] = (),
+        diagnostics: tuple[StandardsDiagnostic, ...] = (),
+    ) -> None:
+        internal_frozen_setattr(self, "header_version", header_version)
+        internal_frozen_setattr(self, "catalog_version", catalog_version)
+        internal_frozen_setattr(self, "effective_version", effective_version)
+        internal_frozen_setattr(self, "header_declaration", header_declaration)
+        internal_frozen_setattr(self, "catalog_declaration", catalog_declaration)
+        internal_frozen_setattr(self, "extensions", extensions)
+        internal_frozen_setattr(self, "profile_claims", profile_claims)
+        internal_frozen_setattr(self, "diagnostics", diagnostics)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"header_version={self.header_version!r}, "
+            f"catalog_version={self.catalog_version!r}, "
+            f"effective_version={self.effective_version!r}, "
+            f"header_declaration={self.header_declaration!r}, "
+            f"catalog_declaration={self.catalog_declaration!r}, "
+            f"extensions={self.extensions!r}, "
+            f"profile_claims={self.profile_claims!r}, "
+            f"diagnostics={self.diagnostics!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.header_version == other.header_version
+            and self.catalog_version == other.catalog_version
+            and self.effective_version == other.effective_version
+            and self.header_declaration == other.header_declaration
+            and self.catalog_declaration == other.catalog_declaration
+            and self.extensions == other.extensions
+            and self.profile_claims == other.profile_claims
+            and self.diagnostics == other.diagnostics
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.header_version,
+                self.catalog_version,
+                self.effective_version,
+                self.header_declaration,
+                self.catalog_declaration,
+                self.extensions,
+                self.profile_claims,
+                self.diagnostics,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        header_version = changes.pop("header_version", self.header_version)
+        catalog_version = changes.pop("catalog_version", self.catalog_version)
+        effective_version = changes.pop("effective_version", self.effective_version)
+        header_declaration = changes.pop("header_declaration", self.header_declaration)
+        catalog_declaration = changes.pop("catalog_declaration", self.catalog_declaration)
+        extensions = changes.pop("extensions", self.extensions)
+        profile_claims = changes.pop("profile_claims", self.profile_claims)
+        diagnostics = changes.pop("diagnostics", self.diagnostics)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            header_version,
+            catalog_version,
+            effective_version,
+            header_declaration,
+            catalog_declaration,
+            extensions,
+            profile_claims,
+            diagnostics,
+        )
 
     @property
     def context(self) -> SemanticContext:
         return SemanticContext(self.effective_version, self.extensions)
 
 
-@dataclass(frozen=True, slots=True)
 class StandardProfile:
+    __slots__ = ("identifier", "family", "edition", "base_version", "reference_url")
+
     identifier: str
     family: str
     edition: str
     base_version: PdfVersion
     reference_url: str
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "identifier",
+        "family",
+        "edition",
+        "base_version",
+        "reference_url",
+    )
+    __match_args__ = ("identifier", "family", "edition", "base_version", "reference_url")
+
+    def __init__(
+        self,
+        identifier: str,
+        family: str,
+        edition: str,
+        base_version: PdfVersion,
+        reference_url: str,
+    ) -> None:
+        internal_frozen_setattr(self, "identifier", identifier)
+        internal_frozen_setattr(self, "family", family)
+        internal_frozen_setattr(self, "edition", edition)
+        internal_frozen_setattr(self, "base_version", base_version)
+        internal_frozen_setattr(self, "reference_url", reference_url)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"identifier={self.identifier!r}, "
+            f"family={self.family!r}, "
+            f"edition={self.edition!r}, "
+            f"base_version={self.base_version!r}, "
+            f"reference_url={self.reference_url!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.identifier == other.identifier
+            and self.family == other.family
+            and self.edition == other.edition
+            and self.base_version == other.base_version
+            and self.reference_url == other.reference_url
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.identifier,
+                self.family,
+                self.edition,
+                self.base_version,
+                self.reference_url,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        identifier = changes.pop("identifier", self.identifier)
+        family = changes.pop("family", self.family)
+        edition = changes.pop("edition", self.edition)
+        base_version = changes.pop("base_version", self.base_version)
+        reference_url = changes.pop("reference_url", self.reference_url)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(identifier, family, edition, base_version, reference_url)
 
 
 STANDARD_PROFILES: tuple[StandardProfile, ...] = (
@@ -220,14 +820,124 @@ def get_standard_profile(identifier: str) -> StandardProfile | None:
     )
 
 
-@dataclass(frozen=True, slots=True)
 class ExtensionCoverage:
+    __slots__ = (
+        "prefix",
+        "base_version",
+        "extension_level",
+        "extension_revision",
+        "features",
+        "reference_url",
+    )
+
     prefix: str
     base_version: PdfVersion
     extension_level: int
     extension_revision: str | None
     features: tuple[str, ...]
     reference_url: str
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "prefix",
+        "base_version",
+        "extension_level",
+        "extension_revision",
+        "features",
+        "reference_url",
+    )
+    __match_args__ = (
+        "prefix",
+        "base_version",
+        "extension_level",
+        "extension_revision",
+        "features",
+        "reference_url",
+    )
+
+    def __init__(
+        self,
+        prefix: str,
+        base_version: PdfVersion,
+        extension_level: int,
+        extension_revision: str | None,
+        features: tuple[str, ...],
+        reference_url: str,
+    ) -> None:
+        internal_frozen_setattr(self, "prefix", prefix)
+        internal_frozen_setattr(self, "base_version", base_version)
+        internal_frozen_setattr(self, "extension_level", extension_level)
+        internal_frozen_setattr(self, "extension_revision", extension_revision)
+        internal_frozen_setattr(self, "features", features)
+        internal_frozen_setattr(self, "reference_url", reference_url)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"prefix={self.prefix!r}, "
+            f"base_version={self.base_version!r}, "
+            f"extension_level={self.extension_level!r}, "
+            f"extension_revision={self.extension_revision!r}, "
+            f"features={self.features!r}, "
+            f"reference_url={self.reference_url!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.prefix == other.prefix
+            and self.base_version == other.base_version
+            and self.extension_level == other.extension_level
+            and self.extension_revision == other.extension_revision
+            and self.features == other.features
+            and self.reference_url == other.reference_url
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.prefix,
+                self.base_version,
+                self.extension_level,
+                self.extension_revision,
+                self.features,
+                self.reference_url,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        prefix = changes.pop("prefix", self.prefix)
+        base_version = changes.pop("base_version", self.base_version)
+        extension_level = changes.pop("extension_level", self.extension_level)
+        extension_revision = changes.pop("extension_revision", self.extension_revision)
+        features = changes.pop("features", self.features)
+        reference_url = changes.pop("reference_url", self.reference_url)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            prefix,
+            base_version,
+            extension_level,
+            extension_revision,
+            features,
+            reference_url,
+        )
 
 
 IMPLEMENTED_EXTENSIONS = (

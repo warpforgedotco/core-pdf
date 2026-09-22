@@ -12,7 +12,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
-from dataclasses import replace
+from copy import replace
 from html.parser import HTMLParser
 from importlib import import_module
 from pathlib import Path

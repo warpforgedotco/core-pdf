@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_adobe_fonts.cmap.ranges import (
     CodeSpaceRanges,
@@ -16,30 +16,196 @@ from core_adobe_fonts.cmap.tokenizer import (
     decode_cmap_hex_token,
 )
 
+internal_frozen_setattr = object.__setattr__
+
 
 def decode_utf16be(data: bytes) -> str:
     return data.decode("utf-16-be")
 
 
-@dataclass(frozen=True, slots=True)
 class ParsedToUnicodeCMap:
+    __slots__ = ("code_space_ranges", "mappings", "usecmap_name")
+
     code_space_ranges: tuple[tuple[bytes, bytes], ...]
     mappings: dict[bytes, str]
     usecmap_name: str | None
 
+    __fields__: ClassVar[tuple[str, ...]] = ("code_space_ranges", "mappings", "usecmap_name")
+    __match_args__ = ("code_space_ranges", "mappings", "usecmap_name")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        code_space_ranges: tuple[tuple[bytes, bytes], ...],
+        mappings: dict[bytes, str],
+        usecmap_name: str | None,
+    ) -> None:
+        internal_frozen_setattr(self, "code_space_ranges", code_space_ranges)
+        internal_frozen_setattr(self, "mappings", mappings)
+        internal_frozen_setattr(self, "usecmap_name", usecmap_name)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"code_space_ranges={self.code_space_ranges!r}, "
+            f"mappings={self.mappings!r}, "
+            f"usecmap_name={self.usecmap_name!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.code_space_ranges == other.code_space_ranges
+            and self.mappings == other.mappings
+            and self.usecmap_name == other.usecmap_name
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.code_space_ranges, self.mappings, self.usecmap_name))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        code_space_ranges = changes.pop("code_space_ranges", self.code_space_ranges)
+        mappings = changes.pop("mappings", self.mappings)
+        usecmap_name = changes.pop("usecmap_name", self.usecmap_name)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(code_space_ranges, mappings, usecmap_name)
+
+
 class CMapMappingRecord:
+    __slots__ = ("source", "destination", "source_end")
+
     source: bytes
     destination: bytes
-    source_end: bytes | None = None
+    source_end: bytes | None
+
+    __fields__: ClassVar[tuple[str, ...]] = ("source", "destination", "source_end")
+    __match_args__ = ("source", "destination", "source_end")
+
+    def __init__(self, source: bytes, destination: bytes, source_end: bytes | None = None) -> None:
+        internal_frozen_setattr(self, "source", source)
+        internal_frozen_setattr(self, "destination", destination)
+        internal_frozen_setattr(self, "source_end", source_end)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"source={self.source!r}, "
+            f"destination={self.destination!r}, "
+            f"source_end={self.source_end!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.source == other.source
+            and self.destination == other.destination
+            and self.source_end == other.source_end
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.source, self.destination, self.source_end))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        source = changes.pop("source", self.source)
+        destination = changes.pop("destination", self.destination)
+        source_end = changes.pop("source_end", self.source_end)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(source, destination, source_end)
 
 
-@dataclass(frozen=True, slots=True)
 class CMapMappingBlock:
+    __slots__ = ("operator", "operands", "stride")
+
     operator: bytes
     operands: tuple[bytes, ...]
     stride: int
+
+    __fields__: ClassVar[tuple[str, ...]] = ("operator", "operands", "stride")
+    __match_args__ = ("operator", "operands", "stride")
+
+    def __init__(self, operator: bytes, operands: tuple[bytes, ...], stride: int) -> None:
+        internal_frozen_setattr(self, "operator", operator)
+        internal_frozen_setattr(self, "operands", operands)
+        internal_frozen_setattr(self, "stride", stride)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"operator={self.operator!r}, "
+            f"operands={self.operands!r}, "
+            f"stride={self.stride!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.operator == other.operator
+            and self.operands == other.operands
+            and self.stride == other.stride
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.operator, self.operands, self.stride))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        operator = changes.pop("operator", self.operator)
+        operands = changes.pop("operands", self.operands)
+        stride = changes.pop("stride", self.stride)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(operator, operands, stride)
 
     @property
     def trailing_operand_count(self) -> int:
@@ -74,11 +240,60 @@ def cmap_mapping_blocks(
         )
 
 
-@dataclass(frozen=True, slots=True)
 class CMapSourceRange:
+    __slots__ = ("first", "last", "width")
+
     first: int
     last: int
     width: int
+
+    __fields__: ClassVar[tuple[str, ...]] = ("first", "last", "width")
+    __match_args__ = ("first", "last", "width")
+
+    def __init__(self, first: int, last: int, width: int) -> None:
+        internal_frozen_setattr(self, "first", first)
+        internal_frozen_setattr(self, "last", last)
+        internal_frozen_setattr(self, "width", width)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"first={self.first!r}, "
+            f"last={self.last!r}, "
+            f"width={self.width!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.first == other.first and self.last == other.last and self.width == other.width
+
+    def __hash__(self) -> int:
+        return hash((self.first, self.last, self.width))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        first = changes.pop("first", self.first)
+        last = changes.pop("last", self.last)
+        width = changes.pop("width", self.width)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(first, last, width)
 
     @property
     def count(self) -> int:

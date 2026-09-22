@@ -6,9 +6,8 @@ import math
 from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, cast
 
 from core_pdf.impl._impl.extract.contracts import ObservationBatch, internal_bbox_tuple
 from core_pdf.impl._impl.extract.selection import (
@@ -34,6 +33,9 @@ if TYPE_CHECKING:
     from core_pdf.impl._impl.document.document import PdfDocument
     from core_pdf.impl._impl.document.page import PdfPage
 
+internal_frozen_setattr = object.__setattr__
+
+
 DOCUMENT_FONT_SEED_LIMIT = 4
 DOCUMENT_FONT_SEEDS_PER_DECODER = 2
 DOCUMENT_STROKED_MIN_DECODED_RUNS = 20
@@ -41,12 +43,73 @@ DOCUMENT_STROKED_MIN_RUN_COVERAGE = 0.70
 DOCUMENT_STROKED_MIN_GLYPH_COVERAGE = 0.70
 
 
-@dataclass(frozen=True, slots=True)
 class internal_FontEnrichment:
-    learned_unicode: LearnedUnicodeMap = field(default_factory=lambda: MappingProxyType({}))
-    recognition_by_index: Mapping[int, RecognitionResult] = field(
-        default_factory=lambda: MappingProxyType({})
-    )
+    __slots__ = ("learned_unicode", "recognition_by_index")
+
+    learned_unicode: LearnedUnicodeMap
+    recognition_by_index: Mapping[int, RecognitionResult]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("learned_unicode", "recognition_by_index")
+    __match_args__ = ("learned_unicode", "recognition_by_index")
+
+    def __init__(
+        self,
+        learned_unicode: LearnedUnicodeMap | None = None,
+        recognition_by_index: Mapping[int, RecognitionResult] | None = None,
+    ) -> None:
+        internal_frozen_setattr(
+            self,
+            "learned_unicode",
+            (lambda: MappingProxyType({}))() if learned_unicode is None else learned_unicode,
+        )
+        internal_frozen_setattr(
+            self,
+            "recognition_by_index",
+            (lambda: MappingProxyType({}))()
+            if recognition_by_index is None
+            else recognition_by_index,
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"learned_unicode={self.learned_unicode!r}, "
+            f"recognition_by_index={self.recognition_by_index!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.learned_unicode == other.learned_unicode
+            and self.recognition_by_index == other.recognition_by_index
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.learned_unicode, self.recognition_by_index))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        learned_unicode = changes.pop("learned_unicode", self.learned_unicode)
+        recognition_by_index = changes.pop("recognition_by_index", self.recognition_by_index)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(learned_unicode, recognition_by_index)
 
 
 def internal_unknown_decoder_counts(capture: PageAnalysis) -> Counter[object]:

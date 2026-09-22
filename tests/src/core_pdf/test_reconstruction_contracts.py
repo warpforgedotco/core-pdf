@@ -1,5 +1,3 @@
-import dataclasses
-
 import pytest
 
 from core_pdf.impl._impl.layout.reconstruction import reconstruct_layout_line_text
@@ -52,7 +50,7 @@ def test_replace_preserves_every_field_it_was_not_asked_to_change():
         "confidence": 0.5,
         "glyph_clusters": (),
     }
-    assert set(values) == {field.name for field in dataclasses.fields(TextRun)}
+    assert set(values) == set(TextRun.__fields__)
     original = TextRun(**values)
     replaced = original.replace(font_name="Helvetica")
     assert replaced is not original

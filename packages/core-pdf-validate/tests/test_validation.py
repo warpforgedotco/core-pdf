@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
@@ -283,9 +282,9 @@ def test_results_are_immutable() -> None:
     report = validate(b"source", profiles="pdfa-1b", backend=RecordingBackend())
     targets_field = "targets"
     conformance_field = "conformance"
-    with pytest.raises(FrozenInstanceError):
+    with pytest.raises(AttributeError):
         setattr(report, targets_field, ())
-    with pytest.raises(FrozenInstanceError):
+    with pytest.raises(AttributeError):
         setattr(report.results[0], conformance_field, "fail")
 
 

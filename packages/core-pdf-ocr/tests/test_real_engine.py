@@ -1,7 +1,7 @@
 import hashlib
 import json
 import os
-from dataclasses import replace
+from copy import replace
 from pathlib import Path
 from typing import Any
 

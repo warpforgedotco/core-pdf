@@ -3,29 +3,167 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from functools import cache
 from importlib.resources import files
-from typing import Protocol, cast
+from typing import Any, ClassVar, NoReturn, Protocol, Self, cast
 
 from core_pdf.impl._impl.fonts.font_program_truetype import TrueTypeFontProgram
 from core_pdf.impl._impl.fonts.helpers import strip_subset_tag
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class PdfRasterFontRequest:
+    __slots__ = ("font_name", "text", "is_cid_font", "is_vertical", "cid_registry", "cid_ordering")
+
     font_name: str | None
     text: str
     is_cid_font: bool
     is_vertical: bool
-    cid_registry: str | None = None
-    cid_ordering: str | None = None
+    cid_registry: str | None
+    cid_ordering: str | None
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "font_name",
+        "text",
+        "is_cid_font",
+        "is_vertical",
+        "cid_registry",
+        "cid_ordering",
+    )
+    __match_args__ = (
+        "font_name",
+        "text",
+        "is_cid_font",
+        "is_vertical",
+        "cid_registry",
+        "cid_ordering",
+    )
+
+    def __init__(
+        self,
+        font_name: str | None,
+        text: str,
+        is_cid_font: bool,
+        is_vertical: bool,
+        cid_registry: str | None = None,
+        cid_ordering: str | None = None,
+    ) -> None:
+        internal_frozen_setattr(self, "font_name", font_name)
+        internal_frozen_setattr(self, "text", text)
+        internal_frozen_setattr(self, "is_cid_font", is_cid_font)
+        internal_frozen_setattr(self, "is_vertical", is_vertical)
+        internal_frozen_setattr(self, "cid_registry", cid_registry)
+        internal_frozen_setattr(self, "cid_ordering", cid_ordering)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"font_name={self.font_name!r}, "
+            f"text={self.text!r}, "
+            f"is_cid_font={self.is_cid_font!r}, "
+            f"is_vertical={self.is_vertical!r}, "
+            f"cid_registry={self.cid_registry!r}, "
+            f"cid_ordering={self.cid_ordering!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.font_name == other.font_name
+            and self.text == other.text
+            and self.is_cid_font == other.is_cid_font
+            and self.is_vertical == other.is_vertical
+            and self.cid_registry == other.cid_registry
+            and self.cid_ordering == other.cid_ordering
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.font_name,
+                self.text,
+                self.is_cid_font,
+                self.is_vertical,
+                self.cid_registry,
+                self.cid_ordering,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        font_name = changes.pop("font_name", self.font_name)
+        text = changes.pop("text", self.text)
+        is_cid_font = changes.pop("is_cid_font", self.is_cid_font)
+        is_vertical = changes.pop("is_vertical", self.is_vertical)
+        cid_registry = changes.pop("cid_registry", self.cid_registry)
+        cid_ordering = changes.pop("cid_ordering", self.cid_ordering)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(font_name, text, is_cid_font, is_vertical, cid_registry, cid_ordering)
 
 
-@dataclass(frozen=True, slots=True)
 class PdfRasterFontFace:
+    __slots__ = ("identifier", "data")
+
     identifier: str
     data: bytes
+
+    __fields__: ClassVar[tuple[str, ...]] = ("identifier", "data")
+    __match_args__ = ("identifier", "data")
+
+    def __init__(self, identifier: str, data: bytes) -> None:
+        internal_frozen_setattr(self, "identifier", identifier)
+        internal_frozen_setattr(self, "data", data)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(identifier={self.identifier!r}, data={self.data!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.identifier == other.identifier and self.data == other.data
+
+    def __hash__(self) -> int:
+        return hash((self.identifier, self.data))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        identifier = changes.pop("identifier", self.identifier)
+        data = changes.pop("data", self.data)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(identifier, data)
 
 
 class PdfRasterFontProvider(Protocol):

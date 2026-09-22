@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from dataclasses import dataclass
-from typing import cast
+from typing import Any, ClassVar, NoReturn, Self, cast
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.types import MISSING
+
+internal_frozen_setattr = object.__setattr__
 
 
 def parse_role_map(
@@ -21,11 +22,64 @@ def parse_role_map(
     return mapping
 
 
-@dataclass(frozen=True, slots=True)
 class StructureAttribute:
+    __slots__ = ("value", "revision", "explicit_revision")
+
     value: PdfDict | PdfStream
     revision: int
     explicit_revision: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = ("value", "revision", "explicit_revision")
+    __match_args__ = ("value", "revision", "explicit_revision")
+
+    def __init__(self, value: PdfDict | PdfStream, revision: int, explicit_revision: bool) -> None:
+        internal_frozen_setattr(self, "value", value)
+        internal_frozen_setattr(self, "revision", revision)
+        internal_frozen_setattr(self, "explicit_revision", explicit_revision)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"value={self.value!r}, "
+            f"revision={self.revision!r}, "
+            f"explicit_revision={self.explicit_revision!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.value == other.value
+            and self.revision == other.revision
+            and self.explicit_revision == other.explicit_revision
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.value, self.revision, self.explicit_revision))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        value = changes.pop("value", self.value)
+        revision = changes.pop("revision", self.revision)
+        explicit_revision = changes.pop("explicit_revision", self.explicit_revision)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(value, revision, explicit_revision)
 
 
 def attribute_entries(

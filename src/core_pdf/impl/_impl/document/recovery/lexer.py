@@ -6,7 +6,7 @@ import binascii
 import mmap
 import re
 from collections.abc import Callable
-from dataclasses import replace
+from copy import replace
 from typing import Any
 
 from core_pdf.impl._impl.document.recovery.scanning import matches_keyword_with_one_substitution

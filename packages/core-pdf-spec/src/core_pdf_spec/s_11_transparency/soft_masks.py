@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Any, ClassVar, Literal, NoReturn, Self, cast
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfValueResolver
@@ -19,15 +18,106 @@ from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator, compile_pdf_function
 from core_pdf_spec.types import PdfReference
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class SoftMask:
+    __slots__ = ("subtype", "group", "ctm", "transfer", "backdrop_color", "color_space")
+
     subtype: Literal["Alpha", "Luminosity"]
     group: PdfStream
     ctm: Matrix
-    transfer: PdfFunctionEvaluator | None = None
-    backdrop_color: tuple[float, ...] | None = None
-    color_space: ColorSpace | None = None
+    transfer: PdfFunctionEvaluator | None
+    backdrop_color: tuple[float, ...] | None
+    color_space: ColorSpace | None
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "subtype",
+        "group",
+        "ctm",
+        "transfer",
+        "backdrop_color",
+        "color_space",
+    )
+    __match_args__ = ("subtype", "group", "ctm", "transfer", "backdrop_color", "color_space")
+
+    def __init__(
+        self,
+        subtype: Literal["Alpha", "Luminosity"],
+        group: PdfStream,
+        ctm: Matrix,
+        transfer: PdfFunctionEvaluator | None = None,
+        backdrop_color: tuple[float, ...] | None = None,
+        color_space: ColorSpace | None = None,
+    ) -> None:
+        internal_frozen_setattr(self, "subtype", subtype)
+        internal_frozen_setattr(self, "group", group)
+        internal_frozen_setattr(self, "ctm", ctm)
+        internal_frozen_setattr(self, "transfer", transfer)
+        internal_frozen_setattr(self, "backdrop_color", backdrop_color)
+        internal_frozen_setattr(self, "color_space", color_space)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"subtype={self.subtype!r}, "
+            f"group={self.group!r}, "
+            f"ctm={self.ctm!r}, "
+            f"transfer={self.transfer!r}, "
+            f"backdrop_color={self.backdrop_color!r}, "
+            f"color_space={self.color_space!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.subtype == other.subtype
+            and self.group == other.group
+            and self.ctm == other.ctm
+            and self.transfer == other.transfer
+            and self.backdrop_color == other.backdrop_color
+            and self.color_space == other.color_space
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.subtype,
+                self.group,
+                self.ctm,
+                self.transfer,
+                self.backdrop_color,
+                self.color_space,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        subtype = changes.pop("subtype", self.subtype)
+        group = changes.pop("group", self.group)
+        ctm = changes.pop("ctm", self.ctm)
+        transfer = changes.pop("transfer", self.transfer)
+        backdrop_color = changes.pop("backdrop_color", self.backdrop_color)
+        color_space = changes.pop("color_space", self.color_space)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(subtype, group, ctm, transfer, backdrop_color, color_space)
 
 
 def internal_resolve(value: object, resolver: PdfValueResolver) -> object:

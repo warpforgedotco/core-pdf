@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 from enum import StrEnum
 from os import PathLike
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, NoReturn, Self, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl._impl.document.recovery.xref import XRefScanner
@@ -15,6 +14,8 @@ from core_pdf_spec.s_07_filters.errors import FilterParseError
 
 from ..pypdf import internal_validate_pypdf_page_tree
 from ._operator_text import OperatorTextProjection
+
+internal_frozen_setattr = object.__setattr__
 
 
 class MetadataMode(StrEnum):
@@ -64,15 +65,139 @@ class _MetadataMixin:
         return _metadata_text(self.metadata, excluded, self.metadata_template)
 
 
-@dataclass(frozen=True, slots=True)
 class Document(_MetadataMixin):
+    __slots__ = (
+        "text",
+        "metadata",
+        "id_",
+        "excluded_llm_metadata_keys",
+        "excluded_embed_metadata_keys",
+        "metadata_template",
+        "text_template",
+    )
+
     text: str
-    metadata: dict[str, Any] = field(default_factory=dict)
-    id_: str = ""
-    excluded_llm_metadata_keys: frozenset[str] = frozenset()
-    excluded_embed_metadata_keys: frozenset[str] = frozenset()
-    metadata_template: str = "{metadata}"
-    text_template: str = "{metadata_str}\n\n{content}"
+    metadata: dict[str, Any]
+    id_: str
+    excluded_llm_metadata_keys: frozenset[str]
+    excluded_embed_metadata_keys: frozenset[str]
+    metadata_template: str
+    text_template: str
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "text",
+        "metadata",
+        "id_",
+        "excluded_llm_metadata_keys",
+        "excluded_embed_metadata_keys",
+        "metadata_template",
+        "text_template",
+    )
+    __match_args__ = (
+        "text",
+        "metadata",
+        "id_",
+        "excluded_llm_metadata_keys",
+        "excluded_embed_metadata_keys",
+        "metadata_template",
+        "text_template",
+    )
+
+    def __init__(
+        self,
+        text: str,
+        metadata: dict[str, Any] | None = None,
+        id_: str = "",
+        excluded_llm_metadata_keys: frozenset[str] = frozenset(),
+        excluded_embed_metadata_keys: frozenset[str] = frozenset(),
+        metadata_template: str = "{metadata}",
+        text_template: str = "{metadata_str}\n\n{content}",
+    ) -> None:
+        internal_frozen_setattr(self, "text", text)
+        internal_frozen_setattr(self, "metadata", {} if metadata is None else metadata)
+        internal_frozen_setattr(self, "id_", id_)
+        internal_frozen_setattr(self, "excluded_llm_metadata_keys", excluded_llm_metadata_keys)
+        internal_frozen_setattr(self, "excluded_embed_metadata_keys", excluded_embed_metadata_keys)
+        internal_frozen_setattr(self, "metadata_template", metadata_template)
+        internal_frozen_setattr(self, "text_template", text_template)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"text={self.text!r}, "
+            f"metadata={self.metadata!r}, "
+            f"id_={self.id_!r}, "
+            f"excluded_llm_metadata_keys={self.excluded_llm_metadata_keys!r}, "
+            f"excluded_embed_metadata_keys={self.excluded_embed_metadata_keys!r}, "
+            f"metadata_template={self.metadata_template!r}, "
+            f"text_template={self.text_template!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.text == other.text
+            and self.metadata == other.metadata
+            and self.id_ == other.id_
+            and self.excluded_llm_metadata_keys == other.excluded_llm_metadata_keys
+            and self.excluded_embed_metadata_keys == other.excluded_embed_metadata_keys
+            and self.metadata_template == other.metadata_template
+            and self.text_template == other.text_template
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.text,
+                self.metadata,
+                self.id_,
+                self.excluded_llm_metadata_keys,
+                self.excluded_embed_metadata_keys,
+                self.metadata_template,
+                self.text_template,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        metadata = changes.pop("metadata", self.metadata)
+        id_ = changes.pop("id_", self.id_)
+        excluded_llm_metadata_keys = changes.pop(
+            "excluded_llm_metadata_keys", self.excluded_llm_metadata_keys
+        )
+        excluded_embed_metadata_keys = changes.pop(
+            "excluded_embed_metadata_keys", self.excluded_embed_metadata_keys
+        )
+        metadata_template = changes.pop("metadata_template", self.metadata_template)
+        text_template = changes.pop("text_template", self.text_template)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            text,
+            metadata,
+            id_,
+            excluded_llm_metadata_keys,
+            excluded_embed_metadata_keys,
+            metadata_template,
+            text_template,
+        )
 
     @property
     def doc_id(self) -> str:
@@ -82,17 +207,163 @@ class Document(_MetadataMixin):
         return {"id_": self.doc_id, "text": self.text, "metadata": dict(self.metadata)}
 
 
-@dataclass(frozen=True, slots=True)
 class Node(_MetadataMixin):
+    __slots__ = (
+        "text",
+        "node_id",
+        "metadata",
+        "relationships",
+        "id_",
+        "excluded_llm_metadata_keys",
+        "excluded_embed_metadata_keys",
+        "metadata_template",
+        "text_template",
+    )
+
     text: str
-    node_id: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
-    relationships: dict[str, str] = field(default_factory=dict)
-    id_: str = ""
-    excluded_llm_metadata_keys: frozenset[str] = frozenset()
-    excluded_embed_metadata_keys: frozenset[str] = frozenset()
-    metadata_template: str = "{metadata}"
-    text_template: str = "{metadata_str}\n\n{content}"
+    node_id: str
+    metadata: dict[str, Any]
+    relationships: dict[str, str]
+    id_: str
+    excluded_llm_metadata_keys: frozenset[str]
+    excluded_embed_metadata_keys: frozenset[str]
+    metadata_template: str
+    text_template: str
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "text",
+        "node_id",
+        "metadata",
+        "relationships",
+        "id_",
+        "excluded_llm_metadata_keys",
+        "excluded_embed_metadata_keys",
+        "metadata_template",
+        "text_template",
+    )
+    __match_args__ = (
+        "text",
+        "node_id",
+        "metadata",
+        "relationships",
+        "id_",
+        "excluded_llm_metadata_keys",
+        "excluded_embed_metadata_keys",
+        "metadata_template",
+        "text_template",
+    )
+
+    def __init__(
+        self,
+        text: str,
+        node_id: str = "",
+        metadata: dict[str, Any] | None = None,
+        relationships: dict[str, str] | None = None,
+        id_: str = "",
+        excluded_llm_metadata_keys: frozenset[str] = frozenset(),
+        excluded_embed_metadata_keys: frozenset[str] = frozenset(),
+        metadata_template: str = "{metadata}",
+        text_template: str = "{metadata_str}\n\n{content}",
+    ) -> None:
+        internal_frozen_setattr(self, "text", text)
+        internal_frozen_setattr(self, "node_id", node_id)
+        internal_frozen_setattr(self, "metadata", {} if metadata is None else metadata)
+        internal_frozen_setattr(
+            self, "relationships", {} if relationships is None else relationships
+        )
+        internal_frozen_setattr(self, "id_", id_)
+        internal_frozen_setattr(self, "excluded_llm_metadata_keys", excluded_llm_metadata_keys)
+        internal_frozen_setattr(self, "excluded_embed_metadata_keys", excluded_embed_metadata_keys)
+        internal_frozen_setattr(self, "metadata_template", metadata_template)
+        internal_frozen_setattr(self, "text_template", text_template)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"text={self.text!r}, "
+            f"node_id={self.node_id!r}, "
+            f"metadata={self.metadata!r}, "
+            f"relationships={self.relationships!r}, "
+            f"id_={self.id_!r}, "
+            f"excluded_llm_metadata_keys={self.excluded_llm_metadata_keys!r}, "
+            f"excluded_embed_metadata_keys={self.excluded_embed_metadata_keys!r}, "
+            f"metadata_template={self.metadata_template!r}, "
+            f"text_template={self.text_template!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.text == other.text
+            and self.node_id == other.node_id
+            and self.metadata == other.metadata
+            and self.relationships == other.relationships
+            and self.id_ == other.id_
+            and self.excluded_llm_metadata_keys == other.excluded_llm_metadata_keys
+            and self.excluded_embed_metadata_keys == other.excluded_embed_metadata_keys
+            and self.metadata_template == other.metadata_template
+            and self.text_template == other.text_template
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.text,
+                self.node_id,
+                self.metadata,
+                self.relationships,
+                self.id_,
+                self.excluded_llm_metadata_keys,
+                self.excluded_embed_metadata_keys,
+                self.metadata_template,
+                self.text_template,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        node_id = changes.pop("node_id", self.node_id)
+        metadata = changes.pop("metadata", self.metadata)
+        relationships = changes.pop("relationships", self.relationships)
+        id_ = changes.pop("id_", self.id_)
+        excluded_llm_metadata_keys = changes.pop(
+            "excluded_llm_metadata_keys", self.excluded_llm_metadata_keys
+        )
+        excluded_embed_metadata_keys = changes.pop(
+            "excluded_embed_metadata_keys", self.excluded_embed_metadata_keys
+        )
+        metadata_template = changes.pop("metadata_template", self.metadata_template)
+        text_template = changes.pop("text_template", self.text_template)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            text,
+            node_id,
+            metadata,
+            relationships,
+            id_,
+            excluded_llm_metadata_keys,
+            excluded_embed_metadata_keys,
+            metadata_template,
+            text_template,
+        )
 
     @property
     def source_node(self) -> str | None:

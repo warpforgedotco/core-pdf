@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import cast
+from typing import Any, ClassVar, Self, cast
 
 from core_pdf.impl._impl.graphics.filter_registry import (
     CCITT_FILTERS,
@@ -17,9 +16,157 @@ from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterPara
 from core_pdf_spec.s_07_filters.decode_spec import FilterStep, StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class FilterParams(PdfFilterParams):
+    __slots__ = ()
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "early_change",
+        "predictor",
+        "columns",
+        "colors",
+        "bits_per_component",
+        "k",
+        "damaged_rows_before_error",
+        "black_is_1",
+        "rows",
+        "encoded_byte_align",
+        "has_columns",
+        "jbig2_globals",
+    )
+    __match_args__ = (
+        "early_change",
+        "predictor",
+        "columns",
+        "colors",
+        "bits_per_component",
+        "k",
+        "damaged_rows_before_error",
+        "black_is_1",
+        "rows",
+        "encoded_byte_align",
+        "has_columns",
+        "jbig2_globals",
+    )
+
+    def __init__(
+        self,
+        early_change: int = 1,
+        predictor: int = 1,
+        columns: int = 1,
+        colors: int = 1,
+        bits_per_component: int = 8,
+        k: int = 0,
+        damaged_rows_before_error: int = 0,
+        black_is_1: bool = False,
+        rows: int = 0,
+        encoded_byte_align: bool = False,
+        has_columns: bool = False,
+        jbig2_globals: object | None = None,
+    ) -> None:
+        internal_frozen_setattr(self, "early_change", early_change)
+        internal_frozen_setattr(self, "predictor", predictor)
+        internal_frozen_setattr(self, "columns", columns)
+        internal_frozen_setattr(self, "colors", colors)
+        internal_frozen_setattr(self, "bits_per_component", bits_per_component)
+        internal_frozen_setattr(self, "k", k)
+        internal_frozen_setattr(self, "damaged_rows_before_error", damaged_rows_before_error)
+        internal_frozen_setattr(self, "black_is_1", black_is_1)
+        internal_frozen_setattr(self, "rows", rows)
+        internal_frozen_setattr(self, "encoded_byte_align", encoded_byte_align)
+        internal_frozen_setattr(self, "has_columns", has_columns)
+        internal_frozen_setattr(self, "jbig2_globals", jbig2_globals)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"early_change={self.early_change!r}, "
+            f"predictor={self.predictor!r}, "
+            f"columns={self.columns!r}, "
+            f"colors={self.colors!r}, "
+            f"bits_per_component={self.bits_per_component!r}, "
+            f"k={self.k!r}, "
+            f"damaged_rows_before_error={self.damaged_rows_before_error!r}, "
+            f"black_is_1={self.black_is_1!r}, "
+            f"rows={self.rows!r}, "
+            f"encoded_byte_align={self.encoded_byte_align!r}, "
+            f"has_columns={self.has_columns!r}, "
+            f"jbig2_globals={self.jbig2_globals!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.early_change == other.early_change
+            and self.predictor == other.predictor
+            and self.columns == other.columns
+            and self.colors == other.colors
+            and self.bits_per_component == other.bits_per_component
+            and self.k == other.k
+            and self.damaged_rows_before_error == other.damaged_rows_before_error
+            and self.black_is_1 == other.black_is_1
+            and self.rows == other.rows
+            and self.encoded_byte_align == other.encoded_byte_align
+            and self.has_columns == other.has_columns
+            and self.jbig2_globals == other.jbig2_globals
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.early_change,
+                self.predictor,
+                self.columns,
+                self.colors,
+                self.bits_per_component,
+                self.k,
+                self.damaged_rows_before_error,
+                self.black_is_1,
+                self.rows,
+                self.encoded_byte_align,
+                self.has_columns,
+                self.jbig2_globals,
+            )
+        )
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        early_change = changes.pop("early_change", self.early_change)
+        predictor = changes.pop("predictor", self.predictor)
+        columns = changes.pop("columns", self.columns)
+        colors = changes.pop("colors", self.colors)
+        bits_per_component = changes.pop("bits_per_component", self.bits_per_component)
+        k = changes.pop("k", self.k)
+        damaged_rows_before_error = changes.pop(
+            "damaged_rows_before_error", self.damaged_rows_before_error
+        )
+        black_is_1 = changes.pop("black_is_1", self.black_is_1)
+        rows = changes.pop("rows", self.rows)
+        encoded_byte_align = changes.pop("encoded_byte_align", self.encoded_byte_align)
+        has_columns = changes.pop("has_columns", self.has_columns)
+        jbig2_globals = changes.pop("jbig2_globals", self.jbig2_globals)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            early_change,
+            predictor,
+            columns,
+            colors,
+            bits_per_component,
+            k,
+            damaged_rows_before_error,
+            black_is_1,
+            rows,
+            encoded_byte_align,
+            has_columns,
+            jbig2_globals,
+        )
+
     @classmethod
     def from_parms(cls, parms: object) -> FilterParams:
         if not isinstance(parms, dict):

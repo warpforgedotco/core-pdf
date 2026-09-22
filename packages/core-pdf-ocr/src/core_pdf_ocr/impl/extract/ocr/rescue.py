@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Any
+from copy import replace
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
@@ -22,6 +22,8 @@ from core_pdf_ocr.impl.extract.ocr.raster import internal_raster_ink_grid
 from core_pdf_ocr.impl.extract.ocr.region_tasks import internal_weak_region_grid_shape
 from core_pdf_ocr.impl.extract.ocr.types import internal_OcrTask, internal_Raster
 from core_pdf_ocr.impl.extract.quality import internal_Candidate, internal_text_utility_stats
+
+internal_frozen_setattr = object.__setattr__
 
 
 def internal_observation_coverage_grid(
@@ -75,12 +77,75 @@ def internal_observation_coverage_grid(
     return output.astype(numpy.float32, copy=False).reshape(-1)
 
 
-@dataclass(frozen=True, slots=True)
 class internal_RescueCoverage:
-    raster_count: int = 0
-    cell_count: int = 0
-    ink: float = 0.0
-    weak_ink: float = 0.0
+    __slots__ = ("raster_count", "cell_count", "ink", "weak_ink")
+
+    raster_count: int
+    cell_count: int
+    ink: float
+    weak_ink: float
+
+    __fields__: ClassVar[tuple[str, ...]] = ("raster_count", "cell_count", "ink", "weak_ink")
+    __match_args__ = ("raster_count", "cell_count", "ink", "weak_ink")
+
+    def __init__(
+        self,
+        raster_count: int = 0,
+        cell_count: int = 0,
+        ink: float = 0.0,
+        weak_ink: float = 0.0,
+    ) -> None:
+        internal_frozen_setattr(self, "raster_count", raster_count)
+        internal_frozen_setattr(self, "cell_count", cell_count)
+        internal_frozen_setattr(self, "ink", ink)
+        internal_frozen_setattr(self, "weak_ink", weak_ink)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"raster_count={self.raster_count!r}, "
+            f"cell_count={self.cell_count!r}, "
+            f"ink={self.ink!r}, "
+            f"weak_ink={self.weak_ink!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.raster_count == other.raster_count
+            and self.cell_count == other.cell_count
+            and self.ink == other.ink
+            and self.weak_ink == other.weak_ink
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.raster_count, self.cell_count, self.ink, self.weak_ink))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        raster_count = changes.pop("raster_count", self.raster_count)
+        cell_count = changes.pop("cell_count", self.cell_count)
+        ink = changes.pop("ink", self.ink)
+        weak_ink = changes.pop("weak_ink", self.weak_ink)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(raster_count, cell_count, ink, weak_ink)
 
     @property
     def mean_ink(self) -> float:

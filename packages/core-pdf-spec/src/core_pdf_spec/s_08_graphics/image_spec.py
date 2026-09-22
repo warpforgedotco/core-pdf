@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.resolver import STREAM_DECODE_KEYS
@@ -16,6 +15,9 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
     parse_rendering_intent,
 )
 from core_pdf_spec.standards import PdfVersion, SemanticContext
+
+internal_frozen_setattr = object.__setattr__
+
 
 internal_IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
     "Width",
@@ -31,19 +33,112 @@ internal_IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
 }
 
 
-@dataclass(frozen=True, slots=True)
 class SoftMask:
+    __slots__ = ("raw", "dictionary")
+
     raw: bytes | memoryview
     dictionary: dict[Any, Any]
 
+    __fields__: ClassVar[tuple[str, ...]] = ("raw", "dictionary")
+    __match_args__ = ("raw", "dictionary")
 
-@dataclass(slots=True, eq=False)
+    def __init__(self, raw: bytes | memoryview, dictionary: dict[Any, Any]) -> None:
+        internal_frozen_setattr(self, "raw", raw)
+        internal_frozen_setattr(self, "dictionary", dictionary)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(raw={self.raw!r}, dictionary={self.dictionary!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.raw == other.raw and self.dictionary == other.dictionary
+
+    def __hash__(self) -> int:
+        return hash((self.raw, self.dictionary))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        raw = changes.pop("raw", self.raw)
+        dictionary = changes.pop("dictionary", self.dictionary)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(raw, dictionary)
+
+
 class ImageSource:
+    __slots__ = ("raw", "dictionary", "soft_mask", "semantic_context", "color_rendering")
+
     raw: bytes | memoryview
     dictionary: dict[Any, Any]
-    soft_mask: SoftMask | None = field(default=None, kw_only=True)
-    semantic_context: SemanticContext | None = field(default=None, kw_only=True)
-    color_rendering: ColorRendering = field(default=DEFAULT_COLOR_RENDERING, kw_only=True)
+    soft_mask: SoftMask | None
+    semantic_context: SemanticContext | None
+    color_rendering: ColorRendering
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "raw",
+        "dictionary",
+        "soft_mask",
+        "semantic_context",
+        "color_rendering",
+    )
+    __match_args__ = ("raw", "dictionary")
+
+    def __init__(
+        self,
+        raw: bytes | memoryview,
+        dictionary: dict[Any, Any],
+        *,
+        soft_mask: SoftMask | None = None,
+        semantic_context: SemanticContext | None = None,
+        color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    ) -> None:
+        self.raw = raw
+        self.dictionary = dictionary
+        self.soft_mask = soft_mask
+        self.semantic_context = semantic_context
+        self.color_rendering = color_rendering
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"raw={self.raw!r}, "
+            f"dictionary={self.dictionary!r}, "
+            f"soft_mask={self.soft_mask!r}, "
+            f"semantic_context={self.semantic_context!r}, "
+            f"color_rendering={self.color_rendering!r}"
+            ")"
+        )
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        raw = changes.pop("raw", self.raw)
+        dictionary = changes.pop("dictionary", self.dictionary)
+        soft_mask = changes.pop("soft_mask", self.soft_mask)
+        semantic_context = changes.pop("semantic_context", self.semantic_context)
+        color_rendering = changes.pop("color_rendering", self.color_rendering)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            raw,
+            dictionary,
+            soft_mask=soft_mask,
+            semantic_context=semantic_context,
+            color_rendering=color_rendering,
+        )
 
 
 def internal_resolve_image_dictionary(

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
-
 from core_pdf_spec.s_09_fonts import service
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
 
@@ -11,7 +9,7 @@ def test_decoded_font_glyph_is_exported() -> None:
 
 
 def test_decoded_font_glyph_field_order_is_pinned() -> None:
-    assert tuple(field.name for field in dataclasses.fields(DecodedFontGlyph)) == (
+    assert DecodedFontGlyph.__fields__ == (
         "code_bytes",
         "char_code",
         "cid",

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
@@ -37,6 +36,8 @@ from core_pdf_spec.s_08_graphics.image_spec import (
 )
 from core_pdf_spec.standards import SemanticContext
 
+internal_frozen_setattr = object.__setattr__
+
 
 def internal_decode_array_applies(
     dictionary: dict[Any, Any], context: SemanticContext | None
@@ -51,20 +52,127 @@ def internal_image_color_space_paints(dictionary: dict[Any, Any]) -> bool:
     return internal_color_space_paints(dictionary.get("ColorSpace"))
 
 
-@dataclass(frozen=True, slots=True)
 class DecodedRaster:
+    __slots__ = ("data", "width", "height", "channels")
+
     data: bytes | memoryview | numpy.ndarray[Any, Any]
     width: int
     height: int
     channels: int
 
+    __fields__: ClassVar[tuple[str, ...]] = ("data", "width", "height", "channels")
+    __match_args__ = ("data", "width", "height", "channels")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        data: bytes | memoryview | numpy.ndarray[Any, Any],
+        width: int,
+        height: int,
+        channels: int,
+    ) -> None:
+        internal_frozen_setattr(self, "data", data)
+        internal_frozen_setattr(self, "width", width)
+        internal_frozen_setattr(self, "height", height)
+        internal_frozen_setattr(self, "channels", channels)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"data={self.data!r}, "
+            f"width={self.width!r}, "
+            f"height={self.height!r}, "
+            f"channels={self.channels!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.data == other.data
+            and self.width == other.width
+            and self.height == other.height
+            and self.channels == other.channels
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.data, self.width, self.height, self.channels))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        data = changes.pop("data", self.data)
+        width = changes.pop("width", self.width)
+        height = changes.pop("height", self.height)
+        channels = changes.pop("channels", self.channels)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(data, width, height, channels)
+
+
 class ImageRaster:
+    __slots__ = ("array", "color_model")
+
     array: numpy.ndarray[Any, Any]
     color_model: str
 
-    def __post_init__(self) -> None:
+    __fields__: ClassVar[tuple[str, ...]] = ("array", "color_model")
+    __match_args__ = ("array", "color_model")
+
+    def __init__(self, array: numpy.ndarray[Any, Any], color_model: str) -> None:
+        internal_frozen_setattr(self, "array", array)
+        internal_frozen_setattr(self, "color_model", color_model)
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}(array={self.array!r}, color_model={self.color_model!r})"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.array == other.array and self.color_model == other.color_model
+
+    def __hash__(self) -> int:
+        return hash((self.array, self.color_model))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        array = changes.pop("array", self.array)
+        color_model = changes.pop("color_model", self.color_model)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(array, color_model)
+
+    def _post_init(self) -> None:
         array = numpy.asarray(self.array, dtype=numpy.uint8)
         if array.ndim == 2:
             array = array[:, :, None]
@@ -98,13 +206,72 @@ class ImageRaster:
         return int(self.array.strides[0])
 
 
-@dataclass(frozen=True, slots=True)
 class PreparedImage:
-    raster: ImageRaster
-    soft_mask: ImageRaster | None = None
-    is_stencil: bool = False
+    __slots__ = ("raster", "soft_mask", "is_stencil")
 
-    def __post_init__(self) -> None:
+    raster: ImageRaster
+    soft_mask: ImageRaster | None
+    is_stencil: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = ("raster", "soft_mask", "is_stencil")
+    __match_args__ = ("raster", "soft_mask", "is_stencil")
+
+    def __init__(
+        self,
+        raster: ImageRaster,
+        soft_mask: ImageRaster | None = None,
+        is_stencil: bool = False,
+    ) -> None:
+        internal_frozen_setattr(self, "raster", raster)
+        internal_frozen_setattr(self, "soft_mask", soft_mask)
+        internal_frozen_setattr(self, "is_stencil", is_stencil)
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"raster={self.raster!r}, "
+            f"soft_mask={self.soft_mask!r}, "
+            f"is_stencil={self.is_stencil!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.raster == other.raster
+            and self.soft_mask == other.soft_mask
+            and self.is_stencil == other.is_stencil
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.raster, self.soft_mask, self.is_stencil))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        raster = changes.pop("raster", self.raster)
+        soft_mask = changes.pop("soft_mask", self.soft_mask)
+        is_stencil = changes.pop("is_stencil", self.is_stencil)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(raster, soft_mask, is_stencil)
+
+    def _post_init(self) -> None:
         soft_mask = self.soft_mask
         if soft_mask is not None and (soft_mask.color_model != "gray" or soft_mask.has_alpha):
             raise ValueError("prepared image soft mask must be grayscale without alpha")

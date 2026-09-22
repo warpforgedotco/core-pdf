@@ -8,8 +8,11 @@ import hashlib
 import json
 import shutil
 import subprocess
-from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, ClassVar, NoReturn, Self
+
+internal_frozen_setattr = object.__setattr__
+
 
 internal_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 internal_DEFAULT_OUTPUT = internal_REPOSITORY_ROOT / "tests" / "fixtures" / "security_interop"
@@ -18,7 +21,6 @@ internal_EXPECTED_TITLE = "Core PDF Security Fixture"
 internal_XMP_MARKER = "security-xmp-marker"
 
 
-@dataclass(frozen=True)
 class internal_FixtureSpec:
     filename: str
     algorithm: str
@@ -26,9 +28,131 @@ class internal_FixtureSpec:
     bits: int
     user_password: str
     owner_password: str
-    encrypt_metadata: bool = True
-    qpdf_options: tuple[str, ...] = ()
-    weak_crypto: bool = False
+    encrypt_metadata: bool
+    qpdf_options: tuple[str, ...]
+    weak_crypto: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "filename",
+        "algorithm",
+        "revision",
+        "bits",
+        "user_password",
+        "owner_password",
+        "encrypt_metadata",
+        "qpdf_options",
+        "weak_crypto",
+    )
+    __match_args__ = (
+        "filename",
+        "algorithm",
+        "revision",
+        "bits",
+        "user_password",
+        "owner_password",
+        "encrypt_metadata",
+        "qpdf_options",
+        "weak_crypto",
+    )
+
+    def __init__(
+        self,
+        filename: str,
+        algorithm: str,
+        revision: int,
+        bits: int,
+        user_password: str,
+        owner_password: str,
+        encrypt_metadata: bool = True,
+        qpdf_options: tuple[str, ...] = (),
+        weak_crypto: bool = False,
+    ) -> None:
+        internal_frozen_setattr(self, "filename", filename)
+        internal_frozen_setattr(self, "algorithm", algorithm)
+        internal_frozen_setattr(self, "revision", revision)
+        internal_frozen_setattr(self, "bits", bits)
+        internal_frozen_setattr(self, "user_password", user_password)
+        internal_frozen_setattr(self, "owner_password", owner_password)
+        internal_frozen_setattr(self, "encrypt_metadata", encrypt_metadata)
+        internal_frozen_setattr(self, "qpdf_options", qpdf_options)
+        internal_frozen_setattr(self, "weak_crypto", weak_crypto)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"filename={self.filename!r}, "
+            f"algorithm={self.algorithm!r}, "
+            f"revision={self.revision!r}, "
+            f"bits={self.bits!r}, "
+            f"user_password={self.user_password!r}, "
+            f"owner_password={self.owner_password!r}, "
+            f"encrypt_metadata={self.encrypt_metadata!r}, "
+            f"qpdf_options={self.qpdf_options!r}, "
+            f"weak_crypto={self.weak_crypto!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.filename == other.filename
+            and self.algorithm == other.algorithm
+            and self.revision == other.revision
+            and self.bits == other.bits
+            and self.user_password == other.user_password
+            and self.owner_password == other.owner_password
+            and self.encrypt_metadata == other.encrypt_metadata
+            and self.qpdf_options == other.qpdf_options
+            and self.weak_crypto == other.weak_crypto
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.filename,
+                self.algorithm,
+                self.revision,
+                self.bits,
+                self.user_password,
+                self.owner_password,
+                self.encrypt_metadata,
+                self.qpdf_options,
+                self.weak_crypto,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        filename = changes.pop("filename", self.filename)
+        algorithm = changes.pop("algorithm", self.algorithm)
+        revision = changes.pop("revision", self.revision)
+        bits = changes.pop("bits", self.bits)
+        user_password = changes.pop("user_password", self.user_password)
+        owner_password = changes.pop("owner_password", self.owner_password)
+        encrypt_metadata = changes.pop("encrypt_metadata", self.encrypt_metadata)
+        qpdf_options = changes.pop("qpdf_options", self.qpdf_options)
+        weak_crypto = changes.pop("weak_crypto", self.weak_crypto)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            filename,
+            algorithm,
+            revision,
+            bits,
+            user_password,
+            owner_password,
+            encrypt_metadata,
+            qpdf_options,
+            weak_crypto,
+        )
 
 
 internal_FIXTURES = (
@@ -215,7 +339,7 @@ def internal_generate(qpdf: str, output_directory: Path) -> None:
             check=True,
             capture_output=True,
         )
-        record = asdict(fixture)
+        record = {name: getattr(fixture, name) for name in fixture.__fields__}
         record["qpdf_options"] = list(fixture.qpdf_options)
         record["command"] = internal_display_command(fixture)
         record["sha256"] = internal_sha256(destination)

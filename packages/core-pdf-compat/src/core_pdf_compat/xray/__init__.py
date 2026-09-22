@@ -3,11 +3,10 @@ from __future__ import annotations
 import re
 import struct
 from collections import defaultdict
-from dataclasses import dataclass
 from math import ceil, floor
 from os import PathLike
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, Self, cast
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
@@ -41,27 +40,164 @@ class internal_XrayDocument(PdfDocument):
         return None
 
 
-@dataclass(slots=True)
 class _Rectangle:
+    __slots__ = ("bbox", "seqno", "fill", "allow_same_fill")
+
     bbox: tuple[float, float, float, float]
     seqno: int
     fill: tuple[float, ...]
-    allow_same_fill: bool = False
+    allow_same_fill: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "seqno", "fill", "allow_same_fill")
+    __match_args__ = ("bbox", "seqno", "fill", "allow_same_fill")
+
+    def __init__(
+        self,
+        bbox: tuple[float, float, float, float],
+        seqno: int,
+        fill: tuple[float, ...],
+        allow_same_fill: bool = False,
+    ) -> None:
+        self.bbox = bbox
+        self.seqno = seqno
+        self.fill = fill
+        self.allow_same_fill = allow_same_fill
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"bbox={self.bbox!r}, "
+            f"seqno={self.seqno!r}, "
+            f"fill={self.fill!r}, "
+            f"allow_same_fill={self.allow_same_fill!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.bbox == other.bbox
+            and self.seqno == other.seqno
+            and self.fill == other.fill
+            and self.allow_same_fill == other.allow_same_fill
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        bbox = changes.pop("bbox", self.bbox)
+        seqno = changes.pop("seqno", self.seqno)
+        fill = changes.pop("fill", self.fill)
+        allow_same_fill = changes.pop("allow_same_fill", self.allow_same_fill)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(bbox, seqno, fill, allow_same_fill)
 
 
-@dataclass(slots=True)
 class _Character:
+    __slots__ = ("bbox", "text", "seqno", "fill")
+
     bbox: tuple[float, float, float, float]
     text: str
     seqno: int
     fill: tuple[float, ...] | None
 
+    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "text", "seqno", "fill")
+    __match_args__ = ("bbox", "text", "seqno", "fill")
 
-@dataclass(slots=True)
+    def __init__(
+        self,
+        bbox: tuple[float, float, float, float],
+        text: str,
+        seqno: int,
+        fill: tuple[float, ...] | None,
+    ) -> None:
+        self.bbox = bbox
+        self.text = text
+        self.seqno = seqno
+        self.fill = fill
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"bbox={self.bbox!r}, "
+            f"text={self.text!r}, "
+            f"seqno={self.seqno!r}, "
+            f"fill={self.fill!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.bbox == other.bbox
+            and self.text == other.text
+            and self.seqno == other.seqno
+            and self.fill == other.fill
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        bbox = changes.pop("bbox", self.bbox)
+        text = changes.pop("text", self.text)
+        seqno = changes.pop("seqno", self.seqno)
+        fill = changes.pop("fill", self.fill)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(bbox, text, seqno, fill)
+
+
 class _RecoveredFont:
+    __slots__ = ("cmap", "first_char", "widths")
+
     cmap: ToUnicodeCMap
     first_char: int
     widths: tuple[float, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("cmap", "first_char", "widths")
+    __match_args__ = ("cmap", "first_char", "widths")
+
+    def __init__(self, cmap: ToUnicodeCMap, first_char: int, widths: tuple[float, ...]) -> None:
+        self.cmap = cmap
+        self.first_char = first_char
+        self.widths = widths
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"cmap={self.cmap!r}, "
+            f"first_char={self.first_char!r}, "
+            f"widths={self.widths!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.cmap == other.cmap
+            and self.first_char == other.first_char
+            and self.widths == other.widths
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        cmap = changes.pop("cmap", self.cmap)
+        first_char = changes.pop("first_char", self.first_char)
+        widths = changes.pop("widths", self.widths)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(cmap, first_char, widths)
 
 
 def _occluded(character: _Character, rectangle: _Rectangle, threshold: float) -> bool:

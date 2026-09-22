@@ -1,6 +1,6 @@
 import subprocess
 from contextlib import nullcontext
-from dataclasses import replace
+from copy import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from functools import lru_cache
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl._impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl._impl.graphics.color_spec import internal_color_space_paints, parse_color_space
@@ -16,9 +16,22 @@ from core_pdf.impl._impl.runtime.scalars import parse_int
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.shading import parse_shading
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class PreparedShading:
+    __slots__ = (
+        "shading_type",
+        "coords",
+        "domain",
+        "extend_start",
+        "extend_end",
+        "color_model",
+        "bbox",
+        "internal_evaluator",
+        "color_rendering",
+    )
+
     shading_type: int
     coords: tuple[float, ...]
     domain: tuple[float, float]
@@ -26,8 +39,134 @@ class PreparedShading:
     extend_end: bool
     color_model: str
     bbox: tuple[float, float, float, float] | None
-    internal_evaluator: Callable[[float], tuple[float, ...]] = field(repr=False, compare=False)
-    color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+    internal_evaluator: Callable[[float], tuple[float, ...]]
+    color_rendering: ColorRendering
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "shading_type",
+        "coords",
+        "domain",
+        "extend_start",
+        "extend_end",
+        "color_model",
+        "bbox",
+        "internal_evaluator",
+        "color_rendering",
+    )
+    __match_args__ = (
+        "shading_type",
+        "coords",
+        "domain",
+        "extend_start",
+        "extend_end",
+        "color_model",
+        "bbox",
+        "internal_evaluator",
+        "color_rendering",
+    )
+
+    def __init__(
+        self,
+        shading_type: int,
+        coords: tuple[float, ...],
+        domain: tuple[float, float],
+        extend_start: bool,
+        extend_end: bool,
+        color_model: str,
+        bbox: tuple[float, float, float, float] | None,
+        internal_evaluator: Callable[[float], tuple[float, ...]],
+        color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    ) -> None:
+        internal_frozen_setattr(self, "shading_type", shading_type)
+        internal_frozen_setattr(self, "coords", coords)
+        internal_frozen_setattr(self, "domain", domain)
+        internal_frozen_setattr(self, "extend_start", extend_start)
+        internal_frozen_setattr(self, "extend_end", extend_end)
+        internal_frozen_setattr(self, "color_model", color_model)
+        internal_frozen_setattr(self, "bbox", bbox)
+        internal_frozen_setattr(self, "internal_evaluator", internal_evaluator)
+        internal_frozen_setattr(self, "color_rendering", color_rendering)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"shading_type={self.shading_type!r}, "
+            f"coords={self.coords!r}, "
+            f"domain={self.domain!r}, "
+            f"extend_start={self.extend_start!r}, "
+            f"extend_end={self.extend_end!r}, "
+            f"color_model={self.color_model!r}, "
+            f"bbox={self.bbox!r}, "
+            f"color_rendering={self.color_rendering!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.shading_type == other.shading_type
+            and self.coords == other.coords
+            and self.domain == other.domain
+            and self.extend_start == other.extend_start
+            and self.extend_end == other.extend_end
+            and self.color_model == other.color_model
+            and self.bbox == other.bbox
+            and self.color_rendering == other.color_rendering
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.shading_type,
+                self.coords,
+                self.domain,
+                self.extend_start,
+                self.extend_end,
+                self.color_model,
+                self.bbox,
+                self.color_rendering,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        shading_type = changes.pop("shading_type", self.shading_type)
+        coords = changes.pop("coords", self.coords)
+        domain = changes.pop("domain", self.domain)
+        extend_start = changes.pop("extend_start", self.extend_start)
+        extend_end = changes.pop("extend_end", self.extend_end)
+        color_model = changes.pop("color_model", self.color_model)
+        bbox = changes.pop("bbox", self.bbox)
+        internal_evaluator = changes.pop("internal_evaluator", self.internal_evaluator)
+        color_rendering = changes.pop("color_rendering", self.color_rendering)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            shading_type,
+            coords,
+            domain,
+            extend_start,
+            extend_end,
+            color_model,
+            bbox,
+            internal_evaluator,
+            color_rendering,
+        )
 
     def evaluate(self, value: float) -> tuple[float, ...]:
         return self.internal_evaluator(value)

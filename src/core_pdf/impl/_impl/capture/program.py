@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal, TypeAlias
+from typing import Any, ClassVar, Literal, NoReturn, Self, TypeAlias
 
 from core_pdf.impl._impl.capture.records import (
     CapturedDrawing,
@@ -15,22 +14,135 @@ from core_pdf.impl._impl.model.glyphs import GlyphObservation
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf.impl.exceptions import PdfContractError
 
+internal_frozen_setattr = object.__setattr__
+
+
 PageCommand: TypeAlias = (
     TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage | CapturedTextBoundary
 )
 
 
-@dataclass(frozen=True, slots=True)
 class CapturedProgram:
-    runs: tuple[TextRun, ...] = ()
-    glyphs: tuple[GlyphObservation, ...] = ()
-    drawings: tuple[CapturedDrawing, ...] = ()
-    inline_images: tuple[CapturedInlineImage, ...] = ()
-    lines: tuple[CapturedLine, ...] = ()
-    text_boundaries: tuple[CapturedTextBoundary, ...] = field(default=(), kw_only=True)
-    commands: tuple[PageCommand, ...] = field(init=False)
+    __slots__ = (
+        "runs",
+        "glyphs",
+        "drawings",
+        "inline_images",
+        "lines",
+        "text_boundaries",
+        "commands",
+    )
 
-    def __post_init__(self) -> None:
+    runs: tuple[TextRun, ...]
+    glyphs: tuple[GlyphObservation, ...]
+    drawings: tuple[CapturedDrawing, ...]
+    inline_images: tuple[CapturedInlineImage, ...]
+    lines: tuple[CapturedLine, ...]
+    text_boundaries: tuple[CapturedTextBoundary, ...]
+    commands: tuple[PageCommand, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "runs",
+        "glyphs",
+        "drawings",
+        "inline_images",
+        "lines",
+        "text_boundaries",
+        "commands",
+    )
+    __match_args__ = ("runs", "glyphs", "drawings", "inline_images", "lines")
+
+    def __init__(
+        self,
+        runs: tuple[TextRun, ...] = (),
+        glyphs: tuple[GlyphObservation, ...] = (),
+        drawings: tuple[CapturedDrawing, ...] = (),
+        inline_images: tuple[CapturedInlineImage, ...] = (),
+        lines: tuple[CapturedLine, ...] = (),
+        *,
+        text_boundaries: tuple[CapturedTextBoundary, ...] = (),
+    ) -> None:
+        internal_frozen_setattr(self, "runs", runs)
+        internal_frozen_setattr(self, "glyphs", glyphs)
+        internal_frozen_setattr(self, "drawings", drawings)
+        internal_frozen_setattr(self, "inline_images", inline_images)
+        internal_frozen_setattr(self, "lines", lines)
+        internal_frozen_setattr(self, "text_boundaries", text_boundaries)
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"runs={self.runs!r}, "
+            f"glyphs={self.glyphs!r}, "
+            f"drawings={self.drawings!r}, "
+            f"inline_images={self.inline_images!r}, "
+            f"lines={self.lines!r}, "
+            f"text_boundaries={self.text_boundaries!r}, "
+            f"commands={self.commands!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.runs == other.runs
+            and self.glyphs == other.glyphs
+            and self.drawings == other.drawings
+            and self.inline_images == other.inline_images
+            and self.lines == other.lines
+            and self.text_boundaries == other.text_boundaries
+            and self.commands == other.commands
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.runs,
+                self.glyphs,
+                self.drawings,
+                self.inline_images,
+                self.lines,
+                self.text_boundaries,
+                self.commands,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        runs = changes.pop("runs", self.runs)
+        glyphs = changes.pop("glyphs", self.glyphs)
+        drawings = changes.pop("drawings", self.drawings)
+        inline_images = changes.pop("inline_images", self.inline_images)
+        lines = changes.pop("lines", self.lines)
+        text_boundaries = changes.pop("text_boundaries", self.text_boundaries)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            runs,
+            glyphs,
+            drawings,
+            inline_images,
+            lines,
+            text_boundaries=text_boundaries,
+        )
+
+    def _post_init(self) -> None:
         runs = tuple(self.runs)
         glyphs = tuple(self.glyphs)
         drawings = tuple(self.drawings)
@@ -64,28 +176,190 @@ class CapturedProgram:
         object.__setattr__(self, "commands", tuple(commands))
 
 
-@dataclass(frozen=True, slots=True)
 class AppearanceProgram:
+    __slots__ = ("kind", "source", "clip_bbox", "program")
+
     kind: Literal["widget", "annotation"]
     source: object
     clip_bbox: tuple[float, float, float, float]
     program: CapturedProgram
 
+    __fields__: ClassVar[tuple[str, ...]] = ("kind", "source", "clip_bbox", "program")
+    __match_args__ = ("kind", "source", "clip_bbox", "program")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        kind: Literal["widget", "annotation"],
+        source: object,
+        clip_bbox: tuple[float, float, float, float],
+        program: CapturedProgram,
+    ) -> None:
+        internal_frozen_setattr(self, "kind", kind)
+        internal_frozen_setattr(self, "source", source)
+        internal_frozen_setattr(self, "clip_bbox", clip_bbox)
+        internal_frozen_setattr(self, "program", program)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"kind={self.kind!r}, "
+            f"source={self.source!r}, "
+            f"clip_bbox={self.clip_bbox!r}, "
+            f"program={self.program!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.kind == other.kind
+            and self.source == other.source
+            and self.clip_bbox == other.clip_bbox
+            and self.program == other.program
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.kind, self.source, self.clip_bbox, self.program))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        kind = changes.pop("kind", self.kind)
+        source = changes.pop("source", self.source)
+        clip_bbox = changes.pop("clip_bbox", self.clip_bbox)
+        program = changes.pop("program", self.program)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(kind, source, clip_bbox, program)
+
+
 class PageProgram:
-    body: CapturedProgram = field(default_factory=CapturedProgram)
-    appearances: tuple[AppearanceProgram, ...] = ()
+    __slots__ = (
+        "body",
+        "appearances",
+        "runs",
+        "glyphs",
+        "drawings",
+        "inline_images",
+        "lines",
+        "text_boundaries",
+        "commands",
+    )
 
-    runs: tuple[TextRun, ...] = field(init=False)
-    glyphs: tuple[GlyphObservation, ...] = field(init=False)
-    drawings: tuple[CapturedDrawing, ...] = field(init=False)
-    inline_images: tuple[CapturedInlineImage, ...] = field(init=False)
-    lines: tuple[CapturedLine, ...] = field(init=False)
-    text_boundaries: tuple[CapturedTextBoundary, ...] = field(init=False)
-    commands: tuple[PageCommand, ...] = field(init=False)
+    body: CapturedProgram
+    appearances: tuple[AppearanceProgram, ...]
+    runs: tuple[TextRun, ...]
+    glyphs: tuple[GlyphObservation, ...]
+    drawings: tuple[CapturedDrawing, ...]
+    inline_images: tuple[CapturedInlineImage, ...]
+    lines: tuple[CapturedLine, ...]
+    text_boundaries: tuple[CapturedTextBoundary, ...]
+    commands: tuple[PageCommand, ...]
 
-    def __post_init__(self) -> None:
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "body",
+        "appearances",
+        "runs",
+        "glyphs",
+        "drawings",
+        "inline_images",
+        "lines",
+        "text_boundaries",
+        "commands",
+    )
+    __match_args__ = ("body", "appearances")
+
+    def __init__(
+        self,
+        body: CapturedProgram | None = None,
+        appearances: tuple[AppearanceProgram, ...] = (),
+    ) -> None:
+        internal_frozen_setattr(self, "body", CapturedProgram() if body is None else body)
+        internal_frozen_setattr(self, "appearances", appearances)
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"body={self.body!r}, "
+            f"appearances={self.appearances!r}, "
+            f"runs={self.runs!r}, "
+            f"glyphs={self.glyphs!r}, "
+            f"drawings={self.drawings!r}, "
+            f"inline_images={self.inline_images!r}, "
+            f"lines={self.lines!r}, "
+            f"text_boundaries={self.text_boundaries!r}, "
+            f"commands={self.commands!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.body == other.body
+            and self.appearances == other.appearances
+            and self.runs == other.runs
+            and self.glyphs == other.glyphs
+            and self.drawings == other.drawings
+            and self.inline_images == other.inline_images
+            and self.lines == other.lines
+            and self.text_boundaries == other.text_boundaries
+            and self.commands == other.commands
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.body,
+                self.appearances,
+                self.runs,
+                self.glyphs,
+                self.drawings,
+                self.inline_images,
+                self.lines,
+                self.text_boundaries,
+                self.commands,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        body = changes.pop("body", self.body)
+        appearances = changes.pop("appearances", self.appearances)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(body, appearances)
+
+    def _post_init(self) -> None:
         if not isinstance(self.body, CapturedProgram):
             raise PdfContractError("page program contains an invalid body")
         appearances = tuple(self.appearances)

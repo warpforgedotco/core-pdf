@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl._impl.capture.records import CapturedPath
 from core_pdf.impl._impl.render.kernels import internal_make_page_geometry
@@ -13,18 +12,95 @@ from core_pdf.impl._impl.render.paths import (
     internal_intersect_box,
 )
 
+internal_frozen_setattr = object.__setattr__
+
+
 internal_PixelSpan = tuple[int, int]
 internal_RowSpans = tuple[internal_PixelSpan, ...]
 internal_EMPTY_CLIP_BOX = (0.0, 0.0, 0.0, 0.0)
 
 
-@dataclass(frozen=True, slots=True)
 class internal_ClipRegion:
+    __slots__ = ("box", "pixel_box", "rectangular", "rows", "rows_origin")
+
     box: tuple[float, float, float, float] | None
     pixel_box: tuple[int, int, int, int] | None
     rectangular: bool
     rows: tuple[internal_RowSpans, ...] | None
-    rows_origin: int = 0
+    rows_origin: int
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "box",
+        "pixel_box",
+        "rectangular",
+        "rows",
+        "rows_origin",
+    )
+    __match_args__ = ("box", "pixel_box", "rectangular", "rows", "rows_origin")
+
+    def __init__(
+        self,
+        box: tuple[float, float, float, float] | None,
+        pixel_box: tuple[int, int, int, int] | None,
+        rectangular: bool,
+        rows: tuple[internal_RowSpans, ...] | None,
+        rows_origin: int = 0,
+    ) -> None:
+        internal_frozen_setattr(self, "box", box)
+        internal_frozen_setattr(self, "pixel_box", pixel_box)
+        internal_frozen_setattr(self, "rectangular", rectangular)
+        internal_frozen_setattr(self, "rows", rows)
+        internal_frozen_setattr(self, "rows_origin", rows_origin)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"box={self.box!r}, "
+            f"pixel_box={self.pixel_box!r}, "
+            f"rectangular={self.rectangular!r}, "
+            f"rows={self.rows!r}, "
+            f"rows_origin={self.rows_origin!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.box == other.box
+            and self.pixel_box == other.pixel_box
+            and self.rectangular == other.rectangular
+            and self.rows == other.rows
+            and self.rows_origin == other.rows_origin
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.box, self.pixel_box, self.rectangular, self.rows, self.rows_origin))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        box = changes.pop("box", self.box)
+        pixel_box = changes.pop("pixel_box", self.pixel_box)
+        rectangular = changes.pop("rectangular", self.rectangular)
+        rows = changes.pop("rows", self.rows)
+        rows_origin = changes.pop("rows_origin", self.rows_origin)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(box, pixel_box, rectangular, rows, rows_origin)
 
     @property
     def empty(self) -> bool:

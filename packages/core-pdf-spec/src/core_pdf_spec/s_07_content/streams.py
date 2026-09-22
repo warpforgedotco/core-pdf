@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import GraphicsState
@@ -17,11 +16,29 @@ if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
     from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 
+internal_frozen_setattr = object.__setattr__
+
+
 StreamKey = tuple[str, int, int]
 
 
-@dataclass(frozen=True, slots=True)
 class StreamState:
+    __slots__ = (
+        "graphics_state",
+        "resources",
+        "text_matrix",
+        "line_matrix",
+        "graphics_stack_floor",
+        "graphics_stack_len",
+        "marked_content_stack_len",
+        "xobject_depth",
+        "compatibility_depth",
+        "pending_clip_rule",
+        "initial_alpha_is_shape",
+        "initial_text_knockout",
+        "in_text_object",
+    )
+
     graphics_state: GraphicsState
     resources: PdfDict
     text_matrix: Matrix
@@ -30,30 +47,340 @@ class StreamState:
     graphics_stack_len: int
     marked_content_stack_len: int
     xobject_depth: int
-    compatibility_depth: int = field(default=0, kw_only=True)
-    pending_clip_rule: str | None = field(default=None, kw_only=True)
-    initial_alpha_is_shape: bool = field(default=False, kw_only=True)
-    initial_text_knockout: bool = field(default=True, kw_only=True)
-    in_text_object: bool = field(default=False, kw_only=True)
+    compatibility_depth: int
+    pending_clip_rule: str | None
+    initial_alpha_is_shape: bool
+    initial_text_knockout: bool
+    in_text_object: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "graphics_state",
+        "resources",
+        "text_matrix",
+        "line_matrix",
+        "graphics_stack_floor",
+        "graphics_stack_len",
+        "marked_content_stack_len",
+        "xobject_depth",
+        "compatibility_depth",
+        "pending_clip_rule",
+        "initial_alpha_is_shape",
+        "initial_text_knockout",
+        "in_text_object",
+    )
+    __match_args__ = (
+        "graphics_state",
+        "resources",
+        "text_matrix",
+        "line_matrix",
+        "graphics_stack_floor",
+        "graphics_stack_len",
+        "marked_content_stack_len",
+        "xobject_depth",
+    )
+
+    def __init__(
+        self,
+        graphics_state: GraphicsState,
+        resources: PdfDict,
+        text_matrix: Matrix,
+        line_matrix: Matrix,
+        graphics_stack_floor: int,
+        graphics_stack_len: int,
+        marked_content_stack_len: int,
+        xobject_depth: int,
+        *,
+        compatibility_depth: int = 0,
+        pending_clip_rule: str | None = None,
+        initial_alpha_is_shape: bool = False,
+        initial_text_knockout: bool = True,
+        in_text_object: bool = False,
+    ) -> None:
+        internal_frozen_setattr(self, "graphics_state", graphics_state)
+        internal_frozen_setattr(self, "resources", resources)
+        internal_frozen_setattr(self, "text_matrix", text_matrix)
+        internal_frozen_setattr(self, "line_matrix", line_matrix)
+        internal_frozen_setattr(self, "graphics_stack_floor", graphics_stack_floor)
+        internal_frozen_setattr(self, "graphics_stack_len", graphics_stack_len)
+        internal_frozen_setattr(self, "marked_content_stack_len", marked_content_stack_len)
+        internal_frozen_setattr(self, "xobject_depth", xobject_depth)
+        internal_frozen_setattr(self, "compatibility_depth", compatibility_depth)
+        internal_frozen_setattr(self, "pending_clip_rule", pending_clip_rule)
+        internal_frozen_setattr(self, "initial_alpha_is_shape", initial_alpha_is_shape)
+        internal_frozen_setattr(self, "initial_text_knockout", initial_text_knockout)
+        internal_frozen_setattr(self, "in_text_object", in_text_object)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"graphics_state={self.graphics_state!r}, "
+            f"resources={self.resources!r}, "
+            f"text_matrix={self.text_matrix!r}, "
+            f"line_matrix={self.line_matrix!r}, "
+            f"graphics_stack_floor={self.graphics_stack_floor!r}, "
+            f"graphics_stack_len={self.graphics_stack_len!r}, "
+            f"marked_content_stack_len={self.marked_content_stack_len!r}, "
+            f"xobject_depth={self.xobject_depth!r}, "
+            f"compatibility_depth={self.compatibility_depth!r}, "
+            f"pending_clip_rule={self.pending_clip_rule!r}, "
+            f"initial_alpha_is_shape={self.initial_alpha_is_shape!r}, "
+            f"initial_text_knockout={self.initial_text_knockout!r}, "
+            f"in_text_object={self.in_text_object!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.graphics_state == other.graphics_state
+            and self.resources == other.resources
+            and self.text_matrix == other.text_matrix
+            and self.line_matrix == other.line_matrix
+            and self.graphics_stack_floor == other.graphics_stack_floor
+            and self.graphics_stack_len == other.graphics_stack_len
+            and self.marked_content_stack_len == other.marked_content_stack_len
+            and self.xobject_depth == other.xobject_depth
+            and self.compatibility_depth == other.compatibility_depth
+            and self.pending_clip_rule == other.pending_clip_rule
+            and self.initial_alpha_is_shape == other.initial_alpha_is_shape
+            and self.initial_text_knockout == other.initial_text_knockout
+            and self.in_text_object == other.in_text_object
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.graphics_state,
+                self.resources,
+                self.text_matrix,
+                self.line_matrix,
+                self.graphics_stack_floor,
+                self.graphics_stack_len,
+                self.marked_content_stack_len,
+                self.xobject_depth,
+                self.compatibility_depth,
+                self.pending_clip_rule,
+                self.initial_alpha_is_shape,
+                self.initial_text_knockout,
+                self.in_text_object,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        graphics_state = changes.pop("graphics_state", self.graphics_state)
+        resources = changes.pop("resources", self.resources)
+        text_matrix = changes.pop("text_matrix", self.text_matrix)
+        line_matrix = changes.pop("line_matrix", self.line_matrix)
+        graphics_stack_floor = changes.pop("graphics_stack_floor", self.graphics_stack_floor)
+        graphics_stack_len = changes.pop("graphics_stack_len", self.graphics_stack_len)
+        marked_content_stack_len = changes.pop(
+            "marked_content_stack_len", self.marked_content_stack_len
+        )
+        xobject_depth = changes.pop("xobject_depth", self.xobject_depth)
+        compatibility_depth = changes.pop("compatibility_depth", self.compatibility_depth)
+        pending_clip_rule = changes.pop("pending_clip_rule", self.pending_clip_rule)
+        initial_alpha_is_shape = changes.pop("initial_alpha_is_shape", self.initial_alpha_is_shape)
+        initial_text_knockout = changes.pop("initial_text_knockout", self.initial_text_knockout)
+        in_text_object = changes.pop("in_text_object", self.in_text_object)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            graphics_state,
+            resources,
+            text_matrix,
+            line_matrix,
+            graphics_stack_floor,
+            graphics_stack_len,
+            marked_content_stack_len,
+            xobject_depth,
+            compatibility_depth=compatibility_depth,
+            pending_clip_rule=pending_clip_rule,
+            initial_alpha_is_shape=initial_alpha_is_shape,
+            initial_text_knockout=initial_text_knockout,
+            in_text_object=in_text_object,
+        )
 
 
-@dataclass(slots=True)
 class ContentStreamFrame:
+    __slots__ = (
+        "stream",
+        "resources",
+        "ctm",
+        "depth",
+        "clip_bbox",
+        "group_alpha",
+        "group_isolated",
+        "group_knockout",
+        "form_bbox_operand",
+        "form_bbox",
+        "is_form",
+        "source_key",
+        "stream_key",
+        "lexer",
+        "old_state",
+    )
+
     stream: PdfStream
     resources: PdfDict
     ctm: Matrix
     depth: int
     clip_bbox: Rectangle | None
-    group_alpha: float | None = None
-    group_isolated: bool = field(default=True, kw_only=True)
-    group_knockout: bool = field(default=False, kw_only=True)
-    form_bbox_operand: object = field(default=None, kw_only=True)
-    form_bbox: Rectangle | None = field(default=None, kw_only=True)
-    is_form: bool = field(default=False, kw_only=True)
-    source_key: StreamKey | None = field(default=None, kw_only=True)
-    stream_key: StreamKey | None = field(default=None, kw_only=True)
-    lexer: PdfLexer | None = field(default=None, init=False)
-    old_state: StreamState | None = field(default=None, init=False)
+    group_alpha: float | None
+    group_isolated: bool
+    group_knockout: bool
+    form_bbox_operand: object
+    form_bbox: Rectangle | None
+    is_form: bool
+    source_key: StreamKey | None
+    stream_key: StreamKey | None
+    lexer: PdfLexer | None
+    old_state: StreamState | None
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "stream",
+        "resources",
+        "ctm",
+        "depth",
+        "clip_bbox",
+        "group_alpha",
+        "group_isolated",
+        "group_knockout",
+        "form_bbox_operand",
+        "form_bbox",
+        "is_form",
+        "source_key",
+        "stream_key",
+        "lexer",
+        "old_state",
+    )
+    __match_args__ = ("stream", "resources", "ctm", "depth", "clip_bbox", "group_alpha")
+
+    def __init__(
+        self,
+        stream: PdfStream,
+        resources: PdfDict,
+        ctm: Matrix,
+        depth: int,
+        clip_bbox: Rectangle | None,
+        group_alpha: float | None = None,
+        *,
+        group_isolated: bool = True,
+        group_knockout: bool = False,
+        form_bbox_operand: object = None,
+        form_bbox: Rectangle | None = None,
+        is_form: bool = False,
+        source_key: StreamKey | None = None,
+        stream_key: StreamKey | None = None,
+    ) -> None:
+        self.stream = stream
+        self.resources = resources
+        self.ctm = ctm
+        self.depth = depth
+        self.clip_bbox = clip_bbox
+        self.group_alpha = group_alpha
+        self.group_isolated = group_isolated
+        self.group_knockout = group_knockout
+        self.form_bbox_operand = form_bbox_operand
+        self.form_bbox = form_bbox
+        self.is_form = is_form
+        self.source_key = source_key
+        self.stream_key = stream_key
+        self.lexer = None
+        self.old_state = None
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"stream={self.stream!r}, "
+            f"resources={self.resources!r}, "
+            f"ctm={self.ctm!r}, "
+            f"depth={self.depth!r}, "
+            f"clip_bbox={self.clip_bbox!r}, "
+            f"group_alpha={self.group_alpha!r}, "
+            f"group_isolated={self.group_isolated!r}, "
+            f"group_knockout={self.group_knockout!r}, "
+            f"form_bbox_operand={self.form_bbox_operand!r}, "
+            f"form_bbox={self.form_bbox!r}, "
+            f"is_form={self.is_form!r}, "
+            f"source_key={self.source_key!r}, "
+            f"stream_key={self.stream_key!r}, "
+            f"lexer={self.lexer!r}, "
+            f"old_state={self.old_state!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.stream == other.stream
+            and self.resources == other.resources
+            and self.ctm == other.ctm
+            and self.depth == other.depth
+            and self.clip_bbox == other.clip_bbox
+            and self.group_alpha == other.group_alpha
+            and self.group_isolated == other.group_isolated
+            and self.group_knockout == other.group_knockout
+            and self.form_bbox_operand == other.form_bbox_operand
+            and self.form_bbox == other.form_bbox
+            and self.is_form == other.is_form
+            and self.source_key == other.source_key
+            and self.stream_key == other.stream_key
+            and self.lexer == other.lexer
+            and self.old_state == other.old_state
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        stream = changes.pop("stream", self.stream)
+        resources = changes.pop("resources", self.resources)
+        ctm = changes.pop("ctm", self.ctm)
+        depth = changes.pop("depth", self.depth)
+        clip_bbox = changes.pop("clip_bbox", self.clip_bbox)
+        group_alpha = changes.pop("group_alpha", self.group_alpha)
+        group_isolated = changes.pop("group_isolated", self.group_isolated)
+        group_knockout = changes.pop("group_knockout", self.group_knockout)
+        form_bbox_operand = changes.pop("form_bbox_operand", self.form_bbox_operand)
+        form_bbox = changes.pop("form_bbox", self.form_bbox)
+        is_form = changes.pop("is_form", self.is_form)
+        source_key = changes.pop("source_key", self.source_key)
+        stream_key = changes.pop("stream_key", self.stream_key)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            stream,
+            resources,
+            ctm,
+            depth,
+            clip_bbox,
+            group_alpha,
+            group_isolated=group_isolated,
+            group_knockout=group_knockout,
+            form_bbox_operand=form_bbox_operand,
+            form_bbox=form_bbox,
+            is_form=is_form,
+            source_key=source_key,
+            stream_key=stream_key,
+        )
 
 
 class ContentStreamExecutor:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from copy import copy
-from dataclasses import fields
 from typing import TYPE_CHECKING
 
 from core_pdf.impl._impl.capture.program import CapturedProgram
@@ -15,7 +14,7 @@ if TYPE_CHECKING:
     from core_pdf.impl._impl.capture.recording import RecordingMethods
 
 
-GRAPHICS_STATE_FIELDS = tuple(item.name for item in fields(GraphicsState))
+GRAPHICS_STATE_FIELDS = GraphicsState.__fields__
 
 
 def internal_state_key(value: object) -> object:

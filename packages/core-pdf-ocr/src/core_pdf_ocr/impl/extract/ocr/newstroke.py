@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, NoReturn, Self, cast
 
 import numpy
 
 from core_pdf.impl._impl.capture.records import CapturedDrawing, CapturedPath
 from core_pdf.impl._impl.model.runs import TextRun
 from core_pdf_ocr._vendor.newstroke_data import NEWSTROKE_ASCII, NEWSTROKE_ASCII_ALTERNATES
+
+internal_frozen_setattr = object.__setattr__
+
 
 FIT_ERROR = 0.08
 FIXED_ERROR = 0.10
@@ -25,15 +27,135 @@ MIN_CHARACTERS = 1_000
 MIN_SEQUENCES = 100
 
 
-@dataclass(frozen=True, slots=True)
 class NewstrokeDecode:
-    runs: tuple[TextRun, ...] = ()
-    candidate_segments: int = 0
-    matched_segments: int = 0
-    glyphs: int = 0
-    characters: int = 0
-    sequences: int = 0
-    maximum_error: float = 0.0
+    __slots__ = (
+        "runs",
+        "candidate_segments",
+        "matched_segments",
+        "glyphs",
+        "characters",
+        "sequences",
+        "maximum_error",
+    )
+
+    runs: tuple[TextRun, ...]
+    candidate_segments: int
+    matched_segments: int
+    glyphs: int
+    characters: int
+    sequences: int
+    maximum_error: float
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "runs",
+        "candidate_segments",
+        "matched_segments",
+        "glyphs",
+        "characters",
+        "sequences",
+        "maximum_error",
+    )
+    __match_args__ = (
+        "runs",
+        "candidate_segments",
+        "matched_segments",
+        "glyphs",
+        "characters",
+        "sequences",
+        "maximum_error",
+    )
+
+    def __init__(
+        self,
+        runs: tuple[TextRun, ...] = (),
+        candidate_segments: int = 0,
+        matched_segments: int = 0,
+        glyphs: int = 0,
+        characters: int = 0,
+        sequences: int = 0,
+        maximum_error: float = 0.0,
+    ) -> None:
+        internal_frozen_setattr(self, "runs", runs)
+        internal_frozen_setattr(self, "candidate_segments", candidate_segments)
+        internal_frozen_setattr(self, "matched_segments", matched_segments)
+        internal_frozen_setattr(self, "glyphs", glyphs)
+        internal_frozen_setattr(self, "characters", characters)
+        internal_frozen_setattr(self, "sequences", sequences)
+        internal_frozen_setattr(self, "maximum_error", maximum_error)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"runs={self.runs!r}, "
+            f"candidate_segments={self.candidate_segments!r}, "
+            f"matched_segments={self.matched_segments!r}, "
+            f"glyphs={self.glyphs!r}, "
+            f"characters={self.characters!r}, "
+            f"sequences={self.sequences!r}, "
+            f"maximum_error={self.maximum_error!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.runs == other.runs
+            and self.candidate_segments == other.candidate_segments
+            and self.matched_segments == other.matched_segments
+            and self.glyphs == other.glyphs
+            and self.characters == other.characters
+            and self.sequences == other.sequences
+            and self.maximum_error == other.maximum_error
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.runs,
+                self.candidate_segments,
+                self.matched_segments,
+                self.glyphs,
+                self.characters,
+                self.sequences,
+                self.maximum_error,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        runs = changes.pop("runs", self.runs)
+        candidate_segments = changes.pop("candidate_segments", self.candidate_segments)
+        matched_segments = changes.pop("matched_segments", self.matched_segments)
+        glyphs = changes.pop("glyphs", self.glyphs)
+        characters = changes.pop("characters", self.characters)
+        sequences = changes.pop("sequences", self.sequences)
+        maximum_error = changes.pop("maximum_error", self.maximum_error)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            runs,
+            candidate_segments,
+            matched_segments,
+            glyphs,
+            characters,
+            sequences,
+            maximum_error,
+        )
 
     @property
     def matched_coverage(self) -> float:
@@ -51,8 +173,18 @@ class NewstrokeDecode:
         )
 
 
-@dataclass(frozen=True, slots=True)
 class internal_Template:
+    __slots__ = (
+        "char",
+        "width",
+        "segments",
+        "continuity",
+        "solver",
+        "points",
+        "centroid_x",
+        "centroid_y",
+    )
+
     char: str
     width: float
     segments: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
@@ -62,16 +194,195 @@ class internal_Template:
     centroid_x: float
     centroid_y: float
 
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "char",
+        "width",
+        "segments",
+        "continuity",
+        "solver",
+        "points",
+        "centroid_x",
+        "centroid_y",
+    )
+    __match_args__ = (
+        "char",
+        "width",
+        "segments",
+        "continuity",
+        "solver",
+        "points",
+        "centroid_x",
+        "centroid_y",
+    )
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        char: str,
+        width: float,
+        segments: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+        continuity: tuple[bool, ...],
+        solver: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+        points: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+        centroid_x: float,
+        centroid_y: float,
+    ) -> None:
+        internal_frozen_setattr(self, "char", char)
+        internal_frozen_setattr(self, "width", width)
+        internal_frozen_setattr(self, "segments", segments)
+        internal_frozen_setattr(self, "continuity", continuity)
+        internal_frozen_setattr(self, "solver", solver)
+        internal_frozen_setattr(self, "points", points)
+        internal_frozen_setattr(self, "centroid_x", centroid_x)
+        internal_frozen_setattr(self, "centroid_y", centroid_y)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"char={self.char!r}, "
+            f"width={self.width!r}, "
+            f"segments={self.segments!r}, "
+            f"continuity={self.continuity!r}, "
+            f"solver={self.solver!r}, "
+            f"points={self.points!r}, "
+            f"centroid_x={self.centroid_x!r}, "
+            f"centroid_y={self.centroid_y!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.char == other.char
+            and self.width == other.width
+            and self.segments == other.segments
+            and self.continuity == other.continuity
+            and self.solver == other.solver
+            and self.points == other.points
+            and self.centroid_x == other.centroid_x
+            and self.centroid_y == other.centroid_y
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.char,
+                self.width,
+                self.segments,
+                self.continuity,
+                self.solver,
+                self.points,
+                self.centroid_x,
+                self.centroid_y,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        char = changes.pop("char", self.char)
+        width = changes.pop("width", self.width)
+        segments = changes.pop("segments", self.segments)
+        continuity = changes.pop("continuity", self.continuity)
+        solver = changes.pop("solver", self.solver)
+        points = changes.pop("points", self.points)
+        centroid_x = changes.pop("centroid_x", self.centroid_x)
+        centroid_y = changes.pop("centroid_y", self.centroid_y)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            char,
+            width,
+            segments,
+            continuity,
+            solver,
+            points,
+            centroid_x,
+            centroid_y,
+        )
+
+
 class internal_TemplateSet:
+    __slots__ = ("all", "robust", "by_first_delta")
+
     all: tuple[internal_Template, ...]
     robust: tuple[internal_Template, ...]
     by_first_delta: dict[tuple[int, int], tuple[internal_Template, ...]]
 
+    __fields__: ClassVar[tuple[str, ...]] = ("all", "robust", "by_first_delta")
+    __match_args__ = ("all", "robust", "by_first_delta")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        all: tuple[internal_Template, ...],
+        robust: tuple[internal_Template, ...],
+        by_first_delta: dict[tuple[int, int], tuple[internal_Template, ...]],
+    ) -> None:
+        internal_frozen_setattr(self, "all", all)
+        internal_frozen_setattr(self, "robust", robust)
+        internal_frozen_setattr(self, "by_first_delta", by_first_delta)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"all={self.all!r}, "
+            f"robust={self.robust!r}, "
+            f"by_first_delta={self.by_first_delta!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.all == other.all
+            and self.robust == other.robust
+            and self.by_first_delta == other.by_first_delta
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.all, self.robust, self.by_first_delta))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        all = changes.pop("all", self.all)
+        robust = changes.pop("robust", self.robust)
+        by_first_delta = changes.pop("by_first_delta", self.by_first_delta)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(all, robust, by_first_delta)
+
+
 class internal_Segment:
+    __slots__ = ("x0", "y0", "x1", "y1", "style", "line_width")
+
     x0: float
     y0: float
     x1: float
@@ -79,18 +390,159 @@ class internal_Segment:
     style: int
     line_width: float
 
+    __fields__: ClassVar[tuple[str, ...]] = ("x0", "y0", "x1", "y1", "style", "line_width")
+    __match_args__ = ("x0", "y0", "x1", "y1", "style", "line_width")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        style: int,
+        line_width: float,
+    ) -> None:
+        internal_frozen_setattr(self, "x0", x0)
+        internal_frozen_setattr(self, "y0", y0)
+        internal_frozen_setattr(self, "x1", x1)
+        internal_frozen_setattr(self, "y1", y1)
+        internal_frozen_setattr(self, "style", style)
+        internal_frozen_setattr(self, "line_width", line_width)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"x0={self.x0!r}, "
+            f"y0={self.y0!r}, "
+            f"x1={self.x1!r}, "
+            f"y1={self.y1!r}, "
+            f"style={self.style!r}, "
+            f"line_width={self.line_width!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.x0 == other.x0
+            and self.y0 == other.y0
+            and self.x1 == other.x1
+            and self.y1 == other.y1
+            and self.style == other.style
+            and self.line_width == other.line_width
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.x0, self.y0, self.x1, self.y1, self.style, self.line_width))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        x0 = changes.pop("x0", self.x0)
+        y0 = changes.pop("y0", self.y0)
+        x1 = changes.pop("x1", self.x1)
+        y1 = changes.pop("y1", self.y1)
+        style = changes.pop("style", self.style)
+        line_width = changes.pop("line_width", self.line_width)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(x0, y0, x1, y1, style, line_width)
+
+
 class internal_Transform:
+    __slots__ = ("matrix", "inverse", "scale", "x_scale", "y_scale")
+
     matrix: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
     inverse: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
     scale: float
     x_scale: float
     y_scale: float
 
+    __fields__: ClassVar[tuple[str, ...]] = ("matrix", "inverse", "scale", "x_scale", "y_scale")
+    __match_args__ = ("matrix", "inverse", "scale", "x_scale", "y_scale")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        matrix: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+        inverse: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+        scale: float,
+        x_scale: float,
+        y_scale: float,
+    ) -> None:
+        internal_frozen_setattr(self, "matrix", matrix)
+        internal_frozen_setattr(self, "inverse", inverse)
+        internal_frozen_setattr(self, "scale", scale)
+        internal_frozen_setattr(self, "x_scale", x_scale)
+        internal_frozen_setattr(self, "y_scale", y_scale)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"matrix={self.matrix!r}, "
+            f"inverse={self.inverse!r}, "
+            f"scale={self.scale!r}, "
+            f"x_scale={self.x_scale!r}, "
+            f"y_scale={self.y_scale!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.matrix == other.matrix
+            and self.inverse == other.inverse
+            and self.scale == other.scale
+            and self.x_scale == other.x_scale
+            and self.y_scale == other.y_scale
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.matrix, self.inverse, self.scale, self.x_scale, self.y_scale))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        matrix = changes.pop("matrix", self.matrix)
+        inverse = changes.pop("inverse", self.inverse)
+        scale = changes.pop("scale", self.scale)
+        x_scale = changes.pop("x_scale", self.x_scale)
+        y_scale = changes.pop("y_scale", self.y_scale)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(matrix, inverse, scale, x_scale, y_scale)
+
+
 class internal_Match:
+    __slots__ = ("char", "start", "stop", "width", "transform", "translation", "error")
+
     char: str
     start: int
     stop: int
@@ -98,6 +550,101 @@ class internal_Match:
     transform: internal_Transform
     translation: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
     error: float
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "char",
+        "start",
+        "stop",
+        "width",
+        "transform",
+        "translation",
+        "error",
+    )
+    __match_args__ = ("char", "start", "stop", "width", "transform", "translation", "error")
+
+    def __init__(
+        self,
+        char: str,
+        start: int,
+        stop: int,
+        width: float,
+        transform: internal_Transform,
+        translation: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+        error: float,
+    ) -> None:
+        internal_frozen_setattr(self, "char", char)
+        internal_frozen_setattr(self, "start", start)
+        internal_frozen_setattr(self, "stop", stop)
+        internal_frozen_setattr(self, "width", width)
+        internal_frozen_setattr(self, "transform", transform)
+        internal_frozen_setattr(self, "translation", translation)
+        internal_frozen_setattr(self, "error", error)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"char={self.char!r}, "
+            f"start={self.start!r}, "
+            f"stop={self.stop!r}, "
+            f"width={self.width!r}, "
+            f"transform={self.transform!r}, "
+            f"translation={self.translation!r}, "
+            f"error={self.error!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.char == other.char
+            and self.start == other.start
+            and self.stop == other.stop
+            and self.width == other.width
+            and self.transform == other.transform
+            and self.translation == other.translation
+            and self.error == other.error
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.char,
+                self.start,
+                self.stop,
+                self.width,
+                self.transform,
+                self.translation,
+                self.error,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        char = changes.pop("char", self.char)
+        start = changes.pop("start", self.start)
+        stop = changes.pop("stop", self.stop)
+        width = changes.pop("width", self.width)
+        transform = changes.pop("transform", self.transform)
+        translation = changes.pop("translation", self.translation)
+        error = changes.pop("error", self.error)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(char, start, stop, width, transform, translation, error)
 
 
 def internal_templates() -> internal_TemplateSet:

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from functools import cache, lru_cache
-from typing import Any
+from typing import Any, ClassVar, NoReturn, Self
 
 import imagecodecs
 import numpy
@@ -14,6 +13,9 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
     ColorRendering,
     use_black_point_compensation,
 )
+
+internal_frozen_setattr = object.__setattr__
+
 
 ByteSamples = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 
@@ -58,11 +60,50 @@ def internal_srgb_profile() -> bytes:
     return bytes(imagecodecs.cms_profile("srgb"))
 
 
-@dataclass(frozen=True, slots=True, eq=False)
 class IccTransform:
+    __slots__ = ("profile", "color_space", "input_channels")
+
     profile: bytes
     color_space: str
     input_channels: int
+
+    __fields__: ClassVar[tuple[str, ...]] = ("profile", "color_space", "input_channels")
+    __match_args__ = ("profile", "color_space", "input_channels")
+
+    def __init__(self, profile: bytes, color_space: str, input_channels: int) -> None:
+        internal_frozen_setattr(self, "profile", profile)
+        internal_frozen_setattr(self, "color_space", color_space)
+        internal_frozen_setattr(self, "input_channels", input_channels)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"profile={self.profile!r}, "
+            f"color_space={self.color_space!r}, "
+            f"input_channels={self.input_channels!r}"
+            ")"
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        profile = changes.pop("profile", self.profile)
+        color_space = changes.pop("color_space", self.color_space)
+        input_channels = changes.pop("input_channels", self.input_channels)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(profile, color_space, input_channels)
 
     @property
     def alternate_color_space(self) -> str:

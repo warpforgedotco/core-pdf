@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass
 from functools import cache
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_adobe_fonts.cmap.ranges import (
     code_in_ranges,
@@ -20,10 +20,53 @@ from core_pdf.impl._impl.fonts.cmap_resources import (
     unicode_scalar_from_cmap_code,
 )
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class CompactCMap:
+    __slots__ = ("effective_codes_by_cid",)
+
     effective_codes_by_cid: dict[int, tuple[bytes, ...]]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("effective_codes_by_cid",)
+    __match_args__ = ("effective_codes_by_cid",)
+
+    def __init__(self, effective_codes_by_cid: dict[int, tuple[bytes, ...]]) -> None:
+        internal_frozen_setattr(self, "effective_codes_by_cid", effective_codes_by_cid)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}(effective_codes_by_cid={self.effective_codes_by_cid!r})"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.effective_codes_by_cid == other.effective_codes_by_cid
+
+    def __hash__(self) -> int:
+        return hash((self.effective_codes_by_cid,))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        effective_codes_by_cid = changes.pop("effective_codes_by_cid", self.effective_codes_by_cid)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(effective_codes_by_cid)
 
     def codes_for_cid(self, cid: int) -> tuple[bytes, ...]:
         return self.effective_codes_by_cid.get(cid, ())

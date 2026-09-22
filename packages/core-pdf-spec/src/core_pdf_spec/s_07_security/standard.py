@@ -6,11 +6,10 @@ import stringprep
 import struct
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from hashlib import md5, sha256, sha384, sha512
 from hmac import compare_digest
 from types import MappingProxyType
-from typing import Literal, cast
+from typing import Any, ClassVar, Literal, NoReturn, Self, cast
 
 from core_pdf_spec.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.decode_spec import normalize_stream_decode_spec
@@ -29,6 +28,9 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
 )
 from core_pdf_spec.types import MISSING
+
+internal_frozen_setattr = object.__setattr__
+
 
 internal_CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
 
@@ -55,8 +57,27 @@ internal_PDF_MAC_PERMISSION_BIT = 13
 internal_PDF_MAC_PERMISSION_MASK = 1 << (internal_PDF_MAC_PERMISSION_BIT - 1)
 
 
-@dataclass(frozen=True, slots=True)
 class StandardSecurityConfig:
+    __slots__ = (
+        "version",
+        "revision",
+        "permissions",
+        "owner_entry",
+        "user_entry",
+        "length_bits",
+        "document_id",
+        "encrypt_metadata",
+        "stream_filter",
+        "string_filter",
+        "embedded_file_filter",
+        "crypt_filters",
+        "owner_encrypted_key",
+        "user_encrypted_key",
+        "encrypted_permissions",
+        "kdf_salt",
+        "pdf_mac_required",
+    )
+
     version: int
     revision: int
     permissions: int
@@ -72,14 +93,256 @@ class StandardSecurityConfig:
     owner_encrypted_key: bytes
     user_encrypted_key: bytes
     encrypted_permissions: bytes
-    kdf_salt: bytes | None = None
-    pdf_mac_required: bool = False
+    kdf_salt: bytes | None
+    pdf_mac_required: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "version",
+        "revision",
+        "permissions",
+        "owner_entry",
+        "user_entry",
+        "length_bits",
+        "document_id",
+        "encrypt_metadata",
+        "stream_filter",
+        "string_filter",
+        "embedded_file_filter",
+        "crypt_filters",
+        "owner_encrypted_key",
+        "user_encrypted_key",
+        "encrypted_permissions",
+        "kdf_salt",
+        "pdf_mac_required",
+    )
+    __match_args__ = (
+        "version",
+        "revision",
+        "permissions",
+        "owner_entry",
+        "user_entry",
+        "length_bits",
+        "document_id",
+        "encrypt_metadata",
+        "stream_filter",
+        "string_filter",
+        "embedded_file_filter",
+        "crypt_filters",
+        "owner_encrypted_key",
+        "user_encrypted_key",
+        "encrypted_permissions",
+        "kdf_salt",
+        "pdf_mac_required",
+    )
+
+    def __init__(
+        self,
+        version: int,
+        revision: int,
+        permissions: int,
+        owner_entry: bytes,
+        user_entry: bytes,
+        length_bits: int,
+        document_id: bytes,
+        encrypt_metadata: bool,
+        stream_filter: str,
+        string_filter: str,
+        embedded_file_filter: str,
+        crypt_filters: Mapping[str, internal_CryptMethod],
+        owner_encrypted_key: bytes,
+        user_encrypted_key: bytes,
+        encrypted_permissions: bytes,
+        kdf_salt: bytes | None = None,
+        pdf_mac_required: bool = False,
+    ) -> None:
+        internal_frozen_setattr(self, "version", version)
+        internal_frozen_setattr(self, "revision", revision)
+        internal_frozen_setattr(self, "permissions", permissions)
+        internal_frozen_setattr(self, "owner_entry", owner_entry)
+        internal_frozen_setattr(self, "user_entry", user_entry)
+        internal_frozen_setattr(self, "length_bits", length_bits)
+        internal_frozen_setattr(self, "document_id", document_id)
+        internal_frozen_setattr(self, "encrypt_metadata", encrypt_metadata)
+        internal_frozen_setattr(self, "stream_filter", stream_filter)
+        internal_frozen_setattr(self, "string_filter", string_filter)
+        internal_frozen_setattr(self, "embedded_file_filter", embedded_file_filter)
+        internal_frozen_setattr(self, "crypt_filters", crypt_filters)
+        internal_frozen_setattr(self, "owner_encrypted_key", owner_encrypted_key)
+        internal_frozen_setattr(self, "user_encrypted_key", user_encrypted_key)
+        internal_frozen_setattr(self, "encrypted_permissions", encrypted_permissions)
+        internal_frozen_setattr(self, "kdf_salt", kdf_salt)
+        internal_frozen_setattr(self, "pdf_mac_required", pdf_mac_required)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"version={self.version!r}, "
+            f"revision={self.revision!r}, "
+            f"permissions={self.permissions!r}, "
+            f"owner_entry={self.owner_entry!r}, "
+            f"user_entry={self.user_entry!r}, "
+            f"length_bits={self.length_bits!r}, "
+            f"document_id={self.document_id!r}, "
+            f"encrypt_metadata={self.encrypt_metadata!r}, "
+            f"stream_filter={self.stream_filter!r}, "
+            f"string_filter={self.string_filter!r}, "
+            f"embedded_file_filter={self.embedded_file_filter!r}, "
+            f"crypt_filters={self.crypt_filters!r}, "
+            f"owner_encrypted_key={self.owner_encrypted_key!r}, "
+            f"user_encrypted_key={self.user_encrypted_key!r}, "
+            f"encrypted_permissions={self.encrypted_permissions!r}, "
+            f"kdf_salt={self.kdf_salt!r}, "
+            f"pdf_mac_required={self.pdf_mac_required!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.version == other.version
+            and self.revision == other.revision
+            and self.permissions == other.permissions
+            and self.owner_entry == other.owner_entry
+            and self.user_entry == other.user_entry
+            and self.length_bits == other.length_bits
+            and self.document_id == other.document_id
+            and self.encrypt_metadata == other.encrypt_metadata
+            and self.stream_filter == other.stream_filter
+            and self.string_filter == other.string_filter
+            and self.embedded_file_filter == other.embedded_file_filter
+            and self.crypt_filters == other.crypt_filters
+            and self.owner_encrypted_key == other.owner_encrypted_key
+            and self.user_encrypted_key == other.user_encrypted_key
+            and self.encrypted_permissions == other.encrypted_permissions
+            and self.kdf_salt == other.kdf_salt
+            and self.pdf_mac_required == other.pdf_mac_required
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.version,
+                self.revision,
+                self.permissions,
+                self.owner_entry,
+                self.user_entry,
+                self.length_bits,
+                self.document_id,
+                self.encrypt_metadata,
+                self.stream_filter,
+                self.string_filter,
+                self.embedded_file_filter,
+                self.crypt_filters,
+                self.owner_encrypted_key,
+                self.user_encrypted_key,
+                self.encrypted_permissions,
+                self.kdf_salt,
+                self.pdf_mac_required,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        version = changes.pop("version", self.version)
+        revision = changes.pop("revision", self.revision)
+        permissions = changes.pop("permissions", self.permissions)
+        owner_entry = changes.pop("owner_entry", self.owner_entry)
+        user_entry = changes.pop("user_entry", self.user_entry)
+        length_bits = changes.pop("length_bits", self.length_bits)
+        document_id = changes.pop("document_id", self.document_id)
+        encrypt_metadata = changes.pop("encrypt_metadata", self.encrypt_metadata)
+        stream_filter = changes.pop("stream_filter", self.stream_filter)
+        string_filter = changes.pop("string_filter", self.string_filter)
+        embedded_file_filter = changes.pop("embedded_file_filter", self.embedded_file_filter)
+        crypt_filters = changes.pop("crypt_filters", self.crypt_filters)
+        owner_encrypted_key = changes.pop("owner_encrypted_key", self.owner_encrypted_key)
+        user_encrypted_key = changes.pop("user_encrypted_key", self.user_encrypted_key)
+        encrypted_permissions = changes.pop("encrypted_permissions", self.encrypted_permissions)
+        kdf_salt = changes.pop("kdf_salt", self.kdf_salt)
+        pdf_mac_required = changes.pop("pdf_mac_required", self.pdf_mac_required)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            version,
+            revision,
+            permissions,
+            owner_entry,
+            user_entry,
+            length_bits,
+            document_id,
+            encrypt_metadata,
+            stream_filter,
+            string_filter,
+            embedded_file_filter,
+            crypt_filters,
+            owner_encrypted_key,
+            user_encrypted_key,
+            encrypted_permissions,
+            kdf_salt,
+            pdf_mac_required,
+        )
 
 
-@dataclass(frozen=True, slots=True)
 class StandardSecurityHandler:
+    __slots__ = ("config", "file_key")
+
     config: StandardSecurityConfig
     file_key: bytes
+
+    __fields__: ClassVar[tuple[str, ...]] = ("config", "file_key")
+    __match_args__ = ("config", "file_key")
+
+    def __init__(self, config: StandardSecurityConfig, file_key: bytes) -> None:
+        internal_frozen_setattr(self, "config", config)
+        internal_frozen_setattr(self, "file_key", file_key)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(config={self.config!r}, file_key={self.file_key!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.config == other.config and self.file_key == other.file_key
+
+    def __hash__(self) -> int:
+        return hash((self.config, self.file_key))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        config = changes.pop("config", self.config)
+        file_key = changes.pop("file_key", self.file_key)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(config, file_key)
 
     def decrypt(
         self,

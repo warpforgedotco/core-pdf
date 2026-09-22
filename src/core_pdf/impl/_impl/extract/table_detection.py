@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from collections import Counter, defaultdict
-from dataclasses import dataclass, replace
+from copy import replace
 from itertools import combinations
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
@@ -40,13 +41,16 @@ from core_pdf.impl._impl.model.geometry import bbox_union, interval_overlap, ove
 from core_pdf.impl._impl.output.model import Table, TableCell
 from core_pdf.impl._impl.runtime.array_views import finite_median
 
+internal_frozen_setattr = object.__setattr__
+
 
 def internal_table_vertical_sort_key(table: Table) -> float:
     return -(table.bbox or (0.0, 0.0, 0.0, 0.0))[3]
 
 
-@dataclass(frozen=True, slots=True)
 class internal_ObservationCoordinates:
+    __slots__ = ("x0", "y0", "x1", "y1", "y_centers", "widths", "heights", "sequences")
+
     x0: list[float]
     y0: list[float]
     x1: list[float]
@@ -55,6 +59,108 @@ class internal_ObservationCoordinates:
     widths: list[float]
     heights: list[float]
     sequences: list[int]
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "x0",
+        "y0",
+        "x1",
+        "y1",
+        "y_centers",
+        "widths",
+        "heights",
+        "sequences",
+    )
+    __match_args__ = ("x0", "y0", "x1", "y1", "y_centers", "widths", "heights", "sequences")
+
+    def __init__(
+        self,
+        x0: list[float],
+        y0: list[float],
+        x1: list[float],
+        y1: list[float],
+        y_centers: list[float],
+        widths: list[float],
+        heights: list[float],
+        sequences: list[int],
+    ) -> None:
+        internal_frozen_setattr(self, "x0", x0)
+        internal_frozen_setattr(self, "y0", y0)
+        internal_frozen_setattr(self, "x1", x1)
+        internal_frozen_setattr(self, "y1", y1)
+        internal_frozen_setattr(self, "y_centers", y_centers)
+        internal_frozen_setattr(self, "widths", widths)
+        internal_frozen_setattr(self, "heights", heights)
+        internal_frozen_setattr(self, "sequences", sequences)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"x0={self.x0!r}, "
+            f"y0={self.y0!r}, "
+            f"x1={self.x1!r}, "
+            f"y1={self.y1!r}, "
+            f"y_centers={self.y_centers!r}, "
+            f"widths={self.widths!r}, "
+            f"heights={self.heights!r}, "
+            f"sequences={self.sequences!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.x0 == other.x0
+            and self.y0 == other.y0
+            and self.x1 == other.x1
+            and self.y1 == other.y1
+            and self.y_centers == other.y_centers
+            and self.widths == other.widths
+            and self.heights == other.heights
+            and self.sequences == other.sequences
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.x0,
+                self.y0,
+                self.x1,
+                self.y1,
+                self.y_centers,
+                self.widths,
+                self.heights,
+                self.sequences,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        x0 = changes.pop("x0", self.x0)
+        y0 = changes.pop("y0", self.y0)
+        x1 = changes.pop("x1", self.x1)
+        y1 = changes.pop("y1", self.y1)
+        y_centers = changes.pop("y_centers", self.y_centers)
+        widths = changes.pop("widths", self.widths)
+        heights = changes.pop("heights", self.heights)
+        sequences = changes.pop("sequences", self.sequences)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(x0, y0, x1, y1, y_centers, widths, heights, sequences)
 
     @classmethod
     def from_observations(cls, observations: ObservationBatch) -> internal_ObservationCoordinates:
@@ -71,13 +177,101 @@ class internal_ObservationCoordinates:
         )
 
 
-@dataclass(frozen=True, slots=True)
 class internal_TableAnalysis:
+    __slots__ = ("observations", "coordinates", "text_rows", "row_centers", "candidate_columns")
+
     observations: ObservationBatch
     coordinates: internal_ObservationCoordinates
     text_rows: list[list[int]]
     row_centers: list[float]
     candidate_columns: list[list[tuple[int, int]]]
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "observations",
+        "coordinates",
+        "text_rows",
+        "row_centers",
+        "candidate_columns",
+    )
+    __match_args__ = (
+        "observations",
+        "coordinates",
+        "text_rows",
+        "row_centers",
+        "candidate_columns",
+    )
+
+    def __init__(
+        self,
+        observations: ObservationBatch,
+        coordinates: internal_ObservationCoordinates,
+        text_rows: list[list[int]],
+        row_centers: list[float],
+        candidate_columns: list[list[tuple[int, int]]],
+    ) -> None:
+        internal_frozen_setattr(self, "observations", observations)
+        internal_frozen_setattr(self, "coordinates", coordinates)
+        internal_frozen_setattr(self, "text_rows", text_rows)
+        internal_frozen_setattr(self, "row_centers", row_centers)
+        internal_frozen_setattr(self, "candidate_columns", candidate_columns)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"observations={self.observations!r}, "
+            f"coordinates={self.coordinates!r}, "
+            f"text_rows={self.text_rows!r}, "
+            f"row_centers={self.row_centers!r}, "
+            f"candidate_columns={self.candidate_columns!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.observations == other.observations
+            and self.coordinates == other.coordinates
+            and self.text_rows == other.text_rows
+            and self.row_centers == other.row_centers
+            and self.candidate_columns == other.candidate_columns
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.observations,
+                self.coordinates,
+                self.text_rows,
+                self.row_centers,
+                self.candidate_columns,
+            )
+        )
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        observations = changes.pop("observations", self.observations)
+        coordinates = changes.pop("coordinates", self.coordinates)
+        text_rows = changes.pop("text_rows", self.text_rows)
+        row_centers = changes.pop("row_centers", self.row_centers)
+        candidate_columns = changes.pop("candidate_columns", self.candidate_columns)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(observations, coordinates, text_rows, row_centers, candidate_columns)
 
     @classmethod
     def build(cls, observations: ObservationBatch, page_width: float) -> internal_TableAnalysis:

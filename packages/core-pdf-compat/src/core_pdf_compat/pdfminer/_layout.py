@@ -2,21 +2,117 @@ from __future__ import annotations
 
 import heapq
 from collections.abc import Iterator
-from dataclasses import dataclass, field
 from math import ceil
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl._impl.model.geometry import bbox_union
 
 
-@dataclass(slots=True)
 class LAParams:
-    line_overlap: float = 0.5
-    char_margin: float = 2.0
-    line_margin: float = 0.5
-    word_margin: float = 0.1
-    boxes_flow: float | None = 0.5
-    detect_vertical: bool = False
-    all_texts: bool = False
+    __slots__ = (
+        "line_overlap",
+        "char_margin",
+        "line_margin",
+        "word_margin",
+        "boxes_flow",
+        "detect_vertical",
+        "all_texts",
+    )
+
+    line_overlap: float
+    char_margin: float
+    line_margin: float
+    word_margin: float
+    boxes_flow: float | None
+    detect_vertical: bool
+    all_texts: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "line_overlap",
+        "char_margin",
+        "line_margin",
+        "word_margin",
+        "boxes_flow",
+        "detect_vertical",
+        "all_texts",
+    )
+    __match_args__ = (
+        "line_overlap",
+        "char_margin",
+        "line_margin",
+        "word_margin",
+        "boxes_flow",
+        "detect_vertical",
+        "all_texts",
+    )
+
+    def __init__(
+        self,
+        line_overlap: float = 0.5,
+        char_margin: float = 2.0,
+        line_margin: float = 0.5,
+        word_margin: float = 0.1,
+        boxes_flow: float | None = 0.5,
+        detect_vertical: bool = False,
+        all_texts: bool = False,
+    ) -> None:
+        self.line_overlap = line_overlap
+        self.char_margin = char_margin
+        self.line_margin = line_margin
+        self.word_margin = word_margin
+        self.boxes_flow = boxes_flow
+        self.detect_vertical = detect_vertical
+        self.all_texts = all_texts
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"line_overlap={self.line_overlap!r}, "
+            f"char_margin={self.char_margin!r}, "
+            f"line_margin={self.line_margin!r}, "
+            f"word_margin={self.word_margin!r}, "
+            f"boxes_flow={self.boxes_flow!r}, "
+            f"detect_vertical={self.detect_vertical!r}, "
+            f"all_texts={self.all_texts!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.line_overlap == other.line_overlap
+            and self.char_margin == other.char_margin
+            and self.line_margin == other.line_margin
+            and self.word_margin == other.word_margin
+            and self.boxes_flow == other.boxes_flow
+            and self.detect_vertical == other.detect_vertical
+            and self.all_texts == other.all_texts
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        line_overlap = changes.pop("line_overlap", self.line_overlap)
+        char_margin = changes.pop("char_margin", self.char_margin)
+        line_margin = changes.pop("line_margin", self.line_margin)
+        word_margin = changes.pop("word_margin", self.word_margin)
+        boxes_flow = changes.pop("boxes_flow", self.boxes_flow)
+        detect_vertical = changes.pop("detect_vertical", self.detect_vertical)
+        all_texts = changes.pop("all_texts", self.all_texts)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            line_overlap,
+            char_margin,
+            line_margin,
+            word_margin,
+            boxes_flow,
+            detect_vertical,
+            all_texts,
+        )
 
 
 class LTItem:
@@ -24,11 +120,37 @@ class LTItem:
         del laparams
 
 
-@dataclass(slots=True)
 class LTComponent(LTItem):
+    __slots__ = ("bbox",)
+
     bbox: tuple[float, float, float, float]
 
-    def __post_init__(self) -> None:
+    __fields__: ClassVar[tuple[str, ...]] = ("bbox",)
+    __match_args__ = ("bbox",)
+
+    def __init__(self, bbox: tuple[float, float, float, float]) -> None:
+        self.bbox = bbox
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(bbox={self.bbox!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.bbox == other.bbox
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        bbox = changes.pop("bbox", self.bbox)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(bbox)
+
+    def _post_init(self) -> None:
         self.x0, self.y0, self.x1, self.y1 = self.bbox
         self.width = self.x1 - self.x0
         self.height = self.y1 - self.y0
@@ -73,19 +195,94 @@ class LTText(LTItem):
         raise NotImplementedError
 
 
-@dataclass(slots=True)
 class LTAnno(LTText):
+    __slots__ = ("text",)
+
     text: str
+
+    __fields__: ClassVar[tuple[str, ...]] = ("text",)
+    __match_args__ = ("text",)
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(text={self.text!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.text == other.text
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(text)
 
     def get_text(self) -> str:
         return self.text
 
 
-@dataclass(slots=True)
 class LTChar(LTComponent, LTText):
-    text: str = ""
-    fontname: str | None = None
-    size: float = 0.0
+    __slots__ = ("text", "fontname", "size")
+
+    text: str
+    fontname: str | None
+    size: float
+
+    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "text", "fontname", "size")
+    __match_args__ = ("bbox", "text", "fontname", "size")
+
+    def __init__(
+        self,
+        bbox: tuple[float, float, float, float],
+        text: str = "",
+        fontname: str | None = None,
+        size: float = 0.0,
+    ) -> None:
+        self.bbox = bbox
+        self.text = text
+        self.fontname = fontname
+        self.size = size
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"bbox={self.bbox!r}, "
+            f"text={self.text!r}, "
+            f"fontname={self.fontname!r}, "
+            f"size={self.size!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.bbox == other.bbox
+            and self.text == other.text
+            and self.fontname == other.fontname
+            and self.size == other.size
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        bbox = changes.pop("bbox", self.bbox)
+        text = changes.pop("text", self.text)
+        fontname = changes.pop("fontname", self.fontname)
+        size = changes.pop("size", self.size)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(bbox, text, fontname, size)
 
     def get_text(self) -> str:
         return self.text
@@ -103,9 +300,41 @@ class LTChar(LTComponent, LTText):
         return (1.0, 0.0, 0.0, 1.0, self.x0, self.y0)
 
 
-@dataclass(slots=True)
 class LTTextLine(LTComponent, LTText):
-    _objs: list[LTText | LTChar] = field(default_factory=list)
+    __slots__ = ("_objs",)
+
+    _objs: list[LTText | LTChar]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "_objs")
+    __match_args__ = ("bbox", "_objs")
+
+    def __init__(
+        self,
+        bbox: tuple[float, float, float, float],
+        _objs: list[LTText | LTChar] | None = None,
+    ) -> None:
+        self.bbox = bbox
+        self._objs = [] if _objs is None else _objs
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(bbox={self.bbox!r}, _objs={self._objs!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.bbox == other.bbox and self._objs == other._objs
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        bbox = changes.pop("bbox", self.bbox)
+        _objs = changes.pop("_objs", self._objs)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(bbox, _objs)
 
     def __iter__(self) -> Iterator[LTText | LTChar]:
         return iter(self._objs)
@@ -122,9 +351,41 @@ class LTTextLineVertical(LTTextLine):
     pass
 
 
-@dataclass(slots=True)
 class LTTextBox(LTComponent, LTText):
-    _objs: list[LTTextLine] = field(default_factory=list)
+    __slots__ = ("_objs",)
+
+    _objs: list[LTTextLine]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "_objs")
+    __match_args__ = ("bbox", "_objs")
+
+    def __init__(
+        self,
+        bbox: tuple[float, float, float, float],
+        _objs: list[LTTextLine] | None = None,
+    ) -> None:
+        self.bbox = bbox
+        self._objs = [] if _objs is None else _objs
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(bbox={self.bbox!r}, _objs={self._objs!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.bbox == other.bbox and self._objs == other._objs
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        bbox = changes.pop("bbox", self.bbox)
+        _objs = changes.pop("_objs", self._objs)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(bbox, _objs)
 
     def __iter__(self) -> Iterator[LTTextLine]:
         return iter(self._objs)
@@ -144,27 +405,168 @@ class LTTextBoxVertical(LTTextBox):
 LTTextContainer = LTTextBox
 
 
-@dataclass(slots=True)
 class LTImage(LTComponent):
-    name: str = ""
-    stream: object | None = None
+    __slots__ = ("name", "stream")
+
+    name: str
+    stream: object | None
+
+    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "name", "stream")
+    __match_args__ = ("bbox", "name", "stream")
+
+    def __init__(
+        self,
+        bbox: tuple[float, float, float, float],
+        name: str = "",
+        stream: object | None = None,
+    ) -> None:
+        self.bbox = bbox
+        self.name = name
+        self.stream = stream
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"bbox={self.bbox!r}, "
+            f"name={self.name!r}, "
+            f"stream={self.stream!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.bbox == other.bbox and self.name == other.name and self.stream == other.stream
+
+    __hash__ = None
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        bbox = changes.pop("bbox", self.bbox)
+        name = changes.pop("name", self.name)
+        stream = changes.pop("stream", self.stream)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(bbox, name, stream)
 
 
-@dataclass(slots=True)
 class LTFigure(LTComponent):
-    name: str = ""
-    _objs: list[LTItem] = field(default_factory=list)
-    text_snippets: tuple[str, ...] = ()
+    __slots__ = ("name", "_objs", "text_snippets")
+
+    name: str
+    _objs: list[LTItem]
+    text_snippets: tuple[str, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "name", "_objs", "text_snippets")
+    __match_args__ = ("bbox", "name", "_objs", "text_snippets")
+
+    def __init__(
+        self,
+        bbox: tuple[float, float, float, float],
+        name: str = "",
+        _objs: list[LTItem] | None = None,
+        text_snippets: tuple[str, ...] = (),
+    ) -> None:
+        self.bbox = bbox
+        self.name = name
+        self._objs = [] if _objs is None else _objs
+        self.text_snippets = text_snippets
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"bbox={self.bbox!r}, "
+            f"name={self.name!r}, "
+            f"_objs={self._objs!r}, "
+            f"text_snippets={self.text_snippets!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.bbox == other.bbox
+            and self.name == other.name
+            and self._objs == other._objs
+            and self.text_snippets == other.text_snippets
+        )
+
+    __hash__ = None
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        bbox = changes.pop("bbox", self.bbox)
+        name = changes.pop("name", self.name)
+        _objs = changes.pop("_objs", self._objs)
+        text_snippets = changes.pop("text_snippets", self.text_snippets)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(bbox, name, _objs, text_snippets)
 
     def __iter__(self) -> Iterator[LTItem]:
         return iter(self._objs)
 
 
-@dataclass(slots=True)
 class LTPage(LTComponent):
+    __slots__ = ("pageid", "rotate", "_objs")
+
     pageid: int
-    rotate: float = 0
-    _objs: list[LTItem] = field(default_factory=list)
+    rotate: float
+    _objs: list[LTItem]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "pageid", "rotate", "_objs")
+    __match_args__ = ("bbox", "pageid", "rotate", "_objs")
+
+    def __init__(
+        self,
+        bbox: tuple[float, float, float, float],
+        pageid: int,
+        rotate: float = 0,
+        _objs: list[LTItem] | None = None,
+    ) -> None:
+        self.bbox = bbox
+        self.pageid = pageid
+        self.rotate = rotate
+        self._objs = [] if _objs is None else _objs
+        self._post_init()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"bbox={self.bbox!r}, "
+            f"pageid={self.pageid!r}, "
+            f"rotate={self.rotate!r}, "
+            f"_objs={self._objs!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.bbox == other.bbox
+            and self.pageid == other.pageid
+            and self.rotate == other.rotate
+            and self._objs == other._objs
+        )
+
+    __hash__ = None
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        bbox = changes.pop("bbox", self.bbox)
+        pageid = changes.pop("pageid", self.pageid)
+        rotate = changes.pop("rotate", self.rotate)
+        _objs = changes.pop("_objs", self._objs)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(bbox, pageid, rotate, _objs)
 
     def __iter__(self) -> Iterator[LTItem]:
         return iter(self._objs)
@@ -417,11 +819,55 @@ def _group_lines(
     return boxes
 
 
-@dataclass(slots=True)
 class _TextGroup:
+    __slots__ = ("children", "bbox", "vertical")
+
     children: list[LTTextBox | _TextGroup]
     bbox: tuple[float, float, float, float]
-    vertical: bool = False
+    vertical: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = ("children", "bbox", "vertical")
+    __match_args__ = ("children", "bbox", "vertical")
+
+    def __init__(
+        self,
+        children: list[LTTextBox | _TextGroup],
+        bbox: tuple[float, float, float, float],
+        vertical: bool = False,
+    ) -> None:
+        self.children = children
+        self.bbox = bbox
+        self.vertical = vertical
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"children={self.children!r}, "
+            f"bbox={self.bbox!r}, "
+            f"vertical={self.vertical!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.children == other.children
+            and self.bbox == other.bbox
+            and self.vertical == other.vertical
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        children = changes.pop("children", self.children)
+        bbox = changes.pop("bbox", self.bbox)
+        vertical = changes.pop("vertical", self.vertical)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(children, bbox, vertical)
 
 
 def _reading_order(

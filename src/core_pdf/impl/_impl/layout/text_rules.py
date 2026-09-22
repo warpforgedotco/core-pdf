@@ -8,13 +8,16 @@ import re
 import struct
 import unicodedata
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
 from functools import cache, lru_cache
 from importlib.resources import files
 from statistics import median_low
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl._impl.model.geometry import interval_overlap
 from core_pdf.impl._impl.model.runs import TextRun
+
+internal_frozen_setattr = object.__setattr__
+
 
 WORDLIST_PACKAGE = "core_pdf.impl._impl.layout.data.wordlists"
 NORVIG_COUNTS = "norvig_count_1w.txt.gz"
@@ -25,10 +28,51 @@ WORD_RANK_HEADER = struct.Struct("<8sI")
 UINT32 = struct.Struct("<I")
 
 
-@dataclass(frozen=True, slots=True)
 class WordFrequency:
+    __slots__ = ("count", "rank")
+
     count: int
     rank: int
+
+    __fields__: ClassVar[tuple[str, ...]] = ("count", "rank")
+    __match_args__ = ("count", "rank")
+
+    def __init__(self, count: int, rank: int) -> None:
+        internal_frozen_setattr(self, "count", count)
+        internal_frozen_setattr(self, "rank", rank)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(count={self.count!r}, rank={self.rank!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.count == other.count and self.rank == other.rank
+
+    def __hash__(self) -> int:
+        return hash((self.count, self.rank))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        count = changes.pop("count", self.count)
+        rank = changes.pop("rank", self.rank)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(count, rank)
 
 
 class WordRankIndex(Mapping[str, int]):

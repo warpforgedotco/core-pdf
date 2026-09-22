@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 from math import inf, isfinite
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_adobe_fonts.cff.charstrings import (
     cubic_extrema_times,
@@ -36,13 +36,69 @@ from core_pdf.impl._impl.fonts.feature_distance_kernel import internal_feature_a
 from core_pdf.impl._impl.fonts.raster_kernel import rasterize_contours, transform_contours
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True)
+
 class CFFGlyphFeature:
     cells: tuple[tuple[int, int], ...]
     aspect: float
     contours: int
-    bitmap: tuple[int, ...] = ()
+    bitmap: tuple[int, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("cells", "aspect", "contours", "bitmap")
+    __match_args__ = ("cells", "aspect", "contours", "bitmap")
+
+    def __init__(
+        self,
+        cells: tuple[tuple[int, int], ...],
+        aspect: float,
+        contours: int,
+        bitmap: tuple[int, ...] = (),
+    ) -> None:
+        internal_frozen_setattr(self, "cells", cells)
+        internal_frozen_setattr(self, "aspect", aspect)
+        internal_frozen_setattr(self, "contours", contours)
+        internal_frozen_setattr(self, "bitmap", bitmap)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"cells={self.cells!r}, "
+            f"aspect={self.aspect!r}, "
+            f"contours={self.contours!r}, "
+            f"bitmap={self.bitmap!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.cells == other.cells
+            and self.aspect == other.aspect
+            and self.contours == other.contours
+            and self.bitmap == other.bitmap
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.cells, self.aspect, self.contours, self.bitmap))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        cells = changes.pop("cells", self.cells)
+        aspect = changes.pop("aspect", self.aspect)
+        contours = changes.pop("contours", self.contours)
+        bitmap = changes.pop("bitmap", self.bitmap)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(cells, aspect, contours, bitmap)
 
 
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())

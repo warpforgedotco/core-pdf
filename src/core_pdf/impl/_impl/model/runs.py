@@ -2,25 +2,135 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, TypeAlias
 
 if TYPE_CHECKING:
     from core_pdf.impl._impl.model.glyphs import GlyphCluster
 
+internal_frozen_setattr = object.__setattr__
 
-@dataclass(frozen=True, slots=True)
+
 class LayoutLineTextSegment:
+    __slots__ = ("text", "separator_before", "advance_bbox", "rotation_angle")
+
     text: str
     separator_before: str
     advance_bbox: tuple[float, float, float, float]
     rotation_angle: int
 
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "text",
+        "separator_before",
+        "advance_bbox",
+        "rotation_angle",
+    )
+    __match_args__ = ("text", "separator_before", "advance_bbox", "rotation_angle")
 
-@dataclass(frozen=True, slots=True)
+    def __init__(
+        self,
+        text: str,
+        separator_before: str,
+        advance_bbox: tuple[float, float, float, float],
+        rotation_angle: int,
+    ) -> None:
+        internal_frozen_setattr(self, "text", text)
+        internal_frozen_setattr(self, "separator_before", separator_before)
+        internal_frozen_setattr(self, "advance_bbox", advance_bbox)
+        internal_frozen_setattr(self, "rotation_angle", rotation_angle)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"text={self.text!r}, "
+            f"separator_before={self.separator_before!r}, "
+            f"advance_bbox={self.advance_bbox!r}, "
+            f"rotation_angle={self.rotation_angle!r}"
+            ")"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.text == other.text
+            and self.separator_before == other.separator_before
+            and self.advance_bbox == other.advance_bbox
+            and self.rotation_angle == other.rotation_angle
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.text, self.separator_before, self.advance_bbox, self.rotation_angle))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        separator_before = changes.pop("separator_before", self.separator_before)
+        advance_bbox = changes.pop("advance_bbox", self.advance_bbox)
+        rotation_angle = changes.pop("rotation_angle", self.rotation_angle)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(text, separator_before, advance_bbox, rotation_angle)
+
+
 class LayoutLineText:
+    __slots__ = ("text", "segments")
+
     text: str
     segments: tuple[LayoutLineTextSegment, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("text", "segments")
+    __match_args__ = ("text", "segments")
+
+    def __init__(self, text: str, segments: tuple[LayoutLineTextSegment, ...]) -> None:
+        internal_frozen_setattr(self, "text", text)
+        internal_frozen_setattr(self, "segments", segments)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}(text={self.text!r}, segments={self.segments!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.text == other.text and self.segments == other.segments
+
+    def __hash__(self) -> int:
+        return hash((self.text, self.segments))
+
+    def __setattr__(self, name: str, value: object) -> NoReturn:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> NoReturn:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __getstate__(self) -> list[Any]:
+        return [getattr(self, name) for name in self.__fields__]
+
+    def __setstate__(self, state: list[Any]) -> None:
+        for name, value in zip(self.__fields__, state, strict=True):
+            internal_frozen_setattr(self, name, value)
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        segments = changes.pop("segments", self.segments)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(text, segments)
 
 
 EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
@@ -29,8 +139,36 @@ EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
 Provenance: TypeAlias = tuple[tuple[str, object], ...]
 
 
-@dataclass(slots=True, eq=False, init=False)
 class TextRun:
+    __slots__ = (
+        "text",
+        "x0",
+        "y0",
+        "x1",
+        "y1",
+        "tx",
+        "ty",
+        "font_size",
+        "space_width",
+        "font_name",
+        "order",
+        "stream_order",
+        "xobject_depth",
+        "is_vertical",
+        "rotation_angle",
+        "visible",
+        "inside_active_clip",
+        "line_break_before",
+        "seqno",
+        "fill_color",
+        "advance_bbox",
+        "ink_bbox",
+        "baseline",
+        "provenance",
+        "confidence",
+        "glyph_clusters",
+    )
+
     text: str
     x0: float
     y0: float
@@ -57,6 +195,153 @@ class TextRun:
     provenance: Provenance
     confidence: float | None
     glyph_clusters: tuple[GlyphCluster, ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "text",
+        "x0",
+        "y0",
+        "x1",
+        "y1",
+        "tx",
+        "ty",
+        "font_size",
+        "space_width",
+        "font_name",
+        "order",
+        "stream_order",
+        "xobject_depth",
+        "is_vertical",
+        "rotation_angle",
+        "visible",
+        "inside_active_clip",
+        "line_break_before",
+        "seqno",
+        "fill_color",
+        "advance_bbox",
+        "ink_bbox",
+        "baseline",
+        "provenance",
+        "confidence",
+        "glyph_clusters",
+    )
+    __match_args__ = (
+        "text",
+        "x0",
+        "y0",
+        "x1",
+        "y1",
+        "tx",
+        "ty",
+        "font_size",
+        "space_width",
+        "font_name",
+        "order",
+        "stream_order",
+        "xobject_depth",
+        "is_vertical",
+        "rotation_angle",
+        "visible",
+        "inside_active_clip",
+        "line_break_before",
+        "seqno",
+        "fill_color",
+        "advance_bbox",
+        "ink_bbox",
+        "baseline",
+        "provenance",
+        "confidence",
+        "glyph_clusters",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__qualname__}("
+            f"text={self.text!r}, "
+            f"x0={self.x0!r}, "
+            f"y0={self.y0!r}, "
+            f"x1={self.x1!r}, "
+            f"y1={self.y1!r}, "
+            f"tx={self.tx!r}, "
+            f"ty={self.ty!r}, "
+            f"font_size={self.font_size!r}, "
+            f"space_width={self.space_width!r}, "
+            f"font_name={self.font_name!r}, "
+            f"order={self.order!r}, "
+            f"stream_order={self.stream_order!r}, "
+            f"xobject_depth={self.xobject_depth!r}, "
+            f"is_vertical={self.is_vertical!r}, "
+            f"rotation_angle={self.rotation_angle!r}, "
+            f"visible={self.visible!r}, "
+            f"inside_active_clip={self.inside_active_clip!r}, "
+            f"line_break_before={self.line_break_before!r}, "
+            f"seqno={self.seqno!r}, "
+            f"fill_color={self.fill_color!r}, "
+            f"advance_bbox={self.advance_bbox!r}, "
+            f"ink_bbox={self.ink_bbox!r}, "
+            f"baseline={self.baseline!r}, "
+            f"provenance={self.provenance!r}, "
+            f"confidence={self.confidence!r}, "
+            f"glyph_clusters={self.glyph_clusters!r}"
+            ")"
+        )
+
+    def __replace__(self, /, **changes: Any) -> Self:
+        text = changes.pop("text", self.text)
+        x0 = changes.pop("x0", self.x0)
+        y0 = changes.pop("y0", self.y0)
+        x1 = changes.pop("x1", self.x1)
+        y1 = changes.pop("y1", self.y1)
+        tx = changes.pop("tx", self.tx)
+        ty = changes.pop("ty", self.ty)
+        font_size = changes.pop("font_size", self.font_size)
+        space_width = changes.pop("space_width", self.space_width)
+        font_name = changes.pop("font_name", self.font_name)
+        order = changes.pop("order", self.order)
+        stream_order = changes.pop("stream_order", self.stream_order)
+        xobject_depth = changes.pop("xobject_depth", self.xobject_depth)
+        is_vertical = changes.pop("is_vertical", self.is_vertical)
+        rotation_angle = changes.pop("rotation_angle", self.rotation_angle)
+        visible = changes.pop("visible", self.visible)
+        inside_active_clip = changes.pop("inside_active_clip", self.inside_active_clip)
+        line_break_before = changes.pop("line_break_before", self.line_break_before)
+        seqno = changes.pop("seqno", self.seqno)
+        fill_color = changes.pop("fill_color", self.fill_color)
+        advance_bbox = changes.pop("advance_bbox", self.advance_bbox)
+        ink_bbox = changes.pop("ink_bbox", self.ink_bbox)
+        baseline = changes.pop("baseline", self.baseline)
+        provenance = changes.pop("provenance", self.provenance)
+        confidence = changes.pop("confidence", self.confidence)
+        glyph_clusters = changes.pop("glyph_clusters", self.glyph_clusters)
+        if changes:
+            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
+        return self.__class__(
+            text=text,
+            x0=x0,
+            y0=y0,
+            x1=x1,
+            y1=y1,
+            tx=tx,
+            ty=ty,
+            font_size=font_size,
+            space_width=space_width,
+            font_name=font_name,
+            order=order,
+            stream_order=stream_order,
+            xobject_depth=xobject_depth,
+            is_vertical=is_vertical,
+            rotation_angle=rotation_angle,
+            visible=visible,
+            inside_active_clip=inside_active_clip,
+            line_break_before=line_break_before,
+            seqno=seqno,
+            fill_color=fill_color,
+            advance_bbox=advance_bbox,
+            ink_bbox=ink_bbox,
+            baseline=baseline,
+            provenance=provenance,
+            confidence=confidence,
+            glyph_clusters=glyph_clusters,
+        )
 
     @property
     def height(self) -> float:

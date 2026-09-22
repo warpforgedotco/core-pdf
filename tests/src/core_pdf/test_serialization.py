@@ -1,6 +1,6 @@
 import csv
 import json
-from dataclasses import replace
+from copy import replace
 from io import StringIO
 from typing import Any
 from xml.etree import ElementTree
