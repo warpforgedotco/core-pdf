@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from functools import lru_cache
 
 from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_number
 from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf_spec.s_08_graphics.pdf_function import compile_pdf_function
 
 
+@lru_cache(maxsize=256)
 def color_space_paints(spec: ColorSpace) -> bool:
+    # Pure in its argument, and called twice for every drawing captured, while
+    # a page draws from only a handful of distinct spaces. Bounded so a long
+    # run over many documents cannot retain every space it has ever seen.
     while spec.kind in {"Indexed", "Pattern"} and spec.base is not None:
         spec = spec.base
     if spec.kind == "Separation":

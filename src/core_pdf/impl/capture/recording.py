@@ -235,15 +235,25 @@ class RecordingMethods(RecoveringTextState):
 
     def graphics_scale(self) -> float:
         ctm = self.graphics.ctm
+        # Matrix is immutable, so identity is enough to know the scale still
+        # holds. Drawing-heavy pages emit long runs under one CTM, and every
+        # drawing asks for this once for the line width and again for the dash
+        # pattern, so the repeat is worth catching.
+        cached = getattr(self, "scale_cache", None)
+        if cached is not None and cached[0] is ctm:
+            return cast(float, cached[1])
         x_scale = hypot(ctm.a, ctm.b)
         y_scale = hypot(ctm.c, ctm.d)
         if x_scale == 0 and y_scale == 0:
-            return 1.0
-        if x_scale == 0:
-            return y_scale
-        if y_scale == 0:
-            return x_scale
-        return (x_scale + y_scale) * 0.5
+            scale = 1.0
+        elif x_scale == 0:
+            scale = y_scale
+        elif y_scale == 0:
+            scale = x_scale
+        else:
+            scale = (x_scale + y_scale) * 0.5
+        self.scale_cache = (ctm, scale)
+        return scale
 
     def transformed_line_width(self) -> float:
         line_width = max(0.0, self.graphics.line_width)
