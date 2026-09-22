@@ -185,19 +185,20 @@ class DisplayList:
         )
 
     def track_group_boundary(self, kind: str, data: dict[str, Any]) -> None:
-        if kind == "scope-begin":
-            self.group_scope_floors.append(len(self.shape_tracking_groups))
-        elif kind == "scope-end":
-            if self.group_scope_floors:
-                del self.shape_tracking_groups[self.group_scope_floors.pop() :]
-        elif kind == "group-begin":
-            self.shape_tracking_groups.append(
-                data.get("group_knockout") is True or data.get("group_track_shape") is True
-            )
-        elif kind == "group-end":
-            floor = self.group_scope_floors[-1] if self.group_scope_floors else 0
-            if len(self.shape_tracking_groups) > floor:
-                self.shape_tracking_groups.pop()
+        match kind:
+            case "scope-begin":
+                self.group_scope_floors.append(len(self.shape_tracking_groups))
+            case "scope-end":
+                if self.group_scope_floors:
+                    del self.shape_tracking_groups[self.group_scope_floors.pop() :]
+            case "group-begin":
+                self.shape_tracking_groups.append(
+                    data.get("group_knockout") is True or data.get("group_track_shape") is True
+                )
+            case "group-end":
+                floor = self.group_scope_floors[-1] if self.group_scope_floors else 0
+                if len(self.shape_tracking_groups) > floor:
+                    self.shape_tracking_groups.pop()
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
         graphics_mask = data.get("graphics_soft_mask")

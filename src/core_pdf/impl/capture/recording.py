@@ -793,26 +793,27 @@ class RecordingMethods(RecoveringTextState):
                 )
             )
             return
-        if kind == "begin":
-            if self.capture_text_open:
-                self.text_boundaries.append(CapturedTextBoundary(self.sequence, "end"))
-            self.text_boundaries.append(
-                CapturedTextBoundary(self.sequence, "begin", self.graphics.text_knockout)
-            )
-            self.capture_text_open = True
-            self.text_object_id += 1
-            self.run_accumulator.flush()
-        elif kind == "end":
-            if self.capture_text_open:
-                self.text_boundaries.append(CapturedTextBoundary(self.sequence, "end"))
-            self.capture_text_open = False
-            self.run_accumulator.flush()
-        elif kind == "shown":
-            self.pending_line_break = False
-        elif kind == "quoted":
-            self.pending_line_break = True
-        else:
-            self.run_accumulator.flush()
+        match kind:
+            case "begin":
+                if self.capture_text_open:
+                    self.text_boundaries.append(CapturedTextBoundary(self.sequence, "end"))
+                self.text_boundaries.append(
+                    CapturedTextBoundary(self.sequence, "begin", self.graphics.text_knockout)
+                )
+                self.capture_text_open = True
+                self.text_object_id += 1
+                self.run_accumulator.flush()
+            case "end":
+                if self.capture_text_open:
+                    self.text_boundaries.append(CapturedTextBoundary(self.sequence, "end"))
+                self.capture_text_open = False
+                self.run_accumulator.flush()
+            case "shown":
+                self.pending_line_break = False
+            case "quoted":
+                self.pending_line_break = True
+            case _:
+                self.run_accumulator.flush()
 
     def current_capture_actual_text_span(self) -> MarkedContentEntry | None:
         entry = self.current_actual_text_span()

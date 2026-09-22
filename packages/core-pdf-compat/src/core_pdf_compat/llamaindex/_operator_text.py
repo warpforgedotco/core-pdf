@@ -654,119 +654,127 @@ class OperatorTextProjection:
         parsed = list(iter_content_operations(PdfLexer(content)))
         for operator, raw_operands in parsed:
             operands = list(raw_operands)
-            if operator == "BT":
-                state.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                state.flush()
-            elif operator == "ET":
-                state.flush()
-            elif operator == "q":
-                state.stack.append((state.cm.copy(), state.font, state.font_size, state.leading))
-            elif operator == "Q":
-                if state.stack:
-                    state.cm, state.font, state.font_size, state.leading = state.stack.pop()
-                else:
-                    state.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-            elif operator == "cm":
-                state.flush()
-                try:
-                    matrix = [float(cast(Any, value)) for value in operands[:6]]
-                except TypeError, ValueError:
-                    matrix = []
-                state.cm = (
-                    list(multiply_affine(matrix, state.cm))
-                    if len(matrix) == 6
-                    else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                )
-            elif operator == "TL":
-                scale_x = math.hypot(state.tm[0], state.tm[2])
-                state.leading = (
-                    float(cast(Any, operands[0])) * state.font_size * scale_x if operands else 0.0
-                )
-            elif operator == "Tf":
-                state.flush()
-                if operands:
-                    state.font = state.fonts.get(str(operands[0]))
-                if len(operands) > 1:
-                    state.font_size = float(cast(Any, operands[1]))
-                state.half_space_width = (
-                    state.font.space_width / 2.0 if state.font is not None else 125.0
-                )
-            elif operator in {"Td", "TD"}:
-                tx = float(cast(Any, operands[0])) if operands else 0.0
-                ty = float(cast(Any, operands[1])) if len(operands) > 1 else 0.0
-                if operator == "TD":
+            match operator:
+                case "BT":
+                    state.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                    state.flush()
+                case "ET":
+                    state.flush()
+                case "q":
+                    state.stack.append(
+                        (state.cm.copy(), state.font, state.font_size, state.leading)
+                    )
+                case "Q":
+                    if state.stack:
+                        state.cm, state.font, state.font_size, state.leading = state.stack.pop()
+                    else:
+                        state.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                case "cm":
+                    state.flush()
+                    try:
+                        matrix = [float(cast(Any, value)) for value in operands[:6]]
+                    except TypeError, ValueError:
+                        matrix = []
+                    state.cm = (
+                        list(multiply_affine(matrix, state.cm))
+                        if len(matrix) == 6
+                        else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                    )
+                case "TL":
                     scale_x = math.hypot(state.tm[0], state.tm[2])
-                    state.leading = -ty * state.font_size * scale_x
-                state.tm[4] += tx * state.tm[0] + ty * state.tm[2]
-                state.tm[5] += tx * state.tm[1] + ty * state.tm[3]
-                state.positioned(state.width / 1000.0)
-                state.width = 0.0
-            elif operator == "Tm":
-                try:
-                    matrix = [float(cast(Any, value)) for value in operands[:6]]
-                except TypeError, ValueError:
-                    matrix = []
-                state.tm = matrix if len(matrix) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                state.positioned(state.width / 1000.0)
-                state.width = 0.0
-            elif operator == "T*":
-                state.tm[4] -= state.leading * state.tm[2]
-                state.tm[5] -= state.leading * state.tm[3]
-                state.positioned(state.width / 1000.0)
-                state.width = 0.0
-            elif operator in {"Tj", "'", '"'}:
-                if operator in {"'", '"'}:
+                    state.leading = (
+                        float(cast(Any, operands[0])) * state.font_size * scale_x
+                        if operands
+                        else 0.0
+                    )
+                case "Tf":
+                    state.flush()
+                    if operands:
+                        state.font = state.fonts.get(str(operands[0]))
+                    if len(operands) > 1:
+                        state.font_size = float(cast(Any, operands[1]))
+                    state.half_space_width = (
+                        state.font.space_width / 2.0 if state.font is not None else 125.0
+                    )
+                case "Td" | "TD":
+                    tx = float(cast(Any, operands[0])) if operands else 0.0
+                    ty = float(cast(Any, operands[1])) if len(operands) > 1 else 0.0
+                    if operator == "TD":
+                        scale_x = math.hypot(state.tm[0], state.tm[2])
+                        state.leading = -ty * state.font_size * scale_x
+                    state.tm[4] += tx * state.tm[0] + ty * state.tm[2]
+                    state.tm[5] += tx * state.tm[1] + ty * state.tm[3]
+                    state.positioned(state.width / 1000.0)
+                    state.width = 0.0
+                case "Tm":
+                    try:
+                        matrix = [float(cast(Any, value)) for value in operands[:6]]
+                    except TypeError, ValueError:
+                        matrix = []
+                    state.tm = matrix if len(matrix) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                    state.positioned(state.width / 1000.0)
+                    state.width = 0.0
+                case "T*":
                     state.tm[4] -= state.leading * state.tm[2]
                     state.tm[5] -= state.leading * state.tm[3]
                     state.positioned(state.width / 1000.0)
                     state.width = 0.0
-                value = (
-                    operands[2]
-                    if operator == '"' and len(operands) > 2
-                    else operands[0]
-                    if operands
-                    else None
-                )
-                if isinstance(value, PdfString):
-                    state.show(bytes(value.data))
-                elif isinstance(value, PdfName):
-                    state.show_name(value)
-            elif operator == "TJ" and operands and isinstance(operands[0], (list, tuple)):
-                threshold = state.half_space_width * 0.95
-                for item in operands[0]:
-                    if isinstance(item, PdfString):
-                        state.show(bytes(item.data))
-                    elif isinstance(item, PdfName):
-                        state.show_name(item)
-                    elif (
-                        isinstance(item, (int, float))
-                        and abs(float(item)) >= threshold
-                        and state.text
-                        and state.text[-1] != " "
+                case "Tj" | "'" | '"':
+                    if operator in {"'", '"'}:
+                        state.tm[4] -= state.leading * state.tm[2]
+                        state.tm[5] -= state.leading * state.tm[3]
+                        state.positioned(state.width / 1000.0)
+                        state.width = 0.0
+                    value = (
+                        operands[2]
+                        if operator == '"' and len(operands) > 2
+                        else operands[0]
+                        if operands
+                        else None
+                    )
+                    if isinstance(value, PdfString):
+                        state.show(bytes(value.data))
+                    elif isinstance(value, PdfName):
+                        state.show_name(value)
+                case "TJ" if operands and isinstance(operands[0], (list, tuple)):
+                    threshold = state.half_space_width * 0.95
+                    for item in operands[0]:
+                        if isinstance(item, PdfString):
+                            state.show(bytes(item.data))
+                        elif isinstance(item, PdfName):
+                            state.show_name(item)
+                        elif (
+                            isinstance(item, (int, float))
+                            and abs(float(item)) >= threshold
+                            and state.text
+                            and state.text[-1] != " "
+                        ):
+                            state.insert_space()
+                case "Do" if operands and isinstance(xobjects, dict):
+                    state.flush()
+                    state.output_last = ensure_line_break(state.output_parts, state.output_last)
+                    form = self.resolver.resolve(xobjects.get(operands[0]))
+                    if not isinstance(form, PdfStream):
+                        form = self.resolver.resolve(xobjects.get(str(operands[0])))
+                    if (
+                        isinstance(form, PdfStream)
+                        and str(form.dictionary.get("Subtype")) != "Image"
                     ):
-                        state.insert_space()
-            elif operator == "Do" and operands and isinstance(xobjects, dict):
-                state.flush()
-                state.output_last = ensure_line_break(state.output_parts, state.output_last)
-                form = self.resolver.resolve(xobjects.get(operands[0]))
-                if not isinstance(form, PdfStream):
-                    form = self.resolver.resolve(xobjects.get(str(operands[0])))
-                if isinstance(form, PdfStream) and str(form.dictionary.get("Subtype")) != "Image":
-                    form_resources = self.resolver.resolve(form.dictionary.get("Resources"))
-                    if isinstance(form_resources, dict):
-                        form_id = id(form)
-                        if form_id in self.active_forms:
-                            continue
-                        self.active_forms.add(form_id)
-                        try:
-                            form_text = self.extract(
-                                (self.resolver.resolve_stream(form),), form_resources
-                            )
-                        finally:
-                            self.active_forms.discard(form_id)
-                        if form_text:
-                            state.output_parts.append(form_text)
-                            state.output_last = form_text[-1]
+                        form_resources = self.resolver.resolve(form.dictionary.get("Resources"))
+                        if isinstance(form_resources, dict):
+                            form_id = id(form)
+                            if form_id in self.active_forms:
+                                continue
+                            self.active_forms.add(form_id)
+                            try:
+                                form_text = self.extract(
+                                    (self.resolver.resolve_stream(form),), form_resources
+                                )
+                            finally:
+                                self.active_forms.discard(form_id)
+                            if form_text:
+                                state.output_parts.append(form_text)
+                                state.output_last = form_text[-1]
         state.flush()
         return "".join(state.output_parts)
 
