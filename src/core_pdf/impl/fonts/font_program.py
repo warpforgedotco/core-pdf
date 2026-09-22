@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from math import inf, isfinite
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_adobe_fonts.cff.charstrings import (
     cubic_extrema_times,
@@ -34,12 +34,13 @@ from core_pdf.impl.fonts.feature_distance_kernel import (
 )
 from core_pdf.impl.fonts.feature_distance_kernel import internal_feature_arrays
 from core_pdf.impl.fonts.raster_kernel import rasterize_contours, transform_contours
+from core_pdf.impl.records import internal_FrozenFields
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 
 internal_frozen_setattr = object.__setattr__
 
 
-class CFFGlyphFeature:
+class CFFGlyphFeature(internal_FrozenFields):
     cells: tuple[tuple[int, int], ...]
     aspect: float
     contours: int
@@ -84,12 +85,6 @@ class CFFGlyphFeature:
 
     def __hash__(self) -> int:
         return hash((self.cells, self.aspect, self.contours, self.bitmap))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
 
     def __replace__(self, /, **changes: Any) -> Self:
         cells = changes.pop("cells", self.cells)

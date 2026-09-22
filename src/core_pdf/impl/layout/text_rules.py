@@ -11,10 +11,11 @@ from collections.abc import Iterator, Mapping
 from functools import cache, lru_cache
 from importlib.resources import files
 from statistics import median_low
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl.model.geometry import interval_overlap
 from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.records import internal_Record
 
 internal_frozen_setattr = object.__setattr__
 
@@ -28,7 +29,7 @@ WORD_RANK_HEADER = struct.Struct("<8sI")
 UINT32 = struct.Struct("<I")
 
 
-class WordFrequency:
+class WordFrequency(internal_Record):
     __slots__ = ("count", "rank")
 
     count: int
@@ -53,19 +54,6 @@ class WordFrequency:
 
     def __hash__(self) -> int:
         return hash((self.count, self.rank))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         count = changes.pop("count", self.count)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal, NoReturn, Self, TypeAlias
+from typing import Any, ClassVar, Literal, Self, TypeAlias
 
 from core_pdf.impl.capture.records import (
     CapturedDrawing,
@@ -13,6 +13,7 @@ from core_pdf.impl.capture.records import (
 from core_pdf.impl.exceptions import PdfContractError
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.records import internal_Record
 
 internal_frozen_setattr = object.__setattr__
 
@@ -22,7 +23,7 @@ PageCommand: TypeAlias = (
 )
 
 
-class CapturedProgram:
+class CapturedProgram(internal_Record):
     __slots__ = (
         "runs",
         "glyphs",
@@ -111,19 +112,6 @@ class CapturedProgram:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         runs = changes.pop("runs", self.runs)
         glyphs = changes.pop("glyphs", self.glyphs)
@@ -176,7 +164,7 @@ class CapturedProgram:
         object.__setattr__(self, "commands", tuple(commands))
 
 
-class AppearanceProgram:
+class AppearanceProgram(internal_Record):
     __slots__ = ("kind", "source", "clip_bbox", "program")
 
     kind: Literal["widget", "annotation"]
@@ -224,19 +212,6 @@ class AppearanceProgram:
     def __hash__(self) -> int:
         return hash((self.kind, self.source, self.clip_bbox, self.program))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         kind = changes.pop("kind", self.kind)
         source = changes.pop("source", self.source)
@@ -247,7 +222,7 @@ class AppearanceProgram:
         return self.__class__(kind, source, clip_bbox, program)
 
 
-class PageProgram:
+class PageProgram(internal_Record):
     __slots__ = (
         "body",
         "appearances",
@@ -338,19 +313,6 @@ class PageProgram:
                 self.commands,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         body = changes.pop("body", self.body)

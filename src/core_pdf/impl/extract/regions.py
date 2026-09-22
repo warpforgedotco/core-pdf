@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import math
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 import numpy
 
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.runtime.array_views import finite_median
 
 internal_frozen_setattr = object.__setattr__
 
 
-class internal_LayoutRegion:
+class internal_LayoutRegion(internal_Record):
     __slots__ = ("indexes", "x_start_order", "y_start_order", "y_center_order")
 
     indexes: numpy.ndarray
@@ -64,19 +65,6 @@ class internal_LayoutRegion:
 
     def __hash__(self) -> int:
         return hash((self.indexes, self.x_start_order, self.y_start_order, self.y_center_order))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         indexes = changes.pop("indexes", self.indexes)

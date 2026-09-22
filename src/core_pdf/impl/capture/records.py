@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NoReturn, Self, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, TypeAlias
 
 from core_pdf.impl.model.geometry import bbox_union, normalize_rect, points_bbox
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
@@ -22,7 +23,7 @@ internal_frozen_setattr = object.__setattr__
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
 
 
-class CapturedSoftMask:
+class CapturedSoftMask(internal_Record):
     __slots__ = ("program", "transfer", "offset")
 
     program: CapturedProgram
@@ -51,19 +52,6 @@ class CapturedSoftMask:
             ")"
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         program = changes.pop("program", self.program)
         transfer = changes.pop("transfer", self.transfer)
@@ -73,7 +61,7 @@ class CapturedSoftMask:
         return self.__class__(program, transfer, offset)
 
 
-class CapturedTextBoundary:
+class CapturedTextBoundary(internal_Record):
     __slots__ = ("seqno", "kind", "knockout")
 
     seqno: int
@@ -116,19 +104,6 @@ class CapturedTextBoundary:
     def __hash__(self) -> int:
         return hash((self.seqno, self.kind, self.knockout))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         seqno = changes.pop("seqno", self.seqno)
         kind = changes.pop("kind", self.kind)
@@ -168,7 +143,7 @@ class CapturedLine:
         return self.__class__(x0, y0, x1, y1, line_width)
 
 
-class CapturedInlineImage:
+class CapturedInlineImage(internal_Record):
     __slots__ = (
         "seqno",
         "dictionary",
@@ -336,19 +311,6 @@ class CapturedInlineImage:
                 self.graphics_soft_mask,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         seqno = changes.pop("seqno", self.seqno)
@@ -956,7 +918,7 @@ def marker_drawing(
     )
 
 
-class ShadingPattern:
+class ShadingPattern(internal_Record):
     __slots__ = ("dictionary", "color_rendering")
 
     dictionary: dict[Any, Any]
@@ -991,19 +953,6 @@ class ShadingPattern:
     def __hash__(self) -> int:
         return hash((self.dictionary, self.color_rendering))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         dictionary = changes.pop("dictionary", self.dictionary)
         color_rendering = changes.pop("color_rendering", self.color_rendering)
@@ -1012,7 +961,7 @@ class ShadingPattern:
         return self.__class__(dictionary, color_rendering)
 
 
-class TilingPattern:
+class TilingPattern(internal_Record):
     __slots__ = ("bbox", "x_step", "y_step", "program")
 
     bbox: Rectangle
@@ -1059,19 +1008,6 @@ class TilingPattern:
 
     def __hash__(self) -> int:
         return hash((self.bbox, self.x_step, self.y_step, self.program))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         bbox = changes.pop("bbox", self.bbox)

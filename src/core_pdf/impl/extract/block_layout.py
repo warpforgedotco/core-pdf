@@ -7,7 +7,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from copy import replace
 from heapq import heappop, heappush
-from typing import Any, ClassVar, NoReturn, Self, cast
+from typing import Any, ClassVar, Self, cast
 
 import numpy
 
@@ -29,6 +29,7 @@ from core_pdf.impl.model.text import (
     internal_text_word_tokens,
 )
 from core_pdf.impl.output.model import TextLine, TextSpan
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.types import TextWord
 
@@ -41,7 +42,7 @@ internal_CAPTION_RE = re.compile(r"^(?:figure|fig\.|table|chart|exhibit)\s+\d+\b
 internal_LIST_MARKER_RE = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
 
 
-class internal_LineGroupPlan:
+class internal_LineGroupPlan(internal_Record):
     __slots__ = ("indexes", "starts", "stops")
 
     indexes: numpy.ndarray
@@ -79,19 +80,6 @@ class internal_LineGroupPlan:
     def __hash__(self) -> int:
         return hash((self.indexes, self.starts, self.stops))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         indexes = changes.pop("indexes", self.indexes)
         starts = changes.pop("starts", self.starts)
@@ -101,7 +89,7 @@ class internal_LineGroupPlan:
         return self.__class__(indexes, starts, stops)
 
 
-class internal_BuiltLines:
+class internal_BuiltLines(internal_Record):
     __slots__ = ("lines", "boxes")
 
     lines: tuple[ParsedLine, ...]
@@ -126,19 +114,6 @@ class internal_BuiltLines:
 
     def __hash__(self) -> int:
         return hash((self.lines, self.boxes))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         lines = changes.pop("lines", self.lines)

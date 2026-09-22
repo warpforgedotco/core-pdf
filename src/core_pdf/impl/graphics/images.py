@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 import numpy
 
@@ -22,6 +22,7 @@ from core_pdf.impl.graphics.soft_masks import image_has_color_key_mask
 from core_pdf.impl.graphics.stream_decoding import (
     decode_stream_data,
 )
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.runtime.scalars import parse_int
 from core_pdf_spec.s_07_filters.errors import FilterError
@@ -52,7 +53,7 @@ def internal_image_color_space_paints(dictionary: dict[Any, Any]) -> bool:
     return internal_color_space_paints(dictionary.get("ColorSpace"))
 
 
-class DecodedRaster:
+class DecodedRaster(internal_Record):
     __slots__ = ("data", "width", "height", "channels")
 
     data: bytes | memoryview | numpy.ndarray[Any, Any]
@@ -100,19 +101,6 @@ class DecodedRaster:
     def __hash__(self) -> int:
         return hash((self.data, self.width, self.height, self.channels))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         data = changes.pop("data", self.data)
         width = changes.pop("width", self.width)
@@ -123,7 +111,7 @@ class DecodedRaster:
         return self.__class__(data, width, height, channels)
 
 
-class ImageRaster:
+class ImageRaster(internal_Record):
     __slots__ = ("array", "color_model")
 
     array: numpy.ndarray[Any, Any]
@@ -151,19 +139,6 @@ class ImageRaster:
 
     def __hash__(self) -> int:
         return hash((self.array, self.color_model))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         array = changes.pop("array", self.array)
@@ -206,7 +181,7 @@ class ImageRaster:
         return int(self.array.strides[0])
 
 
-class PreparedImage:
+class PreparedImage(internal_Record):
     __slots__ = ("raster", "soft_mask", "is_stencil")
 
     raster: ImageRaster
@@ -249,19 +224,6 @@ class PreparedImage:
 
     def __hash__(self) -> int:
         return hash((self.raster, self.soft_mask, self.is_stencil))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         raster = changes.pop("raster", self.raster)

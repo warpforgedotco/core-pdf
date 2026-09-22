@@ -7,11 +7,12 @@ from collections.abc import Mapping as MappingABC
 from copy import replace
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, ClassVar, NoReturn, Self, TypeAlias
+from typing import Any, ClassVar, Self, TypeAlias
 
 from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.model.page_selection import PageSelection
 from core_pdf.impl.model.text import internal_reconcile_text_words
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.types import Rectangle, TextWord
 
 internal_frozen_setattr = object.__setattr__
@@ -48,7 +49,7 @@ class BlockKind(StrEnum):
     UNKNOWN = "unknown"
 
 
-class TableCell:
+class TableCell(internal_Record):
     __slots__ = ("row", "column", "text", "row_span", "column_span", "bbox")
 
     row: int
@@ -113,19 +114,6 @@ class TableCell:
     def __hash__(self) -> int:
         return hash((self.row, self.column, self.text, self.row_span, self.column_span, self.bbox))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         row = changes.pop("row", self.row)
         column = changes.pop("column", self.column)
@@ -138,7 +126,7 @@ class TableCell:
         return self.__class__(row, column, text, row_span, column_span, bbox)
 
 
-class TableRowBand:
+class TableRowBand(internal_Record):
     __slots__ = ("index", "bbox", "kind", "confidence")
 
     index: int
@@ -186,19 +174,6 @@ class TableRowBand:
     def __hash__(self) -> int:
         return hash((self.index, self.bbox, self.kind, self.confidence))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         index = changes.pop("index", self.index)
         bbox = changes.pop("bbox", self.bbox)
@@ -209,7 +184,7 @@ class TableRowBand:
         return self.__class__(index, bbox, kind, confidence)
 
 
-class TableColumnBand:
+class TableColumnBand(internal_Record):
     __slots__ = ("index", "bbox", "confidence")
 
     index: int
@@ -252,19 +227,6 @@ class TableColumnBand:
     def __hash__(self) -> int:
         return hash((self.index, self.bbox, self.confidence))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         index = changes.pop("index", self.index)
         bbox = changes.pop("bbox", self.bbox)
@@ -274,7 +236,7 @@ class TableColumnBand:
         return self.__class__(index, bbox, confidence)
 
 
-class TableAssociatedText:
+class TableAssociatedText(internal_Record):
     __slots__ = ("text", "bbox", "kind", "confidence")
 
     text: str
@@ -322,19 +284,6 @@ class TableAssociatedText:
     def __hash__(self) -> int:
         return hash((self.text, self.bbox, self.kind, self.confidence))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
         bbox = changes.pop("bbox", self.bbox)
@@ -345,7 +294,7 @@ class TableAssociatedText:
         return self.__class__(text, bbox, kind, confidence)
 
 
-class Table:
+class Table(internal_Record):
     __slots__ = (
         "order",
         "rows",
@@ -461,19 +410,6 @@ class Table:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         order = changes.pop("order", self.order)
         rows = changes.pop("rows", self.rows)
@@ -520,7 +456,7 @@ class Table:
         return bbox_union(boxes) if boxes else self.bbox
 
 
-class Figure:
+class Figure(internal_Record):
     __slots__ = ("order", "bbox", "kind", "metadata")
 
     order: int
@@ -569,19 +505,6 @@ class Figure:
     def __hash__(self) -> int:
         return hash((self.order, self.bbox, self.kind, self.metadata))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         order = changes.pop("order", self.order)
         bbox = changes.pop("bbox", self.bbox)
@@ -595,7 +518,7 @@ class Figure:
         object.__setattr__(self, "metadata", internal_freeze(self.metadata))
 
 
-class Link:
+class Link(internal_Record):
     __slots__ = ("bbox", "url", "link_type", "text")
 
     bbox: Rectangle | None
@@ -643,19 +566,6 @@ class Link:
     def __hash__(self) -> int:
         return hash((self.bbox, self.url, self.link_type, self.text))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         bbox = changes.pop("bbox", self.bbox)
         url = changes.pop("url", self.url)
@@ -666,7 +576,7 @@ class Link:
         return self.__class__(bbox, url, link_type, text)
 
 
-class Annotation:
+class Annotation(internal_Record):
     __slots__ = ("subtype", "bbox", "contents", "destination")
 
     subtype: str | None
@@ -715,19 +625,6 @@ class Annotation:
     def __hash__(self) -> int:
         return hash((self.subtype, self.bbox, self.contents, self.destination))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         subtype = changes.pop("subtype", self.subtype)
         bbox = changes.pop("bbox", self.bbox)
@@ -741,7 +638,7 @@ class Annotation:
         object.__setattr__(self, "destination", internal_freeze(self.destination))
 
 
-class FormField:
+class FormField(internal_Record):
     __slots__ = (
         "name",
         "field_type",
@@ -856,19 +753,6 @@ class FormField:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         name = changes.pop("name", self.name)
         field_type = changes.pop("field_type", self.field_type)
@@ -894,7 +778,7 @@ class FormField:
         )
 
 
-class TextSpan:
+class TextSpan(internal_Record):
     __slots__ = (
         "text",
         "bold",
@@ -1000,19 +884,6 @@ class TextSpan:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
         bold = changes.pop("bold", self.bold)
@@ -1036,7 +907,7 @@ class TextSpan:
         )
 
 
-class TextLine:
+class TextLine(internal_Record):
     __slots__ = (
         "text",
         "break_before",
@@ -1242,19 +1113,6 @@ class TextLine:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
         break_before = changes.pop("break_before", self.break_before)
@@ -1330,7 +1188,7 @@ class TextLine:
         )
 
 
-class Block:
+class Block(internal_Record):
     __slots__ = (
         "order",
         "kind",
@@ -1445,19 +1303,6 @@ class Block:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         order = changes.pop("order", self.order)
         kind = changes.pop("kind", self.kind)
@@ -1495,7 +1340,7 @@ class Block:
 PageElement: TypeAlias = Block | Table | Figure
 
 
-class ContentNode:
+class ContentNode(internal_Record):
     __slots__ = ("node_id", "kind", "payload", "page_number")
 
     node_id: int
@@ -1543,19 +1388,6 @@ class ContentNode:
     def __hash__(self) -> int:
         return hash((self.node_id, self.kind, self.payload, self.page_number))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         node_id = changes.pop("node_id", self.node_id)
         kind = changes.pop("kind", self.kind)
@@ -1579,7 +1411,7 @@ class ContentNode:
         return (str(source),) if source else ()
 
 
-class TextView:
+class TextView(internal_Record):
     __slots__ = ("elements", "page_number")
 
     elements: tuple[PageElement, ...]
@@ -1609,19 +1441,6 @@ class TextView:
 
     def __hash__(self) -> int:
         return hash((self.elements, self.page_number))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         elements = changes.pop("elements", self.elements)
@@ -1673,7 +1492,7 @@ class TextView:
         return "\n\n".join(parts)
 
 
-class TextLineReference:
+class TextLineReference(internal_Record):
     __slots__ = ("page_number", "line_index", "line")
 
     page_number: int
@@ -1711,19 +1530,6 @@ class TextLineReference:
     def __hash__(self) -> int:
         return hash((self.page_number, self.line_index, self.line))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         page_number = changes.pop("page_number", self.page_number)
         line_index = changes.pop("line_index", self.line_index)
@@ -1733,7 +1539,7 @@ class TextLineReference:
         return self.__class__(page_number, line_index, line)
 
 
-class TableView:
+class TableView(internal_Record):
     __slots__ = ("tables", "page_number")
 
     tables: tuple[Table, ...]
@@ -1764,19 +1570,6 @@ class TableView:
     def __hash__(self) -> int:
         return hash((self.tables, self.page_number))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         tables = changes.pop("tables", self.tables)
         page_number = changes.pop("page_number", self.page_number)
@@ -1785,7 +1578,7 @@ class TableView:
         return self.__class__(tables, page_number)
 
 
-class TableReference:
+class TableReference(internal_Record):
     __slots__ = ("page_number", "table_index", "table")
 
     page_number: int
@@ -1823,19 +1616,6 @@ class TableReference:
     def __hash__(self) -> int:
         return hash((self.page_number, self.table_index, self.table))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         page_number = changes.pop("page_number", self.page_number)
         table_index = changes.pop("table_index", self.table_index)
@@ -1845,7 +1625,7 @@ class TableReference:
         return self.__class__(page_number, table_index, table)
 
 
-class DocumentTextView:
+class DocumentTextView(internal_Record):
     __slots__ = ("pages",)
 
     pages: tuple[TextView, ...]
@@ -1868,19 +1648,6 @@ class DocumentTextView:
 
     def __hash__(self) -> int:
         return hash((self.pages,))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         pages = changes.pop("pages", self.pages)
@@ -1920,7 +1687,7 @@ class DocumentTextView:
         return "\f".join(page.text for page in self.pages) + "\f"
 
 
-class DocumentTableView:
+class DocumentTableView(internal_Record):
     __slots__ = ("pages",)
 
     pages: tuple[TableView, ...]
@@ -1943,19 +1710,6 @@ class DocumentTableView:
 
     def __hash__(self) -> int:
         return hash((self.pages,))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         pages = changes.pop("pages", self.pages)
@@ -1980,7 +1734,7 @@ class DocumentTableView:
         )
 
 
-class Page:
+class Page(internal_Record):
     __slots__ = (
         "page_number",
         "page_label",
@@ -2190,19 +1944,6 @@ class Page:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         page_number = changes.pop("page_number", self.page_number)
         page_label = changes.pop("page_label", self.page_label)
@@ -2306,7 +2047,7 @@ class Page:
         return page_to_html(self)
 
 
-class Diagnostic:
+class Diagnostic(internal_Record):
     __slots__ = ("code", "message", "severity", "page_number")
 
     code: str
@@ -2354,19 +2095,6 @@ class Diagnostic:
     def __hash__(self) -> int:
         return hash((self.code, self.message, self.severity, self.page_number))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         code = changes.pop("code", self.code)
         message = changes.pop("message", self.message)
@@ -2377,7 +2105,7 @@ class Diagnostic:
         return self.__class__(code, message, severity, page_number)
 
 
-class Document:
+class Document(internal_Record):
     __slots__ = ("pages", "metadata", "diagnostics", "schema_version")
 
     pages: tuple[Page, ...]
@@ -2425,19 +2153,6 @@ class Document:
 
     def __hash__(self) -> int:
         return hash((self.pages, self.metadata, self.diagnostics, self.schema_version))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         pages = changes.pop("pages", self.pages)

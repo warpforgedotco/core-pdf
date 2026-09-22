@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 import numpy
 
@@ -12,6 +12,7 @@ from core_pdf.impl.capture.program import PageProgram
 from core_pdf.impl.output.model import (
     TextLine,
 )
+from core_pdf.impl.records import internal_Record
 from core_pdf.impl.runtime.array_views import readonly
 
 if TYPE_CHECKING:
@@ -61,7 +62,7 @@ class ObservationSource(IntEnum):
     STRUCTURE = 2
 
 
-class ObservationBatch:
+class ObservationBatch(internal_Record):
     __slots__ = (
         "text",
         "bbox",
@@ -185,19 +186,6 @@ class ObservationBatch:
                 self.references,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
@@ -417,7 +405,7 @@ class ObservationBatch:
         )
 
 
-class TextQualityStats:
+class TextQualityStats(internal_Record):
     __slots__ = (
         "token_count",
         "wordlike_ratio",
@@ -505,19 +493,6 @@ class TextQualityStats:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         token_count = changes.pop("token_count", self.token_count)
         wordlike_ratio = changes.pop("wordlike_ratio", self.wordlike_ratio)
@@ -551,7 +526,7 @@ class TextQualityStats:
         )
 
 
-class GlyphEvidence:
+class GlyphEvidence(internal_Record):
     __slots__ = (
         "glyph_count",
         "semantic_characters",
@@ -657,19 +632,6 @@ class GlyphEvidence:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         glyph_count = changes.pop("glyph_count", self.glyph_count)
         semantic_characters = changes.pop("semantic_characters", self.semantic_characters)
@@ -720,7 +682,7 @@ class GlyphEvidence:
         return self.glyph_count / max(1, characters)
 
 
-class PageEvidence:
+class PageEvidence(internal_Record):
     __slots__ = (
         "page_area",
         "native_characters",
@@ -886,19 +848,6 @@ class PageEvidence:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         page_area = changes.pop("page_area", self.page_area)
         native_characters = changes.pop("native_characters", self.native_characters)
@@ -955,7 +904,7 @@ class PageEvidence:
         return self.native_characters >= 100 and painted < self.native_characters * 0.20
 
 
-class PageAnalysis:
+class PageAnalysis(internal_Record):
     __slots__ = (
         "page",
         "width",
@@ -1070,19 +1019,6 @@ class PageAnalysis:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         page = changes.pop("page", self.page)
         width = changes.pop("width", self.width)
@@ -1108,7 +1044,7 @@ class PageAnalysis:
         )
 
 
-class ParsedLine:
+class ParsedLine(internal_Record):
     __slots__ = ("line", "sequence", "rotation", "font_size")
 
     line: TextLine
@@ -1157,19 +1093,6 @@ class ParsedLine:
     def __hash__(self) -> int:
         return hash((self.line, self.sequence, self.rotation, self.font_size))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         line = changes.pop("line", self.line)
         sequence = changes.pop("sequence", self.sequence)
@@ -1184,7 +1107,7 @@ class ParsedLine:
             raise ValueError("ParsedLine requires a positioned line")
 
 
-class ParsedBlock:
+class ParsedBlock(internal_Record):
     __slots__ = ("lines", "bbox", "column_index", "kind", "level")
 
     lines: tuple[ParsedLine, ...]
@@ -1237,19 +1160,6 @@ class ParsedBlock:
     def __hash__(self) -> int:
         return hash((self.lines, self.bbox, self.column_index, self.kind, self.level))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         lines = changes.pop("lines", self.lines)
         bbox = changes.pop("bbox", self.bbox)
@@ -1261,7 +1171,7 @@ class ParsedBlock:
         return self.__class__(lines, bbox, column_index, kind, level)
 
 
-class ReadingOrderEvidence:
+class ReadingOrderEvidence(internal_Record):
     __slots__ = (
         "line_count",
         "source_inversions",
@@ -1375,19 +1285,6 @@ class ReadingOrderEvidence:
                 self.strategy,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            internal_frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         line_count = changes.pop("line_count", self.line_count)
