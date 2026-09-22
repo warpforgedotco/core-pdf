@@ -7,6 +7,7 @@ import mmap
 import re
 import struct
 import threading
+from bisect import bisect_right
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import AbstractContextManager
 from functools import partial
@@ -1878,12 +1879,22 @@ class PdfDocument(Generic[PageT]):
 
     def iter_recoverable_xref_stream_dictionaries(self) -> Iterator[PdfDict]:
         data = self.raw_data
+        data_len = len(data)
+        # Object starts in file order, so each candidate's span can be bounded
+        # by the next one rather than by a guess at how long a dictionary runs.
+        starts = sorted(
+            entry.offset
+            for entry in self.xref.values()
+            if entry.in_use and entry.object_stream is None and 0 <= entry.offset < data_len
+        )
         lexer = PdfLexer(data, semantic_context=self.xref_context)
         try:
             for key, entry in sorted(self.xref.items()):
                 if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
                     continue
-                if not self.may_be_xref_stream(data, entry.offset):
+                following = bisect_right(starts, entry.offset)
+                end = starts[following] if following < len(starts) else data_len
+                if not self.may_be_xref_stream(data, entry.offset, end):
                     continue
                 lexer.rewind(entry.offset)
                 try:
@@ -1900,26 +1911,25 @@ class PdfDocument(Generic[PageT]):
         finally:
             lexer.close()
 
-    def may_be_xref_stream(self, data: bytes | mmap.mmap, offset: int) -> bool:
+    def may_be_xref_stream(self, data: bytes | mmap.mmap, offset: int, end: int) -> bool:
         """Rule out an object as an xref stream by reading bytes, not parsing it.
 
         The caller only wants dictionaries that declare Type /XRef, or that
-        carry both W and Size. All three are short literals that must appear in
-        the dictionary, which sits at the very start of the object, so a window
-        that finds none of them cannot be one. Parsing every object in the file
-        to discover that is what made opening a large document expensive.
+        carry both W and Size, so a span holding none of those literals cannot
+        be one. Parsing every object in the file to discover that is what made
+        opening a large document expensive.
 
-        Conservative in both directions that matter: a window containing "#"
-        may hold a hex-escaped name that these literals would not match, and a
-        window that reached the end of the data may have been truncated, so
-        both fall through to the parse rather than skip it.
+        The span runs to the next object rather than over a fixed window,
+        because nothing bounds how much dictionary may precede the markers: a
+        long Index array or a run of comments can push them arbitrarily far
+        into the object. Searching a fixed prefix would skip such a stream and
+        lose the trailer metadata it carries.
+
+        A span containing "#" falls through to the parse, since a hex-escaped
+        name would not match these literals. Searching a whole object span can
+        also match bytes inside stream data, but a false positive only costs
+        the parse that used to happen anyway.
         """
-        end = offset + XREF_STREAM_MARKER_WINDOW
-        if end > len(data):
-            return True
-        # find() takes bounds, so the window never has to be materialised.
-        # Copying 2 KB per candidate made this the most expensive call in an
-        # open, which rather defeated the point of not parsing them.
         if data.find(b"#", offset, end) >= 0 or data.find(b"XRef", offset, end) >= 0:
             return True
         return data.find(b"/W", offset, end) >= 0 and data.find(b"/Size", offset, end) >= 0
@@ -2002,14 +2012,9 @@ def create_recovered_security_handler(
     return create_standard_security_handler(document_id, normalized, password)
 
 
-# Wide enough to contain any real xref stream dictionary, which begins at the
-# object header. Objects whose window is shorter than this are near the end of
-# the file and are parsed rather than judged on a truncated window.
 # "N G obj" at an object header, with the inter-token whitespace PDF allows
 # and a trailing separator so a longer keyword cannot match.
 OBJECT_HEADER_RE = re.compile(rb"(\d+)[\0\t\n\f\r ]+(\d+)[\0\t\n\f\r ]+obj(?=[\0\t\n\f\r ]|\Z)")
-
-XREF_STREAM_MARKER_WINDOW = 2048
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
 
