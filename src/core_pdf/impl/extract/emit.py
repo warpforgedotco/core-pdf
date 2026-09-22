@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from collections.abc import Iterable
 from copy import replace
 from statistics import fmean
@@ -120,13 +120,20 @@ def remove_off_page_blocks(blocks: list[Block], width: float, height: float) -> 
 def line_decoration_flags(
     line: TextLine,
     decoration_boxes: tuple[tuple[float, float, float], ...],
+    decoration_centers: tuple[float, ...],
 ) -> dict[str, bool]:
     if line.bbox is None:
         return {}
     x0, y0, x1, y1 = line.bbox
     line_height = max(1.0, y1 - y0)
     flags = {"underline": False, "strikeout": False}
-    for dx0, dx1, center_y in decoration_boxes:
+    # Only a rule centred in the union of the underline and strikeout bands
+    # below can set either flag, so bisect to that slice rather than scanning
+    # every rule on the page. Drawing-heavy pages carry thousands of them, and
+    # the scan was the dominant cost of assembling such a page.
+    first = bisect_left(decoration_centers, y0 - 3.0)
+    last = bisect_right(decoration_centers, y0 + max(1.5, line_height * 0.75))
+    for dx0, dx1, center_y in decoration_boxes[first:last]:
         if interval_overlap(x0, x1, dx0, dx1) / (dx1 - dx0) < 0.75:
             continue
         if y0 - 3.0 <= center_y <= y0 + 1.5:
@@ -149,14 +156,22 @@ def normalize_blocks(
     parsed_blocks: tuple[ParsedBlock, ...],
     drawings: tuple[CapturedDrawing, ...],
 ) -> list[Block]:
+    # Sorted by centre so line_decoration_flags can bisect. The flags are
+    # order-independent, so ordering the rules changes nothing it reports.
     decoration_boxes = tuple(
-        (bbox[0], bbox[2], (bbox[1] + bbox[3]) * 0.5)
-        for drawing in drawings
-        if drawing.kind in {"fill", "fillstroke", "stroke"}
-        and (bbox := line_decoration_bbox(drawing)) is not None
-        and bbox[2] - bbox[0] >= 2.0
-        and bbox[3] - bbox[1] <= 2.5
+        sorted(
+            (
+                (bbox[0], bbox[2], (bbox[1] + bbox[3]) * 0.5)
+                for drawing in drawings
+                if drawing.kind in {"fill", "fillstroke", "stroke"}
+                and (bbox := line_decoration_bbox(drawing)) is not None
+                and bbox[2] - bbox[0] >= 2.0
+                and bbox[3] - bbox[1] <= 2.5
+            ),
+            key=lambda box: box[2],
+        )
     )
+    decoration_centers = tuple(box[2] for box in decoration_boxes)
     blocks: list[Block] = []
     for index, parsed_block in enumerate(parsed_blocks):
         confidences = tuple(
@@ -167,7 +182,7 @@ def normalize_blocks(
         sources = tuple(dict.fromkeys(parsed.line.source for parsed in parsed_block.lines))
         lines: list[TextLine] = []
         for parsed in parsed_block.lines:
-            flags = line_decoration_flags(parsed.line, decoration_boxes)
+            flags = line_decoration_flags(parsed.line, decoration_boxes, decoration_centers)
             lines.append(
                 replace(
                     parsed.line,
