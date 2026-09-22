@@ -95,6 +95,9 @@ vendor-test = [
     "pypdfium2>=5.9.0",
     "unstructured[pdf]>=0.25.2",
 ]
+benchmark = [
+    "pytest-codspeed>=5.0.3",
+]
 
 [tool.pytest.ini_options]
 testpaths = [
