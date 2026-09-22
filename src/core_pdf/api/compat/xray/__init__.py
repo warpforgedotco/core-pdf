@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import struct
+from collections import defaultdict
 from dataclasses import dataclass
 from math import ceil, floor
 from os import PathLike
@@ -280,9 +281,10 @@ def _page_redactions(
     operand_overrides = override_cache["overrides"]
     glyphs = program.glyphs
     raster_page = _PageRaster(page, program)
-    sequence_codes: dict[int, bytes] = {}
+    sequence_parts: defaultdict[int, list[bytes]] = defaultdict(list)
     for glyph in glyphs:
-        sequence_codes[glyph.seqno] = sequence_codes.get(glyph.seqno, b"") + glyph.code_bytes
+        sequence_parts[glyph.seqno].append(glyph.code_bytes)
+    sequence_codes = {seqno: b"".join(parts) for seqno, parts in sequence_parts.items()}
     overridden_sequences = {
         seqno: operand_overrides[codes]
         for seqno, codes in sequence_codes.items()

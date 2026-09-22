@@ -201,12 +201,17 @@ class JBIG2MQDecoder:
 
 
 def read_be_u32(data: bytes, pos: int) -> int:
-    return (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3]
+    chunk = data[pos : pos + 4]
+    if len(chunk) != 4:
+        raise Jbig2ParseError("truncated JBIG2 data")
+    return int.from_bytes(chunk, "big")
 
 
 def read_be_i32(data: bytes, pos: int) -> int:
-    value = read_be_u32(data, pos)
-    return value - 0x100000000 if value & 0x80000000 else value
+    chunk = data[pos : pos + 4]
+    if len(chunk) != 4:
+        raise Jbig2ParseError("truncated JBIG2 data")
+    return int.from_bytes(chunk, "big", signed=True)
 
 
 def read_be_i8(data: bytes, pos: int) -> int:
@@ -281,7 +286,7 @@ def read_u32(data: bytes, pos: int) -> tuple[int, int]:
 def read_u24(data: bytes, pos: int) -> tuple[int, int]:
     if pos + 3 > len(data):
         raise Jbig2ParseError("truncated JBIG2 data")
-    return (data[pos] << 16) | (data[pos + 1] << 8) | data[pos + 2], pos + 3
+    return int.from_bytes(data[pos : pos + 3], "big"), pos + 3
 
 
 def parse_page_association(data: bytes, pos: int, long_form: bool) -> tuple[int, int]:

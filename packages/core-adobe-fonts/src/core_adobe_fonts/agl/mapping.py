@@ -19,7 +19,7 @@ def glyph_component_to_unicode(name: str, *, zapf_dingbats: bool = False) -> str
     if name in GLYPH_DATA:
         return GLYPH_DATA[name]
     digits = name[3:] if name.startswith("uni") else name[1:] if name.startswith("u") else ""
-    if not digits or any(character not in "0123456789ABCDEF" for character in digits):
+    if not digits or digits.strip("0123456789ABCDEF"):
         return ""
     if name.startswith("uni"):
         if len(digits) % 4:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from itertools import batched
 from typing import Literal, Protocol, cast
 
 from core_pdf_spec.exceptions import PdfParseError
@@ -329,8 +330,7 @@ def internal_validate_xref_index(index: list[int], size: int) -> int:
     previous_start = -1
     previous_end = 0
     row_count = 0
-    for position in range(0, len(index), 2):
-        start, count = index[position : position + 2]
+    for start, count in batched(index, 2, strict=True):
         end = start + count
         if start < previous_start or start < previous_end or end > size:
             raise PdfParseError("invalid xref stream Index")
@@ -386,8 +386,8 @@ def internal_decode_xref_rows(
         raise PdfParseError("xref stream length mismatch")
     entries: XRefTable = {}
     pos = 0
-    for i in range(0, len(index), 2):
-        for object_number in range(index[i], index[i] + index[i + 1]):
+    for start, count in batched(index, 2, strict=True):
+        for object_number in range(start, start + count):
             key, entry, pos = internal_decode_xref_row(data, pos, widths, object_number, row_size)
             entries[key] = entry
     return entries

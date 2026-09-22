@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from copy import copy
 from dataclasses import dataclass
 from io import BytesIO
-from itertools import groupby
+from itertools import accumulate, groupby, pairwise
 from operator import itemgetter
 from types import SimpleNamespace
 from typing import Any, TypeAlias, cast
@@ -49,20 +49,16 @@ def cluster_by(
     getter = itemgetter(key) if isinstance(key, str) else key
     items = list(values)
     ordered_values = sorted({getter(item) for item in items})
+
+    def separated(previous: Any, value: Any) -> int:
+        if isinstance(value, (int, float)) and isinstance(previous, (int, float)):
+            return 1 if value - previous > tolerance else 0
+        return 1 if value != previous else 0
+
     cluster_ids: dict[Any, int] = {}
-    cluster = 0
-    previous: Any = None
-    for index, value in enumerate(ordered_values):
-        if index:
-            separated = (
-                value - previous > tolerance
-                if isinstance(value, (int, float)) and isinstance(previous, (int, float))
-                else value != previous
-            )
-            if separated:
-                cluster += 1
-        cluster_ids[value] = cluster
-        previous = value
+    if ordered_values:
+        steps = (separated(previous, value) for previous, value in pairwise(ordered_values))
+        cluster_ids = dict(zip(ordered_values, accumulate(steps, initial=0), strict=True))
     ordered = sorted(items, key=lambda item: cluster_ids[getter(item)])
     return [list(group) for _, group in groupby(ordered, lambda item: cluster_ids[getter(item)])]
 
