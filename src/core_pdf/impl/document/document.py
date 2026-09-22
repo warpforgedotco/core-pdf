@@ -1894,10 +1894,13 @@ class PdfDocument(Generic[PageT]):
             lexer.close()
 
     def iter_recoverable_xref_stream_dictionaries(self) -> Iterator[PdfDict]:
-        lexer = PdfLexer(self.raw_data, semantic_context=self.xref_context)
+        data = self.raw_data
+        lexer = PdfLexer(data, semantic_context=self.xref_context)
         try:
             for key, entry in sorted(self.xref.items()):
                 if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
+                    continue
+                if not self.may_be_xref_stream(data, entry.offset):
                     continue
                 lexer.rewind(entry.offset)
                 try:
@@ -1913,6 +1916,27 @@ class PdfDocument(Generic[PageT]):
                     yield cast(PdfDict, dictionary)
         finally:
             lexer.close()
+
+    def may_be_xref_stream(self, data: bytes | mmap.mmap, offset: int) -> bool:
+        """Rule out an object as an xref stream by reading bytes, not parsing it.
+
+        The caller only wants dictionaries that declare Type /XRef, or that
+        carry both W and Size. All three are short literals that must appear in
+        the dictionary, which sits at the very start of the object, so a window
+        that finds none of them cannot be one. Parsing every object in the file
+        to discover that is what made opening a large document expensive.
+
+        Conservative in both directions that matter: a window containing "#"
+        may hold a hex-escaped name that these literals would not match, and a
+        window that reached the end of the data may have been truncated, so
+        both fall through to the parse rather than skip it.
+        """
+        window = bytes(data[offset : offset + XREF_STREAM_MARKER_WINDOW])
+        if len(window) < XREF_STREAM_MARKER_WINDOW or b"#" in window:
+            return True
+        if b"XRef" in window:
+            return True
+        return b"/W" in window and b"/Size" in window
 
     def is_valid_trailer_metadata_value(self, key: str, value: object) -> bool:
         if key == "Info":
@@ -1991,6 +2015,11 @@ def create_recovered_security_handler(
             normalized["CF"] = cast(PdfDict, normalized_filters)
     return create_standard_security_handler(document_id, normalized, password)
 
+
+# Wide enough to contain any real xref stream dictionary, which begins at the
+# object header. Objects whose window is shorter than this are near the end of
+# the file and are parsed rather than judged on a truncated window.
+XREF_STREAM_MARKER_WINDOW = 2048
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
 
