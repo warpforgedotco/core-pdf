@@ -39,7 +39,7 @@ from core_pdf.impl.output.model import (
     TableCell,
     TextLine,
 )
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.types import Rectangle
 
 
@@ -321,9 +321,6 @@ def compose_page(
     )
 
 
-frozen_setattr = object.__setattr__
-
-
 def remove_block_duplicate_table_rows(
     blocks: list[Block],
     tables: tuple[Table, ...],
@@ -599,9 +596,6 @@ def project_text_and_tables(
     return text_blocks, projected_tables
 
 
-frozen_setattr = object.__setattr__
-
-
 class SpatialFrame(Record):
     __slots__ = ("boxes", "areas")
 
@@ -647,7 +641,7 @@ class SpatialFrame(Record):
         return widths * heights
 
     def overlap_min(self, box: Rectangle) -> numpy.ndarray[Any, Any]:
-        box_area = max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
+        box_area = bbox_area(box)
         denominator = numpy.minimum(self.areas, box_area)
         return numpy.divide(
             self.intersection_areas(box),

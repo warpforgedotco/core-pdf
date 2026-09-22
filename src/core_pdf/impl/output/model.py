@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from collections.abc import Mapping as MappingABC
 from copy import replace
 from enum import StrEnum
 from types import MappingProxyType
@@ -12,11 +11,8 @@ from typing import Any, ClassVar, Self, TypeAlias
 from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.model.page_selection import PageSelection
 from core_pdf.impl.model.text import reconcile_text_words
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.types import Rectangle, TextWord
-
-frozen_setattr = object.__setattr__
-
 
 SCHEMA_VERSION = "5.0"
 
@@ -24,7 +20,7 @@ JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dic
 
 
 def freeze(value: Any) -> Any:
-    if isinstance(value, MappingABC):
+    if isinstance(value, Mapping):
         return MappingProxyType({key: freeze(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
         return tuple(freeze(item) for item in value)
@@ -1031,7 +1027,7 @@ class ContentNode(Record):
         if value:
             return tuple(value)
         metadata = getattr(self.payload, "metadata", {})
-        source = metadata.get("source") if isinstance(metadata, MappingABC) else None
+        source = metadata.get("source") if isinstance(metadata, Mapping) else None
         return (str(source),) if source else ()
 
 

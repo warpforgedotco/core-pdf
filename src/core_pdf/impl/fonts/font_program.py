@@ -4,6 +4,7 @@ import logging
 import re
 import struct
 import threading
+from abc import abstractmethod
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from io import BytesIO
 from math import inf, isfinite
@@ -53,8 +54,8 @@ from core_pdf.impl.fonts.raster_kernel import (
     scale_contours,
     transform_contours,
 )
-from core_pdf.impl.model.geometry import transform_bbox
-from core_pdf.impl.records import FrozenFields, ReplaceFields, ReprFields
+from core_pdf.impl.model.geometry import points_bbox, transform_bbox
+from core_pdf.impl.records import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.font_program_truetype import (
     is_unicode_scalar,
@@ -70,9 +71,6 @@ def with_recovery[T](strict: Callable[..., T], repair: Callable[..., T], /, *arg
         return strict(*args)
     except MALFORMED_CFF_TABLE:
         return repair(*args)
-
-
-frozen_setattr = object.__setattr__
 
 
 class CFFGlyphFeature(FrozenFields, ReplaceFields, ReprFields):
@@ -527,7 +525,7 @@ class CFFFont(PdfCFFFont):
         return feature_from_contours(contours)
 
     def glyph_bitmap_for_gid(
-        self, glyph_id: int, width: int = 24, height: int = 32
+        self, glyph_id: int, *, width: int = 24, height: int = 32
     ) -> tuple[int, ...]:
         geometry = self.glyph_geometry_for_gid(glyph_id)
         contours = geometry[0]
@@ -548,11 +546,7 @@ class CFFFont(PdfCFFFont):
 def contours_bbox(
     contours: tuple[tuple[tuple[float, float], ...], ...],
 ) -> tuple[float, float, float, float] | None:
-    points = tuple(point for contour in contours for point in contour)
-    if not points:
-        return None
-    xs, ys = zip(*points, strict=True)
-    return (min(xs), min(ys), max(xs), max(ys))
+    return points_bbox(point for contour in contours for point in contour)
 
 
 def feature_from_contours(
@@ -1277,7 +1271,36 @@ def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...
     return tuple(tuple(contour) for contour in recording_to_contours(pen.value))
 
 
-class FontToolsOutlineAccess:
+class BitmapFromContours:
+    """`glyph_bitmap_for_gid` for programs that produce their own contours."""
+
+    __slots__ = ()
+
+    @abstractmethod
+    def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]: ...
+
+    def glyph_bitmap_for_gid(
+        self, glyph_id: int, *, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
+        return rasterize_contours(
+            self.normalized_glyph_contours(glyph_id), width=width, height=height
+        )
+
+
+class BitmapFromOutlines:
+    """`glyph_bitmap_for_gid` for programs backed by a `FontToolsOutlineAccess`."""
+
+    __slots__ = ()
+
+    outlines: FontToolsOutlineAccess
+
+    def glyph_bitmap_for_gid(
+        self, glyph_id: int, *, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
+        return self.outlines.glyph_bitmap_for_gid(glyph_id, width=width, height=height)
+
+
+class FontToolsOutlineAccess(BitmapFromContours):
     __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale")
 
     def __init__(self, font: TTFont) -> None:
@@ -1306,13 +1329,6 @@ class FontToolsOutlineAccess:
         except FONT_PROGRAM_ERRORS:
             return None
 
-    def glyph_bitmap_for_gid(
-        self, glyph_id: int, *, width: int = 24, height: int = 32
-    ) -> tuple[int, ...]:
-        return rasterize_contours(
-            self.normalized_glyph_contours(glyph_id), width=width, height=height
-        )
-
 
 class RecoverableFontTableWarningFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
@@ -1337,7 +1353,7 @@ for logger_name in (
     logging.getLogger(logger_name).addFilter(FONT_TABLE_WARNING_FILTER)
 
 
-class TrueTypeFontProgram:
+class TrueTypeFontProgram(BitmapFromOutlines):
     __slots__ = (
         "data",
         "font",
@@ -1412,11 +1428,6 @@ class TrueTypeFontProgram:
 
     def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
         return self.glyph_bitmap_for_gid(self.glyph_id_for_code(code), width=width, height=height)
-
-    def glyph_bitmap_for_gid(
-        self, gid: int, *, width: int = 24, height: int = 32
-    ) -> tuple[int, ...]:
-        return self.outlines.glyph_bitmap_for_gid(gid, width=width, height=height)
 
     def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
         return self.glyph_bbox_for_gid(self.glyph_id_for_code(code))
@@ -1762,7 +1773,7 @@ def parse_opentype_program(data: bytes) -> TTFont:
     return font
 
 
-class OpenTypeFontProgram:
+class OpenTypeFontProgram(BitmapFromOutlines):
     __slots__ = (
         "font",
         "outlines",
@@ -1788,11 +1799,6 @@ class OpenTypeFontProgram:
 
     def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
         return self.outlines.glyph_bbox_for_gid(glyph_id)
-
-    def glyph_bitmap_for_gid(
-        self, glyph_id: int, *, width: int = 24, height: int = 32
-    ) -> tuple[int, ...]:
-        return self.outlines.glyph_bitmap_for_gid(glyph_id, width=width, height=height)
 
 
 LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
@@ -1923,7 +1929,7 @@ def eexec_payload(data: bytes, length1: int | None) -> bytes:
     return decrypted[4:]
 
 
-class Type1FontProgram(Type1FontProgramBase):
+class Type1FontProgram(Type1FontProgramBase, BitmapFromContours):
     __slots__ = ()
 
     @staticmethod
@@ -1955,13 +1961,6 @@ class Type1FontProgram(Type1FontProgramBase):
         if not self.has_glyph_id(glyph_id):
             return ()
         return self.glyph_contours(self.glyph_names[glyph_id])
-
-    def glyph_bitmap_for_gid(
-        self, glyph_id: int, *, width: int = 24, height: int = 32
-    ) -> tuple[int, ...]:
-        return rasterize_contours(
-            self.normalized_glyph_contours(glyph_id), width=width, height=height
-        )
 
     def glyph_contours(self, glyph_name: str) -> tuple[tuple[Point, ...], ...]:
         charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")

@@ -5,9 +5,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from core_pdf.impl.extract.contracts import TextQualityStats
-from core_pdf.impl.records import Record
-
-frozen_setattr = object.__setattr__
+from core_pdf.impl.records import Record, frozen_setattr
 
 
 class TextAnalysis(Record):

@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from os import PathLike
 from typing import ClassVar, Protocol, Self, TypeAlias, TypeVar
 
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf_spec.types import (
     MISSING,
     MissingObject,
@@ -16,8 +16,6 @@ from core_pdf_spec.types import (
     PdfString,
     Rectangle,
 )
-
-frozen_setattr = object.__setattr__
 
 
 class BinaryReader(Protocol):

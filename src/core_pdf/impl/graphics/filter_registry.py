@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import ClassVar
 
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf_spec.s_07_filters.registry import (
     FILTER_DESCRIPTORS as PDF_FILTER_DESCRIPTORS,
 )
@@ -16,9 +16,6 @@ from core_pdf_spec.s_07_filters.registry import (
 from core_pdf_spec.s_07_filters.registry import (
     FilterDescriptor,
 )
-
-frozen_setattr = object.__setattr__
-
 
 FILTER_DESCRIPTORS = (
     *PDF_FILTER_DESCRIPTORS,

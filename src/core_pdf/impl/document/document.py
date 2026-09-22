@@ -94,10 +94,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf_spec.standards import DocumentStandards, PdfVersion, SemanticContext
 
 if TYPE_CHECKING:
-    from core_pdf.impl.fonts.fallback import (
-        RasterFontProviderLike,
-        RasterFontRepository,
-    )
+    from core_pdf.impl.fonts.fallback import RasterFontProviderLike
 
 
 PageT = TypeVar("PageT", bound=PdfPage, default=PdfPage)
@@ -160,8 +157,6 @@ class PageLookup[LookupPageT: PdfPage]:
         return self._pages
 
     def page_index_for(self, page_obj: object) -> int | None:
-        from core_pdf.impl.document.page import PdfPage
-
         if isinstance(page_obj, PdfPage):
             return page_obj.page_number - 1
         if not isinstance(page_obj, dict):
@@ -895,8 +890,6 @@ class PdfDocument(Generic[PageT]):
     def build_pages(self, nodes: Iterable[PageNode]) -> tuple[PageT, ...]:
         page_class = self.page_class
         if page_class is None:
-            from core_pdf.impl.document.page import PdfPage
-
             page_class = PdfPage
         factory = cast(Callable[..., PageT], page_class)
         return tuple(
@@ -1235,8 +1228,6 @@ class PdfDocument(Generic[PageT]):
         self,
         pages: Sequence[PageT] | None = None,
     ) -> dict[int, list[RawFormField]]:
-        from core_pdf.impl.document.page import PdfPage
-
         page_sequence = self.pages if pages is None else tuple(pages)
         page_indexes_by_dict = {
             id(page.page_dict): page.page_number - 1

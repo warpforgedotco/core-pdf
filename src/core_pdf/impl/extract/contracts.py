@@ -12,15 +12,12 @@ from core_pdf.impl.capture.program import PageProgram
 from core_pdf.impl.output.model import (
     TextLine,
 )
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.runtime.array_views import readonly
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.page import PdfPage
     from core_pdf.impl.document.records import RawAnnotation, RawFormField
-
-frozen_setattr = object.__setattr__
-
 
 FloatArray = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 IntArray = numpy.ndarray[Any, numpy.dtype[numpy.int64]]

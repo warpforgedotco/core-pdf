@@ -28,7 +28,7 @@ from core_pdf.impl.output.model import (
     Page,
     Table,
 )
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.runtime.execution import ExtractionScope
 
 if TYPE_CHECKING:
@@ -36,8 +36,6 @@ if TYPE_CHECKING:
     from core_pdf.impl.document.records import RawAnnotation, RawFormField
     from core_pdf.impl.document.structure import PageStructure
     from core_pdf.impl.extract.capture import StructureUnset
-
-frozen_setattr = object.__setattr__
 
 
 class Layout(Protocol):

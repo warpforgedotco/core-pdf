@@ -40,10 +40,8 @@ from core_pdf.impl.extract.table_cleanup import (
 )
 from core_pdf.impl.model.geometry import bbox_union, interval_overlap, overlap_ratio_min
 from core_pdf.impl.output.model import Table, TableCell
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.runtime.array_views import finite_median
-
-frozen_setattr = object.__setattr__
 
 
 def table_vertical_sort_key(table: Table) -> float:

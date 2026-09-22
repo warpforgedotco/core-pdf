@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import binascii
 import mmap
-import re
 from collections.abc import Callable
 from copy import replace
 from typing import Any
@@ -28,9 +27,6 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     lexical_rules,
 )
 from core_pdf_spec.standards import PdfVersion, SemanticContext
-
-PdfName_of = PdfName.of
-HEX_STRING_END_RE = re.compile(b">")
 
 RECOVERABLE_DICTIONARY_KEY_NAMES = {
     b"Type",

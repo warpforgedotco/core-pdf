@@ -8,14 +8,11 @@ from collections.abc import Callable
 from typing import Any, ClassVar
 
 from core_pdf.impl.capture.records import CapturedPath
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.render.paths import (
     fill_path_crossing_spans,
     intersect_box,
 )
-
-frozen_setattr = object.__setattr__
-
 
 PixelSpan = tuple[int, int]
 RowSpans = tuple[PixelSpan, ...]

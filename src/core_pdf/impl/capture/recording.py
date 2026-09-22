@@ -3,19 +3,9 @@
 from __future__ import annotations
 
 from contextlib import suppress
-from math import hypot
-from typing import TYPE_CHECKING, Any, ClassVar, cast
-
-from core_pdf.impl.capture.program import CapturedProgram
-
-if TYPE_CHECKING:
-    from core_pdf.impl.capture.interpreter import TextState
-    from core_pdf_spec.s_07_content.inline_images import InlineImage
-
-
 from copy import copy
-from math import ceil
-from typing import TYPE_CHECKING
+from math import ceil, hypot
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import numpy
 
@@ -27,6 +17,7 @@ from core_pdf.impl.capture.glyphs import (
     capture_glyphs,
 )
 from core_pdf.impl.capture.marked_content import MarkedContentEntry
+from core_pdf.impl.capture.program import CapturedProgram
 from core_pdf.impl.capture.records import (
     CapturedDrawing,
     CapturedInlineImage,
@@ -88,6 +79,10 @@ from core_pdf_spec.s_08_graphics.image_spec import (
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
+
+if TYPE_CHECKING:
+    from core_pdf.impl.capture.interpreter import TextState
+    from core_pdf_spec.s_07_content.inline_images import InlineImage
 
 
 class CaptureGraphicsSave(ReplaceFields, ReprFields):

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import typing
 from contextlib import suppress
 from itertools import batched
 from typing import Any, ClassVar
@@ -36,7 +35,7 @@ from core_pdf.impl.graphics.stream_decoding import (
     decode_stream_data,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.runtime.scalars import parse_int
 from core_pdf_spec.s_07_filters.errors import FilterError
@@ -50,8 +49,6 @@ from core_pdf_spec.s_08_graphics.image_spec import (
     image_smask_in_data,
 )
 from core_pdf_spec.standards import SemanticContext
-
-frozen_setattr = object.__setattr__
 
 
 def decode_array_applies(dictionary: dict[Any, Any], context: SemanticContext | None) -> bool:
@@ -585,9 +582,6 @@ def decode_image(source: ImageSource) -> ImageRaster | None:
     return prepared.raster if prepared is not None else None
 
 
-frozen_setattr = object.__setattr__
-
-
 class DecodedImage(Record):
     __slots__ = ("array", "source")
 
@@ -633,11 +627,6 @@ class DecodedImage(Record):
         return 1 if self.array.ndim == 2 else int(self.array.shape[2])
 
 
-if typing.TYPE_CHECKING:
-    from collections.abc import Callable
-
-    FilterFn = Callable[[bytes, object], bytes]
-frozen_setattr = object.__setattr__
 NATIVE_ARRAY_DECODERS = {
     "jpeg": decode_jpeg_image,
     "jpx": decode_jpx_image,

@@ -3,9 +3,6 @@ from __future__ import annotations
 
 import typing
 
-if typing.TYPE_CHECKING:
-    from typing import Any
-
 from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.pdf_names import recover_pdf_name
@@ -17,6 +14,9 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
+
+if typing.TYPE_CHECKING:
+    from typing import Any
 
 
 class PdfObjectStream(SyntaxObjectStream):

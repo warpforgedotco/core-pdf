@@ -12,12 +12,10 @@ from core_pdf.impl.graphics.functions import (
     compile_pdf_function,
     number_array,
 )
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.runtime.scalars import parse_int
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.shading import parse_shading
-
-frozen_setattr = object.__setattr__
 
 
 class PreparedShading(Record):

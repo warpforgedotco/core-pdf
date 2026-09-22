@@ -9,9 +9,7 @@ from typing import ClassVar, Protocol, cast
 
 from core_pdf.impl.fonts.font_program import TrueTypeFontProgram
 from core_pdf.impl.fonts.helpers import strip_subset_tag
-from core_pdf.impl.records import Record
-
-frozen_setattr = object.__setattr__
+from core_pdf.impl.records import Record, frozen_setattr
 
 
 class PdfRasterFontRequest(Record):

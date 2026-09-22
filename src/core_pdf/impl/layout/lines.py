@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, ClassVar
 from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
 from core_pdf.impl.model.glyphs import glyph_text_has_unsupported_codepoint
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.records import Record
+from core_pdf.impl.records import Record, frozen_setattr
 from core_pdf.impl.types import Rectangle, TextWord
 
 if TYPE_CHECKING:
@@ -17,8 +17,6 @@ if TYPE_CHECKING:
         LayoutLineText,
         LayoutLineTextSegment,
     )
-
-frozen_setattr = object.__setattr__
 
 
 class LayoutLine:

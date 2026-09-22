@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 
 from core_pdf.impl.model.geometry import bbox_union, normalize_rect, points_bbox
-from core_pdf.impl.records import Record, ReplaceFields, ReprFields
+from core_pdf.impl.records import Record, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
@@ -16,9 +16,6 @@ from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.program import CapturedProgram
-
-frozen_setattr = object.__setattr__
-
 
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
 

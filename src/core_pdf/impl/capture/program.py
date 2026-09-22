@@ -13,10 +13,7 @@ from core_pdf.impl.capture.records import (
 from core_pdf.impl.exceptions import PdfContractError
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.records import Record
-
-frozen_setattr = object.__setattr__
-
+from core_pdf.impl.records import Record, frozen_setattr
 
 PageCommand: TypeAlias = (
     TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage | CapturedTextBoundary
