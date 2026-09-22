@@ -2073,8 +2073,8 @@ class RasterTarget:
             start_x = 0.0
             for end_x, delta in intersections:
                 if winding:
-                    start = max(ix0, math.ceil((start_x - crop_x0) * scale))
-                    end = min(ix1, math.ceil((end_x - crop_x0) * scale))
+                    start = max(ix0, math.ceil((start_x - crop_x0) * scale - 0.5))
+                    end = min(ix1, math.ceil((end_x - crop_x0) * scale - 0.5))
                     blend_normal_solid_span(py * width * 4, start, end, (0, 0, 0, 255))
                 if winding == 0:
                     start_x = end_x
