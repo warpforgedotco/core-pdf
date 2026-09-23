@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Text-space to device-space box helpers shared by the geometry passes."""
+"""Text-space to device-space box helpers shared by the geometry passes.
+
+These are what the split-unicode fallback in capture_glyphs still needs;
+the ink box its sibling used to compute is the compiled kernel's job now.
+"""
 
 from __future__ import annotations
 
@@ -13,39 +17,6 @@ TextBasis = tuple[float, float, float, float, float, float]
 def text_basis_rect(x0: float, y0: float, x1: float, y1: float, text_basis: TextBasis) -> Rectangle:
     base_x, base_y, a, b, c, d = text_basis
     return transform_bbox((x0, y0, x1, y1), (a, b, c, d, base_x, base_y))
-
-
-def glyph_ink_rect(
-    glyph_bbox: Rectangle | None,
-    advance_start: float,
-    fallback_bbox: Rectangle,
-    text_basis: TextBasis,
-    text_advance_scale: float,
-    rise: float,
-    font_scale: float,
-) -> Rectangle:
-    if glyph_bbox is None:
-        return fallback_bbox
-    gx0, gy0, gx1, gy1 = glyph_bbox
-    if gx1 <= gx0 or gy1 <= gy0:
-        return fallback_bbox
-    text_x0 = advance_start + gx0 * text_advance_scale
-    text_x1 = advance_start + gx1 * text_advance_scale
-    text_y0 = rise + gy0 * font_scale
-    text_y1 = rise + gy1 * font_scale
-    rect = text_basis_rect(text_x0, text_y0, text_x1, text_y1, text_basis)
-    fallback_height = fallback_bbox[3] - fallback_bbox[1]
-    fallback_width = fallback_bbox[2] - fallback_bbox[0]
-    rect_x0, rect_y0, rect_x1, rect_y1 = rect
-    rect_height = rect_y1 - rect_y0
-    rect_width = rect_x1 - rect_x0
-    if rect_width <= 0.01 or rect_height <= 0.01:
-        return fallback_bbox
-    if fallback_width > 0.0 and rect_width > fallback_width * 4.0:
-        return fallback_bbox
-    if fallback_height > 0.0 and rect_height > fallback_height * 1.5:
-        return fallback_bbox
-    return rect
 
 
 def transformed_text_line(
