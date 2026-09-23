@@ -10,6 +10,9 @@ from libc.math cimport sqrt, fabs
 
 cdef double CUBIC_FLATNESS = 0.25
 cdef int CUBIC_MAX_DEPTH = 12
+# rec() appends one time per leaf. Depth is capped, so leaves <= 2**12,
+# plus 1.0 and up to four extrema.
+cdef int CUBIC_SAMPLE_CAPACITY = 4101
 
 cdef inline bint flat(double x0, double y0, double x1, double y1,
                       double x2, double y2, double x3, double y3) noexcept nogil:
@@ -74,24 +77,47 @@ cdef void rec(double x0, double y0, double x1, double y1, double x2, double y2,
     rec(x0,y0, ax,ay, dx,dy, mx,my, t0, tm, depth+1, buf, count, capacity)
     rec(mx,my, ex,ey, cx,cy, x3,y3, tm, t1, depth+1, buf, count, capacity)
 
+cdef int sample_times_c(double x0, double y0, double x1, double y1,
+                        double x2, double y2, double x3, double y3,
+                        double* out) noexcept nogil:
+    """Fill `out` with the sorted, de-duplicated sample times. Returns the count.
+
+    `out` must hold CUBIC_SAMPLE_CAPACITY doubles. This is what
+    cubic_sample_times returns as a tuple, and what _type2 consumes directly;
+    the sort-then-drop-neighbours is the C spelling of sorted(set(...)), which
+    agrees for these values because none of them can be NaN.
+    """
+    cdef double ex[2]
+    cdef int count = 0, n = 0, i, j
+    cdef double key
+    out[count] = 1.0; count += 1
+    extrema(x0, x1, x2, x3, ex, &n)
+    for i in range(n):
+        out[count] = ex[i]; count += 1
+    extrema(y0, y1, y2, y3, ex, &n)
+    for i in range(n):
+        out[count] = ex[i]; count += 1
+    rec(x0,y0,x1,y1,x2,y2,x3,y3, 0.0, 1.0, 0, out, &count, CUBIC_SAMPLE_CAPACITY)
+    # Insertion sort: the count is a handful for a typical glyph curve, and it
+    # avoids a qsort callback in the inner loop.
+    for i in range(1, count):
+        key = out[i]
+        j = i - 1
+        while j >= 0 and out[j] > key:
+            out[j + 1] = out[j]
+            j -= 1
+        out[j + 1] = key
+    j = 0
+    for i in range(count):
+        if i == 0 or out[i] != out[j - 1]:
+            out[j] = out[i]; j += 1
+    return j
+
+
 def cubic_sample_times(tuple p0, tuple p1, tuple p2, tuple p3):
     cdef double x0=p0[0], y0=p0[1], x1=p1[0], y1=p1[1]
     cdef double x2=p2[0], y2=p2[1], x3=p3[0], y3=p3[1]
-    # rec() appends one time per leaf. Depth is capped at CUBIC_MAX_DEPTH,
-    # so leaves <= 2**12, plus 1.0 and up to four extrema.
-    cdef int capacity = 4101
     cdef double buf[4101]
-    cdef double ex[2]
-    cdef int count = 0, n = 0, i
-    buf[count] = 1.0; count += 1
-    extrema(x0, x1, x2, x3, ex, &n)
-    for i in range(n):
-        buf[count] = ex[i]; count += 1
-    extrema(y0, y1, y2, y3, ex, &n)
-    for i in range(n):
-        buf[count] = ex[i]; count += 1
-    rec(x0,y0,x1,y1,x2,y2,x3,y3, 0.0, 1.0, 0, buf, &count, capacity)
-    cdef set seen = set()
-    for i in range(count):
-        seen.add(buf[i])
-    return tuple(sorted(seen))
+    cdef int count = sample_times_c(x0,y0,x1,y1,x2,y2,x3,y3, buf)
+    cdef int i
+    return tuple([buf[i] for i in range(count)])

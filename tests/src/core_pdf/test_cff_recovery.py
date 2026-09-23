@@ -6,12 +6,12 @@ from core_pdf.impl.fonts.font_program import (
     CFFGlyphFeature,
     CFFUnicodeRepairIndex,
     contours_bbox,
-    cubic_sample_times,
     feature_from_contours,
     glyph_feature_distance,
     is_repairable_to_unicode_label,
     repair_candidate,
 )
+from core_pdf_cythonized import cubic_sample_times
 
 
 def make_font(payload: bytes, glyph_count: int = 4) -> CFFFont:

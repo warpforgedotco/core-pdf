@@ -12,11 +12,6 @@ from typing import Any, ClassVar, TypeAlias
 
 import numpy
 
-from core_adobe_fonts.cff.charstrings import (
-    cubic_extrema_times,
-    cubic_point,
-    execute_type2_charstring,
-)
 from core_adobe_fonts.cff.font import (
     CFF_EXPERT_ENCODING_CODES,
     CFF_STANDARD_STRING_COUNT,
@@ -56,7 +51,7 @@ from core_pdf.impl.fonts.raster_kernel import (
 )
 from core_pdf.impl.model.geometry import points_bbox, transform_bbox
 from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
-from core_pdf_cythonized import cubic_sample_times
+from core_pdf_cythonized import type2_glyph_geometry
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.font_program_truetype import (
     is_unicode_scalar,
@@ -113,8 +108,6 @@ class CFFGlyphFeature(FrozenFields, ReplaceFields, ReprFields):
 
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
 assert len(STANDARD_GLYPH_SIDS) == CFF_STANDARD_STRING_COUNT
-
-TYPE2_RANDOM_INITIAL_STATE = 0x1234ABCD
 
 
 DEFAULT_CFF_FONT_MATRIX = DEFAULT_CFF_MATRIX
@@ -567,7 +560,7 @@ def feature_from_contours(
     return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)
 
 
-def type2_glyph_geometry_impl(  # noqa: C901
+def type2_glyph_geometry_impl(
     charstring: bytes,
     *,
     local_subrs: tuple[bytes, ...],
@@ -582,127 +575,37 @@ def type2_glyph_geometry_impl(  # noqa: C901
     flatten: bool = True,
     retain_contours: bool = True,
 ) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
-    contours: list[list[tuple[float, float]]] = []
-    current: list[tuple[float, float]] = []
-    current_min_x = inf
-    current_min_y = inf
-    current_max_x = -inf
-    current_max_y = -inf
-    bbox_min_x = inf
-    bbox_min_y = inf
-    bbox_max_x = -inf
-    bbox_max_y = -inf
-    current_has_points = False
-    bbox_has_points = False
-    x = 0.0
-    y = 0.0
-    random_state = TYPE2_RANDOM_INITIAL_STATE
+    """Interpret a Type 2 charstring into contours and a bounding box.
 
-    def flush_contour() -> None:
-        nonlocal current
-        nonlocal current_min_x, current_min_y, current_max_x, current_max_y
-        nonlocal bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y
-        nonlocal current_has_points, bbox_has_points
-        if current:
-            contours.append(current)
-            current = []
-        if current_has_points:
-            bbox_min_x = min(bbox_min_x, current_min_x)
-            bbox_min_y = min(bbox_min_y, current_min_y)
-            bbox_max_x = max(bbox_max_x, current_max_x)
-            bbox_max_y = max(bbox_max_y, current_max_y)
-            bbox_has_points = True
-            current_min_x = inf
-            current_min_y = inf
-            current_max_x = -inf
-            current_max_y = -inf
-            current_has_points = False
+    The interpretation and the pen that used to drive it both live in the
+    compiled kernel now; what stays here is the one thing the kernel cannot
+    finish, because it needs the font's charset rather than the charstring: a
+    composite glyph's components. The kernel reports the request and the
+    components are run back through this same function.
+    """
+    # `valid` is deliberately ignored: a malformed charstring still yields
+    # whatever it completed, exactly as the raising interpreter plus its
+    # swallowing caller did. The conformance tests are what read it.
+    contours, bbox, seac, _valid = type2_glyph_geometry(
+        charstring, local_subrs, global_subrs, flatten, retain_contours
+    )
+    if seac is None or seac_resolver is None:
+        return contours, bbox
 
-    def append_completed_contour(points: tuple[tuple[float, float], ...]) -> None:
-        nonlocal bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y, bbox_has_points
-        if not points:
-            return
+    base_code, accent_code, dx, dy = seac
+    min_x, min_y, max_x, max_y = bbox if bbox is not None else (inf, inf, -inf, -inf)
+    has_points = bbox is not None
+    for component in seac_resolver(base_code, accent_code, dx, dy):
+        if not component:
+            continue
         if retain_contours:
-            contours.append(list(points))
-        bbox_min_x = min(bbox_min_x, *(point[0] for point in points))
-        bbox_min_y = min(bbox_min_y, *(point[1] for point in points))
-        bbox_max_x = max(bbox_max_x, *(point[0] for point in points))
-        bbox_max_y = max(bbox_max_y, *(point[1] for point in points))
-        bbox_has_points = True
-
-    def record_point(px: float, py: float) -> None:
-        nonlocal current_min_x, current_min_y, current_max_x, current_max_y
-        nonlocal current_has_points
-        if retain_contours:
-            current.append((px, py))
-        current_min_x = min(current_min_x, px)
-        current_min_y = min(current_min_y, py)
-        current_max_x = max(current_max_x, px)
-        current_max_y = max(current_max_y, py)
-        current_has_points = True
-
-    def move(dx: float, dy: float) -> None:
-        nonlocal x, y
-        flush_contour()
-        x += dx
-        y += dy
-        record_point(x, y)
-
-    def line(dx: float, dy: float) -> None:
-        nonlocal x, y
-        x += dx
-        y += dy
-        record_point(x, y)
-
-    def curve(dx1: float, dy1: float, dx2: float, dy2: float, dx3: float, dy3: float) -> None:
-        nonlocal x, y
-        point0 = (x, y)
-        point1 = (x + dx1, y + dy1)
-        point2 = (point1[0] + dx2, point1[1] + dy2)
-        point3 = (point2[0] + dx3, point2[1] + dy3)
-        if flatten:
-            for t in cubic_sample_times(point0, point1, point2, point3):
-                record_point(*cubic_point(point0, point1, point2, point3, t))
-        else:
-            for t in cubic_extrema_times(point0[0], point1[0], point2[0], point3[0]):
-                record_point(*cubic_point(point0, point1, point2, point3, t))
-            for t in cubic_extrema_times(point0[1], point1[1], point2[1], point3[1]):
-                record_point(*cubic_point(point0, point1, point2, point3, t))
-            record_point(*point3)
-        x, y = point3
-
-    def has_current_point() -> bool:
-        return current_has_points
-
-    def seac(base_code: int, accent_code: int, dx: float, dy: float) -> None:
-        if seac_resolver is not None:
-            for component in seac_resolver(base_code, accent_code, dx, dy):
-                append_completed_contour(component)
-
-    def random_value() -> float:
-        nonlocal random_state
-        random_state = (1103515245 * random_state + 12345) & 0x7FFFFFFF
-        return (random_state + 1) / 0x80000000
-
-    try:
-        unfinished = execute_type2_charstring(
-            charstring,
-            local_subrs=local_subrs,
-            global_subrs=global_subrs,
-            move=move,
-            line=line,
-            curve=curve,
-            flush_contour=flush_contour,
-            has_current_point=has_current_point,
-            seac=seac,
-            random_value=random_value,
-        )
-    except ArithmeticError, IndexError, ValueError:
-        unfinished = False
-    if unfinished:
-        flush_contour()
-    bbox = (bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y) if bbox_has_points else None
-    return contours, bbox
+            contours.append(list(component))
+        min_x = min(min_x, *(point[0] for point in component))
+        min_y = min(min_y, *(point[1] for point in component))
+        max_x = max(max_x, *(point[0] for point in component))
+        max_y = max(max_y, *(point[1] for point in component))
+        has_points = True
+    return contours, (min_x, min_y, max_x, max_y) if has_points else None
 
 
 def glyph_feature_distance(left: CFFGlyphFeature, right: CFFGlyphFeature) -> float:

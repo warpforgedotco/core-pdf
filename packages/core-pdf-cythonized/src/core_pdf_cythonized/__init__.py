@@ -42,6 +42,7 @@ from core_pdf_cythonized._knockout import (
 )
 from core_pdf_cythonized._outline import outline_edges
 from core_pdf_cythonized._rect import rect_coverage_plane
+from core_pdf_cythonized._type2 import type2_glyph_geometry
 
 __all__ = (
     "SCAN_NAME",
@@ -57,4 +58,5 @@ __all__ = (
     "outline_edges",
     "rect_coverage_plane",
     "signed_area_coverage",
+    "type2_glyph_geometry",
 )

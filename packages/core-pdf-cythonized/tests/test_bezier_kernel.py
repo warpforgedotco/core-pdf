@@ -46,13 +46,20 @@ def test_sample_times_are_sorted_unique_and_bounded():
         assert all(0.0 < t <= 1.0 and math.isfinite(t) for t in times)
 
 
-def test_core_imports_the_kernel_directly():
-    """core-pdf depends on this distribution; there is no fallback to shadow it."""
+def test_core_reaches_the_sampler_through_the_type2_kernel():
+    """core-pdf depends on this distribution; there is no fallback to shadow it.
+
+    core no longer calls cubic_sample_times itself: the only caller is the
+    type2 kernel, which cimports the same C sampler these vectors pin. So the
+    wire-up to assert is that font_program takes its geometry from the kernel.
+    """
     # These wire-up assertions need the consumer installed. The kernel tests
     # otherwise stand alone, so cibuildwheel can run the golden vectors
     # against a freshly built wheel with nothing else present.
     pytest.importorskip("core_pdf")
     from core_pdf.impl.fonts import font_program
+    from core_pdf_cythonized import type2_glyph_geometry
 
-    assert font_program.cubic_sample_times is cubic_sample_times
+    assert font_program.type2_glyph_geometry is type2_glyph_geometry
     assert not hasattr(font_program, "pure_cubic_sample_times")
+    assert not hasattr(font_program, "execute_type2_charstring")
