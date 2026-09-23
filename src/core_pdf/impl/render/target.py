@@ -75,6 +75,7 @@ from core_pdf.impl.runtime.scalars import parse_int
 from core_pdf_cythonized import (
     blend_normal_alpha_array_numpy,
     composite_knockout_group,
+    rect_coverage_plane,
     signed_area_coverage,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
@@ -1585,17 +1586,7 @@ class RasterTarget:
                 and bottom >= iy1 - 1e-9
             )
         ):
-            columns = numpy.arange(ix0, ix1, dtype=numpy.float64)
-            rows = numpy.arange(iy0, iy1, dtype=numpy.float64)
-            x_coverage = numpy.clip(
-                numpy.minimum(columns + 1.0, right) - numpy.maximum(columns, left), 0.0, 1.0
-            )
-            y_coverage = numpy.clip(
-                numpy.minimum(rows + 1.0, bottom) - numpy.maximum(rows, top), 0.0, 1.0
-            )
-            alpha_plane = numpy.rint(numpy.outer(y_coverage, x_coverage) * rgba[3]).astype(
-                numpy.uint8
-            )
+            alpha_plane = rect_coverage_plane(ix0, ix1, iy0, iy1, left, right, top, bottom, rgba[3])
             blend_normal_alpha_array_numpy(
                 self.pixel_view(pixels)[iy0:iy1, ix0:ix1],
                 rgba,
@@ -1606,7 +1597,7 @@ class RasterTarget:
                 self.record_source_shape(
                     slice(iy0, iy1),
                     slice(ix0, ix1),
-                    numpy.rint(numpy.outer(y_coverage, x_coverage) * 255).astype(numpy.uint8),
+                    rect_coverage_plane(ix0, ix1, iy0, iy1, left, right, top, bottom, 255),
                 )
             return
         if rgba[3] == 255 and blend_mode is None and rectangular_clip:
