@@ -74,6 +74,7 @@ from core_pdf.impl.runtime.array_views import (
 from core_pdf.impl.runtime.scalars import parse_int
 from core_pdf_cythonized import (
     blend_normal_alpha_array_numpy,
+    composite_elementary_normal,
     composite_knockout_group,
     glyph_coverage_plane,
     rect_coverage_plane,
@@ -227,6 +228,12 @@ def composite_nonisolated_group(
     mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
 ) -> UInt8Array:
     opacity = clamp01(opacity)
+    mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
+    if opacity == 1.0 and mode in {None, "normal"} and mask_alpha is None:
+        # Every elementary group around a glyph lands here: quantizing the
+        # coverage and copying the covered pixels across is the whole of it,
+        # and the planes are far too small to pay for nine numpy passes.
+        return composite_elementary_normal(destination, rendered, source_alpha)
     scaled_alpha = source_alpha.astype(numpy.float64) * opacity * 255.0
     if mask_alpha is not None:
         scaled_alpha *= mask_alpha
@@ -234,11 +241,8 @@ def composite_nonisolated_group(
     visible = effective_alpha > 0
     if not numpy.any(visible):
         return effective_alpha
-    mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
     if opacity == 1.0 and mode in {None, "normal"}:
-        if mask_alpha is None:
-            destination[visible] = rendered[visible]
-            return effective_alpha
+        # Reachable only with a soft mask; the unmasked case went to the kernel.
         unchanged_alpha = visible & (mask_alpha == 1.0)
         destination[unchanged_alpha] = rendered[unchanged_alpha]
         visible &= ~unchanged_alpha
