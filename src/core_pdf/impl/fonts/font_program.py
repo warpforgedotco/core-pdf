@@ -56,6 +56,7 @@ from core_pdf.impl.fonts.raster_kernel import (
 )
 from core_pdf.impl.model.geometry import points_bbox, transform_bbox
 from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
+from core_pdf_cythonized import cubic_sample_times
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.font_program_truetype import (
     is_unicode_scalar,
@@ -114,8 +115,6 @@ EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
 assert len(STANDARD_GLYPH_SIDS) == CFF_STANDARD_STRING_COUNT
 
 TYPE2_RANDOM_INITIAL_STATE = 0x1234ABCD
-CUBIC_FLATNESS = 0.25
-CUBIC_MAX_DEPTH = 12
 
 
 DEFAULT_CFF_FONT_MATRIX = DEFAULT_CFF_MATRIX
@@ -566,73 +565,6 @@ def feature_from_contours(
         add_cell((cell_x, cell_y))
     bitmap = rasterize_contours(contours, width=18, height=24)
     return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)
-
-
-def cubic_is_flat(
-    p0: tuple[float, float],
-    p1: tuple[float, float],
-    p2: tuple[float, float],
-    p3: tuple[float, float],
-) -> bool:
-    dx = p3[0] - p0[0]
-    dy = p3[1] - p0[1]
-    chord_squared = dx * dx + dy * dy
-    tolerance_squared = CUBIC_FLATNESS * CUBIC_FLATNESS
-    if chord_squared <= 1e-18:
-        return (
-            max(
-                (p1[0] - p0[0]) ** 2 + (p1[1] - p0[1]) ** 2,
-                (p2[0] - p0[0]) ** 2 + (p2[1] - p0[1]) ** 2,
-            )
-            <= tolerance_squared
-        )
-    cross1 = dx * (p1[1] - p0[1]) - dy * (p1[0] - p0[0])
-    cross2 = dx * (p2[1] - p0[1]) - dy * (p2[0] - p0[0])
-    return max(cross1 * cross1, cross2 * cross2) <= tolerance_squared * chord_squared
-
-
-def cubic_sample_times(
-    p0: tuple[float, float],
-    p1: tuple[float, float],
-    p2: tuple[float, float],
-    p3: tuple[float, float],
-) -> tuple[float, ...]:
-    times = {
-        1.0,
-        *cubic_extrema_times(p0[0], p1[0], p2[0], p3[0]),
-        *cubic_extrema_times(p0[1], p1[1], p2[1], p3[1]),
-    }
-
-    def subdivide(
-        start: tuple[float, float],
-        control1: tuple[float, float],
-        control2: tuple[float, float],
-        end: tuple[float, float],
-        start_t: float,
-        end_t: float,
-        depth: int,
-    ) -> None:
-        if depth >= CUBIC_MAX_DEPTH or cubic_is_flat(start, control1, control2, end):
-            times.add(end_t)
-            return
-        point01 = ((start[0] + control1[0]) / 2.0, (start[1] + control1[1]) / 2.0)
-        point12 = (
-            (control1[0] + control2[0]) / 2.0,
-            (control1[1] + control2[1]) / 2.0,
-        )
-        point23 = ((control2[0] + end[0]) / 2.0, (control2[1] + end[1]) / 2.0)
-        point012 = ((point01[0] + point12[0]) / 2.0, (point01[1] + point12[1]) / 2.0)
-        point123 = ((point12[0] + point23[0]) / 2.0, (point12[1] + point23[1]) / 2.0)
-        midpoint = (
-            (point012[0] + point123[0]) / 2.0,
-            (point012[1] + point123[1]) / 2.0,
-        )
-        middle_t = (start_t + end_t) / 2.0
-        subdivide(start, point01, point012, midpoint, start_t, middle_t, depth + 1)
-        subdivide(midpoint, point123, point23, end, middle_t, end_t, depth + 1)
-
-    subdivide(p0, p1, p2, p3, 0.0, 1.0, 0)
-    return tuple(sorted(times))
 
 
 def type2_glyph_geometry_impl(  # noqa: C901

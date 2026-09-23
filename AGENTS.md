@@ -35,6 +35,17 @@ inversion) stays in the spec chapter that ISO 32000 assigns; kernels take bytes 
 Python values. Spec pins each floor package's minor range; core pins the two it imports
 directly. See `tests/fixtures/specifications/README.md` for the document-to-package map.
 
+`packages/core-pdf-cythonized/src/core_pdf_cythonized` holds compiled kernels and is the
+only workspace member shipping a C extension, so `core-pdf` is a compiled distribution and
+needs a wheel or a compiler. There is no pure-Python fallback by design: when a kernel lands
+there the Python it replaced is deleted, so nothing can silently diverge between a compiled
+and an interpreted path. A kernel belongs there only if it is measured against a profiled
+workload, its inner loop touches no Python objects (Cython loses to CPython's specializing
+interpreter on object-heavy code, measured at roughly 2x slower for per-item construction),
+and it is pinned by golden vectors generated from the original before deletion. The build
+sets `-ffp-contract=off`: the kernels must reproduce CPython float semantics exactly, and
+compilers contract expressions into FMAs that shift results by an ULP.
+
 The optional `core-pdf-validate` workspace member owns external validator adapters and reports.
 Core, spec, and OCR must never import or discover it. Explicit validation uses original source
 bytes; only declaration discovery depends on public core APIs. Validator execution, temporary

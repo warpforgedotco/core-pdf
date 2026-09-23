@@ -163,11 +163,14 @@ documented next to their strict implementations. Spec reports malformed input ra
 than repairing it, except where a referenced standard prescribes a fallback, and it is
 not a complete conformance validator.
 
-Core requires `core-pdf-spec>=0.5.0,<0.6.0`. Referenced-standard kernels (the PostScript
-calculator, JBIG2, ciphers and PDF MAC, and the Adobe font formats with their CMap data)
-are separately versioned floor packages that spec depends on and core may import
-directly: `core-postscript`, `core-jbig2`, `core-pdf-crypto`, and `core-adobe-fonts`.
-The PNG and TIFF predictor kernels are small enough that they live in spec itself, as
+Core requires `core-pdf-spec>=0.5.0,<0.6.0` and `core-pdf-cythonized>=0.1.0,<0.2.0`;
+the latter carries compiled kernels with no pure-Python fallback, so core needs a
+wheel for the target platform or a C compiler at install time. Referenced-standard
+kernels (the PostScript calculator, JBIG2, ciphers and PDF MAC, and the Adobe font
+formats with their CMap data) are separately versioned floor packages that spec
+depends on and core may import directly: `core-postscript`, `core-jbig2`,
+`core-pdf-crypto`, and `core-adobe-fonts`. The PNG and TIFF predictor kernels are
+small enough that they live in spec itself, as
 `core_pdf_spec.s_07_filters.predictors`. Core's public exceptions keep their names
 and share spec's error identities. Reader recovery, fontTools backends, Unicode guesses,
 device color conversion, capture, extraction, and rendering stay in core.

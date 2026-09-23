@@ -19,6 +19,7 @@ dependencies = [
     "core-pdf-spec>=0.5.0,<0.6.0",
     "core-jbig2>=0.1.0,<0.2.0",
     "core-adobe-fonts>=0.1.0,<0.2.0",
+    "core-pdf-cythonized>=0.1.0,<0.2.0",
 ]
 
 [project.scripts]
@@ -37,12 +38,14 @@ members = [
     "packages/core-jbig2",
     "packages/core-pdf-crypto",
     "packages/core-adobe-fonts",
+    "packages/core-pdf-cythonized",
 ]
 
 [tool.uv.sources]
 core-jbig2 = { workspace = true }
 core-adobe-fonts = { workspace = true }
 core-pdf-spec = { workspace = true }
+core-pdf-cythonized = { workspace = true }
 
 # [tool.uv.sources]
 # nuitka = { path = "../Nuitka", editable = true }
@@ -103,6 +106,7 @@ testpaths = [
     "packages/core-pdf-ocr/tests",
     "packages/core-pdf-spec/tests",
     "packages/core-pdf-validate/tests",
+    "packages/core-pdf-cythonized/tests",
     "packages/core-postscript/tests",
     "packages/core-jbig2/tests",
     "packages/core-pdf-crypto/tests",
@@ -127,6 +131,7 @@ source = [
     "packages/core-jbig2/src/core_jbig2",
     "packages/core-pdf-crypto/src/core_pdf_crypto",
     "packages/core-adobe-fonts/src/core_adobe_fonts",
+    "packages/core-pdf-cythonized/src/core_pdf_cythonized",
 ]
 omit = ["*/_vendor/*"]
 relative_files = true
@@ -138,7 +143,7 @@ precision = 2
 output = "htmlcov/coverage.json"
 
 [tool.ruff]
-src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "."]
+src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-pdf-cythonized/src", "."]
 extend-exclude = [
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
@@ -234,7 +239,7 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.14"
-files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-spec/src/core_pdf_spec", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-postscript/src/core_postscript", "packages/core-jbig2/src/core_jbig2", "packages/core-pdf-crypto/src/core_pdf_crypto", "packages/core-adobe-fonts/src/core_adobe_fonts"]
+files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-spec/src/core_pdf_spec", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-postscript/src/core_postscript", "packages/core-jbig2/src/core_jbig2", "packages/core-pdf-crypto/src/core_pdf_crypto", "packages/core-adobe-fonts/src/core_adobe_fonts", "packages/core-pdf-cythonized/src/core_pdf_cythonized"]
 mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
@@ -245,12 +250,15 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [tool.ty.environment]
-root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src"]
+root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-pdf-cythonized/src"]
 
 [tool.ty.src]
 exclude = [
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
+    # Runs in the isolated PEP 517 build environment, where Cython is present
+    # and the dev venv it would be checked against is not.
+    "packages/core-pdf-cythonized/setup.py",
 ]
 
 [tool.setuptools]
