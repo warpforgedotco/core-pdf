@@ -1013,6 +1013,7 @@ class RecordingMethods(RecoveringTextState):
             capture_ink_bounds=self.capture_ink_bounds,
             capture_text_runs=self.capture_text_runs,
         )
+        nested.parsed_soft_masks = self.parsed_soft_masks
         nested.capture_soft_masks = self.capture_soft_masks
         nested.capture_mask_resources = self.capture_mask_resources
         nested.capture_active_mask_groups = self.capture_active_mask_groups
