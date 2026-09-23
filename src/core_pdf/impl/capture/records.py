@@ -267,6 +267,29 @@ DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
 EMPTY_DRAWING_ITEMS: tuple[DrawingItem, ...] = ()
 
 
+# CapturedDrawing is one record for twelve things, told apart by `kind`. Six
+# paint something; the other six are control-flow signals the renderer replays
+# to rebuild the graphics stack, and they leave most of the record unset.
+PaintedDrawingKind: TypeAlias = Literal[
+    "fill",
+    "stroke",
+    "fillstroke",
+    "clip",
+    "image",
+    "shading",
+]
+# What marker_drawing emits. "scope-begin" is not here: it carries the form's
+# clip path, so it is built as a full record.
+MarkerDrawingKind: TypeAlias = Literal[
+    "state-push",
+    "state-pop",
+    "group-begin",
+    "group-end",
+    "scope-end",
+]
+DrawingKind: TypeAlias = PaintedDrawingKind | MarkerDrawingKind | Literal["scope-begin"]
+
+
 StrokeStyleKey = tuple[
     tuple[float, ...] | None,
     float,
@@ -299,7 +322,7 @@ class CapturedDrawing:
     dictionary: dict[Any, Any] | None = None
     image_source: ImageSource | None = None
     image_clip: Rectangle | None = None
-    kind: str = "fill"
+    kind: DrawingKind = "fill"
     items: tuple[DrawingItem, ...] | list[DrawingItem] = EMPTY_DRAWING_ITEMS
     path: CapturedPath | None = None
     bbox: Rectangle | None = None
@@ -350,7 +373,7 @@ class CapturedDrawing:
 
 
 def marker_drawing(
-    kind: str,
+    kind: MarkerDrawingKind,
     seqno: int,
     *,
     fill_opacity: float | None = None,
@@ -394,6 +417,7 @@ PatternPaint: TypeAlias = ShadingPattern | TilingPattern
 
 __all__ = (
     "CapturedDrawing",
+    "DrawingKind",
     "CapturedInlineImage",
     "CapturedLine",
     "CapturedPath",

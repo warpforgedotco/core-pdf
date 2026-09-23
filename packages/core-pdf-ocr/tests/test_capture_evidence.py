@@ -8,6 +8,7 @@ from core_pdf.impl.capture.records import (
     CapturedLine,
     CapturedPath,
     CapturedSubpath,
+    DrawingKind,
     ShadingPattern,
 )
 from core_pdf.impl.extract.contracts import ObservationBatch
@@ -37,12 +38,15 @@ def test_patterned_strokes_do_not_supply_solid_vector_text_evidence() -> None:
 
 
 def test_vector_complexity_counts_paints_and_segments_but_not_control_records() -> None:
-    drawings = tuple(
-        CapturedDrawing(i, None, None, kind=kind)
-        for i, kind in enumerate(
-            ("stroke", "fill", "fillstroke", "scope-begin", "scope-end", "image")
-        )
+    kinds: tuple[DrawingKind, ...] = (
+        "stroke",
+        "fill",
+        "fillstroke",
+        "scope-begin",
+        "scope-end",
+        "image",
     )
+    drawings = tuple(CapturedDrawing(i, None, None, kind=kind) for i, kind in enumerate(kinds))
     lines = (CapturedLine(0, 0, 1, 1),) * 10
     assert capture.vector_complexity(drawings, lines) == 19
     assert capture.vector_complexity((), ()) == 0

@@ -27,6 +27,7 @@ from core_pdf.impl.capture.records import (
     CapturedSubpath,
     CapturedTextBoundary,
     LayoutFormId,
+    PaintedDrawingKind,
     PatternPaint,
     ShadingPattern,
     TilingPattern,
@@ -790,7 +791,11 @@ class TextState(RecoveringTextState):
         strokes = kind in {"stroke", "fillstroke"} and not self.initial_pattern(stroke=True)
         if not fills and not strokes:
             return
-        kind = "fillstroke" if fills and strokes else "fill" if fills else "stroke"
+        # The operator asked for one of the three; what actually paints after
+        # the pattern and colour-space probes above may be narrower.
+        painted: PaintedDrawingKind = (
+            "fillstroke" if fills and strokes else "fill" if fills else "stroke"
+        )
         fill_paints = color_space_paints(self.graphics.fill_space)
         stroke_paints = color_space_paints(self.graphics.stroke_space)
 
@@ -828,7 +833,7 @@ class TextState(RecoveringTextState):
                     blend_mode=self.graphics.blend_mode,
                     soft_mask_alpha=self.group_alpha,
                     alpha_is_shape=self.graphics.alpha_is_shape,
-                    kind=kind,
+                    kind=painted,
                     graphics_soft_mask=self.capture_graphics_soft_mask(),
                     fill_paints=fill_paints,
                     stroke_paints=stroke_paints,
