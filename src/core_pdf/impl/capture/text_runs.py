@@ -6,7 +6,7 @@ from collections import deque
 from itertools import chain
 from typing import Literal, TypeAlias
 
-from core_pdf.impl.model.glyphs import GlyphCluster
+from core_pdf.impl.model.glyphs import GlyphClusterLike
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.model.text import word_gap_threshold
 
@@ -46,7 +46,7 @@ class PendingRun:
     def __init__(self, run: TextRun) -> None:
         self.run = run
         self.parts: deque[str] = deque((run.text,))
-        self.clusters: list[tuple[GlyphCluster, ...]] = [run.glyph_clusters]
+        self.clusters: list[tuple[GlyphClusterLike, ...]] = [run.glyph_clusters]
         self.head = run.text[:1]
         self.tail = run.text[-1:]
 

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
 from core_pdf.impl.types import Record, ReprFields, frozen_setattr
 
 if TYPE_CHECKING:
-    from core_pdf.impl.model.glyphs import GlyphCluster
+    from core_pdf.impl.model.glyphs import GlyphClusterLike
 
 
 class LayoutLineTextSegment(Record):
@@ -139,7 +139,7 @@ class TextRun(ReprFields):
     baseline: tuple[float, float, float, float] | None
     provenance: Provenance
     confidence: float | None
-    glyph_clusters: tuple[GlyphCluster, ...]
+    glyph_clusters: tuple[GlyphClusterLike, ...]
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "text",
@@ -307,7 +307,7 @@ class TextRun(ReprFields):
         baseline: tuple[float, float, float, float] | None = None,
         provenance: Provenance = (),
         confidence: float | None = None,
-        glyph_clusters: tuple[GlyphCluster, ...] = (),
+        glyph_clusters: tuple[GlyphClusterLike, ...] = (),
     ) -> None:
         self.inside_active_clip = inside_active_clip
         self.x0 = x0

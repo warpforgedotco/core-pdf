@@ -14,7 +14,7 @@ from core_pdf.impl.capture.glyph_geometry import NO_BOX, vertical_glyph_geometry
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts.font_program import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.model.glyphs import (
-    GlyphCluster,
+    GlyphClusterLike,
     GlyphObservation,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
@@ -153,7 +153,7 @@ class GlyphCapture:
     """What one run of glyphs contributed, accumulated as it is captured."""
 
     glyphs: list[GlyphObservation] = field(default_factory=list)
-    clusters: list[GlyphCluster] = field(default_factory=list)
+    clusters: list[GlyphClusterLike] = field(default_factory=list)
     cluster_count: int = 0
     geometry: RunGeometry = field(default_factory=RunGeometry)
 

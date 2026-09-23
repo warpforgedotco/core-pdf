@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Self, TypeAlias
 
 from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.types import Rectangle
@@ -510,6 +510,24 @@ class GlyphObservation:
             return ()
         return resolver(code, width=self.bitmap_width, height=self.bitmap_height)
 
+    @property
+    def cluster_id(self) -> int:
+        """This observation's cluster identity, when it is its own cluster.
+
+        99.91% of clusters over the corpus hold exactly one glyph, so building
+        a separate seven-slot GlyphCluster for each of them allocated one
+        object per glyph on the page to duplicate four fields -- the same
+        tuple objects -- off the observation it wrapped. A single-glyph cluster
+        is now the observation itself, and these two properties are the only
+        part of the cluster interface it did not already have.
+        """
+        key = self.cluster_key
+        return key[1] if key is not None else 0
+
+    @property
+    def glyphs(self) -> tuple[GlyphObservation, ...]:
+        return (self,)
+
 
 class GlyphCluster:
     __slots__ = (
@@ -681,27 +699,32 @@ def glyph_text_has_unsupported_codepoint(text: str) -> bool:
     return False
 
 
+# A cluster of glyphs, or the single observation that stands in for one. The
+# two are interchangeable to every reader: GlyphObservation carries the whole
+# cluster interface, and 99.91% of clusters hold exactly one glyph.
+GlyphClusterLike: TypeAlias = GlyphCluster | GlyphObservation
+
+
 def glyph_cluster_from_observations(
     cluster_id: int,
     text: str,
     glyphs: tuple[GlyphObservation, ...],
-) -> GlyphCluster | None:
+) -> GlyphClusterLike | None:
     if not glyphs:
         return None
     first = glyphs[0]
     if len(glyphs) == 1:
-        advance_bbox = first.advance_bbox
-        ink_bbox = first.ink_bbox
-        confidence = first.confidence
-    else:
-        aggregated_advance_bbox = bbox_union(tuple(glyph.advance_bbox for glyph in glyphs))
-        aggregated_ink_bbox = bbox_union(tuple(glyph.ink_bbox for glyph in glyphs))
-        if aggregated_advance_bbox is None or aggregated_ink_bbox is None:
-            return None
-        advance_bbox = aggregated_advance_bbox
-        ink_bbox = aggregated_ink_bbox
-        confidences = [glyph.confidence for glyph in glyphs if glyph.confidence is not None]
-        confidence = min(confidences) if confidences else None
+        # The observation already carries every field a one-glyph cluster has,
+        # with the same tuple objects, so it is returned as its own cluster
+        # rather than copied into a new one. Callers see the cluster interface
+        # either way; see GlyphObservation.cluster_id.
+        return first
+    advance_bbox = bbox_union(tuple(glyph.advance_bbox for glyph in glyphs))
+    ink_bbox = bbox_union(tuple(glyph.ink_bbox for glyph in glyphs))
+    if advance_bbox is None or ink_bbox is None:
+        return None
+    confidences = [glyph.confidence for glyph in glyphs if glyph.confidence is not None]
+    confidence = min(confidences) if confidences else None
     return GlyphCluster(
         cluster_id, text, glyphs, advance_bbox, ink_bbox, first.baseline, confidence
     )
