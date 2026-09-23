@@ -85,18 +85,46 @@ def font_signature(
 # distinct colours is not the case the cache exists for.
 COLOR_CACHE_LIMIT = 4096
 
+# Soft masks get the same treatment for a harsher reason. Every gs operator
+# re-parses the ExtGState soft mask into a fresh SoftMask object, and each one
+# carries a freshly compiled transfer closure, so a page that sets the same
+# mask thousands of times produces thousands of distinct objects. Every cache
+# downstream is keyed by one of those identities -- the captured program by
+# id(mask), the rendered plane by id(mask.program) -- so none of them could
+# ever hit, and the mask was captured and rasterized from scratch each time.
+# One corpus page, PyMuPDF/tests/resources/test_3450.pdf, parsed 11,136 soft
+# masks holding 802 distinct rasters and spent 137s and 7.9GB rendering them.
+# Masks are far heavier than colours, so the bound is lower.
+SOFT_MASK_CACHE_LIMIT = 512
+
 
 class RecoveringTextState(ContentInterpreter):
     recovery: CaptureRecovery
     normalized_colors: dict[tuple[ColorSpace, tuple[object, ...]], tuple[float, ...]]
+    parsed_soft_masks: dict[tuple[int, Matrix, int], tuple[object, object, SoftMask | None]]
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
-        return parse_soft_mask(
+        # The ctm is baked into the parsed mask, and the resource scope decides
+        # what the mask's own content stream can name, so both belong in the
+        # key: a mask reached through different resources stays a separate
+        # object, exactly as it was before this cache existed.
+        resources = self.resources
+        key = (id(value), self.graphics.ctm, id(resources))
+        cached = self.parsed_soft_masks.get(key)
+        if cached is not None:
+            return cached[2]
+        mask = parse_soft_mask(
             value,
             self.resolver,
             ctm=self.graphics.ctm,
             compile_function=compile_pdf_function,
         )
+        if len(self.parsed_soft_masks) >= SOFT_MASK_CACHE_LIMIT:
+            self.parsed_soft_masks.clear()
+        # The source and the resources are held alongside the result so their
+        # ids cannot be handed to another object while this entry is live.
+        self.parsed_soft_masks[key] = (value, resources, mask)
+        return mask
 
     def execute_operation(
         self, name: str, operands: ContentOperands, depth: int
