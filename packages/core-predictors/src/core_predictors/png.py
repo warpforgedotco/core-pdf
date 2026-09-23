@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy
 
 from core_predictors.errors import PredictorError, UnsupportedPngFilterError
+from core_predictors.samples import uint8_view
 
 
 def png_predict(
@@ -26,45 +27,32 @@ def png_predict(
     previous = memoryview(bytes(row_length))
     bpp = bytes_per_pixel
     rl = row_length
+    first = min(bpp, rl)
     for row_index, start in enumerate(range(0, n, rl + 1)):
         filter_type = data[start]
         pos = start + 1
         out_pos = row_index * rl
         if filter_type == 0:
-            raw_row = memoryview(data)[pos : pos + rl]
-            out_view[out_pos : out_pos + rl] = numpy.frombuffer(raw_row, dtype=numpy.uint8)
-            previous = raw_row
-            continue
-        if filter_type == 1:
-            row_array = numpy.frombuffer(data, dtype=numpy.uint8, count=rl, offset=pos).copy()
-            for offset in range(min(bpp, len(row_array))):
-                row_array[offset::bpp] = numpy.cumsum(
-                    row_array[offset::bpp],
-                    dtype=numpy.uint16,
-                ).astype(numpy.uint8, copy=False)
-            row: bytes | bytearray | memoryview | numpy.ndarray = row_array
-        elif filter_type == 2:
-            row_array = numpy.frombuffer(data, dtype=numpy.uint8, count=rl, offset=pos).copy()
-            row_array[:] = (
-                row_array.astype(numpy.uint16) + numpy.frombuffer(previous, dtype=numpy.uint8)
-            ).astype(numpy.uint8)
+            row: bytes | bytearray | memoryview | numpy.ndarray = memoryview(data)[pos : pos + rl]
+        elif filter_type == 1:
+            row_array = uint8_view(data, count=rl, offset=pos).copy()
+            for offset in range(first):
+                row_array[offset::bpp] = numpy.cumsum(row_array[offset::bpp], dtype=numpy.uint8)
             row = row_array
+        elif filter_type == 2:
+            row = uint8_view(data, count=rl, offset=pos) + uint8_view(previous)
         elif filter_type == 3:
             row_bytes = bytearray(data[pos : pos + rl])
-            n_row = len(row_bytes)
-            first = min(bpp, n_row)
             for i in range(first):
                 row_bytes[i] = (row_bytes[i] + (previous[i] >> 1)) & 0xFF
-            for i in range(bpp, n_row):
+            for i in range(bpp, rl):
                 row_bytes[i] = (row_bytes[i] + ((row_bytes[i - bpp] + previous[i]) >> 1)) & 0xFF
             row = row_bytes
         elif filter_type == 4:
             row_bytes = bytearray(data[pos : pos + rl])
-            n_row = len(row_bytes)
-            first = min(bpp, n_row)
             for i in range(first):
                 row_bytes[i] = (row_bytes[i] + previous[i]) & 0xFF
-            for i in range(bpp, n_row):
+            for i in range(bpp, rl):
                 left, up, up_left = (
                     row_bytes[i - bpp],
                     previous[i],
