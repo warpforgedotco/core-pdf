@@ -32,18 +32,21 @@ from core_pdf.impl.runtime.codec_backends import (
     png_predict_codec,
     tiff_predict_codec,
 )
+from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import (
     FilterParseError,
     FilterUnsupportedError,
     PredictorError,
-    UnsupportedPngFilterError,
 )
 from core_pdf_spec.s_07_filters.jbig2 import decode_jbig2 as decode_strict_jbig2
 from core_pdf_spec.s_07_filters.predictors import (
     SUPPORTED_PREDICTOR_BITS,
     png_predict,
     tiff_predict,
+)
+from core_pdf_spec.s_07_filters.predictors import (
+    apply_predictor as strict_apply_predictor,
 )
 from core_pdf_spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
@@ -279,61 +282,32 @@ def png_predict_tolerant(
     )
 
 
-def predictor_row_length(params: FilterParams) -> int:
-    return (params.columns * params.colors * params.bits_per_component + 7) // 8
+def png_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -> bytes:
+    return png_predict_tolerant(
+        data,
+        columns=params.columns,
+        colors=params.colors,
+        bits_per_component=params.bits_per_component,
+        damaged_rows_before_error=params.damaged_rows_before_error,
+    )
 
 
-def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
-    if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
-        if not data:
-            return b""
-        row_length = predictor_row_length(params)
-        if row_length and len(data) % row_length:
-            raise FilterParseError("truncated TIFF predictor row")
-    try:
-        return tiff_predict_tolerant(
-            data,
-            columns=params.columns,
-            colors=params.colors,
-            bits_per_component=params.bits_per_component,
-        )
-    except PredictorError as exc:
-        raise FilterParseError(str(exc)) from exc
-
-
-def apply_png_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
-    if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
-        if not data:
-            return b""
-        stride = predictor_row_length(params) + 1
-        if len(data) % stride and not params.damaged_rows_before_error:
-            raise FilterParseError("truncated PNG predictor row")
-    try:
-        return png_predict_tolerant(
-            data,
-            columns=params.columns,
-            colors=params.colors,
-            bits_per_component=params.bits_per_component,
-            damaged_rows_before_error=params.damaged_rows_before_error,
-        )
-    except UnsupportedPngFilterError as exc:
-        raise FilterUnsupportedError(str(exc)) from exc
-    except PredictorError as exc:
-        raise FilterParseError(str(exc)) from exc
+def tiff_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -> bytes:
+    return tiff_predict_tolerant(
+        data,
+        columns=params.columns,
+        colors=params.colors,
+        bits_per_component=params.bits_per_component,
+    )
 
 
 def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
-    if parms is None or parms == {}:
-        return bytes(data)
+    # Row framing, the truncation rules and the error mapping live in spec;
+    # core supplies only the kernels that recover damaged rows.
     params = parms if type(parms) is FilterParams else FilterParams.from_parms(parms)
-    predictor = params.predictor
-    if predictor == 1:
-        return bytes(data)
-    if predictor == 2:
-        return apply_tiff_predictor(data, params)
-    if predictor >= 10:
-        return apply_png_predictor(data, params)
-    raise FilterParseError(f"invalid stream predictor {predictor}")
+    return strict_apply_predictor(
+        data, params, png=png_predictor_tolerant, tiff=tiff_predictor_tolerant
+    )
 
 
 def tiff_predict_tolerant(
@@ -363,28 +337,12 @@ def apply_ascii_hex(data: bytes, parms: object) -> bytes:
 
 
 def apply_run_length(data: bytes, parms: object) -> bytes:
-    out = bytearray()
-    n = len(data)
-    i = 0
-    while i < n:
-        length = data[i]
-        i += 1
-        if length == 128:
-            break
-        if length < 128:
-            run = length + 1
-            if i + run > n:
-                out.extend(data[i:n])
-                break
-            out.extend(data[i : i + run])
-            i += run
-            continue
-        run = 257 - length
-        if i >= n:
-            break
-        out.extend(data[i : i + 1] * run)
-        i += 1
-    return bytes(out)
+    # The strict decoder carries its partial output on the error, so recovery
+    # is "keep what decoded" rather than a second copy of the loop.
+    try:
+        return strict.apply_run_length(data, parms)
+    except strict.IncompleteRunLengthError as exc:
+        return exc.decoded
 
 
 def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:

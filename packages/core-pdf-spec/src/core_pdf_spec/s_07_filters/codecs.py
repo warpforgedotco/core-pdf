@@ -15,6 +15,12 @@ ASCII85_PACK_QUAD = struct.Struct(">I").pack_into
 ASCII85_MAX = 0xFFFFFFFF
 
 
+class IncompleteRunLengthError(FilterParseError):
+    def __init__(self, message: str, decoded: bytes) -> None:
+        super().__init__(message)
+        self.decoded = decoded
+
+
 class IncompleteLzwError(ValueError):
     def __init__(self, message: str, decoded: bytes) -> None:
         super().__init__(message)
@@ -50,16 +56,17 @@ def apply_run_length(data: bytes, parms: object) -> bytes:
         if length < 128:
             run = length + 1
             if i + run > n:
-                raise FilterParseError("truncated RunLength stream")
+                out.extend(data[i:n])
+                raise IncompleteRunLengthError("truncated RunLength stream", bytes(out))
             out.extend(data[i : i + run])
             i += run
             continue
         run = 257 - length
         if i >= n:
-            raise FilterParseError("truncated RunLength stream")
+            raise IncompleteRunLengthError("truncated RunLength stream", bytes(out))
         out.extend(data[i : i + 1] * run)
         i += 1
-    raise FilterParseError("missing RunLength end marker")
+    raise IncompleteRunLengthError("missing RunLength end marker", bytes(out))
 
 
 class BitReader:
@@ -238,6 +245,7 @@ __all__ = (
     "ASCII85_PACK_QUAD",
     "ASCII85_MAX",
     "IncompleteLzwError",
+    "IncompleteRunLengthError",
     "apply_ascii_hex",
     "apply_flate",
     "apply_run_length",

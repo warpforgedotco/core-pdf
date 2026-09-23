@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from operator import index
 from typing import Any
 
@@ -155,7 +156,35 @@ def tiff_predict(
     return tiff_predict_bits(data, columns, colors, bits_per_component)
 
 
-def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
+def png_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
+    return png_predict(
+        data,
+        columns=params.columns,
+        colors=params.colors,
+        bits_per_component=params.bits_per_component,
+    )
+
+
+def tiff_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
+    return tiff_predict(
+        data,
+        columns=params.columns,
+        colors=params.colors,
+        bits_per_component=params.bits_per_component,
+    )
+
+
+# The apply_* wrappers own the row framing checks and the PredictorError ->
+# FilterParseError mapping. `predict` is the extension point: core passes
+# recovery kernels that salvage damaged rows, and everything else -- which
+# rows count as truncated, which error each failure becomes -- stays here so
+# the strict and tolerant readers cannot disagree about it.
+PredictFn = Callable[[bytes | memoryview, FilterParams], bytes]
+
+
+def apply_tiff_predictor(
+    data: bytes | memoryview, params: FilterParams, *, predict: PredictFn = tiff_predictor
+) -> bytes:
     if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
         if not data:
             return b""
@@ -163,48 +192,48 @@ def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> byte
         if row_length and len(data) % row_length:
             raise FilterParseError("truncated TIFF predictor row")
     try:
-        return tiff_predict(
-            data,
-            columns=params.columns,
-            colors=params.colors,
-            bits_per_component=params.bits_per_component,
-        )
+        return predict(data, params)
     except PredictorError as exc:
         raise FilterParseError(str(exc)) from exc
 
 
-def apply_png_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
+def apply_png_predictor(
+    data: bytes | memoryview, params: FilterParams, *, predict: PredictFn = png_predictor
+) -> bytes:
     if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
         if not data:
             return b""
         row_length = (params.columns * params.colors * params.bits_per_component + 7) // 8
         stride = row_length + 1
-        if len(data) % stride:
+        # A producer that declared damaged rows is telling us the tail is
+        # short on purpose, so the reader salvages instead of rejecting.
+        if len(data) % stride and not params.damaged_rows_before_error:
             raise FilterParseError("truncated PNG predictor row")
     try:
-        return png_predict(
-            data,
-            columns=params.columns,
-            colors=params.colors,
-            bits_per_component=params.bits_per_component,
-        )
+        return predict(data, params)
     except UnsupportedPngFilterError as exc:
         raise FilterUnsupportedError(str(exc)) from exc
     except PredictorError as exc:
         raise FilterParseError(str(exc)) from exc
 
 
-def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
+def apply_predictor(
+    data: bytes | memoryview,
+    parms: object,
+    *,
+    png: PredictFn = png_predictor,
+    tiff: PredictFn = tiff_predictor,
+) -> bytes:
     if parms is None or parms == {}:
         return bytes(data)
-    params = parms if type(parms) is FilterParams else FilterParams.from_parms(parms)
+    params = parms if isinstance(parms, FilterParams) else FilterParams.from_parms(parms)
     predictor = params.predictor
     if predictor == 1:
         return bytes(data)
     if predictor == 2:
-        return apply_tiff_predictor(data, params)
+        return apply_tiff_predictor(data, params, predict=tiff)
     if predictor >= 10:
-        return apply_png_predictor(data, params)
+        return apply_png_predictor(data, params, predict=png)
     raise FilterParseError(f"invalid stream predictor {predictor}")
 
 
@@ -214,6 +243,8 @@ __all__ = (
     "png_predict",
     "tiff_predict",
     "tiff_predict_bits",
+    "png_predictor",
+    "tiff_predictor",
     "apply_tiff_predictor",
     "apply_png_predictor",
     "apply_predictor",
