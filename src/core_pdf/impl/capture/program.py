@@ -29,31 +29,39 @@ class CapturedProgram:
     inline_images: tuple[CapturedInlineImage, ...] = ()
     lines: tuple[CapturedLine, ...] = ()
     text_boundaries: tuple[CapturedTextBoundary, ...] = field(default=(), kw_only=True)
-    # Derived from the six above. init=False keeps it out of __init__,
-    # __match_args__ and copy.replace, which is what the hand-written
-    # __replace__ arranged by listing the other six explicitly.
-    commands: tuple[PageCommand, ...] = field(init=False)
+    # Derived from the six above, and built only when something asks for it.
+    # init=False keeps it out of __init__, __match_args__ and copy.replace,
+    # which is what the hand-written __replace__ arranged by listing the other
+    # six explicitly. compare=False because it is a function of them.
+    #
+    # Lazy because the renderer is its only reader in the workspace: an
+    # extract never touches it, and building it eagerly meant a has_paint call
+    # on every glyph and a sort of every product on the page, for a tuple that
+    # was then dropped.
+    _commands: tuple[PageCommand, ...] | None = field(
+        init=False, default=None, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
-        runs = tuple(self.runs)
-        glyphs = tuple(self.glyphs)
-        drawings = tuple(self.drawings)
-        inline_images = tuple(self.inline_images)
-        lines = tuple(self.lines)
-        text_boundaries = tuple(self.text_boundaries)
-        commands: list[PageCommand] = [*text_boundaries, *runs]
-        commands.extend(glyph for glyph in glyphs if glyph.has_paint)
-        commands.extend(drawings)
-        commands.extend(inline_images)
-        commands.sort(key=lambda command: command.seqno)
+        object.__setattr__(self, "runs", tuple(self.runs))
+        object.__setattr__(self, "glyphs", tuple(self.glyphs))
+        object.__setattr__(self, "drawings", tuple(self.drawings))
+        object.__setattr__(self, "inline_images", tuple(self.inline_images))
+        object.__setattr__(self, "lines", tuple(self.lines))
+        object.__setattr__(self, "text_boundaries", tuple(self.text_boundaries))
 
-        object.__setattr__(self, "runs", runs)
-        object.__setattr__(self, "glyphs", glyphs)
-        object.__setattr__(self, "drawings", drawings)
-        object.__setattr__(self, "inline_images", inline_images)
-        object.__setattr__(self, "lines", lines)
-        object.__setattr__(self, "text_boundaries", text_boundaries)
-        object.__setattr__(self, "commands", tuple(commands))
+    @property
+    def commands(self) -> tuple[PageCommand, ...]:
+        commands = self._commands
+        if commands is None:
+            ordered: list[PageCommand] = [*self.text_boundaries, *self.runs]
+            ordered.extend(glyph for glyph in self.glyphs if glyph.has_paint)
+            ordered.extend(self.drawings)
+            ordered.extend(self.inline_images)
+            ordered.sort(key=lambda command: command.seqno)
+            commands = tuple(ordered)
+            object.__setattr__(self, "_commands", commands)
+        return commands
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +83,11 @@ class PageProgram:
     inline_images: tuple[CapturedInlineImage, ...] = field(init=False)
     lines: tuple[CapturedLine, ...] = field(init=False)
     text_boundaries: tuple[CapturedTextBoundary, ...] = field(init=False)
-    commands: tuple[PageCommand, ...] = field(init=False)
+    # Lazy for the same reason as CapturedProgram.commands, and it has to be:
+    # reading body.commands here would force the body's.
+    _commands: tuple[PageCommand, ...] | None = field(
+        init=False, default=None, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         set_derived = partial(object.__setattr__, self)
@@ -90,7 +102,6 @@ class PageProgram:
             set_derived("inline_images", body.inline_images)
             set_derived("lines", body.lines)
             set_derived("text_boundaries", body.text_boundaries)
-            set_derived("commands", body.commands)
             return
         # Body first, then each appearance in capture order. Nothing is
         # re-sorted: one TextState numbers the body and every appearance off a
@@ -103,7 +114,18 @@ class PageProgram:
         set_derived("inline_images", tuple(merge(p.inline_images for p in programs)))
         set_derived("lines", tuple(merge(p.lines for p in programs)))
         set_derived("text_boundaries", tuple(merge(p.text_boundaries for p in programs)))
-        set_derived("commands", tuple(merge(p.commands for p in programs)))
+
+    @property
+    def commands(self) -> tuple[PageCommand, ...]:
+        commands = self._commands
+        if commands is None:
+            if not self.appearances:
+                commands = self.body.commands
+            else:
+                programs = (self.body, *(a.program for a in self.appearances))
+                commands = tuple(chain.from_iterable(p.commands for p in programs))
+            object.__setattr__(self, "_commands", commands)
+        return commands
 
 
 __all__ = (
