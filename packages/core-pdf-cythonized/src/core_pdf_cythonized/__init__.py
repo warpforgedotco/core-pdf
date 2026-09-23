@@ -37,6 +37,7 @@ from core_pdf_cythonized._knockout import (
     composite_knockout_element,
     composite_knockout_group,
 )
+from core_pdf_cythonized._outline import outline_edges
 from core_pdf_cythonized._rect import rect_coverage_plane
 
 __all__ = (
@@ -44,6 +45,7 @@ __all__ = (
     "composite_knockout_element",
     "composite_knockout_group",
     "cubic_sample_times",
+    "outline_edges",
     "rect_coverage_plane",
     "signed_area_coverage",
 )
