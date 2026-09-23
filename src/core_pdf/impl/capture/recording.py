@@ -36,7 +36,7 @@ from core_pdf.impl.capture.text_runs import (
     RunAccumulator,
     is_garbage_text,
 )
-from core_pdf.impl.capture.tolerant_state import RecoveringTextState
+from core_pdf.impl.capture.tolerant_state import COLOR_CACHE_LIMIT, RecoveringTextState
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import raw_color_space_paints
@@ -207,7 +207,10 @@ class RecordingMethods(RecoveringTextState):
 
     def resolve_soft_mask(self, value: object) -> PdfSoftMask | None:
         mask = super().resolve_soft_mask(value)
-        if mask is not None:
+        # The parse cache keys on the resource scope, so a mask only ever comes
+        # back under the scope it was parsed with and the entry never changes
+        # once written. Rewriting it on every gs was work with no effect.
+        if mask is not None and id(mask) not in self.capture_mask_resources:
             self.capture_mask_resources[id(mask)] = (mask, self.resources)
         return mask
 
@@ -219,12 +222,8 @@ class RecordingMethods(RecoveringTextState):
         first_code = ord(text[0])
         if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and is_garbage_text(text):
             return False
-        if not self.marked_content_stack and self.graphics.font_size >= 0.1:
-            return True
-
         if self.graphics.font_size < 0.1:
             return False
-
         return self.is_graphics_visible()
 
     def is_graphics_visible(self) -> bool:
@@ -990,7 +989,7 @@ class RecordingMethods(RecoveringTextState):
                 spec, list(color), rendering=self.graphics.color_rendering
             )
             result = converted if converted is not None else color
-            if len(self.capture_colors) >= 4096:
+            if len(self.capture_colors) >= COLOR_CACHE_LIMIT:
                 self.capture_colors.clear()
             self.capture_colors[key] = (spec, result)
             return result
