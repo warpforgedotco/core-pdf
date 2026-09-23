@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.capture.records import CapturedSubpath
+from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render import paths
 from core_pdf_cythonized import signed_area_coverage
 
@@ -232,3 +232,76 @@ def test_square_cap_coverage_matches_independent_rectangle_sampling(
         return_source_alpha=True,
     )
     np.testing.assert_array_equal(actual, expected)
+
+
+def test_a_deferred_outline_builds_the_same_subpaths_as_an_eager_one():
+    xs = np.array([0.0, 4.0, 4.0, 0.0, 1.0, 3.0, 2.0])
+    ys = np.array([0.0, 0.0, 4.0, 4.0, 1.0, 1.0, 3.0])
+    spans = [(0, 4, True), (4, 7, True)]
+    deferred = CapturedPath.deferred_outline(xs, ys, spans)
+    eager = CapturedPath(
+        [
+            CapturedSubpath(list(zip(xs[start:end].tolist(), ys[start:end].tolist())), closed=True)
+            for start, end, _closes in spans
+        ]
+    )
+    assert [subpath.points for subpath in deferred.subpaths] == [
+        subpath.points for subpath in eager.subpaths
+    ]
+    assert deferred.bbox() == eager.bbox()
+    assert deferred.fill_edges() == eager.fill_edges()
+
+
+def test_a_deferred_outline_is_an_ordinary_captured_path():
+    # The renderer tests for this type by identity rather than with isinstance,
+    # so a deferred outline must not be a distinct class.
+    path = CapturedPath.deferred_outline(np.array([0.0, 1.0]), np.array([0.0, 1.0]), [(0, 2, True)])
+    assert type(path) is CapturedPath
+
+
+def test_axis_aligned_rect_answers_a_deferred_outline_without_building_points():
+    # Two subpaths cannot be a rectangle, and neither can one of five points.
+    xs = np.array([0.0, 4.0, 4.0, 0.0, 1.0, 3.0, 2.0])
+    ys = np.array([0.0, 0.0, 4.0, 4.0, 1.0, 1.0, 3.0])
+    two = CapturedPath.deferred_outline(xs, ys, [(0, 4, True), (4, 7, True)])
+    assert two.axis_aligned_rect() is None
+    assert two._deferred is not None
+
+    five = CapturedPath.deferred_outline(xs, ys, [(0, 5, True)])
+    assert five.axis_aligned_rect() is None
+    assert five._deferred is not None
+
+
+def test_a_deferred_outline_that_really_is_a_rectangle_is_still_recognized():
+    xs = np.array([1.0, 5.0, 5.0, 1.0])
+    ys = np.array([2.0, 2.0, 7.0, 7.0])
+    path = CapturedPath.deferred_outline(xs, ys, [(0, 4, True)])
+    assert path.axis_aligned_rect() == (1.0, 2.0, 5.0, 7.0)
+
+
+def test_a_four_point_deferred_outline_that_is_not_a_rectangle_is_rejected():
+    xs = np.array([0.0, 4.0, 5.0, 1.0])
+    ys = np.array([0.0, 0.0, 4.0, 4.0])
+    path = CapturedPath.deferred_outline(xs, ys, [(0, 4, True)])
+    assert path.axis_aligned_rect() is None
+
+
+def test_reading_subpaths_is_what_clears_the_deferred_state():
+    # Reading is the only supported way to fill a deferred path: the class
+    # deliberately has no __setattr__ or property, so a direct assignment would
+    # leave the spans in place for axis_aligned_rect to keep answering from.
+    path = CapturedPath.deferred_outline(np.array([0.0, 1.0]), np.array([0.0, 1.0]), [(0, 2, True)])
+    assert path._deferred is not None
+    built = path.subpaths
+    assert path._deferred is None
+    assert path.subpaths is built
+
+    path.subpaths = [CapturedSubpath([(9.0, 9.0), (8.0, 8.0)], closed=False)]
+    assert path.subpaths[0].points == [(9.0, 9.0), (8.0, 8.0)]
+
+
+def test_an_unknown_attribute_still_raises():
+    path = CapturedPath.deferred_outline(np.array([0.0, 1.0]), np.array([0.0, 1.0]), [(0, 2, True)])
+    with pytest.raises(AttributeError):
+        getattr(path, "no_such_attribute")
+    assert not hasattr(path, "no_such_attribute")

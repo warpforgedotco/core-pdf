@@ -291,10 +291,65 @@ class CapturedSubpath:
 
 
 class CapturedPath:
-    __slots__ = ("subpaths",)
+    __slots__ = ("subpaths", "_deferred")
 
     def __init__(self, subpaths: list[CapturedSubpath] | None = None) -> None:
         self.subpaths = subpaths if subpaths is not None else []
+        self._deferred: tuple[Any, Any, list[tuple[int, int, bool]]] | None = None
+
+    @classmethod
+    def deferred_outline(
+        cls,
+        column_x: Any,
+        column_y: Any,
+        spans: list[tuple[int, int, bool]],
+    ) -> CapturedPath:
+        """A path whose point lists are built only if something asks for them.
+
+        The kernel that builds a glyph's edges already returns everything a
+        fill needs -- the edge array and the bounding box -- so the
+        CapturedSubpath objects and their point tuples were built for one
+        caller, fill_path asking axis_aligned_rect whether the path is a
+        rectangle, and then dropped. That is a hundred-odd tuples per glyph,
+        several thousand times a page, and it measured at about a fifth of the
+        render.
+
+        The subpaths slot is left unset rather than filled, so the first
+        attribute access falls through to __getattr__ and builds them there.
+        Paths that are not deferred keep a plain slot read, and the type is
+        unchanged, which matters because the renderer tests for it by identity
+        rather than with isinstance.
+
+        Reading subpaths is the only supported way to fill a deferred path.
+        Assigning the slot directly would leave the deferred spans in place and
+        axis_aligned_rect would keep answering from them; enforcing that would
+        mean a __setattr__ or a property, and both put a Python call on the
+        read path this exists to keep free. Nothing outside this class assigns
+        subpaths.
+        """
+        path = cls.__new__(cls)
+        path._deferred = (column_x, column_y, spans)
+        return path
+
+    def __getattr__(self, name: str) -> Any:
+        # Only ever reached for an unset slot, which means a deferred outline
+        # whose points nobody had needed until now.
+        if name == "subpaths":
+            deferred = self._deferred
+            if deferred is not None:
+                column_x, column_y, spans = deferred
+                xs = column_x.tolist()
+                ys = column_y.tolist()
+                subpaths = [
+                    CapturedSubpath(
+                        list(zip(xs[start:end], ys[start:end], strict=True)), closed=True
+                    )
+                    for start, end, _closes in spans
+                ]
+                self.subpaths = subpaths
+                self._deferred = None
+                return subpaths
+        raise AttributeError(name)
 
     def transformed(self, matrix: Matrix) -> CapturedPath:
         return CapturedPath([subpath.transformed(matrix) for subpath in self.subpaths])
@@ -322,6 +377,14 @@ class CapturedPath:
             self.subpaths[-1].close()
 
     def axis_aligned_rect(self) -> Rectangle | None:
+        deferred = self._deferred
+        if deferred is not None:
+            # A rectangle is one subpath of exactly four points. The kernel has
+            # already dropped any duplicated closing point, so the span lengths
+            # are final and this settles it without building anything.
+            spans = deferred[2]
+            if len(spans) != 1 or spans[0][1] - spans[0][0] != 4:
+                return None
         segment_subpaths = [subpath for subpath in self.subpaths if subpath.has_segments()]
         if len(segment_subpaths) != 1 or self.subpaths[-1] is not segment_subpaths[0]:
             return None
