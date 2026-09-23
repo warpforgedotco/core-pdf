@@ -314,7 +314,47 @@ def composite_masked_group(
 
 SoftMaskPlane = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 SoftMaskKey = tuple[int, int, tuple[float, float]]
-SoftMaskCache = dict[SoftMaskKey, tuple[CapturedSoftMask, SoftMaskPlane | None]]
+# A resolved plane covers the whole page in float32, so a page that uses many
+# distinct masks keeps far more of them than it can afford: one corpus page,
+# PyMuPDF/tests/resources/test_3450.pdf, held 1,598 planes totalling 3,208MB,
+# which was 91% of its peak resident set. The budget is generous next to the
+# prepared-image one because re-resolving a mask means replaying its content
+# stream, which is dearer than re-preparing an image.
+SOFT_MASK_CACHE_BYTES = 512 << 20
+
+
+class SoftMaskCache:
+    """Resolved mask planes, evicted oldest first once the budget is spent."""
+
+    __slots__ = ("budget", "entries", "size")
+
+    def __init__(self, budget: int = SOFT_MASK_CACHE_BYTES) -> None:
+        self.budget = budget
+        self.entries: dict[SoftMaskKey, tuple[CapturedSoftMask, SoftMaskPlane | None, int]] = {}
+        self.size = 0
+
+    def get(self, key: SoftMaskKey) -> tuple[CapturedSoftMask, SoftMaskPlane | None] | None:
+        entry = self.entries.get(key)
+        return None if entry is None else (entry[0], entry[1])
+
+    def store(self, key: SoftMaskKey, mask: CapturedSoftMask, plane: SoftMaskPlane | None) -> None:
+        size = 0 if plane is None else plane.nbytes
+        entries = self.entries
+        previous = entries.pop(key, None)
+        if previous is not None:
+            self.size -= previous[2]
+        if size > self.budget:
+            # Keep the negative result so the mask is not resolved again, but
+            # not the plane that will not fit.
+            entries[key] = (mask, None, 0)
+            return
+        while entries and self.size + size > self.budget:
+            self.size -= entries.pop(next(iter(entries)))[2]
+        entries[key] = (mask, plane, size)
+        self.size += size
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.entries
 
 
 def graphics_soft_mask(item: DisplayItem) -> CapturedSoftMask | None:
@@ -350,7 +390,7 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
         result = None
     finally:
         target.active_soft_masks.remove(key)
-    target.soft_mask_cache[key] = (mask, result)
+    target.soft_mask_cache.store(key, mask, result)
     return result
 
 
@@ -473,7 +513,7 @@ class RasterTarget:
         self.clip_floor = 0
         self.group_floor = 1
         self.scope_stack: list[tuple[int, list[int], int, int, int]] = []
-        self.soft_mask_cache: SoftMaskCache = {}
+        self.soft_mask_cache = SoftMaskCache()
         self.prepared_image_cache = PreparedImageCache()
         self.tiling_cell_cache: TilingCellCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()

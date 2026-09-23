@@ -196,3 +196,64 @@ def test_a_nested_capture_shares_the_parse_cache(state) -> None:
     # the nested state started with an empty cache, every gs inside one would
     # mint a fresh mask identity again and miss every cache downstream.
     assert state.nested_capture_state().parsed_soft_masks is state.parsed_soft_masks
+
+
+def make_plane(megabytes: float) -> np.ndarray:
+    return np.zeros(int(megabytes * 1e6 // 4), dtype=np.float32)
+
+
+def plane_key(index: int) -> tuple[int, int, tuple[float, float]]:
+    return (index, 0, (0.0, 0.0))
+
+
+def make_mask() -> CapturedSoftMask:
+    return CapturedSoftMask(mask_program())
+
+
+def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
+    # A resolved plane covers the whole page in float32, so a page using many
+    # distinct masks kept far more than it could afford: one corpus page held
+    # 1,598 planes totalling 3,208MB, 91% of its peak resident set.
+    from core_pdf.impl.render.target import SoftMaskCache
+
+    cache = SoftMaskCache(budget=10_000_000)
+    for index in range(4):
+        cache.store(plane_key(index), make_mask(), make_plane(3))
+    assert cache.size <= cache.budget
+    # The oldest went first, the newest are still there.
+    assert cache.get(plane_key(0)) is None
+    assert cache.get(plane_key(3)) is not None
+
+
+def test_a_plane_larger_than_the_budget_keeps_only_the_negative_result() -> None:
+    from core_pdf.impl.render.target import SoftMaskCache
+
+    cache = SoftMaskCache(budget=1_000_000)
+    mask = make_mask()
+    cache.store(plane_key(1), mask, make_plane(5))
+    entry = cache.get(plane_key(1))
+    # Cached, so the mask is not resolved again, but the plane that would not
+    # fit is dropped rather than blowing the budget.
+    assert entry is not None
+    assert entry[0] is mask
+    assert entry[1] is None
+    assert cache.size == 0
+
+
+def test_restoring_a_key_does_not_double_count_its_bytes() -> None:
+    from core_pdf.impl.render.target import SoftMaskCache
+
+    cache = SoftMaskCache(budget=10_000_000)
+    cache.store(plane_key(1), make_mask(), make_plane(2))
+    first = cache.size
+    cache.store(plane_key(1), make_mask(), make_plane(2))
+    assert cache.size == first
+
+
+def test_a_cached_none_plane_costs_nothing() -> None:
+    from core_pdf.impl.render.target import SoftMaskCache
+
+    cache = SoftMaskCache(budget=1_000)
+    cache.store(plane_key(1), make_mask(), None)
+    assert cache.size == 0
+    assert cache.get(plane_key(1)) is not None
