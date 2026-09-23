@@ -69,6 +69,7 @@ the wheel.
 | `rect_coverage_plane` | `core_pdf.impl.render.paths` (deleted) | 8.57x on the kernel; -21% on a vector-heavy page render, -7 to -9% elsewhere |
 | `outline_edges` | `core_pdf.impl.render.commands` (edge half only) | 2.01x on the kernel; -2.5 to -4.4% on text-page render |
 | `glyph_coverage_plane` | the device-edge preparation in `core_pdf.impl.render.target.fill_path` (deleted) | 8.3us of numpy prep per call removed, against 3.3us of actual coverage; -10.6% / -7.5% on text-page render |
+| `ContentScanner` | the regular-expression fast path in `core_pdf.impl.capture.recovery.iter_content_operations` (deleted) | 1.1x to 2.1x on the tokenizer, by document; -16% on a vector-heavy page render, nothing on text pages |
 | `composite_elementary_normal` | the opaque-normal branch of `core_pdf.impl.render.target.composite_nonisolated_group` (deleted) | nine numpy passes over an 8-to-32-pixel plane removed; -4.2 to -4.8% on text-page render |
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render.target` (both deleted) | 7.06x on the fused wrapper |
 

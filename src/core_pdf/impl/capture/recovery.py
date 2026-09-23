@@ -5,6 +5,7 @@ from typing import cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.types import PdfName
+from core_pdf_cythonized import SCAN_NAME, SCAN_OPERATOR, ContentScanner
 from core_pdf_spec.s_07_content.inline_images import (
     InlineImage,
     InlineImageDataLengthError,
@@ -111,50 +112,39 @@ def iter_content_operations(
 ) -> Iterator[ContentOperation]:
     operands: list[ContentOperand] = []
     recovery = recovery if recovery is not None else CaptureRecovery()
-    token_re = lexer.lexical_rules.content_token_re
-    data = lexer.raw_data
     names: dict[bytes, PdfName] = {}
     operators: dict[bytes, str] = {}
-    # The loop below runs once per token of every content stream, so it holds
-    # its hot lookups as locals: the bound matcher, the bound append, and the
-    # group numbers. Dispatching on lastindex rather than lastgroup keeps the
-    # per-token work to integer comparisons; lastgroup would map the index back
-    # to a name and group(name) would map it forward again.
-    match_token = token_re.match
+    # The kernel scans whitespace, comments, numbers, names and operators and
+    # appends operands as it goes, so the loop below runs once per operation
+    # rather than once per token. It hands back a byte offset for anything it
+    # does not own -- strings, arrays, dictionaries, inline images, the
+    # BI/true/false/null keywords, and anything malformed -- and every one of
+    # those, with all the recovery around them, is still parsed here.
+    scanner = ContentScanner(lexer.raw_data, KEYWORD_TOKENS)
     append = operands.append
-    group_index = token_re.groupindex
-    num_group = group_index["num"]
-    name_group = group_index["name"]
     while True:
-        cursor = lexer.pos
-        match = match_token(data, cursor)
-        if match is not None and (index := match.lastindex) is not None:
-            word = match[index]
-            if index == num_group:
-                if len(word) < 16:
-                    value: ContentOperand = float(word) if b"." in word else int(word)
-                    lexer.pos = match.end()
-                    if len(operands) < 16:
-                        append(value)
-                    continue
-            elif index == name_group:
-                lexer.pos = match.end()
-                name = names.get(word)
-                if name is None:
-                    name = names[word] = PdfName.of(word[1:])
-                if len(operands) < 16:
-                    append(name)
-                continue
-            elif word not in KEYWORD_TOKENS:
-                lexer.pos = match.end()
-                op_name = operators.get(word)
-                if op_name is None:
-                    op_name = operators[word] = word.decode("latin-1")
-                operation = (op_name, tuple(operands))
-                operands.clear()
-                if op_name not in OBJECT_KEYWORDS:
-                    yield operation
-                continue
+        # The slow path below owns lexer.pos and moves it in ways the scanner
+        # cannot see, so the two cursors meet here once per operation.
+        scanner.pos = lexer.pos
+        word, code = scanner.next_operation(operands, names)
+        if code == SCAN_OPERATOR:
+            lexer.pos = scanner.pos
+            op_name = operators.get(word)
+            if op_name is None:
+                op_name = operators[word] = word.decode("latin-1")
+            operation = (op_name, tuple(operands))
+            operands.clear()
+            if op_name not in OBJECT_KEYWORDS:
+                yield operation
+            continue
+        if code == SCAN_NAME:
+            lexer.pos = scanner.pos
+            name = names[word] = PdfName.of(word[1:])
+            if len(operands) < 16:
+                append(name)
+            continue
+        lexer.pos = code
+        cursor = code
         try:
             try:
                 token = parse_content_token(lexer)

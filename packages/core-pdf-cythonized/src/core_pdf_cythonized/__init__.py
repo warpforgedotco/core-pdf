@@ -33,6 +33,7 @@ A kernel earns its place here by clearing three bars, in this order:
 from core_pdf_cythonized._bezier import cubic_sample_times
 from core_pdf_cythonized._blend import blend_normal_alpha_array_numpy
 from core_pdf_cythonized._composite import composite_elementary_normal
+from core_pdf_cythonized._content import SCAN_NAME, SCAN_OPERATOR, ContentScanner
 from core_pdf_cythonized._coverage import glyph_coverage_plane, signed_area_coverage
 from core_pdf_cythonized._knockout import (
     composite_knockout_element,
@@ -42,6 +43,9 @@ from core_pdf_cythonized._outline import outline_edges
 from core_pdf_cythonized._rect import rect_coverage_plane
 
 __all__ = (
+    "SCAN_NAME",
+    "SCAN_OPERATOR",
+    "ContentScanner",
     "blend_normal_alpha_array_numpy",
     "composite_elementary_normal",
     "composite_knockout_element",
