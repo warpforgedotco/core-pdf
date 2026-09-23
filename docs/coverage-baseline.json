@@ -8,7 +8,8 @@
     "packages/core-postscript/src/core_postscript",
     "packages/core-jbig2/src/core_jbig2",
     "packages/core-pdf-crypto/src/core_pdf_crypto",
-    "packages/core-adobe-fonts/src/core_adobe_fonts"
+    "packages/core-adobe-fonts/src/core_adobe_fonts",
+    "packages/core-pdf-cythonized/src/core_pdf_cythonized"
   ],
   "statements": {
     "covered": 41584,

@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from core_pdf.impl.render import blend
+from core_pdf_cythonized import blend_normal_alpha_array_numpy
 
 
 def source_over(destination, source, mode=None):
@@ -114,7 +115,7 @@ def test_coverage_alpha_is_capped_by_source_opacity_and_zero_coverage_preserves_
         ],
         dtype=np.uint8,
     )
-    blend.blend_normal_alpha_array_numpy(
+    blend_normal_alpha_array_numpy(
         target, (204, 85, 34, 128), np.full((1, 2), coverage, dtype=np.uint8)
     )
     np.testing.assert_array_equal(target, expected)

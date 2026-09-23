@@ -3,6 +3,7 @@ import pytest
 
 from core_pdf.impl.capture.records import CapturedSubpath
 from core_pdf.impl.render import paths
+from core_pdf_cythonized import signed_area_coverage
 
 
 @pytest.mark.parametrize(
@@ -77,7 +78,7 @@ def test_rectangle_coverage_equals_pixel_intersection_area(box, reverse):
     if reverse:
         points.reverse()
     edges = np.array([(*a, *b) for a, b in zip(points, points[1:] + points[:1])])
-    actual = paths.signed_area_coverage(edges, 3, 3)
+    actual = signed_area_coverage(edges, 3, 3)
     expected = [
         [
             max(0, min(x + 1, x1) - max(x, x0)) * max(0, min(y + 1, y1) - max(y, y0))
@@ -90,7 +91,7 @@ def test_rectangle_coverage_equals_pixel_intersection_area(box, reverse):
 
 @pytest.mark.parametrize(("width", "height"), [(0, 3), (3, 0), (-1, 3), (3, -1), (3, 3)])
 def test_empty_edge_coverage_respects_target_shape(width, height):
-    actual = paths.signed_area_coverage(np.empty((0, 4)), width, height)
+    actual = signed_area_coverage(np.empty((0, 4)), width, height)
     assert actual.shape == (max(height, 0), max(width, 0))
     assert not actual.any()
 

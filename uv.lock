@@ -13,6 +13,7 @@ members = [
     "core-pdf",
     "core-pdf-compat",
     "core-pdf-crypto",
+    "core-pdf-cythonized",
     "core-pdf-ocr",
     "core-pdf-spec",
     "core-pdf-validate",
@@ -431,6 +432,7 @@ source = { editable = "." }
 dependencies = [
     { name = "core-adobe-fonts" },
     { name = "core-jbig2" },
+    { name = "core-pdf-cythonized" },
     { name = "core-pdf-spec" },
     { name = "defusedxml" },
     { name = "imagecodecs" },
@@ -489,6 +491,7 @@ vendor-test = [
 requires-dist = [
     { name = "core-adobe-fonts", editable = "packages/core-adobe-fonts" },
     { name = "core-jbig2", editable = "packages/core-jbig2" },
+    { name = "core-pdf-cythonized", editable = "packages/core-pdf-cythonized" },
     { name = "core-pdf-spec", editable = "packages/core-pdf-spec" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "imagecodecs", specifier = ">=2026.6.26" },
@@ -583,6 +586,11 @@ requires-dist = [
     { name = "asn1crypto", specifier = ">=1.5.1" },
     { name = "cryptography", specifier = ">=50.0.0" },
 ]
+
+[[package]]
+name = "core-pdf-cythonized"
+version = "0.1.0"
+source = { editable = "packages/core-pdf-cythonized" }
 
 [[package]]
 name = "core-pdf-ocr"
