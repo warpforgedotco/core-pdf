@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typing
+from math import isfinite
 from typing import Any
 
 from core_pdf.impl.capture.recovery import CaptureRecovery
@@ -78,8 +79,16 @@ def font_signature(
     return (font_ref.object_number, font_ref.generation_number, companions)
 
 
+# Content streams re-state the same colour relentlessly: one corpus page
+# issues RG 18,612 times with a single distinct operand tuple. The cache is
+# cleared wholesale rather than evicted, since a page that exceeds this many
+# distinct colours is not the case the cache exists for.
+COLOR_CACHE_LIMIT = 4096
+
+
 class RecoveringTextState(ContentInterpreter):
     recovery: CaptureRecovery
+    normalized_colors: dict[tuple[ColorSpace, tuple[object, ...]], tuple[float, ...]]
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
         return parse_soft_mask(
@@ -304,8 +313,33 @@ class RecoveringTextState(ContentInterpreter):
         if len(operands) < count:
             self.handle_operand_error(PdfParseError("missing numeric operand"), "numeric-operands")
             return None
+        # The content tokenizer already produced int and float operands, but
+        # reaching them through as_float costs four call frames each
+        # (as_float -> parse_float_strict -> parse_float) to re-derive a value
+        # that is already a float. Path operators run this per segment, so the
+        # already-numeric cases are handled inline and anything else still
+        # falls back to the full coercion.
         try:
-            return tuple([self.as_float(operands[i]) for i in range(count)])
+            values: list[float] = []
+            append = values.append
+            for index in range(count):
+                value = operands[index]
+                kind = type(value)
+                # `type(...) is int` rather than isinstance: bool subclasses
+                # int and must keep failing the way the full coercion fails it.
+                if kind is float:
+                    number = typing.cast(float, value)
+                    if not isfinite(number):
+                        raise ValueError("invalid numeric operand")
+                    append(number)
+                elif kind is int:
+                    try:
+                        append(float(typing.cast(int, value)))
+                    except OverflowError:
+                        raise ValueError("invalid numeric operand") from None
+                else:
+                    append(self.as_float(value))
+            return tuple(values)
         except (TypeError, ValueError) as error:
             self.handle_operand_error(error, "numeric-operands")
             return None
@@ -449,9 +483,23 @@ class RecoveringTextState(ContentInterpreter):
     def normalize_color_components(
         self, spec: ColorSpace, components: typing.Sequence[object]
     ) -> tuple[float, ...] | None:
+        cache_key = (spec, tuple(components))
+        try:
+            cached = self.normalized_colors.get(cache_key)
+            cacheable = True
+        except TypeError:  # an unhashable operand, e.g. a malformed array
+            cached = None
+            cacheable = False
+        if cached is not None:
+            return cached
         try:
             values = tuple(self.as_float(value) for value in components)
-            return super().normalize_color_components(spec, values)
+            normalized = super().normalize_color_components(spec, values)
+            if cacheable and normalized is not None:
+                if len(self.normalized_colors) >= COLOR_CACHE_LIMIT:
+                    self.normalized_colors.clear()
+                self.normalized_colors[cache_key] = normalized
+            return normalized
         except (PdfParseError, TypeError, ValueError) as error:
             self.handle_operand_error(error, "color-components")
             if spec.kind in {"Indexed", "Lab"}:

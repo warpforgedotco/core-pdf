@@ -578,6 +578,13 @@ class RecordingMethods(RecoveringTextState):
         self.sequence = seqno + 1
 
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
+        # An empty path paints nothing, and everything below -- pattern and
+        # colour-space probing, flattening, the CTM transform -- is setup for a
+        # mark that will not exist. Content streams hit this constantly: a
+        # paint operator resets current_path, so the common "m l S f" idiom
+        # runs f against an empty path. One corpus page does that 18,560 times.
+        if not source.commands:
+            return
         if not self.is_graphics_visible():
             return
         fills = kind in {"fill", "fillstroke"} and not self.initial_pattern(stroke=False)

@@ -103,6 +103,7 @@ class TextState(RecordingMethods):
         )
 
         self.recovery = CaptureRecovery()
+        self.normalized_colors = {}
         self.stream_executor = CaptureStreamExecutor(self)
 
         self.graphics.font_size = 12.0
