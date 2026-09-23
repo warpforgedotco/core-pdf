@@ -54,26 +54,33 @@ Four axes are covered:
 
 ## What a recorded run costs
 
-Measured on the profiling VM: 12 benchmarks took **about 16 minutes of wall
-clock** under simulation, for roughly 3.7 s of native work. The six rendering
-benchmarks add roughly 0.9 s of native work and, more to the point, six more
-valgrind startups; budget nearer 24 minutes until that is re-measured. Two rules of
-thumb, both from that run:
+Measured from the CodSpeed job itself, which is the number that matters:
 
-- Wall clock lands near **25x the sum of the reported values**, which are
-  modelled times rather than measured ones.
-- Every benchmark pays valgrind's startup, so the suite total is dominated by
-  per-benchmark fixed cost rather than by any single sample.
+| suite | benchmarks | job wall clock |
+| ----- | ---------: | -------------: |
+| extraction only | 12 | 7.2 min |
+| plus rendering  | 18 | 10.4 min |
 
-A per-sample multiplier is the wrong way to budget this. An earlier version of
-this file quoted "roughly 45x native", taken from timing one file end to end;
-it understates a suite badly enough to be misleading, so prefer the wall-clock
-figure above.
+Budget from that table, not from the modelled values the report prints. Those
+are instruction-derived and do not scale to wall clock: the six rendering
+benchmarks report 8.2 s between them -- `test_rasterize_page[tables-…]` alone
+reports 4.7 s, the most expensive entry in the suite -- yet cost 3.2 minutes of
+job time. Rasterizing is instruction-dense rather than call-dense, so it
+inflates the modelled figure far more than the clock.
+
+Two earlier attempts at a rule of thumb here were both wrong and are worth
+recording as such: "roughly 45x native", taken from timing one file end to
+end, and "25x the sum of the reported values". Neither survives contact with
+the table above. What does hold is that every benchmark pays valgrind's
+startup, so the count is the thing to economise on.
 
 ## Adding a sample
 
 Keep the default suite cheap: prefer a file that isolates one kind of work, and
-keep its extraction cost under roughly 500 ms natively. Anything heavier
+keep its extraction cost under roughly 500 ms natively. That heuristic is about
+extraction; it does not transfer to rendering, where a 274 ms native rasterize
+reports 4.7 s modelled. For a rendering sample, check the reported value after
+its first recorded run rather than trusting the native figure. Anything heavier
 belongs in `DEEP_DIVE`, which is documentation for one-off profiling rather
 than part of the suite. Record the sample's measured `native_ms` so the budget
 stays reviewable.
