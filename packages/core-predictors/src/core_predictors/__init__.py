@@ -8,6 +8,8 @@ from typing import Any
 import numpy
 
 __all__ = (
+    "SUBBYTE_PREDICTOR_BITS",
+    "SUPPORTED_PREDICTOR_BITS",
     "PredictorError",
     "UnsupportedPngFilterError",
     "png_predict",
@@ -16,6 +18,12 @@ __all__ = (
     "uint8_view",
     "unpack_subbyte_rows",
 )
+
+
+# The sample depths the PNG and TIFF predictors accept. Callers gate on these
+# before framing rows; the kernels below raise PredictorError for anything else.
+SUPPORTED_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})
+SUBBYTE_PREDICTOR_BITS = frozenset({1, 2, 4})
 
 
 class PredictorError(ValueError):
@@ -45,20 +53,9 @@ def uint8_view(
     count: int = -1,
     offset: int = 0,
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-    count = index(count)
-    offset = index(offset)
     if isinstance(buffer, numpy.ndarray):
-        view = numpy.ascontiguousarray(buffer, dtype=numpy.uint8).reshape(-1)
-        if offset < 0 or offset > view.size:
-            raise ValueError("offset must be non-negative and no greater than buffer length")
-        if count > view.size - offset:
-            raise ValueError("buffer is smaller than requested size")
-        if offset:
-            view = view[offset:]
-        if count >= 0:
-            view = view[:count]
-        return view
-    return numpy.frombuffer(buffer, dtype=numpy.uint8, count=count, offset=offset)
+        buffer = numpy.ascontiguousarray(buffer, dtype=numpy.uint8).reshape(-1)
+    return numpy.frombuffer(buffer, dtype=numpy.uint8, count=index(count), offset=index(offset))
 
 
 def png_predict(
@@ -68,9 +65,9 @@ def png_predict(
     colors: int,
     bits_per_component: int,
 ) -> bytes:
-    if bits_per_component not in {1, 2, 4, 8, 16}:
+    if bits_per_component not in SUPPORTED_PREDICTOR_BITS:
         raise PredictorError(f"invalid PNG predictor bits {bits_per_component}")
-    bytes_per_pixel = max(1, (colors * bits_per_component + 7) // 8)
+    bpp = max(1, (colors * bits_per_component + 7) // 8)
     row_length = max(1, (colors * columns * bits_per_component + 7) // 8)
     n = len(data)
     if n % (row_length + 1):
@@ -78,34 +75,32 @@ def png_predict(
     out = bytearray((n // (row_length + 1)) * row_length)
     out_view = numpy.frombuffer(out, dtype=numpy.uint8)
     previous = memoryview(bytes(row_length))
-    bpp = bytes_per_pixel
-    rl = row_length
-    first = min(bpp, rl)
-    for row_index, start in enumerate(range(0, n, rl + 1)):
+    first = min(bpp, row_length)
+    for row_index, start in enumerate(range(0, n, row_length + 1)):
         filter_type = data[start]
         pos = start + 1
-        out_pos = row_index * rl
+        out_pos = row_index * row_length
         if filter_type == 0:
-            row: bytes | bytearray | memoryview | numpy.ndarray = memoryview(data)[pos : pos + rl]
+            row: bytearray | memoryview | numpy.ndarray = memoryview(data)[pos : pos + row_length]
         elif filter_type == 1:
-            row_array = uint8_view(data, count=rl, offset=pos).copy()
+            row_array = uint8_view(data, count=row_length, offset=pos).copy()
             for offset in range(first):
                 row_array[offset::bpp] = numpy.cumsum(row_array[offset::bpp], dtype=numpy.uint8)
             row = row_array
         elif filter_type == 2:
-            row = uint8_view(data, count=rl, offset=pos) + uint8_view(previous)
+            row = uint8_view(data, count=row_length, offset=pos) + uint8_view(previous)
         elif filter_type == 3:
-            row_bytes = bytearray(data[pos : pos + rl])
+            row_bytes = bytearray(data[pos : pos + row_length])
             for i in range(first):
                 row_bytes[i] = (row_bytes[i] + (previous[i] >> 1)) & 0xFF
-            for i in range(bpp, rl):
+            for i in range(bpp, row_length):
                 row_bytes[i] = (row_bytes[i] + ((row_bytes[i - bpp] + previous[i]) >> 1)) & 0xFF
             row = row_bytes
         elif filter_type == 4:
-            row_bytes = bytearray(data[pos : pos + rl])
+            row_bytes = bytearray(data[pos : pos + row_length])
             for i in range(first):
                 row_bytes[i] = (row_bytes[i] + previous[i]) & 0xFF
-            for i in range(bpp, rl):
+            for i in range(bpp, row_length):
                 left, up, up_left = (
                     row_bytes[i - bpp],
                     previous[i],
@@ -114,16 +109,17 @@ def png_predict(
                 p = left + up - up_left
                 pa, pb, pc = abs(p - left), abs(p - up), abs(p - up_left)
                 if pa <= pb and pa <= pc:
-                    row_bytes[i] = (row_bytes[i] + left) & 0xFF
+                    nearest = left
                 elif pb <= pc:
-                    row_bytes[i] = (row_bytes[i] + up) & 0xFF
+                    nearest = up
                 else:
-                    row_bytes[i] = (row_bytes[i] + up_left) & 0xFF
+                    nearest = up_left
+                row_bytes[i] = (row_bytes[i] + nearest) & 0xFF
             row = row_bytes
         else:
             raise UnsupportedPngFilterError(f"Unsupported PNG predictor filter {filter_type}")
-        out_view[out_pos : out_pos + rl] = row
-        previous = memoryview(out)[out_pos : out_pos + rl]
+        out_view[out_pos : out_pos + row_length] = row
+        previous = memoryview(out)[out_pos : out_pos + row_length]
     return bytes(out)
 
 
@@ -178,6 +174,6 @@ def tiff_predict(
         return tiff_predict_words(data, columns, colors, numpy.dtype("u1"))
     if bits_per_component == 16:
         return tiff_predict_words(data, columns, colors, numpy.dtype(">u2"))
-    if bits_per_component not in {1, 2, 4}:
+    if bits_per_component not in SUBBYTE_PREDICTOR_BITS:
         raise PredictorError(f"invalid TIFF predictor bits {bits_per_component}")
     return tiff_predict_bits(data, columns, colors, bits_per_component)

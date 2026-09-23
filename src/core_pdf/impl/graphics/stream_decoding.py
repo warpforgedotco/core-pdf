@@ -11,7 +11,6 @@ import imagecodecs
 import numpy
 
 import core_pdf_spec.s_07_filters.codecs as strict
-import core_predictors as strict_predictors
 from core_jbig2.bitmap import compose_packed_bitmap_data
 from core_jbig2.codec import (
     JBIG2GenericRegionHeader,
@@ -50,7 +49,12 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     WHITESPACE,
     WS_TABLE,
 )
-from core_predictors import PredictorError, UnsupportedPngFilterError
+from core_predictors import (
+    PredictorError,
+    UnsupportedPngFilterError,
+    png_predict,
+    tiff_predict,
+)
 
 if TYPE_CHECKING:
     FilterFn = Callable[[bytes, object], bytes]
@@ -245,7 +249,7 @@ def decode_jbig2(data: bytes, parms: object) -> bytes:
     return decode_strict_jbig2(data, params, decoder_type=RecoveryJBIG2PageDecoder)
 
 
-def png_predict(
+def png_predict_tolerant(
     data: bytes | memoryview,
     *,
     columns: int,
@@ -255,12 +259,9 @@ def png_predict(
 ) -> bytes:
     if bits_per_component not in SUPPORTED_PREDICTOR_BITS:
         raise PredictorError(f"invalid PNG predictor bits {bits_per_component}")
-    try:
-        decoded = png_predict_codec(
-            data, columns=columns, colors=colors, bits_per_component=bits_per_component
-        )
-    except Exception:
-        decoded = None
+    decoded = png_predict_codec(
+        data, columns=columns, colors=colors, bits_per_component=bits_per_component
+    )
     if decoded is not None:
         return decoded
     stride = max(1, (colors * columns * bits_per_component + 7) // 8) + 1
@@ -270,7 +271,7 @@ def png_predict(
             if data[start] > 4:
                 stop = start
                 break
-    return strict_predictors.png_predict(
+    return png_predict(
         data[:stop], columns=columns, colors=colors, bits_per_component=bits_per_component
     )
 
@@ -287,7 +288,7 @@ def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> byte
         if row_length and len(data) % row_length:
             raise FilterParseError("truncated TIFF predictor row")
     try:
-        return tiff_predict(
+        return tiff_predict_tolerant(
             data,
             columns=params.columns,
             colors=params.colors,
@@ -305,7 +306,7 @@ def apply_png_predictor(data: bytes | memoryview, params: FilterParams) -> bytes
         if len(data) % stride and not params.damaged_rows_before_error:
             raise FilterParseError("truncated PNG predictor row")
     try:
-        return png_predict(
+        return png_predict_tolerant(
             data,
             columns=params.columns,
             colors=params.colors,
@@ -332,7 +333,7 @@ def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
     raise FilterParseError(f"invalid stream predictor {predictor}")
 
 
-def tiff_predict(
+def tiff_predict_tolerant(
     data: bytes | memoryview, *, columns: int, colors: int, bits_per_component: int
 ) -> bytes:
     decoded = tiff_predict_codec(
@@ -340,9 +341,7 @@ def tiff_predict(
     )
     if decoded is not None:
         return decoded
-    return strict_predictors.tiff_predict(
-        data, columns=columns, colors=colors, bits_per_component=bits_per_component
-    )
+    return tiff_predict(data, columns=columns, colors=colors, bits_per_component=bits_per_component)
 
 
 ASCII_HEX_DIGITS = b"0123456789ABCDEFabcdef"

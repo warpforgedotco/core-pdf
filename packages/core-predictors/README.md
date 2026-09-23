@@ -9,7 +9,11 @@ in the `core-pdf-spec` chapter that ISO 32000 assigns.
 
 The package is a single module: `core_predictors` exports `png_predict`,
 `tiff_predict`, `tiff_predict_bits`, `unpack_subbyte_rows`, `uint8_view`,
-`PredictorError`, and `UnsupportedPngFilterError`.
+`SUPPORTED_PREDICTOR_BITS`, `SUBBYTE_PREDICTOR_BITS`, `PredictorError`, and
+`UnsupportedPngFilterError`. Unlike the other floor packages it has no module
+layer, because at this size every importer wanted one or two symbols and the
+root is the only import path. If it passes roughly 250 lines or gains a third
+unrelated concept, split it back into modules and restore the stub root.
 
 Run its tests without the rest of the workspace installed:
 

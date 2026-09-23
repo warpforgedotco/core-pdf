@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import core_predictors
 from core_pdf.impl.runtime import codec_backends as codecs
 
 
@@ -171,11 +172,46 @@ def test_subbyte_tiff_prediction_preserves_channel_and_padded_row_boundaries(bit
     row = [mask] * colors + [1] * ((columns - 1) * colors)
     expected = [((mask + column) & mask) for column in range(columns) for _ in range(colors)]
     encoded = pack_rows([row, row], bits)
-    assert codecs.tiff_predict_bits(encoded, columns, colors, bits) == pack_rows(
+    assert codecs.tiff_predict_bits_codec(encoded, columns, colors, bits) == pack_rows(
         [expected, expected], bits
     )
 
 
 @pytest.mark.parametrize("bits", [1, 2, 4])
 def test_subbyte_tiff_prediction_returns_empty_for_missing_row(bits):
-    assert codecs.tiff_predict_bits(b"", 8, 1, bits) == b""
+    assert codecs.tiff_predict_bits_codec(b"", 8, 1, bits) == b""
+
+
+def test_prediction_codecs_report_unavailability_instead_of_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both prediction backends answer "not this shape" with None, never an exception."""
+
+    def explode(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("codec unavailable")
+
+    monkeypatch.setattr(codecs.imagecodecs, "png_decode", explode)
+    monkeypatch.setattr(codecs.imagecodecs, "delta_decode", explode)
+    options = {"columns": 2, "colors": 1, "bits_per_component": 8}
+    assert codecs.png_predict_codec(b"\x00\x05\x07", **options) is None
+    assert codecs.tiff_predict_codec(b"\x05\x07", **options) is None
+
+
+@pytest.mark.parametrize("bits", [1, 2, 4, 8, 16])
+@pytest.mark.parametrize("colors", [1, 3])
+@pytest.mark.parametrize("columns", [1, 7])
+def test_prediction_backends_agree_with_the_pure_python_kernels(bits, colors, columns):
+    """The codec path and the fallback must be interchangeable.
+
+    stream_decoding tries the imagecodecs backend and silently falls back to
+    core_predictors, so a divergence between them would change output based on
+    nothing the caller can see. The two carry separate copies of the row
+    framing, masking and padding rules; this pins them together.
+    """
+    row_bytes = max(1, (columns * colors * bits + 7) // 8)
+    rng = np.random.default_rng(seed=bits * 100 + colors * 10 + columns)
+    data = rng.integers(0, 256, size=row_bytes * 4, dtype=np.uint8).tobytes()
+    options = {"columns": columns, "colors": colors, "bits_per_component": bits}
+    assert codecs.tiff_predict_codec(data, **options) == core_predictors.tiff_predict(
+        data, **options
+    )

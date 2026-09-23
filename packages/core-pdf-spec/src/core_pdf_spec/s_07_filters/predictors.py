@@ -5,13 +5,12 @@ from __future__ import annotations
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_predictors import (
+    SUPPORTED_PREDICTOR_BITS,
     PredictorError,
     UnsupportedPngFilterError,
     png_predict,
     tiff_predict,
 )
-
-SUPPORTED_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})
 
 
 def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
