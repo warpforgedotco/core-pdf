@@ -32,9 +32,14 @@ core_pdf_cythonized = ["py.typed", "*.pyi", "*.pyx"]
 
 [tool.cibuildwheel]
 # The workspace is Python 3.14+ only, and nothing here works on a
-# non-CPython interpreter: the kernels are CPython C-API extensions.
+# non-CPython interpreter: the kernels are CPython C-API extensions. The
+# selector already excludes PyPy and the free-threaded cp314t builds, so no
+# skip list is needed -- an explicit `skip = ["pp*"]` makes cibuildwheel
+# enable the PyPy group purely to exclude it again.
+#
+# cibuildwheel must be new enough to know cp314: v2.x selects nothing at all
+# and exits 3 with "No build identifiers selected".
 build = "cp314-*"
-skip = ["pp*"]
 build-frontend = "build"
 
 # The golden vectors are the point of running tests here. They pin the
