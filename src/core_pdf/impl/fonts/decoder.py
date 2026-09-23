@@ -584,6 +584,7 @@ class FontDecoder:
         "cff_unicode_repair_index",
         "cff_unicode_repairs",
         "simple_glyph_cache",
+        "cid_glyph_cache",
         "font_program",
         "raster_font_provider",
         "glyph_bbox_cache",
@@ -624,6 +625,7 @@ class FontDecoder:
     cff_unicode_repair_index: CFFUnicodeRepairIndex | None
     cff_unicode_repairs: dict[bytes, str]
     simple_glyph_cache: dict[int, DecodedGlyph]
+    cid_glyph_cache: dict[tuple[bytes, int], DecodedGlyph]
     font_program: FontProgram | None
     raster_font_provider: RasterFontProviderLike | None
     glyph_bbox_cache: dict[int, Rectangle | None]
@@ -666,6 +668,7 @@ class FontDecoder:
         "cff_unicode_repair_index",
         "cff_unicode_repairs",
         "simple_glyph_cache",
+        "cid_glyph_cache",
         "font_program",
         "raster_font_provider",
         "glyph_bbox_cache",
@@ -811,10 +814,13 @@ class FontDecoder:
         # to one per character *class*, which is the point -- the profile
         # says this path is ~65% cache stalls, not instructions.
         #
-        # CID fonts do not share this: decode_cid_glyphs can rewrite
-        # cff_unicode_repairs mid-run, so its glyphs are not a pure
-        # function of the code and are built per occurrence as before.
+        # CID fonts share the same way, keyed by the pair the cmap yields.
+        # Their one piece of mutable input is cff_unicode_repairs, which
+        # decode_cid_glyphs can rewrite partway through a document; it already
+        # purges unicode_choice_cache for the codes that changed, and purges
+        # this alongside it.
         self.simple_glyph_cache = {}
+        self.cid_glyph_cache = {}
 
     @staticmethod
     def cid_system_info_string(value: object) -> str | None:
@@ -1181,8 +1187,20 @@ class FontDecoder:
                     cache = self.unicode_choice_cache
                     for key in [key for key in cache if key[0] in changed]:
                         del cache[key]
+                    glyph_cache = self.cid_glyph_cache
+                    for glyph_key in [key for key in glyph_cache if key[0] in changed]:
+                        del glyph_cache[glyph_key]
                     current.update(repairs)
-        return [self.build_cid_glyph(code_bytes, cid) for code_bytes, cid in entries]
+        decoded_cache = self.cid_glyph_cache
+        glyphs: list[DecodedGlyph] = []
+        append = glyphs.append
+        for code_bytes, cid in entries:
+            decoded_key = (code_bytes, cid)
+            decoded = decoded_cache.get(decoded_key)
+            if decoded is None:
+                decoded = decoded_cache[decoded_key] = self.build_cid_glyph(code_bytes, cid)
+            append(decoded)
+        return glyphs
 
     def build_cid_glyph(self, code_bytes: bytes, cid: int) -> DecodedGlyph:
         char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0
