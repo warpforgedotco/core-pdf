@@ -7,7 +7,6 @@ import mmap
 import re
 import struct
 import threading
-from bisect import bisect_right
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import AbstractContextManager
 from functools import partial
@@ -1878,20 +1877,25 @@ class PdfDocument(Generic[PageT]):
         # Object starts in file order, so each candidate's span can be bounded
         # by the next one rather than by a guess at how long a dictionary runs.
         starts = sorted(
-            entry.offset
-            for entry in self.xref.values()
-            if entry.in_use and entry.object_stream is None and 0 <= entry.offset < data_len
+            {
+                entry.offset
+                for entry in self.xref.values()
+                if entry.in_use and entry.object_stream is None and 0 <= entry.offset < data_len
+            }
         )
+        # Walking the offsets rather than the entries: a damaged xref can point
+        # many object numbers at one offset, and the object living there is the
+        # same object however many keys reach it. The keys are not otherwise
+        # needed here, so distinct offsets in file order are both the shorter
+        # loop and the one whose neighbour is already the span boundary.
+        last = len(starts) - 1
         lexer = PdfLexer(data, semantic_context=self.xref_context)
         try:
-            for key, entry in sorted(self.xref.items()):
-                if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
+            for index, offset in enumerate(starts):
+                end = starts[index + 1] if index < last else data_len
+                if not self.may_be_xref_stream(data, offset, end):
                     continue
-                following = bisect_right(starts, entry.offset)
-                end = starts[following] if following < len(starts) else data_len
-                if not self.may_be_xref_stream(data, entry.offset, end):
-                    continue
-                lexer.rewind(entry.offset)
+                lexer.rewind(offset)
                 try:
                     obj = lexer.parse_indirect_object()
                 except Exception:
