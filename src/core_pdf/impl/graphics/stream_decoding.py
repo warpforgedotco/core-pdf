@@ -32,9 +32,7 @@ from core_pdf.impl.model.pdf_values import is_pdf_null
 from core_pdf.impl.runtime import codec_backends
 from core_pdf.impl.runtime.codec_backends import (
     png_predict_codec,
-    tiff_predict_8,
-    tiff_predict_16,
-    tiff_predict_bits,
+    tiff_predict_codec,
 )
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
@@ -338,15 +336,11 @@ def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
 def tiff_predict(
     data: bytes | memoryview, *, columns: int, colors: int, bits_per_component: int
 ) -> bytes:
-    try:
-        if bits_per_component == 8:
-            return tiff_predict_8(data, columns, colors)
-        if bits_per_component == 16:
-            return tiff_predict_16(data, columns, colors)
-        if bits_per_component in {1, 2, 4}:
-            return tiff_predict_bits(data, columns, colors, bits_per_component)
-    except Exception:
-        pass
+    decoded = tiff_predict_codec(
+        data, columns=columns, colors=colors, bits_per_component=bits_per_component
+    )
+    if decoded is not None:
+        return decoded
     return strict_tiff.tiff_predict(
         data, columns=columns, colors=colors, bits_per_component=bits_per_component
     )

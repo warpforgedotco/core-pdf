@@ -203,7 +203,7 @@ def png_predict_codec(
     return packed.tobytes()
 
 
-def tiff_predict(
+def tiff_predict_words(
     data: bytes | memoryview, columns: int, colors: int, dtype: str, sample_bytes: int
 ) -> bytes:
     bytes_per_row = colors * columns * sample_bytes
@@ -220,12 +220,22 @@ def tiff_predict(
     return numpy.asarray(imagecodecs.delta_decode(rows, axis=1)).tobytes()
 
 
-def tiff_predict_8(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    return tiff_predict(data, columns, colors, "u1", 1)
-
-
-def tiff_predict_16(data: bytes | memoryview, columns: int, colors: int) -> bytes:
-    return tiff_predict(data, columns, colors, ">u2", 2)
+def tiff_predict_codec(
+    data: bytes | memoryview, *, columns: int, colors: int, bits_per_component: int
+) -> bytes | None:
+    # Mirrors png_predict_codec: returns None when imagecodecs cannot take
+    # this shape, so the caller has one decision to make rather than a
+    # second copy of the bit-width table plus a bare except.
+    try:
+        if bits_per_component == 8:
+            return tiff_predict_words(data, columns, colors, "u1", 1)
+        if bits_per_component == 16:
+            return tiff_predict_words(data, columns, colors, ">u2", 2)
+        if bits_per_component in {1, 2, 4}:
+            return tiff_predict_bits(data, columns, colors, bits_per_component)
+    except Exception:
+        return None
+    return None
 
 
 def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:

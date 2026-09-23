@@ -133,7 +133,12 @@ def test_tiff_prediction_accumulates_per_channel_and_restarts_each_row(bits, col
     maximum = (1 << bits) - 1
     row = [maximum] * colors + [2] * colors + [3] * colors
     encoded = np.asarray(row * 2, dtype=dtype).tobytes()
-    decoder = codecs.tiff_predict_8 if bits == 8 else codecs.tiff_predict_16
+
+    def decoder(data, columns, colors):
+        return codecs.tiff_predict_codec(
+            data, columns=columns, colors=colors, bits_per_component=bits
+        )
+
     actual = decoder(encoded + b"x", 3, colors)
     expected = np.asarray(
         ([maximum] * colors + [1] * colors + [4] * colors) * 2, dtype=dtype
@@ -141,10 +146,12 @@ def test_tiff_prediction_accumulates_per_channel_and_restarts_each_row(bits, col
     assert actual == expected
 
 
-@pytest.mark.parametrize("decoder", [codecs.tiff_predict_8, codecs.tiff_predict_16])
+@pytest.mark.parametrize("bits", [8, 16])
 @pytest.mark.parametrize(("data", "columns"), [(b"", 3), (b"x", 3), (b"abc", 0)])
-def test_tiff_prediction_ignores_incomplete_rows(decoder, data, columns):
-    assert decoder(data, columns, 1) == b""
+def test_tiff_prediction_ignores_incomplete_rows(bits, data, columns):
+    assert (
+        codecs.tiff_predict_codec(data, columns=columns, colors=1, bits_per_component=bits) == b""
+    )
 
 
 def pack_rows(rows, bits):
