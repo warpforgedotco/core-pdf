@@ -20,6 +20,7 @@ from core_pdf_spec.s_07_syntax.types import (
     Decipher,
     ObjectCache,
     PdfDict,
+    PdfObject,
 )
 from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
@@ -117,15 +118,18 @@ class ObjectResolver:
             self.data.release()
         self.data = memoryview(b"")
 
-    def resolve(self, ref: object) -> object:
+    def resolve(self, ref: object) -> PdfObject:
+        # This is where an unknown becomes a PDF object: the parser hands in
+        # whatever the file contained, and everything downstream is entitled
+        # to treat the result as an object of the model.
         if type(ref) is not PdfReference:
-            return ref
+            return cast(PdfObject, ref)
 
         cache_key = key_for(ref.object_number, ref.generation_number)
         with self.lock:
             cached = self.objects.get(cache_key, MISSING)
             if cached is not MISSING:
-                return cached
+                return cast(PdfObject, cached)
 
         resolving = getattr(self.thread_state, "resolving", None)
         if resolving is None:
@@ -136,23 +140,23 @@ class ObjectResolver:
 
         resolving.add(cache_key)
         try:
-            resolved = self.resolve_reference(ref)
+            resolved = cast(PdfObject, self.resolve_reference(ref))
         finally:
             resolving.remove(cache_key)
 
         with self.lock:
             cached = self.objects.get(cache_key, MISSING)
             if cached is not MISSING:
-                return cached
+                return cast(PdfObject, cached)
             self.objects[cache_key] = cast(CachedPdfObject, resolved)
         return resolved
 
-    def deep_resolve(self, value: object) -> object:
-        return resolve_object_graph(value, self.resolve)
+    def deep_resolve(self, value: object) -> PdfObject:
+        return cast(PdfObject, resolve_object_graph(value, self.resolve))
 
     def resolve_dict(self, value: object) -> PdfDict | None:
         resolved = self.deep_resolve(value)
-        return cast(PdfDict, resolved) if isinstance(resolved, dict) else None
+        return resolved if isinstance(resolved, dict) else None
 
     def resolve_box(self, value: object) -> tuple[float, float, float, float] | None:
         resolved = self.deep_resolve(value)
@@ -173,7 +177,7 @@ class ObjectResolver:
         resolved_font = self.deep_resolve(font_values)
         if not isinstance(resolved_font, dict):
             raise ValueError("invalid font dictionary")
-        result = cast(PdfDict, resolved_font)
+        result = resolved_font
         if has_resources:
             result["Resources"] = font["Resources"]
         return result
@@ -257,7 +261,7 @@ class ObjectResolver:
         if resolved is selected:
             return stream
         dictionary = dict(stream.dictionary)
-        dictionary.update(cast(dict[object, object], resolved))
+        dictionary.update(cast(PdfDict, resolved))
         return stream.replace(dictionary=dictionary)
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:

@@ -178,7 +178,7 @@ def test_resolving_a_decoded_stream_dictionary_does_not_decode_again(
 
 def test_stream_copy_preserves_independent_and_dictionary_bound_plans() -> None:
     original = {"Filter": PdfName.of("FlateDecode")}
-    replacement: dict[object, object] = {"Filter": PdfName.of("ASCIIHexDecode")}
+    replacement: PdfDict = {"Filter": PdfName.of("ASCIIHexDecode")}
     bound = PdfStream(original, zlib.compress(b"x"), original)
     assert bound.data == b"x"
     replaced = bound.replace(dictionary=replacement, raw_data=b"78>")

@@ -99,12 +99,14 @@ binary is imported instead of the source — and it still reports the `.py` path
 `__file__`, so nothing looks wrong. Edits to that module then silently do nothing.
 Remove any such `.so` from every source root listed in `[tool.coverage.run].source` before validating source changes; the root `conftest.py` reads that list and aborts the run if one is found.
 
-### Two type checkers, contradictory advice
+### Two type checkers
 
-Both `mypy` and `ty` gate this repo, and they disagree about several `cast()`
-calls: mypy reports them as redundant while `ty` requires them. Because of that,
-mypy's `warn_redundant_casts` is deliberately left off. Run both before assuming
-a typing change is an improvement.
+Both `mypy` and `ty` gate this repo. They used to disagree about several
+`cast()` calls -- mypy reported them as redundant while `ty` required them --
+and `warn_redundant_casts` was left off because of it. That no longer
+reproduces: the flag is on, and the tree is clean under both. Run both before
+assuming a typing change is an improvement, and if the disagreement returns,
+record the specific call rather than disabling the check again.
 
 ## Dependency Management
 

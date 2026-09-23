@@ -33,7 +33,7 @@ def validate_pdf_mac_if_present(
     try:
         validate_standalone_pdf_mac(
             raw_data,
-            cast(PdfDict, raw_auth_code),
+            raw_auth_code,
             handler.file_key,
             handler.config.kdf_salt,
         )

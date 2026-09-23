@@ -7,7 +7,7 @@ from typing import Any, ClassVar, NoReturn, Self
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.resolver import STREAM_DECODE_KEYS
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfValueResolver
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name, require_pdf_integer
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
@@ -141,9 +141,7 @@ class ImageSource:
         )
 
 
-def resolve_image_dictionary(
-    dictionary: dict[object, object], resolver: PdfValueResolver
-) -> dict[object, object]:
+def resolve_image_dictionary(dictionary: PdfDict, resolver: PdfValueResolver) -> PdfDict:
     return {
         key: resolver.deep_resolve(value)
         if value is not None and decoded_name(key) in IMAGE_INPUT_KEYS

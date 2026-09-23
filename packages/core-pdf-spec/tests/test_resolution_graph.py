@@ -9,7 +9,7 @@ from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import CachedPdfObject
+from core_pdf_spec.s_07_syntax.types import CachedPdfObject, PdfObject
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.types import PdfReference
 
@@ -89,9 +89,9 @@ def test_non_caching_resolver_still_forms_one_indirect_cycle() -> None:
     class FreshResolver(ObjectResolver):
         calls = 0
 
-        def resolve(self, ref: object) -> object:
+        def resolve(self, ref: object) -> PdfObject:
             if not isinstance(ref, PdfReference):
-                return ref
+                return cast(PdfObject, ref)
             self.calls += 1
             if self.calls > 1:
                 raise AssertionError("indirect container was resolved more than once")
@@ -199,7 +199,7 @@ def test_deep_graph_uses_iterative_resolution(resolver: ObjectResolver) -> None:
 
 def test_failed_resolution_does_not_modify_partially_discovered_graph() -> None:
     class FailingResolver(ObjectResolver):
-        def resolve(self, ref: object) -> object:
+        def resolve(self, ref: object) -> PdfObject:
             if ref == PdfReference(3):
                 raise ValueError("resolution failed")
             return super().resolve(ref)

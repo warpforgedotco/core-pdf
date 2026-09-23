@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import TypeVar
 
+from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict
 from core_pdf_spec.types import PdfReference
 
 ResolveFn = Callable[[object], object]
@@ -13,17 +14,17 @@ NumberDecodeFn = Callable[[object], int | None]
 TreeKeyT = TypeVar("TreeKeyT")
 
 
-def tree_node(value: object, resolve: ResolveFn, tree_name: str) -> dict:
+def tree_node(value: object, resolve: ResolveFn, tree_name: str) -> PdfDict:
     return require_tree_node(resolve(value), tree_name)
 
 
-def require_tree_node(current: object, tree_name: str) -> dict:
+def require_tree_node(current: object, tree_name: str) -> PdfDict:
     if not isinstance(current, dict):
         raise ValueError(f"invalid {tree_name} tree node")
     return current
 
 
-def tree_array(node: dict, field: str, resolve: ResolveFn, tree_name: str) -> list | None:
+def tree_array(node: PdfDict, field: str, resolve: ResolveFn, tree_name: str) -> PdfArray | None:
     value = resolve(node.get(field))
     if value is not None and not isinstance(value, list):
         raise ValueError(f"invalid {tree_name} tree {field} array")
@@ -31,7 +32,7 @@ def tree_array(node: dict, field: str, resolve: ResolveFn, tree_name: str) -> li
 
 
 def tree_entry[TreeKeyT](
-    entries: list, index: int, key: TreeKeyT | None, key_error: str
+    entries: PdfArray, index: int, key: TreeKeyT | None, key_error: str
 ) -> tuple[TreeKeyT, object]:
     if index + 1 >= len(entries):
         raise ValueError(key_error)
@@ -50,7 +51,7 @@ def iter_tree_items[TreeKeyT](
     key_error: str,
     resolve_values: bool = True,
 ) -> Iterator[tuple[TreeKeyT, object]]:
-    seen: dict[int, dict] = {}
+    seen: dict[int, PdfDict] = {}
     references: set[tuple[int, int]] = set()
     stack = [node]
     is_root = True

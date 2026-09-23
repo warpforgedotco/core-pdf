@@ -19,7 +19,6 @@ from core_pdf_compat.pypdf import (
     PdfReader,
     StructuredState,
 )
-from core_pdf_spec.s_07_syntax.types import PdfDict
 
 from .._strict_page_tree import has_malformed_shadowed_definition
 
@@ -153,7 +152,7 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
         resolved = pdf.resolver.resolve(value)
         if not isinstance(resolved, dict):
             return
-        if resolve_page_tree_node_type(pdf.resolver, cast(PdfDict, resolved)) != "Pages":
+        if resolve_page_tree_node_type(pdf.resolver, resolved) != "Pages":
             return
         kids = pdf.resolver.resolve(resolved.get("Kids"))
         if not isinstance(kids, list):
@@ -220,7 +219,7 @@ def _pikepdf_page_boxes(
         resolved = pdf.resolver.resolve(value)
         if not isinstance(resolved, dict):
             return
-        node_type = resolve_page_tree_node_type(pdf.resolver, cast(PdfDict, resolved))
+        node_type = resolve_page_tree_node_type(pdf.resolver, resolved)
         if node_type == "Page":
             boxes.append(box)
             return

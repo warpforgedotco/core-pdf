@@ -125,7 +125,7 @@ class PdfPage:
                 raise ValueError("invalid page Annots array")
             if strict:
                 return []
-            annots = [raw_annots]
+            annots: list[PdfObject] = [raw_annots]
         else:
             annots = raw_annots
         resolved_annots: list[PdfDict] = []
@@ -170,7 +170,7 @@ class PdfPage:
                     rect=rect,
                     contents=contents,
                     dict_=annot,
-                    dest=cast(PdfObject | None, dest),
+                    dest=dest,
                     action=cast(PdfDict, action) if isinstance(action, dict) else None,
                 )
             )

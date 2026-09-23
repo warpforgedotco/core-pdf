@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import mmap
+import re
 import struct
 import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -55,7 +56,6 @@ from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.types import (
     ImageRecord,
     PageScoped,
-    PathSource,
     PdfByteBuffer,
     PdfName,
     PdfReference,
@@ -481,7 +481,7 @@ class PdfDocument(Generic[PageT]):
         if value is None:
             return None
         if isinstance(value, dict):
-            return cast(PdfDict, value)
+            return value
         if recoverable and self.recovery_enabled:
             return None
         raise ValueError(f"invalid {key} dictionary")
@@ -499,7 +499,7 @@ class PdfDocument(Generic[PageT]):
         if isinstance(source, (str, PathLike)):
             if isinstance(source, str) and source.startswith("%PDF"):
                 return source.encode("latin-1")
-            file_handle = open(cast(PathSource, source), "rb")  # noqa: SIM115
+            file_handle = open(source, "rb")  # noqa: SIM115
             self.file_handle = file_handle
             try:
                 return mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ)
@@ -594,7 +594,6 @@ class PdfDocument(Generic[PageT]):
                 continue
             if not isinstance(obj, dict):
                 continue
-            obj = cast(PdfDict, obj)
             marker = id(obj)
             if marker in seen_objects:
                 continue
@@ -686,7 +685,7 @@ class PdfDocument(Generic[PageT]):
             except Exception:
                 parent_obj = None
             if isinstance(parent_obj, dict):
-                sources.append(cast(PdfDict, parent_obj))
+                sources.append(parent_obj)
         sources.extend(pages_nodes)
         if not sources:
             return values
@@ -1288,7 +1287,7 @@ class PdfDocument(Generic[PageT]):
                 subtype = self.resolver.resolve_name_or_text(annot.get("Subtype")) or ""
                 if subtype != "Widget":
                     continue
-                root = self.widget_field_root(cast(PdfDict, annot))
+                root = self.widget_field_root(annot)
                 if id(root) in seen_widgets:
                     continue
                 seen_widgets.add(id(root))
@@ -1306,7 +1305,7 @@ class PdfDocument(Generic[PageT]):
             if not isinstance(parent, dict) or id(parent) in seen:
                 break
             seen.add(id(parent))
-            node = cast(PdfDict, parent)
+            node = parent
         return node
 
     def embedded_files(self) -> list[RawEmbeddedFile]:
@@ -1340,11 +1339,9 @@ class PdfDocument(Generic[PageT]):
         filespec = self.resolver.resolve(value)
         if not isinstance(filespec, dict):
             raise ValueError("invalid embedded file spec")
-        filespec = cast(PdfDict, filespec)
         ef = self.resolver.resolve(filespec.get("EF"))
         if not isinstance(ef, dict):
             raise ValueError("invalid embedded file stream")
-        ef = cast(PdfDict, ef)
         stream = self.resolver.resolve(ef.get("UF") or ef.get("F"))
         if not isinstance(stream, PdfStream):
             raise ValueError("invalid embedded file stream")
@@ -1603,34 +1600,16 @@ class PdfDocument(Generic[PageT]):
         expected_object_number = key >> 16
         expected_generation_number = key & 0xFFFF
 
-        pos = offset
-        if pos < data_len and 48 <= data[pos] <= 57:
-            obj_num = 0
-            while pos < data_len and 48 <= data[pos] <= 57:
-                obj_num = obj_num * 10 + (data[pos] - 48)
-                pos += 1
-            if pos < data_len and data[pos] in (0, 9, 10, 12, 13, 32):
-                while pos < data_len and data[pos] in (0, 9, 10, 12, 13, 32):
-                    pos += 1
-                if pos < data_len and 48 <= data[pos] <= 57:
-                    gen_num = 0
-                    while pos < data_len and 48 <= data[pos] <= 57:
-                        gen_num = gen_num * 10 + (data[pos] - 48)
-                        pos += 1
-                    if (
-                        pos < data_len
-                        and data[pos] in (0, 9, 10, 12, 13, 32)
-                        and obj_num == expected_object_number
-                        and gen_num == expected_generation_number
-                    ):
-                        while pos < data_len and data[pos] in (0, 9, 10, 12, 13, 32):
-                            pos += 1
-                        if (
-                            pos + 3 <= data_len
-                            and data[pos : pos + 3] == b"obj"
-                            and (pos + 3 == data_len or data[pos + 3] in (0, 9, 10, 12, 13, 32))
-                        ):
-                            return True
+        # One anchored match in C rather than a digit-at-a-time walk in Python.
+        # This runs for every entry of every xref table, so the interpreter
+        # overhead of the old loop dominated repairing stale offsets.
+        header = OBJECT_HEADER_RE.match(data, offset)
+        if (
+            header is not None
+            and int(header[1]) == expected_object_number
+            and int(header[2]) == expected_generation_number
+        ):
+            return True
 
         search_end = min(data_len, offset + 64)
         for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
@@ -1662,7 +1641,6 @@ class PdfDocument(Generic[PageT]):
             pages = resolver.resolve(root.get("Pages"))
             if not isinstance(pages, dict):
                 return False
-            pages = cast(PdfDict, pages)
             node_type = resolve_page_tree_node_type(resolver, pages)
             if node_type != "Pages":
                 return False
@@ -1894,12 +1872,30 @@ class PdfDocument(Generic[PageT]):
             lexer.close()
 
     def iter_recoverable_xref_stream_dictionaries(self) -> Iterator[PdfDict]:
-        lexer = PdfLexer(self.raw_data, semantic_context=self.xref_context)
+        data = self.raw_data
+        data_len = len(data)
+        # Object starts in file order, so each candidate's span can be bounded
+        # by the next one rather than by a guess at how long a dictionary runs.
+        starts = sorted(
+            {
+                entry.offset
+                for entry in self.xref.values()
+                if entry.in_use and entry.object_stream is None and 0 <= entry.offset < data_len
+            }
+        )
+        # Walking the offsets rather than the entries: a damaged xref can point
+        # many object numbers at one offset, and the object living there is the
+        # same object however many keys reach it. The keys are not otherwise
+        # needed here, so distinct offsets in file order are both the shorter
+        # loop and the one whose neighbour is already the span boundary.
+        last = len(starts) - 1
+        lexer = PdfLexer(data, semantic_context=self.xref_context)
         try:
-            for key, entry in sorted(self.xref.items()):
-                if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
+            for index, offset in enumerate(starts):
+                end = starts[index + 1] if index < last else data_len
+                if not self.may_be_xref_stream(data, offset, end):
                     continue
-                lexer.rewind(entry.offset)
+                lexer.rewind(offset)
                 try:
                     obj = lexer.parse_indirect_object()
                 except Exception:
@@ -1910,9 +1906,32 @@ class PdfDocument(Generic[PageT]):
                 if recover_pdf_name(dictionary.get("Type")) == "XRef" or (
                     dictionary.get("W") is not None and dictionary.get("Size") is not None
                 ):
-                    yield cast(PdfDict, dictionary)
+                    yield dictionary
         finally:
             lexer.close()
+
+    def may_be_xref_stream(self, data: bytes | mmap.mmap, offset: int, end: int) -> bool:
+        """Rule out an object as an xref stream by reading bytes, not parsing it.
+
+        The caller only wants dictionaries that declare Type /XRef, or that
+        carry both W and Size, so a span holding none of those literals cannot
+        be one. Parsing every object in the file to discover that is what made
+        opening a large document expensive.
+
+        The span runs to the next object rather than over a fixed window,
+        because nothing bounds how much dictionary may precede the markers: a
+        long Index array or a run of comments can push them arbitrarily far
+        into the object. Searching a fixed prefix would skip such a stream and
+        lose the trailer metadata it carries.
+
+        A span containing "#" falls through to the parse, since a hex-escaped
+        name would not match these literals. Searching a whole object span can
+        also match bytes inside stream data, but a false positive only costs
+        the parse that used to happen anyway.
+        """
+        if data.find(b"#", offset, end) >= 0 or data.find(b"XRef", offset, end) >= 0:
+            return True
+        return data.find(b"/W", offset, end) >= 0 and data.find(b"/Size", offset, end) >= 0
 
     def is_valid_trailer_metadata_value(self, key: str, value: object) -> bool:
         if key == "Info":
@@ -1988,9 +2007,13 @@ def create_recovered_security_handler(
         if normalized_filters is not filters:
             if normalized is params:
                 normalized = dict(params)
-            normalized["CF"] = cast(PdfDict, normalized_filters)
+            normalized["CF"] = normalized_filters
     return create_standard_security_handler(document_id, normalized, password)
 
+
+# "N G obj" at an object header, with the inter-token whitespace PDF allows
+# and a trailing separator so a longer keyword cannot match.
+OBJECT_HEADER_RE = re.compile(rb"(\d+)[\0\t\n\f\r ]+(\d+)[\0\t\n\f\r ]+obj(?=[\0\t\n\f\r ]|\Z)")
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 from core_pdf_spec.standards import PdfExtension, PdfVersion, SemanticContext
 from core_pdf_spec.types import PdfName, PdfString
@@ -34,7 +35,7 @@ def effective_pdf_version(
     )
 
 
-def optional_string(dictionary: dict, key: str) -> str | None:
+def optional_string(dictionary: PdfDict, key: str) -> str | None:
     value = dictionary.get(key)
     if value is None:
         return None

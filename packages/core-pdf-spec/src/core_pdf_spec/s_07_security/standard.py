@@ -570,7 +570,7 @@ def parse_crypt_filters(
     if raw_filters is MISSING:
         filters: PdfDict = {}
     elif isinstance(raw_filters, dict):
-        filters = cast(PdfDict, raw_filters)
+        filters = raw_filters
     else:
         raise ValueError("invalid crypt filter dictionary")
 
@@ -594,7 +594,7 @@ def parse_crypt_filters(
             raise ValueError(f"unsupported Standard Security crypt filter: {filter_name}")
         if not isinstance(raw_config, dict):
             raise ValueError(f"invalid crypt filter dictionary: {raw_name!r}")
-        filter_config = cast(PdfDict, raw_config)
+        filter_config = raw_config
 
         raw_type = filter_config.get("Type", MISSING)
         if raw_type is not MISSING and name(raw_type) != "CryptFilter":

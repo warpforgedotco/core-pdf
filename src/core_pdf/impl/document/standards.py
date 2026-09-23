@@ -175,7 +175,7 @@ def bootstrap_security_context(
         catalog = resolver.resolve(trailer.get("Root"))
         if not isinstance(catalog, dict):
             return None
-        catalog = cast(PdfDict, catalog)
+        catalog = catalog
         version = None
         if "Version" in catalog:
             version = parse_catalog_version(resolver.resolve(catalog["Version"]))
@@ -345,7 +345,7 @@ def preserve_historical_version(
             catalog = resolver.resolve(revision.trailer.get("Root"))
             if not isinstance(catalog, dict):
                 raise ValueError("missing historical catalog")
-            catalog = cast(PdfDict, catalog)
+            catalog = catalog
             if "Version" in catalog:
                 version = parse_catalog_version(resolver.resolve(catalog["Version"]))
                 floor = effective_pdf_version(floor, version)

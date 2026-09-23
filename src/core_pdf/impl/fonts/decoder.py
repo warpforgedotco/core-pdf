@@ -5,12 +5,12 @@ from __future__ import annotations
 import typing
 import unicodedata
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from copy import replace
 from functools import cache
 from io import BytesIO
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import numpy
 
@@ -329,16 +329,20 @@ class DecodedGlyph(DecodedFontGlyph, ReplaceFields, ReprFields):
         bitmap_code: int,
         split_unicode: bool = False,
     ) -> None:
-        frozen_setattr(self, "code_bytes", code_bytes)
-        frozen_setattr(self, "char_code", char_code)
-        frozen_setattr(self, "cid", cid)
-        frozen_setattr(self, "gid", gid)
-        frozen_setattr(self, "unicode", unicode)
-        frozen_setattr(self, "width_code", width_code)
-        frozen_setattr(self, "unicode_source", unicode_source)
-        frozen_setattr(self, "alternates", alternates)
-        frozen_setattr(self, "bitmap_code", bitmap_code)
-        frozen_setattr(self, "split_unicode", split_unicode)
+        # Slot descriptors rather than object.__setattr__: both bypass the
+        # frozen __setattr__, but the descriptor writes the slot directly
+        # while __setattr__ looks the name up first. One glyph is built per
+        # character of every page, so the ten lookups are worth removing.
+        _set_code_bytes(self, code_bytes)
+        _set_char_code(self, char_code)
+        _set_cid(self, cid)
+        _set_gid(self, gid)
+        _set_unicode(self, unicode)
+        _set_width_code(self, width_code)
+        _set_unicode_source(self, unicode_source)
+        _set_alternates(self, alternates)
+        _set_bitmap_code(self, bitmap_code)
+        _set_split_unicode(self, split_unicode)
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -375,6 +379,25 @@ class DecodedGlyph(DecodedFontGlyph, ReplaceFields, ReprFields):
         )
 
 
+# Bound once, next to the class whose __init__ uses them. Reached through
+# getattr because a type checker reads DecodedGlyph.code_bytes as the
+# attribute's type rather than as the slot descriptor it is at runtime.
+def slot_setter(owner: type, name: str) -> Callable[[object, Any], None]:
+    return cast("Callable[[object, Any], None]", getattr(owner, name).__set__)
+
+
+_set_code_bytes = slot_setter(DecodedGlyph, "code_bytes")
+_set_char_code = slot_setter(DecodedGlyph, "char_code")
+_set_cid = slot_setter(DecodedGlyph, "cid")
+_set_gid = slot_setter(DecodedGlyph, "gid")
+_set_unicode = slot_setter(DecodedGlyph, "unicode")
+_set_width_code = slot_setter(DecodedGlyph, "width_code")
+_set_unicode_source = slot_setter(DecodedGlyph, "unicode_source")
+_set_alternates = slot_setter(DecodedGlyph, "alternates")
+_set_bitmap_code = slot_setter(DecodedGlyph, "bitmap_code")
+_set_split_unicode = slot_setter(DecodedGlyph, "split_unicode")
+
+
 UNRESOLVED_UNICODE_SOURCES = frozenset(
     {UnicodeSource.IDENTITY, UnicodeSource.REPLACEMENT, UnicodeSource.FALLBACK_NUL}
 )
@@ -391,9 +414,9 @@ class UnicodeChoice(Record):
     __match_args__ = ("text", "source", "alternates")
 
     def __init__(self, text: str, source: UnicodeSource, alternates: tuple[str, ...] = ()) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "source", source)
-        frozen_setattr(self, "alternates", alternates)
+        _unicodechoice_set_text(self, text)
+        _unicodechoice_set_source(self, source)
+        _unicodechoice_set_alternates(self, alternates)
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -408,6 +431,12 @@ class UnicodeChoice(Record):
 
     def __hash__(self) -> int:
         return hash((self.text, self.source, self.alternates))
+
+
+# Slot descriptors bypass the frozen __setattr__ without its name lookup.
+_unicodechoice_set_text = slot_setter(UnicodeChoice, "text")
+_unicodechoice_set_source = slot_setter(UnicodeChoice, "source")
+_unicodechoice_set_alternates = slot_setter(UnicodeChoice, "alternates")
 
 
 SINGLE_BYTES = tuple(bytes((value,)) for value in range(256))

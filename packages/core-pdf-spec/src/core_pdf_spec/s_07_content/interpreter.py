@@ -232,7 +232,7 @@ class ContentInterpreter:
         font = self.resolver.resolve(font_reference)
         if not isinstance(font, dict):
             raise PdfParseError("font resource must be a dictionary")
-        resolved_font = self.resolver.resolve_font_dict(cast(PdfDict, font))
+        resolved_font = self.resolver.resolve_font_dict(font)
         decoder = self.font_provider(
             cast(dict[str, Any], resolved_font), cast(dict[str, Any], self.resources)
         )
@@ -645,13 +645,13 @@ class ContentInterpreter:
         self.sink.text_boundary(self, "marked")
 
     def op_G(self, operands: ContentOperands, depth: int) -> None:
-        self.set_device_color(operands, "DeviceGray", 1, stroke=True)
+        self.set_device_color(operands, DEVICE_GRAY, stroke=True)
 
     def op_RG(self, operands: ContentOperands, depth: int) -> None:
-        self.set_device_color(operands, "DeviceRGB", 3, stroke=True)
+        self.set_device_color(operands, DEVICE_RGB, stroke=True)
 
     def op_K(self, operands: ContentOperands, depth: int) -> None:
-        self.set_device_color(operands, "DeviceCMYK", 4, stroke=True)
+        self.set_device_color(operands, DEVICE_CMYK, stroke=True)
 
     def op_w(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
@@ -790,13 +790,12 @@ class ContentInterpreter:
         self.pending_clip_rule_value = "evenodd"
 
     def set_device_color(
-        self, operands: ContentOperands, color_space: str, count: int, *, stroke: bool
+        self, operands: ContentOperands, space: ColorSpace, *, stroke: bool
     ) -> None:
+        # The count comes from the space so the two cannot disagree.
+        count = len(space.component_ranges)
         if self.type3_uncolored or len(operands) < count:
             return
-        space = {"DeviceGray": DEVICE_GRAY, "DeviceRGB": DEVICE_RGB, "DeviceCMYK": DEVICE_CMYK}[
-            color_space
-        ]
         normalized = self.normalize_color_components(space, operands[:count])
         if normalized is None:
             return
@@ -923,7 +922,7 @@ class ContentInterpreter:
             return name
         return self.resolver.resolve_str(value)
 
-    def resolve_marked_content_properties(self, value: Any) -> dict[str, Any] | None:
+    def resolve_marked_content_properties(self, value: Any) -> PdfDict | None:
         if value is None:
             return None
         resolved = self.resolver.resolve(value)
@@ -933,7 +932,7 @@ class ContentInterpreter:
         if not name:
             return None
         props = self.resolver.resolve(self.lookup_page_resource("Properties", name))
-        return cast("dict[str, Any]", props) if isinstance(props, dict) else None
+        return props if isinstance(props, dict) else None
 
     def resolve_marked_content_layer(self, value: Any) -> str | None:
         if value is None:
@@ -998,7 +997,7 @@ class ContentInterpreter:
         extgstate = self.resolver.resolve(self.lookup_page_resource("ExtGState", name))
         if not isinstance(extgstate, dict):
             return None
-        source = cast(PdfDict, extgstate)
+        source = extgstate
         values = {
             key: value
             for key, value in source.items()
@@ -1034,13 +1033,13 @@ class ContentInterpreter:
         self.graphics.ctm = Matrix(*values).multiply(self.graphics.ctm)
 
     def op_g(self, operands: ContentOperands, depth: int) -> None:
-        self.set_device_color(operands, "DeviceGray", 1, stroke=False)
+        self.set_device_color(operands, DEVICE_GRAY, stroke=False)
 
     def op_rg(self, operands: ContentOperands, depth: int) -> None:
-        self.set_device_color(operands, "DeviceRGB", 3, stroke=False)
+        self.set_device_color(operands, DEVICE_RGB, stroke=False)
 
     def op_k(self, operands: ContentOperands, depth: int) -> None:
-        self.set_device_color(operands, "DeviceCMYK", 4, stroke=False)
+        self.set_device_color(operands, DEVICE_CMYK, stroke=False)
 
     def op_gs(self, operands: ContentOperands, depth: int) -> None:
         if not operands:
@@ -1099,7 +1098,7 @@ class ContentInterpreter:
         pattern = self.resolver.resolve(self.lookup_page_resource("Pattern", pattern_name))
         pattern_dict: PdfDict | None
         if isinstance(pattern, PdfStream):
-            pattern_dict = cast(PdfDict, pattern.dictionary)
+            pattern_dict = pattern.dictionary
         else:
             pattern_dict = self.resolver.resolve_dict(pattern) if pattern is not None else None
         return (pattern, pattern_dict) if isinstance(pattern_dict, dict) else None

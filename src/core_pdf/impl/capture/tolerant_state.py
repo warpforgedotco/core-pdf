@@ -157,7 +157,7 @@ class RecoveringTextState(ContentInterpreter):
         if not isinstance(font_obj, dict):
             decoder = self.font_provider({}, typing.cast(dict[str, Any], resources))
         else:
-            font_dict = typing.cast(PdfDict, font_obj)
+            font_dict = font_obj
             resolved_font = self.resolver.resolve_font_dict(font_dict)
             decoder = self.font_provider(
                 typing.cast(dict[str, Any], resolved_font), typing.cast(dict[str, Any], resources)

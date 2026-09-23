@@ -3,7 +3,7 @@ import pytest
 from core_pdf_spec.s_07_document.metadata import metadata_stream
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.s_14_structure.dictionaries import attribute_entries
 from core_pdf_spec.types import PdfReference
@@ -19,7 +19,7 @@ def test_metadata_resolves_only_selected_objects_and_preserves_stream(
             super().__init__(b"", {})
             self.references: list[PdfReference] = []
 
-        def resolve(self, ref: object) -> object:
+        def resolve(self, ref: object) -> PdfObject:
             if isinstance(ref, PdfReference):
                 self.references.append(ref)
             return super().resolve(ref)

@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any, ClassVar, Literal, NoReturn, Self, cast
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfValueResolver
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
     require_pdf_number,
@@ -120,7 +120,7 @@ class SoftMask:
         return self.__class__(subtype, group, ctm, transfer, backdrop_color, color_space)
 
 
-def resolve(value: object, resolver: PdfValueResolver) -> object:
+def resolve(value: object, resolver: PdfValueResolver) -> PdfObject:
     seen: set[tuple[int, int]] = set()
     while isinstance(value, PdfReference):
         key = (value.object_number, value.generation_number)
@@ -128,19 +128,17 @@ def resolve(value: object, resolver: PdfValueResolver) -> object:
             raise ValueError("cyclic soft-mask reference")
         seen.add(key)
         value = resolver.resolve(value)
-    return value
+    return cast(PdfObject, value)
 
 
-def array(value: object, resolver: PdfValueResolver) -> object:
+def array(value: object, resolver: PdfValueResolver) -> PdfObject:
     value = resolve(value, resolver)
     if isinstance(value, (list, tuple)):
-        return tuple(resolve(item, resolver) for item in value)
+        return [resolve(item, resolver) for item in value]
     return value
 
 
-def function(
-    value: object, resolver: PdfValueResolver, active: set[int]
-) -> dict[object, object] | PdfStream:
+def function(value: object, resolver: PdfValueResolver, active: set[int]) -> PdfDict | PdfStream:
     value = resolve(value, resolver)
     if not isinstance(value, (dict, PdfStream)):
         raise ValueError("soft-mask transfer must be a function or Identity")
@@ -149,8 +147,8 @@ def function(
         raise ValueError("cyclic soft-mask transfer function")
     active.add(identity)
     try:
-        dictionary: dict[object, object] = dict(
-            value.dictionary if isinstance(value, PdfStream) else cast(dict[object, object], value)
+        dictionary: PdfDict = dict(
+            value.dictionary if isinstance(value, PdfStream) else cast(PdfDict, value)
         )
         for key in ("FunctionType", "BitsPerSample", "Order", "N"):
             if key in dictionary:
@@ -176,7 +174,7 @@ def function(
             children = resolve(dictionary.get("Functions"), resolver)
             if not isinstance(children, (list, tuple)) or not children:
                 raise ValueError("invalid soft-mask stitching function")
-            dictionary["Functions"] = tuple(function(child, resolver, active) for child in children)
+            dictionary["Functions"] = [function(child, resolver, active) for child in children]
         elif function_type not in {0, 4}:
             raise ValueError("unsupported soft-mask transfer function")
         if function_type in {0, 4} and not isinstance(value, PdfStream):
@@ -210,10 +208,10 @@ def transfer(
 
 def resolve_soft_mask_color_space(value: object, resolver: PdfValueResolver) -> ColorSpace:
     value = array(value, resolver)
-    kind = resolver.resolve_name(value[0] if isinstance(value, tuple) and value else value)
+    kind = resolver.resolve_name(value[0] if isinstance(value, list) and value else value)
     if kind not in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "CalGray", "CalRGB", "ICCBased"}:
         raise ValueError("invalid soft-mask blending color space")
-    if isinstance(value, tuple) and len(value) == 2:
+    if isinstance(value, list) and len(value) == 2:
         source = value[1]
         dictionary = source.dictionary if isinstance(source, PdfStream) else source
         if isinstance(dictionary, dict):

@@ -60,7 +60,7 @@ class PdfLexer:
     )
 
     raw_data: memoryview
-    source_buffer: FindableSizedBuffer | None
+    source_buffer: bytes | FindableSizedBuffer | None
     data_len: int
     pos: int
     reference_resolver: Callable[[PdfReference], object] | None

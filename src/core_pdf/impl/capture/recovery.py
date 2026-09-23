@@ -115,25 +115,35 @@ def iter_content_operations(
     data = lexer.raw_data
     names: dict[bytes, PdfName] = {}
     operators: dict[bytes, str] = {}
+    # The loop below runs once per token of every content stream, so it holds
+    # its hot lookups as locals: the bound matcher, the bound append, and the
+    # group numbers. Dispatching on lastindex rather than lastgroup keeps the
+    # per-token work to integer comparisons; lastgroup would map the index back
+    # to a name and group(name) would map it forward again.
+    match_token = token_re.match
+    append = operands.append
+    group_index = token_re.groupindex
+    num_group = group_index["num"]
+    name_group = group_index["name"]
     while True:
         cursor = lexer.pos
-        match = token_re.match(data, cursor)
-        if match is not None and (kind := match.lastgroup) is not None:
-            word = match.group(kind)
-            if kind == "num":
+        match = match_token(data, cursor)
+        if match is not None and (index := match.lastindex) is not None:
+            word = match[index]
+            if index == num_group:
                 if len(word) < 16:
                     value: ContentOperand = float(word) if b"." in word else int(word)
                     lexer.pos = match.end()
                     if len(operands) < 16:
-                        operands.append(value)
+                        append(value)
                     continue
-            elif kind == "name":
+            elif index == name_group:
                 lexer.pos = match.end()
                 name = names.get(word)
                 if name is None:
                     name = names[word] = PdfName.of(word[1:])
                 if len(operands) < 16:
-                    operands.append(name)
+                    append(name)
                 continue
             elif word not in KEYWORD_TOKENS:
                 lexer.pos = match.end()

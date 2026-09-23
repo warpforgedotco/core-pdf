@@ -329,9 +329,7 @@ class StructureElement(StructureNode):
                 tree.page_lookup = self.page_lookup
             self.parent_value = tree
             return tree
-        self.parent_value = StructureElement(
-            self.document, cast(PdfDict, parent), page_lookup=self.page_lookup
-        )
+        self.parent_value = StructureElement(self.document, parent, page_lookup=self.page_lookup)
         return self.parent_value
 
     def kids_page(self) -> PdfPage | None:
@@ -490,7 +488,7 @@ class PageStructure(Sequence[StructureElement | None]):
                 if marker not in self.elements:
                     self.elements[marker] = StructureElement(
                         self.page.document,
-                        cast(PdfDict, resolved),
+                        resolved,
                         page_lookup=self.page_lookup,
                     )
                 return self.elements[marker]
@@ -602,7 +600,7 @@ def make_kids(
                     raise ValueError("invalid structure object reference")
                 yield StructureContentObject(
                     page_index=get_kid_page_index(document, page, current, page_lookup),
-                    props=cast(PdfDict, obj),
+                    props=obj,
                 )
                 continue
             yield StructureElement(document, current, page_lookup=page_lookup)
