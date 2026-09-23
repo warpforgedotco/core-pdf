@@ -31,6 +31,11 @@ A kernel earns its place here by clearing three bars, in this order:
 """
 
 from core_pdf_cythonized._bezier import cubic_sample_times
+from core_pdf_cythonized._blend import blend_normal_alpha_array_numpy
 from core_pdf_cythonized._coverage import signed_area_coverage
 
-__all__ = ("cubic_sample_times", "signed_area_coverage")
+__all__ = (
+    "blend_normal_alpha_array_numpy",
+    "cubic_sample_times",
+    "signed_area_coverage",
+)

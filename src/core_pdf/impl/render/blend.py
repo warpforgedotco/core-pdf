@@ -199,35 +199,6 @@ def composite_blended_group_numpy(
         destination[..., channel][visible] = numpy.clip(values, 0.0, 255.0).astype(numpy.uint8)
 
 
-def blend_normal_alpha_array_numpy(
-    target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
-    rgba: tuple[int, int, int, int],
-    alpha: numpy.ndarray[Any, Any],
-) -> None:
-    if target.size == 0 or not numpy.any(alpha):
-        return
-    source_alpha = numpy.minimum(alpha, rgba[3]).astype(numpy.float32) / 255.0
-    destination_float = target.astype(numpy.float32)
-    destination_alpha = destination_float[..., 3] / 255.0
-    output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha)
-    safe_output_alpha = numpy.where(output_alpha > 0.0, output_alpha, 1.0)
-    inverse_source_alpha = 1.0 - source_alpha
-    dst_weight = destination_alpha * inverse_source_alpha
-    destination_float[..., 0] = (
-        rgba[0] * source_alpha + destination_float[..., 0] * dst_weight
-    ) / safe_output_alpha
-    destination_float[..., 1] = (
-        rgba[1] * source_alpha + destination_float[..., 1] * dst_weight
-    ) / safe_output_alpha
-    destination_float[..., 2] = (
-        rgba[2] * source_alpha + destination_float[..., 2] * dst_weight
-    ) / safe_output_alpha
-    destination_float[..., 3] = output_alpha * 255.0
-    numpy.rint(destination_float, out=destination_float)
-    numpy.clip(destination_float, 0.0, 255.0, out=destination_float)
-    numpy.copyto(target, destination_float.astype(numpy.uint8), where=(alpha > 0)[..., None])
-
-
 def composite_normal_group_numpy(
     destination: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     source: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],

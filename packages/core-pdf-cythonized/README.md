@@ -32,7 +32,13 @@ A kernel earns its place by clearing three bars, in order:
 
 ## Float arithmetic is part of the contract
 
-The kernels must reproduce CPython's float semantics bit for bit, and a C
+Match the width the original computed in. numpy promoted uint8 buffers to
+**float32** for compositing, so `_blend` uses C `float` and typed float
+constants — a bare `1.0` is a double in C and would promote the expression,
+compute in double and narrow on assignment, landing on different bytes.
+Cython has no float-literal suffix, so named constants are how that is said.
+
+The kernels must also reproduce CPython's float semantics bit for bit, and a C
 compiler will not do that on its own. Left alone it contracts expressions like
 `b*b - 4*a*c` into an FMA — more accurate, and wrong here, because it moves a
 root by one ULP. `setup.py` builds with `-ffp-contract=off` for that reason.
@@ -45,6 +51,17 @@ the wheel.
 | ------ | -------- | -------- |
 | `cubic_sample_times` | `core_pdf.impl.fonts.font_program` (deleted) | 7.57x on the kernel; 3.7% of a glyph-outline page, 0% on pages needing no outlines |
 | `signed_area_coverage` | `core_pdf.impl.render.paths` (deleted, with `group_offsets`) | 4.26x on the kernel; ~20% off full render on glyph-heavy pages |
+| `blend_normal_alpha_array_numpy` | `core_pdf.impl.render.blend` (deleted) | 9.04x on the kernel, over 26,315 calls averaging 38 elements |
+
+Together the two render kernels take full `render().rasterize()` down by
+21-32% across the corpus, with byte-identical pixels:
+
+| page | before | after |
+| ---- | ------ | ----- |
+| i1040nr | 907 ms | ~615 ms |
+| lyft_2021 | 635 ms | ~443 ms |
+| billionaires | 505 ms | ~388 ms |
+| issue-301 | 1007 ms | ~794 ms |
 
 ## Building and testing
 

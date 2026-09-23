@@ -23,7 +23,6 @@ from core_pdf.impl.model.geometry import normalize_rect, points_bbox, rect_tuple
 from core_pdf.impl.render.blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     blend_context,
-    blend_normal_alpha_array_numpy,
     blend_normal_solid_array_numpy,
     blend_solid_array_numpy,
     blend_visible_pixels,
@@ -73,7 +72,7 @@ from core_pdf.impl.runtime.array_views import (
     uint8_view,
 )
 from core_pdf.impl.runtime.scalars import parse_int
-from core_pdf_cythonized import signed_area_coverage
+from core_pdf_cythonized import blend_normal_alpha_array_numpy, signed_area_coverage
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
