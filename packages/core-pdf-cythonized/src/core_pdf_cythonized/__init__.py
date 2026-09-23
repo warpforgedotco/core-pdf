@@ -17,9 +17,13 @@ A kernel earns its place here by clearing three bars, in this order:
    compiling it is worth a stated percentage of a real page. Compiling
    something because it looks numeric is how this package turns into dead
    weight that still has to be built on every platform.
-2. Scalar. The inner loop touches no Python objects. Cython loses to CPython's
-   specializing interpreter on object-heavy code -- measured at roughly 2x
-   slower for per-item construction -- so object churn does not belong here.
+2. Scalar, on data too small for its abstraction. The work is arithmetic and
+   the data is too small to amortize the per-call overhead of whatever runs
+   it. Usually that is the CPython interpreter; numpy counts too, since
+   thirty array operations over a forty-pixel buffer is the same disease.
+   Check the size distribution first -- numpy wins once arrays are large.
+   Python object churn does not belong here: Cython loses to CPython's
+   specializing interpreter on it, by roughly 2x for per-item construction.
 3. Pinned. Before the original is deleted it generates golden vectors, and a
    test drives the kernel over them demanding identical output. Float
    arithmetic must match CPython exactly, which is why the build disables
@@ -27,5 +31,6 @@ A kernel earns its place here by clearing three bars, in this order:
 """
 
 from core_pdf_cythonized._bezier import cubic_sample_times
+from core_pdf_cythonized._coverage import signed_area_coverage
 
-__all__ = ("cubic_sample_times",)
+__all__ = ("cubic_sample_times", "signed_area_coverage")

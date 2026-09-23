@@ -57,7 +57,6 @@ from core_pdf.impl.render.paths import (
     fill_path_sample_crossings_numpy,
     intersect_box,
     rasterize_unclipped_line_normal,
-    signed_area_coverage,
 )
 from core_pdf.impl.render.patterns import (
     TilingCellCache,
@@ -74,6 +73,7 @@ from core_pdf.impl.runtime.array_views import (
     uint8_view,
 )
 from core_pdf.impl.runtime.scalars import parse_int
+from core_pdf_cythonized import signed_area_coverage
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource

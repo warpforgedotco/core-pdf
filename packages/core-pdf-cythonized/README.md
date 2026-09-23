@@ -15,9 +15,17 @@ A kernel earns its place by clearing three bars, in order:
    compiling it is worth a stated percentage of a real page. Compiling things
    that merely look numeric is how this package becomes dead weight that still
    has to be built on every platform.
-2. **Scalar.** The inner loop touches no Python objects. Cython loses to
+2. **Scalar, on data too small for its abstraction.** The work is arithmetic,
+   and the data is too small to amortize the per-call overhead of whatever is
+   running it. That abstraction is usually the CPython interpreter, but numpy
+   counts too: `signed_area_coverage` had no Python loop at all — it ran about
+   thirty array operations to fill a forty-pixel buffer, and a scalar C loop
+   beat it 4.3x. The inverse also holds, so check the size distribution before
+   assuming: numpy wins once the arrays are genuinely large.
+
+   What does *not* belong here is Python object churn. Cython loses to
    CPython's specializing interpreter on object-heavy code — measured at about
-   2x slower for per-item construction — so object churn does not belong here.
+   2x slower for per-item construction.
 3. **Pinned.** Before the Python original is deleted, it generates a golden
    vector file, and a test drives the kernel over those vectors demanding
    identical output. That file becomes the definition of correct.
@@ -36,6 +44,7 @@ the wheel.
 | kernel | replaces | measured |
 | ------ | -------- | -------- |
 | `cubic_sample_times` | `core_pdf.impl.fonts.font_program` (deleted) | 7.57x on the kernel; 3.7% of a glyph-outline page, 0% on pages needing no outlines |
+| `signed_area_coverage` | `core_pdf.impl.render.paths` (deleted, with `group_offsets`) | 4.26x on the kernel; ~20% off full render on glyph-heavy pages |
 
 ## Building and testing
 
