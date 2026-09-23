@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 from core_pdf.impl.model.geometry import bbox_union, normalize_rect, points_bbox
-from core_pdf.impl.types import Rectangle, ReplaceFields, ReprFields
+from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
@@ -20,7 +20,10 @@ if TYPE_CHECKING:
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
 
 
-@dataclass(frozen=True, slots=True)
+# Compared by identity before this was a dataclass: it defined no __eq__ and
+# no Record base supplies one. A generated __eq__ would deep-walk the whole
+# CapturedProgram whenever a drawing or inline image compares its soft mask.
+@dataclass(frozen=True, slots=True, eq=False)
 class CapturedSoftMask:
     program: CapturedProgram
     transfer: PdfFunctionEvaluator | None = None
@@ -276,256 +279,42 @@ StrokeStyleKey = tuple[
 ]
 
 
-class CapturedDrawing(ReplaceFields, ReprFields):
-    __slots__ = (
-        "seqno",
-        "fill",
-        "fill_opacity",
-        "fill_pattern",
-        "stroke_color",
-        "stroke_pattern",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "fill_rule",
-        "blend_mode",
-        "soft_mask_alpha",
-        "raw_data",
-        "dictionary",
-        "image_source",
-        "image_clip",
-        "kind",
-        "items",
-        "path",
-        "bbox",
-        "stream_order",
-        "xobject_depth",
-        "color_rendering",
-        "paints",
-        "fill_paints",
-        "stroke_paints",
-        "group_isolated",
-        "group_knockout",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-    )
-
+@dataclass(slots=True)
+class CapturedDrawing:
     seqno: int
     fill: tuple[float, ...] | None
     fill_opacity: float | None
-    fill_pattern: PatternPaint | None
-    stroke_color: tuple[float, ...] | None
-    stroke_pattern: PatternPaint | None
-    stroke_opacity: float | None
-    line_width: float
-    line_cap: int
-    line_join: int
-    dash_pattern: tuple[list[float], float] | None
-    fill_rule: str
-    blend_mode: str | None
-    soft_mask_alpha: float | None
-    raw_data: bytes | memoryview | None
-    dictionary: dict[Any, Any] | None
-    image_source: ImageSource | None
-    image_clip: Rectangle | None
-    kind: str
-    items: tuple[DrawingItem, ...] | list[DrawingItem]
-    path: CapturedPath | None
-    bbox: Rectangle | None
-    stream_order: int
-    xobject_depth: int
-    color_rendering: ColorRendering
-    paints: bool
-    fill_paints: bool
-    stroke_paints: bool
-    group_isolated: bool
-    group_knockout: bool
-    alpha_is_shape: bool
-    graphics_soft_mask: CapturedSoftMask | None
+    fill_pattern: PatternPaint | None = None
+    stroke_color: tuple[float, ...] | None = None
+    stroke_pattern: PatternPaint | None = None
+    stroke_opacity: float | None = None
+    line_width: float = 1.0
+    line_cap: int = 0
+    line_join: int = 0
+    dash_pattern: tuple[list[float], float] | None = None
+    fill_rule: str = "nonzero"
+    blend_mode: str | None = None
+    soft_mask_alpha: float | None = None
+    raw_data: bytes | memoryview | None = None
+    dictionary: dict[Any, Any] | None = None
+    image_source: ImageSource | None = None
+    image_clip: Rectangle | None = None
+    kind: str = "fill"
+    items: tuple[DrawingItem, ...] | list[DrawingItem] = EMPTY_DRAWING_ITEMS
+    path: CapturedPath | None = None
+    bbox: Rectangle | None = None
+    stream_order: int = 0
+    xobject_depth: int = 0
+    color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+    paints: bool = True
+    fill_paints: bool = True
+    stroke_paints: bool = True
+    group_isolated: bool = True
+    group_knockout: bool = False
+    alpha_is_shape: bool = False
+    graphics_soft_mask: CapturedSoftMask | None = None
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "seqno",
-        "fill",
-        "fill_opacity",
-        "fill_pattern",
-        "stroke_color",
-        "stroke_pattern",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "fill_rule",
-        "blend_mode",
-        "soft_mask_alpha",
-        "raw_data",
-        "dictionary",
-        "image_source",
-        "image_clip",
-        "kind",
-        "items",
-        "path",
-        "bbox",
-        "stream_order",
-        "xobject_depth",
-        "color_rendering",
-        "paints",
-        "fill_paints",
-        "stroke_paints",
-        "group_isolated",
-        "group_knockout",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-    )
-    __match_args__ = (
-        "seqno",
-        "fill",
-        "fill_opacity",
-        "fill_pattern",
-        "stroke_color",
-        "stroke_pattern",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "fill_rule",
-        "blend_mode",
-        "soft_mask_alpha",
-        "raw_data",
-        "dictionary",
-        "image_source",
-        "image_clip",
-        "kind",
-        "items",
-        "path",
-        "bbox",
-        "stream_order",
-        "xobject_depth",
-        "color_rendering",
-        "paints",
-        "fill_paints",
-        "stroke_paints",
-        "group_isolated",
-        "group_knockout",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-    )
-
-    def __init__(
-        self,
-        seqno: int,
-        fill: tuple[float, ...] | None,
-        fill_opacity: float | None,
-        fill_pattern: PatternPaint | None = None,
-        stroke_color: tuple[float, ...] | None = None,
-        stroke_pattern: PatternPaint | None = None,
-        stroke_opacity: float | None = None,
-        line_width: float = 1.0,
-        line_cap: int = 0,
-        line_join: int = 0,
-        dash_pattern: tuple[list[float], float] | None = None,
-        fill_rule: str = "nonzero",
-        blend_mode: str | None = None,
-        soft_mask_alpha: float | None = None,
-        raw_data: bytes | memoryview | None = None,
-        dictionary: dict[Any, Any] | None = None,
-        image_source: ImageSource | None = None,
-        image_clip: Rectangle | None = None,
-        kind: str = "fill",
-        items: tuple[DrawingItem, ...] | list[DrawingItem] = EMPTY_DRAWING_ITEMS,
-        path: CapturedPath | None = None,
-        bbox: Rectangle | None = None,
-        stream_order: int = 0,
-        xobject_depth: int = 0,
-        color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
-        paints: bool = True,
-        fill_paints: bool = True,
-        stroke_paints: bool = True,
-        group_isolated: bool = True,
-        group_knockout: bool = False,
-        alpha_is_shape: bool = False,
-        graphics_soft_mask: CapturedSoftMask | None = None,
-    ) -> None:
-        self.seqno = seqno
-        self.fill = fill
-        self.fill_opacity = fill_opacity
-        self.fill_pattern = fill_pattern
-        self.stroke_color = stroke_color
-        self.stroke_pattern = stroke_pattern
-        self.stroke_opacity = stroke_opacity
-        self.line_width = line_width
-        self.line_cap = line_cap
-        self.line_join = line_join
-        self.dash_pattern = dash_pattern
-        self.fill_rule = fill_rule
-        self.blend_mode = blend_mode
-        self.soft_mask_alpha = soft_mask_alpha
-        self.raw_data = raw_data
-        self.dictionary = dictionary
-        self.image_source = image_source
-        self.image_clip = image_clip
-        self.kind = kind
-        self.items = items
-        self.path = path
-        self.bbox = bbox
-        self.stream_order = stream_order
-        self.xobject_depth = xobject_depth
-        self.color_rendering = color_rendering
-        self.paints = paints
-        self.fill_paints = fill_paints
-        self.stroke_paints = stroke_paints
-        self.group_isolated = group_isolated
-        self.group_knockout = group_knockout
-        self.alpha_is_shape = alpha_is_shape
-        self.graphics_soft_mask = graphics_soft_mask
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.seqno == other.seqno
-            and self.fill == other.fill
-            and self.fill_opacity == other.fill_opacity
-            and self.fill_pattern == other.fill_pattern
-            and self.stroke_color == other.stroke_color
-            and self.stroke_pattern == other.stroke_pattern
-            and self.stroke_opacity == other.stroke_opacity
-            and self.line_width == other.line_width
-            and self.line_cap == other.line_cap
-            and self.line_join == other.line_join
-            and self.dash_pattern == other.dash_pattern
-            and self.fill_rule == other.fill_rule
-            and self.blend_mode == other.blend_mode
-            and self.soft_mask_alpha == other.soft_mask_alpha
-            and self.raw_data == other.raw_data
-            and self.dictionary == other.dictionary
-            and self.image_source == other.image_source
-            and self.image_clip == other.image_clip
-            and self.kind == other.kind
-            and self.items == other.items
-            and self.path == other.path
-            and self.bbox == other.bbox
-            and self.stream_order == other.stream_order
-            and self.xobject_depth == other.xobject_depth
-            and self.color_rendering == other.color_rendering
-            and self.paints == other.paints
-            and self.fill_paints == other.fill_paints
-            and self.stroke_paints == other.stroke_paints
-            and self.group_isolated == other.group_isolated
-            and self.group_knockout == other.group_knockout
-            and self.alpha_is_shape == other.alpha_is_shape
-            and self.graphics_soft_mask == other.graphics_soft_mask
-        )
-
-    __hash__ = None  # type: ignore[assignment]
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         if not self.items:
             self.items = EMPTY_DRAWING_ITEMS
 

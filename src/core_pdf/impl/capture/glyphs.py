@@ -152,14 +152,12 @@ def glyph_text_space_boxes(
     )
 
 
+@dataclass(slots=True, eq=False)
 class RunGeometry:
-    __slots__ = ("started", "advance", "ink", "confidence")
-
-    def __init__(self) -> None:
-        self.started = False
-        self.advance: Rectangle = (0.0, 0.0, 0.0, 0.0)
-        self.ink: Rectangle = (0.0, 0.0, 0.0, 0.0)
-        self.confidence: float | None = None
+    started: bool = False
+    advance: Rectangle = (0.0, 0.0, 0.0, 0.0)
+    ink: Rectangle = (0.0, 0.0, 0.0, 0.0)
+    confidence: float | None = None
 
     def add(
         self,

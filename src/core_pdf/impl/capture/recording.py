@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from contextlib import suppress
 from copy import copy
+from dataclasses import dataclass
 from math import ceil, hypot
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy
 
@@ -51,8 +52,6 @@ from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import (
     PdfName,
     Rectangle,
-    ReplaceFields,
-    ReprFields,
 )
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES, GraphicsState, PdfPath
@@ -77,7 +76,7 @@ from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_08_graphics.image_spec import (
     image_source_from_stream as resolve_image_source,
 )
-from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
+from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
 
@@ -86,38 +85,11 @@ if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.inline_images import InlineImage
 
 
-class CaptureGraphicsSave(ReplaceFields, ReprFields):
-    __slots__ = ("clip_bbox", "group_alpha", "clip_scope_emitted")
-
+@dataclass(slots=True)
+class CaptureGraphicsSave:
     clip_bbox: Rectangle | None
     group_alpha: float | None
-    clip_scope_emitted: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = ("clip_bbox", "group_alpha", "clip_scope_emitted")
-    __match_args__ = ("clip_bbox", "group_alpha", "clip_scope_emitted")
-
-    def __init__(
-        self,
-        clip_bbox: Rectangle | None,
-        group_alpha: float | None,
-        clip_scope_emitted: bool = False,
-    ) -> None:
-        self.clip_bbox = clip_bbox
-        self.group_alpha = group_alpha
-        self.clip_scope_emitted = clip_scope_emitted
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.clip_bbox == other.clip_bbox
-            and self.group_alpha == other.group_alpha
-            and self.clip_scope_emitted == other.clip_scope_emitted
-        )
-
-    __hash__ = None  # type: ignore[assignment]
+    clip_scope_emitted: bool = False
 
 
 MATRIX_TOLERANCE = 0.1
@@ -204,6 +176,7 @@ class RecordingMethods(RecoveringTextState):
     ]
     capture_mask_resources: dict[int, tuple[PdfSoftMask, PdfDict]]
     capture_active_mask_groups: set[int]
+    scale_cache: tuple[Matrix, float] | None
 
     def resolve_soft_mask(self, value: object) -> PdfSoftMask | None:
         mask = super().resolve_soft_mask(value)
@@ -238,9 +211,9 @@ class RecordingMethods(RecoveringTextState):
         # holds. Drawing-heavy pages emit long runs under one CTM, and every
         # drawing asks for this once for the line width and again for the dash
         # pattern, so the repeat is worth catching.
-        cached = getattr(self, "scale_cache", None)
+        cached = self.scale_cache
         if cached is not None and cached[0] is ctm:
-            return cast(float, cached[1])
+            return cached[1]
         x_scale = hypot(ctm.a, ctm.b)
         y_scale = hypot(ctm.c, ctm.d)
         if x_scale == 0 and y_scale == 0:
@@ -434,11 +407,12 @@ class RecordingMethods(RecoveringTextState):
 
         text_matrix = self.text_matrix
         combined = text_matrix.multiply(self.graphics.ctm)
-        A, B, C, D = combined.a, combined.b, combined.c, combined.d
-        ca, cb, cc, cd, ce, cf = self.graphics.ctm
+        # combined already carries the translation: multiply_affine's last two
+        # terms are te * ca + tf * cc + ce and te * cb + tf * cd + cf, which is
+        # what this used to recompute by hand. Checked bit for bit over 44,001
+        # matrix pairs, including both of multiply's identity short circuits.
+        A, B, C, D, E, F = combined
         te, tf = text_matrix.e, text_matrix.f
-        E = te * ca + tf * cc + ce
-        F = te * cb + tf * cd + cf
 
         rot = detect_rotation_from_linear(A, B, C, D)
         seqno = self.sequence
@@ -1159,6 +1133,15 @@ def flatten_path(source: PdfPath) -> CapturedPath:
 
 GRAPHICS_STATE_FIELDS = GraphicsState.__fields__
 
+# capture_graphics_soft_mask overrides these before capturing, so they are
+# constant for a given mask and cannot distinguish two of its cache entries.
+MASK_OVERRIDDEN_FIELDS = frozenset(
+    {"ctm", "soft_mask", "fill_opacity", "stroke_opacity", "blend_mode"}
+)
+MASK_KEYED_FIELDS = tuple(
+    name for name in GRAPHICS_STATE_FIELDS if name not in MASK_OVERRIDDEN_FIELDS
+)
+
 
 def state_key(value: object) -> object:
     if isinstance(value, tuple):
@@ -1172,18 +1155,23 @@ def capture_graphics_soft_mask(state: RecordingMethods) -> CapturedSoftMask | No
     mask = state.graphics.soft_mask
     if mask is None:
         return None
+    # The five fields the nested capture overrides carry no information: four
+    # are the same literals every time, and the fifth is mask.ctm, which id(mask)
+    # already pins. Keying on the rest lets the lookup happen before the state is
+    # copied, which is the whole cost on a hit -- 1.5us of copy plus five fields
+    # of state_key, against a lookup that is measured in nanoseconds.
+    key = (
+        id(mask),
+        tuple(state_key(getattr(state.graphics, name)) for name in MASK_KEYED_FIELDS),
+    )
+    cached = state.capture_soft_masks.get(key)
+    if cached is not None:
+        return cached[2]
     graphics = copy(state.graphics)
     graphics.ctm = mask.ctm
     graphics.soft_mask = None
     graphics.fill_opacity = graphics.stroke_opacity = 1.0
     graphics.blend_mode = None
-    key = (
-        id(mask),
-        tuple(state_key(getattr(graphics, name)) for name in GRAPHICS_STATE_FIELDS),
-    )
-    cached = state.capture_soft_masks.get(key)
-    if cached is not None:
-        return cached[2]
     state.capture_soft_masks[key] = (mask, graphics, None)
     group_key = id(mask.group)
     if mask.subtype != "Alpha" or group_key in state.capture_active_mask_groups:

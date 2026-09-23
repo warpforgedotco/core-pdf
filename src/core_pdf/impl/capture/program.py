@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal, Self, TypeAlias
+from dataclasses import dataclass, field
+from typing import Literal, TypeAlias
 
 from core_pdf.impl.capture.records import (
     CapturedDrawing,
@@ -13,108 +14,26 @@ from core_pdf.impl.capture.records import (
 from core_pdf.impl.exceptions import PdfContractError
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.types import Record, frozen_setattr
 
 PageCommand: TypeAlias = (
     TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage | CapturedTextBoundary
 )
 
 
-class CapturedProgram(Record):
-    __slots__ = (
-        "runs",
-        "glyphs",
-        "drawings",
-        "inline_images",
-        "lines",
-        "text_boundaries",
-        "commands",
-    )
+@dataclass(frozen=True, slots=True)
+class CapturedProgram:
+    runs: tuple[TextRun, ...] = ()
+    glyphs: tuple[GlyphObservation, ...] = ()
+    drawings: tuple[CapturedDrawing, ...] = ()
+    inline_images: tuple[CapturedInlineImage, ...] = ()
+    lines: tuple[CapturedLine, ...] = ()
+    text_boundaries: tuple[CapturedTextBoundary, ...] = field(default=(), kw_only=True)
+    # Derived from the six above. init=False keeps it out of __init__,
+    # __match_args__ and copy.replace, which is what the hand-written
+    # __replace__ arranged by listing the other six explicitly.
+    commands: tuple[PageCommand, ...] = field(init=False)
 
-    runs: tuple[TextRun, ...]
-    glyphs: tuple[GlyphObservation, ...]
-    drawings: tuple[CapturedDrawing, ...]
-    inline_images: tuple[CapturedInlineImage, ...]
-    lines: tuple[CapturedLine, ...]
-    text_boundaries: tuple[CapturedTextBoundary, ...]
-    commands: tuple[PageCommand, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "runs",
-        "glyphs",
-        "drawings",
-        "inline_images",
-        "lines",
-        "text_boundaries",
-        "commands",
-    )
-    __match_args__ = ("runs", "glyphs", "drawings", "inline_images", "lines")
-
-    def __init__(
-        self,
-        runs: tuple[TextRun, ...] = (),
-        glyphs: tuple[GlyphObservation, ...] = (),
-        drawings: tuple[CapturedDrawing, ...] = (),
-        inline_images: tuple[CapturedInlineImage, ...] = (),
-        lines: tuple[CapturedLine, ...] = (),
-        *,
-        text_boundaries: tuple[CapturedTextBoundary, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "runs", runs)
-        frozen_setattr(self, "glyphs", glyphs)
-        frozen_setattr(self, "drawings", drawings)
-        frozen_setattr(self, "inline_images", inline_images)
-        frozen_setattr(self, "lines", lines)
-        frozen_setattr(self, "text_boundaries", text_boundaries)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.runs == other.runs
-            and self.glyphs == other.glyphs
-            and self.drawings == other.drawings
-            and self.inline_images == other.inline_images
-            and self.lines == other.lines
-            and self.text_boundaries == other.text_boundaries
-            and self.commands == other.commands
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.runs,
-                self.glyphs,
-                self.drawings,
-                self.inline_images,
-                self.lines,
-                self.text_boundaries,
-                self.commands,
-            )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        runs = changes.pop("runs", self.runs)
-        glyphs = changes.pop("glyphs", self.glyphs)
-        drawings = changes.pop("drawings", self.drawings)
-        inline_images = changes.pop("inline_images", self.inline_images)
-        lines = changes.pop("lines", self.lines)
-        text_boundaries = changes.pop("text_boundaries", self.text_boundaries)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            runs,
-            glyphs,
-            drawings,
-            inline_images,
-            lines,
-            text_boundaries=text_boundaries,
-        )
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         runs = tuple(self.runs)
         glyphs = tuple(self.glyphs)
         drawings = tuple(self.drawings)
@@ -148,130 +67,28 @@ class CapturedProgram(Record):
         object.__setattr__(self, "commands", tuple(commands))
 
 
-class AppearanceProgram(Record):
-    __slots__ = ("kind", "source", "clip_bbox", "program")
-
+@dataclass(frozen=True, slots=True)
+class AppearanceProgram:
     kind: Literal["widget", "annotation"]
     source: object
     clip_bbox: tuple[float, float, float, float]
     program: CapturedProgram
 
-    __fields__: ClassVar[tuple[str, ...]] = ("kind", "source", "clip_bbox", "program")
-    __match_args__ = ("kind", "source", "clip_bbox", "program")
 
-    def __init__(
-        self,
-        kind: Literal["widget", "annotation"],
-        source: object,
-        clip_bbox: tuple[float, float, float, float],
-        program: CapturedProgram,
-    ) -> None:
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "source", source)
-        frozen_setattr(self, "clip_bbox", clip_bbox)
-        frozen_setattr(self, "program", program)
+@dataclass(frozen=True, slots=True)
+class PageProgram:
+    body: CapturedProgram = field(default_factory=CapturedProgram)
+    appearances: tuple[AppearanceProgram, ...] = ()
+    # Concatenations of body and appearances, rebuilt by __post_init__.
+    runs: tuple[TextRun, ...] = field(init=False)
+    glyphs: tuple[GlyphObservation, ...] = field(init=False)
+    drawings: tuple[CapturedDrawing, ...] = field(init=False)
+    inline_images: tuple[CapturedInlineImage, ...] = field(init=False)
+    lines: tuple[CapturedLine, ...] = field(init=False)
+    text_boundaries: tuple[CapturedTextBoundary, ...] = field(init=False)
+    commands: tuple[PageCommand, ...] = field(init=False)
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.kind == other.kind
-            and self.source == other.source
-            and self.clip_bbox == other.clip_bbox
-            and self.program == other.program
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.kind, self.source, self.clip_bbox, self.program))
-
-
-class PageProgram(Record):
-    __slots__ = (
-        "body",
-        "appearances",
-        "runs",
-        "glyphs",
-        "drawings",
-        "inline_images",
-        "lines",
-        "text_boundaries",
-        "commands",
-    )
-
-    body: CapturedProgram
-    appearances: tuple[AppearanceProgram, ...]
-    runs: tuple[TextRun, ...]
-    glyphs: tuple[GlyphObservation, ...]
-    drawings: tuple[CapturedDrawing, ...]
-    inline_images: tuple[CapturedInlineImage, ...]
-    lines: tuple[CapturedLine, ...]
-    text_boundaries: tuple[CapturedTextBoundary, ...]
-    commands: tuple[PageCommand, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "body",
-        "appearances",
-        "runs",
-        "glyphs",
-        "drawings",
-        "inline_images",
-        "lines",
-        "text_boundaries",
-        "commands",
-    )
-    __match_args__ = ("body", "appearances")
-
-    def __init__(
-        self,
-        body: CapturedProgram | None = None,
-        appearances: tuple[AppearanceProgram, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "body", CapturedProgram() if body is None else body)
-        frozen_setattr(self, "appearances", appearances)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.body == other.body
-            and self.appearances == other.appearances
-            and self.runs == other.runs
-            and self.glyphs == other.glyphs
-            and self.drawings == other.drawings
-            and self.inline_images == other.inline_images
-            and self.lines == other.lines
-            and self.text_boundaries == other.text_boundaries
-            and self.commands == other.commands
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.body,
-                self.appearances,
-                self.runs,
-                self.glyphs,
-                self.drawings,
-                self.inline_images,
-                self.lines,
-                self.text_boundaries,
-                self.commands,
-            )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        body = changes.pop("body", self.body)
-        appearances = changes.pop("appearances", self.appearances)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(body, appearances)
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         if not isinstance(self.body, CapturedProgram):
             raise PdfContractError("page program contains an invalid body")
         appearances = tuple(self.appearances)
