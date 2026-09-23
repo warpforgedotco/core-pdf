@@ -27,12 +27,12 @@ cdef inline double dmax(double a, double b) noexcept nogil:
     return a if a > b else b
 
 
-def signed_area_coverage(edges, int width, int height):
-    if height <= 0 or width <= 0 or edges.size == 0:
-        return numpy.zeros((max(height, 0), max(width, 0)), numpy.float64)
+cdef object _coverage_from_device(const double* e, Py_ssize_t count, int width, int height):
+    """Accumulate device-space edges into a coverage plane.
 
-    cdef double[:, ::1] view = numpy.ascontiguousarray(edges, dtype=numpy.float64)
-    cdef Py_ssize_t count = view.shape[0]
+    ``e`` points at ``count`` rows of four doubles: x0, y0, x1, y1, already in
+    pixel coordinates relative to the plane's top-left corner.
+    """
     cdef Py_ssize_t stride = width + 2
     result = numpy.zeros((height, width), numpy.float64)
     cdef double[:, ::1] out = result
@@ -60,7 +60,7 @@ def signed_area_coverage(edges, int width, int height):
 
     try:
         for i in range(count):
-            sx = view[i, 0]; sy = view[i, 1]; ex = view[i, 2]; ey = view[i, 3]
+            sx = e[i * 4]; sy = e[i * 4 + 1]; ex = e[i * 4 + 2]; ey = e[i * 4 + 3]
             if sy == ey:
                 continue
             if ey > sy:
@@ -139,3 +139,72 @@ def signed_area_coverage(edges, int width, int height):
         PyMem_Free(idx); PyMem_Free(left_w); PyMem_Free(right_w)
 
     return result
+
+
+def signed_area_coverage(edges, int width, int height):
+    if height <= 0 or width <= 0 or edges.size == 0:
+        return numpy.zeros((max(height, 0), max(width, 0)), numpy.float64)
+
+    cdef double[:, ::1] view = numpy.ascontiguousarray(edges, dtype=numpy.float64)
+    if view.shape[0] == 0:
+        return numpy.zeros((height, width), numpy.float64)
+    return _coverage_from_device(&view[0, 0], view.shape[0], width, height)
+
+
+def glyph_coverage_plane(
+    edges,
+    double crop_x0,
+    double crop_y1,
+    double scale,
+    double ix0,
+    double iy0,
+    int width,
+    int height,
+):
+    """Transform page-space edges to device space and accumulate coverage.
+
+    The numpy original spent about twelve array operations flattening a
+    hundred-odd edges into a device-space copy, to fill a plane averaging
+    forty pixels. The transform is four independent affine expressions per
+    edge, so it fuses into the accumulation loop's own read of each edge and
+    the intermediate array disappears.
+
+    Returns ``None`` when no edge has distinct endpoints in y, which is the
+    early return the caller used to get from ``sloped.any()``. A plane of that
+    shape would be entirely zero.
+    """
+    cdef double[:, ::1] view = numpy.ascontiguousarray(edges, dtype=numpy.float64)
+    cdef Py_ssize_t total = view.shape[0]
+    cdef Py_ssize_t i, kept = 0
+    cdef double sy, ey
+
+    for i in range(total):
+        if view[i, 1] != view[i, 3]:
+            kept += 1
+    if kept == 0:
+        return None
+    if height <= 0 or width <= 0:
+        return numpy.zeros((max(height, 0), max(width, 0)), numpy.float64)
+
+    cdef double* device = <double*> PyMem_Malloc(kept * 4 * sizeof(double))
+    if device == NULL:
+        raise MemoryError
+
+    cdef Py_ssize_t out = 0
+    try:
+        # Each expression matches the numpy original term for term, and the
+        # build disables float contraction so the compiler cannot fold any of
+        # them into an FMA and shift the result by an ULP.
+        for i in range(total):
+            sy = view[i, 1]
+            ey = view[i, 3]
+            if sy == ey:
+                continue
+            device[out] = (view[i, 0] - crop_x0) * scale - ix0
+            device[out + 1] = (crop_y1 - sy) * scale - iy0
+            device[out + 2] = (view[i, 2] - crop_x0) * scale - ix0
+            device[out + 3] = (crop_y1 - ey) * scale - iy0
+            out += 4
+        return _coverage_from_device(device, kept, width, height)
+    finally:
+        PyMem_Free(device)

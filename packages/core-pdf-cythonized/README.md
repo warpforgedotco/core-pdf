@@ -68,7 +68,13 @@ the wheel.
 | `blend_normal_alpha_array_numpy` | `core_pdf.impl.render.blend` (deleted) | 9.04x on the kernel, over 26,315 calls averaging 38 elements |
 | `rect_coverage_plane` | `core_pdf.impl.render.paths` (deleted) | 8.57x on the kernel; -21% on a vector-heavy page render, -7 to -9% elsewhere |
 | `outline_edges` | `core_pdf.impl.render.commands` (edge half only) | 2.01x on the kernel; -2.5 to -4.4% on text-page render |
+| `glyph_coverage_plane` | the device-edge preparation in `core_pdf.impl.render.target.fill_path` (deleted) | 8.3us of numpy prep per call removed, against 3.3us of actual coverage; -10.6% / -7.5% on text-page render |
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render.target` (both deleted) | 7.06x on the fused wrapper |
+
+`glyph_coverage_plane` and `signed_area_coverage` share one accumulation core.
+Core reaches it through the fused entry point only; the device-space entry stays
+public because it is what the coverage golden vectors pin directly, and pinning
+the core through an affine transform instead would weaken them.
 
 Together the two render kernels take full `render().rasterize()` down by
 21-32% across the corpus, with byte-identical pixels:

@@ -75,8 +75,8 @@ from core_pdf.impl.runtime.scalars import parse_int
 from core_pdf_cythonized import (
     blend_normal_alpha_array_numpy,
     composite_knockout_group,
+    glyph_coverage_plane,
     rect_coverage_plane,
-    signed_area_coverage,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING
@@ -2115,16 +2115,15 @@ class RasterTarget:
             source = (
                 edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
             )
-            sloped = source[:, 1] != source[:, 3]
-            if not sloped.any():
+            # The transform and the flat-edge filter fuse into the kernel's own
+            # pass over the edges. None means no edge spans any y, which is the
+            # early return the sloped mask used to give: coverage would be zero
+            # everywhere and the blend a no-op.
+            coverage = glyph_coverage_plane(
+                source, crop_x0, crop_y1, scale, ix0, iy0, ix1 - ix0, iy1 - iy0
+            )
+            if coverage is None:
                 return
-            source = source[sloped]
-            device_edges = numpy.empty(source.shape, dtype=numpy.float64)
-            device_edges[:, 0] = (source[:, 0] - crop_x0) * scale - ix0
-            device_edges[:, 1] = (crop_y1 - source[:, 1]) * scale - iy0
-            device_edges[:, 2] = (source[:, 2] - crop_x0) * scale - ix0
-            device_edges[:, 3] = (crop_y1 - source[:, 3]) * scale - iy0
-            coverage = signed_area_coverage(device_edges, ix1 - ix0, iy1 - iy0)
             alpha_plane = numpy.rint(coverage * rgba[3]).astype(numpy.uint8)
             blend_normal_alpha_array_numpy(
                 pixel_view(pixels)[iy0:iy1, ix0:ix1],
