@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from math import ceil
-from typing import ClassVar
 
 from core_pdf.impl.capture.marked_content import min_optional_confidence
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
@@ -15,7 +15,7 @@ from core_pdf.impl.model.glyphs import (
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
-from core_pdf.impl.types import Record, Rectangle, ReplaceFields, ReprFields, frozen_setattr
+from core_pdf.impl.types import Rectangle
 
 TextBasis = tuple[float, float, float, float, float, float]
 
@@ -192,22 +192,9 @@ class RunGeometry:
         self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
-class TextGeometry(Record):
-    __slots__ = (
-        "basis",
-        "font_size",
-        "font_scale",
-        "font_ascent",
-        "font_descent",
-        "advance_scale",
-        "char_space",
-        "word_space",
-        "horizontal_scale",
-        "rise",
-        "rotation_angle",
-        "effective_font_size",
-        "effective_font_height",
-    )
+@dataclass(frozen=True, slots=True)
+class TextGeometry:
+    """The text-state geometry a run of glyphs is laid out under."""
 
     basis: TextBasis
     font_size: float
@@ -223,127 +210,10 @@ class TextGeometry(Record):
     effective_font_size: float
     effective_font_height: float
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "basis",
-        "font_size",
-        "font_scale",
-        "font_ascent",
-        "font_descent",
-        "advance_scale",
-        "char_space",
-        "word_space",
-        "horizontal_scale",
-        "rise",
-        "rotation_angle",
-        "effective_font_size",
-        "effective_font_height",
-    )
-    __match_args__ = (
-        "basis",
-        "font_size",
-        "font_scale",
-        "font_ascent",
-        "font_descent",
-        "advance_scale",
-        "char_space",
-        "word_space",
-        "horizontal_scale",
-        "rise",
-        "rotation_angle",
-        "effective_font_size",
-        "effective_font_height",
-    )
 
-    def __init__(
-        self,
-        basis: TextBasis,
-        font_size: float,
-        font_scale: float,
-        font_ascent: float,
-        font_descent: float,
-        advance_scale: float,
-        char_space: float,
-        word_space: float,
-        horizontal_scale: float,
-        rise: float,
-        rotation_angle: int,
-        effective_font_size: float,
-        effective_font_height: float,
-    ) -> None:
-        frozen_setattr(self, "basis", basis)
-        frozen_setattr(self, "font_size", font_size)
-        frozen_setattr(self, "font_scale", font_scale)
-        frozen_setattr(self, "font_ascent", font_ascent)
-        frozen_setattr(self, "font_descent", font_descent)
-        frozen_setattr(self, "advance_scale", advance_scale)
-        frozen_setattr(self, "char_space", char_space)
-        frozen_setattr(self, "word_space", word_space)
-        frozen_setattr(self, "horizontal_scale", horizontal_scale)
-        frozen_setattr(self, "rise", rise)
-        frozen_setattr(self, "rotation_angle", rotation_angle)
-        frozen_setattr(self, "effective_font_size", effective_font_size)
-        frozen_setattr(self, "effective_font_height", effective_font_height)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.basis == other.basis
-            and self.font_size == other.font_size
-            and self.font_scale == other.font_scale
-            and self.font_ascent == other.font_ascent
-            and self.font_descent == other.font_descent
-            and self.advance_scale == other.advance_scale
-            and self.char_space == other.char_space
-            and self.word_space == other.word_space
-            and self.horizontal_scale == other.horizontal_scale
-            and self.rise == other.rise
-            and self.rotation_angle == other.rotation_angle
-            and self.effective_font_size == other.effective_font_size
-            and self.effective_font_height == other.effective_font_height
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.basis,
-                self.font_size,
-                self.font_scale,
-                self.font_ascent,
-                self.font_descent,
-                self.advance_scale,
-                self.char_space,
-                self.word_space,
-                self.horizontal_scale,
-                self.rise,
-                self.rotation_angle,
-                self.effective_font_size,
-                self.effective_font_height,
-            )
-        )
-
-
-class GlyphPaint(Record):
-    __slots__ = (
-        "clip_bbox",
-        "page_clip",
-        "fill",
-        "render_mode",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "blend_mode",
-        "group_alpha",
-        "clip_glyph",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-    )
+@dataclass(frozen=True, slots=True)
+class GlyphPaint:
+    """The painting state a run of glyphs is drawn with."""
 
     clip_bbox: Rectangle | None
     page_clip: Rectangle | None
@@ -362,162 +232,15 @@ class GlyphPaint(Record):
     alpha_is_shape: bool
     graphics_soft_mask: object | None
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "clip_bbox",
-        "page_clip",
-        "fill",
-        "render_mode",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "blend_mode",
-        "group_alpha",
-        "clip_glyph",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-    )
-    __match_args__ = (
-        "clip_bbox",
-        "page_clip",
-        "fill",
-        "render_mode",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "blend_mode",
-        "group_alpha",
-        "clip_glyph",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-    )
 
-    def __init__(
-        self,
-        clip_bbox: Rectangle | None,
-        page_clip: Rectangle | None,
-        fill: tuple[float, ...] | None,
-        render_mode: int,
-        fill_opacity: float | None,
-        stroke_color: tuple[float, ...] | None,
-        stroke_opacity: float | None,
-        line_width: float,
-        line_cap: int,
-        line_join: int,
-        dash_pattern: tuple[list[float], float] | None,
-        blend_mode: str | None,
-        group_alpha: float | None,
-        clip_glyph: bool = False,
-        alpha_is_shape: bool = False,
-        graphics_soft_mask: object | None = None,
-    ) -> None:
-        frozen_setattr(self, "clip_bbox", clip_bbox)
-        frozen_setattr(self, "page_clip", page_clip)
-        frozen_setattr(self, "fill", fill)
-        frozen_setattr(self, "render_mode", render_mode)
-        frozen_setattr(self, "fill_opacity", fill_opacity)
-        frozen_setattr(self, "stroke_color", stroke_color)
-        frozen_setattr(self, "stroke_opacity", stroke_opacity)
-        frozen_setattr(self, "line_width", line_width)
-        frozen_setattr(self, "line_cap", line_cap)
-        frozen_setattr(self, "line_join", line_join)
-        frozen_setattr(self, "dash_pattern", dash_pattern)
-        frozen_setattr(self, "blend_mode", blend_mode)
-        frozen_setattr(self, "group_alpha", group_alpha)
-        frozen_setattr(self, "clip_glyph", clip_glyph)
-        frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
-        frozen_setattr(self, "graphics_soft_mask", graphics_soft_mask)
+@dataclass(slots=True)
+class GlyphCapture:
+    """What one run of glyphs contributed, accumulated as it is captured."""
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.clip_bbox == other.clip_bbox
-            and self.page_clip == other.page_clip
-            and self.fill == other.fill
-            and self.render_mode == other.render_mode
-            and self.fill_opacity == other.fill_opacity
-            and self.stroke_color == other.stroke_color
-            and self.stroke_opacity == other.stroke_opacity
-            and self.line_width == other.line_width
-            and self.line_cap == other.line_cap
-            and self.line_join == other.line_join
-            and self.dash_pattern == other.dash_pattern
-            and self.blend_mode == other.blend_mode
-            and self.group_alpha == other.group_alpha
-            and self.clip_glyph == other.clip_glyph
-            and self.alpha_is_shape == other.alpha_is_shape
-            and self.graphics_soft_mask == other.graphics_soft_mask
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.clip_bbox,
-                self.page_clip,
-                self.fill,
-                self.render_mode,
-                self.fill_opacity,
-                self.stroke_color,
-                self.stroke_opacity,
-                self.line_width,
-                self.line_cap,
-                self.line_join,
-                self.dash_pattern,
-                self.blend_mode,
-                self.group_alpha,
-                self.clip_glyph,
-                self.alpha_is_shape,
-                self.graphics_soft_mask,
-            )
-        )
-
-
-class GlyphCapture(ReplaceFields, ReprFields):
-    __slots__ = ("glyphs", "clusters", "cluster_count", "geometry")
-
-    glyphs: list[GlyphObservation]
-    clusters: list[GlyphCluster]
-    cluster_count: int
-    geometry: RunGeometry
-
-    __fields__: ClassVar[tuple[str, ...]] = ("glyphs", "clusters", "cluster_count", "geometry")
-    __match_args__ = ("glyphs", "clusters", "cluster_count", "geometry")
-
-    def __init__(
-        self,
-        glyphs: list[GlyphObservation] | None = None,
-        clusters: list[GlyphCluster] | None = None,
-        cluster_count: int = 0,
-        geometry: RunGeometry | None = None,
-    ) -> None:
-        self.glyphs = [] if glyphs is None else glyphs
-        self.clusters = [] if clusters is None else clusters
-        self.cluster_count = cluster_count
-        self.geometry = RunGeometry() if geometry is None else geometry
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.glyphs == other.glyphs
-            and self.clusters == other.clusters
-            and self.cluster_count == other.cluster_count
-            and self.geometry == other.geometry
-        )
-
-    __hash__ = None  # type: ignore[assignment]
+    glyphs: list[GlyphObservation] = field(default_factory=list)
+    clusters: list[GlyphCluster] = field(default_factory=list)
+    cluster_count: int = 0
+    geometry: RunGeometry = field(default_factory=RunGeometry)
 
 
 def capture_glyphs(
