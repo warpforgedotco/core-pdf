@@ -612,8 +612,12 @@ def capture_page(
     hidden_layers: frozenset[str] | None = None,
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
+    render_details: bool = False,
 ) -> PageAnalysis:
-    capture_options: dict[str, object] = {}
+    # Extraction never rasterizes: core composes blocks, not pixels. Skipping
+    # the rasterizer's per-glyph payload is the point of the flag. OCR asks for
+    # it back, because it renders the page it extracted.
+    capture_options: dict[str, object] = {"render_details": render_details}
     if hidden_layers is not None:
         capture_options["hidden_layers"] = hidden_layers
     if fields is not None:

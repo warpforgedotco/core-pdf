@@ -263,6 +263,7 @@ class TextState(RecoveringTextState):
     page_clip: Rectangle | None
     capture_ink_bounds: bool
     capture_text_runs: bool
+    capture_render_details: bool
     clip_bbox: Rectangle | None
     layout_form_bbox: Rectangle | None
     layout_form_id: LayoutFormId
@@ -305,6 +306,7 @@ class TextState(RecoveringTextState):
         *,
         capture_ink_bounds: bool = True,
         capture_text_runs: bool = True,
+        capture_render_details: bool = True,
     ):
         self.document = document
         self.runs = []
@@ -317,6 +319,7 @@ class TextState(RecoveringTextState):
         self.page_clip = page_clip
         self.capture_ink_bounds = capture_ink_bounds
         self.capture_text_runs = capture_text_runs
+        self.capture_render_details = capture_render_details
         self.clip_bbox = None
         self.layout_form_bbox = None
         self.layout_form_id = None
@@ -563,6 +566,7 @@ class TextState(RecoveringTextState):
             cluster_start=self.glyph_cluster_count,
             capture_ink_bounds=self.capture_ink_bounds,
             capture_run_details=self.capture_text_runs,
+            capture_render_details=self.capture_render_details,
         )
 
     def emit_actual_text_span(self, entry: MarkedContentEntry) -> None:
@@ -1214,6 +1218,7 @@ class TextState(RecoveringTextState):
             hidden_layers=self.hidden_layers,
             capture_ink_bounds=self.capture_ink_bounds,
             capture_text_runs=self.capture_text_runs,
+            capture_render_details=self.capture_render_details,
         )
         nested.parsed_soft_masks = self.parsed_soft_masks
         nested.capture_soft_masks = self.capture_soft_masks

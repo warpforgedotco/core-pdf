@@ -173,6 +173,7 @@ def capture_glyphs(
     cluster_start: int,
     capture_ink_bounds: bool = True,
     capture_run_details: bool = True,
+    capture_render_details: bool = True,
 ) -> GlyphCapture:
     """Lay out and record one show-text operation's glyphs.
 
@@ -203,6 +204,9 @@ def capture_glyphs(
     glyph_bbox_for_code = decoder.glyph_bbox
     vertical_position = decoder.vertical_glyph_position
     want_ink = capture_ink_bounds and not is_vertical
+    # The glyph transform and the bitmap request exist for the rasterizer.
+    # A caller that only wants text says so, and neither is computed.
+    want_render = capture_render_details
 
     # ---- pass one: the decoder and the source text ------------------------
     kept: list[DecodedGlyph] = []
@@ -248,11 +252,17 @@ def capture_glyphs(
             glyph_boxes.extend((NO_BOX, NO_BOX, NO_BOX, NO_BOX))
         else:
             glyph_boxes.extend(box)
-        suspicious = (
-            False if chunk_length == 1 else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
-        )
+        if not want_render:
+            suspicious = False
+            want_bitmap.append(0)
+        else:
+            suspicious = (
+                False
+                if chunk_length == 1
+                else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
+            )
+            want_bitmap.append(1 if (should_capture_glyph_bitmap(chunk_text) or suspicious) else 0)
         suspicious_flags.append(suspicious)
-        want_bitmap.append(1 if (should_capture_glyph_bitmap(chunk_text) or suspicious) else 0)
         if is_vertical:
             positions.append(vertical_position(glyph.cid, font_size=font_size))
         offset += advance
@@ -293,6 +303,7 @@ def capture_glyphs(
             clip_page=paint.page_clip,
             visible=visible,
             want_bitmap=want_bitmap,
+            want_transform=want_render,
         )
 
     # ---- pass three: the observations -------------------------------------

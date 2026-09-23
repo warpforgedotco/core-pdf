@@ -172,6 +172,7 @@ def capture_page_program(
     hidden_layers: frozenset[str] | None = None,
     fields: Iterable[RawFormField] | None = None,
     annotations: Iterable[RawAnnotation] | None = None,
+    render_details: bool = True,
 ) -> PageProgram:
     state = TextState(
         page.document,
@@ -179,6 +180,7 @@ def capture_page_program(
             page.document.oc_hidden_layers() if hidden_layers is None else hidden_layers
         ),
         page_clip=page.effective_page_clip(),
+        capture_render_details=render_details,
     )
     page.consume_contents(state)
     state.run_accumulator.flush()
@@ -189,4 +191,5 @@ def capture_page_program(
         appearances=capture_annotation_appearances(
             page, state, fields=fields, annotations=annotations
         ),
+        render_details=render_details,
     )

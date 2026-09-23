@@ -280,6 +280,9 @@ def test_public_capture_entry_point_passes_selection_options(
         "hidden_layers": frozenset({"layer"}),
         "fields": (),
         "annotations": (),
+        # OCR rasterizes what it captures, so it keeps the render payload that
+        # core's own extraction now skips.
+        "render_details": True,
     }
 
 

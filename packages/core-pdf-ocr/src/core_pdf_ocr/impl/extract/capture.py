@@ -524,6 +524,7 @@ def capture_page(
     hidden_layers: frozenset[str] | None = None,
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
+    render_details: bool = True,
 ) -> PageAnalysis:
     return enrich_capture(
         native_capture_page(
@@ -532,5 +533,10 @@ def capture_page(
             hidden_layers=hidden_layers,
             fields=fields,
             annotations=annotations,
+            # OCR rasterizes the page it just captured -- OcrSession hands this
+            # very program to compose_page -- so it defaults to keeping the
+            # per-glyph payload that core's own extraction skips. A caller that
+            # overrides this gets compose_page's error, not a blank render.
+            render_details=render_details,
         )
     )

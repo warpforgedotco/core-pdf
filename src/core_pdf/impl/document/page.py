@@ -320,9 +320,14 @@ class PdfPage:
         hidden_layers: frozenset[str] | None = None,
         fields: Iterable[RawFormField] | None = None,
         annotations: Iterable[RawAnnotation] | None = None,
+        render_details: bool = True,
     ) -> PageProgram:
         return capture_page_program(
-            self, hidden_layers=hidden_layers, fields=fields, annotations=annotations
+            self,
+            hidden_layers=hidden_layers,
+            fields=fields,
+            annotations=annotations,
+            render_details=render_details,
         )
 
     def collect_inherited_values(self) -> InheritedValueMap:

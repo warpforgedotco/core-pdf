@@ -30,8 +30,9 @@ Matrix6 = tuple[float, float, float, float, float, float]
 ZERO_MATRIX: Matrix6 = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 # advance boxes, baselines, glyph transforms, ink boxes, visibility, bitmaps
+# The transform entries are None when the caller asked for no render detail.
 GlyphGeometry = tuple[
-    list[Rectangle], list[Rectangle], list[Matrix6], list[Rectangle], list[int], list[int]
+    list[Rectangle], list[Rectangle], list[Matrix6 | None], list[Rectangle], list[int], list[int]
 ]
 
 
@@ -68,7 +69,7 @@ def vertical_glyph_geometry(
     n = len(offsets)
     out_advance: list[Rectangle] = []
     out_baseline: list[Rectangle] = []
-    out_transform: list[Matrix6] = []
+    out_transform: list[Matrix6 | None] = []
     out_ink: list[Rectangle] = []
     out_visible: list[int] = [0] * n
     out_bitmap: list[int] = [0] * (2 * n)

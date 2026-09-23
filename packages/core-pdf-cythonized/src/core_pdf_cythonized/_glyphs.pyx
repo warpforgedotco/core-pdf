@@ -59,12 +59,19 @@ def horizontal_glyph_geometry(
     clip_page,
     bint visible,
     list want_bitmap,
+    bint want_transform=True,
 ):
     """Lay out ``n`` horizontal glyphs.
 
     ``glyph_boxes`` is four floats per glyph, NaN where the font gave none.
     Returns per-glyph lists of advance boxes, baselines, glyph transforms and
     ink boxes as tuples, plus flat visibility flags and bitmap dimensions.
+
+    ``want_transform`` is False when the caller will not rasterize glyph
+    outlines. The transform is six floats per glyph and nothing but the
+    renderer reads it, so skipping it drops the largest of the four tuples
+    this builds; the entries come back None, which is what marks the glyph as
+    carrying no paint.
     """
     cdef Py_ssize_t n = len(offsets)
     cdef Py_ssize_t i, j, k
@@ -202,14 +209,15 @@ def horizontal_glyph_geometry(
 
             out_advance[i] = (abx0, aby0, abx1, aby1)
             out_baseline[i] = (blx0, bly0, blx1, bly1)
-            out_transform[i] = (
-                transform_a,
-                transform_b,
-                transform_c,
-                transform_d,
-                base_x + offset * a + rise_offset_x,
-                base_y + offset * b + rise_offset_y,
-            )
+            if want_transform:
+                out_transform[i] = (
+                    transform_a,
+                    transform_b,
+                    transform_c,
+                    transform_d,
+                    base_x + offset * a + rise_offset_x,
+                    base_y + offset * b + rise_offset_y,
+                )
 
             vis = 0
             if visible:

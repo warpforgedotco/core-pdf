@@ -19,6 +19,12 @@ def horizontal_glyph_geometry(
     clip_page: Rectangle | None,
     visible: bool,
     want_bitmap: list[int],
+    want_transform: bool = ...,
 ) -> tuple[
-    list[Rectangle], list[Rectangle], list[Matrix6], list[Rectangle], list[int], list[int]
+    list[Rectangle],
+    list[Rectangle],
+    list[Matrix6 | None],
+    list[Rectangle],
+    list[int],
+    list[int],
 ]: ...

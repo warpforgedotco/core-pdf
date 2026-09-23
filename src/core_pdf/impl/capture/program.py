@@ -76,6 +76,11 @@ class AppearanceProgram:
 class PageProgram:
     body: CapturedProgram = field(default_factory=CapturedProgram)
     appearances: tuple[AppearanceProgram, ...] = ()
+    # False when the capture skipped the rasterizer's per-glyph payload -- the
+    # glyph transforms and the bitmap requests. Such a program describes the
+    # page's text correctly but cannot be drawn, and compose_page refuses it
+    # rather than rendering a page with no glyphs on it.
+    render_details: bool = field(default=True, kw_only=True)
     # Concatenations of body and appearances, rebuilt by __post_init__.
     runs: tuple[TextRun, ...] = field(init=False)
     glyphs: tuple[GlyphObservation, ...] = field(init=False)
