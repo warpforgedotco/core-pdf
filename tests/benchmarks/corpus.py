@@ -127,6 +127,39 @@ SLICE_SAMPLES = (
     ),
 )
 
+# Rendering, which until now had no benchmark at all. It is a sibling of
+# extraction rather than a stage of it -- both consume the captured page
+# program, and only rendering turns it into pixels -- so a change can move one
+# and not the other, and several already have.
+#
+# The set is deliberately small, and smaller than the extraction one. A
+# recorded run is dominated by per-benchmark valgrind startup rather than by
+# sample cost, so the count is what to economise on: three shapes, each
+# measured twice (compose and rasterize), is six more benchmarks against the
+# suite's twelve. lyft_2021 is left out because i1040nr covers the same text
+# shape more densely.
+RENDER_SAMPLES = (
+    Sample(
+        "pdfminer.six/samples/nonfree/i1040nr.pdf",
+        "text",
+        420,
+        "densest text in the corpus; dominated by glyph outline fills",
+    ),
+    Sample(
+        "llama_index/docs/examples/query_engine/pdf_tables/billionaires_page.pdf",
+        "tables",
+        274,
+        "rules and fills rather than glyph outlines",
+    ),
+    Sample(
+        "pdf20examples/Simple PDF 2.0 file.pdf",
+        "control",
+        8,
+        "trivial page; the floor for any rendering change",
+    ),
+)
+
+
 # Too slow for a routine suite, kept here because they are the best targets for
 # a one-off profile. Run these by hand, not under the default benchmark run.
 DEEP_DIVE = (

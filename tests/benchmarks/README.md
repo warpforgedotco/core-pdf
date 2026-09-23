@@ -39,17 +39,25 @@ from sweeping all 795 fixture PDFs, so the samples span the shapes that actually
 drive cost -- text density, tables, figures, sparse pages -- rather than the
 largest files. The module docstring has the details.
 
-Three axes are covered:
+Four axes are covered:
 
 - `test_open_document` -- xref parsing, trailer and page tree, no content.
 - `test_extract_first_page` -- one page, across the shape spread.
 - `test_extract_page_slice` -- three pages, for costs that only appear across
   page boundaries, such as shared font and resource caches.
+- `test_compose_page` / `test_rasterize_page` -- rendering, which is a sibling
+  of extraction rather than a stage of it. Both consume the captured page
+  program and only rendering produces pixels, so a change moves one and not
+  the other: the glyph caches moved extraction alone, the rasterizer kernels
+  moved rendering alone. Until these existed, rendering had no recorded
+  measurement at all and its numbers came from laptop wall clock.
 
 ## What a recorded run costs
 
-Measured on the profiling VM: these 12 benchmarks take **about 16 minutes of
-wall clock** under simulation, for roughly 3.7 s of native work. Two rules of
+Measured on the profiling VM: 12 benchmarks took **about 16 minutes of wall
+clock** under simulation, for roughly 3.7 s of native work. The six rendering
+benchmarks add roughly 0.9 s of native work and, more to the point, six more
+valgrind startups; budget nearer 24 minutes until that is re-measured. Two rules of
 thumb, both from that run:
 
 - Wall clock lands near **25x the sum of the reported values**, which are
@@ -72,4 +80,7 @@ stays reviewable.
 
 `native_ms` is extraction cost with the document already open, so benchmarks
 must keep `PdfDocument(...)` outside the measured region or the two stop being
-comparable. Opening is its own axis, measured by `test_open_document`.
+comparable. Opening is its own axis, measured by `test_open_document`. For
+`RENDER_SAMPLES` the figure is the rasterize cost with the page already
+composed, for the same reason: capture and compose are measured by their own
+benchmarks and stay outside the region.

@@ -437,6 +437,7 @@ def sample_image_plane(
 class RasterTarget:
     __slots__ = (
         "pixels",
+        "pixel_views",
         "semantic_context",
         "buffer_stack",
         "group_source_alpha",
@@ -508,6 +509,12 @@ class RasterTarget:
         self.crop_y1 = crop_y1
         self.page_pixels = page_view
         self.page_buffer = pixels
+        # A numpy view over a group buffer, kept rather than rebuilt. The
+        # elementary scratch buffers are reused per stack depth, so the same
+        # handful of buffers were being wrapped again for every painted item --
+        # about four views per item, tens of thousands a page. The buffer is
+        # stored beside its view so an id() key cannot outlive its object.
+        self.pixel_views: dict[int, tuple[bytearray | bytes, UInt8Array]] = {}
         self.crop_y0 = crop_y0
         self.clip_stack: list[int] = []
         self.clip_floor = 0
@@ -856,7 +863,16 @@ class RasterTarget:
     def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
         if buffer is self.page_buffer:
             return self.page_pixels
-        return uint8_image_view(buffer, (self.height, self.width, 4))
+        cached = self.pixel_views.get(id(buffer))
+        if cached is not None and cached[0] is buffer:
+            return cached[1]
+        view = uint8_image_view(buffer, (self.height, self.width, 4))
+        if len(self.pixel_views) >= 64:
+            # Group buffers are reused per depth, so this only grows if a page
+            # nests unusually deep. Cleared wholesale rather than evicted.
+            self.pixel_views.clear()
+        self.pixel_views[id(buffer)] = (buffer, view)
+        return view
 
     def record_source_shape(
         self,
