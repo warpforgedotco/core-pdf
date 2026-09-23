@@ -5,7 +5,7 @@ from typing import Any, Literal
 import numpy
 import pytest
 
-from core_pdf_spec.s_11_transparency.groups import composite_knockout_element
+from core_pdf_cythonized import composite_knockout_element
 
 
 def make_samples() -> dict[str, Any]:

@@ -7,6 +7,20 @@ no pure-Python fallback: when a kernel lands here, the Python it replaced is
 deleted. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
+## One kernel owns its algorithm
+
+`composite_knockout_element` is the exception to everything below. It is not
+a mirror of code owned elsewhere — it *is* the ISO 32000-2 11.4.x knockout
+algorithm, moved out of `core-pdf-spec` rather than copied, and its
+conformance tests (`test_knockout_groups.py`) moved with it. That was a
+deliberate trade: spec dropped a declared `__all__` export, and in exchange
+spec stays pure Python instead of becoming a compiled distribution.
+
+It came here because 60% of the cost sat in core's wrapper — a mask, three
+boolean fancy-index copies and a scatter, all of it marshalling to hand
+compacted arrays to a Python callee. Marshalling cannot be removed while the
+callee stays in Python, so the two had to be compiled together.
+
 ## What belongs here
 
 A kernel earns its place by clearing three bars, in order:
@@ -52,6 +66,7 @@ the wheel.
 | `cubic_sample_times` | `core_pdf.impl.fonts.font_program` (deleted) | 7.57x on the kernel; 3.7% of a glyph-outline page, 0% on pages needing no outlines |
 | `signed_area_coverage` | `core_pdf.impl.render.paths` (deleted, with `group_offsets`) | 4.26x on the kernel; ~20% off full render on glyph-heavy pages |
 | `blend_normal_alpha_array_numpy` | `core_pdf.impl.render.blend` (deleted) | 9.04x on the kernel, over 26,315 calls averaging 38 elements |
+| `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render.target` (both deleted) | 7.06x on the fused wrapper |
 
 Together the two render kernels take full `render().rasterize()` down by
 21-32% across the corpus, with byte-identical pixels:

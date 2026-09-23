@@ -42,7 +42,11 @@ there the Python it replaced is deleted, so nothing can silently diverge between
 and an interpreted path. A kernel belongs there only if it is measured against a profiled
 workload, its inner loop touches no Python objects (Cython loses to CPython's specializing
 interpreter on object-heavy code, measured at roughly 2x slower for per-item construction),
-and it is pinned by golden vectors generated from the original before deletion. The build
+and it is pinned by golden vectors generated from the original before deletion.
+One kernel, `composite_knockout_element`, owns its algorithm outright: ISO 32000-2
+11.4.x knockout compositing moved out of spec, with its conformance tests, so that
+spec could stay pure Python rather than become a compiled distribution. That is the
+only member of the package that is not a mirror of code owned elsewhere. The build
 sets `-ffp-contract=off`: the kernels must reproduce CPython float semantics exactly, and
 compilers contract expressions into FMAs that shift results by an ULP.
 

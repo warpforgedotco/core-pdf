@@ -72,13 +72,16 @@ from core_pdf.impl.runtime.array_views import (
     uint8_view,
 )
 from core_pdf.impl.runtime.scalars import parse_int
-from core_pdf_cythonized import blend_normal_alpha_array_numpy, signed_area_coverage
+from core_pdf_cythonized import (
+    blend_normal_alpha_array_numpy,
+    composite_knockout_group,
+    signed_area_coverage,
+)
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_component
 from core_pdf_spec.s_11_transparency.groups import (
-    composite_knockout_element,
     remove_group_backdrop,
 )
 from core_pdf_spec.standards import SemanticContext
@@ -302,40 +305,6 @@ def composite_masked_group(
         semantic_context=semantic_context,
     )
     return effective_alpha
-
-
-def composite_knockout_group(
-    destination: UInt8Array,
-    backdrop: UInt8Array,
-    element: UInt8Array,
-    group_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
-    element_alpha: UInt8Array,
-    shape: numpy.ndarray[Any, Any],
-) -> None:
-    effective_alpha = element_alpha.astype(numpy.float64) / 255.0
-    shape = numpy.maximum(numpy.clip(shape, 0.0, 1.0), effective_alpha)
-    visible = shape > 0.0
-    if not numpy.any(visible):
-        return
-    previous = destination[visible].astype(numpy.float64) / 255.0
-    initial = backdrop[visible].astype(numpy.float64) / 255.0
-    painted = element[visible].astype(numpy.float64) / 255.0
-    colors, complete, accumulated = composite_knockout_element(
-        previous[..., :3],
-        previous[..., 3],
-        backdrop_components=initial[..., :3],
-        backdrop_alpha=initial[..., 3],
-        element_components=painted[..., :3],
-        element_alpha=painted[..., 3],
-        shape=shape[visible],
-        group_alpha=group_alpha[visible],
-        element_group_alpha=effective_alpha[visible],
-        validate=False,
-    )
-    destination[visible] = numpy.clip(
-        numpy.rint(numpy.column_stack((colors, complete)) * 255.0), 0, 255
-    ).astype(numpy.uint8)
-    group_alpha[visible] = accumulated
 
 
 SoftMaskPlane = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
