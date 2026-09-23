@@ -84,18 +84,15 @@ def transformed_outline(
     column_y = linear_y + f
     # The kernel takes the numeric half: which spans survive a duplicated
     # closing point, and every edge of every survivor written into one array.
-    # The point lists stay here, because building those tuples in C measured
-    # slower than tolist() + zip() -- CPython's zip is hard to beat.
+    # The point lists stay in Python, because building those tuples in C
+    # measured slower than tolist() + zip() -- CPython's zip is hard to beat.
     edges, kept, dropped = outline_edges(column_x, column_y, arrays.spans)
     if edges is None:
         return None
-    tx = column_x.tolist()
-    ty = column_y.tolist()
-    subpaths: list[CapturedSubpath] = [
-        CapturedSubpath(list(zip(tx[start:end], ty[start:end], strict=True)), closed=True)
-        for start, end, _closes in kept
-    ]
-    path = CapturedPath(subpaths)
+    # The points stay unbuilt until something asks for them. A filled glyph
+    # never does: it needs the edges and the bounding box, both of which are
+    # already here.
+    path = CapturedPath.deferred_outline(column_x, column_y, kept)
     if dropped:
         return path, path.bbox(), edges
     # The columns are already numpy arrays here, so there is no conversion to
