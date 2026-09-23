@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-import core_predictors
 from core_pdf.impl.runtime import codec_backends as codecs
+from core_pdf_spec.s_07_filters import predictors as strict
 
 
 @pytest.mark.parametrize(
@@ -204,7 +204,7 @@ def test_prediction_backends_agree_with_the_pure_python_kernels(bits, colors, co
     """The codec path and the fallback must be interchangeable.
 
     stream_decoding tries the imagecodecs backend and silently falls back to
-    core_predictors, so a divergence between them would change output based on
+    the spec kernels, so a divergence between them would change output based on
     nothing the caller can see. The two carry separate copies of the row
     framing, masking and padding rules; this pins them together.
     """
@@ -212,6 +212,4 @@ def test_prediction_backends_agree_with_the_pure_python_kernels(bits, colors, co
     rng = np.random.default_rng(seed=bits * 100 + colors * 10 + columns)
     data = rng.integers(0, 256, size=row_bytes * 4, dtype=np.uint8).tobytes()
     options = {"columns": columns, "colors": colors, "bits_per_component": bits}
-    assert codecs.tiff_predict_codec(data, **options) == core_predictors.tiff_predict(
-        data, **options
-    )
+    assert codecs.tiff_predict_codec(data, **options) == strict.tiff_predict(data, **options)

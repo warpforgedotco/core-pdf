@@ -44,7 +44,6 @@ jobs:
           uv run --locked --all-packages --group test pytest
           packages/core-pdf-spec/tests
           packages/core-pdf-validate/tests
-          packages/core-predictors/tests
           packages/core-postscript/tests
           packages/core-jbig2/tests
           packages/core-pdf-crypto/tests
@@ -137,7 +136,6 @@ jobs:
       fail-fast: false
       matrix:
         package:
-          - core-predictors
           - core-postscript
           - core-jbig2
           - core-pdf-crypto

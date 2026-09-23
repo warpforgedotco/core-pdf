@@ -1,15 +1,16 @@
 import pytest
 
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams
-from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf_spec.s_07_filters.errors import (
+    FilterParseError,
+    FilterUnsupportedError,
+    PredictorError,
+    UnsupportedPngFilterError,
+)
 from core_pdf_spec.s_07_filters.predictors import (
     apply_png_predictor,
     apply_predictor,
     apply_tiff_predictor,
-)
-from core_predictors import (
-    PredictorError,
-    UnsupportedPngFilterError,
     png_predict,
     tiff_predict,
 )

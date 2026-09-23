@@ -14,8 +14,18 @@ class FilterUnsupportedError(FilterError):
     pass
 
 
+class PredictorError(ValueError):
+    pass
+
+
+class UnsupportedPngFilterError(PredictorError):
+    pass
+
+
 __all__ = (
     "FilterError",
     "FilterParseError",
     "FilterUnsupportedError",
+    "PredictorError",
+    "UnsupportedPngFilterError",
 )

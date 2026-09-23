@@ -17,7 +17,6 @@ dependencies = [
     "imagecodecs>=2026.6.26",
     "defusedxml>=0.7.1",
     "core-pdf-spec>=0.5.0,<0.6.0",
-    "core-predictors>=0.1.0,<0.2.0",
     "core-jbig2>=0.1.0,<0.2.0",
     "core-adobe-fonts>=0.1.0,<0.2.0",
 ]
@@ -34,7 +33,6 @@ members = [
     "packages/core-pdf-compat",
     "packages/core-pdf-spec",
     "packages/core-pdf-validate",
-    "packages/core-predictors",
     "packages/core-postscript",
     "packages/core-jbig2",
     "packages/core-pdf-crypto",
@@ -42,7 +40,6 @@ members = [
 ]
 
 [tool.uv.sources]
-core-predictors = { workspace = true }
 core-jbig2 = { workspace = true }
 core-adobe-fonts = { workspace = true }
 core-pdf-spec = { workspace = true }
@@ -106,7 +103,6 @@ testpaths = [
     "packages/core-pdf-ocr/tests",
     "packages/core-pdf-spec/tests",
     "packages/core-pdf-validate/tests",
-    "packages/core-predictors/tests",
     "packages/core-postscript/tests",
     "packages/core-jbig2/tests",
     "packages/core-pdf-crypto/tests",
@@ -127,7 +123,6 @@ source = [
     "packages/core-pdf-compat/src/core_pdf_compat",
     "packages/core-pdf-spec/src/core_pdf_spec",
     "packages/core-pdf-validate/src/core_pdf_validate",
-    "packages/core-predictors/src/core_predictors",
     "packages/core-postscript/src/core_postscript",
     "packages/core-jbig2/src/core_jbig2",
     "packages/core-pdf-crypto/src/core_pdf_crypto",
@@ -143,7 +138,7 @@ precision = 2
 output = "htmlcov/coverage.json"
 
 [tool.ruff]
-src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-predictors/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "."]
+src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "."]
 extend-exclude = [
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
@@ -233,8 +228,8 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.14"
-files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-spec/src/core_pdf_spec", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-predictors/src/core_predictors", "packages/core-postscript/src/core_postscript", "packages/core-jbig2/src/core_jbig2", "packages/core-pdf-crypto/src/core_pdf_crypto", "packages/core-adobe-fonts/src/core_adobe_fonts"]
-mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-predictors/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src"]
+files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-spec/src/core_pdf_spec", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-postscript/src/core_postscript", "packages/core-jbig2/src/core_jbig2", "packages/core-pdf-crypto/src/core_pdf_crypto", "packages/core-adobe-fonts/src/core_adobe_fonts"]
+mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
 ignore_missing_imports = true
@@ -244,7 +239,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [tool.ty.environment]
-root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-predictors/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src"]
+root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src"]
 
 [tool.ty.src]
 exclude = [
@@ -279,7 +274,6 @@ root_packages = [
     "core_pdf_compat",
     "core_pdf_spec",
     "core_pdf_validate",
-    "core_predictors",
     "core_postscript",
     "core_jbig2",
     "core_pdf_crypto",
@@ -336,7 +330,6 @@ forbidden_modules = [
     "core_pdf_spec.s_09_fonts",
     "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
-    "core_predictors",
     "core_postscript",
     "core_jbig2",
     "core_pdf_crypto",
@@ -384,7 +377,6 @@ forbidden_modules = [
     "core_pdf_spec.s_09_fonts",
     "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
-    "core_predictors",
     "core_postscript",
     "core_jbig2",
     "core_pdf_crypto",
@@ -406,23 +398,12 @@ forbidden_modules = ["core_pdf", "core_pdf_ocr"]
 name = "Standards packages are the workspace floor"
 type = "forbidden"
 source_modules = [
-    "core_predictors",
     "core_postscript",
     "core_jbig2",
     "core_pdf_crypto",
     "core_adobe_fonts",
 ]
 forbidden_modules = ["core_pdf", "core_pdf_ocr", "core_pdf_spec", "core_pdf_validate", "core_pdf_compat"]
-
-# core-predictors also hosts the shared numpy sample-view helpers, so it is the
-# one floor package the others may use; the rest stay independent of each other.
-[[tool.importlinter.contracts]]
-name = "Standards packages depend at most on core-predictors"
-type = "layers"
-layers = [
-    "core_postscript | core_jbig2 | core_pdf_crypto | core_adobe_fonts",
-    "core_predictors",
-]
 
 [[tool.importlinter.contracts]]
 name = "impl/runtime is the floor"
@@ -467,7 +448,6 @@ forbidden_modules = [
     "core_pdf_spec.s_09_fonts",
     "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
-    "core_predictors",
     "core_postscript",
     "core_jbig2",
     "core_pdf_crypto",
@@ -524,7 +504,6 @@ forbidden_modules = [
     "core_pdf.impl.model",
     "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_predictors",
     "core_postscript",
     "core_jbig2",
     "core_pdf_crypto",
@@ -558,7 +537,6 @@ forbidden_modules = [
     "core_pdf_spec.s_09_fonts",
     "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
-    "core_predictors",
     "core_postscript",
     "core_jbig2",
     "core_pdf_crypto",
@@ -614,7 +592,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Spec identities stay beneath chapter algorithms"
 type = "forbidden"
-source_modules = ["core_pdf_spec.types", "core_pdf_spec.exceptions"]
+source_modules = ["core_pdf_spec.types", "core_pdf_spec.exceptions", "core_pdf_spec.samples"]
 forbidden_modules = [
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
@@ -626,7 +604,6 @@ forbidden_modules = [
     "core_pdf_spec.s_09_fonts",
     "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
-    "core_predictors",
     "core_postscript",
     "core_jbig2",
     "core_pdf_crypto",

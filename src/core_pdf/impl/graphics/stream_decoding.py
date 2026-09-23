@@ -33,9 +33,18 @@ from core_pdf.impl.runtime.codec_backends import (
     tiff_predict_codec,
 )
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
-from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf_spec.s_07_filters.errors import (
+    FilterParseError,
+    FilterUnsupportedError,
+    PredictorError,
+    UnsupportedPngFilterError,
+)
 from core_pdf_spec.s_07_filters.jbig2 import decode_jbig2 as decode_strict_jbig2
-from core_pdf_spec.s_07_filters.predictors import SUPPORTED_PREDICTOR_BITS
+from core_pdf_spec.s_07_filters.predictors import (
+    SUPPORTED_PREDICTOR_BITS,
+    png_predict,
+    tiff_predict,
+)
 from core_pdf_spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
     full_source_bytes,
@@ -48,12 +57,6 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     SEPARATOR_TABLE,
     WHITESPACE,
     WS_TABLE,
-)
-from core_predictors import (
-    PredictorError,
-    UnsupportedPngFilterError,
-    png_predict,
-    tiff_predict,
 )
 
 if TYPE_CHECKING:
