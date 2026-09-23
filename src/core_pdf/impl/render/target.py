@@ -611,6 +611,61 @@ class RasterTarget:
         finally:
             self.pop_scope()
 
+    # Past this many boxes the linear scan stops paying for itself, and a
+    # knockout group with that many elements is not the text case this is for.
+    KNOCKOUT_DISJOINT_LIMIT = 96
+
+    def knockout_needs_group(self, item: DisplayItem, parent: RasterGroup) -> bool:
+        """Whether `item` has to go through an elementary group to knock out.
+
+        Knockout composites each element against the group's *initial*
+        backdrop rather than the accumulated result. Where nothing has been
+        painted yet those are the same buffer, the accumulated source alpha is
+        zero, and the knockout formula collapses: `dst == bak` makes
+        `colour * complete - backdrop * initial` vanish, `rga` becomes the
+        element's own alpha and `ra` equals it, so the component reduces to the
+        element itself. Painting straight into the parent produces that.
+
+        So an element that misses everything painted so far can skip the group.
+        The test is on bounding boxes, which over-approximate the pixels a fill
+        touches, so a miss here is a genuine miss. The box is inflated by one
+        pixel because antialiasing writes outside the geometric edge.
+        """
+        boxes = parent.painted_boxes
+        if boxes is None:
+            return True
+        if not isinstance(item, PathPaintItem):
+            return True
+        if item.paint_kind is not PathPaintKind.FILL:
+            # A stroke reaches half a line width beyond the bbox, and
+            # fill-stroke paints twice; neither is worth the extra bookkeeping.
+            return True
+        if item.fill_pattern is not None or item.blend_mode not in (None, "Normal"):
+            return True
+        bbox = item.bbox
+        if bbox is None or item.edge_array is None:
+            # Without an edge array, fill_path derives its own bbox from the
+            # path and may not land on the box computed here. Only the glyph
+            # case, where it provably uses item.bbox, is eligible.
+            return True
+        clipped = self.clip.clipped_pixel_box(bbox)
+        if clipped is None:
+            # Nothing of it lands on the page; the group would paint nothing.
+            return False
+        # Exactly the box fill_path will paint into -- it clips the coverage
+        # plane to this and blends only inside it -- so no margin is needed.
+        # An earlier version inflated by a pixel for antialiasing and skipped
+        # only 7.6% of a dense text page, because adjacent glyph boxes tile
+        # contiguously and a one-pixel margin makes every neighbour an overlap.
+        x0, y0, x1, y1 = clipped[1]
+        for bx0, by0, bx1, by1 in boxes:
+            if x0 < bx1 and bx0 < x1 and y0 < by1 and by0 < y1:
+                return True
+        if len(boxes) >= self.KNOCKOUT_DISJOINT_LIMIT:
+            return True
+        boxes.append((x0, y0, x1, y1))
+        return False
+
     def paint_item(self, item: DisplayItem) -> None:
         if isinstance(item, (PathPaintItem, ImagePaintItem)) or item.kind in {"glyph", "shading"}:
             previous_shape_state = self.paint_alpha_is_shape, self.shape_alpha
@@ -628,6 +683,8 @@ class RasterTarget:
                     isinstance(item, PathPaintItem) and item.paint_kind is PathPaintKind.FILL_STROKE
                 )
                 elementary_group = knockout or mask_alpha is not None
+                if elementary_group and mask_alpha is None and knockout:
+                    elementary_group = self.knockout_needs_group(item, self.buffer_stack[-1])
                 if elementary_group:
                     self.push_elementary_group(
                         track_shape=mask_alpha is not None,
@@ -815,6 +872,8 @@ class RasterTarget:
                 knockout=knockout,
                 alpha_is_shape=alpha_is_shape,
                 mask_alpha=mask_alpha,
+                # Only a knockout group needs this, and only it reads it.
+                painted_boxes=[] if knockout else None,
             )
         )
         self.pixels = buffer

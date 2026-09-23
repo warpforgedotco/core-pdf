@@ -470,6 +470,7 @@ class RasterGroup(Record):
         "alpha_is_shape",
         "mask_alpha",
         "paint_window",
+        "painted_boxes",
     )
 
     pixels: bytearray
@@ -482,6 +483,10 @@ class RasterGroup(Record):
     alpha_is_shape: bool
     mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
     paint_window: list[int]
+    # Pixel boxes already painted into this group, when it knocks out.
+    # An element that misses all of them sees an accumulated result equal
+    # to the initial backdrop, so it does not need an elementary group.
+    painted_boxes: list[tuple[int, int, int, int]] | None
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "pixels",
@@ -494,6 +499,7 @@ class RasterGroup(Record):
         "alpha_is_shape",
         "mask_alpha",
         "paint_window",
+        "painted_boxes",
     )
     __match_args__ = ("pixels", "composite_alpha", "blend_mode")
 
@@ -510,6 +516,7 @@ class RasterGroup(Record):
         alpha_is_shape: bool = False,
         mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
         paint_window: list[int] | None = None,
+        painted_boxes: list[tuple[int, int, int, int]] | None = None,
     ) -> None:
         frozen_setattr(self, "pixels", pixels)
         frozen_setattr(self, "composite_alpha", composite_alpha)
@@ -521,6 +528,7 @@ class RasterGroup(Record):
         frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
         frozen_setattr(self, "mask_alpha", mask_alpha)
         frozen_setattr(self, "paint_window", [] if paint_window is None else paint_window)
+        frozen_setattr(self, "painted_boxes", painted_boxes)
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -538,6 +546,7 @@ class RasterGroup(Record):
             and self.alpha_is_shape == other.alpha_is_shape
             and self.mask_alpha == other.mask_alpha
             and self.paint_window == other.paint_window
+            and self.painted_boxes == other.painted_boxes
         )
 
     def __hash__(self) -> int:
@@ -567,6 +576,7 @@ class RasterGroup(Record):
         alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
         mask_alpha = changes.pop("mask_alpha", self.mask_alpha)
         paint_window = changes.pop("paint_window", self.paint_window)
+        painted_boxes = changes.pop("painted_boxes", self.painted_boxes)
         if changes:
             raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
         return self.__class__(
@@ -580,6 +590,7 @@ class RasterGroup(Record):
             alpha_is_shape=alpha_is_shape,
             mask_alpha=mask_alpha,
             paint_window=paint_window,
+            painted_boxes=painted_boxes,
         )
 
     @property
