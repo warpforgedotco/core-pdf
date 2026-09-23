@@ -43,7 +43,7 @@ see `PDF/README.md`.
 | `reference/rfc/rfc5652-cms.txt` | `core-pdf-crypto` (`pdf_mac`) |
 | `reference/rfc/rfc1950-*.txt`, `rfc1951-*.txt` | `core_pdf_spec.s_07_filters.codecs` via `zlib` |
 | `reference/rfc/rfc3161-timestamp.txt` | not implemented |
-| `reference/png/png-3rd-edition.html` | `core-predictors` (`png`) |
+| `reference/png/png-3rd-edition.html` | `core-pdf-spec` (`s_07_filters.predictors`) |
 | `reference/unicode/*.txt` | `core-pdf` layout and text |
 | `reference/pdfa/*.pdf` | `core_pdf_spec.s_14_structure`, `core_pdf_spec.standards`, `core-pdf-validate` |
 | `restricted/itu-t/T.88-JBIG2.pdf` | `core-jbig2` with `core_pdf_spec.s_07_filters.jbig2` glue |

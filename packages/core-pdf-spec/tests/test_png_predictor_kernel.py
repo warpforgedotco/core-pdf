@@ -1,7 +1,7 @@
 import pytest
 
-from core_predictors.errors import PredictorError, UnsupportedPngFilterError
-from core_predictors.png import png_predict
+from core_pdf_spec.s_07_filters.errors import PredictorError, UnsupportedPngFilterError
+from core_pdf_spec.s_07_filters.predictors import png_predict
 
 
 @pytest.mark.parametrize("buffer_type", [bytes, memoryview])

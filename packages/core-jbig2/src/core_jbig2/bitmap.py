@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from operator import index
 from typing import Any
 
 import numpy
 
-from core_predictors.samples import uint8_view
+
+def uint8_view(
+    buffer: bytes | bytearray | memoryview | numpy.ndarray[Any, Any],
+    *,
+    count: int = -1,
+    offset: int = 0,
+) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
+    if isinstance(buffer, numpy.ndarray):
+        buffer = numpy.ascontiguousarray(buffer, dtype=numpy.uint8).reshape(-1)
+    return numpy.frombuffer(buffer, dtype=numpy.uint8, count=index(count), offset=index(offset))
 
 
 def uint8_matrix_view(

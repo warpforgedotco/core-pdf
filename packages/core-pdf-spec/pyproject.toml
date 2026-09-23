@@ -13,7 +13,6 @@ dependencies = [
     "core-jbig2>=0.1.0,<0.2.0",
     "core-pdf-crypto>=0.1.0,<0.2.0",
     "core-postscript>=0.1.0,<0.2.0",
-    "core-predictors>=0.1.0,<0.2.0",
     "numpy>=2.5.1",
 ]
 
@@ -38,7 +37,6 @@ core_pdf_spec = ["py.typed"]
 "*" = ["**/__pycache__/*", "**/*.pyc", "*.pdf", "**/*.pdf"]
 
 [tool.uv.sources]
-core-predictors = { workspace = true }
 core-postscript = { workspace = true }
 core-jbig2 = { workspace = true }
 core-pdf-crypto = { workspace = true }

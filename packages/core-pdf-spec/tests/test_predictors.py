@@ -1,15 +1,19 @@
 import pytest
 
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams
-from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf_spec.s_07_filters.errors import (
+    FilterParseError,
+    FilterUnsupportedError,
+    PredictorError,
+    UnsupportedPngFilterError,
+)
 from core_pdf_spec.s_07_filters.predictors import (
     apply_png_predictor,
     apply_predictor,
     apply_tiff_predictor,
+    png_predict,
+    tiff_predict,
 )
-from core_predictors.errors import PredictorError, UnsupportedPngFilterError
-from core_predictors.png import png_predict
-from core_predictors.tiff import tiff_predict
 
 
 def test_png_rejects_an_incomplete_final_row_before_decoding_any_filter() -> None:

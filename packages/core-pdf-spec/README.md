@@ -25,7 +25,7 @@ parsing and the extension points consumers can implement.
 
 The library contains implemented PDF semantics and the PDF-facing wrappers over the
 referenced standards. The referenced-standard kernels themselves are separate floor
-distributions that spec depends on: `core-predictors`, `core-postscript`, `core-jbig2`,
+distributions that spec depends on: `core-postscript`, `core-jbig2`,
 `core-pdf-crypto`, and `core-adobe-fonts` (which also carries the bundled CMaps and
 standard font tables). It preserves standard-defined defaults and fallback rules. Malformed-input repair, retry/skip policy, substitute fonts, fontTools backends,
 Unicode guesses, output-device choices, capture products, and rasterization belong to
@@ -202,8 +202,9 @@ the spec modules keep only the PDF wrappers:
 
 - `s_07_filters.predictors` keeps `apply_predictor`, `apply_tiff_predictor`,
   `apply_png_predictor`, and `SUPPORTED_PREDICTOR_BITS`; `png_predict`, `tiff_predict*`,
-  `PredictorError`, and `UnsupportedPngFilterError` are in `core_predictors.{png,tiff,errors}`,
-  and the sub-byte unpacker is public as `core_predictors.samples.unpack_subbyte_rows`.
+  `PredictorError`, and `UnsupportedPngFilterError` are in `s_07_filters` itself (the
+  kernels in `s_07_filters.predictors`, the errors in `s_07_filters.errors`), and the
+  sub-byte unpacker is public as `core_pdf_spec.samples.unpack_subbyte_rows`.
 - `s_08_graphics.calculator` keeps the Domain/Range reader; the language is
   `core_postscript.calculator.compile_calculator(source, domains, ranges)`.
 - `s_07_filters.jbig2` is now a module exporting `decode_jbig2`; the decoder, segment

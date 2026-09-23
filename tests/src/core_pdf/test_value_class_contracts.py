@@ -35,7 +35,6 @@ PACKAGE_ROOTS = (
     "core_pdf_ocr",
     "core_pdf_compat",
     "core_pdf_validate",
-    "core_predictors",
     "core_postscript",
     "core_jbig2",
     "core_pdf_crypto",

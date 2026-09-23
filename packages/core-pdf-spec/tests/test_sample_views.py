@@ -5,7 +5,7 @@ from typing import Any, cast
 import numpy
 import pytest
 
-from core_predictors.samples import uint8_view
+from core_pdf_spec.s_07_filters.predictors import uint8_view
 
 
 @pytest.mark.parametrize(("offset", "count"), [(-1, -1), (4, -1), (0, 4), (2, 2)])

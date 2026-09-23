@@ -17,7 +17,6 @@ members = [
     "core-pdf-spec",
     "core-pdf-validate",
     "core-postscript",
-    "core-predictors",
 ]
 
 [[package]]
@@ -419,15 +418,11 @@ name = "core-jbig2"
 version = "0.1.0"
 source = { editable = "packages/core-jbig2" }
 dependencies = [
-    { name = "core-predictors" },
     { name = "numpy" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "core-predictors", editable = "packages/core-predictors" },
-    { name = "numpy", specifier = ">=2.5.1" },
-]
+requires-dist = [{ name = "numpy", specifier = ">=2.5.1" }]
 
 [[package]]
 name = "core-pdf"
@@ -437,7 +432,6 @@ dependencies = [
     { name = "core-adobe-fonts" },
     { name = "core-jbig2" },
     { name = "core-pdf-spec" },
-    { name = "core-predictors" },
     { name = "defusedxml" },
     { name = "imagecodecs" },
     { name = "numpy" },
@@ -496,7 +490,6 @@ requires-dist = [
     { name = "core-adobe-fonts", editable = "packages/core-adobe-fonts" },
     { name = "core-jbig2", editable = "packages/core-jbig2" },
     { name = "core-pdf-spec", editable = "packages/core-pdf-spec" },
-    { name = "core-predictors", editable = "packages/core-predictors" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "imagecodecs", specifier = ">=2026.6.26" },
     { name = "numpy", specifier = ">=2.5.1" },
@@ -617,7 +610,6 @@ dependencies = [
     { name = "core-jbig2" },
     { name = "core-pdf-crypto" },
     { name = "core-postscript" },
-    { name = "core-predictors" },
     { name = "numpy" },
 ]
 
@@ -627,7 +619,6 @@ requires-dist = [
     { name = "core-jbig2", editable = "packages/core-jbig2" },
     { name = "core-pdf-crypto", editable = "packages/core-pdf-crypto" },
     { name = "core-postscript", editable = "packages/core-postscript" },
-    { name = "core-predictors", editable = "packages/core-predictors" },
     { name = "numpy", specifier = ">=2.5.1" },
 ]
 
@@ -650,17 +641,6 @@ requires-dist = [
 name = "core-postscript"
 version = "0.1.0"
 source = { editable = "packages/core-postscript" }
-
-[[package]]
-name = "core-predictors"
-version = "0.1.0"
-source = { editable = "packages/core-predictors" }
-dependencies = [
-    { name = "numpy" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "numpy", specifier = ">=2.5.1" }]
 
 [[package]]
 name = "coverage"

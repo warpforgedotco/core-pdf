@@ -3,13 +3,12 @@ import pytest
 
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams
 from core_pdf_spec.s_07_filters.errors import FilterParseError
-from core_pdf_spec.s_07_filters.predictors import apply_tiff_predictor
+from core_pdf_spec.s_07_filters.predictors import apply_tiff_predictor, tiff_predict_bits
 from core_pdf_spec.s_08_graphics.color_kernels import (
     color_key_alpha,
     unpack_image_samples,
     unpack_subbyte_image_samples,
 )
-from core_predictors.tiff import tiff_predict_bits
 
 
 def test_color_key_requires_all_original_components_in_inclusive_ranges() -> None:
