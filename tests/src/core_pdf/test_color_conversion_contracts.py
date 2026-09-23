@@ -3,7 +3,10 @@ import pytest
 
 from core_pdf.impl.graphics.color import color_operands_to_srgb, convert_image_data
 from core_pdf.impl.graphics.color_spec import parse_color_space
-from core_pdf.impl.graphics.image_samples import convert_integer_samples
+from core_pdf.impl.graphics.image_samples import (
+    convert_integer_samples,
+    distinct_component_rows,
+)
 
 
 @pytest.mark.parametrize(
@@ -136,3 +139,51 @@ def test_device_cmyk_vector_and_image_share_profile_and_fallback(monkeypatch, fa
             np.testing.assert_array_equal(vector, expected)
     finally:
         device_profiles.cmyk_byte_tuple_to_srgb.cache_clear()
+
+
+@pytest.mark.parametrize("components", [1, 2, 3, 4])
+@pytest.mark.parametrize("distinct_values", [1, 2, 3, 256])
+@pytest.mark.parametrize("rows", [0, 1, 2, 17, 1000])
+def test_distinct_component_rows_matches_the_row_sort(rows, distinct_values, components):
+    rng = np.random.default_rng(17)
+    values = rng.integers(0, distinct_values, (rows, components)).astype(np.float64)
+    expected_distinct, expected_inverse = np.unique(values, axis=0, return_inverse=True)
+    distinct, inverse = distinct_component_rows(values)
+    assert distinct.shape == expected_distinct.shape
+    assert np.array_equal(distinct, expected_distinct)
+    assert inverse.shape == expected_inverse.shape
+    assert np.array_equal(inverse, expected_inverse)
+    # The scatter is what the tint path actually depends on.
+    assert np.array_equal(distinct[inverse], values)
+
+
+def test_distinct_component_rows_keeps_the_row_sort_for_wide_spaces():
+    values = np.array([[1.0, 2.0], [1.0, 1.0], [1.0, 2.0]])
+    distinct, inverse = distinct_component_rows(values)
+    assert np.array_equal(distinct, np.array([[1.0, 1.0], [1.0, 2.0]]))
+    assert np.array_equal(inverse, np.array([1, 0, 1]))
+
+
+def test_distinct_component_rows_handles_signed_zero_and_extremes():
+    values = np.array([[-0.0], [0.0], [1e308], [1e-308], [-0.0]])
+    expected_distinct, expected_inverse = np.unique(values, axis=0, return_inverse=True)
+    distinct, inverse = distinct_component_rows(values)
+    assert np.array_equal(distinct, expected_distinct)
+    assert np.array_equal(inverse, expected_inverse)
+
+
+def test_distinct_component_rows_collapses_nan_rows():
+    # The row sort compares raw bytes and keeps each NaN row separate; the
+    # one-dimensional sort collapses them. Both scatter the same tint output
+    # over the same pixels, because the tint function is deterministic, so the
+    # difference is a saved evaluation rather than a different image. This test
+    # pins the collapse so the divergence is a decision, not a surprise.
+    values = np.array([[np.nan], [1.0], [np.nan], [2.0]])
+    distinct, inverse = distinct_component_rows(values)
+    assert distinct.shape == (3, 1)
+    assert np.array_equal(inverse, np.array([2, 0, 2, 1]))
+    assert np.isnan(distinct[2, 0])
+    # Every NaN pixel still selects a NaN entry, so a deterministic tint gives
+    # each of them the same colour either way.
+    assert np.isnan(distinct[inverse][0, 0])
+    assert np.isnan(distinct[inverse][2, 0])
