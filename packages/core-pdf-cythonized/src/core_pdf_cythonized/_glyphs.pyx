@@ -154,7 +154,7 @@ def horizontal_glyph_geometry(
     cdef double ix0, ix1, iy0, iy1, rx0, rx1, ry0, ry1
     cdef double ex0, ex1, ex2, ex3, ey0, ey1, ey2, ey3
     cdef double inx0, iny0, inx1, iny1
-    cdef double fb_w, fb_h, r_w, r_h, width, height, size
+    cdef double fb_w, fb_h, r_w, r_h, width, height, size, scaled, ratio
     cdef bint have_box
     cdef int vis, bw, bh
 
@@ -315,17 +315,28 @@ def horizontal_glyph_geometry(
                     width = gx1 - gx0
                     height = gy1 - gy0
                     if width > 0.0 and height > 0.0:
+                        # Clamped as doubles, then cast. Converting a double
+                        # outside int's range is undefined: arm64 saturates and
+                        # gives the right answer by luck, x86-64 returns INT_MIN
+                        # and would clamp up to 16 instead of down to 64. A
+                        # malformed `Tf 1e10` reaches this, and the Python
+                        # original clamped arbitrary-precision ints, so it
+                        # always gave 64.
                         size = font_size if font_size > 1.0 else 1.0
-                        bh = <int> ceil(size * 2.5)
-                        if bh < 16:
+                        scaled = ceil(size * 2.5)
+                        if scaled < 16.0:
                             bh = 16
-                        elif bh > 64:
+                        elif scaled > 64.0:
                             bh = 64
-                        bw = <int> ceil(bh * width / height)
-                        if bw < 1:
+                        else:
+                            bh = <int> scaled
+                        ratio = ceil(bh * width / height)
+                        if ratio < 1.0:
                             bw = 1
-                        elif bw > 96:
+                        elif ratio > 96.0:
                             bw = 96
+                        else:
+                            bw = <int> ratio
                 out_bitmap[2 * i] = bw
                 out_bitmap[2 * i + 1] = bh
     finally:

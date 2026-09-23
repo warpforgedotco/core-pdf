@@ -51,6 +51,7 @@ def vertical_glyph_geometry(
     clip_page: Rectangle | None,
     visible: bool,
     want_bitmap: list[int],
+    want_transform: bool = True,
 ) -> GlyphGeometry:
     """The vertical-writing twin of ``horizontal_glyph_geometry``.
 
@@ -102,6 +103,8 @@ def vertical_glyph_geometry(
                 base_x + origin_x * a + origin_y * c,
                 base_y + origin_x * b + origin_y * d,
             )
+            if want_transform
+            else None
         )
         out_ink.append(advance_bbox)
 

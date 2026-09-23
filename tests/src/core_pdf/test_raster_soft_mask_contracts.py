@@ -1,4 +1,8 @@
+from __future__ import annotations
+
+from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -7,6 +11,11 @@ from core_pdf.impl.capture.program import CapturedProgram
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl.render.target import resolve_soft_mask
 from tests.src.core_pdf.test_pattern_rendering import make_target
+
+if TYPE_CHECKING:
+    from core_pdf.impl.capture.recording import TextState
+    from core_pdf.impl.capture.tolerant_state import RecoveringTextState
+    from core_pdf_spec.s_11_transparency.soft_masks import SoftMask
 
 
 def mask_program() -> CapturedProgram:
@@ -95,7 +104,7 @@ REPEATED_SOFT_MASK_PDF = (
 
 
 @pytest.fixture
-def state(text_pdf_bytes):
+def state(text_pdf_bytes: bytes) -> Iterator[TextState]:
     """A capture state over a trivial document.
 
     The cache tests stub parse_soft_mask out, so nothing here reads the
@@ -109,11 +118,11 @@ def state(text_pdf_bytes):
 
 
 @pytest.fixture
-def parses(monkeypatch):
+def parses(monkeypatch: pytest.MonkeyPatch) -> list[object]:
     """Counts reaching the real parse, standing in for its result."""
     from core_pdf.impl.capture import tolerant_state
 
-    reached = []
+    reached: list[object] = []
     monkeypatch.setattr(
         tolerant_state,
         "parse_soft_mask",
@@ -122,7 +131,9 @@ def parses(monkeypatch):
     return reached
 
 
-def test_a_repeated_soft_mask_is_parsed_once_per_distinct_state(monkeypatch) -> None:
+def test_a_repeated_soft_mask_is_parsed_once_per_distinct_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Every gs used to re-parse the ExtGState soft mask into a fresh SoftMask
     # carrying a freshly compiled transfer closure, and every cache downstream
     # is keyed by one of those identities, so none of them could ever hit.
@@ -133,7 +144,7 @@ def test_a_repeated_soft_mask_is_parsed_once_per_distinct_state(monkeypatch) -> 
     produced: list[int] = []
     original = tolerant_state.RecoveringTextState.resolve_soft_mask
 
-    def counting(self, value):
+    def counting(self: RecoveringTextState, value: object) -> SoftMask | None:
         nonlocal calls
         calls += 1
         mask = original(self, value)
@@ -149,7 +160,9 @@ def test_a_repeated_soft_mask_is_parsed_once_per_distinct_state(monkeypatch) -> 
     assert len(set(produced)) <= calls // 2
 
 
-def test_the_same_source_under_the_same_state_parses_once(state, parses) -> None:
+def test_the_same_source_under_the_same_state_parses_once(
+    state: TextState, parses: list[object]
+) -> None:
     value = {"S": "Alpha"}
     assert state.resolve_soft_mask(value) is None
     assert state.resolve_soft_mask(value) is None
@@ -160,7 +173,9 @@ def test_the_same_source_under_the_same_state_parses_once(state, parses) -> None
     assert len(state.parsed_soft_masks) == 1
 
 
-def test_the_parse_cache_separates_masks_by_transform(state, parses) -> None:
+def test_the_parse_cache_separates_masks_by_transform(
+    state: TextState, parses: list[object]
+) -> None:
     # The ctm is baked into the parsed mask, so the same source under a
     # different transform must not be served from the cache.
     from core_pdf_spec.s_08_graphics.matrix import Matrix
@@ -172,7 +187,9 @@ def test_the_parse_cache_separates_masks_by_transform(state, parses) -> None:
     assert len(parses) == 2
 
 
-def test_the_parse_cache_separates_masks_by_resource_scope(state, parses) -> None:
+def test_the_parse_cache_separates_masks_by_resource_scope(
+    state: TextState, parses: list[object]
+) -> None:
     # A mask reached through different resources stays a separate object, so a
     # program captured under one scope is never reused under another.
     value = {"S": "Alpha"}
@@ -182,7 +199,9 @@ def test_the_parse_cache_separates_masks_by_resource_scope(state, parses) -> Non
     assert len(parses) == 2
 
 
-def test_the_parse_cache_is_bounded(state, parses, monkeypatch) -> None:
+def test_the_parse_cache_is_bounded(
+    state: TextState, parses: list[object], monkeypatch: pytest.MonkeyPatch
+) -> None:
     from core_pdf.impl.capture import tolerant_state
 
     monkeypatch.setattr(tolerant_state, "SOFT_MASK_CACHE_LIMIT", 3)
@@ -191,7 +210,7 @@ def test_the_parse_cache_is_bounded(state, parses, monkeypatch) -> None:
     assert len(state.parsed_soft_masks) <= 3
 
 
-def test_a_nested_capture_shares_the_parse_cache(state) -> None:
+def test_a_nested_capture_shares_the_parse_cache(state: TextState) -> None:
     # Patterns and mask groups each capture a whole nested content stream. If
     # the nested state started with an empty cache, every gs inside one would
     # mint a fresh mask identity again and miss every cache downstream.
@@ -225,18 +244,16 @@ def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
     assert cache.get(plane_key(3)) is not None
 
 
-def test_a_plane_larger_than_the_budget_keeps_only_the_negative_result() -> None:
+def test_a_plane_larger_than_the_budget_is_not_cached_at_all() -> None:
     from core_pdf.impl.render.target import SoftMaskCache
 
     cache = SoftMaskCache(budget=1_000_000)
-    mask = make_mask()
-    cache.store(plane_key(1), mask, make_plane(5))
-    entry = cache.get(plane_key(1))
-    # Cached, so the mask is not resolved again, but the plane that would not
-    # fit is dropped rather than blowing the budget.
-    assert entry is not None
-    assert entry[0] is mask
-    assert entry[1] is None
+    cache.store(plane_key(1), make_mask(), make_plane(5))
+    # The plane is dropped rather than blowing the budget, and the key is left
+    # absent with it. Keeping the key with a None plane would read back as
+    # "this mask resolves to nothing", because resolve_soft_mask returns the
+    # cached plane, and every later use of the mask would paint unmasked.
+    assert cache.get(plane_key(1)) is None
     assert cache.size == 0
 
 

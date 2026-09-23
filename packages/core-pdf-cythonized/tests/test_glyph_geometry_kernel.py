@@ -19,6 +19,7 @@ glyph bounding box; these vectors do, on whatever platform built the wheel.
 """
 
 import gzip
+import math
 import pickle
 from pathlib import Path
 
@@ -80,3 +81,53 @@ def test_kernel_rejects_a_short_glyph_box_array():
             visible=True,
             want_bitmap=[1, 1],
         )
+
+
+@pytest.mark.parametrize("font_size", [1e9, 1e10, 1e300])
+def test_a_huge_font_size_clamps_rather_than_overflowing(font_size: float) -> None:
+    """Casting a double outside int's range is undefined, and the two build
+    platforms disagree: arm64 saturates, x86-64 returns INT_MIN. Clamped as
+    doubles first, both give the Python original's answer. Sizes stop at 1e300
+    because the original raised OverflowError on an infinite one, so there is
+    no answer to match; the kernel clamps that to the same 64 regardless."""
+    plane = horizontal_glyph_geometry(
+        [0.0],
+        [6.0],
+        [0.0, 0.0, 0.5, 0.7],
+        basis=(0.0, 0.0, 1.0, 0.0, 0.0, 1.0),
+        font_ascent=0.8,
+        font_descent=-0.2,
+        rise=0.0,
+        font_scale=0.012,
+        advance_scale=0.012,
+        font_size=font_size,
+        clip_primary=None,
+        clip_page=None,
+        visible=True,
+        want_bitmap=[1],
+    )
+    # What the deleted Python original computed, with arbitrary-precision ints.
+    height = max(16, min(64, math.ceil(max(font_size, 1.0) * 2.5)))
+    width = max(1, min(96, math.ceil(height * 0.5 / 0.7)))
+    assert plane[5] == [width, height]
+
+
+def test_a_degenerate_glyph_box_clamps_the_bitmap_width() -> None:
+    """A near-zero height gives an enormous width ratio; the same cast applies."""
+    plane = horizontal_glyph_geometry(
+        [0.0],
+        [6.0],
+        [0.0, 0.0, 1.0, 1e-300],
+        basis=(0.0, 0.0, 1.0, 0.0, 0.0, 1.0),
+        font_ascent=0.8,
+        font_descent=-0.2,
+        rise=0.0,
+        font_scale=0.012,
+        advance_scale=0.012,
+        font_size=12.0,
+        clip_primary=None,
+        clip_page=None,
+        visible=True,
+        want_bitmap=[1],
+    )
+    assert plane[5] == [96, 30]

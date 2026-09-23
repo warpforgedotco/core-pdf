@@ -52,3 +52,23 @@ def test_rendering_still_works_from_a_full_capture(text_pdf_bytes: bytes) -> Non
         program = page.get_page_program()
         rendered = compose_page(page, RenderOptions(), page_program=program)
     assert rendered is not None
+
+
+def test_a_text_only_capture_splits_glyphs_the_same_way(text_pdf_bytes: bytes) -> None:
+    """The flag is about the render payload, not about what the text is.
+
+    `suspicious` decides whether a multi-character glyph is split into one
+    observation per character. It once hung off the render flag, which split
+    "A/B" into three observations for a text-only capture and left it as one
+    otherwise -- a silent extraction difference from a rendering switch.
+    """
+    with PdfDocument(text_pdf_bytes) as document:
+        page = document.pages[0]
+        text_only = page.get_page_program(render_details=False)
+        full = page.get_page_program()
+
+    assert len(text_only.glyphs) == len(full.glyphs)
+    assert [glyph.text for glyph in text_only.glyphs] == [glyph.text for glyph in full.glyphs]
+    assert [glyph.cluster_id for glyph in text_only.glyphs] == [
+        glyph.cluster_id for glyph in full.glyphs
+    ]

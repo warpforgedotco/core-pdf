@@ -322,6 +322,11 @@ SoftMaskKey = tuple[int, int, tuple[float, float]]
 # stream, which is dearer than re-preparing an image.
 SOFT_MASK_CACHE_BYTES = 512 << 20
 
+# A half-open pixel box, as clipped_pixel_box returns it, and the one that
+# stands for "this element lands nowhere on the page".
+type PixelBox = tuple[int, int, int, int]
+EMPTY_PIXEL_BOX: PixelBox = (0, 0, 0, 0)
+
 
 class SoftMaskCache:
     """Resolved mask planes, evicted oldest first once the budget is spent."""
@@ -344,9 +349,9 @@ class SoftMaskCache:
         if previous is not None:
             self.size -= previous[2]
         if size > self.budget:
-            # Keep the negative result so the mask is not resolved again, but
-            # not the plane that will not fit.
-            entries[key] = (mask, None, 0)
+            # Too large to keep. Storing None here would be read back as "this
+            # mask resolves to nothing", and every later use of the mask would
+            # paint unmasked. Leave the key absent and resolve it again.
             return
         while entries and self.size + size > self.budget:
             self.size -= entries.pop(next(iter(entries)))[2]
@@ -438,6 +443,7 @@ class RasterTarget:
     __slots__ = (
         "pixels",
         "pixel_views",
+        "reusable_buffer_ids",
         "semantic_context",
         "buffer_stack",
         "group_source_alpha",
@@ -515,6 +521,10 @@ class RasterTarget:
         # about four views per item, tens of thousands a page. The buffer is
         # stored beside its view so an id() key cannot outlive its object.
         self.pixel_views: dict[int, tuple[bytearray | bytes, UInt8Array]] = {}
+        # ids of the buffers this target owns and paints into repeatedly: the
+        # elementary scratch, one per stack depth. Anything else handed to
+        # pixel_view is transient and must not be retained.
+        self.reusable_buffer_ids: set[int] = set()
         self.crop_y0 = crop_y0
         self.clip_stack: list[int] = []
         self.clip_floor = 0
@@ -615,8 +625,58 @@ class RasterTarget:
     # knockout group with that many elements is not the text case this is for.
     KNOCKOUT_DISJOINT_LIMIT = 96
 
-    def knockout_needs_group(self, item: DisplayItem, parent: RasterGroup) -> bool:
-        """Whether `item` has to go through an elementary group to knock out.
+    def knockout_paint_box(self, item: DisplayItem) -> PixelBox | None:
+        """The pixel box `item` can paint into, or None if it is not bounded.
+
+        Only a superset of the pixels it touches is wanted, so that a later
+        element missing this box provably misses every pixel this one wrote.
+        Only a plain fill is bounded here: a stroke reaches half a line width
+        beyond the path bbox, `blit_image` derives its own quad rather than
+        using `item.bbox`, and a shading paints an extent the item does not
+        carry. Pattern fills and blend modes stay bounded even though they
+        cannot skip the group, because they still paint inside the box.
+        """
+        if not isinstance(item, PathPaintItem) or item.paint_kind is not PathPaintKind.FILL:
+            return None
+        bbox = item.bbox
+        if bbox is None or item.edge_array is None:
+            # Without an edge array, fill_path derives its own bbox from the
+            # path and may not land on the box computed here. Only the glyph
+            # case, where it provably uses item.bbox, is bounded.
+            return None
+        clipped = self.clip.clipped_pixel_box(bbox)
+        if clipped is None:
+            # Nothing of it lands on the page, so it paints nothing at all.
+            return EMPTY_PIXEL_BOX
+        # Exactly the box fill_path will paint into -- it clips the coverage
+        # plane to this and blends only inside it -- so no margin is needed.
+        # An earlier version inflated by a pixel for antialiasing and skipped
+        # only 7.6% of a dense text page, because adjacent glyph boxes tile
+        # contiguously and a one-pixel margin makes every neighbour an overlap.
+        return clipped[1]
+
+    def record_knockout_paint(self, box: PixelBox | None) -> None:
+        """Record what an element painted into the innermost knockout group.
+
+        Everything painted into the group has to be recorded, not only the
+        elements that skipped its elementary group: one composited in through
+        a group leaves pixels behind just the same, and a later element
+        landing on them would no longer be painting over the initial backdrop.
+        A None box means the pixels could not be bounded, so the whole page is
+        recorded instead and the test retires for the rest of the group.
+        """
+        boxes = self.buffer_stack[-1].painted_boxes
+        if boxes is None:
+            return
+        if box is None or len(boxes) >= self.KNOCKOUT_DISJOINT_LIMIT:
+            boxes.clear()
+            boxes.append((0, 0, self.width, self.height))
+        elif box != EMPTY_PIXEL_BOX:
+            boxes.append(box)
+
+    def knockout_paint_is_disjoint(self, item: DisplayItem, boxes: list[PixelBox]) -> bool:
+        """Whether `item` misses every pixel painted into the knockout group so
+        far, so that it can knock out without an elementary group.
 
         Knockout composites each element against the group's *initial*
         backdrop rather than the accumulated result. Where nothing has been
@@ -626,45 +686,27 @@ class RasterTarget:
         element's own alpha and `ra` equals it, so the component reduces to the
         element itself. Painting straight into the parent produces that.
 
-        So an element that misses everything painted so far can skip the group.
-        The test is on bounding boxes, which over-approximate the pixels a fill
-        touches, so a miss here is a genuine miss. The box is inflated by one
-        pixel because antialiasing writes outside the geometric edge.
+        Records what the element paints on the way out, so this must be called
+        exactly once for every element painted into a knockout group.
         """
-        boxes = parent.painted_boxes
-        if boxes is None:
-            return True
-        if not isinstance(item, PathPaintItem):
-            return True
-        if item.paint_kind is not PathPaintKind.FILL:
-            # A stroke reaches half a line width beyond the bbox, and
-            # fill-stroke paints twice; neither is worth the extra bookkeeping.
-            return True
-        if item.fill_pattern is not None or item.blend_mode not in (None, "Normal"):
-            return True
-        bbox = item.bbox
-        if bbox is None or item.edge_array is None:
-            # Without an edge array, fill_path derives its own bbox from the
-            # path and may not land on the box computed here. Only the glyph
-            # case, where it provably uses item.bbox, is eligible.
-            return True
-        clipped = self.clip.clipped_pixel_box(bbox)
-        if clipped is None:
-            # Nothing of it lands on the page; the group would paint nothing.
-            return False
-        # Exactly the box fill_path will paint into -- it clips the coverage
-        # plane to this and blends only inside it -- so no margin is needed.
-        # An earlier version inflated by a pixel for antialiasing and skipped
-        # only 7.6% of a dense text page, because adjacent glyph boxes tile
-        # contiguously and a one-pixel margin makes every neighbour an overlap.
-        x0, y0, x1, y1 = clipped[1]
+        box = self.knockout_paint_box(item)
+        if box is None or box == EMPTY_PIXEL_BOX:
+            self.record_knockout_paint(box)
+            # An unbounded element needs the group; one that paints nothing
+            # would have the group paint nothing either.
+            return box is not None
+        x0, y0, x1, y1 = box
+        disjoint = True
         for bx0, by0, bx1, by1 in boxes:
             if x0 < bx1 and bx0 < x1 and y0 < by1 and by0 < y1:
-                return True
-        if len(boxes) >= self.KNOCKOUT_DISJOINT_LIMIT:
-            return True
-        boxes.append((x0, y0, x1, y1))
-        return False
+                disjoint = False
+                break
+        self.record_knockout_paint(box)
+        if disjoint and isinstance(item, PathPaintItem):
+            # Bounded, and so worth recording, but a pattern fill or a blend
+            # mode does not composite the way the collapsed formula assumes.
+            return item.fill_pattern is None and item.blend_mode in (None, "Normal")
+        return disjoint
 
     def paint_item(self, item: DisplayItem) -> None:
         if isinstance(item, (PathPaintItem, ImagePaintItem)) or item.kind in {"glyph", "shading"}:
@@ -683,8 +725,12 @@ class RasterTarget:
                     isinstance(item, PathPaintItem) and item.paint_kind is PathPaintKind.FILL_STROKE
                 )
                 elementary_group = knockout or mask_alpha is not None
-                if elementary_group and mask_alpha is None and knockout:
-                    elementary_group = self.knockout_needs_group(item, self.buffer_stack[-1])
+                parent = self.buffer_stack[-1]
+                boxes = parent.painted_boxes
+                if knockout and boxes is not None:
+                    disjoint = self.knockout_paint_is_disjoint(item, boxes)
+                    if disjoint and mask_alpha is None:
+                        elementary_group = False
                 if elementary_group:
                     self.push_elementary_group(
                         track_shape=mask_alpha is not None,
@@ -752,6 +798,10 @@ class RasterTarget:
                 )
             case "group-end" if len(self.buffer_stack) > self.group_floor:
                 self.composite_group(self.pop_group())
+                # A nested group composites straight into its parent without
+                # passing through paint_item, and what it painted is not
+                # bounded by anything the item carries.
+                self.record_knockout_paint(None)
             case "glyph" if data.get("visible") is not False:
                 rgba = color_rgba(data.get("fill_color"), data.get("fill_opacity"))
                 if is_pdf_number(mask := data.get("soft_mask_alpha")):
@@ -797,6 +847,7 @@ class RasterTarget:
             scratch = self.elementary_scratch[depth] = ElementaryScratch(
                 len(self.pixels), self.height, self.width
             )
+            self.reusable_buffer_ids.add(id(scratch.buffer))
         buffer = scratch.buffer
         source_alpha = scratch.source_alpha
         source_shape = scratch.source_shape
@@ -926,9 +977,15 @@ class RasterTarget:
         if cached is not None and cached[0] is buffer:
             return cached[1]
         view = uint8_image_view(buffer, (self.height, self.width, 4))
+        if id(buffer) not in self.reusable_buffer_ids:
+            # Only buffers this target owns and reuses are worth keeping, and
+            # only they are safe to keep: paint_stroke_once allocates a fresh
+            # full-page coverage buffer per stroke, and holding sixty-four of
+            # those on a large page is gigabytes of dead memory.
+            return view
         if len(self.pixel_views) >= 64:
-            # Group buffers are reused per depth, so this only grows if a page
-            # nests unusually deep. Cleared wholesale rather than evicted.
+            # Reusable buffers are one per stack depth, so this only grows if a
+            # page nests unusually deep. Cleared wholesale rather than evicted.
             self.pixel_views.clear()
         self.pixel_views[id(buffer)] = (buffer, view)
         return view

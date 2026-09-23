@@ -252,17 +252,17 @@ def capture_glyphs(
             glyph_boxes.extend((NO_BOX, NO_BOX, NO_BOX, NO_BOX))
         else:
             glyph_boxes.extend(box)
-        if not want_render:
-            suspicious = False
-            want_bitmap.append(0)
-        else:
-            suspicious = (
-                False
-                if chunk_length == 1
-                else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
-            )
-            want_bitmap.append(1 if (should_capture_glyph_bitmap(chunk_text) or suspicious) else 0)
+        # Computed whichever mode this is: suspicious feeds split_flags below,
+        # so gating it on render details would split a multi-character glyph
+        # like "A/B" into three observations for a text-only capture and leave
+        # it as one otherwise. Only the bitmap request is a render concern.
+        suspicious = (
+            False if chunk_length == 1 else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
+        )
         suspicious_flags.append(suspicious)
+        want_bitmap.append(
+            1 if want_render and (should_capture_glyph_bitmap(chunk_text) or suspicious) else 0
+        )
         if is_vertical:
             positions.append(vertical_position(glyph.cid, font_size=font_size))
         offset += advance
@@ -286,6 +286,7 @@ def capture_glyphs(
             clip_page=paint.page_clip,
             visible=visible,
             want_bitmap=want_bitmap,
+            want_transform=want_render,
         )
     else:
         advance_f, baseline_f, transform_f, ink_f, visible_f, bitmap_f = horizontal_glyph_geometry(
