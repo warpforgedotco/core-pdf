@@ -67,6 +67,7 @@ the wheel.
 | `signed_area_coverage` | `core_pdf.impl.render.paths` (deleted, with `group_offsets`) | 4.26x on the kernel; ~20% off full render on glyph-heavy pages |
 | `blend_normal_alpha_array_numpy` | `core_pdf.impl.render.blend` (deleted) | 9.04x on the kernel, over 26,315 calls averaging 38 elements |
 | `rect_coverage_plane` | `core_pdf.impl.render.paths` (deleted) | 8.57x on the kernel; -21% on a vector-heavy page render, -7 to -9% elsewhere |
+| `outline_edges` | `core_pdf.impl.render.commands` (edge half only) | 2.01x on the kernel; -2.5 to -4.4% on text-page render |
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render.target` (both deleted) | 7.06x on the fused wrapper |
 
 Together the two render kernels take full `render().rasterize()` down by

@@ -28,6 +28,7 @@ from core_pdf.impl.render.model import (
 )
 from core_pdf.impl.render.paths import translate_rect
 from core_pdf.impl.types import Rectangle
+from core_pdf_cythonized import outline_edges
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 
@@ -81,31 +82,20 @@ def transformed_outline(
     linear_x, linear_y = arrays.linear_columns(a, b, c, d)
     column_x = linear_x + e
     column_y = linear_y + f
+    # The kernel takes the numeric half: which spans survive a duplicated
+    # closing point, and every edge of every survivor written into one array.
+    # The point lists stay here, because building those tuples in C measured
+    # slower than tolist() + zip() -- CPython's zip is hard to beat.
+    edges, kept, dropped = outline_edges(column_x, column_y, arrays.spans)
+    if edges is None:
+        return None
     tx = column_x.tolist()
     ty = column_y.tolist()
-    subpaths: list[CapturedSubpath] = []
-    edge_blocks: list[numpy.ndarray[Any, Any]] = []
-    dropped = False
-    for start, end in arrays.spans:
-        points = list(zip(tx[start:end], ty[start:end], strict=True))
-        if points[0] == points[-1]:
-            points.pop()
-            end -= 1
-        if len(points) >= 2:
-            subpaths.append(CapturedSubpath(points, closed=True))
-            xs = column_x[start:end]
-            ys = column_y[start:end]
-            edge_blocks.append(numpy.column_stack((xs[:-1], ys[:-1], xs[1:], ys[1:])))
-            if points[0] != points[-1]:
-                edge_blocks.append(
-                    numpy.array([[xs[-1], ys[-1], xs[0], ys[0]]], dtype=numpy.float64)
-                )
-        else:
-            dropped = True
-    if not subpaths:
-        return None
+    subpaths: list[CapturedSubpath] = [
+        CapturedSubpath(list(zip(tx[start:end], ty[start:end], strict=True)), closed=True)
+        for start, end, _closes in kept
+    ]
     path = CapturedPath(subpaths)
-    edges = edge_blocks[0] if len(edge_blocks) == 1 else numpy.concatenate(edge_blocks)
     if dropped:
         return path, path.bbox(), edges
     # The columns are already numpy arrays here, so there is no conversion to
