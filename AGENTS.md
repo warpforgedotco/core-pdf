@@ -21,16 +21,18 @@ spec must never import core or OCR, including type-only imports. Spec exposes lo
 chapter APIs, not a document facade or CLI. Its exported symbols and documented parsing
 extension methods form the cross-distribution compatibility contract.
 
-Five standards packages sit beneath spec as the workspace floor, one per external
-specification family: `core-predictors` (PNG and TIFF predictors), `core-postscript` (the
-PLRM calculator subset), `core-jbig2` (ITU-T T.88), `core-pdf-crypto` (ciphers, RFC 5652 CMS,
-ISO/TS 32003 and 32004), and `core-adobe-fonts` (CFF, Type 2, Type 1, CMaps, the Adobe Glyph
-List, and Core 14 metrics, with the CMap data). Each lives at `packages/<name>/src/<name>/`
-and imports nothing from core, spec, OCR, or validate, including type-only imports; the floor
-packages are independent of each other except that any may use `core-predictors`, which also
-hosts the shared numpy sample-view helpers. PDF glue (DecodeParms, PDF objects, spec exceptions, T.88 polarity
+Four standards packages sit beneath spec as the workspace floor, one per external
+specification family: `core-postscript` (the PLRM calculator subset), `core-jbig2`
+(ITU-T T.88), `core-pdf-crypto` (ciphers, RFC 5652 CMS, ISO/TS 32003 and 32004), and
+`core-adobe-fonts` (CFF, Type 2, Type 1, CMaps, the Adobe Glyph List, and Core 14 metrics,
+with the CMap data). Each lives at `packages/<name>/src/<name>/` and imports nothing from
+core, spec, OCR, or validate, including type-only imports; the floor packages are also
+independent of each other. The PNG and TIFF predictor kernels are the exception to the
+one-package-per-standard rule: at ~180 lines, with spec as their only consumer, they live
+in `core_pdf_spec.s_07_filters.predictors` beside the wrappers that call them, and the
+sample helper both they and image decoding share is `core_pdf_spec.samples`. PDF glue (DecodeParms, PDF objects, spec exceptions, T.88 polarity
 inversion) stays in the spec chapter that ISO 32000 assigns; kernels take bytes and plain
-Python values. Spec pins each floor package's minor range; core pins the three it imports
+Python values. Spec pins each floor package's minor range; core pins the two it imports
 directly. See `tests/fixtures/specifications/README.md` for the document-to-package map.
 
 The optional `core-pdf-validate` workspace member owns external validator adapters and reports.

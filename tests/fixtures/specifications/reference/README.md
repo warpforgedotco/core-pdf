@@ -31,7 +31,7 @@ Re-fetch with:
 | `rfc/rfc3161-timestamp.txt` | IETF Trust | signature timestamps |
 | `unicode/UnicodeData.txt` | Unicode | `ToUnicode` normalisation |
 | `unicode/LineBreak.txt` | Unicode | line/word segmentation |
-| `png/png-3rd-edition.html` | W3C Document | `core-predictors` `png`; `FlateDecode` PNG predictors |
+| `png/png-3rd-edition.html` | W3C Document | `core-pdf-spec` `s_07_filters.predictors`; `FlateDecode` PNG predictors |
 | `pdfa/Matterhorn-Protocol-1.1.pdf` | CC BY 4.0 | PDF/UA failure conditions, `s_14_structure` |
 | `pdfa/Tagged-PDF-Best-Practice-Guide-Syntax.pdf` | CC BY 4.0 | structure tree, `s_14_structure` |
 | `pdfa/Well-Tagged-PDF-WTPDF-1.0.pdf` | CC BY 4.0 | tagged PDF 2.0 |
