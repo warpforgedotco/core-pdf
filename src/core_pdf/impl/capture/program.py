@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import partial
+from itertools import chain
 from typing import Literal, TypeAlias
 
 from core_pdf.impl.capture.records import (
@@ -11,7 +13,6 @@ from core_pdf.impl.capture.records import (
     CapturedLine,
     CapturedTextBoundary,
 )
-from core_pdf.impl.exceptions import PdfContractError
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
 
@@ -40,18 +41,6 @@ class CapturedProgram:
         inline_images = tuple(self.inline_images)
         lines = tuple(self.lines)
         text_boundaries = tuple(self.text_boundaries)
-        validations: tuple[tuple[str, tuple[object, ...], type[object]], ...] = (
-            ("text-run", runs, TextRun),
-            ("glyph", glyphs, GlyphObservation),
-            ("drawing", drawings, CapturedDrawing),
-            ("inline-image", inline_images, CapturedInlineImage),
-            ("line", lines, CapturedLine),
-            ("text-boundary", text_boundaries, CapturedTextBoundary),
-        )
-        for name, products, product_type in validations:
-            if not all(isinstance(product, product_type) for product in products):
-                raise PdfContractError(f"page program contains an invalid {name} product")
-
         commands: list[PageCommand] = [*text_boundaries, *runs]
         commands.extend(glyph for glyph in glyphs if glyph.has_paint)
         commands.extend(drawings)
@@ -89,34 +78,32 @@ class PageProgram:
     commands: tuple[PageCommand, ...] = field(init=False)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.body, CapturedProgram):
-            raise PdfContractError("page program contains an invalid body")
+        set_derived = partial(object.__setattr__, self)
         appearances = tuple(self.appearances)
-        if not all(
-            isinstance(appearance, AppearanceProgram)
-            and appearance.kind in {"widget", "annotation"}
-            and isinstance(appearance.program, CapturedProgram)
-            for appearance in appearances
-        ):
-            raise PdfContractError("page program contains an invalid appearance")
-        object.__setattr__(self, "appearances", appearances)
-        programs = (self.body, *(appearance.program for appearance in appearances))
-        for name in (
-            "runs",
-            "glyphs",
-            "drawings",
-            "inline_images",
-            "lines",
-            "text_boundaries",
-            "commands",
-        ):
-            object.__setattr__(
-                self,
-                name,
-                tuple(item for program in programs for item in getattr(program, name))
-                if appearances
-                else getattr(self.body, name),
-            )
+        set_derived("appearances", appearances)
+        body = self.body
+        if not appearances:
+            # Nothing to concatenate, so the body's own tuples stand as they are.
+            set_derived("runs", body.runs)
+            set_derived("glyphs", body.glyphs)
+            set_derived("drawings", body.drawings)
+            set_derived("inline_images", body.inline_images)
+            set_derived("lines", body.lines)
+            set_derived("text_boundaries", body.text_boundaries)
+            set_derived("commands", body.commands)
+            return
+        # Body first, then each appearance in capture order. Nothing is
+        # re-sorted: one TextState numbers the body and every appearance off a
+        # single counter, so concatenating in that order is already by seqno.
+        programs = (body, *(appearance.program for appearance in appearances))
+        merge = chain.from_iterable
+        set_derived("runs", tuple(merge(p.runs for p in programs)))
+        set_derived("glyphs", tuple(merge(p.glyphs for p in programs)))
+        set_derived("drawings", tuple(merge(p.drawings for p in programs)))
+        set_derived("inline_images", tuple(merge(p.inline_images for p in programs)))
+        set_derived("lines", tuple(merge(p.lines for p in programs)))
+        set_derived("text_boundaries", tuple(merge(p.text_boundaries for p in programs)))
+        set_derived("commands", tuple(merge(p.commands for p in programs)))
 
 
 __all__ = (

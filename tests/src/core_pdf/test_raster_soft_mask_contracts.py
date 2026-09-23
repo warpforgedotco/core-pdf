@@ -102,7 +102,7 @@ def state(text_pdf_bytes):
     document's content and a real mask would only slow them down.
     """
     from core_pdf import PdfDocument
-    from core_pdf.impl.capture.interpreter import TextState
+    from core_pdf.impl.capture.recording import TextState
 
     with PdfDocument(text_pdf_bytes) as document:
         yield TextState(document)

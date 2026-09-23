@@ -5,7 +5,7 @@ from __future__ import annotations
 import typing
 from collections.abc import Callable
 from copy import copy
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import (
@@ -64,6 +64,11 @@ if TYPE_CHECKING:
 
 
 class ContentInterpreter:
+    # The executor a subclass wants built for it. Overriding the attribute is
+    # what keeps __init__ from constructing a base executor that the subclass
+    # would only replace and discard.
+    stream_executor_type: ClassVar[type[ContentStreamExecutor]] = ContentStreamExecutor
+
     def __init__(
         self,
         resolver: PdfValueResolver,
@@ -99,7 +104,7 @@ class ContentInterpreter:
         self.default_handlers: dict[str, OperationHandler] = {
             name: getattr(self, handler) for name, handler in CONTENT_OPERATOR_HANDLERS.items()
         }
-        self.stream_executor = ContentStreamExecutor(self)
+        self.stream_executor = self.stream_executor_type(self)
 
     def create_lexer(self, data: bytes | memoryview) -> PdfLexer:
         lexer = self.lexer_factory(data)

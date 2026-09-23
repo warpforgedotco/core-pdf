@@ -5,8 +5,8 @@ from typing import Any, cast
 
 from core_pdf import PdfPage
 from core_pdf.impl.capture.glyphs import GlyphPaint
-from core_pdf.impl.capture.interpreter import TextState
 from core_pdf.impl.capture.program import CapturedProgram
+from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.capture.recovery import CaptureRecovery
 from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfError, PdfParseError

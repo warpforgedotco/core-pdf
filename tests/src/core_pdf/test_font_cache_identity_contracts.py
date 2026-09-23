@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.capture.interpreter import TextState
+from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.capture.tolerant_state import (
     FontCompanionsCache,
     font_companions,

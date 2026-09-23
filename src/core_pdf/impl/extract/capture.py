@@ -11,7 +11,6 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.capture.marked_content import extend_baseline, min_optional_confidence
 from core_pdf.impl.capture.program import PageProgram
 from core_pdf.impl.capture.records import LayoutFormId
 from core_pdf.impl.extract.contracts import (
@@ -26,6 +25,7 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.quality import analyze_text
 from core_pdf.impl.model.geometry import (
     bbox_union,
+    extend_baseline,
     interval_overlap,
     rect_tuple,
     union_bbox,
@@ -33,6 +33,7 @@ from core_pdf.impl.model.geometry import (
 from core_pdf.impl.model.glyphs import (
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
+    min_optional_confidence,
 )
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.model.text import collapse_ws

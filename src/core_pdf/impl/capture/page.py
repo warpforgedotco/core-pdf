@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any, cast
 
-from core_pdf.impl.capture.interpreter import TextState
-from core_pdf.impl.capture.program import AppearanceProgram, CapturedProgram, PageProgram
+from core_pdf.impl.capture.program import AppearanceProgram, PageProgram
+from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.document.records import RawAnnotation, RawFormField
 from core_pdf.impl.document.recovery.resolver import resolve_resource_dict
 from core_pdf.impl.exceptions import PdfParseError
@@ -136,12 +136,7 @@ def capture_annotation_appearances(
 
             previous_source = state.capture_source
             state.run_accumulator.flush()
-            run_start = len(state.runs)
-            glyph_start = len(state.glyphs)
-            drawing_start = len(state.drawings)
-            image_start = len(state.inline_images)
-            line_start = len(state.lines)
-            text_boundary_start = len(state.text_boundaries)
+            marks = state.capture_marks()
             state.capture_source = "annotation_appearance"
             try:
                 state.stream_executor.consume(
@@ -163,14 +158,7 @@ def capture_annotation_appearances(
                         ),
                         source=annot,
                         clip_bbox=clip,
-                        program=CapturedProgram(
-                            runs=tuple(state.runs[run_start:]),
-                            glyphs=tuple(state.glyphs[glyph_start:]),
-                            drawings=tuple(state.drawings[drawing_start:]),
-                            inline_images=tuple(state.inline_images[image_start:]),
-                            lines=tuple(state.lines[line_start:]),
-                            text_boundaries=tuple(state.text_boundaries[text_boundary_start:]),
-                        ),
+                        program=state.captured_program(marks),
                     )
                 )
         except PdfParseError, ValueError:
@@ -194,14 +182,8 @@ def capture_page_program(
     )
     page.consume_contents(state)
     state.run_accumulator.flush()
-    body = CapturedProgram(
-        runs=tuple(state.runs),
-        glyphs=tuple(state.glyphs),
-        drawings=tuple(state.drawings),
-        inline_images=tuple(state.inline_images),
-        lines=tuple(state.lines),
-        text_boundaries=tuple(state.text_boundaries),
-    )
+    # Snapshot before the appearances run: they append to the same state.
+    body = state.captured_program()
     return PageProgram(
         body=body,
         appearances=capture_annotation_appearances(

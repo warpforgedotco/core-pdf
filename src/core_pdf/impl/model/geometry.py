@@ -82,6 +82,15 @@ def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | N
     )
 
 
+def extend_baseline(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
+    """Join two baselines end to end, keeping the left's start and the right's end."""
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return (left[0], left[1], right[2], right[3])
+
+
 def intersect_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
     if left is None:
         return right

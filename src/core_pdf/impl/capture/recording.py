@@ -5,8 +5,8 @@ from __future__ import annotations
 from contextlib import suppress
 from copy import copy
 from dataclasses import dataclass
-from math import ceil, hypot
-from typing import TYPE_CHECKING, Any, cast
+from math import ceil, hypot, isfinite
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy
 
@@ -17,7 +17,6 @@ from core_pdf.impl.capture.glyphs import (
     TextGeometry,
     capture_glyphs,
 )
-from core_pdf.impl.capture.marked_content import MarkedContentEntry
 from core_pdf.impl.capture.program import CapturedProgram
 from core_pdf.impl.capture.records import (
     CapturedDrawing,
@@ -33,22 +32,29 @@ from core_pdf.impl.capture.records import (
     TilingPattern,
     marker_drawing,
 )
+from core_pdf.impl.capture.recovery import CaptureRecovery, iter_content_operations
 from core_pdf.impl.capture.text_runs import (
     RunAccumulator,
     is_garbage_text,
 )
 from core_pdf.impl.capture.tolerant_state import COLOR_CACHE_LIMIT, RecoveringTextState
+from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
+from core_pdf.impl.fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import raw_color_space_paints
 from core_pdf.impl.graphics.soft_masks import image_overrides_graphics_soft_mask
-from core_pdf.impl.model.geometry import intersect_bbox, transform_bbox
-from core_pdf.impl.model.glyphs import (
-    GlyphObservation,
+from core_pdf.impl.model.geometry import (
+    extend_baseline,
+    intersect_bbox,
+    transform_bbox,
+    union_bbox,
 )
+from core_pdf.impl.model.glyphs import GlyphObservation, min_optional_confidence
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.model.text import normalize_extracted_text
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.runtime.scalars import parse_float_strict, parse_int_strict
 from core_pdf.impl.types import (
     PdfName,
     Rectangle,
@@ -61,7 +67,9 @@ from core_pdf_spec.s_07_content.model import (
 from core_pdf_spec.s_07_content.model import ShadingPattern as PdfShadingPattern
 from core_pdf_spec.s_07_content.model import TilingPattern as PdfTilingPattern
 from core_pdf_spec.s_07_content.streams import (
+    ContentStreamExecutor,
     ContentStreamFrame,
+    StreamKey,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
@@ -81,7 +89,6 @@ from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
 
 if TYPE_CHECKING:
-    from core_pdf.impl.capture.interpreter import TextState
     from core_pdf_spec.s_07_content.inline_images import InlineImage
 
 
@@ -90,6 +97,39 @@ class CaptureGraphicsSave:
     clip_bbox: Rectangle | None
     group_alpha: float | None
     clip_scope_emitted: bool = False
+
+
+@dataclass(slots=True)
+class MarkedContentEntry:
+    """A marked-content span's ActualText, and the one run it collapses to."""
+
+    layer: str | None = None
+    actual_text: str | None = None
+    mcid: int | None = None
+    run: TextRun | None = None
+    font_decoder: object | None = None
+    effective_font_height: float = 0.0
+
+    def add_run(
+        self,
+        run: TextRun,
+        *,
+        font_decoder: object | None = None,
+        effective_font_height: float = 0.0,
+    ) -> None:
+        captured = self.run
+        if captured is None:
+            self.run = run
+            self.font_decoder = font_decoder
+            self.effective_font_height = effective_font_height
+            return
+        captured.x0 = min(captured.x0, run.x0)
+        captured.y0 = min(captured.y0, run.y0)
+        captured.x1 = max(captured.x1, run.x1)
+        captured.y1 = max(captured.y1, run.y1)
+        captured.advance_bbox = cast(Rectangle, union_bbox(captured.advance_bbox, run.advance_bbox))
+        captured.baseline = extend_baseline(captured.baseline, run.baseline)
+        captured.confidence = min_optional_confidence(captured.confidence, run.confidence)
 
 
 MATRIX_TOLERANCE = 0.1
@@ -134,7 +174,83 @@ def detect_rotation_from_linear(
     return 0
 
 
-class RecordingMethods(RecoveringTextState):
+# The product lists a CapturedProgram is cut from, in the order its fields
+# take them. capture_marks/captured_program are the only places that need to
+# know the set, so adding a product means touching this tuple and those two.
+CaptureMarks: TypeAlias = tuple[int, int, int, int, int, int]
+NO_MARKS: CaptureMarks = (0, 0, 0, 0, 0, 0)
+
+
+class CaptureStreamExecutor(ContentStreamExecutor):
+    state: TextState
+    _operator_names: frozenset[bytes] | None = None
+
+    def is_reentrant(self, stream: PdfStream, stream_key: StreamKey | None, depth: int) -> bool:
+        return depth > 10 or (stream_key or self.execution_key(stream)) in self.active_streams
+
+    def queue(
+        self,
+        stream: PdfStream,
+        resources: PdfDict,
+        ctm: Matrix,
+        depth: int,
+        *,
+        clip_bbox: Rectangle | None = None,
+        form_bbox_operand: object = None,
+        group_alpha: float | None = None,
+        stream_key: StreamKey | None = None,
+    ) -> ContentStreamFrame | None:
+        if self.is_reentrant(stream, stream_key, depth):
+            return None
+        return super().queue(
+            stream,
+            resources,
+            ctm,
+            depth,
+            clip_bbox=clip_bbox,
+            form_bbox_operand=form_bbox_operand,
+            group_alpha=group_alpha,
+            stream_key=stream_key,
+        )
+
+    def enter(self, frame: ContentStreamFrame) -> bool:
+        if self.is_reentrant(frame.stream, frame.stream_key, frame.depth):
+            return False
+        return super().enter(frame)
+
+    def operator_names(self) -> frozenset[bytes]:
+        # Encoding all 71 handler names costs 6us, and iter_content_operations
+        # wants the set once per frame -- a page of form XObjects, tiling
+        # patterns and soft masks has thousands. The handler tables are built
+        # in the interpreter's __init__ and nothing mutates them afterwards.
+        names = self._operator_names
+        if names is None:
+            state = self.state
+            names = self._operator_names = frozenset(
+                name.encode("latin-1")
+                for name in (*state.default_handlers, *state.operator_overrides)
+            )
+        return names
+
+    def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
+        state = self.state
+        assert frame.lexer is not None
+        for name, operands in iter_content_operations(
+            frame.lexer,
+            recovery=state.recovery,
+            is_operator=self.operator_names().__contains__,
+        ):
+            child = state.execute_operation(name, operands, frame.depth)
+            if child is not None:
+                return child
+        return None
+
+    def handle_parse_error(self, frame: ContentStreamFrame, error: PdfParseError) -> None:
+        if not frame.is_form:
+            raise error
+
+
+class TextState(RecoveringTextState):
     document: Any
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
@@ -177,6 +293,116 @@ class RecordingMethods(RecoveringTextState):
     capture_mask_resources: dict[int, tuple[PdfSoftMask, PdfDict]]
     capture_active_mask_groups: set[int]
     scale_cache: tuple[Matrix, float] | None
+    stream_executor: CaptureStreamExecutor
+    stream_executor_type = CaptureStreamExecutor
+
+    def __init__(
+        self,
+        document: Any,
+        hidden_layers: frozenset[str] = frozenset(),
+        page_clip: Rectangle | None = None,
+        *,
+        capture_ink_bounds: bool = True,
+        capture_text_runs: bool = True,
+    ):
+        self.document = document
+        self.runs = []
+        self.glyphs = []
+        self.glyph_cluster_count = 0
+        self.lines = []
+        self.drawings = []
+        self.inline_images = []
+        self.hidden_layers = hidden_layers
+        self.page_clip = page_clip
+        self.capture_ink_bounds = capture_ink_bounds
+        self.capture_text_runs = capture_text_runs
+        self.clip_bbox = None
+        self.layout_form_bbox = None
+        self.layout_form_id = None
+        self.capture_source = "native_text"
+        self.stream_order = -1
+        self.sequence = 0
+        self.text_object_id = 0
+        self.text_boundaries = []
+        self.capture_text_open = False
+        self.capture_text_frames = {}
+        self.pending_line_break = False
+        self.group_alpha = None
+        self.run_accumulator = RunAccumulator(self.runs)
+        self.capture_graphics_stack = []
+        self.capture_marked_entries = {}
+        self.capture_frames = {}
+        self.capture_patterns = {}
+        self.capture_image_sources = {}
+        self.capture_colors = {}
+        self.capture_soft_masks = {}
+        self.capture_mask_resources = {}
+        self.capture_active_mask_groups = set()
+        self.capture_font_decoders = {}
+        self.capture_font_companions = {}
+
+        def font_provider(font: dict[str, Any], resources: dict[str, Any]) -> FontDecoder:
+            return FontDecoder(
+                font,
+                ligature_overrides=detect_ligature_overrides(document, resources, font),
+                raster_font_provider=getattr(document, "raster_font_provider", None),
+                semantic_context=getattr(
+                    document,
+                    "font_semantic_context",
+                    getattr(document.resolver, "semantic_context", None),
+                ),
+            )
+
+        super().__init__(
+            document.resolver,
+            sink=self,
+            font_provider=font_provider,
+            lexer_factory=PdfLexer,
+            semantic_context=getattr(document.resolver, "semantic_context", None),
+        )
+
+        self.recovery = CaptureRecovery()
+        self.normalized_colors = {}
+        self.parsed_soft_masks = {}
+        self.scale_cache = None
+
+        self.graphics.font_size = 12.0
+        self.graphics.fill_color = (0.0, 0.0, 0.0)
+        self.graphics.stroke_color = (0.0, 0.0, 0.0)
+
+    @staticmethod
+    def as_float(value: Any) -> float:
+        parsed = parse_float_strict(value, "invalid numeric operand")
+        if not isfinite(parsed):
+            raise ValueError("invalid numeric operand")
+        return parsed
+
+    @staticmethod
+    def as_int(value: Any) -> int:
+        return parse_int_strict(value, "invalid numeric operand")
+
+    def capture_marks(self) -> CaptureMarks:
+        """Where each product list stands, to cut a later program from."""
+        return (
+            len(self.runs),
+            len(self.glyphs),
+            len(self.drawings),
+            len(self.inline_images),
+            len(self.lines),
+            len(self.text_boundaries),
+        )
+
+    def captured_program(self, since: CaptureMarks = NO_MARKS) -> CapturedProgram:
+        """Everything captured, or everything captured since `since`."""
+        runs, glyphs, drawings, inline_images, lines, text_boundaries = since
+        return CapturedProgram(
+            runs=tuple(self.runs[runs:]),
+            glyphs=tuple(self.glyphs[glyphs:]),
+            drawings=tuple(self.drawings[drawings:]),
+            inline_images=tuple(self.inline_images[inline_images:]),
+            lines=tuple(self.lines[lines:]),
+            text_boundaries=tuple(self.text_boundaries[text_boundaries:]),
+        )
 
     def resolve_soft_mask(self, value: object) -> PdfSoftMask | None:
         mask = super().resolve_soft_mask(value)
@@ -269,7 +495,7 @@ class RecordingMethods(RecoveringTextState):
             blend_mode=self.graphics.blend_mode,
             group_alpha=self.group_alpha,
             alpha_is_shape=self.graphics.alpha_is_shape,
-            graphics_soft_mask=capture_graphics_soft_mask(self),
+            graphics_soft_mask=self.capture_graphics_soft_mask(),
             clip_glyph=4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible(),
         )
 
@@ -603,7 +829,7 @@ class RecordingMethods(RecoveringTextState):
                     soft_mask_alpha=self.group_alpha,
                     alpha_is_shape=self.graphics.alpha_is_shape,
                     kind=kind,
-                    graphics_soft_mask=capture_graphics_soft_mask(self),
+                    graphics_soft_mask=self.capture_graphics_soft_mask(),
                     fill_paints=fill_paints,
                     stroke_paints=stroke_paints,
                     path=path,
@@ -683,7 +909,7 @@ class RecordingMethods(RecoveringTextState):
                     kind="image",
                     graphics_soft_mask=None
                     if image_overrides_graphics_soft_mask(source)
-                    else capture_graphics_soft_mask(self),
+                    else self.capture_graphics_soft_mask(),
                     paints=paints,
                     image_source=source,
                     raw_data=xobj.raw_data,
@@ -730,7 +956,7 @@ class RecordingMethods(RecoveringTextState):
                     ctm=self.graphics.ctm,
                     graphics_soft_mask=None
                     if image_overrides_graphics_soft_mask(source)
-                    else capture_graphics_soft_mask(self),
+                    else self.capture_graphics_soft_mask(),
                     xobject_depth=self.xobject_depth,
                     blend_mode=self.graphics.blend_mode,
                     soft_mask_alpha=self.group_alpha,
@@ -764,7 +990,7 @@ class RecordingMethods(RecoveringTextState):
                 soft_mask_alpha=self.group_alpha,
                 alpha_is_shape=self.graphics.alpha_is_shape,
                 kind="shading",
-                graphics_soft_mask=capture_graphics_soft_mask(self),
+                graphics_soft_mask=self.capture_graphics_soft_mask(),
                 paints=raw_color_space_paints(dictionary.get("ColorSpace")),
                 color_rendering=self.graphics.color_rendering,
                 items=[],
@@ -870,7 +1096,7 @@ class RecordingMethods(RecoveringTextState):
                     group_isolated=frame.group_isolated,
                     group_knockout=frame.group_knockout,
                     alpha_is_shape=self.graphics.alpha_is_shape,
-                    graphics_soft_mask=capture_graphics_soft_mask(self),
+                    graphics_soft_mask=self.capture_graphics_soft_mask(),
                 )
             )
             self.sequence += 1
@@ -978,8 +1204,6 @@ class RecordingMethods(RecoveringTextState):
         }
 
     def nested_capture_state(self) -> TextState:
-        from core_pdf.impl.capture.interpreter import TextState
-
         nested = TextState(
             self.document,
             hidden_layers=self.hidden_layers,
@@ -1059,6 +1283,54 @@ class RecordingMethods(RecoveringTextState):
             )
         self.capture_patterns[key] = (pattern, result)
         return result
+
+    def capture_graphics_soft_mask(self) -> CapturedSoftMask | None:
+        mask = self.graphics.soft_mask
+        if mask is None:
+            return None
+        # The five fields the nested capture overrides carry no information: four
+        # are the same literals every time, and the fifth is mask.ctm, which id(mask)
+        # already pins. Keying on the rest lets the lookup happen before the state is
+        # copied, which is the whole cost on a hit -- 1.5us of copy plus five fields
+        # of state_key, against a lookup that is measured in nanoseconds.
+        key = (
+            id(mask),
+            tuple(state_key(getattr(self.graphics, name)) for name in MASK_KEYED_FIELDS),
+        )
+        cached = self.capture_soft_masks.get(key)
+        if cached is not None:
+            return cached[2]
+        graphics = copy(self.graphics)
+        graphics.ctm = mask.ctm
+        graphics.soft_mask = None
+        graphics.fill_opacity = graphics.stroke_opacity = 1.0
+        graphics.blend_mode = None
+        self.capture_soft_masks[key] = (mask, graphics, None)
+        group_key = id(mask.group)
+        if mask.subtype != "Alpha" or group_key in self.capture_active_mask_groups:
+            return None
+        if len(self.capture_active_mask_groups) >= 10:
+            return None
+        self.capture_active_mask_groups.add(group_key)
+        try:
+            nested = self.nested_capture_state()
+            nested.graphics = copy(graphics)
+            scope = self.capture_mask_resources.get(id(mask))
+            nested.resources = scope[1] if scope is not None else self.resources
+            frame = nested.append_form_xobject(mask.group, 0)
+            if frame is None:
+                return None
+            nested.stream_executor.consume_frame(frame)
+            nested.run_accumulator.flush()
+            if not nested.text_boundaries:
+                return None
+            result = CapturedSoftMask(nested.captured_program(), mask.transfer)
+            self.capture_soft_masks[key] = (mask, graphics, result)
+            return result
+        except PdfParseError, TypeError, ValueError, ArithmeticError:
+            return None
+        finally:
+            self.capture_active_mask_groups.remove(group_key)
 
     def named_value(self, value: object, *, allow_text: bool = False) -> str | None:
         resolver = cast(Any, self.resolver)
@@ -1149,62 +1421,3 @@ def state_key(value: object) -> object:
     if value is None or isinstance(value, (bool, int, float, str)):
         return (type(value), value)
     return ("identity", id(value))
-
-
-def capture_graphics_soft_mask(state: RecordingMethods) -> CapturedSoftMask | None:
-    mask = state.graphics.soft_mask
-    if mask is None:
-        return None
-    # The five fields the nested capture overrides carry no information: four
-    # are the same literals every time, and the fifth is mask.ctm, which id(mask)
-    # already pins. Keying on the rest lets the lookup happen before the state is
-    # copied, which is the whole cost on a hit -- 1.5us of copy plus five fields
-    # of state_key, against a lookup that is measured in nanoseconds.
-    key = (
-        id(mask),
-        tuple(state_key(getattr(state.graphics, name)) for name in MASK_KEYED_FIELDS),
-    )
-    cached = state.capture_soft_masks.get(key)
-    if cached is not None:
-        return cached[2]
-    graphics = copy(state.graphics)
-    graphics.ctm = mask.ctm
-    graphics.soft_mask = None
-    graphics.fill_opacity = graphics.stroke_opacity = 1.0
-    graphics.blend_mode = None
-    state.capture_soft_masks[key] = (mask, graphics, None)
-    group_key = id(mask.group)
-    if mask.subtype != "Alpha" or group_key in state.capture_active_mask_groups:
-        return None
-    if len(state.capture_active_mask_groups) >= 10:
-        return None
-    state.capture_active_mask_groups.add(group_key)
-    try:
-        nested = state.nested_capture_state()
-        nested.graphics = copy(graphics)
-        scope = state.capture_mask_resources.get(id(mask))
-        nested.resources = scope[1] if scope is not None else state.resources
-        frame = nested.append_form_xobject(mask.group, 0)
-        if frame is None:
-            return None
-        nested.stream_executor.consume_frame(frame)
-        nested.run_accumulator.flush()
-        if not nested.text_boundaries:
-            return None
-        result = CapturedSoftMask(
-            CapturedProgram(
-                runs=tuple(nested.runs),
-                glyphs=tuple(nested.glyphs),
-                drawings=tuple(nested.drawings),
-                inline_images=tuple(nested.inline_images),
-                lines=tuple(nested.lines),
-                text_boundaries=tuple(nested.text_boundaries),
-            ),
-            mask.transfer,
-        )
-        state.capture_soft_masks[key] = (mask, graphics, result)
-        return result
-    except PdfParseError, TypeError, ValueError, ArithmeticError:
-        return None
-    finally:
-        state.capture_active_mask_groups.remove(group_key)

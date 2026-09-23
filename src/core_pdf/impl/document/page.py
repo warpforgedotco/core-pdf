@@ -8,11 +8,11 @@ from contextlib import suppress
 from copy import replace
 from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl.capture.interpreter import TextState
 from core_pdf.impl.capture.page import (
     capture_page_program,
 )
 from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.document.page_links import (
     link_target_direct,
     link_target_resolved,

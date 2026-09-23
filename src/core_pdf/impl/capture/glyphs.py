@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from math import ceil
 
-from core_pdf.impl.capture.marked_content import min_optional_confidence
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts.font_program import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.model.geometry import transform_bbox
@@ -14,6 +13,7 @@ from core_pdf.impl.model.glyphs import (
     GlyphObservation,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
+    min_optional_confidence,
 )
 from core_pdf.impl.types import Rectangle
 

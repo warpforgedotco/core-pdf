@@ -605,6 +605,15 @@ CONFIDENCE_CACHE: dict[tuple[str, str, tuple[str, ...]], float] = {}
 CONFIDENCE_CACHE_LIMIT = 8192
 
 
+def min_optional_confidence(left: float | None, right: float | None) -> float | None:
+    """The lower of two confidences, treating an absent one as no evidence."""
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return min(left, right)
+
+
 def glyph_unicode_confidence(
     text: str,
     unicode_source: str,
