@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
-from core_predictors.errors import PredictorError, UnsupportedPngFilterError
-from core_predictors.png import png_predict
-from core_predictors.tiff import tiff_predict
+from core_predictors import (
+    PredictorError,
+    UnsupportedPngFilterError,
+    png_predict,
+    tiff_predict,
+)
 
 SUPPORTED_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})
 

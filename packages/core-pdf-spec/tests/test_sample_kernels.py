@@ -9,7 +9,7 @@ from core_pdf_spec.s_08_graphics.color_kernels import (
     unpack_image_samples,
     unpack_subbyte_image_samples,
 )
-from core_predictors.tiff import tiff_predict_bits
+from core_predictors import tiff_predict_bits
 
 
 def test_color_key_requires_all_original_components_in_inclusive_ranges() -> None:

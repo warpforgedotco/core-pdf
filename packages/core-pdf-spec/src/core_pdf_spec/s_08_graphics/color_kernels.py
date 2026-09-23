@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy
 
-from core_predictors.samples import unpack_subbyte_rows
+from core_predictors import unpack_subbyte_rows
 
 
 def unpack_subbyte_image_samples(

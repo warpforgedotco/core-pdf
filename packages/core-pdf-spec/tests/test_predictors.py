@@ -7,9 +7,12 @@ from core_pdf_spec.s_07_filters.predictors import (
     apply_predictor,
     apply_tiff_predictor,
 )
-from core_predictors.errors import PredictorError, UnsupportedPngFilterError
-from core_predictors.png import png_predict
-from core_predictors.tiff import tiff_predict
+from core_predictors import (
+    PredictorError,
+    UnsupportedPngFilterError,
+    png_predict,
+    tiff_predict,
+)
 
 
 def test_png_rejects_an_incomplete_final_row_before_decoding_any_filter() -> None:

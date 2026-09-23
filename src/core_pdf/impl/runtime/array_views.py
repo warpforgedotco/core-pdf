@@ -6,7 +6,7 @@ from typing import Any, TypeAlias
 
 import numpy
 
-from core_predictors.samples import uint8_view
+from core_predictors import uint8_view
 
 ByteBuffer: TypeAlias = bytes | bytearray | memoryview | numpy.ndarray[Any, Any]
 UInt8Array = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]

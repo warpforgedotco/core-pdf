@@ -202,8 +202,8 @@ the spec modules keep only the PDF wrappers:
 
 - `s_07_filters.predictors` keeps `apply_predictor`, `apply_tiff_predictor`,
   `apply_png_predictor`, and `SUPPORTED_PREDICTOR_BITS`; `png_predict`, `tiff_predict*`,
-  `PredictorError`, and `UnsupportedPngFilterError` are in `core_predictors.{png,tiff,errors}`,
-  and the sub-byte unpacker is public as `core_predictors.samples.unpack_subbyte_rows`.
+  `PredictorError`, and `UnsupportedPngFilterError` are in `core_predictors`, and the
+  sub-byte unpacker is public as `core_predictors.unpack_subbyte_rows`.
 - `s_08_graphics.calculator` keeps the Domain/Range reader; the language is
   `core_postscript.calculator.compile_calculator(source, domains, ranges)`.
 - `s_07_filters.jbig2` is now a module exporting `decode_jbig2`; the decoder, segment

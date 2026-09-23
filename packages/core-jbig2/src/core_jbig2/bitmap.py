@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy
 
-from core_predictors.samples import uint8_view
+from core_predictors import uint8_view
 
 
 def uint8_matrix_view(

@@ -1,7 +1,6 @@
 import pytest
 
-from core_predictors.errors import PredictorError
-from core_predictors.tiff import tiff_predict, tiff_predict_bits
+from core_predictors import PredictorError, tiff_predict, tiff_predict_bits
 
 
 def pack_samples(rows: list[list[int]], bits: int) -> bytes:

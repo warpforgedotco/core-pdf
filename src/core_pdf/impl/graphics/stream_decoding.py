@@ -11,8 +11,7 @@ import imagecodecs
 import numpy
 
 import core_pdf_spec.s_07_filters.codecs as strict
-import core_predictors.png as strict_png
-import core_predictors.tiff as strict_tiff
+import core_predictors as strict_predictors
 from core_jbig2.bitmap import compose_packed_bitmap_data
 from core_jbig2.codec import (
     JBIG2GenericRegionHeader,
@@ -51,7 +50,7 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     WHITESPACE,
     WS_TABLE,
 )
-from core_predictors.errors import PredictorError, UnsupportedPngFilterError
+from core_predictors import PredictorError, UnsupportedPngFilterError
 
 if TYPE_CHECKING:
     FilterFn = Callable[[bytes, object], bytes]
@@ -271,7 +270,7 @@ def png_predict(
             if data[start] > 4:
                 stop = start
                 break
-    return strict_png.png_predict(
+    return strict_predictors.png_predict(
         data[:stop], columns=columns, colors=colors, bits_per_component=bits_per_component
     )
 
@@ -341,7 +340,7 @@ def tiff_predict(
     )
     if decoded is not None:
         return decoded
-    return strict_tiff.tiff_predict(
+    return strict_predictors.tiff_predict(
         data, columns=columns, colors=colors, bits_per_component=bits_per_component
     )
 
