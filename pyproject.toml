@@ -163,6 +163,12 @@ line-length = 100
 # Stream filters share the FilterFn signature: (data, parms).
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_filters/codecs.py" = ["ARG001"]
 "src/core_pdf/impl/graphics/stream_decoding.py" = ["ARG001"]
+# FURB136 rewrites `a if a < b else b` back into min()/max(). Both spellings
+# are fine, but min(a, b) is a call with tuple packing where the conditional
+# is a compare and a jump -- measured 3.2x cheaper. These run per glyph, over
+# coordinates as_floats has already proved finite, so the NaN difference the
+# two spellings have cannot arise here.
+"src/core_pdf/impl/capture/glyphs.py" = ["FURB136"]
 # Scanner callbacks share the (data, pos, ..., semantic_context) signature.
 "src/core_pdf/impl/document/recovery/xref.py" = ["ARG001", "ARG004"]
 # Content operator handlers and semantic-sink callbacks share fixed signatures.
