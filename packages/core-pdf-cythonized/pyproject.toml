@@ -55,7 +55,7 @@ test-command = "pytest -q {package}/tests"
 archs = ["x86_64", "aarch64"]
 
 [tool.cibuildwheel.macos]
-archs = ["arm64", "x86_64"]
+archs = ["arm64"]
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]

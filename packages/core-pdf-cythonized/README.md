@@ -83,8 +83,13 @@ Together the two render kernels take full `render().rasterize()` down by
 
 `core-pdf` depends on this distribution, so it cannot be installed from source
 without a compiler. `.github/workflows/wheels.yml` builds wheels with
-cibuildwheel for CPython 3.14 on Linux (x86_64, aarch64), macOS (arm64,
-x86_64) and Windows (AMD64), plus an sdist for anything else.
+cibuildwheel for CPython 3.14 on Linux (x86_64, aarch64), macOS (arm64) and
+Windows (AMD64), plus an sdist for anything else.
+
+There is no macOS x86_64 wheel. Its runner image is retired, and every way of
+producing one from an arm64 runner gives up running the golden vectors on the
+wheel that was built -- which is the one thing this matrix exists to do. Intel
+Macs build from the sdist instead.
 
 Every wheel runs the golden vectors before it is kept. That is not ceremony:
 the rest of the repo tests on Linux only, and float behaviour is exactly what

@@ -36,8 +36,12 @@ jobs:
         include:
           - { os: ubuntu-latest, label: "linux x86_64", archs: x86_64 }
           - { os: ubuntu-24.04-arm, label: "linux aarch64", archs: aarch64 }
-          - { os: macos-14, label: "macos arm64", archs: arm64 }
-          - { os: macos-13, label: "macos x86_64", archs: x86_64 }
+          # No macOS x86_64: its runner (macos-13) is retired, and the
+          # alternatives all give up the property that matters here -- cross
+          # compiling from arm64 cannot run the golden vectors on the wheel it
+          # produces, so the wheel would ship unverified on the one axis this
+          # matrix exists to check.
+          - { os: macos-15, label: "macos arm64", archs: arm64 }
           - { os: windows-latest, label: "windows AMD64", archs: AMD64 }
 
     steps:
