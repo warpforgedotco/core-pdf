@@ -79,6 +79,24 @@ Together the two render kernels take full `render().rasterize()` down by
 | billionaires | 505 ms | ~388 ms |
 | issue-301 | 1007 ms | ~794 ms |
 
+## Wheels
+
+`core-pdf` depends on this distribution, so it cannot be installed from source
+without a compiler. `.github/workflows/wheels.yml` builds wheels with
+cibuildwheel for CPython 3.14 on Linux (x86_64, aarch64), macOS (arm64,
+x86_64) and Windows (AMD64), plus an sdist for anything else.
+
+Every wheel runs the golden vectors before it is kept. That is not ceremony:
+the rest of the repo tests on Linux only, and float behaviour is exactly what
+a different compiler on a different platform changes. `setup.py` picks the
+contraction flag per compiler for the same reason -- passing the GCC/Clang
+spelling to MSVC would be worse than passing nothing, because MSVC warns and
+carries on, and the build would succeed with semantics the vectors do not
+describe.
+
+The sdist carries the tests and their golden data, so a source build can check
+itself on a platform no wheel covers.
+
 ## Building and testing
 
 Needs a C compiler. From the workspace root:

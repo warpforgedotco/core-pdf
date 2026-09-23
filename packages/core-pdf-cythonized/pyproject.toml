@@ -29,3 +29,28 @@ core_pdf_cythonized = ["py.typed", "*.pyi", "*.pyx"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["**/__pycache__/*", "**/*.pyc"]
+
+[tool.cibuildwheel]
+# The workspace is Python 3.14+ only, and nothing here works on a
+# non-CPython interpreter: the kernels are CPython C-API extensions.
+build = "cp314-*"
+skip = ["pp*"]
+build-frontend = "build"
+
+# The golden vectors are the point of running tests here. They pin the
+# kernels' float arithmetic bit for bit, and float behaviour is exactly what a
+# different compiler on a different platform can change -- an FMA contraction
+# moves a root by one ULP. This repo otherwise tests on Linux only, so these
+# vectors are the only thing standing between a Windows or macOS wheel and
+# silently different output.
+test-requires = ["pytest", "numpy>=2.5.1"]
+test-command = "pytest -q {package}/tests"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
+
+[tool.cibuildwheel.macos]
+archs = ["arm64", "x86_64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]

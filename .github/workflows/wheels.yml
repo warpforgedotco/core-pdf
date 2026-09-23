@@ -1,0 +1,93 @@
+name: Wheels
+
+# core-pdf-cythonized is the only workspace member shipping a C extension, and
+# core-pdf depends on it, so core-pdf cannot be installed from source without a
+# compiler. These are the wheels that make that unnecessary.
+#
+# The rest of the repo tests on Linux only. Every wheel therefore runs the
+# kernels' golden vectors before it is kept (see [tool.cibuildwheel] in the
+# package's pyproject): they pin float arithmetic bit for bit, which is the
+# thing a different compiler on a different platform actually changes.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - "packages/core-pdf-cythonized/**"
+      - ".github/workflows/wheels.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wheels:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, label: "linux x86_64", archs: x86_64 }
+          - { os: ubuntu-24.04-arm, label: "linux aarch64", archs: aarch64 }
+          - { os: macos-14, label: "macos arm64", archs: arm64 }
+          - { os: macos-13, label: "macos x86_64", archs: x86_64 }
+          - { os: windows-latest, label: "windows AMD64", archs: AMD64 }
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.23.3
+        with:
+          package-dir: packages/core-pdf-cythonized
+        env:
+          CIBW_ARCHS: ${{ matrix.archs }}
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.archs }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build sdist
+        run: uv build --sdist --package core-pdf-cythonized --out-dir dist
+
+      # Consumers without a matching wheel install from this, compiling the
+      # kernels themselves. Unpack it somewhere else entirely and run its own
+      # tests, so the check fails if the sdist is missing sources or the golden
+      # vectors rather than quietly falling back on the repo checkout.
+      - name: Check the sdist builds and tests standalone
+        run: |
+          mkdir -p /tmp/unpacked
+          tar xzf dist/*.tar.gz -C /tmp/unpacked
+          uv venv --python 3.14 /tmp/sdist-check
+          uv pip install --python /tmp/sdist-check/bin/python --no-binary :all: dist/*.tar.gz
+          uv pip install --python /tmp/sdist-check/bin/python pytest "numpy>=2.5.1"
+          cd /tmp/unpacked/core_pdf_cythonized-* && /tmp/sdist-check/bin/python -m pytest -q tests
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error

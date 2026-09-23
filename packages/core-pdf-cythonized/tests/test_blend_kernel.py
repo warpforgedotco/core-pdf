@@ -67,6 +67,10 @@ def test_empty_buffer_is_a_no_op():
 
 
 def test_render_target_uses_the_kernel():
+    # These wire-up assertions need the consumer installed. The kernel tests
+    # otherwise stand alone, so cibuildwheel can run the golden vectors
+    # against a freshly built wheel with nothing else present.
+    pytest.importorskip("core_pdf")
     from core_pdf.impl.render import blend, target
 
     assert target.blend_normal_alpha_array_numpy is blend_normal_alpha_array_numpy

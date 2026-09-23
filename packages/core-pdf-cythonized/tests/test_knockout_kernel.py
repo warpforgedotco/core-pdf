@@ -64,12 +64,17 @@ def test_pixels_outside_the_shape_are_left_alone():
 
 
 def test_render_target_uses_the_kernel():
+    # These wire-up assertions need the consumer installed. The kernel tests
+    # otherwise stand alone, so cibuildwheel can run the golden vectors
+    # against a freshly built wheel with nothing else present.
+    pytest.importorskip("core_pdf")
     from core_pdf.impl.render import target
 
     assert target.composite_knockout_group is composite_knockout_group
 
 
 def test_spec_no_longer_owns_the_algorithm():
+    pytest.importorskip("core_pdf_spec")
     from core_pdf_spec.s_11_transparency import groups
 
     assert not hasattr(groups, "composite_knockout_element")
