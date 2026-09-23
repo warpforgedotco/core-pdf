@@ -390,17 +390,7 @@ def glyph_evidence_fields(
     replacements: Mapping[int, str],
 ) -> GlyphEvidence:
     evidence = native_glyph_evidence_fields(
-        (
-            (
-                glyph.text,
-                glyph.visible,
-                glyph.font_decoder,
-                glyph.code_bytes,
-                glyph.unicode_source,
-                glyph.confidence,
-            )
-            for glyph in glyphs
-        ),
+        ((glyph.text, glyph.unicode_source, glyph.confidence) for glyph in glyphs),
         runs,
     )
     if not replacements:

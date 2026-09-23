@@ -257,7 +257,7 @@ def apply_structure_actual_text(
 
 
 def glyph_evidence_fields(
-    glyph_fields: Iterable[tuple[str, bool, object, bytes, str, float | None]],
+    glyph_fields: Iterable[tuple[str, str, float | None]],
     runs: tuple[TextRun, ...],
 ) -> GlyphEvidence:
     authoritative = 0
@@ -267,14 +267,7 @@ def glyph_evidence_fields(
     low_confidence = 0
     semantic_characters = 0
     glyph_count = 0
-    for (
-        glyph_text,
-        ignored_visible,
-        decoder,
-        code_bytes,
-        unicode_source,
-        confidence,
-    ) in glyph_fields:
+    for glyph_text, unicode_source, confidence in glyph_fields:
         if not glyph_text or glyph_text.isspace():
             continue
         glyph_count += 1
@@ -507,17 +500,7 @@ def capture_from_program(
         painted_text_quality = painted_analysis.quality
         painted_native_characters = painted_analysis.characters
     glyph_evidence = glyph_evidence or glyph_evidence_fields(
-        (
-            (
-                glyph.text,
-                glyph.visible,
-                glyph.font_decoder,
-                glyph.code_bytes,
-                glyph.unicode_source,
-                glyph.confidence,
-            )
-            for glyph in program.glyphs
-        ),
+        ((glyph.text, glyph.unicode_source, glyph.confidence) for glyph in program.glyphs),
         raw_runs,
     )
     trusted_hidden_text = hidden_text_is_trusted(
