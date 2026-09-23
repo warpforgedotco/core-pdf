@@ -207,14 +207,31 @@ def test_painting_a_fill_back_over_the_first_takes_a_group(
     assert grouped(target, items, monkeypatch) == [False, False, True]
 
 
+def image_item(quad: Any) -> ImagePaintItem:
+    return ImagePaintItem("image", 0, None, None, quad, None, None, None, None, None, {})
+
+
 def test_a_fill_over_an_image_takes_a_group(monkeypatch: pytest.MonkeyPatch) -> None:
     """An image composites in through an elementary group and leaves pixels
-    behind, but nothing the item carries bounds them: blit_image derives its
-    own quad. A later fill must not be told the backdrop is untouched."""
+    behind. A later fill landing on them must not be told the backdrop is
+    untouched -- item.bbox does not bound them, but the placement quad does."""
     target = knockout_target()
-    image = ImagePaintItem("image", 0, (0, 0, 5, 5), None, None, None, None, None, None, None, {})
-    items = [image, fill_item((0, 0, 5, 5))]
-    assert grouped(target, items, monkeypatch) == [True, True]
+    image = image_item(((0, 0), (5, 0), (5, 5), (0, 5)))
+    assert grouped(target, [image, fill_item((1, 1, 4, 4))], monkeypatch) == [True, True]
+
+
+def test_a_fill_clear_of_an_image_still_skips(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An image never skips its own group, but bounding it by the quad keeps
+    the rest of the group eligible instead of retiring the test."""
+    target = knockout_target()
+    image = image_item(((0, 0), (5, 0), (5, 5), (0, 5)))
+    assert grouped(target, [image, fill_item((20, 20, 25, 25))], monkeypatch) == [True, False]
+
+
+def test_an_image_with_no_placement_occupies_the_whole_page() -> None:
+    target, group = make_target(), knockout_group()
+    assert needs_group(target, group, image_item(None)) is True
+    assert group.painted_boxes == [(0, 0, target.width, target.height)]
 
 
 def test_a_fill_over_a_stroke_takes_a_group(monkeypatch: pytest.MonkeyPatch) -> None:

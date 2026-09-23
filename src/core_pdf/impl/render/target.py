@@ -630,19 +630,25 @@ class RasterTarget:
 
         Only a superset of the pixels it touches is wanted, so that a later
         element missing this box provably misses every pixel this one wrote.
-        Only a plain fill is bounded here: a stroke reaches half a line width
-        beyond the path bbox, `blit_image` derives its own quad rather than
-        using `item.bbox`, and a shading paints an extent the item does not
-        carry. Pattern fills and blend modes stay bounded even though they
-        cannot skip the group, because they still paint inside the box.
+        A fill and an image are bounded; a stroke reaches half a line width
+        beyond the path bbox and a shading paints an extent the item does not
+        carry, so neither is. Pattern fills, blend modes and images stay
+        bounded even though they cannot skip the group, because they do paint
+        inside the box and nowhere else.
         """
-        if not isinstance(item, PathPaintItem) or item.paint_kind is not PathPaintKind.FILL:
-            return None
-        bbox = item.bbox
-        if bbox is None or item.edge_array is None:
+        if isinstance(item, ImagePaintItem):
+            # blit_image ignores item.bbox and derives this same box from the
+            # placement quad, then paints inside it.
+            quad = image_placement(item)
+            bbox = None if quad is None else points_bbox(quad)
+        elif isinstance(item, PathPaintItem) and item.paint_kind is PathPaintKind.FILL:
             # Without an edge array, fill_path derives its own bbox from the
             # path and may not land on the box computed here. Only the glyph
             # case, where it provably uses item.bbox, is bounded.
+            bbox = item.bbox if item.edge_array is not None else None
+        else:
+            return None
+        if bbox is None:
             return None
         clipped = self.clip.clipped_pixel_box(bbox)
         if clipped is None:
@@ -702,11 +708,14 @@ class RasterTarget:
                 disjoint = False
                 break
         self.record_knockout_paint(box)
-        if disjoint and isinstance(item, PathPaintItem):
-            # Bounded, and so worth recording, but a pattern fill or a blend
-            # mode does not composite the way the collapsed formula assumes.
-            return item.fill_pattern is None and item.blend_mode in (None, "Normal")
-        return disjoint
+        if not disjoint or not isinstance(item, PathPaintItem):
+            # An image is bounded, and so worth recording, but blit_affine_image
+            # does its own alpha and shape bookkeeping; only a fill is known to
+            # reduce to a direct paint.
+            return False
+        # A pattern fill or a blend mode does not composite the way the
+        # collapsed formula assumes either, though it does stay in its box.
+        return item.fill_pattern is None and item.blend_mode in (None, "Normal")
 
     def paint_item(self, item: DisplayItem) -> None:
         if isinstance(item, (PathPaintItem, ImagePaintItem)) or item.kind in {"glyph", "shading"}:
