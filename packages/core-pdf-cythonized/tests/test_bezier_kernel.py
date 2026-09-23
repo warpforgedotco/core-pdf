@@ -48,6 +48,10 @@ def test_sample_times_are_sorted_unique_and_bounded():
 
 def test_core_imports_the_kernel_directly():
     """core-pdf depends on this distribution; there is no fallback to shadow it."""
+    # These wire-up assertions need the consumer installed. The kernel tests
+    # otherwise stand alone, so cibuildwheel can run the golden vectors
+    # against a freshly built wheel with nothing else present.
+    pytest.importorskip("core_pdf")
     from core_pdf.impl.fonts import font_program
 
     assert font_program.cubic_sample_times is cubic_sample_times

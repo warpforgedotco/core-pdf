@@ -1,0 +1,7 @@
+# The sdist carries the tests, so it must carry what they assert against: the
+# golden vectors are the only check that a source build on an untested
+# platform produces the same floats as the reference implementations did.
+recursive-include tests *.json *.gz
+include src/core_pdf_cythonized/*.pyx
+include src/core_pdf_cythonized/*.pyi
+include src/core_pdf_cythonized/py.typed

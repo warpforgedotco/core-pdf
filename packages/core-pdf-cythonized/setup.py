@@ -2,38 +2,60 @@
 """Cython build hook.
 
 Kept as a setup.py because the extension list has to be produced by
-cythonize() at build time; everything else about the distribution is declared
-in pyproject.toml.
+cythonize() at build time, and because the float-contraction flags have to be
+chosen per compiler; everything else about the distribution is declared in
+pyproject.toml.
 """
 
 from pathlib import Path
 
 from setuptools import setup
+from setuptools.command.build_ext import build_ext
 
 # The kernels must reproduce CPython's float arithmetic bit for bit, and
-# CPython does not fuse. Left to itself the compiler contracts expressions
-# like b*b - 4*a*c into an FMA, which is more accurate and therefore wrong
-# here: it moves a root by one ULP and the differential tests fail. Turning
-# contraction off is what makes 'identical output' true rather than close.
-STRICT_FLOAT_ARGS = ["-ffp-contract=off"]
+# CPython does not fuse. Left to itself a compiler contracts expressions like
+# b*b - 4*a*c into an FMA, which is more accurate and therefore wrong here: it
+# moves a root by one ULP and the golden vectors fail.
+#
+# These are per-compiler because there is no portable spelling. Passing the
+# GCC/Clang flag to MSVC would be worse than passing nothing: MSVC warns and
+# carries on, so the build would succeed with the wrong semantics and only the
+# golden vectors would notice -- on a platform this repo does not otherwise
+# test.
+CONTRACTION_FLAGS = {
+    "unix": ["-ffp-contract=off"],
+    "mingw32": ["-ffp-contract=off"],
+    # MSVC has no direct equivalent. /fp:precise is the default and does not
+    # contract on x64, but it is stated explicitly so an inherited setting
+    # cannot quietly enable it, and so ARM64 (which otherwise may contract) is
+    # covered too.
+    "msvc": ["/fp:precise"],
+}
 
 SOURCES = sorted(str(path) for path in Path("src").rglob("*.pyx"))
 
 
+class BuildExtWithStrictFloats(build_ext):
+    """Apply the contraction flags once the compiler is actually known."""
+
+    def build_extensions(self) -> None:
+        flags = CONTRACTION_FLAGS.get(self.compiler.compiler_type)
+        if flags is None:
+            raise RuntimeError(
+                f"unknown compiler {self.compiler.compiler_type!r}: refusing to build "
+                "without a float-contraction flag, because the kernels would compile "
+                "with semantics the golden vectors do not describe"
+            )
+        for extension in self.extensions:
+            extension.extra_compile_args = [*extension.extra_compile_args, *flags]
+        super().build_extensions()
+
+
 def extensions() -> list:
     from Cython.Build import cythonize
-    from setuptools import Extension
 
-    modules = [
-        Extension(
-            source.removeprefix("src/").removesuffix(".pyx").replace("/", "."),
-            [source],
-            extra_compile_args=STRICT_FLOAT_ARGS,
-        )
-        for source in SOURCES
-    ]
     return cythonize(
-        modules,
+        SOURCES,
         language_level="3",
         compiler_directives={
             "boundscheck": False,
@@ -44,4 +66,4 @@ def extensions() -> list:
     )
 
 
-setup(ext_modules=extensions())
+setup(ext_modules=extensions(), cmdclass={"build_ext": BuildExtWithStrictFloats})

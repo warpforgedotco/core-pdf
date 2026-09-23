@@ -7,7 +7,7 @@ from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
-from core_pdf_spec.types import PdfReference
+from core_pdf_spec.types import PdfName, PdfReference
 
 
 @pytest.mark.parametrize("ending", [b"", b"\n", b"\r", b"\r\n", b"\n\r", b" \n", b"\t\r\n"])
@@ -311,7 +311,9 @@ def test_object_stream_recovery_skips_unusable_containers(kind):
     elif kind == "stale":
         parsed[key_for(1)] = (101, stream)
     elif kind == "wrong-type":
-        stream.dictionary = {"Type": "Other"}
+        # A PDF name, not a bare str: PdfObject has no str member, and the
+        # reader reaches this through recover_pdf_name, which takes either.
+        stream.dictionary = {"Type": PdfName.of(b"Other")}
     else:
         stream.dictionary = {"N": -1, "First": 0}
     entries = {key_for(1): entry}

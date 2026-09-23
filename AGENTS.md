@@ -47,8 +47,12 @@ One kernel, `composite_knockout_element`, owns its algorithm outright: ISO 32000
 11.4.x knockout compositing moved out of spec, with its conformance tests, so that
 spec could stay pure Python rather than become a compiled distribution. That is the
 only member of the package that is not a mirror of code owned elsewhere. The build
-sets `-ffp-contract=off`: the kernels must reproduce CPython float semantics exactly, and
-compilers contract expressions into FMAs that shift results by an ULP.
+disables float contraction -- `-ffp-contract=off` on GCC/Clang, `/fp:precise` on MSVC,
+chosen per compiler in `setup.py` because passing the wrong spelling would build with
+semantics the golden vectors do not describe. The kernels must reproduce CPython float
+semantics exactly, and compilers contract expressions into FMAs that shift results by an
+ULP. `.github/workflows/wheels.yml` builds wheels with cibuildwheel and runs the golden
+vectors against each one, which is the only cross-platform check this repo has.
 
 The optional `core-pdf-validate` workspace member owns external validator adapters and reports.
 Core, spec, and OCR must never import or discover it. Explicit validation uses original source

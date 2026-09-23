@@ -58,6 +58,10 @@ def test_coverage_is_bounded_to_unit_range():
 
 
 def test_render_target_uses_the_kernel():
+    # These wire-up assertions need the consumer installed. The kernel tests
+    # otherwise stand alone, so cibuildwheel can run the golden vectors
+    # against a freshly built wheel with nothing else present.
+    pytest.importorskip("core_pdf")
     from core_pdf.impl.render import paths, target
 
     assert target.signed_area_coverage is signed_area_coverage
