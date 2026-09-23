@@ -4,7 +4,7 @@ import struct
 import zlib
 from os import PathLike
 from pathlib import Path
-from typing import Any, BinaryIO, cast
+from typing import Any, BinaryIO
 
 from core_pdf.impl.model.geometry import rect_tuple
 
@@ -34,7 +34,7 @@ def coerce_bbox(value: object) -> BBox:
 
 def write_bytes(target: str | PathLike[str] | BinaryIO, data: bytes) -> None:
     if isinstance(target, (str, PathLike)):
-        Path(cast(str | PathLike[str], target)).write_bytes(data)
+        Path(target).write_bytes(data)
     else:
         target.write(data)
 

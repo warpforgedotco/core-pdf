@@ -824,7 +824,7 @@ def iter_indirect_object_headers(
     search_start: int,
     search_end: int,
     *,
-    source_buffer: FindableSizedBuffer | None = None,
+    source_buffer: bytes | FindableSizedBuffer | None = None,
     allow_prefix_before_start: bool = False,
     semantic_context: SemanticContext | None = None,
 ) -> Iterator[tuple[int, int, int]]:

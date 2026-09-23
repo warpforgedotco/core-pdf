@@ -16,8 +16,10 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName, PdfReference
 
 
-def make_state() -> ContentInterpreter:
-    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, None), cast(Any, None))
+def make_state(
+    interpreter_class: type[ContentInterpreter] = ContentInterpreter,
+) -> ContentInterpreter:
+    return interpreter_class(ObjectResolver(b"", {}), cast(Any, None), cast(Any, None))
 
 
 @pytest.mark.parametrize("entry_point", ["operator", "application"])
@@ -67,22 +69,20 @@ def test_extgstate_keeps_earlier_fields_when_a_later_field_is_invalid(entry_poin
     ) == (0.5, 0.75, "Screen")
 
 
-def test_extgstate_application_retains_polymorphic_coercion_order(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    state = make_state()
+def test_extgstate_application_retains_polymorphic_coercion_order() -> None:
     calls: list[tuple[str, object]] = []
 
-    def number(value: object) -> float:
-        calls.append(("number", value))
-        return 0.25 if value == "fill" else 0.75
+    class CoercingInterpreter(ContentInterpreter):
+        @staticmethod
+        def as_float(value: Any) -> float:
+            calls.append(("number", value))
+            return 0.25 if value == "fill" else 0.75
 
-    def name(value: object, *, allow_text: bool = False) -> str:
-        calls.append(("name", value))
-        return "Screen"
+        def named_value(self, value: object, *, allow_text: bool = False) -> str | None:
+            calls.append(("name", value))
+            return "Screen"
 
-    monkeypatch.setattr(state, "as_float", number)
-    monkeypatch.setattr(state, "named_value", name)
+    state = make_state(CoercingInterpreter)
     state.apply_extgstate({"ca": "fill", "CA": "stroke", "BM": ["blend", "unused"]})
     assert calls == [("number", "fill"), ("number", "stroke"), ("name", "blend")]
     assert (
@@ -95,9 +95,17 @@ def test_extgstate_application_retains_polymorphic_coercion_order(
 @pytest.mark.parametrize("stream", [False, True], ids=["shading-dictionary", "tiling-stream"])
 @pytest.mark.parametrize("indirect", [False, True])
 def test_pattern_resource_lookup_preserves_source_identity_and_laziness(
-    monkeypatch: pytest.MonkeyPatch, stream: bool, indirect: bool
+    stream: bool, indirect: bool
 ) -> None:
-    state = make_state()
+    calls: list[tuple[str, str]] = []
+    selection: list[object] = []
+
+    class LookupRecordingInterpreter(ContentInterpreter):
+        def lookup_page_resource(self, category: str, name: str) -> object:
+            calls.append((category, name))
+            return selection[0]
+
+    state = make_state(LookupRecordingInterpreter)
     resolver = cast(ObjectResolver, state.resolver)
     dictionary: PdfDict = {
         "PatternType": 1 if stream else 2,
@@ -114,13 +122,7 @@ def test_pattern_resource_lookup_preserves_source_identity_and_laziness(
     source = PdfStream(dictionary=dictionary, decoder=unexpected_decode) if stream else dictionary
     reference = PdfReference(1, 0)
     resolver.objects[key_for(1, 0)] = source
-    calls: list[tuple[str, str]] = []
-
-    def lookup(category: str, name: str) -> object:
-        calls.append((category, name))
-        return reference if indirect else source
-
-    monkeypatch.setattr(state, "lookup_page_resource", lookup)
+    selection.append(reference if indirect else source)
     selected = state.resolve_pattern_resource(PdfName.of("P"))
     assert selected is not None
     assert selected[0] is source

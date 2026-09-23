@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from itertools import batched
 from typing import Any, ClassVar, Literal, NoReturn, Protocol, Self, cast
 
@@ -431,23 +431,32 @@ class XRefScanner:
         )
 
 
-def validate_xref_widths(widths: list[int]) -> int:
-    if len(widths) != 3 or any(type(width) is not int or width < 0 for width in widths):
+def validate_xref_widths(widths: Sequence[object]) -> int:
+    # Same shape as validate_xref_index: the widths come from a file, so the
+    # integers only exist once they have been checked for.
+    numbers = [width for width in widths if type(width) is int and width >= 0]
+    if len(numbers) != 3 or len(widths) != 3:
         raise PdfParseError("invalid xref stream W")
-    if widths[1] == 0:
+    if numbers[1] == 0:
         raise PdfParseError("invalid xref stream W")
-    return sum(widths)
+    return sum(numbers)
 
 
-def validate_xref_index(index: list[int], size: int) -> int:
-    if type(size) is not int or size <= 0 or len(index) % 2:
+def validate_xref_index(index: Sequence[object], size: object) -> int:
+    if type(size) is not int:
         raise PdfParseError("invalid xref stream Index")
-    if any(type(value) is not int or value < 0 for value in index):
+    if size <= 0 or len(index) % 2:
+        raise PdfParseError("invalid xref stream Index")
+    # Collecting the entries that pass rather than asserting they all do: the
+    # values arrive from a file, and the list this produces is the first thing
+    # here entitled to be typed as integers.
+    numbers = [value for value in index if type(value) is int and value >= 0]
+    if len(numbers) != len(index):
         raise PdfParseError("invalid xref stream Index")
     previous_start = -1
     previous_end = 0
     row_count = 0
-    for start, count in batched(index, 2, strict=True):
+    for start, count in batched(numbers, 2, strict=True):
         end = start + count
         if start < previous_start or start < previous_end or end > size:
             raise PdfParseError("invalid xref stream Index")

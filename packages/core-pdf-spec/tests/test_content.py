@@ -53,11 +53,13 @@ class EmptyTextFont:
         return (5.0 * len(data), 0.0)
 
 
-def state_with_sink() -> tuple[ContentInterpreter, EventSink]:
+def state_with_sink(
+    interpreter_class: type[ContentInterpreter] = ContentInterpreter,
+) -> tuple[ContentInterpreter, EventSink]:
     sink = EventSink()
     resolver = ObjectResolver(b"", {})
     font: Any = EmptyTextFont()
-    return ContentInterpreter(resolver, cast(ContentSink, sink), lambda *args: font), sink
+    return interpreter_class(resolver, cast(ContentSink, sink), lambda *args: font), sink
 
 
 def execute_content(state: ContentInterpreter, content: bytes, depth: int = 0) -> None:
@@ -68,20 +70,20 @@ def execute_content(state: ContentInterpreter, content: bytes, depth: int = 0) -
 def tj_state_with_recording(
     monkeypatch: pytest.MonkeyPatch, *, vertical: bool = False
 ) -> tuple[ContentInterpreter, list[tuple[bytes, float, float]]]:
-    state, _ = state_with_sink()
+    shown: list[tuple[bytes, float, float]] = []
+
+    class RecordingInterpreter(ContentInterpreter):
+        def append_text(self, data: bytes | memoryview, *, decoder: object = None) -> None:
+            shown.append((bytes(data), self.text_matrix.e, self.text_matrix.f))
+            self.text_matrix = self.text_matrix._replace(
+                e=self.text_matrix.e + 1, f=self.text_matrix.f + 2
+            )
+
+    state, _ = state_with_sink(RecordingInterpreter)
     state.graphics.current_decoder = cast(Any, SimpleNamespace(is_vertical=vertical))
     state.text_matrix = Matrix(2, 3, 5, 7, 11, 13)
     state.graphics.font_size = 100
     state.graphics.horizontal_scale = 100
-    shown: list[tuple[bytes, float, float]] = []
-
-    def append_text(*, data: bytes, decoder: object) -> None:
-        shown.append((data, state.text_matrix.e, state.text_matrix.f))
-        state.text_matrix = state.text_matrix._replace(
-            e=state.text_matrix.e + 1, f=state.text_matrix.f + 2
-        )
-
-    monkeypatch.setattr(state, "append_text", append_text)
     return state, shown
 
 
@@ -338,18 +340,18 @@ def test_resource_operator_looks_up_and_resolves_once(
             self.dictionary_calls += 1
             return super().resolve_dict(value)
 
-    state, sink = state_with_sink()
-    resolver = Resolver()
-    state.resolver = resolver
     lookups: list[tuple[str, str]] = []
     paints: list[PdfDict] = []
     resource: PdfDict = {"ca": 0.5} if name == "gs" else {"ShadingType": 2}
 
-    def lookup(category: str, name: str) -> object:
-        lookups.append((category, name))
-        return resource
+    class LookupRecordingInterpreter(ContentInterpreter):
+        def lookup_page_resource(self, category: str, name: str) -> object:
+            lookups.append((category, name))
+            return resource
 
-    monkeypatch.setattr(state, "lookup_page_resource", lookup)
+    state, sink = state_with_sink(LookupRecordingInterpreter)
+    resolver = Resolver()
+    state.resolver = resolver
     monkeypatch.setattr(sink, "paint_shading", lambda state, shading: paints.append(shading))
     if entry_point == "stream":
         state.stream_executor.consume(
