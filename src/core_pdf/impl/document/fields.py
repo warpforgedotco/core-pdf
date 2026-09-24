@@ -79,7 +79,7 @@ def field_record(
     return RawFormField(
         name,
         field_type,
-        value,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        value,
         value_text,
         resolver.resolve_box(node.get("Rect")) if is_widget else None,
         node,

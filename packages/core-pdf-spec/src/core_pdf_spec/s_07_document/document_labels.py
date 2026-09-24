@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from enum import StrEnum
 
-from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name, parse_text_string
 
 ResolveFn = Callable[[object], object]
@@ -20,7 +19,7 @@ class PageLabelStyle(StrEnum):
 
 
 def format_page_label(
-    spec: PdfDict,
+    spec: Mapping[str, object],
     page_offset: int,
     resolve: ResolveFn,
 ) -> str:

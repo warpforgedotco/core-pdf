@@ -79,7 +79,9 @@ def resolve_info_metadata(
         if info is None:
             return {}
         coerced = coerce_value(info, decode_pdf_text_string)
-        return {str(recover_pdf_name(key) or key): value for key, value in coerced.items()}  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        if not isinstance(coerced, dict):
+            return {}
+        return {str(recover_pdf_name(key) or key): value for key, value in coerced.items()}
     except PdfError, RecursionError, ValueError:
         if recover:
             return {}

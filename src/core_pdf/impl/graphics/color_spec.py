@@ -101,7 +101,7 @@ def raw_color_space_paints(value: object) -> bool:
             return True
         seen.add(marker)
         kind = recover_pdf_name(value[0])
-        names: tuple[str | None, ...]
+        names: tuple[str, ...]
         # the tag is decoded rather than literal, so it stays in the guard; the
         # pattern carries the arity each family requires
         match value:
@@ -111,17 +111,24 @@ def raw_color_space_paints(value: object) -> bool:
             case [_, base] if kind == "Pattern":
                 value = base
                 continue
-            case [_, name, _, _] if kind == "Separation":
-                names = (recover_pdf_name(name),)
+            case [_, raw_name, _, _] if kind == "Separation":
+                name = recover_pdf_name(raw_name)
+                if name is None:
+                    return True
+                names = (name,)
             case [_, raw_names, _, _] | [_, raw_names, _, _, _] if kind == "DeviceN":
                 if not isinstance(raw_names, (list, tuple)) or not raw_names:
                     return True
-                names = tuple(recover_pdf_name(entry) for entry in raw_names)
+                decoded: list[str] = []
+                for entry in raw_names:
+                    entry_name = recover_pdf_name(entry)
+                    if entry_name is None:
+                        return True
+                    decoded.append(entry_name)
+                names = tuple(decoded)
             case _:
                 return True
-        if any(name is None for name in names):
-            return True
-        return color_space_paints(ColorSpace(kind, (), colorants=names))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        return color_space_paints(ColorSpace(kind, (), colorants=names))
     return True
 
 

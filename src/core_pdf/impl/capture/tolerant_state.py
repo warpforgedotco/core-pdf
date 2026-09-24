@@ -43,15 +43,17 @@ def font_companions(
     if entry is not None and entry[0] is fonts:
         return entry[1]
     grouped: dict[str, list[tuple[int, int]]] = {}
-    for value in fonts.values():
-        reference = value
+    for reference in fonts.values():
+        # font_signature only calls this once every value is a reference.
+        if type(reference) is not PdfReference:
+            continue
         sibling = resolve(reference)
         if not isinstance(sibling, dict):
             continue
         name = strip_subset_tag(recover_pdf_name(sibling.get("BaseFont")) or "")
         if name:
             grouped.setdefault(name, []).append(
-                (reference.object_number, reference.generation_number)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                (reference.object_number, reference.generation_number)
             )
     companions = {name: tuple(sorted(refs)) for name, refs in grouped.items()}
     cache[id(fonts)] = (fonts, companions)
@@ -154,7 +156,7 @@ class RecoveringTextState(ContentInterpreter):
             self.handle_operand_error(error, "font-resource")
             font_obj_ref = None
         if font_obj_ref is None:
-            return self.font_provider({}, self.resources)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            return self.font_provider({}, self.resources)
 
         try:
             font_obj = self.resolver.resolve(font_obj_ref)
@@ -175,7 +177,7 @@ class RecoveringTextState(ContentInterpreter):
                 self.graphics.decoder_resources = resources
                 return decoder
 
-        document_decoders: dict[object, object] | None = getattr(
+        document_decoders: dict[object, FontDecoder] | None = getattr(
             getattr(self, "document", None), "font_decoders", None
         )
         signature = None
@@ -190,18 +192,17 @@ class RecoveringTextState(ContentInterpreter):
         if signature is not None and document_decoders is not None:
             shared = document_decoders.get(signature)
             if shared is not None:
-                decoder = shared  # type: ignore[assignment]
-                owned.append((resources, font_obj, decoder))  # ty: ignore[invalid-argument-type]
-                self.graphics.current_decoder = decoder  # ty: ignore[invalid-assignment]
+                owned.append((resources, font_obj, shared))
+                self.graphics.current_decoder = shared
                 self.graphics.decoder_resources = resources
-                return decoder  # ty: ignore[invalid-return-type]
+                return shared
 
         if not isinstance(font_obj, dict):
-            decoder = self.font_provider({}, resources)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            decoder = self.font_provider({}, resources)
         else:
             font_dict = font_obj
             resolved_font = self.resolver.resolve_font_dict(font_dict)
-            decoder = self.font_provider(resolved_font, resources)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            decoder = self.font_provider(resolved_font, resources)
         owned.append((resources, font_obj, decoder))
         if signature is not None and document_decoders is not None:
             document_decoders[signature] = decoder

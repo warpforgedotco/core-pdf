@@ -141,7 +141,7 @@ class RawFormField:
         self,
         name: str,
         type: str,
-        value: PdfObject,
+        value: object,
         value_text: str,
         rect: Rectangle | None,
         dict_: PdfDict,

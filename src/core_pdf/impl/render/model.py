@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Self, final
 
 import numpy
 
@@ -134,6 +134,7 @@ class LineJoin(IntEnum):
 PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
 
 
+@final
 class PathPaintItem(ReplaceFields, ReprFields):
     __slots__ = (
         "paint_kind",
@@ -300,6 +301,7 @@ class PathPaintItem(ReplaceFields, ReprFields):
         }
 
 
+@final
 class ImagePaintItem(ReplaceFields, ReprFields):
     __slots__ = (
         "paint_kind",

@@ -180,8 +180,9 @@ class StructureElement(StructureNode):
 
     @property
     def role_resolution(self) -> StructureRole | None:
-        if self.role_resolution_value is not MISSING:
-            return self.role_resolution_value  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+        cached = self.role_resolution_value
+        if cached is None or isinstance(cached, StructureRole):
+            return cached
         resolver = self.document.resolver
         context = resolver.semantic_context
         if context is not None and (context.version is None or not context.version.recognized):

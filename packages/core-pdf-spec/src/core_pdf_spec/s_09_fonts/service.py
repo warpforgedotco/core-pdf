@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, ClassVar, NoReturn, Protocol, Self
 
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 
 frozen_setattr = object.__setattr__
@@ -142,7 +143,7 @@ class FontService(Protocol):
     ) -> tuple[float, float]: ...
 
 
-FontProvider = Callable[[dict[str, Any], dict[str, Any]], FontService]
+FontProvider = Callable[[PdfDict, PdfDict], FontService]
 
 
 __all__ = ["DecodedFontGlyph", "FontService", "FontProvider"]

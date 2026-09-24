@@ -184,13 +184,13 @@ def iter_content_operations(
             if len(operands) < 16:
                 operands.append(token.value)
             op_name = "BI"
-        elif token.is_operator:
-            op_name = token.value  # type: ignore[assignment]
+        elif token.is_operator and isinstance(token.value, str):
+            op_name = token.value
         else:
             if len(operands) < 16:
                 operands.append(token.value)
             continue
-        operation = (op_name, tuple(operands))  # type: ignore[assignment]
+        operation = (op_name, tuple(operands))
         operands.clear()
         if op_name not in OBJECT_KEYWORDS:
-            yield operation  # ty: ignore[invalid-yield]
+            yield operation

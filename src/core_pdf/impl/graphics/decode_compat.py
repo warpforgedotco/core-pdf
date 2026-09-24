@@ -158,7 +158,7 @@ class FilterParams(PdfFilterParams, ReplaceFields, ReprFields):
                 raise ValueError(f"invalid DecodeParms {name}")
         if is_pdf_null(parms.get("JBIG2Globals")):
             normalized["JBIG2Globals"] = None
-        return super().from_parms(normalized)  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+        return super().from_parms(normalized)
 
 
 def with_ccitt_image_rows(parms: object, dictionary: object) -> object:

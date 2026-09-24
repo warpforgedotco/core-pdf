@@ -60,7 +60,6 @@ from core_pdf.impl.types import (
     PdfName,
     PdfReference,
     PdfSource,
-    SeekableBinaryReader,
 )
 from core_pdf_spec.s_07_document.document_labels import PageLabelStyle
 from core_pdf_spec.s_07_document.document_labels import (
@@ -527,22 +526,19 @@ class PdfDocument(Generic[PageT]):
         tell = getattr(source, "tell", None)
         seek = getattr(source, "seek", None)
         position: int | None = None
-        seekable: SeekableBinaryReader | None = None
         if callable(tell) and callable(seek):
-            seekable = source  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
             try:
-                position = seekable.tell()  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
-                seekable.seek(0)  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
+                position = tell()
+                seek(0)
             except OSError, TypeError, ValueError:
                 position = None
-                seekable = None
         try:
             raw = reader.read()
         except OSError as exc:
             raise PdfSourceError(str(exc)) from exc
         finally:
-            if position is not None and seekable is not None:
-                seekable.seek(position)
+            if position is not None and callable(seek):
+                seek(position)
         return raw if isinstance(raw, bytes) else bytes(raw)
 
     def try_mmap_reader(self, source: object) -> mmap.mmap | None:
@@ -666,12 +662,12 @@ class PdfDocument(Generic[PageT]):
     def recovered_page_values(
         self, page_dict: PdfDict, pages_nodes: list[PdfDict]
     ) -> InheritedValueMap:
-        values = {
+        values: InheritedValueMap = {
             key: value for key in PAGE_INHERITED_KEYS if (value := page_dict.get(key)) is not None
         }
         missing = [key for key in PAGE_INHERITED_KEYS if key not in values]
         if not missing:
-            return values  # type: ignore[return-value]
+            return values
 
         sources: list[PdfDict] = []
         parent = page_dict.get("Parent")
@@ -684,15 +680,15 @@ class PdfDocument(Generic[PageT]):
                 sources.append(parent_obj)
         sources.extend(pages_nodes)
         if not sources:
-            return values  # type: ignore[return-value]
+            return values
 
         for source in sources:
             source_values = self.collect_inherited_values_from_node(source, missing)
-            values.update(source_values)  # type: ignore[arg-type]
+            values.update(source_values)
             missing = [key for key in missing if key not in values]
             if not missing:
                 break
-        return values  # type: ignore[return-value]
+        return values
 
     def collect_inherited_values_from_node(
         self, node: PdfDict, keys: list[str]
@@ -1678,7 +1674,7 @@ class PdfDocument(Generic[PageT]):
                     resolved = resolver.resolve(value)
                 except Exception:
                     return None
-                object_cache[key] = resolved  # type: ignore[assignment]
+                object_cache[key] = resolved
                 return resolved
             lexer.rewind(entry.offset)
             try:
@@ -1779,7 +1775,7 @@ class PdfDocument(Generic[PageT]):
                         obj = lexer.parse_indirect_object()
                     except Exception:
                         continue
-                object_cache[(obj_num, gen_num)] = obj  # type: ignore[assignment]
+                object_cache[(obj_num, gen_num)] = obj
                 score = catalog_score(obj)
                 if score > -100:
                     scored.append((score, -offset, obj_num, gen_num))
@@ -1814,11 +1810,11 @@ class PdfDocument(Generic[PageT]):
         merged = dict(trailer)
         for key, value in recovered.items():
             if merged.get(key) is None:
-                merged[key] = value  # type: ignore[assignment]
+                merged[key] = value
         return merged
 
-    def infer_trailer_metadata(self) -> dict[str, object]:
-        metadata: dict[str, object] = {}
+    def infer_trailer_metadata(self) -> PdfDict:
+        metadata: PdfDict = {}
 
         for candidate in self.iter_literal_trailer_dictionaries():
             for key in TRAILER_METADATA_KEYS:
@@ -1941,8 +1937,8 @@ def format_page_label(spec: PdfDict, page_offset: int, resolve: Callable[[object
     style = recover_pdf_name(resolve(spec.get("S")))
     prefix = parse_text_string(resolve(spec.get("P"))) or ""
     start = resolve(spec.get("St"))
-    normalized: PdfDict = {
-        "P": prefix,  # type: ignore[dict-item]
+    normalized: dict[str, object] = {
+        "P": prefix,
         "St": start if type(start) is int and start > 0 else 1,
     }
     if style is not None and style in PageLabelStyle:

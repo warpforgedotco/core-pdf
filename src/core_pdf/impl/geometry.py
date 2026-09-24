@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Sequence
+from typing import Any
 
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_08_graphics.geometry import points_bbox, transform_bbox
@@ -57,8 +58,9 @@ def bbox_intersection_area(left: Sequence[float], right: Sequence[float]) -> flo
 
 def finite_rect(box: object, *, require_positive: bool = True) -> Rectangle | None:
     try:
-        rect = box
-        x0, y0, x1, y1 = (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3]))  # type: ignore[index]  # ty: ignore[not-subscriptable]
+        # Anything indexable by 0..3 will do; the except clause is the check.
+        rect: Any = box
+        x0, y0, x1, y1 = (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3]))
     except IndexError, KeyError, TypeError, ValueError:
         return None
     if not (math.isfinite(x0) and math.isfinite(y0) and math.isfinite(x1) and math.isfinite(y1)):

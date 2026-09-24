@@ -397,7 +397,7 @@ def display_item_box(
             box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
         return box
     generic_item = item
-    data = generic_item.data  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
+    data = generic_item.data
     if generic_item.kind in {"text", "glyph"}:
         value = data.get("bbox")
     elif generic_item.kind in {"annotation", "widget"}:

@@ -25,7 +25,7 @@ PdfObject: TypeAlias = PdfDirectObject | PdfReference
 Decipher: TypeAlias = Callable[[int, int, bytes, PdfDict | None], bytes | memoryview]
 
 CachedPdfObject: TypeAlias = (
-    PdfPrimitive
+    PdfObject
     | str
     | PdfReference
     | PdfStream

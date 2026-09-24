@@ -238,7 +238,7 @@ class ContentInterpreter:
         if not isinstance(font, dict):
             raise PdfParseError("font resource must be a dictionary")
         resolved_font = self.resolver.resolve_font_dict(font)
-        decoder = self.font_provider(resolved_font, self.resources)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        decoder = self.font_provider(resolved_font, self.resources)
         self.graphics.current_decoder = decoder
         self.graphics.decoder_resources = self.resources
         return decoder

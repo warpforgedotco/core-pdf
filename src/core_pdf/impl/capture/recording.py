@@ -40,6 +40,7 @@ from core_pdf.impl.capture.text_runs import (
 )
 from core_pdf.impl.capture.tolerant_state import COLOR_CACHE_LIMIT, RecoveringTextState
 from core_pdf.impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl.document.recovery.resolver import ObjectResolver
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.geometry import (
@@ -257,6 +258,9 @@ class CaptureStreamExecutor(ContentStreamExecutor):
 
 class TextState(RecoveringTextState):
     document: Any
+    # The document's own resolver, typed as the recovering one: the spec's
+    # PdfValueResolver protocol has no name-or-text lookups.
+    name_resolver: ObjectResolver
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
     glyph_cluster_count: int
@@ -313,6 +317,7 @@ class TextState(RecoveringTextState):
         capture_render_details: bool = True,
     ):
         self.document = document
+        self.name_resolver = document.resolver
         self.runs = []
         self.glyphs = []
         self.glyph_cluster_count = 0
@@ -349,7 +354,7 @@ class TextState(RecoveringTextState):
         self.capture_font_decoders = {}
         self.capture_font_companions = {}
 
-        def font_provider(font: dict[str, Any], resources: dict[str, Any]) -> FontDecoder:
+        def font_provider(font: PdfDict, resources: PdfDict) -> FontDecoder:
             return FontDecoder(
                 font,
                 ligature_overrides=detect_ligature_overrides(document, resources, font),
@@ -625,6 +630,8 @@ class TextState(RecoveringTextState):
         *,
         glyph_paint: GlyphPaint | None = None,
     ) -> None:
+        # The capture's font_provider only ever makes FontDecoder and DecodedGlyph;
+        # the spec's FontService protocol is far narrower than what capture reads.
         font_decoder: FontDecoder = decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         decoded_glyphs: tuple[DecodedGlyph, ...] = glyphs  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         visible = self.is_text_visible(text)
@@ -1120,12 +1127,11 @@ class TextState(RecoveringTextState):
         layout_bbox = None
         raw_bbox = frame.form_bbox_operand
         if isinstance(raw_bbox, (list, tuple)) and len(raw_bbox) >= 4:
-            values = tuple(
+            x, y, w, h = (
                 self.resolver.resolve_float(value, default=None) for value in raw_bbox[:4]
             )
-            if all(value is not None for value in values):
-                x, y, w, h = values
-                layout_bbox = transform_bbox((x, y, x + w, y + h), frame.ctm)  # type: ignore[arg-type,operator]  # ty: ignore[invalid-argument-type,unsupported-operator]
+            if x is not None and y is not None and w is not None and h is not None:
+                layout_bbox = transform_bbox((x, y, x + w, y + h), frame.ctm)
         self.layout_form_bbox = layout_bbox
         if frame.is_form:
             self.layout_form_id = (*(self.layout_form_id or ()), (frame.source_key, layout_bbox))
@@ -1347,10 +1353,10 @@ class TextState(RecoveringTextState):
             self.capture_active_mask_groups.remove(group_key)
 
     def named_value(self, value: object, *, allow_text: bool = False) -> str | None:
-        resolver = self.resolver
+        resolver = self.name_resolver
         if allow_text:
-            return resolver.resolve_name_or_text(value)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-        return resolver.resolve_name_like_value(value)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            return resolver.resolve_name_or_text(value)
+        return resolver.resolve_name_like_value(value)
 
 
 def image_source_from_stream(

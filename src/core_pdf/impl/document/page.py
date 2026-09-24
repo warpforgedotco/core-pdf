@@ -53,6 +53,7 @@ from core_pdf_spec.s_07_syntax.types import (
     PdfObject,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_box
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 PAGE_INHERITED_KEYS = (
     "MediaBox",
@@ -90,7 +91,7 @@ class PdfPage:
         self.document = document
         self.page_dict = page_dict
         self.page_number = page_number
-        self.contents = self.page_dict.get("Contents")  # type: ignore[assignment]
+        self.contents = self.page_dict.get("Contents")
         self.inherited_values = (
             self.collect_inherited_values() if inherited_values is None else dict(inherited_values)
         )
@@ -492,7 +493,7 @@ class PdfPage:
             )
         for index, image in enumerate(images):
             source = image.image_source
-            raster = decode_image(source) if source is not None else None  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            raster = decode_image(source) if isinstance(source, ImageSource) else None
             if raster is not None:
                 images[index] = replace(
                     image,

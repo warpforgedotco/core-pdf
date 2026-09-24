@@ -2911,11 +2911,10 @@ class RasterTarget:
             return False
         display, cell_clip = tiling_cell(self, pattern)
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
-        target_box_type = type(target_box)
-        if target_box_type is list or target_box_type is tuple:
-            if len(target_box) == 4:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        if type(target_box) is list or type(target_box) is tuple:
+            if len(target_box) == 4:
                 try:
-                    x0, y0, x1, y1 = (float(value) for value in target_box)  # type: ignore[union-attr]  # ty: ignore[not-iterable]
+                    x0, y0, x1, y1 = (float(value) for value in target_box)
                 except TypeError, ValueError:
                     return False
             else:

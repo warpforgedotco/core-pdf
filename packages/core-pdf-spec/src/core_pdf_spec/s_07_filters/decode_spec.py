@@ -205,7 +205,7 @@ class FilterParams:
         )
 
     @classmethod
-    def from_parms(cls, parms: object) -> FilterParams:
+    def from_parms(cls, parms: object) -> Self:
         if not isinstance(parms, dict):
             if is_pdf_null(parms):
                 return cls()

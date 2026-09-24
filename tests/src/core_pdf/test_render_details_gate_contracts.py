@@ -6,8 +6,6 @@ transforms, so every glyph reports no paint and the page renders blank. These
 pin the two halves -- that the flag is recorded on the program, and that
 compose_page refuses such a program instead of drawing nothing."""
 
-from types import SimpleNamespace
-
 import pytest
 
 from core_pdf import PdfDocument
@@ -20,12 +18,30 @@ def test_a_program_defaults_to_carrying_render_detail() -> None:
     assert PageProgram().render_details is True
 
 
+class UnreadPage:
+    """A page whose every member fails, so reading any of them fails the test."""
+
+    width = height = 0.0
+    media_box = None
+
+    def get_page_program(self, *, fields=None, annotations=None):
+        raise AssertionError("read the page")
+
+    def get_fields(self):
+        raise AssertionError("read the page")
+
+    def get_annotations(self):
+        raise AssertionError("read the page")
+
+    def resolve_transparency_group_alpha(self):
+        raise AssertionError("read the page")
+
+
 def test_compose_page_refuses_a_text_only_program() -> None:
     with pytest.raises(ValueError, match="render_details=True"):
         # A page-shaped stub: the check runs before anything is read off it,
         # which is the point of putting it first.
-        stub = SimpleNamespace(width=0.0, height=0.0, media_box=None, user_unit=1.0)
-        compose_page(stub, RenderOptions(), page_program=PageProgram(render_details=False))
+        compose_page(UnreadPage(), RenderOptions(), page_program=PageProgram(render_details=False))
 
 
 def test_extraction_captures_without_render_detail(text_pdf_bytes: bytes) -> None:

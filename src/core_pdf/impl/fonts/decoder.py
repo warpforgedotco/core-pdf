@@ -680,7 +680,7 @@ class FontDecoder:
 
     def __init__(
         self,
-        font: dict[str, Any],
+        font: dict[Any, Any],
         ligature_overrides: dict[int, str] | None = None,
         raster_font_provider: RasterFontProviderLike | None = None,
         *,
