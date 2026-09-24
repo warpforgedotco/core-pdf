@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Self, final
 
 import numpy
 
-from core_pdf.impl.array_views import uint8_image_view
+from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.capture.records import CapturedSoftMask, PatternPaint
 from core_pdf.impl.render.blend import clamp01
 from core_pdf.impl.types import Record, ReplaceFields, ReprFields, frozen_setattr
@@ -463,6 +463,7 @@ DisplayItem = DisplayListItem | ImagePaintItem | PathPaintItem
 class RasterGroup(Record):
     __slots__ = (
         "pixels",
+        "view",
         "composite_alpha",
         "blend_mode",
         "backdrop",
@@ -476,6 +477,9 @@ class RasterGroup(Record):
     )
 
     pixels: bytearray
+    # pixels as a (height, width, 4) array, built once with the group. Derived,
+    # so it takes no part in equality or hashing.
+    view: UInt8Array
     composite_alpha: float | None
     blend_mode: str | None
     backdrop: bytearray | None
@@ -492,6 +496,7 @@ class RasterGroup(Record):
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "pixels",
+        "view",
         "composite_alpha",
         "blend_mode",
         "backdrop",
@@ -511,6 +516,7 @@ class RasterGroup(Record):
         composite_alpha: float | None = None,
         blend_mode: str | None = None,
         *,
+        view: UInt8Array,
         backdrop: bytearray | None = None,
         source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
         source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
@@ -521,6 +527,7 @@ class RasterGroup(Record):
         painted_boxes: list[tuple[int, int, int, int]] | None = None,
     ) -> None:
         frozen_setattr(self, "pixels", pixels)
+        frozen_setattr(self, "view", view)
         frozen_setattr(self, "composite_alpha", composite_alpha)
         frozen_setattr(self, "blend_mode", blend_mode)
         frozen_setattr(self, "backdrop", backdrop)
@@ -569,6 +576,7 @@ class RasterGroup(Record):
 
     def __replace__(self, /, **changes: Any) -> Self:
         pixels = changes.pop("pixels", self.pixels)
+        view = changes.pop("view", self.view)
         composite_alpha = changes.pop("composite_alpha", self.composite_alpha)
         blend_mode = changes.pop("blend_mode", self.blend_mode)
         backdrop = changes.pop("backdrop", self.backdrop)
@@ -585,6 +593,7 @@ class RasterGroup(Record):
             pixels,
             composite_alpha,
             blend_mode,
+            view=view,
             backdrop=backdrop,
             source_alpha=source_alpha,
             source_shape=source_shape,

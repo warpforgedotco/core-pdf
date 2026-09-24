@@ -60,8 +60,12 @@ def fill_item(bbox, *, edge_array=True, kind=PathPaintKind.FILL, pattern=None, b
     )
 
 
+def pixel_view() -> numpy.ndarray:
+    return numpy.zeros((1, 1, 4), dtype=numpy.uint8)
+
+
 def knockout_group() -> RasterGroup:
-    return RasterGroup(bytearray(4), knockout=True, painted_boxes=[])
+    return RasterGroup(bytearray(4), view=pixel_view(), knockout=True, painted_boxes=[])
 
 
 def needs_group(target: RasterTarget, group: RasterGroup, item: Any) -> bool:
@@ -75,7 +79,7 @@ def needs_group(target: RasterTarget, group: RasterGroup, item: Any) -> bool:
 def test_a_group_that_does_not_knock_out_records_nothing() -> None:
     # The list is what paint_item tests before it reaches the decision at all,
     # and only a knockout group is given one.
-    assert RasterGroup(bytearray(4)).painted_boxes is None
+    assert RasterGroup(bytearray(4), view=pixel_view()).painted_boxes is None
 
 
 def test_disjoint_fills_skip_and_are_remembered() -> None:
