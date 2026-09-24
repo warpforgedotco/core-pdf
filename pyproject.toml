@@ -419,6 +419,29 @@ source_modules = [
 ]
 forbidden_modules = ["core_pdf", "core_pdf_ocr", "core_pdf_spec", "core_pdf_validate", "core_pdf_compat"]
 
+# types, exceptions, and pdf_names sit at the impl root and nearly every
+# subpackage imports them, so they must not import any subpackage back.
+[[tool.importlinter.contracts]]
+name = "impl root modules are the floor"
+type = "forbidden"
+source_modules = [
+    "core_pdf.impl.types",
+    "core_pdf.impl.exceptions",
+    "core_pdf.impl.pdf_names",
+]
+forbidden_modules = [
+    "core_pdf.impl.document",
+    "core_pdf.impl.capture",
+    "core_pdf.impl.fonts",
+    "core_pdf.impl.graphics",
+    "core_pdf.impl.extract",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.model",
+    "core_pdf.impl.output",
+    "core_pdf.impl.render",
+    "core_pdf.impl.runtime",
+]
+
 [[tool.importlinter.contracts]]
 name = "impl/runtime is the floor"
 type = "forbidden"
