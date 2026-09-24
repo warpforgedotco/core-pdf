@@ -90,6 +90,15 @@ class IccTransform(Record):
         return transform(self, samples, rendering)
 
 
+# A colour operand reaches lcms as one sample, and lcms builds a transform from
+# the two profiles on every call: 0.4 to 2.9 ms for a single colour, while the
+# conversion itself is nothing. A page sets the same few colours over and over
+# -- one corpus page 768 times across 6 colours, another 286 across 31 -- so a
+# small sample set is converted once per profile, rendering and value. Images
+# are never cached: each is one call over all its pixels, and rarely repeats.
+SMALL_SAMPLE_ROWS = 16
+
+
 def transform(
     transform: IccTransform,
     samples: numpy.ndarray[Any, Any],
@@ -99,12 +108,51 @@ def transform(
     if rows == 0:
         return numpy.empty((0, 3), dtype=numpy.uint8)
     intent, flags = cms_options(rendering)
+    contiguous = numpy.ascontiguousarray(samples)
+    if rows <= SMALL_SAMPLE_ROWS:
+        converted = cached_cms_transform(
+            transform.profile,
+            transform.color_space,
+            intent,
+            flags,
+            contiguous.tobytes(),
+            rows,
+            channels,
+        )
+        # A copy, so a caller that writes into the result cannot reach the cache.
+        return numpy.frombuffer(converted, dtype=numpy.uint8).reshape(rows, 3).copy()
+    return cms_transform(transform.profile, transform.color_space, intent, flags, contiguous)
+
+
+@lru_cache(maxsize=4096)
+def cached_cms_transform(
+    profile: bytes,
+    color_space: str,
+    intent: int,
+    flags: int,
+    samples: bytes,
+    rows: int,
+    channels: int,
+) -> bytes:
+    """cms_transform for a few samples, keyed on everything its output depends on."""
+    values = numpy.frombuffer(samples, dtype=numpy.uint16).reshape(rows, channels)
+    return cms_transform(profile, color_space, intent, flags, values).tobytes()
+
+
+def cms_transform(
+    profile: bytes,
+    color_space: str,
+    intent: int,
+    flags: int,
+    samples: numpy.ndarray[Any, Any],
+) -> ByteSamples:
+    rows, channels = samples.shape
     try:
         converted = imagecodecs.cms_transform(
-            numpy.ascontiguousarray(samples).reshape(rows, 1, channels),
-            transform.profile,
+            samples.reshape(rows, 1, channels),
+            profile,
             srgb_profile(),
-            colorspace=transform.color_space.lower(),
+            colorspace=color_space.lower(),
             outcolorspace="rgb",
             outdtype=numpy.uint8,
             intent=intent,
