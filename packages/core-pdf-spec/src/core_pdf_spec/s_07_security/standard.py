@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from hashlib import md5, sha256, sha384, sha512
 from hmac import compare_digest
 from types import MappingProxyType
-from typing import Any, ClassVar, Literal, NoReturn, Self, cast
+from typing import Any, ClassVar, Literal, NoReturn, Self
 
 from core_pdf_spec.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.decode_spec import normalize_stream_decode_spec
@@ -615,7 +615,7 @@ def parse_crypt_filters(
             if filter_length != expected_filter_length:
                 raise ValueError(f"invalid {method_name} crypt filter length: {filter_length}")
 
-        crypt_filters[filter_name] = cast(CryptMethod, method_name)
+        crypt_filters[filter_name] = method_name  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
 
     if version == 6 and "AESV4" not in crypt_filters.values():
         raise ValueError("V=6 requires at least one AESV4 crypt filter")

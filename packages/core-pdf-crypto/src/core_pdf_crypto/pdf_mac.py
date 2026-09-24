@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Buffer
-from typing import Any, cast
+from typing import Any
 
 from asn1crypto import cms, core
 from cryptography.exceptions import InvalidSignature
@@ -235,7 +235,7 @@ def unique_attribute(
         return None
     if len(matches) != 1 or len(matches[0]["values"]) != 1:
         raise ValueError(f"PDF MAC attribute {oid} must occur exactly once")
-    return cast(core.Asn1Value, matches[0]["values"][0])
+    return matches[0]["values"][0]
 
 
 def digest_algorithm(identifier: Any) -> hashes.HashAlgorithm:
@@ -291,7 +291,7 @@ def require_algorithm(
         raise ValueError(f"unexpected PDF MAC algorithm: {oid}")
     if require_absent_parameters and not isinstance(identifier["parameters"], core.Void):
         raise ValueError(f"PDF MAC algorithm {oid} cannot have parameters")
-    return cast(str, oid)
+    return oid
 
 
 def algorithm_identifiers_match(left: Any, right: Any) -> bool:

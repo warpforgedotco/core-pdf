@@ -5,15 +5,14 @@ from __future__ import annotations
 from contextlib import suppress
 from math import isfinite
 from types import MappingProxyType
-from typing import cast
 
 from core_pdf.impl.graphics.icc_profiles import (
     IccProfileError,
     parse_icc_transform,
 )
-from core_pdf.impl.model.pdf_values import coerce_to_bytes
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.runtime.scalars import parse_float, parse_int
+from core_pdf.impl.pdf_values import coerce_to_bytes
+from core_pdf.impl.scalars import parse_float, parse_int
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -89,7 +88,7 @@ def recover_image_bits_per_component(image_dict: object) -> int:
     dictionary = image_dict if isinstance(image_dict, dict) else {}
     raw = dictionary.get("BitsPerComponent", 8)
     value = parse_int(raw, None)
-    if type(raw) is bool or value is None or value <= 0:
+    if value is None or value <= 0:
         raise ValueError("invalid image bits-per-component")
     return value
 
@@ -102,7 +101,7 @@ def raw_color_space_paints(value: object) -> bool:
             return True
         seen.add(marker)
         kind = recover_pdf_name(value[0])
-        names: tuple[str | None, ...]
+        names: tuple[str, ...]
         # the tag is decoded rather than literal, so it stays in the guard; the
         # pattern carries the arity each family requires
         match value:
@@ -112,17 +111,24 @@ def raw_color_space_paints(value: object) -> bool:
             case [_, base] if kind == "Pattern":
                 value = base
                 continue
-            case [_, name, _, _] if kind == "Separation":
-                names = (recover_pdf_name(name),)
+            case [_, raw_name, _, _] if kind == "Separation":
+                name = recover_pdf_name(raw_name)
+                if name is None:
+                    return True
+                names = (name,)
             case [_, raw_names, _, _] | [_, raw_names, _, _, _] if kind == "DeviceN":
                 if not isinstance(raw_names, (list, tuple)) or not raw_names:
                     return True
-                names = tuple(recover_pdf_name(entry) for entry in raw_names)
+                decoded: list[str] = []
+                for entry in raw_names:
+                    entry_name = recover_pdf_name(entry)
+                    if entry_name is None:
+                        return True
+                    decoded.append(entry_name)
+                names = tuple(decoded)
             case _:
                 return True
-        if any(name is None for name in names):
-            return True
-        return color_space_paints(ColorSpace(kind, (), colorants=cast(tuple[str, ...], names)))
+        return color_space_paints(ColorSpace(kind, (), colorants=names))
     return True
 
 
@@ -178,13 +184,10 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                 )
             if kind == "ICCBased" and len(value) >= 2 and isinstance(value[1], (dict, PdfStream)):
                 stream = value[1]
-                source = cast(
-                    dict[object, object],
-                    stream.dictionary if isinstance(stream, PdfStream) else stream,
-                )
+                source = stream.dictionary if isinstance(stream, PdfStream) else stream
                 raw_count = source.get("N", 3)
                 count = parse_int(raw_count, None)
-                if type(raw_count) is bool or count is None or count <= 0:
+                if count is None or count <= 0:
                     raise ValueError("invalid ICCBased color space")
                 profile = stream.data if isinstance(stream, PdfStream) else None
                 alternate = (

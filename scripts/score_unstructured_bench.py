@@ -15,7 +15,7 @@ from functools import partial
 from pathlib import Path
 from random import Random
 from time import perf_counter
-from typing import Any, ClassVar, NoReturn, Self, cast
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf import PdfDocument
 
@@ -1118,10 +1118,10 @@ def ground_truth_table_cells(value: object) -> list[tuple[int, int, int, int, in
             cells.append(
                 (
                     table_index,
-                    int(cast(Any, cell.get("x", 0))),
-                    int(cast(Any, cell.get("y", 0))),
-                    max(1, int(cast(Any, cell.get("w", 1)))),
-                    max(1, int(cast(Any, cell.get("h", 1)))),
+                    int(cell.get("x", 0)),
+                    int(cell.get("y", 0)),
+                    max(1, int(cell.get("w", 1))),
+                    max(1, int(cell.get("h", 1))),
                     str(cell.get("content", "")),
                 )
             )
@@ -1138,13 +1138,13 @@ def table_spans(record: object, y: int, x: int) -> tuple[int, int]:
     span = span_row[x]
     if isinstance(span, dict):
         return (
-            max(1, int(cast(Any, span.get("col_span", 1)))),
-            max(1, int(cast(Any, span.get("row_span", 1)))),
+            max(1, int(span.get("col_span", 1))),
+            max(1, int(span.get("row_span", 1))),
         )
     if isinstance(span, (list, tuple)) and len(span) >= 2:
         return (
-            max(1, int(cast(Any, span[1]))),
-            max(1, int(cast(Any, span[0]))),
+            max(1, int(span[1])),
+            max(1, int(span[0])),
         )
     return 1, 1
 

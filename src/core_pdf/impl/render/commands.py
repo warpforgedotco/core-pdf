@@ -17,8 +17,7 @@ from core_pdf.impl.capture.records import (
     CapturedTextBoundary,
 )
 from core_pdf.impl.fonts.decoder import GlyphOutlineArrays
-from core_pdf.impl.model.glyphs import GlyphObservation, Matrix6
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.glyphs import GlyphObservation, Matrix6
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
     DisplayItem,
@@ -27,6 +26,7 @@ from core_pdf.impl.render.model import (
     PathPaintItem,
 )
 from core_pdf.impl.render.paths import translate_rect
+from core_pdf.impl.runs import TextRun
 from core_pdf.impl.types import Rectangle
 from core_pdf_cythonized import outline_edges
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES

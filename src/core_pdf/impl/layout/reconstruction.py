@@ -6,13 +6,13 @@ from collections.abc import Callable
 from typing import ClassVar
 
 from core_pdf.impl.layout import text_rules as rules
-from core_pdf.impl.model.runs import (
+from core_pdf.impl.runs import (
     EMPTY_LAYOUT_LINE_TEXT,
     LayoutLineText,
     LayoutLineTextSegment,
     TextRun,
 )
-from core_pdf.impl.model.text import WORD_GAP_SIZE_FACTOR, word_gap_threshold
+from core_pdf.impl.text import WORD_GAP_SIZE_FACTOR, word_gap_threshold
 from core_pdf.impl.types import ReplaceFields, ReprFields
 
 SUPERSCRIPT_HEIGHT_RATIO = 0.9

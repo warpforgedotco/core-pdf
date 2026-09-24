@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from html import escape
 from io import BytesIO
-from typing import Any, BinaryIO, TextIO, cast
+from typing import Any, BinaryIO, TextIO
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf.impl.exceptions import PdfError
@@ -112,7 +112,7 @@ def extract_text_to_fp(
     if isinstance(outfp, (BytesIO,)):
         outfp.write(output.encode(codec))
     else:
-        cast(TextIO, outfp).write(output)
+        outfp.write(output)  # type: ignore[call-overload]  # ty: ignore[no-matching-overload]
 
 
 def _structured_output(

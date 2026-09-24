@@ -5,7 +5,7 @@ from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
-from core_pdf.impl.model.geometry import flip_rect_vertical
+from core_pdf.impl.geometry import flip_rect_vertical, interval_overlap
 from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTTextBox
 
 from ._classification import (
@@ -113,7 +113,7 @@ def duplicate_character(first: LTChar, second: LTChar, threshold: float = 2.0) -
     average_width = (first_width + second_width) / 2.0
     if average_width <= 0:
         return False
-    overlap = max(0.0, min(first.x1, second.x1) - max(first.x0, second.x0))
+    overlap = interval_overlap(first.x0, first.x1, second.x0, second.x1)
     return overlap / average_width > 0.5
 
 

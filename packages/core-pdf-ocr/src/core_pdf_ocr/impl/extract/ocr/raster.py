@@ -8,15 +8,15 @@ from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
-from core_pdf.impl.capture.records import CapturedDrawing
-from core_pdf.impl.extract.contracts import FULL_PAGE_IMAGE_COVERAGE
-from core_pdf.impl.graphics.images import decode_image, decode_pdf_image
-from core_pdf.impl.model.geometry import bbox_union
-from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.runtime.array_views import (
+from core_pdf.impl.array_views import (
     contiguous_bytes,
     uint8_image_view,
 )
+from core_pdf.impl.capture.records import CapturedDrawing
+from core_pdf.impl.extract.contracts import FULL_PAGE_IMAGE_COVERAGE
+from core_pdf.impl.geometry import bbox_union
+from core_pdf.impl.graphics.images import decode_image, decode_pdf_image
+from core_pdf.impl.render.model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_bilinear, resample_nearest
 from core_pdf_ocr.impl.extract.ocr.types import Raster

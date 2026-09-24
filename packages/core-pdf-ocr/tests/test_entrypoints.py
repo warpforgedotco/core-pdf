@@ -2,14 +2,13 @@ import importlib
 import runpy
 from copy import replace
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
 
 from core_pdf.impl.capture.program import CapturedProgram, PageProgram
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSubpath
+from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr import PdfDocument, cli
 from core_pdf_ocr.impl.extract import pipeline
 from core_pdf_ocr.impl.extract.contracts import (
@@ -82,9 +81,7 @@ def test_stroked_profile_is_lazily_built_and_reused(ocr_capture) -> None:
             ),
         ),
     )
-    extraction = pipeline.PageExtraction(
-        cast(Any, object()), capture=capture, plan=WorkPlan(PageRoute.OCR)
-    )
+    extraction = pipeline.PageExtraction(object(), capture=capture, plan=WorkPlan(PageRoute.OCR))  # ty: ignore[invalid-argument-type]
     assert extraction.stroked_profile_of is None
     profile = extraction.stroked_profile
     assert profile is not None
@@ -99,7 +96,7 @@ def test_page_pipeline_dispatches_recognition_with_exact_context(ocr_capture, mo
     recognition = RecognitionResult(ObservationBatch.empty())
     operation = OcrPass("page", OcrPassScope.PAGE, 1, (6,))
     plan = WorkPlan(PageRoute.OCR, ocr_passes=(operation,))
-    extraction = pipeline.PageExtraction(cast(Any, object()), capture=ocr_capture, plan=plan)
+    extraction = pipeline.PageExtraction(object(), capture=ocr_capture, plan=plan)  # ty: ignore[invalid-argument-type]
 
     def recognize(capture, requested_plan, requested_context, *, stroked_profile):
         assert capture is extraction.capture
@@ -115,7 +112,7 @@ def test_page_pipeline_dispatches_recognition_with_exact_context(ocr_capture, mo
 def test_legacy_reason_strings_normalize_and_vector_match_ratio_handles_empty_counts(
     ocr_capture,
 ) -> None:
-    plan = WorkPlan(PageRoute.NATIVE, reason=cast(Any, "healthy-native-text"))
+    plan = WorkPlan(PageRoute.NATIVE, reason="healthy-native-text")  # ty: ignore[invalid-argument-type]
     assert plan.reason is PagePlanReason.HEALTHY_NATIVE_TEXT
     assert ocr_capture.evidence.vector_text_segment_coverage == 0
     evidence = replace(

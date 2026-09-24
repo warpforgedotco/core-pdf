@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Iterator
 from functools import partial
-from typing import Any, cast
+from typing import Any
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf.impl.document.recovery.lexer import PdfLexer
@@ -11,7 +11,6 @@ from core_pdf.impl.document.recovery.xref import XRefScanner
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfReference
-from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, merge_xref_sections
 
 
@@ -189,7 +188,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
                 document.resolver.resolve(PdfReference(object_number, generation_number))
                 page = document.pages[found]
             except Exception:
-                page = PdfPage(document, cast(PdfDict, value), found + 1)
+                page = PdfPage(document, value, found + 1)
             yield found, page
             found += 1
 
@@ -242,20 +241,16 @@ def pdfminer_resolvable_pages(  # noqa: C901
             section = read_section(section_start)
             section_seen.add(section.offset)
             entries = section.entries
-            previous = cast(int | None, section.trailer.get("Prev"))
-            xref_stream = (
-                cast(int | None, section.trailer.get("XRefStm"))
-                if section.kind == "table"
-                else None
-            )
+            previous = section.trailer.get("Prev")
+            xref_stream = section.trailer.get("XRefStm") if section.kind == "table" else None
             if xref_stream is not None:
-                supplemental = read_section(xref_stream, stream_only=True)
+                supplemental = read_section(xref_stream, stream_only=True)  # type: ignore[arg-type]
                 entries = dict(entries)
                 entries.update(supplemental.entries)
             xref_sections.append(entries)
             if previous is None:
                 break
-            section_start = previous
+            section_start = previous  # type: ignore[assignment]
     except Exception:
         xref_sections = [strict_xref]
 

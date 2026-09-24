@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any, cast
 
 import pytest
 
@@ -16,7 +15,7 @@ from core_pdf_spec.types import PdfName, PdfReference, Rectangle
 
 
 def make_state() -> ContentInterpreter:
-    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, None), cast(Any, None))
+    return ContentInterpreter(ObjectResolver(b"", {}), None, None)  # ty: ignore[invalid-argument-type]
 
 
 @pytest.mark.parametrize("indirect_array", [False, True])
@@ -26,14 +25,14 @@ def test_frame_keeps_resolved_local_bbox_and_original_operand(
     indirect_array: bool, indirect_components: bool, transparency: bool
 ) -> None:
     state = make_state()
-    resolver = cast(ObjectResolver, state.resolver)
+    resolver = state.resolver
     values = [5, 7, 1, 2]
     array = []
     for index, value in enumerate(values, 10):
-        resolver.objects[key_for(index, 0)] = value
+        resolver.objects[key_for(index, 0)] = value  # ty: ignore[unresolved-attribute]
         array.append(PdfReference(index, 0) if indirect_components else value)
     original_array = array.copy()
-    resolver.objects[key_for(20, 0)] = array
+    resolver.objects[key_for(20, 0)] = array  # ty: ignore[unresolved-attribute]
     operand = PdfReference(20, 0) if indirect_array else array
     dictionary: PdfDict = {"Subtype": PdfName.of("Form"), "BBox": operand}
     if transparency:
@@ -183,7 +182,7 @@ def test_local_bbox_transport_preserves_reader_bbox_hook_and_queue_signature() -
                 stream_key=stream_key,
             )
 
-    state = CustomInterpreter(ObjectResolver(b"", {}), cast(Any, None), cast(Any, None))
+    state = CustomInterpreter(ObjectResolver(b"", {}), None, None)  # ty: ignore[invalid-argument-type]
     state.stream_executor = ExistingExecutor(state)
     frame = state.append_form_xobject(PdfStream(dictionary={"BBox": "reader operand"}), 0)
     assert frame is not None
@@ -197,7 +196,7 @@ def test_reader_missing_bbox_hook_keeps_none_transport() -> None:
         def resolve_form_bbox(self, value: object) -> Rectangle | None:
             return None
 
-    state = CustomInterpreter(ObjectResolver(b"", {}), cast(Any, None), cast(Any, None))
+    state = CustomInterpreter(ObjectResolver(b"", {}), None, None)  # ty: ignore[invalid-argument-type]
     frame = state.append_form_xobject(PdfStream(dictionary={}), 0)
     assert frame is not None
     assert frame.form_bbox is frame.clip_bbox is frame.form_bbox_operand is None

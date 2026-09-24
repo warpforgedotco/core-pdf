@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal, Self, TypeAlias
+from dataclasses import dataclass, field
+from functools import partial
+from itertools import chain
+from typing import Literal, TypeAlias
 
 from core_pdf.impl.capture.records import (
     CapturedDrawing,
@@ -10,300 +13,163 @@ from core_pdf.impl.capture.records import (
     CapturedLine,
     CapturedTextBoundary,
 )
-from core_pdf.impl.exceptions import PdfContractError
-from core_pdf.impl.model.glyphs import GlyphObservation
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.glyphs import GlyphObservation
+from core_pdf.impl.runs import TextRun
 
 PageCommand: TypeAlias = (
     TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage | CapturedTextBoundary
 )
 
 
-class CapturedProgram(Record):
-    __slots__ = (
-        "runs",
-        "glyphs",
-        "drawings",
-        "inline_images",
-        "lines",
-        "text_boundaries",
-        "commands",
+@dataclass(frozen=True, slots=True)
+class CaptureOptions:
+    """What a capture records beyond the text itself.
+
+    ink_bounds: each horizontal glyph's ink box, from the font's glyph bbox.
+    text_runs: the layout runs, clusters and run geometry extraction builds on.
+    render_details: the rasterizer's per-glyph payload -- glyph transforms and
+    bitmap requests. A program captured without it describes the page's text
+    correctly but cannot be drawn.
+    """
+
+    ink_bounds: bool = True
+    text_runs: bool = True
+    render_details: bool = True
+
+
+DEFAULT_CAPTURE = CaptureOptions()
+# Extraction composes blocks, not pixels, so it skips the render payload.
+EXTRACTION_CAPTURE = CaptureOptions(render_details=False)
+
+
+@dataclass(frozen=True, slots=True)
+class CapturedProgram:
+    runs: tuple[TextRun, ...] = ()
+    glyphs: tuple[GlyphObservation, ...] = ()
+    drawings: tuple[CapturedDrawing, ...] = ()
+    inline_images: tuple[CapturedInlineImage, ...] = ()
+    lines: tuple[CapturedLine, ...] = ()
+    text_boundaries: tuple[CapturedTextBoundary, ...] = field(default=(), kw_only=True)
+    # What the capture recorded. commands refuses a program captured without
+    # render details rather than draw a page with no glyphs on it.
+    options: CaptureOptions = field(default=DEFAULT_CAPTURE, kw_only=True)
+    # Derived from the six products above, and built only when something asks for it.
+    # init=False keeps it out of __init__, __match_args__ and copy.replace,
+    # which is what the hand-written __replace__ arranged by listing the other
+    # six explicitly. compare=False because it is a function of them.
+    #
+    # Lazy because the renderer is its only reader in the workspace: an
+    # extract never touches it, and building it eagerly meant a has_paint call
+    # on every glyph and a sort of every product on the page, for a tuple that
+    # was then dropped.
+    _commands: tuple[PageCommand, ...] | None = field(
+        init=False, default=None, repr=False, compare=False
     )
 
-    runs: tuple[TextRun, ...]
-    glyphs: tuple[GlyphObservation, ...]
-    drawings: tuple[CapturedDrawing, ...]
-    inline_images: tuple[CapturedInlineImage, ...]
-    lines: tuple[CapturedLine, ...]
-    text_boundaries: tuple[CapturedTextBoundary, ...]
-    commands: tuple[PageCommand, ...]
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "runs", tuple(self.runs))
+        object.__setattr__(self, "glyphs", tuple(self.glyphs))
+        object.__setattr__(self, "drawings", tuple(self.drawings))
+        object.__setattr__(self, "inline_images", tuple(self.inline_images))
+        object.__setattr__(self, "lines", tuple(self.lines))
+        object.__setattr__(self, "text_boundaries", tuple(self.text_boundaries))
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "runs",
-        "glyphs",
-        "drawings",
-        "inline_images",
-        "lines",
-        "text_boundaries",
-        "commands",
-    )
-    __match_args__ = ("runs", "glyphs", "drawings", "inline_images", "lines")
-
-    def __init__(
-        self,
-        runs: tuple[TextRun, ...] = (),
-        glyphs: tuple[GlyphObservation, ...] = (),
-        drawings: tuple[CapturedDrawing, ...] = (),
-        inline_images: tuple[CapturedInlineImage, ...] = (),
-        lines: tuple[CapturedLine, ...] = (),
-        *,
-        text_boundaries: tuple[CapturedTextBoundary, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "runs", runs)
-        frozen_setattr(self, "glyphs", glyphs)
-        frozen_setattr(self, "drawings", drawings)
-        frozen_setattr(self, "inline_images", inline_images)
-        frozen_setattr(self, "lines", lines)
-        frozen_setattr(self, "text_boundaries", text_boundaries)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.runs == other.runs
-            and self.glyphs == other.glyphs
-            and self.drawings == other.drawings
-            and self.inline_images == other.inline_images
-            and self.lines == other.lines
-            and self.text_boundaries == other.text_boundaries
-            and self.commands == other.commands
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.runs,
-                self.glyphs,
-                self.drawings,
-                self.inline_images,
-                self.lines,
-                self.text_boundaries,
-                self.commands,
-            )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        runs = changes.pop("runs", self.runs)
-        glyphs = changes.pop("glyphs", self.glyphs)
-        drawings = changes.pop("drawings", self.drawings)
-        inline_images = changes.pop("inline_images", self.inline_images)
-        lines = changes.pop("lines", self.lines)
-        text_boundaries = changes.pop("text_boundaries", self.text_boundaries)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            runs,
-            glyphs,
-            drawings,
-            inline_images,
-            lines,
-            text_boundaries=text_boundaries,
-        )
-
-    def _post_init(self) -> None:
-        runs = tuple(self.runs)
-        glyphs = tuple(self.glyphs)
-        drawings = tuple(self.drawings)
-        inline_images = tuple(self.inline_images)
-        lines = tuple(self.lines)
-        text_boundaries = tuple(self.text_boundaries)
-        validations: tuple[tuple[str, tuple[object, ...], type[object]], ...] = (
-            ("text-run", runs, TextRun),
-            ("glyph", glyphs, GlyphObservation),
-            ("drawing", drawings, CapturedDrawing),
-            ("inline-image", inline_images, CapturedInlineImage),
-            ("line", lines, CapturedLine),
-            ("text-boundary", text_boundaries, CapturedTextBoundary),
-        )
-        for name, products, product_type in validations:
-            if not all(isinstance(product, product_type) for product in products):
-                raise PdfContractError(f"page program contains an invalid {name} product")
-
-        commands: list[PageCommand] = [*text_boundaries, *runs]
-        commands.extend(glyph for glyph in glyphs if glyph.has_paint)
-        commands.extend(drawings)
-        commands.extend(inline_images)
-        commands.sort(key=lambda command: command.seqno)
-
-        object.__setattr__(self, "runs", runs)
-        object.__setattr__(self, "glyphs", glyphs)
-        object.__setattr__(self, "drawings", drawings)
-        object.__setattr__(self, "inline_images", inline_images)
-        object.__setattr__(self, "lines", lines)
-        object.__setattr__(self, "text_boundaries", text_boundaries)
-        object.__setattr__(self, "commands", tuple(commands))
+    @property
+    def commands(self) -> tuple[PageCommand, ...]:
+        commands = self._commands
+        if commands is None:
+            if not self.options.render_details:
+                # Without glyph transforms and bitmap requests every glyph
+                # reports no paint, so the page would draw with no text on it.
+                # Refusing is better than silently drawing that.
+                raise ValueError(
+                    "page program was captured without render details and cannot be drawn; "
+                    "capture it with CaptureOptions(render_details=True)"
+                )
+            ordered: list[PageCommand] = [*self.text_boundaries, *self.runs]
+            ordered.extend(glyph for glyph in self.glyphs if glyph.has_paint)
+            ordered.extend(self.drawings)
+            ordered.extend(self.inline_images)
+            ordered.sort(key=lambda command: command.seqno)
+            commands = tuple(ordered)
+            object.__setattr__(self, "_commands", commands)
+        return commands
 
 
-class AppearanceProgram(Record):
-    __slots__ = ("kind", "source", "clip_bbox", "program")
-
+@dataclass(frozen=True, slots=True)
+class AppearanceProgram:
     kind: Literal["widget", "annotation"]
     source: object
     clip_bbox: tuple[float, float, float, float]
     program: CapturedProgram
 
-    __fields__: ClassVar[tuple[str, ...]] = ("kind", "source", "clip_bbox", "program")
-    __match_args__ = ("kind", "source", "clip_bbox", "program")
 
-    def __init__(
-        self,
-        kind: Literal["widget", "annotation"],
-        source: object,
-        clip_bbox: tuple[float, float, float, float],
-        program: CapturedProgram,
-    ) -> None:
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "source", source)
-        frozen_setattr(self, "clip_bbox", clip_bbox)
-        frozen_setattr(self, "program", program)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.kind == other.kind
-            and self.source == other.source
-            and self.clip_bbox == other.clip_bbox
-            and self.program == other.program
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.kind, self.source, self.clip_bbox, self.program))
-
-
-class PageProgram(Record):
-    __slots__ = (
-        "body",
-        "appearances",
-        "runs",
-        "glyphs",
-        "drawings",
-        "inline_images",
-        "lines",
-        "text_boundaries",
-        "commands",
+@dataclass(frozen=True, slots=True)
+class PageProgram:
+    body: CapturedProgram = field(default_factory=CapturedProgram)
+    appearances: tuple[AppearanceProgram, ...] = ()
+    # Concatenations of body and appearances, rebuilt by __post_init__.
+    runs: tuple[TextRun, ...] = field(init=False)
+    glyphs: tuple[GlyphObservation, ...] = field(init=False)
+    drawings: tuple[CapturedDrawing, ...] = field(init=False)
+    inline_images: tuple[CapturedInlineImage, ...] = field(init=False)
+    lines: tuple[CapturedLine, ...] = field(init=False)
+    text_boundaries: tuple[CapturedTextBoundary, ...] = field(init=False)
+    # Lazy for the same reason as CapturedProgram.commands, and it has to be:
+    # reading body.commands here would force the body's.
+    _commands: tuple[PageCommand, ...] | None = field(
+        init=False, default=None, repr=False, compare=False
     )
 
-    body: CapturedProgram
-    appearances: tuple[AppearanceProgram, ...]
-    runs: tuple[TextRun, ...]
-    glyphs: tuple[GlyphObservation, ...]
-    drawings: tuple[CapturedDrawing, ...]
-    inline_images: tuple[CapturedInlineImage, ...]
-    lines: tuple[CapturedLine, ...]
-    text_boundaries: tuple[CapturedTextBoundary, ...]
-    commands: tuple[PageCommand, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "body",
-        "appearances",
-        "runs",
-        "glyphs",
-        "drawings",
-        "inline_images",
-        "lines",
-        "text_boundaries",
-        "commands",
-    )
-    __match_args__ = ("body", "appearances")
-
-    def __init__(
-        self,
-        body: CapturedProgram | None = None,
-        appearances: tuple[AppearanceProgram, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "body", CapturedProgram() if body is None else body)
-        frozen_setattr(self, "appearances", appearances)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.body == other.body
-            and self.appearances == other.appearances
-            and self.runs == other.runs
-            and self.glyphs == other.glyphs
-            and self.drawings == other.drawings
-            and self.inline_images == other.inline_images
-            and self.lines == other.lines
-            and self.text_boundaries == other.text_boundaries
-            and self.commands == other.commands
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.body,
-                self.appearances,
-                self.runs,
-                self.glyphs,
-                self.drawings,
-                self.inline_images,
-                self.lines,
-                self.text_boundaries,
-                self.commands,
-            )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        body = changes.pop("body", self.body)
-        appearances = changes.pop("appearances", self.appearances)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(body, appearances)
-
-    def _post_init(self) -> None:
-        if not isinstance(self.body, CapturedProgram):
-            raise PdfContractError("page program contains an invalid body")
+    def __post_init__(self) -> None:
+        set_derived = partial(object.__setattr__, self)
         appearances = tuple(self.appearances)
-        if not all(
-            isinstance(appearance, AppearanceProgram)
-            and appearance.kind in {"widget", "annotation"}
-            and isinstance(appearance.program, CapturedProgram)
-            for appearance in appearances
-        ):
-            raise PdfContractError("page program contains an invalid appearance")
-        object.__setattr__(self, "appearances", appearances)
-        programs = (self.body, *(appearance.program for appearance in appearances))
-        for name in (
-            "runs",
-            "glyphs",
-            "drawings",
-            "inline_images",
-            "lines",
-            "text_boundaries",
-            "commands",
-        ):
-            object.__setattr__(
-                self,
-                name,
-                tuple(item for program in programs for item in getattr(program, name))
-                if appearances
-                else getattr(self.body, name),
-            )
+        set_derived("appearances", appearances)
+        body = self.body
+        if not appearances:
+            # Nothing to concatenate, so the body's own tuples stand as they are.
+            set_derived("runs", body.runs)
+            set_derived("glyphs", body.glyphs)
+            set_derived("drawings", body.drawings)
+            set_derived("inline_images", body.inline_images)
+            set_derived("lines", body.lines)
+            set_derived("text_boundaries", body.text_boundaries)
+            return
+        # Body first, then each appearance in capture order. Nothing is
+        # re-sorted: one TextState numbers the body and every appearance off a
+        # single counter, so concatenating in that order is already by seqno.
+        programs = (body, *(appearance.program for appearance in appearances))
+        merge = chain.from_iterable
+        set_derived("runs", tuple(merge(p.runs for p in programs)))
+        set_derived("glyphs", tuple(merge(p.glyphs for p in programs)))
+        set_derived("drawings", tuple(merge(p.drawings for p in programs)))
+        set_derived("inline_images", tuple(merge(p.inline_images for p in programs)))
+        set_derived("lines", tuple(merge(p.lines for p in programs)))
+        set_derived("text_boundaries", tuple(merge(p.text_boundaries for p in programs)))
+
+    @property
+    def options(self) -> CaptureOptions:
+        # One TextState captures the body and every appearance, so they share it.
+        return self.body.options
+
+    @property
+    def commands(self) -> tuple[PageCommand, ...]:
+        commands = self._commands
+        if commands is None:
+            if not self.appearances:
+                commands = self.body.commands
+            else:
+                programs = (self.body, *(a.program for a in self.appearances))
+                commands = tuple(chain.from_iterable(p.commands for p in programs))
+            object.__setattr__(self, "_commands", commands)
+        return commands
 
 
 __all__ = (
+    "DEFAULT_CAPTURE",
+    "EXTRACTION_CAPTURE",
     "AppearanceProgram",
+    "CaptureOptions",
     "CapturedProgram",
     "PageCommand",
     "PageProgram",

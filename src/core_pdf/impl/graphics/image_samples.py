@@ -25,7 +25,7 @@ from core_pdf.impl.graphics.icc_profiles import (
     parse_icc_transform,
     srgb_profile,
 )
-from core_pdf.impl.runtime.scalars import parse_float
+from core_pdf.impl.scalars import parse_float
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_08_graphics.color_kernels import (

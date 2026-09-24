@@ -10,7 +10,7 @@ from contextlib import suppress
 from copy import replace
 from functools import cache
 from io import BytesIO
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 import numpy
 
@@ -61,7 +61,7 @@ from core_pdf.impl.fonts.widths import (
     get_descendant,
     parse_font_widths,
 )
-from core_pdf.impl.model.glyphs import UnicodeSource
+from core_pdf.impl.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import (
     PdfString,
@@ -383,7 +383,7 @@ class DecodedGlyph(DecodedFontGlyph, ReplaceFields, ReprFields):
 # getattr because a type checker reads DecodedGlyph.code_bytes as the
 # attribute's type rather than as the slot descriptor it is at runtime.
 def slot_setter(owner: type, name: str) -> Callable[[object, Any], None]:
-    return cast("Callable[[object, Any], None]", getattr(owner, name).__set__)
+    return getattr(owner, name).__set__
 
 
 _set_code_bytes = slot_setter(DecodedGlyph, "code_bytes")
@@ -583,6 +583,8 @@ class FontDecoder:
         "glyph_decode_table_authoritative",
         "cff_unicode_repair_index",
         "cff_unicode_repairs",
+        "simple_glyph_cache",
+        "cid_glyph_cache",
         "font_program",
         "raster_font_provider",
         "glyph_bbox_cache",
@@ -622,6 +624,8 @@ class FontDecoder:
     glyph_decode_table_authoritative: bool
     cff_unicode_repair_index: CFFUnicodeRepairIndex | None
     cff_unicode_repairs: dict[bytes, str]
+    simple_glyph_cache: dict[int, DecodedGlyph]
+    cid_glyph_cache: dict[tuple[bytes, int], DecodedGlyph]
     font_program: FontProgram | None
     raster_font_provider: RasterFontProviderLike | None
     glyph_bbox_cache: dict[int, Rectangle | None]
@@ -663,6 +667,8 @@ class FontDecoder:
         "glyph_decode_table_authoritative",
         "cff_unicode_repair_index",
         "cff_unicode_repairs",
+        "simple_glyph_cache",
+        "cid_glyph_cache",
         "font_program",
         "raster_font_provider",
         "glyph_bbox_cache",
@@ -674,7 +680,7 @@ class FontDecoder:
 
     def __init__(
         self,
-        font: dict[str, Any],
+        font: dict[Any, Any],
         ligature_overrides: dict[int, str] | None = None,
         raster_font_provider: RasterFontProviderLike | None = None,
         *,
@@ -799,6 +805,22 @@ class FontDecoder:
             font, self.font_program, to_unicode, cmap
         )
         self.cff_unicode_repairs = {}
+        # A simple font addresses 256 codes, and a glyph decoded from one
+        # is a pure function of that code and this decoder's tables, all of
+        # which are fixed above. A text page decodes thousands of glyphs
+        # from a few dozen distinct codes, so the objects are shared rather
+        # than rebuilt: DecodedGlyph is frozen, nothing compares one by
+        # identity, and the working set drops from one object per character
+        # to one per character *class*, which is the point -- the profile
+        # says this path is ~65% cache stalls, not instructions.
+        #
+        # CID fonts share the same way, keyed by the pair the cmap yields.
+        # Their one piece of mutable input is cff_unicode_repairs, which
+        # decode_cid_glyphs can rewrite partway through a document; it already
+        # purges unicode_choice_cache for the codes that changed, and purges
+        # this alongside it.
+        self.simple_glyph_cache = {}
+        self.cid_glyph_cache = {}
 
     @staticmethod
     def cid_system_info_string(value: object) -> str | None:
@@ -1101,10 +1123,16 @@ class FontDecoder:
 
     def decode_simple_glyphs(self, data: bytes | bytearray | memoryview) -> list[DecodedGlyph]:
         glyphs: list[DecodedGlyph] = []
+        cache = self.simple_glyph_cache
+        append = glyphs.append
         table = self.byte_decode_table
         if table is None and self.to_unicode is None:
             table = self.encoding_decode_table
         for code in data:
+            cached = cache.get(code)
+            if cached is not None:
+                append(cached)
+                continue
             chunk = SINGLE_BYTES[code]
             gid = self.glyph_id_for_code(code)
             if self.to_unicode is not None:
@@ -1121,20 +1149,20 @@ class FontDecoder:
             else:
                 choice = self.unicode_choice_for_code(chunk, code, gid)
             choice = self.apply_simple_unicode_overrides(choice, chunk)
-            glyphs.append(
-                DecodedGlyph(
-                    chunk,
-                    code,
-                    code,
-                    gid,
-                    choice.text,
-                    code,
-                    choice.source,
-                    choice.alternates,
-                    code,
-                    choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
-                )
+            glyph = DecodedGlyph(
+                chunk,
+                code,
+                code,
+                gid,
+                choice.text,
+                code,
+                choice.source,
+                choice.alternates,
+                code,
+                choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
             )
+            cache[code] = glyph
+            append(glyph)
         return glyphs
 
     def decode_cid_glyphs(self, data: bytes) -> list[DecodedGlyph]:
@@ -1159,8 +1187,20 @@ class FontDecoder:
                     cache = self.unicode_choice_cache
                     for key in [key for key in cache if key[0] in changed]:
                         del cache[key]
+                    glyph_cache = self.cid_glyph_cache
+                    for glyph_key in [key for key in glyph_cache if key[0] in changed]:
+                        del glyph_cache[glyph_key]
                     current.update(repairs)
-        return [self.build_cid_glyph(code_bytes, cid) for code_bytes, cid in entries]
+        decoded_cache = self.cid_glyph_cache
+        glyphs: list[DecodedGlyph] = []
+        append = glyphs.append
+        for code_bytes, cid in entries:
+            decoded_key = (code_bytes, cid)
+            decoded = decoded_cache.get(decoded_key)
+            if decoded is None:
+                decoded = decoded_cache[decoded_key] = self.build_cid_glyph(code_bytes, cid)
+            append(decoded)
+        return glyphs
 
     def build_cid_glyph(self, code_bytes: bytes, cid: int) -> DecodedGlyph:
         char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0

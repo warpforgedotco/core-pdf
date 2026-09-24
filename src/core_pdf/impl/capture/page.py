@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import Any
 
-from core_pdf.impl.capture.interpreter import TextState
-from core_pdf.impl.capture.program import AppearanceProgram, CapturedProgram, PageProgram
+from core_pdf.impl.capture.program import (
+    DEFAULT_CAPTURE,
+    AppearanceProgram,
+    CaptureOptions,
+    PageProgram,
+)
+from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.document.records import RawAnnotation, RawFormField
 from core_pdf.impl.document.recovery.resolver import resolve_resource_dict
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.geometry import normalize_rect, transform_bbox
+from core_pdf.impl.geometry import normalize_rect, transform_bbox
 from core_pdf_spec.s_07_document.annotation_appearance import (
     ANNOTATION_FLAG_HIDDEN,
     ANNOTATION_FLAG_NO_VIEW,
@@ -18,7 +23,6 @@ from core_pdf_spec.s_07_document.annotation_appearance import (
     normal_appearance_stream,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
 SKIPPED_SUBTYPES = frozenset({"Popup", "Link"})
@@ -132,16 +136,11 @@ def capture_annotation_appearances(
             resolved_resources = resolve_resource_dict(
                 stream.dictionary.get("Resources"), document.resolver
             )
-            resources = cast(PdfDict, resolved_resources or page.resources)
+            resources = resolved_resources or page.resources
 
             previous_source = state.capture_source
             state.run_accumulator.flush()
-            run_start = len(state.runs)
-            glyph_start = len(state.glyphs)
-            drawing_start = len(state.drawings)
-            image_start = len(state.inline_images)
-            line_start = len(state.lines)
-            text_boundary_start = len(state.text_boundaries)
+            marks = state.capture_marks()
             state.capture_source = "annotation_appearance"
             try:
                 state.stream_executor.consume(
@@ -163,14 +162,7 @@ def capture_annotation_appearances(
                         ),
                         source=annot,
                         clip_bbox=clip,
-                        program=CapturedProgram(
-                            runs=tuple(state.runs[run_start:]),
-                            glyphs=tuple(state.glyphs[glyph_start:]),
-                            drawings=tuple(state.drawings[drawing_start:]),
-                            inline_images=tuple(state.inline_images[image_start:]),
-                            lines=tuple(state.lines[line_start:]),
-                            text_boundaries=tuple(state.text_boundaries[text_boundary_start:]),
-                        ),
+                        program=state.captured_program(marks),
                     )
                 )
         except PdfParseError, ValueError:
@@ -184,6 +176,7 @@ def capture_page_program(
     hidden_layers: frozenset[str] | None = None,
     fields: Iterable[RawFormField] | None = None,
     annotations: Iterable[RawAnnotation] | None = None,
+    options: CaptureOptions = DEFAULT_CAPTURE,
 ) -> PageProgram:
     state = TextState(
         page.document,
@@ -191,17 +184,12 @@ def capture_page_program(
             page.document.oc_hidden_layers() if hidden_layers is None else hidden_layers
         ),
         page_clip=page.effective_page_clip(),
+        options=options,
     )
     page.consume_contents(state)
     state.run_accumulator.flush()
-    body = CapturedProgram(
-        runs=tuple(state.runs),
-        glyphs=tuple(state.glyphs),
-        drawings=tuple(state.drawings),
-        inline_images=tuple(state.inline_images),
-        lines=tuple(state.lines),
-        text_boundaries=tuple(state.text_boundaries),
-    )
+    # Snapshot before the appearances run: they append to the same state.
+    body = state.captured_program()
     return PageProgram(
         body=body,
         appearances=capture_annotation_appearances(

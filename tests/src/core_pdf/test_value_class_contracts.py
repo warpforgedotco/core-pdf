@@ -6,6 +6,13 @@ Every class that declares ``__fields__`` writes its own ``__init__``, ``__repr__
 ``__eq__``, ``__hash__``, ``__replace__``, frozen guards and pickle state instead of
 having them generated. These tests exercise that boilerplate uniformly, so a mistake
 in one class cannot hide behind the classes its own package happens to exercise.
+
+Dataclasses are deliberately out of scope, which is why the discovery below keys on
+``__fields__`` rather than on being a value object. There is no hand-written
+boilerplate in one for a mistake to hide in, and checking that ``@dataclass`` emits a
+working ``__eq__`` is testing CPython. A class converted to a dataclass therefore
+leaves this suite, and that is the conversion working rather than coverage going
+missing.
 """
 
 from __future__ import annotations
@@ -16,7 +23,7 @@ import pickle
 import pkgutil
 from copy import replace
 from types import ModuleType
-from typing import Any, ClassVar, Protocol, cast
+from typing import Any, ClassVar, Protocol
 
 import pytest
 
@@ -91,7 +98,7 @@ def value_classes() -> dict[str, type[ValueClass]]:
                 continue
             if "__fields__" in value.__dict__:
                 key = f"{value.__module__}.{value.__qualname__}"
-                classes[key] = cast("type[ValueClass]", value)
+                classes[key] = value
     return classes
 
 

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.capture.interpreter import TextState
+from core_pdf.impl.capture.recording import TextState
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 
@@ -139,3 +139,28 @@ def test_valid_native_numeric_encodings_remain_accepted(state, value):
     assert state.as_float(value) == 2
     assert state.parse_font_size(value) == 2
     assert state.errors == []
+
+
+def test_both_dispatch_routes_read_one_operation_table(text_pdf_bytes: bytes) -> None:
+    # execute_operation and the stream executor used to resolve overrides each
+    # in their own way; an override for an operator the defaults do not know
+    # has to be recognised by the executor's lexer as well as called.
+    from core_pdf import PdfDocument
+    from core_pdf_spec.s_07_syntax.stream import PdfStream
+
+    with PdfDocument(text_pdf_bytes) as document:
+        page = document.pages[0]
+        state = TextState(document)
+        seen: list[tuple[str, tuple[object, ...]]] = []
+        state.operator_overrides["Xq"] = lambda operands, depth: seen.append(("Xq", operands))
+        state.operator_overrides["w"] = lambda operands, depth: seen.append(("w", operands))
+        assert state.operation_table()["w"] is state.operator_overrides["w"]
+
+        state.execute_operation("w", (3,), 0)
+        page.contents = [PdfStream(raw_data=b"5 w 7 Xq")]
+        page.consume_contents(state)
+        assert seen == [("w", (3,)), ("w", (5,)), ("Xq", (7,))]
+
+
+def test_the_default_table_is_returned_as_is_without_overrides(state) -> None:
+    assert state.operation_table() is state.default_handlers

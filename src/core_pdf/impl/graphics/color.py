@@ -7,6 +7,7 @@ from typing import Any, TypeAlias
 
 import numpy
 
+from core_pdf.impl.array_views import ByteBuffer, uint8_view
 from core_pdf.impl.graphics.color_spec import (
     ColorSpace,
     parse_color_space,
@@ -16,8 +17,7 @@ from core_pdf.impl.graphics.image_samples import (
     convert_components,
     convert_integer_image,
 )
-from core_pdf.impl.runtime.array_views import ByteBuffer, uint8_view
-from core_pdf.impl.runtime.scalars import parse_int
+from core_pdf.impl.scalars import parse_int
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 ImageDict: TypeAlias = dict[str, object]
@@ -109,7 +109,4 @@ def convert_cmyk(
 
 
 def image_dimension(image_dict: ImageDict, key: str) -> int:
-    value = image_dict.get(key)
-    if type(value) is bool:
-        return 0
-    return parse_int(value, 0) or 0
+    return parse_int(image_dict.get(key), 0)

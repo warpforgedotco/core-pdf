@@ -1,13 +1,12 @@
 import subprocess
 import sys
 from types import SimpleNamespace
-from typing import Any, cast
 
 import pytest
 
+from core_pdf.impl.execution import ExtractionCancelled, ExtractionScope
 from core_pdf.impl.extract.selection import assemble_document
 from core_pdf.impl.output.model import Diagnostic, Page
-from core_pdf.impl.runtime.execution import ExtractionCancelled, ExtractionScope
 
 
 @pytest.mark.parametrize("numbers", [(), (3, 1, 3)])
@@ -21,7 +20,7 @@ def test_document_assembly_retains_selection_metadata_and_diagnostics(
         SimpleNamespace(assembled_page=lambda context, page=page: page) for page in pages
     )
     document = SimpleNamespace(get_metadata=lambda: {"Title": "Selection"})
-    result = assemble_document(cast(Any, document), cast(Any, extractions), ExtractionScope())
+    result = assemble_document(document, extractions, ExtractionScope())  # ty: ignore[invalid-argument-type]
     assert result.pages == pages
     assert dict(result.metadata) == {"Title": "Selection"}
     assert result.diagnostics == tuple(d for page in pages for d in page.diagnostics)
@@ -37,7 +36,7 @@ def test_document_assembly_checks_cancellation_between_pages() -> None:
     extractions = (SimpleNamespace(assembled_page=assemble),) * 2
     context = ExtractionScope(cancelled=lambda: bool(visited))
     with pytest.raises(ExtractionCancelled):
-        assemble_document(cast(Any, None), cast(Any, extractions), context)
+        assemble_document(None, extractions, context)  # ty: ignore[invalid-argument-type]
     assert visited == [1]
 
 

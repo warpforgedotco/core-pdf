@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Sequence
-from typing import Any, cast
+from typing import Any
 
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_08_graphics.geometry import points_bbox, transform_bbox
@@ -58,7 +58,8 @@ def bbox_intersection_area(left: Sequence[float], right: Sequence[float]) -> flo
 
 def finite_rect(box: object, *, require_positive: bool = True) -> Rectangle | None:
     try:
-        rect = cast("Sequence[Any]", box)
+        # Anything indexable by 0..3 will do; the except clause is the check.
+        rect: Any = box
         x0, y0, x1, y1 = (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3]))
     except IndexError, KeyError, TypeError, ValueError:
         return None
@@ -80,6 +81,15 @@ def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | N
         max(left[2], right[2]),
         max(left[3], right[3]),
     )
+
+
+def extend_baseline(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
+    """Join two baselines end to end, keeping the left's start and the right's end."""
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return (left[0], left[1], right[2], right[3])
 
 
 def intersect_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:

@@ -8,8 +8,8 @@ from core_pdf.impl.extract.capture import (
     promote_hidden_run,
 )
 from core_pdf.impl.extract.contracts import GlyphEvidence, TextQualityStats
-from core_pdf.impl.model.glyphs import GlyphCluster
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.glyphs import GlyphCluster
+from core_pdf.impl.runs import TextRun
 
 
 def run() -> TextRun:

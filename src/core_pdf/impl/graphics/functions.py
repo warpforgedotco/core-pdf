@@ -6,7 +6,7 @@ import math
 from typing import Any
 
 import core_pdf_spec.s_08_graphics.pdf_function as strict
-from core_pdf.impl.runtime.scalars import parse_float, parse_int
+from core_pdf.impl.scalars import parse_float, parse_int
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream

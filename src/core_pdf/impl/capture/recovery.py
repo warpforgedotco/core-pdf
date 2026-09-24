@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from collections.abc import Callable, Iterator
-from typing import cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.types import PdfName
@@ -185,8 +184,8 @@ def iter_content_operations(
             if len(operands) < 16:
                 operands.append(token.value)
             op_name = "BI"
-        elif token.is_operator:
-            op_name = cast(str, token.value)
+        elif token.is_operator and isinstance(token.value, str):
+            op_name = token.value
         else:
             if len(operands) < 16:
                 operands.append(token.value)

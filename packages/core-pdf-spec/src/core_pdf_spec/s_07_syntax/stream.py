@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias
 
 from core_pdf_spec.s_07_filters import decode_spec as stream_decode_spec
 from core_pdf_spec.types import MISSING, MissingObject
@@ -13,8 +13,7 @@ if TYPE_CHECKING:
 # PdfStream, so the module defining the object types has to import this one.
 # Only the runtime import is circular -- a stream dictionary is an ordinary PDF
 # dictionary, and saying so keeps every reader of stream.dictionary typed.
-# Both aliases appear only in annotations and cast() arguments, neither of
-# which is evaluated at runtime.
+# Both aliases appear only in annotations, which are not evaluated at runtime.
 PdfStreamDictionary: TypeAlias = "PdfDict"
 PdfStreamDecodeSpec: TypeAlias = "stream_decode_spec.StreamDecodeSpec | PdfDict | None"
 
@@ -49,9 +48,9 @@ class PdfStream:
             raise ValueError("invalid stream data")
         if spec is not None and not isinstance(spec, (stream_decode_spec.StreamDecodeSpec, dict)):
             raise ValueError("invalid stream decode spec")
-        self.dictionary = cast(PdfStreamDictionary, dictionary) if dictionary is not None else {}
+        self.dictionary = dictionary if dictionary is not None else {}
         self.raw_data = raw_data
-        self.spec = cast(PdfStreamDecodeSpec, spec)
+        self.spec = spec
         if decoder is None:
             from core_pdf_spec.s_07_filters.pipeline import decode_stream_data
 

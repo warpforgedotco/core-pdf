@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from math import ceil
 from typing import Any, ClassVar, Self
 
-from core_pdf.impl.model.geometry import bbox_union
+from core_pdf.impl.geometry import bbox_union
 
 
 class LAParams:

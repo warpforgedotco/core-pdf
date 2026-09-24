@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -32,7 +32,7 @@ class PaintSink:
 
 def make_state() -> tuple[ContentInterpreter, PaintSink]:
     sink = PaintSink()
-    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None)), sink
+    return ContentInterpreter(ObjectResolver(b"", {}), sink, None), sink  # ty: ignore[invalid-argument-type]
 
 
 def form_xobject(group: PdfDict | None = None) -> PdfStream:
@@ -51,10 +51,10 @@ def test_transparency_group_resolves_isolation_with_nonisolated_default(
     group: PdfDict = {"S": PdfName.of("Transparency")}
     if isolated is not None:
         group["I"] = PdfReference(1, 0) if indirect else isolated
-        cast(ObjectResolver, state.resolver).objects[key_for(1, 0)] = isolated
+        state.resolver.objects[key_for(1, 0)] = isolated  # ty: ignore[unresolved-attribute]
     form = form_xobject(group)
     if indirect:
-        cast(ObjectResolver, state.resolver).objects[key_for(2, 0)] = group
+        state.resolver.objects[key_for(2, 0)] = group  # ty: ignore[unresolved-attribute]
         form.dictionary["Group"] = PdfReference(2, 0)
     frame = state.append_form_xobject(form, 0)
     assert frame is not None

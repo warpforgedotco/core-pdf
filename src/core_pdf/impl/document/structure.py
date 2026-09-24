@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, TypeAlias, cast, overload
+from typing import TYPE_CHECKING, Any, TypeAlias, overload
 
 from core_pdf.impl.document.recovery.trees import iter_number_tree_items
-from core_pdf.impl.model.pdf_values import coerce_value
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import coerce_value
 from core_pdf.impl.types import MISSING, PdfReference
 from core_pdf_spec.exceptions import PdfError
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
@@ -88,14 +88,6 @@ def find_all(
         if match_func(el):
             yield el
         stack.extend(child for child in reversed(list(el)) if isinstance(child, StructureElement))
-
-
-def literal_name(value: Any) -> str | None:
-    if isinstance(value, PdfReference):
-        return None
-    if value is None:
-        return None
-    return recover_pdf_name(value)
 
 
 def structure_key_name(key: Any) -> str:
@@ -188,8 +180,9 @@ class StructureElement(StructureNode):
 
     @property
     def role_resolution(self) -> StructureRole | None:
-        if self.role_resolution_value is not MISSING:
-            return cast(StructureRole | None, self.role_resolution_value)
+        cached = self.role_resolution_value
+        if cached is None or isinstance(cached, StructureRole):
+            return cached
         resolver = self.document.resolver
         context = resolver.semantic_context
         if context is not None and (context.version is None or not context.version.recognized):
@@ -307,7 +300,7 @@ class StructureElement(StructureNode):
             return None
         if isinstance(classes, list) and classes:
             classes = classes[-2] if len(classes) >= 2 else classes[-1]
-        name = literal_name(classes)
+        name = recover_pdf_name(classes)
         if name is None:
             raise ValueError("invalid structure class name")
         self.class_name_value = name

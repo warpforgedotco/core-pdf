@@ -39,37 +39,55 @@ from sweeping all 795 fixture PDFs, so the samples span the shapes that actually
 drive cost -- text density, tables, figures, sparse pages -- rather than the
 largest files. The module docstring has the details.
 
-Three axes are covered:
+Four axes are covered:
 
 - `test_open_document` -- xref parsing, trailer and page tree, no content.
 - `test_extract_first_page` -- one page, across the shape spread.
 - `test_extract_page_slice` -- three pages, for costs that only appear across
   page boundaries, such as shared font and resource caches.
+- `test_compose_page` / `test_rasterize_page` -- rendering, which is a sibling
+  of extraction rather than a stage of it. Both consume the captured page
+  program and only rendering produces pixels, so a change moves one and not
+  the other: the glyph caches moved extraction alone, the rasterizer kernels
+  moved rendering alone. Until these existed, rendering had no recorded
+  measurement at all and its numbers came from laptop wall clock.
 
 ## What a recorded run costs
 
-Measured on the profiling VM: these 12 benchmarks take **about 16 minutes of
-wall clock** under simulation, for roughly 3.7 s of native work. Two rules of
-thumb, both from that run:
+Measured from the CodSpeed job itself, which is the number that matters:
 
-- Wall clock lands near **25x the sum of the reported values**, which are
-  modelled times rather than measured ones.
-- Every benchmark pays valgrind's startup, so the suite total is dominated by
-  per-benchmark fixed cost rather than by any single sample.
+| suite | benchmarks | job wall clock |
+| ----- | ---------: | -------------: |
+| extraction only | 12 | 7.2 min |
+| plus rendering  | 18 | 10.4 min |
 
-A per-sample multiplier is the wrong way to budget this. An earlier version of
-this file quoted "roughly 45x native", taken from timing one file end to end;
-it understates a suite badly enough to be misleading, so prefer the wall-clock
-figure above.
+Budget from that table, not from the modelled values the report prints. Those
+are instruction-derived and do not scale to wall clock: the six rendering
+benchmarks report 8.2 s between them -- `test_rasterize_page[tables-…]` alone
+reports 4.7 s, the most expensive entry in the suite -- yet cost 3.2 minutes of
+job time. Rasterizing is instruction-dense rather than call-dense, so it
+inflates the modelled figure far more than the clock.
+
+Two earlier attempts at a rule of thumb here were both wrong and are worth
+recording as such: "roughly 45x native", taken from timing one file end to
+end, and "25x the sum of the reported values". Neither survives contact with
+the table above. What does hold is that every benchmark pays valgrind's
+startup, so the count is the thing to economise on.
 
 ## Adding a sample
 
 Keep the default suite cheap: prefer a file that isolates one kind of work, and
-keep its extraction cost under roughly 500 ms natively. Anything heavier
+keep its extraction cost under roughly 500 ms natively. That heuristic is about
+extraction; it does not transfer to rendering, where a 274 ms native rasterize
+reports 4.7 s modelled. For a rendering sample, check the reported value after
+its first recorded run rather than trusting the native figure. Anything heavier
 belongs in `DEEP_DIVE`, which is documentation for one-off profiling rather
 than part of the suite. Record the sample's measured `native_ms` so the budget
 stays reviewable.
 
 `native_ms` is extraction cost with the document already open, so benchmarks
 must keep `PdfDocument(...)` outside the measured region or the two stop being
-comparable. Opening is its own axis, measured by `test_open_document`.
+comparable. Opening is its own axis, measured by `test_open_document`. For
+`RENDER_SAMPLES` the figure is the rasterize cost with the page already
+composed, for the same reason: capture and compose are measured by their own
+benchmarks and stay outside the region.

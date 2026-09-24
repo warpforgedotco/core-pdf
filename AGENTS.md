@@ -67,6 +67,10 @@ unstructured` for differential runs (the extra belongs to the compat member, so 
 commands cannot select it); ordinary `uv sync`/`uv run` commands may otherwise remove the model.
 
 This is a Python 3.14+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`.
+Inside `src/core_pdf/impl`, each subpackage owns one feature and code shared between them
+lives in modules at the `impl` root. Root modules never import a subpackage; the pure helpers
+(`scalars`, `array_views`, `execution`) import no spec either. A new root module must be added
+to the root import contract in `pyproject.toml`, which `test_impl_root_contracts.py` enforces.
 
 The authored test suite includes facade tests and differential comparisons under
 `packages/core-pdf-compat/tests`, strict spec tests under

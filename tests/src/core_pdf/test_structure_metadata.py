@@ -8,9 +8,9 @@ from core_pdf.impl.document.structure import (
     StructureContentObject,
     StructureElement,
     StructureTree,
-    literal_name,
     structure_key_name,
 )
+from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -56,7 +56,7 @@ def test_object_content_requires_dictionary(props):
     [(None, None), (PdfReference(3, 0), None), (PdfName(b"Figure"), "Figure")],
 )
 def test_literal_names_do_not_resolve_references(value, expected):
-    assert literal_name(value) == expected
+    assert recover_pdf_name(value) == expected
     assert structure_key_name(42) == "42"
 
 

@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, cast
+from typing import ClassVar
 
 from core_pdf.impl.graphics.filter_registry import (
     CCITT_FILTERS,
     FILTER_NAME_ALIASES,
 )
-from core_pdf.impl.model.pdf_values import is_pdf_null
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.runtime.scalars import parse_int
+from core_pdf.impl.pdf_values import is_pdf_null
+from core_pdf.impl.scalars import parse_int
 from core_pdf.impl.types import PdfReference, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
 from core_pdf_spec.s_07_filters.decode_spec import FilterStep, StreamDecodeSpec
@@ -140,7 +140,7 @@ class FilterParams(PdfFilterParams, ReplaceFields, ReprFields):
             if name == "DamagedRowsBeforeError" and type(value) is bool:
                 normalized[name] = int(value)
                 continue
-            if type(value) is bool or not isinstance(value, (int, bytes, str)):
+            if not isinstance(value, (int, bytes, str)):
                 raise ValueError(f"invalid DecodeParms {name}")
             parsed = parse_int(value, None)
             if parsed is None:
@@ -158,7 +158,7 @@ class FilterParams(PdfFilterParams, ReplaceFields, ReprFields):
                 raise ValueError(f"invalid DecodeParms {name}")
         if is_pdf_null(parms.get("JBIG2Globals")):
             normalized["JBIG2Globals"] = None
-        return cast("FilterParams", super().from_parms(normalized))
+        return super().from_parms(normalized)
 
 
 def with_ccitt_image_rows(parms: object, dictionary: object) -> object:

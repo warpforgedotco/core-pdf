@@ -2,21 +2,19 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from typing import Any, ClassVar, Self, cast
+from typing import Any, ClassVar, Self
 
 from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.fonts.cmap_resources import resolve_cmap_decoder
-from core_pdf.impl.fonts.metrics import FONT_DATA
-from core_pdf.impl.model.geometry import bbox_union
+from core_pdf.impl.fonts.metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
+from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-
-from .._shared import LIGATURES
 
 
 def legacy_glyph_name_text(name: str) -> str:
@@ -403,8 +401,10 @@ def pdfminer_ligature_overrides(
         encoded_ligature = (
             base_table[glyph.char_code] if 0 <= glyph.char_code < len(base_table) else ""
         )
-        expected_ligature = LIGATURES.get(str(glyph_name) if glyph_name else "", encoded_ligature)
-        if expected_ligature not in LIGATURES.values():
+        expected_ligature = LIGATURE_TEXT_TO_CHAR.get(
+            str(glyph_name) if glyph_name else "", encoded_ligature
+        )
+        if expected_ligature not in LIGATURE_TEXT_TO_CHAR.values():
             continue
         ligature_cluster: tuple[Any, ...] | None = None
         legacy_text: str | None = None
@@ -413,7 +413,7 @@ def pdfminer_ligature_overrides(
             if len(candidate) != cluster_size:
                 continue
             decomposition = "".join(item.text for item in candidate)
-            candidate_text = LIGATURES.get(decomposition)
+            candidate_text = LIGATURE_TEXT_TO_CHAR.get(decomposition)
             if candidate_text is None or candidate_text != expected_ligature:
                 continue
             if any(
@@ -506,7 +506,7 @@ def pdfminer_normalized_width(glyph: Any) -> float:
     if getattr(glyph.font_decoder, "is_type3", False):
         font_matrix = _font_value(glyph.font_decoder.font, "FontMatrix")
         if isinstance(font_matrix, (tuple, list)) and len(font_matrix) >= 4:
-            width_scale = float(cast(Any, font_matrix[0])) + float(cast(Any, font_matrix[2]))
+            width_scale = float(font_matrix[0]) + float(font_matrix[2])
         raw_widths = _font_value(glyph.font_decoder.font, "Widths")
         first_char = _font_value(glyph.font_decoder.font, "FirstChar")
         if isinstance(raw_widths, (tuple, list)) and isinstance(first_char, int):
@@ -567,17 +567,17 @@ def pdfminer_descent(glyph: Any) -> float:
     if getattr(decoder, "is_type3", False):
         font_matrix = _font_value(decoder.font, "FontMatrix")
         if isinstance(font_matrix, (tuple, list)) and len(font_matrix) == 6:
-            descent_scale = float(cast(Any, font_matrix[1])) + float(cast(Any, font_matrix[3]))
+            descent_scale = float(font_matrix[1]) + float(font_matrix[3])
         descriptor = _font_value(decoder.font, "FontDescriptor")
         descriptor_bbox = _mapping_value(descriptor, "FontBBox")
         if descriptor is not None:
             descent_value = (
-                float(cast(Any, descriptor_bbox[1]))
+                float(descriptor_bbox[1])
                 if isinstance(descriptor_bbox, (tuple, list)) and len(descriptor_bbox) == 4
                 else 0.0
             )
         else:
             font_bbox = _font_value(decoder.font, "FontBBox")
             if isinstance(font_bbox, (tuple, list)) and len(font_bbox) == 4:
-                descent_value = float(cast(Any, font_bbox[1]))
+                descent_value = float(font_bbox[1])
     return descent_value * descent_scale

@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import cast
 
 from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.types import (
-    CachedPdfObject,
     InheritedValueMap,
     PdfDict,
 )
@@ -46,15 +44,15 @@ def collect_inherited_values(
             if stop_at_malformed_parent:
                 break
             raise ValueError("inherited dictionary cycle detected")
-        seen[marker] = cast(PdfDict, current)
+        seen[marker] = current
 
-        current_dict = cast("PdfDict", current)
+        current_dict = current
         for key in keys:
             if key in values:
                 continue
             value = inherited_dictionary_value(current_dict, key, None, resolve_ref)
             if value is not None:
-                values[key] = cast(CachedPdfObject, value)
+                values[key] = value  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
 
         parent = current_dict.get("Parent")
         if isinstance(parent, PdfReference):

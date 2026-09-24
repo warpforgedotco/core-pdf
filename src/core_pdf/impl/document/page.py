@@ -6,13 +6,13 @@ from collections import deque
 from collections.abc import Iterable
 from contextlib import suppress
 from copy import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-from core_pdf.impl.capture.interpreter import TextState
 from core_pdf.impl.capture.page import (
     capture_page_program,
 )
-from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
+from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.document.page_links import (
     link_target_direct,
     link_target_resolved,
@@ -23,7 +23,9 @@ from core_pdf.impl.document.records import RawAnnotation, RawLink
 from core_pdf.impl.document.recovery.resolver import resolve_resource_dict
 from core_pdf.impl.document.structure import PageStructure
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.pipeline import extract_page
+from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.graphics.images import decode_image
 from core_pdf.impl.layout.lines import (
     LayoutGeometrySummary,
@@ -31,12 +33,10 @@ from core_pdf.impl.layout.lines import (
     page_layout_geometry_issues,
     page_layout_geometry_summary,
 )
-from core_pdf.impl.model.geometry import rect_tuple
 from core_pdf.impl.output.model import Page as StructuredPage
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
-from core_pdf.impl.runtime.execution import ExtractionScope
-from core_pdf.impl.runtime.scalars import clamp01
+from core_pdf.impl.scalars import clamp01
 from core_pdf.impl.types import (
     DrawingRecord,
     ImageMetadata,
@@ -70,7 +70,7 @@ PAGE_INHERITED_KEYS = (
 if TYPE_CHECKING:
     from core_pdf.impl.document.document import PdfDocument
     from core_pdf.impl.document.records import RawFormField
-    from core_pdf.impl.model.runs import TextRun
+    from core_pdf.impl.runs import TextRun
 
 
 class PdfPage:
@@ -91,7 +91,7 @@ class PdfPage:
         self.document = document
         self.page_dict = page_dict
         self.page_number = page_number
-        self.contents = cast(CachedPdfObject | None, self.page_dict.get("Contents"))
+        self.contents = self.page_dict.get("Contents")
         self.inherited_values = (
             self.collect_inherited_values() if inherited_values is None else dict(inherited_values)
         )
@@ -171,7 +171,7 @@ class PdfPage:
                     contents=contents,
                     dict_=annot,
                     dest=dest,
-                    action=cast(PdfDict, action) if isinstance(action, dict) else None,
+                    action=action if isinstance(action, dict) else None,
                 )
             )
         return results
@@ -201,7 +201,6 @@ class PdfPage:
             link_type = None
             url = None
             if isinstance(action, dict):
-                action = cast(PdfDict, action)
                 raw_type = action.get("S")
                 link_type = resolver.resolve_name(raw_type)
                 url = link_target_direct(action, link_type)
@@ -320,9 +319,14 @@ class PdfPage:
         hidden_layers: frozenset[str] | None = None,
         fields: Iterable[RawFormField] | None = None,
         annotations: Iterable[RawAnnotation] | None = None,
+        options: CaptureOptions = DEFAULT_CAPTURE,
     ) -> PageProgram:
         return capture_page_program(
-            self, hidden_layers=hidden_layers, fields=fields, annotations=annotations
+            self,
+            hidden_layers=hidden_layers,
+            fields=fields,
+            annotations=annotations,
+            options=options,
         )
 
     def collect_inherited_values(self) -> InheritedValueMap:
@@ -488,8 +492,8 @@ class PdfPage:
                 for image in program.inline_images
             )
         for index, image in enumerate(images):
-            source = cast(ImageSource | None, image.image_source)
-            raster = decode_image(source) if source is not None else None
+            source = image.image_source
+            raster = decode_image(source) if isinstance(source, ImageSource) else None
             if raster is not None:
                 images[index] = replace(
                     image,

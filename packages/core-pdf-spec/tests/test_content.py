@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -8,7 +8,6 @@ from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content import interpreter
 from core_pdf_spec.s_07_content.inline_images import validate_inline_images
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
-from core_pdf_spec.s_07_content.model import ContentSink
 from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
     iter_content_operations,
@@ -59,7 +58,7 @@ def state_with_sink(
     sink = EventSink()
     resolver = ObjectResolver(b"", {})
     font: Any = EmptyTextFont()
-    return interpreter_class(resolver, cast(ContentSink, sink), lambda *args: font), sink
+    return interpreter_class(resolver, sink, lambda *args: font), sink  # ty: ignore[invalid-argument-type]
 
 
 def execute_content(state: ContentInterpreter, content: bytes, depth: int = 0) -> None:
@@ -80,7 +79,7 @@ def tj_state_with_recording(
             )
 
     state, _ = state_with_sink(RecordingInterpreter)
-    state.graphics.current_decoder = cast(Any, SimpleNamespace(is_vertical=vertical))
+    state.graphics.current_decoder = SimpleNamespace(is_vertical=vertical)  # ty: ignore[invalid-assignment]
     state.text_matrix = Matrix(2, 3, 5, 7, 11, 13)
     state.graphics.font_size = 100
     state.graphics.horizontal_scale = 100
@@ -371,7 +370,7 @@ def test_resource_operator_looks_up_and_resolves_once(
 def test_resource_handlers_reject_missing_or_invalid_resources(name: str, resource: object) -> None:
     state, _ = state_with_sink()
     category = "ExtGState" if name == "gs" else "Shading"
-    state.resources = cast(PdfDict, {category: {"Resource": resource}})
+    state.resources = {category: {"Resource": resource}}
     original = state.capture_stream_state()
     with pytest.raises(PdfParseError, match="resource"):
         state.execute_operation(name, (PdfName.of("Resource"),), 0)

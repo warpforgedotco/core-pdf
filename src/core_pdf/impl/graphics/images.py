@@ -8,6 +8,7 @@ from typing import Any, ClassVar
 
 import numpy
 
+from core_pdf.impl.array_views import readonly
 from core_pdf.impl.graphics.color import (
     convert_cmyk,
     convert_image_data,
@@ -35,11 +36,14 @@ from core_pdf.impl.graphics.stream_decoding import (
     decode_stream_data,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.runtime.array_views import readonly
-from core_pdf.impl.runtime.scalars import parse_int
+from core_pdf.impl.scalars import parse_int
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values, unpack_image_samples
+from core_pdf_spec.s_08_graphics.color_kernels import (
+    decode_sample_values,
+    unpack_image_samples,
+    unpack_subbyte_image_samples,
+)
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import (
     ImageSource,
@@ -212,8 +216,7 @@ def decode_mask(source: ImageSource) -> DecodedRaster | None:
     row_bytes = (width + 7) // 8
     if len(decoded) < row_bytes * height:
         return None
-    packed = numpy.frombuffer(decoded, dtype=numpy.uint8)[: row_bytes * height]
-    bits = numpy.unpackbits(packed).reshape(height, row_bytes * 8)[:, :width]
+    bits = unpack_subbyte_image_samples(decoded, 1, width, height, 1).reshape(height, width)
     alpha = (1 - bits) * 255
     decode = source.dictionary.get("Decode")
     if isinstance(decode, (list, tuple)) and len(decode) >= 2:

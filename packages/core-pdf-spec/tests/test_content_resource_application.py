@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -19,7 +19,7 @@ from core_pdf_spec.types import PdfName, PdfReference
 def make_state(
     interpreter_class: type[ContentInterpreter] = ContentInterpreter,
 ) -> ContentInterpreter:
-    return interpreter_class(ObjectResolver(b"", {}), cast(Any, None), cast(Any, None))
+    return interpreter_class(ObjectResolver(b"", {}), None, None)  # ty: ignore[invalid-argument-type]
 
 
 @pytest.mark.parametrize("entry_point", ["operator", "application"])
@@ -106,7 +106,7 @@ def test_pattern_resource_lookup_preserves_source_identity_and_laziness(
             return selection[0]
 
     state = make_state(LookupRecordingInterpreter)
-    resolver = cast(ObjectResolver, state.resolver)
+    resolver = state.resolver
     dictionary: PdfDict = {
         "PatternType": 1 if stream else 2,
         "PaintType": 1,
@@ -121,7 +121,7 @@ def test_pattern_resource_lookup_preserves_source_identity_and_laziness(
 
     source = PdfStream(dictionary=dictionary, decoder=unexpected_decode) if stream else dictionary
     reference = PdfReference(1, 0)
-    resolver.objects[key_for(1, 0)] = source
+    resolver.objects[key_for(1, 0)] = source  # ty: ignore[unresolved-attribute]
     selection.append(reference if indirect else source)
     selected = state.resolve_pattern_resource(PdfName.of("P"))
     assert selected is not None

@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import struct
 import zlib
-from os import PathLike
-from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any
 
-from core_pdf.impl.model.geometry import rect_tuple
+from core_pdf.impl.geometry import rect_tuple
+from core_pdf.impl.graphics.codec_backends import PNG_SIGNATURE, png_chunk
 
 BBox = tuple[float, float, float, float]
 PdfInput = Any
-
-LIGATURES = {"ff": "ﬀ", "fi": "ﬁ", "fl": "ﬂ", "ffi": "ﬃ", "ffl": "ﬄ"}
 
 
 class ClosingMixin:
@@ -32,19 +29,8 @@ def coerce_bbox(value: object) -> BBox:
     return box
 
 
-def write_bytes(target: str | PathLike[str] | BinaryIO, data: bytes) -> None:
-    if isinstance(target, (str, PathLike)):
-        Path(target).write_bytes(data)
-    else:
-        target.write(data)
-
-
 def float32(value: float) -> float:
     return struct.unpack("f", struct.pack("f", value))[0]
-
-
-def png_chunk(kind: bytes, data: bytes) -> bytes:
-    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
 
 def encode_png(width: int, height: int, channels: int, pixels: bytes | bytearray) -> bytes:
@@ -56,7 +42,7 @@ def encode_png(width: int, height: int, channels: int, pixels: bytes | bytearray
     )
     header = struct.pack(">IIBBBBB", width, height, 8, 6 if channels == 4 else 2, 0, 0, 0)
     return (
-        b"\x89PNG\r\n\x1a\n"
+        PNG_SIGNATURE
         + png_chunk(b"IHDR", header)
         + png_chunk(b"IDAT", zlib.compress(scanlines))
         + png_chunk(b"IEND", b"")

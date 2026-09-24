@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import typing
+import mmap
 import zlib
 from collections.abc import Iterator
-from typing import cast
 
 from core_pdf.impl.document.recovery.lexer import PdfLexer, matches_keyword_with_one_substitution
 from core_pdf.impl.document.recovery.objects import PdfObjectStream
@@ -419,11 +418,11 @@ class XRefScanner(SyntaxXRefScanner):
             index = dict_obj.get("Index")
             if isinstance(w, list) and isinstance(index, list):
                 row_size = sum(item for item in w if type(item) is int)
-                row_count = sum(
-                    cast(int, index[i + 1])
-                    for i in range(0, len(index) - 1, 2)
-                    if type(index[i + 1]) is int
-                )
+                row_count = 0
+                for i in range(0, len(index) - 1, 2):
+                    count = index[i + 1]
+                    if type(count) is int:
+                        row_count += count
                 if len(decoded_data) != row_size * row_count:
                     decoded_data = None
         return PdfStream(
@@ -716,7 +715,7 @@ class XRefScanner(SyntaxXRefScanner):
             raise PdfParseError("invalid xref stream W")
         if not all(type(x) is int for x in w_raw):
             raise PdfParseError("invalid xref stream W")
-        w = [int(cast(typing.Any, x)) for x in w_raw[:3]]
+        w = [x for x in w_raw[:3] if type(x) is int]
         if any(width < 0 for width in w):
             raise PdfParseError("invalid xref stream W")
 
@@ -726,7 +725,7 @@ class XRefScanner(SyntaxXRefScanner):
         elif not isinstance(index_raw, (list, tuple)) or not all(type(x) is int for x in index_raw):
             raise PdfParseError("invalid xref stream Index")
         else:
-            index = [int(cast(typing.Any, x)) for x in index_raw]
+            index = [x for x in index_raw if type(x) is int]
             if len(index) % 2 != 0:
                 index = index[:-1]
         effective_size = size
@@ -830,13 +829,9 @@ def iter_indirect_object_headers(
 ) -> Iterator[tuple[int, int, int]]:
     search_start = max(0, search_start)
     search_end = min(len(data), search_end)
-    source = source_buffer
+    source: bytes | FindableSizedBuffer | mmap.mmap | None = source_buffer
     if source is None:
-        source = (
-            full_source_buffer(data, len(data))
-            if isinstance(data, memoryview)
-            else cast(FindableSizedBuffer, data)
-        )
+        source = full_source_buffer(data, len(data)) if isinstance(data, memoryview) else data
     copied_region = bytes(data[search_start:search_end]) if source is None else None
     pos = search_start
     while pos < search_end:

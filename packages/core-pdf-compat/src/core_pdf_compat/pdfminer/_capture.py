@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 from core_pdf import PdfPage
 from core_pdf.impl.capture.glyphs import GlyphPaint
-from core_pdf.impl.capture.interpreter import TextState
-from core_pdf.impl.capture.program import CapturedProgram
+from core_pdf.impl.capture.program import CapturedProgram, CaptureOptions
+from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.capture.recovery import CaptureRecovery
 from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfError, PdfParseError
-from core_pdf.impl.fonts.decoder import FontDecoder
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfString, Rectangle
 from core_pdf_spec.s_07_content.operations import ContentOperands
@@ -65,7 +64,7 @@ class PdfminerRecovery(CaptureRecovery):
 class PdfminerTextState(TextState):
     def __init__(self, document: Any, *, page_clip: Rectangle | None = None) -> None:
         super().__init__(
-            document, page_clip=page_clip, capture_ink_bounds=False, capture_text_runs=False
+            document, page_clip=page_clip, options=CaptureOptions(ink_bounds=False, text_runs=False)
         )
         self.cursor = 0.0
         self.frame_cursors: dict[int, float] = {}
@@ -93,7 +92,7 @@ class PdfminerTextState(TextState):
             self.append_tj_array([operands[-1]])
 
     def append_tj_array(self, array: Any) -> None:
-        decoder = cast(FontDecoder, self.get_decoder())
+        decoder = self.get_decoder()
         if decoder.is_vertical:
             super().append_tj_array(array)
             return
@@ -102,7 +101,7 @@ class PdfminerTextState(TextState):
         scale = self.graphics.horizontal_scale * 0.01
         adjustment_scale = 0.001 * self.graphics.font_size * scale
         char_space = self.graphics.char_space * scale
-        word_space = 0.0 if decoder.is_cid_font else self.graphics.word_space * scale
+        word_space = 0.0 if decoder.is_cid_font else self.graphics.word_space * scale  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         needs_spacing = False
         paint: GlyphPaint | None = None
         for value in array:
@@ -169,6 +168,7 @@ def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
         inline_images=tuple(state.inline_images),
         lines=tuple(state.lines),
         text_boundaries=tuple(state.text_boundaries),
+        options=state.options,
     )
 
 

@@ -2,9 +2,10 @@ from copy import replace
 
 import pytest
 
+from core_pdf.impl.capture.program import CaptureOptions
 from core_pdf.impl.extract.contracts import PageAnalysis as NativePageAnalysis
-from core_pdf.impl.model.glyphs import GlyphCluster, GlyphObservation
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.glyphs import GlyphCluster, GlyphObservation
+from core_pdf.impl.runs import TextRun
 from core_pdf_ocr.impl.extract import capture
 
 
@@ -280,6 +281,9 @@ def test_public_capture_entry_point_passes_selection_options(
         "hidden_layers": frozenset({"layer"}),
         "fields": (),
         "annotations": (),
+        # OCR rasterizes what it captures, so it keeps the render payload that
+        # core's own extraction skips.
+        "options": CaptureOptions(),
     }
 
 

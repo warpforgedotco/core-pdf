@@ -5,11 +5,11 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from copy import replace
-from typing import Any, cast
+from typing import Any
 
 import numpy
 
-from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine
 from core_pdf.impl.extract.capture import (
     STRUCTURE_UNSET,
@@ -35,15 +35,15 @@ from core_pdf.impl.extract.contracts import (
     PageAnalysis as NativePageAnalysis,
 )
 from core_pdf.impl.extract.quality import analyze_text
-from core_pdf.impl.graphics.filter_registry import declared_filter_names
-from core_pdf.impl.model.geometry import bbox_union, rect_tuple
-from core_pdf.impl.model.glyphs import (
+from core_pdf.impl.geometry import bbox_union, rect_tuple
+from core_pdf.impl.glyphs import (
     GlyphObservation,
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.model.text import normalize_extracted_text
+from core_pdf.impl.graphics.filter_registry import declared_filter_names
+from core_pdf.impl.runs import TextRun
+from core_pdf.impl.text import normalize_extracted_text
 from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
     PageAnalysis,
@@ -84,11 +84,11 @@ def hidden_text_needs_verification(evidence: PageEvidence) -> bool:
 def promoted_hidden_observations(capture: PageAnalysis) -> ObservationBatch:
     references = capture.observations.references
     runs = (
-        cast("tuple[TextRun, ...]", references)
+        references
         if references and all(isinstance(reference, TextRun) for reference in references)
         else capture.program.runs
     )
-    return observations_from_runs(promoted_hidden_runs(runs))
+    return observations_from_runs(promoted_hidden_runs(runs))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 def apply_learned_unicode_to_run(
@@ -390,17 +390,7 @@ def glyph_evidence_fields(
     replacements: Mapping[int, str],
 ) -> GlyphEvidence:
     evidence = native_glyph_evidence_fields(
-        (
-            (
-                glyph.text,
-                glyph.visible,
-                glyph.font_decoder,
-                glyph.code_bytes,
-                glyph.unicode_source,
-                glyph.confidence,
-            )
-            for glyph in glyphs
-        ),
+        ((glyph.text, glyph.unicode_source, glyph.confidence) for glyph in glyphs),
         runs,
     )
     if not replacements:
@@ -534,6 +524,7 @@ def capture_page(
     hidden_layers: frozenset[str] | None = None,
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
+    options: CaptureOptions = DEFAULT_CAPTURE,
 ) -> PageAnalysis:
     return enrich_capture(
         native_capture_page(
@@ -542,5 +533,10 @@ def capture_page(
             hidden_layers=hidden_layers,
             fields=fields,
             annotations=annotations,
+            # OCR rasterizes the page it just captured -- OcrSession hands this
+            # very program to compose_page -- so it defaults to keeping the
+            # per-glyph payload that core's own extraction skips. A caller that
+            # overrides this gets PageProgram.commands' error, not a blank render.
+            options=options,
         )
     )

@@ -147,7 +147,7 @@ def test_pipeline_schedules_fallbacks_with_winning_task_provenance(
     ocr_capture: PageAnalysis,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from core_pdf.impl.runtime.execution import ExtractionScope
+    from core_pdf.impl.execution import ExtractionScope
     from core_pdf_ocr.impl.extract.contracts import PageRoute, WorkPlan
     from core_pdf_ocr.impl.extract.ocr import pipeline
     from core_pdf_ocr.impl.extract.ocr.session import OcrPassTasks
@@ -203,7 +203,7 @@ def test_weak_region_materialization_uses_native_observations_only_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
     seed_with_native: bool,
 ) -> None:
-    from core_pdf.impl.runtime.execution import ExtractionScope
+    from core_pdf.impl.execution import ExtractionScope
     from core_pdf_ocr.impl.extract.contracts import PageRoute, WorkPlan
     from core_pdf_ocr.impl.extract.ocr import session
     from core_pdf_ocr.impl.extract.ocr.types import Raster, RasterRegion

@@ -6,7 +6,7 @@ import numpy
 
 from core_pdf.impl.capture.records import CapturedDrawing
 from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.model.text import compact_text, text_tokens
+from core_pdf.impl.text import compact_text, text_tokens
 from core_pdf_ocr.impl.extract.capture import (
     hidden_text_needs_verification,
     requires_high_resolution_vector_ocr,

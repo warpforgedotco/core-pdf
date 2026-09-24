@@ -1,5 +1,3 @@
-from typing import Any, cast
-
 import pytest
 
 from core_pdf.impl.capture.program import PageProgram
@@ -10,7 +8,7 @@ from core_pdf_ocr.impl.extract.contracts import PageAnalysis, PageEvidence
 @pytest.fixture
 def ocr_capture() -> PageAnalysis:
     return PageAnalysis(
-        page=cast(Any, None),
+        page=None,  # ty: ignore[invalid-argument-type]
         width=600,
         height=800,
         rotation=0,

@@ -4,9 +4,9 @@ from types import SimpleNamespace
 import numpy
 import pytest
 
+from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     PRIMARY_OCR_PIXELS,

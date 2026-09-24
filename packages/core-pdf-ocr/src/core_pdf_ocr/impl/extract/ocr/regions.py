@@ -11,7 +11,7 @@ from core_pdf.impl.extract.grids import (
     line_coordinate_columns,
     split_grid_component,
 )
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl.geometry import (
     bbox_area,
     bbox_intersection_area,
     bbox_union,

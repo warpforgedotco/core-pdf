@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, NamedTuple, TypeAlias, cast
+from collections.abc import Callable, Iterator, Sequence
+from typing import TYPE_CHECKING, NamedTuple, TypeAlias
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.inline_images import InlineImage, parse_inline_image
@@ -34,7 +34,8 @@ class ContentToken(NamedTuple):
 def parse_content_token(lexer: PdfLexer) -> ContentToken | None:
     match = lexer.lexical_rules.content_token_re.match(lexer.raw_data, lexer.pos)
     if match is not None:
-        kind = cast(str, match.lastgroup)
+        # The pattern is all named groups, so a match always has one.
+        kind: str = match.lastgroup  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         start = match.start(kind)
         word = match.group(kind)
         lexer.pos = match.end()
@@ -48,7 +49,7 @@ def parse_content_token(lexer: PdfLexer) -> ContentToken | None:
         if word == b"BI":
             return ContentToken(start, parse_inline_image(lexer))
         if word in (b"true", b"false", b"null"):
-            return ContentToken(start, cast(ContentOperand, lexer.parse_keyword(word)))
+            return ContentToken(start, lexer.parse_keyword(word))
         return ContentToken(start, word.decode("latin-1"), is_operator=True)
     lexer.skip_ignored()
     start = lexer.pos
@@ -67,12 +68,12 @@ def parse_content_token(lexer: PdfLexer) -> ContentToken | None:
         if word == b"BI":
             return ContentToken(start, parse_inline_image(lexer))
         if word in (b"true", b"false", b"null"):
-            return ContentToken(start, cast(ContentOperand, lexer.parse_keyword(word)))
+            return ContentToken(start, lexer.parse_keyword(word))
         return ContentToken(start, word.decode("latin-1"), is_operator=True)
     if byte == 91:
-        return ContentToken(start, cast(ContentOperand, lexer.parse_array()))
+        return ContentToken(start, lexer.parse_array())
     if byte == 60 and lexer.raw_data[start : start + 2] == b"<<":
-        return ContentToken(start, cast(ContentOperand, lexer.parse_dictionary_or_stream()))
+        return ContentToken(start, lexer.parse_dictionary_or_stream())
     if byte in (40, 60):
         data = lexer.read_string() if byte == 40 else lexer.read_hex_string()
         if lexer.decipher is not None and lexer.current_obj_num is not None:
@@ -114,7 +115,9 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
         if not valid:
             raise PdfParseError(f"invalid {operator} operand")
     if operator in {"TJ", "d"}:
-        array = cast(list[ContentOperand], operands[0])
+        # The per-operator check above has already rejected anything but an
+        # array here, and the annotation records that rather than asserting it.
+        array: Sequence[ContentOperand] = operands[0]  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         for value in array:
             if operator == "TJ" and isinstance(value, PdfString):
                 continue
@@ -126,18 +129,22 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
                 raise PdfParseError("negative dash length")
         if operator == "d" and array and not any(array):
             raise PdfParseError("dash array cannot contain only zero lengths")
-    if operator in {"J", "j", "Tr"}:
-        upper = 7 if operator == "Tr" else 2
-        if not 0 <= cast(int, operands[0]) <= upper:
-            raise PdfParseError(f"invalid {operator} value")
-    if operator == "w" and cast(float, operands[0]) < 0:
-        raise PdfParseError("line width must not be negative")
-    if operator == "M" and cast(float, operands[0]) < 1:
-        raise PdfParseError("miter limit must be at least one")
+    if operator in {"J", "j", "Tr", "w", "M"}:
+        # All five take one number, already checked for by the loop above.
+        single: float = operands[0]  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        if operator in {"J", "j", "Tr"}:
+            upper = 7 if operator == "Tr" else 2
+            if not 0 <= single <= upper:
+                raise PdfParseError(f"invalid {operator} value")
+        elif operator == "w" and single < 0:
+            raise PdfParseError("line width must not be negative")
+        elif operator == "M" and single < 1:
+            raise PdfParseError("miter limit must be at least one")
 
 
 def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
     operands: list[ContentOperand] = []
+    op_name: str
     while (token := parse_content_token(lexer)) is not None:
         if isinstance(token.value, InlineImage):
             operands.append(token.value)
@@ -146,7 +153,8 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
             operands.append(token.value)
             continue
         else:
-            op_name = cast(str, token.value)
+            # is_operator is only set for a token whose value is the operator.
+            op_name = token.value  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         operation = (op_name, tuple(operands))
         operands.clear()
         yield operation

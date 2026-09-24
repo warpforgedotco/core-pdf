@@ -8,6 +8,7 @@ from copy import replace
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from core_pdf.impl.document.page_links import resolve_destination_value
+from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf.impl.extract.capture import STRUCTURE_UNSET, capture_page
 from core_pdf.impl.extract.contracts import (
@@ -28,7 +29,6 @@ from core_pdf.impl.output.model import (
     Page,
     Table,
 )
-from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.types import Record, frozen_setattr
 
 if TYPE_CHECKING:

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from core_pdf.impl.fonts.decoder import outline_arrays
-from core_pdf.impl.model.glyphs import GlyphObservation
+from core_pdf.impl.glyphs import GlyphObservation
 from core_pdf.impl.render.commands import (
     append_glyph_paint,
     glyph_outline_path,

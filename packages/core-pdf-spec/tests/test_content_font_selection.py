@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -36,7 +36,7 @@ class RecordingState(ContentInterpreter):
                 font=font,
             )
 
-        super().__init__(ObjectResolver(b"", {}), cast(Any, Sink()), provide)
+        super().__init__(ObjectResolver(b"", {}), Sink(), provide)  # ty: ignore[invalid-argument-type]
         self.resources = {"Font": {"F": {}, "Other": {"BaseFont": PdfName.of("Other")}}}
 
     def resolve_font_name(self, value: object) -> str | None:
@@ -157,8 +157,8 @@ def test_type3_resource_scope_distinguishes_absent_and_empty(scope: str) -> None
         font["Resources"] = {}
     elif scope == "indirect-empty":
         font["Resources"] = PdfReference(1, 0)
-        resolver = cast(ObjectResolver, state.resolver)
-        resolver.objects[key_for(1, 0)] = {}
+        resolver = state.resolver
+        resolver.objects[key_for(1, 0)] = {}  # ty: ignore[unresolved-attribute]
     elif scope == "local":
         font["Resources"] = {"XObject": {"Image": local}}
     decoder = SimpleNamespace(
@@ -169,8 +169,8 @@ def test_type3_resource_scope_distinguishes_absent_and_empty(scope: str) -> None
     )
     if "empty" in scope:
         with pytest.raises(PdfParseError, match="XObject resource must be a stream"):
-            state.render_type3_glyphs(b"A", cast(Any, decoder))
-        assert cast(Sink, state.sink).images == []
+            state.render_type3_glyphs(b"A", decoder)  # ty: ignore[invalid-argument-type]
+        assert state.sink.images == []  # ty: ignore[unresolved-attribute]
     else:
-        state.render_type3_glyphs(b"A", cast(Any, decoder))
-        assert cast(Sink, state.sink).images == [outer if scope == "absent" else local]
+        state.render_type3_glyphs(b"A", decoder)  # ty: ignore[invalid-argument-type]
+        assert state.sink.images == [outer if scope == "absent" else local]  # ty: ignore[unresolved-attribute]

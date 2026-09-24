@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from core_pdf.impl import install_lazy_module_exports
 
 if TYPE_CHECKING:
+    from core_pdf.impl.capture.program import CaptureOptions
     from core_pdf.impl.document.document import DocumentAdapter, PdfDocument
     from core_pdf.impl.document.page import PdfPage
     from core_pdf.impl.exceptions import (
@@ -23,7 +24,6 @@ if TYPE_CHECKING:
         PdfRasterFontProvider,
         PdfRasterFontRequest,
     )
-    from core_pdf.impl.model.page_selection import PageSelection
     from core_pdf.impl.output.model import (
         ContentNode,
         Document,
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
         TextLineReference,
         TextView,
     )
+    from core_pdf.impl.page_selection import PageSelection
     from core_pdf.impl.types import (
         DrawingRecord,
         ImageMetadata,
@@ -45,9 +46,10 @@ if TYPE_CHECKING:
         TextWord,
     )
 EXPORTS = {
+    "CaptureOptions": ("core_pdf.impl.capture.program", "CaptureOptions"),
     "DocumentAdapter": ("core_pdf.impl.document.document", "DocumentAdapter"),
     "Document": ("core_pdf.impl.output.model", "Document"),
-    "PageSelection": ("core_pdf.impl.model.page_selection", "PageSelection"),
+    "PageSelection": ("core_pdf.impl.page_selection", "PageSelection"),
     "PdfDocument": ("core_pdf.impl.document.document", "PdfDocument"),
     "PdfRasterFontFace": (
         "core_pdf.impl.fonts.fallback",
@@ -92,6 +94,7 @@ install_lazy_module_exports(globals(), EXPORTS)
 
 
 __all__ = (
+    "CaptureOptions",
     "DocumentAdapter",
     "Document",
     "PageSelection",

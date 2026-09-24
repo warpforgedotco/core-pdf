@@ -7,7 +7,6 @@ import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from copy import replace
 from functools import partial
-from typing import cast
 
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as defused_fromstring
@@ -96,7 +95,7 @@ def discover_header_standards(data: PdfByteBuffer) -> DocumentStandards:
 
 def resolve_catalog(resolver: PdfValueResolver, trailer: PdfDict) -> PdfDict | None:
     value = resolve_reference_chain(trailer.get("Root"), resolver.resolve)
-    return cast(PdfDict, value) if isinstance(value, dict) else None
+    return value if isinstance(value, dict) else None
 
 
 def discover_document_standards(

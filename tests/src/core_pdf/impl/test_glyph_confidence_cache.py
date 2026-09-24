@@ -1,7 +1,5 @@
-from typing import cast
-
-import core_pdf.impl.model.glyphs as glyphs_module
-from core_pdf.impl.model.glyphs import glyph_unicode_confidence
+import core_pdf.impl.glyphs as glyphs_module
+from core_pdf.impl.glyphs import glyph_unicode_confidence
 
 
 def test_confidence_is_memoised_and_bounded(monkeypatch) -> None:
@@ -18,6 +16,6 @@ def test_confidence_is_memoised_and_bounded(monkeypatch) -> None:
 
 def test_unhashable_alternates_bypass_the_cache(monkeypatch) -> None:
     monkeypatch.setattr(glyphs_module, "CONFIDENCE_CACHE", {})
-    value = glyph_unicode_confidence("a", "tounicode", cast(tuple[str, ...], ["x"]))
+    value = glyph_unicode_confidence("a", "tounicode", (["x"]))  # ty: ignore[invalid-argument-type]
     assert value == glyph_unicode_confidence("a", "tounicode", ("x",))
     assert list(glyphs_module.CONFIDENCE_CACHE) == [("a", "tounicode", ("x",))]

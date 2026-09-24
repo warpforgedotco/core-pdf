@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any, cast
 
 import numpy
 import pytest
@@ -20,7 +19,7 @@ def test_mutable_matrix_view_shares_storage_and_honors_offset_and_count():
     view[:] = [8, 9]
     assert source.tolist() == [[1, 8], [9, 4]]
     with pytest.raises(TypeError):
-        uint8_view(source, count=cast(Any, 1.5))
+        uint8_view(source, count=1.5)  # ty: ignore[invalid-argument-type]
 
 
 @pytest.mark.parametrize("layout", ["contiguous", "strided", "converted"])

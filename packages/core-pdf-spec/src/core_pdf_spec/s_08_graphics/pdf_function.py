@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from bisect import bisect_right
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -71,7 +71,9 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
         raise ValueError("invalid sampled function size")
     if any(type(value) is not int for value in size_obj):
         raise ValueError("invalid sampled function size")
-    sizes = tuple(cast(int, value) for value in size_obj)
+    # Every entry has just been checked to be an int, so the annotation
+    # records that rather than asserting it again per element.
+    sizes: tuple[int, ...] = tuple(size_obj)  # type: ignore[arg-type]
     if not sizes or any(size <= 0 for size in sizes):
         raise ValueError("invalid sampled function size")
     domain_values = require_pdf_number_array(domain_obj, "invalid PDF function domain")

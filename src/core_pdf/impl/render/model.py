@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Self, final
 
 import numpy
 
+from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.capture.records import CapturedSoftMask, PatternPaint
 from core_pdf.impl.render.blend import clamp01
-from core_pdf.impl.runtime.array_views import uint8_image_view
 from core_pdf.impl.types import Record, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
@@ -134,6 +134,7 @@ class LineJoin(IntEnum):
 PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
 
 
+@final
 class PathPaintItem(ReplaceFields, ReprFields):
     __slots__ = (
         "paint_kind",
@@ -300,6 +301,7 @@ class PathPaintItem(ReplaceFields, ReprFields):
         }
 
 
+@final
 class ImagePaintItem(ReplaceFields, ReprFields):
     __slots__ = (
         "paint_kind",
@@ -461,6 +463,7 @@ DisplayItem = DisplayListItem | ImagePaintItem | PathPaintItem
 class RasterGroup(Record):
     __slots__ = (
         "pixels",
+        "view",
         "composite_alpha",
         "blend_mode",
         "backdrop",
@@ -470,9 +473,13 @@ class RasterGroup(Record):
         "alpha_is_shape",
         "mask_alpha",
         "paint_window",
+        "painted_boxes",
     )
 
     pixels: bytearray
+    # pixels as a (height, width, 4) array, built once with the group. Derived,
+    # so it takes no part in equality or hashing.
+    view: UInt8Array
     composite_alpha: float | None
     blend_mode: str | None
     backdrop: bytearray | None
@@ -482,9 +489,14 @@ class RasterGroup(Record):
     alpha_is_shape: bool
     mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
     paint_window: list[int]
+    # Pixel boxes already painted into this group, when it knocks out.
+    # An element that misses all of them sees an accumulated result equal
+    # to the initial backdrop, so it does not need an elementary group.
+    painted_boxes: list[tuple[int, int, int, int]] | None
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "pixels",
+        "view",
         "composite_alpha",
         "blend_mode",
         "backdrop",
@@ -494,6 +506,7 @@ class RasterGroup(Record):
         "alpha_is_shape",
         "mask_alpha",
         "paint_window",
+        "painted_boxes",
     )
     __match_args__ = ("pixels", "composite_alpha", "blend_mode")
 
@@ -503,6 +516,7 @@ class RasterGroup(Record):
         composite_alpha: float | None = None,
         blend_mode: str | None = None,
         *,
+        view: UInt8Array,
         backdrop: bytearray | None = None,
         source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
         source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
@@ -510,8 +524,10 @@ class RasterGroup(Record):
         alpha_is_shape: bool = False,
         mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
         paint_window: list[int] | None = None,
+        painted_boxes: list[tuple[int, int, int, int]] | None = None,
     ) -> None:
         frozen_setattr(self, "pixels", pixels)
+        frozen_setattr(self, "view", view)
         frozen_setattr(self, "composite_alpha", composite_alpha)
         frozen_setattr(self, "blend_mode", blend_mode)
         frozen_setattr(self, "backdrop", backdrop)
@@ -521,6 +537,7 @@ class RasterGroup(Record):
         frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
         frozen_setattr(self, "mask_alpha", mask_alpha)
         frozen_setattr(self, "paint_window", [] if paint_window is None else paint_window)
+        frozen_setattr(self, "painted_boxes", painted_boxes)
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -538,6 +555,7 @@ class RasterGroup(Record):
             and self.alpha_is_shape == other.alpha_is_shape
             and self.mask_alpha == other.mask_alpha
             and self.paint_window == other.paint_window
+            and self.painted_boxes == other.painted_boxes
         )
 
     def __hash__(self) -> int:
@@ -558,6 +576,7 @@ class RasterGroup(Record):
 
     def __replace__(self, /, **changes: Any) -> Self:
         pixels = changes.pop("pixels", self.pixels)
+        view = changes.pop("view", self.view)
         composite_alpha = changes.pop("composite_alpha", self.composite_alpha)
         blend_mode = changes.pop("blend_mode", self.blend_mode)
         backdrop = changes.pop("backdrop", self.backdrop)
@@ -567,12 +586,14 @@ class RasterGroup(Record):
         alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
         mask_alpha = changes.pop("mask_alpha", self.mask_alpha)
         paint_window = changes.pop("paint_window", self.paint_window)
+        painted_boxes = changes.pop("painted_boxes", self.painted_boxes)
         if changes:
             raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
         return self.__class__(
             pixels,
             composite_alpha,
             blend_mode,
+            view=view,
             backdrop=backdrop,
             source_alpha=source_alpha,
             source_shape=source_shape,
@@ -580,23 +601,12 @@ class RasterGroup(Record):
             alpha_is_shape=alpha_is_shape,
             mask_alpha=mask_alpha,
             paint_window=paint_window,
+            painted_boxes=painted_boxes,
         )
 
     @property
     def source_scale(self) -> float:
         return clamp01(float(self.composite_alpha)) if is_pdf_number(self.composite_alpha) else 1.0
-
-    def extend_paint_window(self, y0: int, y1: int, x0: int, x1: int) -> None:
-        window = self.paint_window
-        if window:
-            window[:] = (
-                min(window[0], y0),
-                max(window[1], y1),
-                min(window[2], x0),
-                max(window[3], x1),
-            )
-        else:
-            window[:] = y0, y1, x0, x1
 
 
 class RasterImage(Record):

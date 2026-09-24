@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import cast
 
 import pytest
 
@@ -37,7 +36,7 @@ def test_security_integer_fields_reject_noninteger_representations(
     field: str, representation: type
 ) -> None:
     params = security_dictionary()
-    target = cast(PdfDict, cast(PdfDict, params["CF"])["StdCF"]) if field == "CF/Length" else params
+    target = params["CF"]["StdCF"] if field == "CF/Length" else params
     key = "Length" if field == "CF/Length" else field
     value = target[key]
     encoded = str(value).encode("ascii")
@@ -62,7 +61,7 @@ def test_real_integer_security_dictionary_authenticates_and_keeps_defaults() -> 
     assert handler.config.permissions == 0xFFFFFFFC
     assert len(handler.file_key) == 16
     del params["Length"]
-    del cast(PdfDict, cast(PdfDict, params["CF"])["StdCF"])["Length"]
+    del params["CF"]["StdCF"]["Length"]
     assert (
         create_standard_security_handler([b"core-pdf-security"], params, "user-aes128").file_key
         == handler.file_key
@@ -74,7 +73,7 @@ def test_real_integer_security_dictionary_authenticates_and_keeps_defaults() -> 
 @pytest.mark.parametrize("field", ["V", "R", "P", "Length", "CF/Length"])
 def test_explicit_null_security_integer_is_not_a_default(field: str) -> None:
     params = security_dictionary()
-    target = cast(PdfDict, cast(PdfDict, params["CF"])["StdCF"]) if field == "CF/Length" else params
+    target = params["CF"]["StdCF"] if field == "CF/Length" else params
     target["Length" if field == "CF/Length" else field] = None
     with pytest.raises(PdfUnsupportedError, match="^Invalid encryption dictionary$"):
         create_standard_security_handler([b"core-pdf-security"], params, "user-aes128")
@@ -104,7 +103,7 @@ def test_mac_failure_after_factory_never_installs_the_decipher(
     def factory(document_id: object, params: PdfDict, password: str) -> StandardSecurityHandler:
         assert resolver.decipher is None
         events.append("authenticate")
-        return create_standard_security_handler(cast(list[object], document_id), params, password)
+        return create_standard_security_handler(document_id, params, password)  # ty: ignore[invalid-argument-type]
 
     def failed_mac(*args: object) -> bool:
         assert resolver.decipher is None

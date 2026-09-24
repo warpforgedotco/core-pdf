@@ -5,7 +5,7 @@ from core_pdf.impl.layout.reconstruction import (
     reconstruct_layout_line_text,
     reconstruct_rotated_table_line,
 )
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.runs import TextRun
 
 
 def make_run(text: str, position: float = 0, *, size: float = 10, rotation: int = 0) -> TextRun:

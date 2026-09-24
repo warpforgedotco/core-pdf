@@ -113,3 +113,38 @@ def test_generic_clip_translation_retains_shared_mask_capture_and_source_path():
     assert placed.data["graphics_soft_mask"].offset == (2, 3)
     assert placed.data["graphics_soft_mask"].program is mask.program
     assert path.bbox() == (1, 1, 4, 4)
+
+
+def test_captured_program_commands_are_built_once_on_demand() -> None:
+    """`commands` is lazy: the renderer is its only reader, and an extract
+    never asks. Nothing else in the suite reads it, so the laziness itself is
+    asserted here."""
+    from core_pdf.impl.capture.program import AppearanceProgram, CapturedProgram, PageProgram
+    from core_pdf.impl.capture.records import CapturedDrawing, CapturedTextBoundary
+
+    drawing = CapturedDrawing(seqno=3, fill=None, fill_opacity=None)
+    boundary = CapturedTextBoundary(1, "begin")
+    program = CapturedProgram(drawings=(drawing,), text_boundaries=(boundary,))
+
+    assert program._commands is None, "building it eagerly is the thing this avoids"
+    commands = program.commands
+    assert [command.seqno for command in commands] == [1, 3]
+    assert program.commands is commands, "the second read must not rebuild it"
+
+    # A page with no appearances aliases the body's tuple rather than copying.
+    page = PageProgram(body=program)
+    assert page._commands is None
+    assert page.commands is program.commands
+
+    # With appearances it concatenates, body first, and still only once.
+    appearance = CapturedProgram(drawings=(CapturedDrawing(seqno=7, fill=None, fill_opacity=None),))
+    page = PageProgram(
+        body=program,
+        appearances=(
+            AppearanceProgram(
+                kind="annotation", source=None, clip_bbox=(0.0, 0.0, 1.0, 1.0), program=appearance
+            ),
+        ),
+    )
+    assert [command.seqno for command in page.commands] == [1, 3, 7]
+    assert page.commands is page._commands

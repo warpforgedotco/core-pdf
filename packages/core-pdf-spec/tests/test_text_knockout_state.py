@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -12,7 +12,7 @@ from core_pdf_spec.s_07_content.streams import StreamState
 from core_pdf_spec.s_07_filters.errors import FilterUnsupportedError
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import CachedPdfObject, PdfDict
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName, PdfReference
@@ -39,7 +39,7 @@ class TextSink:
 
 def make_state() -> tuple[ContentInterpreter, TextSink]:
     sink = TextSink()
-    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None)), sink
+    return ContentInterpreter(ObjectResolver(b"", {}), sink, None), sink  # ty: ignore[invalid-argument-type]
 
 
 def test_text_knockout_defaults_preserve_positional_snapshot_construction() -> None:
@@ -56,7 +56,7 @@ def test_text_knockout_resolves_booleans_and_preserves_q_Q(value: bool, indirect
     state, _ = make_state()
     state.graphics.text_knockout = not value
     state.op_q((), 0)
-    cast(ObjectResolver, state.resolver).objects[key_for(1, 0)] = value
+    state.resolver.objects[key_for(1, 0)] = value  # ty: ignore[unresolved-attribute]
     state.apply_extgstate({"TK": PdfReference(1, 0) if indirect else value})
     assert state.graphics.text_knockout is value
     state.apply_extgstate({})
@@ -70,7 +70,7 @@ def test_text_knockout_resolves_booleans_and_preserves_q_Q(value: bool, indirect
 @pytest.mark.parametrize("indirect", [False, True])
 def test_text_knockout_rejects_nonbooleans_outside_text(value: object, indirect: bool) -> None:
     state, _ = make_state()
-    cast(ObjectResolver, state.resolver).objects[key_for(1, 0)] = cast(CachedPdfObject, value)
+    state.resolver.objects[key_for(1, 0)] = value  # ty: ignore[unresolved-attribute]
     with pytest.raises(ValueError, match="invalid text knockout flag"):
         state.apply_extgstate({"ca": 0.4, "TK": PdfReference(1, 0) if indirect else value})
     assert state.graphics.text_knockout is True

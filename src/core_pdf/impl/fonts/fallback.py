@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import cache
 from importlib.resources import files
-from typing import ClassVar, Protocol, cast
+from typing import Any, ClassVar, Protocol
 
 from core_pdf.impl.fonts.font_program import TrueTypeFontProgram
 from core_pdf.impl.fonts.helpers import strip_subset_tag
@@ -154,11 +154,10 @@ def provider_face(
 ) -> PdfRasterFontFace | None:
     if provider is None:
         return None
-    resolver = getattr(provider, "resolve_raster_font", None)
-    if resolver is not None:
-        return resolver(request)
-    callback = cast(Callable[[PdfRasterFontRequest], PdfRasterFontFace | None], provider)
-    return callback(request)
+    # A provider object or a bare callable; the protocol cannot express "either".
+    resolve: Any = getattr(provider, "resolve_raster_font", None) or provider
+    face: PdfRasterFontFace | None = resolve(request)
+    return face
 
 
 def builtin_face_names(font_name: str | None) -> tuple[str, ...]:

@@ -13,7 +13,7 @@ from core_pdf.impl.extract.table_detection import (
     detect_tables,
     finalize_tables,
 )
-from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_min_exact
+from core_pdf.impl.geometry import bbox_union, finite_rect, overlap_ratio_min_exact
 from core_pdf.impl.output.model import Table, TableCell
 from core_pdf.impl.types import Rectangle
 from core_pdf_ocr.impl.extract.contracts import ObservationSource, PageAnalysis

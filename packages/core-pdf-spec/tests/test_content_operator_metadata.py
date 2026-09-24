@@ -1,10 +1,7 @@
-from typing import Any, cast
-
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
-from core_pdf_spec.s_07_content.model import ContentSink
 from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
     iter_content_operations,
@@ -65,7 +62,7 @@ def test_operator_aliases_keep_overridden_handler_bindings() -> None:
             calls.append(("double_quote", operands, depth))
 
     resolver = ObjectResolver(b"", {})
-    state = State(resolver, cast(ContentSink, object()), cast(Any, None))
+    state = State(resolver, object(), None)  # ty: ignore[invalid-argument-type]
     try:
         for name, operands in iter_content_operations(PdfLexer(b"f F (one) ' 1 2 (two) \"")):
             assert state.execute_operation(name, operands, 3) is None

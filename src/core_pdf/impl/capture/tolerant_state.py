@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typing
+from collections.abc import Mapping
 from math import isfinite
 from typing import Any
 
@@ -14,12 +15,13 @@ from core_pdf.impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl.graphics.color_spec import parse_color_space
 from core_pdf.impl.graphics.functions import compile_pdf_function
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.runtime.scalars import clamp01
+from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import PatternPaint, ShadingPattern, TilingPattern
 from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
+    OperationHandler,
 )
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -43,8 +45,10 @@ def font_companions(
     if entry is not None and entry[0] is fonts:
         return entry[1]
     grouped: dict[str, list[tuple[int, int]]] = {}
-    for value in fonts.values():
-        reference = typing.cast(PdfReference, value)
+    for reference in fonts.values():
+        # font_signature only calls this once every value is a reference.
+        if type(reference) is not PdfReference:
+            continue
         sibling = resolve(reference)
         if not isinstance(sibling, dict):
             continue
@@ -85,23 +89,68 @@ def font_signature(
 # distinct colours is not the case the cache exists for.
 COLOR_CACHE_LIMIT = 4096
 
+# Soft masks get the same treatment for a harsher reason. Every gs operator
+# re-parses the ExtGState soft mask into a fresh SoftMask carrying a freshly
+# compiled transfer closure, and each cache downstream is keyed by one of those
+# identities, so none of them could ever hit: PyMuPDF/tests/resources/
+# test_3450.pdf parsed 11,136 masks and rasterized the same 802 again and
+# again, taking 137s and 7.9GB for half a megapixel.
+#
+# The bound matches the colour cache rather than undercutting it. An entry is
+# three pointers to objects the capture already holds elsewhere, so a larger
+# table costs almost nothing, while a bound below the working set would clear
+# and refill on exactly the pages this exists for: that page peaks at 2,397
+# entries, and reaches it without a single clear at this limit.
+SOFT_MASK_CACHE_LIMIT = COLOR_CACHE_LIMIT
+
 
 class RecoveringTextState(ContentInterpreter):
     recovery: CaptureRecovery
     normalized_colors: dict[tuple[ColorSpace, tuple[object, ...]], tuple[float, ...]]
+    parsed_soft_masks: dict[tuple[int, Matrix, int], tuple[object, object, SoftMask | None]]
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
-        return parse_soft_mask(
+        # The ctm is baked into the parsed mask, and the resource scope decides
+        # what the mask's own content stream can name, so both belong in the
+        # key: a mask reached through different resources stays a separate
+        # object, exactly as it was before this cache existed.
+        cache = self.parsed_soft_masks
+        resources = self.resources
+        ctm = self.graphics.ctm
+        key = (id(value), ctm, id(resources))
+        cached = cache.get(key)
+        if cached is not None and cached[0] is value and cached[1] is resources:
+            return cached[2]
+        mask = parse_soft_mask(
             value,
             self.resolver,
-            ctm=self.graphics.ctm,
+            ctm=ctm,
             compile_function=compile_pdf_function,
         )
+        if len(cache) >= SOFT_MASK_CACHE_LIMIT:
+            cache.clear()
+        # The source and the resources lead the entry so their ids cannot be
+        # handed to another object while it is live, and so the identity check
+        # above reads them without unpacking the result.
+        cache[key] = (value, resources, mask)
+        return mask
+
+    def operation_table(self) -> Mapping[str, OperationHandler]:
+        """Every operator this state handles, an override winning over its default.
+
+        Both dispatch routes read this: the capture executor once per content
+        stream, execute_operation once per call. Overrides are empty outside
+        tests, so the common answer is the default table itself.
+        """
+        overrides = self.operator_overrides
+        if not overrides:
+            return self.default_handlers
+        return {**self.default_handlers, **overrides}
 
     def execute_operation(
         self, name: str, operands: ContentOperands, depth: int
     ) -> ContentStreamFrame | None:
-        handler = self.operator_overrides.get(name) or self.default_handlers.get(name)
+        handler = self.operation_table().get(name)
         return handler(operands, depth) if handler is not None else None
 
     capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]
@@ -121,7 +170,7 @@ class RecoveringTextState(ContentInterpreter):
             self.handle_operand_error(error, "font-resource")
             font_obj_ref = None
         if font_obj_ref is None:
-            return self.font_provider({}, typing.cast(dict[str, Any], self.resources))
+            return self.font_provider({}, self.resources)
 
         try:
             font_obj = self.resolver.resolve(font_obj_ref)
@@ -142,7 +191,7 @@ class RecoveringTextState(ContentInterpreter):
                 self.graphics.decoder_resources = resources
                 return decoder
 
-        document_decoders: dict[object, object] | None = getattr(
+        document_decoders: dict[object, FontDecoder] | None = getattr(
             getattr(self, "document", None), "font_decoders", None
         )
         signature = None
@@ -157,20 +206,17 @@ class RecoveringTextState(ContentInterpreter):
         if signature is not None and document_decoders is not None:
             shared = document_decoders.get(signature)
             if shared is not None:
-                decoder = typing.cast(FontDecoder, shared)
-                owned.append((resources, font_obj, decoder))
-                self.graphics.current_decoder = decoder
+                owned.append((resources, font_obj, shared))
+                self.graphics.current_decoder = shared
                 self.graphics.decoder_resources = resources
-                return decoder
+                return shared
 
         if not isinstance(font_obj, dict):
-            decoder = self.font_provider({}, typing.cast(dict[str, Any], resources))
+            decoder = self.font_provider({}, resources)
         else:
             font_dict = font_obj
             resolved_font = self.resolver.resolve_font_dict(font_dict)
-            decoder = self.font_provider(
-                typing.cast(dict[str, Any], resolved_font), typing.cast(dict[str, Any], resources)
-            )
+            decoder = self.font_provider(resolved_font, resources)
         owned.append((resources, font_obj, decoder))
         if signature is not None and document_decoders is not None:
             document_decoders[signature] = decoder
@@ -327,14 +373,17 @@ class RecoveringTextState(ContentInterpreter):
                 kind = type(value)
                 # `type(...) is int` rather than isinstance: bool subclasses
                 # int and must keep failing the way the full coercion fails it.
+                # No typing.cast around these: `kind is float` has already
+                # established the type for a reader, and cast is a function
+                # call that returns its argument, run here once per operand of
+                # every path segment on the page.
                 if kind is float:
-                    number = typing.cast(float, value)
-                    if not isfinite(number):
+                    if not isfinite(value):  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                         raise ValueError("invalid numeric operand")
-                    append(number)
+                    append(value)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                 elif kind is int:
                     try:
-                        append(float(typing.cast(int, value)))
+                        append(float(value))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                     except OverflowError:
                         raise ValueError("invalid numeric operand") from None
                 else:

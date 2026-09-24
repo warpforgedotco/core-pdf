@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Self, cast
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
+from core_pdf.impl.geometry import rect_tuple, union_bbox
 from core_pdf.impl.graphics.color_spec import describe_color_space
 from core_pdf.impl.graphics.filter_registry import declared_filter_names
-from core_pdf.impl.model.geometry import rect_tuple, union_bbox
 from core_pdf.impl.render.model import (
     DisplayItem,
     DisplayListItem,
@@ -15,7 +15,7 @@ from core_pdf.impl.render.model import (
     PathPaintItem,
     PathPaintKind,
 )
-from core_pdf.impl.runtime.scalars import parse_int
+from core_pdf.impl.scalars import parse_int
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
@@ -396,7 +396,7 @@ def display_item_box(
             pad = max(0.5 / scale, item.line_width * 0.5)
             box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
         return box
-    generic_item = cast(DisplayListItem, item)
+    generic_item = item
     data = generic_item.data
     if generic_item.kind in {"text", "glyph"}:
         value = data.get("bbox")

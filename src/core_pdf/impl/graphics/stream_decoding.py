@@ -20,18 +20,18 @@ from core_jbig2.codec import (
     JBIG2Segment,
     compose_packed_bitmap_region,
 )
+from core_pdf.impl.graphics import codec_backends
+from core_pdf.impl.graphics.codec_backends import (
+    png_predict_codec,
+    tiff_predict_codec,
+)
 from core_pdf.impl.graphics.decode_compat import FilterParams, normalize_stream_decode_spec
 from core_pdf.impl.graphics.filter_registry import (
     FILTER_DESCRIPTOR_BY_NAME,
     FILTER_DESCRIPTORS,
     PREDICTOR_FILTERS,
 )
-from core_pdf.impl.model.pdf_values import is_pdf_null
-from core_pdf.impl.runtime import codec_backends
-from core_pdf.impl.runtime.codec_backends import (
-    png_predict_codec,
-    tiff_predict_codec,
-)
+from core_pdf.impl.pdf_values import is_pdf_null
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import (

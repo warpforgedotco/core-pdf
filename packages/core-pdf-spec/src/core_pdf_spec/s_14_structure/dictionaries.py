@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from typing import Any, ClassVar, NoReturn, Self, cast
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -109,7 +109,7 @@ def attribute_entries(
                 revision = parsed
                 explicit_revision = True
                 index += 1
-        yield StructureAttribute(cast(PdfDict | PdfStream, attribute), revision, explicit_revision)
+        yield StructureAttribute(attribute, revision, explicit_revision)
 
 
 def marked_content_id(value: object) -> int:

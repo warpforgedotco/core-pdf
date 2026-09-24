@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
-from core_pdf_spec.s_07_content.model import ContentSink, PdfPath
+from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_07_content.operations import iter_content_operations
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -54,8 +54,8 @@ def new_state() -> tuple[ContentInterpreter, EventSink]:
     sink = EventSink()
     state = ContentInterpreter(
         ObjectResolver(b"", {}),
-        cast(ContentSink, sink),
-        cast(Any, lambda *args: None),
+        sink,  # ty: ignore[invalid-argument-type]
+        (lambda *args: None),  # ty: ignore[invalid-argument-type]
     )
     return state, sink
 

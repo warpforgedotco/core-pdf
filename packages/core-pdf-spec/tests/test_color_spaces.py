@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -130,14 +130,14 @@ def test_indexed_requires_exact_palette_length(lookup: bytes) -> None:
 def test_color_parameters_are_immutable_without_range_mirrors() -> None:
     raw = lab()
     space = parse_color_space(raw)
-    params = cast(dict[str, Any], raw[1])
-    params["WhitePoint"][0] = 99
-    params["Range"][0] = 99
+    params = raw[1]
+    params["WhitePoint"][0] = 99  # ty: ignore[not-subscriptable]
+    params["Range"][0] = 99  # ty: ignore[not-subscriptable]
     assert space.params["WhitePoint"] == (1, 1, 1)
     assert space.component_ranges == ((0, 100), (-20, 20), (-40, 40))
     assert "Range" not in space.params
     with pytest.raises(TypeError):
-        cast(Any, space.params)["WhitePoint"] = (99, 1, 1)
+        space.params["WhitePoint"] = (99, 1, 1)  # ty: ignore[invalid-assignment]
 
 
 @pytest.mark.parametrize(
@@ -205,7 +205,7 @@ def test_mask_and_jpx_bit_depth_rules() -> None:
 
 def make_state() -> ContentInterpreter:
     sink = SimpleNamespace()
-    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None))
+    return ContentInterpreter(ObjectResolver(b"", {}), sink, None)  # ty: ignore[invalid-argument-type]
 
 
 def test_custom_color_handler_receives_raw_operands_after_validation() -> None:

@@ -6,9 +6,9 @@ from statistics import fmean
 
 import numpy
 
+from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf_ocr.impl.extract.contracts import ObservationSource
 from core_pdf_ocr.impl.extract.ocr.types import OcrTask, pixel_box_to_page_box
 

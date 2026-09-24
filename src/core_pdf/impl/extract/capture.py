@@ -7,12 +7,11 @@ import re
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import Any
 
 import numpy
 
-from core_pdf.impl.capture.marked_content import extend_baseline, min_optional_confidence
-from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.capture.program import EXTRACTION_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture.records import LayoutFormId
 from core_pdf.impl.extract.contracts import (
     FULL_PAGE_IMAGE_COVERAGE,
@@ -24,19 +23,17 @@ from core_pdf.impl.extract.contracts import (
     TextQualityStats,
 )
 from core_pdf.impl.extract.quality import analyze_text
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl.geometry import (
     bbox_union,
     interval_overlap,
     rect_tuple,
-    union_bbox,
 )
-from core_pdf.impl.model.glyphs import (
+from core_pdf.impl.glyphs import (
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.model.text import collapse_ws
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.runs import TextRun
+from core_pdf.impl.text import collapse_ws
 
 
 class StructureUnset:
@@ -138,7 +135,7 @@ def discard_duplicate_nested_layers(runs: tuple[TextRun, ...]) -> tuple[TextRun,
                 (value for key, value in reversed(run.provenance) if key == "layout_form_id"),
                 None,
             )
-            group = cast(LayoutFormId, form_id) if isinstance(form_id, tuple) else run.stream_order
+            group = form_id if isinstance(form_id, tuple) else run.stream_order
             by_form.setdefault((run.xobject_depth, group), []).append(index)
     if not page_indices or not by_form:
         return runs
@@ -239,16 +236,8 @@ def apply_structure_actual_text(
             replacements[marker] = replacement
             output.append(replacement)
             continue
-        replacement.x0 = min(replacement.x0, run.x0)
-        replacement.y0 = min(replacement.y0, run.y0)
-        replacement.x1 = max(replacement.x1, run.x1)
-        replacement.y1 = max(replacement.y1, run.y1)
-        replacement.advance_bbox = cast(
-            Rectangle, union_bbox(replacement.advance_bbox, run.advance_bbox)
-        )
+        replacement.absorb_extent(run)
         replacement.union_ink_bbox(run.ink_bbox)
-        replacement.baseline = extend_baseline(replacement.baseline, run.baseline)
-        replacement.confidence = min_optional_confidence(replacement.confidence, run.confidence)
         replacement.glyph_clusters += run.glyph_clusters
         replacement.visible = replacement.visible or run.visible
         replacement.inside_active_clip = replacement.inside_active_clip or run.inside_active_clip
@@ -256,7 +245,7 @@ def apply_structure_actual_text(
 
 
 def glyph_evidence_fields(
-    glyph_fields: Iterable[tuple[str, bool, object, bytes, str, float | None]],
+    glyph_fields: Iterable[tuple[str, str, float | None]],
     runs: tuple[TextRun, ...],
 ) -> GlyphEvidence:
     authoritative = 0
@@ -266,14 +255,7 @@ def glyph_evidence_fields(
     low_confidence = 0
     semantic_characters = 0
     glyph_count = 0
-    for (
-        glyph_text,
-        ignored_visible,
-        decoder,
-        code_bytes,
-        unicode_source,
-        confidence,
-    ) in glyph_fields:
+    for glyph_text, unicode_source, confidence in glyph_fields:
         if not glyph_text or glyph_text.isspace():
             continue
         glyph_count += 1
@@ -506,17 +488,7 @@ def capture_from_program(
         painted_text_quality = painted_analysis.quality
         painted_native_characters = painted_analysis.characters
     glyph_evidence = glyph_evidence or glyph_evidence_fields(
-        (
-            (
-                glyph.text,
-                glyph.visible,
-                glyph.font_decoder,
-                glyph.code_bytes,
-                glyph.unicode_source,
-                glyph.confidence,
-            )
-            for glyph in program.glyphs
-        ),
+        ((glyph.text, glyph.unicode_source, glyph.confidence) for glyph in program.glyphs),
         raw_runs,
     )
     trusted_hidden_text = hidden_text_is_trusted(
@@ -628,8 +600,11 @@ def capture_page(
     hidden_layers: frozenset[str] | None = None,
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
+    options: CaptureOptions = EXTRACTION_CAPTURE,
 ) -> PageAnalysis:
-    capture_options: dict[str, object] = {}
+    # Extraction never rasterizes, so it defaults to EXTRACTION_CAPTURE. OCR
+    # asks for the render payload back, because it renders the page it extracted.
+    capture_options: dict[str, object] = {"options": options}
     if hidden_layers is not None:
         capture_options["hidden_layers"] = hidden_layers
     if fields is not None:

@@ -9,20 +9,22 @@ from io import BytesIO
 from itertools import accumulate, groupby, pairwise
 from operator import itemgetter
 from types import SimpleNamespace
-from typing import Any, ClassVar, NoReturn, Self, TypeAlias, cast
+from typing import Any, ClassVar, NoReturn, Self, TypeAlias
 
 from core_pdf import PdfDocument
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl.geometry import (
     bbox_contains,
     bbox_union,
     flip_rect_vertical,
 )
+from core_pdf.impl.graphics.codec_backends import png_chunk
 from core_pdf.impl.output.model import Table as StructuredTable
 from core_pdf.impl.output.model import TableCell
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.render.paths import intersect_box
 from core_pdf.impl.types import DrawingRecord, ImageRecord, PdfReference
 
-from .._shared import ClosingMixin, PdfInput, encode_png, png_chunk
+from .._shared import ClosingMixin, PdfInput, encode_png
 from .exceptions import PdfminerException
 
 frozen_setattr = object.__setattr__
@@ -42,7 +44,7 @@ LIGATURE_EXPANSIONS = {
 
 
 def flip_box(box: object, height: float) -> BBox:
-    return flip_rect_vertical(cast(Any, box), height)
+    return flip_rect_vertical(box, height)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 def cluster_by(
@@ -1098,15 +1100,10 @@ class Page:
         for top, bottom in zip(horizontal, horizontal[1:]):
             grid_row: list[_CompatCell] = []
             for left, right in zip(vertical, vertical[1:]):
-                bbox = (
-                    max(left, self.bbox[0]),
-                    max(top, self.bbox[1]),
-                    min(right, self.bbox[2]),
-                    min(bottom, self.bbox[3]),
-                )
-                if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
+                cell_bbox = intersect_box((left, top, right, bottom), self.bbox)
+                if cell_bbox is None:
                     continue
-                grid_row.append(_CompatCell(bbox, cell_text(bbox)))
+                grid_row.append(_CompatCell(cell_bbox, cell_text(cell_bbox)))
             grid_rows.append(grid_row)
         if not grid_rows:
             return []
@@ -1178,7 +1175,7 @@ class Page:
             if regex and isinstance(pattern, str) and " " in pattern
             else pattern
             if regex
-            else re.escape(cast(str, pattern))
+            else re.escape(pattern)  # type: ignore[type-var]  # ty: ignore[invalid-argument-type]
         )
         flags = 0 if case else re.IGNORECASE
 
@@ -1440,7 +1437,7 @@ class TableFinder:
                 if isinstance(value, Mapping):
                     selected.extend(
                         edge
-                        for edge in _edges(cast(ObjectDict, value))
+                        for edge in _edges(value)  # type: ignore[arg-type]
                         if edge["orientation"] == orientation
                     )
                     continue
@@ -1685,7 +1682,7 @@ class PageImage:
         if kwargs.get("quantize") is False:
             png += png_chunk(b"tEXt", b"quantize\x00false")
         if hasattr(path, "write"):
-            cast(Any, path).write(png)
+            path.write(png)  # ty: ignore[call-non-callable]
         else:
             with builtins.open(path, "wb") as stream:
                 stream.write(png)
@@ -1815,9 +1812,9 @@ class PDF(ClosingMixin):
     ) -> None:
         self._unicode_norm = unicode_norm
         if source is None:
-            source = cast(PdfInput, document)
+            source = document
             document = _source(source)
-        self._document = cast(PdfDocument, document)
+        self._document = document
         self.doc = document
         self.source = source
         self.stream = source
@@ -2008,8 +2005,8 @@ def obj_to_bbox(obj: ObjectDict) -> BBox:
 def intersects_bbox(obj: ObjectDict | Iterable[ObjectDict], bbox: BBox) -> bool | list[ObjectDict]:
     if not isinstance(obj, Mapping):
         return [item for item in obj if intersects_bbox(item, bbox)]
-    obj = cast(ObjectDict, obj)
-    return bbox_overlap(bbox, obj_to_bbox(obj)) is not None
+    obj = obj
+    return bbox_overlap(bbox, obj_to_bbox(obj)) is not None  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 def crop_to_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:

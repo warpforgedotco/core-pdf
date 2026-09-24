@@ -10,7 +10,7 @@ import numpy
 
 from core_pdf.impl.extract.contracts import ObservationBatch, PageAnalysis
 from core_pdf.impl.extract.table_cleanup import cell_text
-from core_pdf.impl.model.geometry import bbox_union
+from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.output.model import Table, TableCell
 
 AXIS_TOLERANCE = 1.5

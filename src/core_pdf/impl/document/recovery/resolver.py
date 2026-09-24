@@ -9,7 +9,7 @@ from core_pdf.impl.document.recovery.xref import iter_indirect_object_headers
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.graphics.stream_decoding import decode_stream_data
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.runtime.scalars import parse_box, parse_float, parse_int
+from core_pdf.impl.scalars import parse_box, parse_float, parse_int
 from core_pdf.impl.types import PdfReference, PdfString
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data as decode_spec_stream_data
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer

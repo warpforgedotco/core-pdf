@@ -2,23 +2,27 @@
 
 from __future__ import annotations
 
-from math import ceil
-from typing import ClassVar
+from dataclasses import dataclass, field
 
-from core_pdf.impl.capture.marked_content import min_optional_confidence
+from core_pdf.impl.capture.glyph_boxes import (
+    TextBasis,
+    glyph_text_space_boxes,
+    text_basis_rect,
+    transformed_text_line,
+)
+from core_pdf.impl.capture.glyph_geometry import NO_BOX, vertical_glyph_geometry
+from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts.font_program import LEGITIMATE_MULTI_CHAR_GLYPHS
-from core_pdf.impl.model.geometry import transform_bbox
-from core_pdf.impl.model.glyphs import (
-    GlyphCluster,
+from core_pdf.impl.glyphs import (
+    GlyphClusterLike,
     GlyphObservation,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
+    min_optional_confidence,
 )
-from core_pdf.impl.types import Record, Rectangle, ReplaceFields, ReprFields, frozen_setattr
-
-TextBasis = tuple[float, float, float, float, float, float]
-
+from core_pdf.impl.types import Rectangle
+from core_pdf_cythonized import horizontal_glyph_geometry
 
 GLYPH_BITMAP_REPAIR_LABELS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-+/()[]{}<>|_~"
@@ -47,119 +51,12 @@ def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
     return punctuation >= 1 and punctuation / len(nonspace) >= 0.25
 
 
-def glyph_bitmap_dimensions(
-    glyph_bbox: Rectangle | None,
-    font_size: float,
-) -> tuple[int, int]:
-    if glyph_bbox is None:
-        return (24, 32)
-    x0, y0, x1, y1 = glyph_bbox
-    width = x1 - x0
-    height = y1 - y0
-    if width <= 0.0 or height <= 0.0:
-        return (24, 32)
-    bitmap_h = max(16, min(64, ceil(max(font_size, 1.0) * 2.5)))
-    bitmap_w = max(1, min(96, ceil(bitmap_h * width / height)))
-    return (bitmap_w, bitmap_h)
-
-
-def text_basis_rect(x0: float, y0: float, x1: float, y1: float, text_basis: TextBasis) -> Rectangle:
-    base_x, base_y, a, b, c, d = text_basis
-    return transform_bbox((x0, y0, x1, y1), (a, b, c, d, base_x, base_y))
-
-
-def glyph_ink_rect(
-    glyph_bbox: Rectangle | None,
-    advance_start: float,
-    fallback_bbox: Rectangle,
-    text_basis: TextBasis,
-    text_advance_scale: float,
-    rise: float,
-    font_scale: float,
-) -> Rectangle:
-    if glyph_bbox is None:
-        return fallback_bbox
-    gx0, gy0, gx1, gy1 = glyph_bbox
-    if gx1 <= gx0 or gy1 <= gy0:
-        return fallback_bbox
-    text_x0 = advance_start + gx0 * text_advance_scale
-    text_x1 = advance_start + gx1 * text_advance_scale
-    text_y0 = rise + gy0 * font_scale
-    text_y1 = rise + gy1 * font_scale
-    rect = text_basis_rect(text_x0, text_y0, text_x1, text_y1, text_basis)
-    fallback_height = fallback_bbox[3] - fallback_bbox[1]
-    fallback_width = fallback_bbox[2] - fallback_bbox[0]
-    rect_x0, rect_y0, rect_x1, rect_y1 = rect
-    rect_height = rect_y1 - rect_y0
-    rect_width = rect_x1 - rect_x0
-    if rect_width <= 0.01 or rect_height <= 0.01:
-        return fallback_bbox
-    if fallback_width > 0.0 and rect_width > fallback_width * 4.0:
-        return fallback_bbox
-    if fallback_height > 0.0 and rect_height > fallback_height * 1.5:
-        return fallback_bbox
-    return rect
-
-
-def transformed_text_line(
-    x0: float,
-    y0: float,
-    x1: float,
-    y1: float,
-    text_basis: TextBasis,
-) -> tuple[float, float, float, float]:
-    base_x, base_y, a, b, c, d = text_basis
-    return (
-        base_x + x0 * a + y0 * c,
-        base_y + x0 * b + y0 * d,
-        base_x + x1 * a + y1 * c,
-        base_y + x1 * b + y1 * d,
-    )
-
-
-def glyph_text_space_boxes(
-    offset: float,
-    advance: float,
-    *,
-    is_vertical: bool,
-    rise: float,
-    font_ascent: float,
-    font_descent: float,
-    position: tuple[float, float] = (0.0, 0.0),
-) -> tuple[
-    Rectangle,
-    tuple[float, float, float, float],
-]:
-    if is_vertical:
-        position_x, position_y = position
-        start_y = rise + position_y - offset
-        end_y = start_y - advance
-        ar = font_ascent
-        dr = font_descent
-        x0 = position_x + (ar if ar < dr else dr)
-        x1 = position_x + (ar if ar > dr else dr)
-        y0 = start_y if start_y < end_y else end_y
-        y1 = end_y if end_y > start_y else start_y
-        return (
-            (x0, y0, x1, y1),
-            (0.0, start_y, 0.0, end_y),
-        )
-    ar = font_ascent + rise
-    dr = font_descent + rise
-    return (
-        (offset, dr, offset + advance, ar),
-        (offset, rise, offset + advance, rise),
-    )
-
-
+@dataclass(slots=True, eq=False)
 class RunGeometry:
-    __slots__ = ("started", "advance", "ink", "confidence")
-
-    def __init__(self) -> None:
-        self.started = False
-        self.advance: Rectangle = (0.0, 0.0, 0.0, 0.0)
-        self.ink: Rectangle = (0.0, 0.0, 0.0, 0.0)
-        self.confidence: float | None = None
+    started: bool = False
+    advance: Rectangle = (0.0, 0.0, 0.0, 0.0)
+    ink: Rectangle = (0.0, 0.0, 0.0, 0.0)
+    confidence: float | None = None
 
     def add(
         self,
@@ -192,22 +89,9 @@ class RunGeometry:
         self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
-class TextGeometry(Record):
-    __slots__ = (
-        "basis",
-        "font_size",
-        "font_scale",
-        "font_ascent",
-        "font_descent",
-        "advance_scale",
-        "char_space",
-        "word_space",
-        "horizontal_scale",
-        "rise",
-        "rotation_angle",
-        "effective_font_size",
-        "effective_font_height",
-    )
+@dataclass(frozen=True, slots=True)
+class TextGeometry:
+    """The text-state geometry a run of glyphs is laid out under."""
 
     basis: TextBasis
     font_size: float
@@ -223,127 +107,10 @@ class TextGeometry(Record):
     effective_font_size: float
     effective_font_height: float
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "basis",
-        "font_size",
-        "font_scale",
-        "font_ascent",
-        "font_descent",
-        "advance_scale",
-        "char_space",
-        "word_space",
-        "horizontal_scale",
-        "rise",
-        "rotation_angle",
-        "effective_font_size",
-        "effective_font_height",
-    )
-    __match_args__ = (
-        "basis",
-        "font_size",
-        "font_scale",
-        "font_ascent",
-        "font_descent",
-        "advance_scale",
-        "char_space",
-        "word_space",
-        "horizontal_scale",
-        "rise",
-        "rotation_angle",
-        "effective_font_size",
-        "effective_font_height",
-    )
 
-    def __init__(
-        self,
-        basis: TextBasis,
-        font_size: float,
-        font_scale: float,
-        font_ascent: float,
-        font_descent: float,
-        advance_scale: float,
-        char_space: float,
-        word_space: float,
-        horizontal_scale: float,
-        rise: float,
-        rotation_angle: int,
-        effective_font_size: float,
-        effective_font_height: float,
-    ) -> None:
-        frozen_setattr(self, "basis", basis)
-        frozen_setattr(self, "font_size", font_size)
-        frozen_setattr(self, "font_scale", font_scale)
-        frozen_setattr(self, "font_ascent", font_ascent)
-        frozen_setattr(self, "font_descent", font_descent)
-        frozen_setattr(self, "advance_scale", advance_scale)
-        frozen_setattr(self, "char_space", char_space)
-        frozen_setattr(self, "word_space", word_space)
-        frozen_setattr(self, "horizontal_scale", horizontal_scale)
-        frozen_setattr(self, "rise", rise)
-        frozen_setattr(self, "rotation_angle", rotation_angle)
-        frozen_setattr(self, "effective_font_size", effective_font_size)
-        frozen_setattr(self, "effective_font_height", effective_font_height)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.basis == other.basis
-            and self.font_size == other.font_size
-            and self.font_scale == other.font_scale
-            and self.font_ascent == other.font_ascent
-            and self.font_descent == other.font_descent
-            and self.advance_scale == other.advance_scale
-            and self.char_space == other.char_space
-            and self.word_space == other.word_space
-            and self.horizontal_scale == other.horizontal_scale
-            and self.rise == other.rise
-            and self.rotation_angle == other.rotation_angle
-            and self.effective_font_size == other.effective_font_size
-            and self.effective_font_height == other.effective_font_height
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.basis,
-                self.font_size,
-                self.font_scale,
-                self.font_ascent,
-                self.font_descent,
-                self.advance_scale,
-                self.char_space,
-                self.word_space,
-                self.horizontal_scale,
-                self.rise,
-                self.rotation_angle,
-                self.effective_font_size,
-                self.effective_font_height,
-            )
-        )
-
-
-class GlyphPaint(Record):
-    __slots__ = (
-        "clip_bbox",
-        "page_clip",
-        "fill",
-        "render_mode",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "blend_mode",
-        "group_alpha",
-        "clip_glyph",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-    )
+@dataclass(frozen=True, slots=True)
+class GlyphPaint:
+    """The painting state a run of glyphs is drawn with."""
 
     clip_bbox: Rectangle | None
     page_clip: Rectangle | None
@@ -362,162 +129,15 @@ class GlyphPaint(Record):
     alpha_is_shape: bool
     graphics_soft_mask: object | None
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "clip_bbox",
-        "page_clip",
-        "fill",
-        "render_mode",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "blend_mode",
-        "group_alpha",
-        "clip_glyph",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-    )
-    __match_args__ = (
-        "clip_bbox",
-        "page_clip",
-        "fill",
-        "render_mode",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "blend_mode",
-        "group_alpha",
-        "clip_glyph",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-    )
 
-    def __init__(
-        self,
-        clip_bbox: Rectangle | None,
-        page_clip: Rectangle | None,
-        fill: tuple[float, ...] | None,
-        render_mode: int,
-        fill_opacity: float | None,
-        stroke_color: tuple[float, ...] | None,
-        stroke_opacity: float | None,
-        line_width: float,
-        line_cap: int,
-        line_join: int,
-        dash_pattern: tuple[list[float], float] | None,
-        blend_mode: str | None,
-        group_alpha: float | None,
-        clip_glyph: bool = False,
-        alpha_is_shape: bool = False,
-        graphics_soft_mask: object | None = None,
-    ) -> None:
-        frozen_setattr(self, "clip_bbox", clip_bbox)
-        frozen_setattr(self, "page_clip", page_clip)
-        frozen_setattr(self, "fill", fill)
-        frozen_setattr(self, "render_mode", render_mode)
-        frozen_setattr(self, "fill_opacity", fill_opacity)
-        frozen_setattr(self, "stroke_color", stroke_color)
-        frozen_setattr(self, "stroke_opacity", stroke_opacity)
-        frozen_setattr(self, "line_width", line_width)
-        frozen_setattr(self, "line_cap", line_cap)
-        frozen_setattr(self, "line_join", line_join)
-        frozen_setattr(self, "dash_pattern", dash_pattern)
-        frozen_setattr(self, "blend_mode", blend_mode)
-        frozen_setattr(self, "group_alpha", group_alpha)
-        frozen_setattr(self, "clip_glyph", clip_glyph)
-        frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
-        frozen_setattr(self, "graphics_soft_mask", graphics_soft_mask)
+@dataclass(slots=True)
+class GlyphCapture:
+    """What one run of glyphs contributed, accumulated as it is captured."""
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.clip_bbox == other.clip_bbox
-            and self.page_clip == other.page_clip
-            and self.fill == other.fill
-            and self.render_mode == other.render_mode
-            and self.fill_opacity == other.fill_opacity
-            and self.stroke_color == other.stroke_color
-            and self.stroke_opacity == other.stroke_opacity
-            and self.line_width == other.line_width
-            and self.line_cap == other.line_cap
-            and self.line_join == other.line_join
-            and self.dash_pattern == other.dash_pattern
-            and self.blend_mode == other.blend_mode
-            and self.group_alpha == other.group_alpha
-            and self.clip_glyph == other.clip_glyph
-            and self.alpha_is_shape == other.alpha_is_shape
-            and self.graphics_soft_mask == other.graphics_soft_mask
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.clip_bbox,
-                self.page_clip,
-                self.fill,
-                self.render_mode,
-                self.fill_opacity,
-                self.stroke_color,
-                self.stroke_opacity,
-                self.line_width,
-                self.line_cap,
-                self.line_join,
-                self.dash_pattern,
-                self.blend_mode,
-                self.group_alpha,
-                self.clip_glyph,
-                self.alpha_is_shape,
-                self.graphics_soft_mask,
-            )
-        )
-
-
-class GlyphCapture(ReplaceFields, ReprFields):
-    __slots__ = ("glyphs", "clusters", "cluster_count", "geometry")
-
-    glyphs: list[GlyphObservation]
-    clusters: list[GlyphCluster]
-    cluster_count: int
-    geometry: RunGeometry
-
-    __fields__: ClassVar[tuple[str, ...]] = ("glyphs", "clusters", "cluster_count", "geometry")
-    __match_args__ = ("glyphs", "clusters", "cluster_count", "geometry")
-
-    def __init__(
-        self,
-        glyphs: list[GlyphObservation] | None = None,
-        clusters: list[GlyphCluster] | None = None,
-        cluster_count: int = 0,
-        geometry: RunGeometry | None = None,
-    ) -> None:
-        self.glyphs = [] if glyphs is None else glyphs
-        self.clusters = [] if clusters is None else clusters
-        self.cluster_count = cluster_count
-        self.geometry = RunGeometry() if geometry is None else geometry
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.glyphs == other.glyphs
-            and self.clusters == other.clusters
-            and self.cluster_count == other.cluster_count
-            and self.geometry == other.geometry
-        )
-
-    __hash__ = None  # type: ignore[assignment]
+    glyphs: list[GlyphObservation] = field(default_factory=list)
+    clusters: list[GlyphClusterLike] = field(default_factory=list)
+    cluster_count: int = 0
+    geometry: RunGeometry = field(default_factory=RunGeometry)
 
 
 def capture_glyphs(
@@ -533,14 +153,22 @@ def capture_glyphs(
     seqno: int,
     text_object_id: int,
     cluster_start: int,
-    capture_ink_bounds: bool = True,
-    capture_run_details: bool = True,
+    options: CaptureOptions = DEFAULT_CAPTURE,
 ) -> GlyphCapture:
+    """Lay out and record one show-text operation's glyphs.
+
+    Three passes. The first walks the glyphs for everything that needs the
+    decoder or the source text; the second is pure float arithmetic over flat
+    arrays and is the compiled kernel; the third builds the observations. The
+    split exists so the middle pass touches no Python object, which is the only
+    shape a compiled kernel beats the interpreter at -- a fused loop that
+    interleaved the arithmetic with building a forty-field observation would
+    not qualify.
+    """
     result = GlyphCapture()
     if not glyphs:
         return result
     text_basis = geometry.basis
-    _, _, combined_a, combined_b, combined_c, combined_d = text_basis
     font_size = geometry.font_size
     font_scale = geometry.font_scale
     font_ascent = geometry.font_ascent
@@ -549,34 +177,32 @@ def capture_glyphs(
     advance_scale = geometry.advance_scale
     effective_font_name = decoder.font_name or font_name
     is_vertical = decoder.is_vertical
-    axis_aligned_horizontal = not is_vertical and combined_b == 0.0 and combined_c == 0.0
-    glyph_bbox_for_code = decoder.glyph_bbox
-    vertical_position = decoder.vertical_glyph_position
-    clip_primary = paint.clip_bbox
-    clip_page = paint.page_clip
-    offset = 0.0
-    cursor = 0
-    transform_a = advance_scale * combined_a
-    transform_b = advance_scale * combined_b
-    transform_c = font_scale * combined_c
-    transform_d = font_scale * combined_d
-    rise_offset_x = rise * combined_c
-    rise_offset_y = rise * combined_d
-
-    if axis_aligned_horizontal:
-        axis_advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
-        axis_advance_y1 = text_basis[1] + (font_ascent + rise) * combined_d
-        if axis_advance_y0 > axis_advance_y1:
-            axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
-        axis_baseline_y = text_basis[1] + rise * combined_d
-    add_run_geometry = result.geometry.add
     char_space = geometry.char_space
     word_space = geometry.word_space
     horizontal_scale = geometry.horizontal_scale
     glyph_width = decoder.glyph_width
+    glyph_bbox_for_code = decoder.glyph_bbox
+    vertical_position = decoder.vertical_glyph_position
+    want_ink = options.ink_bounds and not is_vertical
+    # The glyph transform and the bitmap request exist for the rasterizer.
+    # A caller that only wants text says so, and neither is computed.
+    want_render = options.render_details
+    want_runs = options.text_runs
+
+    # ---- pass one: the decoder and the source text ------------------------
+    kept: list[DecodedGlyph] = []
+    chunk_texts: list[str] = []
+    offsets: list[float] = []
+    advances: list[float] = []
+    glyph_boxes: list[float] = []
+    want_bitmap: list[int] = []
+    suspicious_flags: list[bool] = []
+    positions: list[tuple[float, float]] = []
+    offset = 0.0
+    cursor = 0
     for glyph in glyphs:
         if is_vertical:
-            advance_x, advance_y = decoder.glyph_advance_vector(
+            _, advance_y = decoder.glyph_advance_vector(
                 glyph.width_code,
                 font_size=font_size,
                 char_space=char_space,
@@ -598,133 +224,99 @@ def capture_glyphs(
             offset += advance
             continue
 
-        cluster_id = cluster_start + result.cluster_count
-        cluster_provenance_id = (seqno, cluster_id)
+        kept.append(glyph)
+        chunk_texts.append(chunk_text)
+        offsets.append(offset)
+        advances.append(advance)
+        box = glyph_bbox_for_code(glyph.bitmap_code) if want_ink else None
+        if box is None:
+            glyph_boxes.extend((NO_BOX, NO_BOX, NO_BOX, NO_BOX))
+        else:
+            glyph_boxes.extend(box)
+        # Computed whichever mode this is: suspicious feeds split_flags below,
+        # so gating it on render details would split a multi-character glyph
+        # like "A/B" into three observations for a text-only capture and leave
+        # it as one otherwise. Only the bitmap request is a render concern.
+        suspicious = (
+            False if chunk_length == 1 else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
+        )
+        suspicious_flags.append(suspicious)
+        want_bitmap.append(
+            1 if want_render and (should_capture_glyph_bitmap(chunk_text) or suspicious) else 0
+        )
         if is_vertical:
-            glyph_vertical_position = vertical_position(
-                glyph.cid,
-                font_size=font_size,
-            )
-            text_box, baseline_text = glyph_text_space_boxes(
-                offset,
-                advance,
-                is_vertical=True,
-                rise=rise,
-                font_ascent=font_ascent,
-                font_descent=font_descent,
-                position=glyph_vertical_position,
-            )
-            advance_bbox = text_basis_rect(*text_box, text_basis)
-            baseline = transformed_text_line(*baseline_text, text_basis)
-            origin_x, position_y = glyph_vertical_position
-            origin_y = rise + position_y - offset
-            outline_transform = (
-                transform_a,
-                transform_b,
-                transform_c,
-                transform_d,
-                text_basis[0] + origin_x * combined_a + origin_y * combined_c,
-                text_basis[1] + origin_x * combined_b + origin_y * combined_d,
-            )
-        else:
-            outline_transform = (
-                transform_a,
-                transform_b,
-                transform_c,
-                transform_d,
-                text_basis[0] + offset * combined_a + rise_offset_x,
-                text_basis[1] + offset * combined_b + rise_offset_y,
-            )
-            if axis_aligned_horizontal:
-                advance_x0 = text_basis[0] + offset * combined_a
-                advance_x1 = text_basis[0] + (offset + advance) * combined_a
-                advance_bbox = (
-                    advance_x1 if advance_x1 < advance_x0 else advance_x0,
-                    axis_advance_y0,
-                    advance_x0 if advance_x0 > advance_x1 else advance_x1,
-                    axis_advance_y1,
-                )
-                baseline = (
-                    advance_x0,
-                    axis_baseline_y,
-                    advance_x1,
-                    axis_baseline_y,
-                )
-            else:
-                text_box, baseline_text = glyph_text_space_boxes(
-                    offset,
-                    advance,
-                    is_vertical=False,
-                    rise=rise,
-                    font_ascent=font_ascent,
-                    font_descent=font_descent,
-                )
-                advance_bbox = text_basis_rect(*text_box, text_basis)
-                baseline = transformed_text_line(*baseline_text, text_basis)
-        observation_visible = visible
-        if observation_visible:
-            box_x0, box_y0, box_x1, box_y1 = advance_bbox
-            if (
-                clip_primary is not None
-                and (
-                    box_x1 <= clip_primary[0]
-                    or box_x0 >= clip_primary[2]
-                    or box_y1 <= clip_primary[1]
-                    or box_y0 >= clip_primary[3]
-                )
-            ) or (
-                clip_page is not None
-                and (
-                    box_x1 <= clip_page[0]
-                    or box_x0 >= clip_page[2]
-                    or box_y1 <= clip_page[1]
-                    or box_y0 >= clip_page[3]
-                )
-            ):
-                observation_visible = False
-        if is_vertical or not capture_ink_bounds:
-            glyph_bbox = None
-        else:
-            glyph_bbox = glyph_bbox_for_code(glyph.bitmap_code)
-        if (
-            axis_aligned_horizontal
-            and glyph_bbox is not None
-            and glyph_bbox[0] == 0.0
-            and glyph_bbox[1] * font_scale == font_descent
-            and glyph_bbox[2] * advance_scale == advance
-            and glyph_bbox[3] * font_scale == font_ascent
-        ):
-            rect = advance_bbox
-        else:
-            rect = glyph_ink_rect(
-                glyph_bbox,
-                offset,
-                advance_bbox,
-                text_basis,
-                advance_scale,
-                rise,
-                font_scale,
-            )
+            positions.append(vertical_position(glyph.cid, font_size=font_size))
+        offset += advance
+
+    if not kept:
+        return result
+
+    # ---- pass two: the geometry kernel ------------------------------------
+    if is_vertical:
+        advance_f, baseline_f, transform_f, ink_f, visible_f, bitmap_f = vertical_glyph_geometry(
+            offsets,
+            advances,
+            positions,
+            basis=text_basis,
+            font_ascent=font_ascent,
+            font_descent=font_descent,
+            rise=rise,
+            font_scale=font_scale,
+            advance_scale=advance_scale,
+            clip_primary=paint.clip_bbox,
+            clip_page=paint.page_clip,
+            visible=visible,
+            want_bitmap=want_bitmap,
+            want_transform=want_render,
+        )
+    else:
+        advance_f, baseline_f, transform_f, ink_f, visible_f, bitmap_f = horizontal_glyph_geometry(
+            offsets,
+            advances,
+            glyph_boxes,
+            basis=text_basis,
+            font_ascent=font_ascent,
+            font_descent=font_descent,
+            rise=rise,
+            font_scale=font_scale,
+            advance_scale=advance_scale,
+            font_size=font_size,
+            clip_primary=paint.clip_bbox,
+            clip_page=paint.page_clip,
+            visible=visible,
+            want_bitmap=want_bitmap,
+            want_transform=want_render,
+        )
+
+    # ---- pass three: the observations -------------------------------------
+    add_run_geometry = result.geometry.add
+    append_glyph = result.glyphs.append
+    for index, glyph in enumerate(kept):
+        chunk_text = chunk_texts[index]
+        chunk_length = len(chunk_text)
+        advance_bbox = advance_f[index]
+        baseline = baseline_f[index]
+        rect = ink_f[index]
+        outline_transform = transform_f[index]
+        observation_visible = bool(visible_f[index])
+        bitmap_width = bitmap_f[2 * index]
+        bitmap_height = bitmap_f[2 * index + 1]
+        bitmap_code = glyph.bitmap_code if want_bitmap[index] else None
+
+        cluster_id = cluster_start + index
+        cluster_provenance_id = (seqno, cluster_id)
         observation_confidence = glyph_unicode_confidence(
             chunk_text,
             glyph.unicode_source,
             glyph.alternates,
         )
 
-        single_character = chunk_length == 1
-        suspicious_multi = (
-            False if single_character else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
-        )
-        bitmap_width = bitmap_height = 0
-        bitmap_code: int | None = None
-        if should_capture_glyph_bitmap(chunk_text) or suspicious_multi:
-            bitmap_width, bitmap_height = glyph_bitmap_dimensions(glyph_bbox, font_size)
-            bitmap_code = glyph.bitmap_code
-
         fragments: list[tuple[str, Rectangle, Rectangle, Rectangle, float]] = []
-        if glyph.split_unicode and not single_character and not suspicious_multi:
-            per_char_advance = advance / len(chunk_text)
-            char_offset = offset
+        if glyph.split_unicode and chunk_length != 1 and not suspicious_flags[index]:
+            # One code that stands for several characters: re-cut the advance
+            # per character. Rare, and the kernel deliberately does not model it.
+            per_char_advance = advances[index] / chunk_length
+            char_offset = offsets[index]
             for ch in chunk_text:
                 char_confidence = glyph_unicode_confidence(
                     ch, glyph.unicode_source, glyph.alternates
@@ -747,9 +339,13 @@ def capture_glyphs(
             fragments.append((chunk_text, rect, advance_bbox, baseline, observation_confidence))
 
         cluster_observations: list[GlyphObservation] = []
-        for index, (fragment_text, ink, advance_rect, fragment_baseline, confidence) in enumerate(
-            fragments
-        ):
+        for position, (
+            fragment_text,
+            ink,
+            advance_rect,
+            fragment_baseline,
+            confidence,
+        ) in enumerate(fragments):
             observation = GlyphObservation(
                 fragment_text,
                 ink,
@@ -784,7 +380,7 @@ def capture_glyphs(
                 paint.line_width,
                 paint.blend_mode,
                 paint.group_alpha,
-                index == 0,
+                position == 0,
                 text_object_id,
                 paint.line_cap,
                 paint.line_join,
@@ -795,16 +391,15 @@ def capture_glyphs(
                 decoder.is_type3,
                 paint.graphics_soft_mask,
             )
-            result.glyphs.append(observation)
-            if capture_run_details:
+            append_glyph(observation)
+            if want_runs:
                 cluster_observations.append(observation)
                 add_run_geometry(advance_rect, ink, confidence)
-        result.cluster_count += 1
-        if capture_run_details:
+        if want_runs:
             cluster = glyph_cluster_from_observations(
                 cluster_id, chunk_text, tuple(cluster_observations)
             )
             if cluster is not None:
                 result.clusters.append(cluster)
-        offset += advance
+    result.cluster_count = len(kept)
     return result

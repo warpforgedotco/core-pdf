@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import ClassVar, cast
+from typing import ClassVar
 
 from core_pdf.impl.types import PdfString, ReplaceFields, ReprFields
 
@@ -100,9 +100,9 @@ def coerce_value(value: object, string_decoder: Callable[[bytes], object] | None
         if cached is not None:
             return True, cached[1]
         if isinstance(item, dict):
-            entries = iter(cast(dict[object, object], item).items())
+            entries = iter(item.items())
         else:
-            entries = iter(enumerate(cast(list[object] | tuple[object, ...], item)))
+            entries = iter(enumerate(item))
         active.add(marker)
         stack.append(CoercionFrame(item, entries))
         return False, None

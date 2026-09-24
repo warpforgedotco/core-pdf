@@ -1,10 +1,8 @@
 from functools import partial
-from typing import cast
 
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import (
     ParsedXRefSection,
     PdfXRefEntry,
@@ -105,7 +103,7 @@ def test_supplemental_stream_can_be_reused_by_previous_revision() -> None:
 @pytest.mark.parametrize("value", [-1, True, "9", 1.0, [9]])
 def test_primary_chain_pointers_are_validated(pointer: str, value: object) -> None:
     def read(offset: int, *, stream_only: bool = False) -> ParsedXRefSection:
-        return ParsedXRefSection(offset, "table", {}, cast(PdfDict, {pointer: value}))
+        return ParsedXRefSection(offset, "table", {}, ({pointer: value}))
 
     with pytest.raises(PdfParseError, match=pointer):
         list(iter_xref_revisions(0, read))

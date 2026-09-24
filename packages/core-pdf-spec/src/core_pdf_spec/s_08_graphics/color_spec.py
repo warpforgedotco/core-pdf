@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Any, ClassVar, NoReturn, Self, TypeAlias, cast
+from typing import Any, ClassVar, NoReturn, Self, TypeAlias
 
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -314,7 +314,7 @@ def device_n_process(
 ) -> DeviceNProcess:
     if not isinstance(value, dict):
         raise ValueError("invalid DeviceN Process dictionary")
-    source = cast(dict[str, object], value)
+    source = value
     space = parse_color_space_versioned(source.get("ColorSpace"), active, version)
     if space.kind not in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "CalGray", "CalRGB", "ICCBased"}:
         raise ValueError("invalid DeviceN process color space")
@@ -366,7 +366,7 @@ def parse_device_n_attributes_for(
         raise ValueError("color space cycle detected")
     active.add(marker)
     try:
-        source = cast(dict[str, object], value)
+        source = value
         subtype = "DeviceN" if source.get("Subtype") is None else decoded_name(source["Subtype"])
         if subtype not in {"DeviceN", "NChannel"}:
             raise ValueError("invalid DeviceN attributes Subtype")
@@ -390,7 +390,7 @@ def parse_device_n_attributes_for(
         if raw_colorants is not None:
             if not isinstance(raw_colorants, dict):
                 raise ValueError("invalid DeviceN Colorants dictionary")
-            for raw_name, raw_space in cast(dict[object, object], raw_colorants).items():
+            for raw_name, raw_space in raw_colorants.items():
                 name = decoded_name(raw_name)
                 if name is None:
                     raise ValueError("invalid DeviceN Colorants name")
@@ -507,7 +507,7 @@ def parse_color_space_versioned(
                 raise ValueError("invalid Indexed color lookup")
             return ColorSpace(kind, ((0.0, float(hival)),), base=base, hival=hival, lookup=lookup)
         if kind in {"Lab", "CalGray", "CalRGB"} and len(value) == 2 and isinstance(value[1], dict):
-            source = cast(PdfDict, value[1])
+            source = value[1]
             params = calibrated_params(kind, source)
             ranges = (
                 (
@@ -572,7 +572,7 @@ def parse_color_space_versioned(
             attributes = None
             if len(value) == 5:
                 attributes = parse_device_n_attributes_for(value[4], colorants, active, version)
-                params["Attributes"] = MappingProxyType(dict(cast(dict[str, object], value[4])))
+                params["Attributes"] = MappingProxyType(dict(value[4]))
             return ColorSpace(
                 kind,
                 ((0.0, 1.0),) * len(colorants),

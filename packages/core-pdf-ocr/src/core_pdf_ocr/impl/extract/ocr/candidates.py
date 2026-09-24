@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import math
-import re
 import unicodedata
 from collections import defaultdict
 
 import numpy
 
+from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract.contracts import ObservationBatch, bbox_tuple
-from core_pdf.impl.model.geometry import overlap_ratio_min
-from core_pdf.impl.model.text import search_key, text_tokens
-from core_pdf.impl.runtime.array_views import finite_median
+from core_pdf.impl.geometry import overlap_ratio_min
+from core_pdf.impl.text import CONTENT_TOKEN_RE, search_key, text_tokens
 from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_MATCHED_TOKENS,
     HIDDEN_TEXT_VERIFY_MIN_SPATIAL_OVERLAP,
@@ -25,7 +24,6 @@ from core_pdf_ocr.impl.extract.quality import (
     text_utility_stats,
 )
 
-OCR_TOKEN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 OCR_TOKEN_TRANSLATION = str.maketrans(
     {
         "‐": "-",
@@ -146,7 +144,7 @@ def merge_candidate_batches(
         normalized_tokens = tuple(
             tuple(
                 key
-                for match in OCR_TOKEN.finditer(text)
+                for match in CONTENT_TOKEN_RE.finditer(text)
                 if (key := normalized_ocr_token_key(match.group(0)))
             )
             for text in combined.text

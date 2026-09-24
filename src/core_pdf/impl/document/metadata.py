@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from typing import TypeAlias, TypedDict, cast
+from typing import TypeAlias, TypedDict
 
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as defused_fromstring
@@ -11,8 +11,8 @@ from defusedxml.ElementTree import fromstring as defused_fromstring
 from core_pdf.impl.document.recovery.text_strings import decode_pdf_text_string
 from core_pdf.impl.document.standards import resolve_catalog
 from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.model.pdf_values import coerce_value
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import coerce_value
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_document.metadata import catalog_metadata_stream, info_dictionary
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -78,11 +78,10 @@ def resolve_info_metadata(
         info = info_dictionary(resolver, trailer)
         if info is None:
             return {}
-        coerced = cast(dict[object, object], coerce_value(info, decode_pdf_text_string))
-        return {
-            str(recover_pdf_name(key) or key): cast(MetadataValue, value)
-            for key, value in coerced.items()
-        }
+        coerced = coerce_value(info, decode_pdf_text_string)
+        if not isinstance(coerced, dict):
+            return {}
+        return {str(recover_pdf_name(key) or key): value for key, value in coerced.items()}
     except PdfError, RecursionError, ValueError:
         if recover:
             return {}

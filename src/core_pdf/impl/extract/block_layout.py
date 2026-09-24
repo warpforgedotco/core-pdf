@@ -8,10 +8,11 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from copy import replace
 from heapq import heappop, heappush
-from typing import ClassVar, cast
+from typing import ClassVar
 
 import numpy
 
+from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     ObservationSource,
@@ -20,16 +21,15 @@ from core_pdf.impl.extract.contracts import (
     ReadingOrderEvidence,
     bbox_tuple,
 )
+from core_pdf.impl.geometry import horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl.layout.lines import LayoutLine
-from core_pdf.impl.model.geometry import horizontal_overlap_ratio, interval_overlap
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.model.text import (
+from core_pdf.impl.output.model import TextLine, TextSpan
+from core_pdf.impl.runs import TextRun
+from core_pdf.impl.text import (
     collapse_ws,
     reconcile_text_words,
     text_word_tokens,
 )
-from core_pdf.impl.output.model import TextLine, TextSpan
-from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.types import Record, ReplaceFields, ReprFields, TextWord, frozen_setattr
 
 NATIVE_SOURCE = int(ObservationSource.NATIVE)
@@ -141,7 +141,7 @@ def group_text_and_words(
 ) -> tuple[str, tuple[TextWord, ...]]:
     references = tuple(observations.references[index] for index in indexes)
     if references and all(isinstance(reference, TextRun) for reference in references):
-        runs = cast(list[TextRun], list(references))
+        runs = list(references)
         line = LayoutLine(runs)
         reconstructed = line.reconstructed_text()
         text = reconstructed.text.strip()

@@ -6,13 +6,13 @@ from copy import replace
 from itertools import islice
 from typing import TYPE_CHECKING, ClassVar
 
-from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
-from core_pdf.impl.model.glyphs import glyph_text_has_unsupported_codepoint
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.geometry import bbox_union, finite_rect, overlap_ratio_of
+from core_pdf.impl.glyphs import glyph_text_has_unsupported_codepoint
+from core_pdf.impl.runs import TextRun
 from core_pdf.impl.types import Record, Rectangle, TextWord, frozen_setattr
 
 if TYPE_CHECKING:
-    from core_pdf.impl.model.runs import (
+    from core_pdf.impl.runs import (
         LayoutLineText,
         LayoutLineTextSegment,
     )
@@ -106,17 +106,6 @@ class LayoutLine:
             append_word(TextWord(word, (word_x0, word_y0, word_x1, word_y1)))
             word = ""
 
-        def extend_word(char: str, bbox: tuple[float, float, float, float]) -> None:
-            nonlocal word, word_x0, word_y0, word_x1, word_y1
-            if not word:
-                word_x0, word_y0, word_x1, word_y1 = bbox
-            else:
-                word_x0 = min(word_x0, bbox[0])
-                word_y0 = min(word_y0, bbox[1])
-                word_x1 = max(word_x1, bbox[2])
-                word_y1 = max(word_y1, bbox[3])
-            word += char
-
         def append_space() -> None:
             if parts and parts[-1] == " ":
                 return
@@ -129,11 +118,27 @@ class LayoutLine:
             text = segment.text
             text_length = len(text)
             for index, char in enumerate(text):
-                bbox = layout_line_segment_char_bbox(segment, index, text_length)
                 if char.isspace():
+                    # The bounding box is only ever used to grow a word, so a
+                    # space does not need one computed and thrown away.
                     append_space()
                     continue
-                extend_word(char, bbox)
+                # extend_word, inlined: this ran once per character of the
+                # page, and a call plus five nonlocal cells is most of what it
+                # cost. flush_word stays a closure -- it runs per word.
+                bx0, by0, bx1, by1 = layout_line_segment_char_bbox(segment, index, text_length)
+                if word:
+                    if bx0 < word_x0:
+                        word_x0 = bx0
+                    if by0 < word_y0:
+                        word_y0 = by0
+                    if bx1 > word_x1:
+                        word_x1 = bx1
+                    if by1 > word_y1:
+                        word_y1 = by1
+                else:
+                    word_x0, word_y0, word_x1, word_y1 = bx0, by0, bx1, by1
+                word += char
                 append_part(char)
 
         flush_word()

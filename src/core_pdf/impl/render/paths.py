@@ -7,9 +7,9 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl.array_views import UInt8Array, uint8_view
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
-from core_pdf.impl.model.geometry import intersect_bbox
-from core_pdf.impl.runtime.array_views import UInt8Array, uint8_view
+from core_pdf.impl.geometry import intersect_bbox
 
 RASTER_KERNEL_MIN_PIXEL_AREA = 64
 RASTER_CIRCLE_MIN_PIXEL_AREA = 16

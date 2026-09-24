@@ -8,8 +8,8 @@ from core_pdf.impl.extract.capture import (
     run_uses_actual_text,
     structure_actual_text_owner,
 )
-from core_pdf.impl.model.glyphs import GlyphCluster
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.glyphs import GlyphCluster
+from core_pdf.impl.runs import TextRun
 
 
 def run(text: str, mcid: object = 0, x: float = 0) -> TextRun:
