@@ -76,6 +76,25 @@ def test_sibling_reuses_mask_cache_without_sharing_paint_state() -> None:
     assert not any(target.pixels)
 
 
+def test_transfer_runs_only_on_alphas_the_mask_holds() -> None:
+    # The mask holds 0 and 255 only. A transfer undefined elsewhere must not
+    # fail it, which rules out tabulating all 256 inputs up front.
+    target = make_target(4, 4)
+    samples: list[float] = []
+
+    def transfer(alpha: float) -> tuple[float, ...]:
+        if alpha not in (0.0, 1.0):
+            raise ValueError("undefined here")
+        samples.append(alpha)
+        return (0.25 + alpha / 2,)
+
+    result = resolve_soft_mask(target, CapturedSoftMask(mask_program(), transfer))
+    assert result is not None
+    assert samples == [0.0, 1.0]
+    assert sorted(set(result.ravel().tolist())) == [0.25, 0.75]
+    assert np.count_nonzero(result == np.float32(0.75)) == 4
+
+
 def test_transfer_failure_is_cached_and_does_not_poison_other_masks() -> None:
     target = make_target(4, 4)
     calls = 0

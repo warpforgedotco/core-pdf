@@ -103,6 +103,23 @@ def test_normal_group_routes_match_general_compositing(
     np.testing.assert_array_equal(destination, expected)
 
 
+def test_normal_group_onto_an_empty_backdrop_writes_only_visible_pixels_through_a_view():
+    # The destination is a strided view into a larger buffer, as a group's
+    # window into the page is; unpainted pixels keep their colour bytes.
+    backing = np.full((2, 6, 4), 17, dtype=np.uint8)
+    destination = backing[:, ::2]
+    destination[:] = (51, 102, 153, 0)
+    source = np.array(
+        [[(204, 85, 34, 0), (204, 85, 34, 129), (204, 85, 34, 255)]] * 2, dtype=np.uint8
+    )
+    expected = destination.copy()
+    blend.composite_blended_group_numpy(expected, source, 1.0, 1.0, None)
+    blend.composite_normal_group_numpy(destination, source, 1.0)
+    np.testing.assert_array_equal(destination, expected)
+    np.testing.assert_array_equal(destination[:, 0], [(51, 102, 153, 0)] * 2)
+    np.testing.assert_array_equal(backing[:, 1::2], 17)
+
+
 @pytest.mark.parametrize("coverage", [0, 64, 128, 255])
 def test_coverage_alpha_is_capped_by_source_opacity_and_zero_coverage_preserves_rgb(coverage):
     target = np.array([[(51, 102, 153, 0), (51, 102, 153, 255)]], dtype=np.uint8)

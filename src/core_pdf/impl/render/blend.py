@@ -237,8 +237,11 @@ def composite_normal_group_numpy(
     if not numpy.any(destination[..., 3]):
         visible = effective_alpha > 0.0
         if numpy.any(visible):
-            destination[..., :3][visible] = source[..., :3][visible]
-            destination[..., 3][visible] = effective_alpha[visible]
+            # copyto rather than boolean-mask assignment: the channel views are
+            # strided, and a mask assignment gathers into temporaries first.
+            # Same pixels, same float-to-byte cast of values already integral.
+            numpy.copyto(destination[..., :3], source[..., :3], where=visible[..., None])
+            numpy.copyto(destination[..., 3], effective_alpha, where=visible, casting="unsafe")
         return
     source_float = source.astype(numpy.float32)
     destination_float = destination.astype(numpy.float32)

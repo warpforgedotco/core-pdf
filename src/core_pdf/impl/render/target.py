@@ -370,9 +370,18 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
         if mask.transfer is None:
             result = alpha.astype(numpy.float32) / 255.0
         else:
-            samples, inverse = numpy.unique(alpha, return_inverse=True)
+            # The transfer runs once per alpha the plane holds, in ascending
+            # order -- not over all 256, since a transfer that fails on a value
+            # the mask never uses must not fail the mask. Marking those values
+            # in a 256-entry table skips numpy.unique's sort of the plane, and
+            # bincount's widening copy of it.
+            present = numpy.zeros(256, dtype=numpy.bool_)
+            present[alpha] = True
+            samples = numpy.flatnonzero(present)
             values = [mask.transfer(int(sample) / 255.0)[0] for sample in samples]
-            result = numpy.asarray(values, dtype=numpy.float32)[inverse].reshape(alpha.shape)
+            table = numpy.zeros(256, dtype=numpy.float32)
+            table[samples] = numpy.asarray(values, dtype=numpy.float32)
+            result = table[alpha]
         result.setflags(write=False)
     except Exception:
         result = None
