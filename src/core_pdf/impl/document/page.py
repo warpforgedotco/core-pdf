@@ -6,7 +6,7 @@ from collections import deque
 from collections.abc import Iterable
 from contextlib import suppress
 from copy import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from core_pdf.impl.capture.page import (
     capture_page_program,
@@ -53,7 +53,6 @@ from core_pdf_spec.s_07_syntax.types import (
     PdfObject,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_box
-from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 PAGE_INHERITED_KEYS = (
     "MediaBox",
@@ -91,7 +90,7 @@ class PdfPage:
         self.document = document
         self.page_dict = page_dict
         self.page_number = page_number
-        self.contents = cast(CachedPdfObject | None, self.page_dict.get("Contents"))
+        self.contents = self.page_dict.get("Contents")  # type: ignore[assignment]
         self.inherited_values = (
             self.collect_inherited_values() if inherited_values is None else dict(inherited_values)
         )
@@ -171,7 +170,7 @@ class PdfPage:
                     contents=contents,
                     dict_=annot,
                     dest=dest,
-                    action=cast(PdfDict, action) if isinstance(action, dict) else None,
+                    action=action if isinstance(action, dict) else None,
                 )
             )
         return results
@@ -201,7 +200,7 @@ class PdfPage:
             link_type = None
             url = None
             if isinstance(action, dict):
-                action = cast(PdfDict, action)
+                action = action
                 raw_type = action.get("S")
                 link_type = resolver.resolve_name(raw_type)
                 url = link_target_direct(action, link_type)
@@ -493,8 +492,8 @@ class PdfPage:
                 for image in program.inline_images
             )
         for index, image in enumerate(images):
-            source = cast(ImageSource | None, image.image_source)
-            raster = decode_image(source) if source is not None else None
+            source = image.image_source
+            raster = decode_image(source) if source is not None else None  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             if raster is not None:
                 images[index] = replace(
                     image,

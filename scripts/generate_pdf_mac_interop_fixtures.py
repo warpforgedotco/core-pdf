@@ -13,7 +13,7 @@ import re
 import secrets
 from importlib import import_module, metadata
 from pathlib import Path
-from typing import Any, ClassVar, NoReturn, Self, cast
+from typing import Any, ClassVar, NoReturn, Self
 from unittest.mock import patch
 
 frozen_setattr = object.__setattr__
@@ -234,9 +234,9 @@ def pyhanko() -> tuple[Any, Any, Any]:
         ) from exc
     if installed_version != PYHANKO_VERSION:
         raise SystemExit(f"expected pyHanko {PYHANKO_VERSION}, got {installed_version}")
-    writer = cast(Any, import_module("pyhanko.pdf_utils.writer"))
-    reader = cast(Any, import_module("pyhanko.pdf_utils.reader"))
-    generic = cast(Any, import_module("pyhanko.pdf_utils.generic"))
+    writer = import_module("pyhanko.pdf_utils.writer")
+    reader = import_module("pyhanko.pdf_utils.reader")
+    generic = import_module("pyhanko.pdf_utils.generic")
     return writer, reader.PdfFileReader, generic
 
 

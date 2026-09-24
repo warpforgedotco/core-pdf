@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -26,7 +26,7 @@ class Sink:
 
 
 def make_state() -> ContentInterpreter:
-    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, Sink()), cast(Any, None))
+    return ContentInterpreter(ObjectResolver(b"", {}), Sink(), None)  # ty: ignore[invalid-argument-type]
 
 
 def make_pattern(paint_type: int = 1, **entries: Any) -> PdfStream:
@@ -61,9 +61,9 @@ def test_matrix_requires_exactly_six_entries(value: object) -> None:
 @pytest.mark.parametrize("indirect", [False, True])
 def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
     state = make_state()
-    resolver = cast(ObjectResolver, state.resolver)
-    resolver.objects[key_for(1, 0)] = [1, 0, 0, 1, PdfReference(2, 0), 6]
-    resolver.objects[key_for(2, 0)] = 5
+    resolver = state.resolver
+    resolver.objects[key_for(1, 0)] = [1, 0, 0, 1, PdfReference(2, 0), 6]  # ty: ignore[unresolved-attribute]
+    resolver.objects[key_for(2, 0)] = 5  # ty: ignore[unresolved-attribute]
     matrix = PdfReference(1, 0) if indirect else [1, 0, 0, 1, 5, 6]
     state.resources = {
         "XObject": {
@@ -86,7 +86,7 @@ def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
     assert frame is not None
     assert frame.ctm == pattern.matrix == Matrix(1, 0, 0, 1, 5, 6)
     assert state.matrix_operand(None, "form") == IDENTITY_MATRIX
-    resolver.objects[key_for(3, 0)] = None
+    resolver.objects[key_for(3, 0)] = None  # ty: ignore[unresolved-attribute]
     assert state.matrix_operand(PdfReference(3, 0), "pattern") == IDENTITY_MATRIX
 
 
@@ -115,7 +115,7 @@ def test_form_retains_transparency_transform_and_source_identity(
             "Group": {"S": PdfName.of("Transparency"), "I": isolated, "ca": 0.1},
         },
     )
-    cast(ObjectResolver, state.resolver).objects[key_for(7, 2)] = form
+    state.resolver.objects[key_for(7, 2)] = form  # ty: ignore[unresolved-attribute]
     state.resources = {"XObject": {"F": PdfReference(7, 2) if indirect else form}}
     state.graphics.ctm = Matrix(2, 0, 0, 3, 7, 11)
     state.graphics.fill_opacity = opacity
@@ -169,7 +169,7 @@ def test_tj_horizontal_scale_applies_only_horizontally(
         == expected
     )
     state = make_state()
-    state.graphics.current_decoder = cast(Any, SimpleNamespace(is_vertical=vertical))
+    state.graphics.current_decoder = SimpleNamespace(is_vertical=vertical)  # ty: ignore[invalid-assignment]
     state.graphics.font_size, state.graphics.horizontal_scale = 10, 200
     state.text_matrix = Matrix(2, 3, 5, 7, 11, 13)
     state.append_tj_array([100])
@@ -220,7 +220,7 @@ def test_type3_glyphs_use_font_service_spacing(
         "consume",
         lambda executor, stream, resources, ctm, depth: origins.append(ctm.e),
     )
-    state.append_text(data=b"A A", decoder=cast(Any, Font()))
+    state.append_text(data=b"A A", decoder=Font())  # ty: ignore[invalid-argument-type]
     step = font_size / 2 + 2
     assert origins == [0, step, 2 * step + 3]
     assert state.text_matrix.e == 3 * step + 3
@@ -235,19 +235,16 @@ def test_text_show_updates_after_callback_and_emits_one_boundary(text: str) -> N
         events.append(("show", state.text_matrix.e))
         state.text_matrix = state.text_matrix._replace(e=1000)
 
-    state.sink = cast(
-        Any,
-        SimpleNamespace(
-            show_text=show,
-            text_boundary=lambda *args: events.append(("boundary", state.text_matrix.e)),
-        ),
+    state.sink = SimpleNamespace(  # ty: ignore[invalid-assignment]
+        show_text=show,
+        text_boundary=lambda *args: events.append(("boundary", state.text_matrix.e)),
     )
     font = SimpleNamespace(
         is_type3=False,
         decode_glyphs=lambda data: (DecodedFontGlyph(b"A", 65, 65, 65, text, 65),),
         text_advance_vector=lambda *args, **kwargs: (5, 0),
     )
-    state.append_text(data=b"A", decoder=cast(Any, font))
+    state.append_text(data=b"A", decoder=font)  # ty: ignore[invalid-argument-type]
     assert events == ([("show", 0)] if text else []) + [("boundary", 5)]
     assert state.text_matrix.e == 5
 
@@ -331,7 +328,7 @@ def test_color_range_validation_precedes_initialization(ranges: list[object]) ->
 def test_color_space_selection_initializes_and_clears_pattern(stroke: bool) -> None:
     state = make_state()
     state.resources = {"ColorSpace": {"DeviceRGB": PdfName.of("DeviceGray")}}
-    state.graphics.fill_pattern = state.graphics.stroke_pattern = cast(Any, object())
+    state.graphics.fill_pattern = state.graphics.stroke_pattern = object()  # ty: ignore[invalid-assignment]
     state.execute_operation("CS" if stroke else "cs", (PdfName.of("DeviceRGB"),), 0)
     assert (
         state.graphics.stroke_space.kind if stroke else state.graphics.fill_space.kind

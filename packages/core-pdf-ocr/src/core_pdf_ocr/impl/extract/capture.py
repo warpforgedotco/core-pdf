@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from copy import replace
-from typing import Any, cast
+from typing import Any
 
 import numpy
 
@@ -84,11 +84,11 @@ def hidden_text_needs_verification(evidence: PageEvidence) -> bool:
 def promoted_hidden_observations(capture: PageAnalysis) -> ObservationBatch:
     references = capture.observations.references
     runs = (
-        cast("tuple[TextRun, ...]", references)
+        references
         if references and all(isinstance(reference, TextRun) for reference in references)
         else capture.program.runs
     )
-    return observations_from_runs(promoted_hidden_runs(runs))
+    return observations_from_runs(promoted_hidden_runs(runs))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 def apply_learned_unicode_to_run(

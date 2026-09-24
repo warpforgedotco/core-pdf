@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from core_pdf.impl.document.recovery.text_strings import (
     decode_pdf_text_string,
     parse_text_string,
@@ -15,7 +13,7 @@ from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDict | None:
     if isinstance(value, PdfReference):
         value = resolver.resolve(value)
-    return cast(PdfDict, value) if isinstance(value, dict) else None
+    return value if isinstance(value, dict) else None
 
 
 def link_target_direct(action: PdfDict, link_type: str | None) -> str | None:

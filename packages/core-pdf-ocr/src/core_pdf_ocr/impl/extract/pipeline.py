@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from copy import replace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from core_pdf.impl.extract.capture import STRUCTURE_UNSET
 from core_pdf.impl.extract.contracts import ObservationBatch
@@ -36,7 +36,7 @@ class PageExtraction(NativePageExtraction):
 
     @property
     def capture(self) -> PageAnalysis:
-        return cast(PageAnalysis, self.page_capture)
+        return self.page_capture  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
     @property
     def route_name(self) -> str:

@@ -6,7 +6,7 @@ import heapq
 import math
 from collections.abc import Iterable
 from copy import replace
-from typing import Any, cast
+from typing import Any
 
 import numpy
 
@@ -2930,10 +2930,10 @@ class RasterTarget:
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
         target_box_type = type(target_box)
         if target_box_type is list or target_box_type is tuple:
-            target_box = cast(list[Any] | tuple[Any, ...], target_box)
-            if len(target_box) == 4:
+            target_box = target_box
+            if len(target_box) == 4:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                 try:
-                    x0, y0, x1, y1 = (float(value) for value in target_box)
+                    x0, y0, x1, y1 = (float(value) for value in target_box)  # type: ignore[union-attr]  # ty: ignore[not-iterable]
                 except TypeError, ValueError:
                     return False
             else:

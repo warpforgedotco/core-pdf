@@ -5,7 +5,7 @@ from __future__ import annotations
 import typing
 from collections.abc import Callable
 from copy import copy
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import (
@@ -60,7 +60,7 @@ from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 if TYPE_CHECKING:
-    from core_pdf_spec.s_07_content.inline_images import InlineImage
+    pass
 
 
 class ContentInterpreter:
@@ -238,9 +238,7 @@ class ContentInterpreter:
         if not isinstance(font, dict):
             raise PdfParseError("font resource must be a dictionary")
         resolved_font = self.resolver.resolve_font_dict(font)
-        decoder = self.font_provider(
-            cast(dict[str, Any], resolved_font), cast(dict[str, Any], self.resources)
-        )
+        decoder = self.font_provider(resolved_font, self.resources)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         self.graphics.current_decoder = decoder
         self.graphics.decoder_resources = self.resources
         return decoder
@@ -617,7 +615,7 @@ class ContentInterpreter:
 
     def op_BI(self, operands: ContentOperands, depth: int) -> None:
         if operands and hasattr(operands[0], "dictionary"):
-            self.sink.paint_inline_image(self, cast("InlineImage", operands[0]))
+            self.sink.paint_inline_image(self, operands[0])  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
     def op_BDC(self, operands: ContentOperands, depth: int) -> None:
         self.sink.text_boundary(self, "marked")
@@ -1013,7 +1011,7 @@ class ContentInterpreter:
             return None
         if "SMask" in source:
             resolved["SMask"] = source["SMask"]
-        return cast("dict[str, Any]", resolved)
+        return resolved  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
         return parse_soft_mask(value, self.resolver, ctm=self.graphics.ctm)

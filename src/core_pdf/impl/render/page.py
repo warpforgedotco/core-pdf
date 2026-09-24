@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from math import isfinite
-from typing import Any, ClassVar, Protocol, Self, cast
+from typing import Any, ClassVar, Protocol, Self
 
 import numpy
 
@@ -337,7 +337,7 @@ def compose_page(
     options = options or RenderOptions()
     fields = tuple(fields) if fields is not None else None
     annotations = tuple(annotations) if annotations is not None else None
-    page_value = cast(Any, page)
+    page_value = page
     media_box = getattr(page, "media_box", None) or (0.0, 0.0, page.width, page.height)
     x0, y0, x1, y1 = media_box
     width = max(0.0, x1 - x0)
@@ -351,7 +351,7 @@ def compose_page(
             capture_inputs["fields"] = fields
         if annotations is not None:
             capture_inputs["annotations"] = annotations
-        page_program = page_value.get_page_program(**capture_inputs)
+        page_program = page_value.get_page_program(**capture_inputs)  # ty: ignore[call-non-callable]
     if page_program is None:
         raise ValueError("compose_page requires the canonical page program")
     selected_appearances = tuple(
@@ -380,7 +380,7 @@ def compose_page(
         field_records = fields
         if field_records is None:
             try:
-                field_records = page_value.get_fields()
+                field_records = page_value.get_fields()  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             except ValueError:
                 field_records = ()
         for field in field_records:
@@ -403,7 +403,7 @@ def compose_page(
                 appearance_rendered=id(widget) in rendered_appearances,
             )
     if options.include_annotations:
-        annotation_records = page_value.get_annotations() if annotations is None else annotations
+        annotation_records = page_value.get_annotations() if annotations is None else annotations  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         for annot in annotation_records:
             appearance = annot.dict.get("AP") if isinstance(annot.dict, dict) else None
             display_list.append(
@@ -427,7 +427,7 @@ def compose_page(
             "crop": options.crop,
             "media_box": media_box,
             "group_alpha": (
-                page_value.resolve_transparency_group_alpha()
+                page_value.resolve_transparency_group_alpha()  # ty: ignore[call-non-callable]
                 if hasattr(page_value, "resolve_transparency_group_alpha")
                 else None
             ),

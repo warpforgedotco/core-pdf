@@ -6,7 +6,7 @@ from contextlib import suppress
 from copy import copy
 from dataclasses import dataclass
 from math import ceil, hypot, isfinite
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numpy
 
@@ -73,7 +73,7 @@ from core_pdf_spec.s_07_content.streams import (
     StreamKey,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
@@ -128,7 +128,7 @@ class MarkedContentEntry:
         captured.y0 = min(captured.y0, run.y0)
         captured.x1 = max(captured.x1, run.x1)
         captured.y1 = max(captured.y1, run.y1)
-        captured.advance_bbox = cast(Rectangle, union_bbox(captured.advance_bbox, run.advance_bbox))
+        captured.advance_bbox = union_bbox(captured.advance_bbox, run.advance_bbox)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         captured.baseline = extend_baseline(captured.baseline, run.baseline)
         captured.confidence = min_optional_confidence(captured.confidence, run.confidence)
 
@@ -956,7 +956,7 @@ class TextState(RecoveringTextState):
                     self.lookup_page_resource("ColorSpace", color_name)
                 )
                 if color_resource is not None:
-                    dictionary[PdfName.of("ColorSpace")] = cast(PdfObject, color_resource)
+                    dictionary[PdfName.of("ColorSpace")] = color_resource
             source, _ = image_source_from_stream(
                 PdfStream(raw_data=data, dictionary=dictionary),
                 self.resolver,
@@ -1132,8 +1132,8 @@ class TextState(RecoveringTextState):
                 self.resolver.resolve_float(value, default=None) for value in raw_bbox[:4]
             )
             if all(value is not None for value in values):
-                x, y, w, h = cast(Rectangle, values)
-                layout_bbox = transform_bbox((x, y, x + w, y + h), frame.ctm)
+                x, y, w, h = values
+                layout_bbox = transform_bbox((x, y, x + w, y + h), frame.ctm)  # type: ignore[arg-type,operator]  # ty: ignore[invalid-argument-type,unsupported-operator]
         self.layout_form_bbox = layout_bbox
         if frame.is_form:
             self.layout_form_id = (*(self.layout_form_id or ()), (frame.source_key, layout_bbox))
@@ -1355,10 +1355,10 @@ class TextState(RecoveringTextState):
             self.capture_active_mask_groups.remove(group_key)
 
     def named_value(self, value: object, *, allow_text: bool = False) -> str | None:
-        resolver = cast(Any, self.resolver)
+        resolver = self.resolver
         if allow_text:
-            return cast(str | None, resolver.resolve_name_or_text(value))
-        return cast(str | None, resolver.resolve_name_like_value(value))
+            return resolver.resolve_name_or_text(value)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        return resolver.resolve_name_like_value(value)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
 
 def image_source_from_stream(

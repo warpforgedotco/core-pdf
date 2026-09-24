@@ -8,7 +8,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from copy import replace
 from heapq import heappop, heappush
-from typing import ClassVar, cast
+from typing import ClassVar
 
 import numpy
 
@@ -141,7 +141,7 @@ def group_text_and_words(
 ) -> tuple[str, tuple[TextWord, ...]]:
     references = tuple(observations.references[index] for index in indexes)
     if references and all(isinstance(reference, TextRun) for reference in references):
-        runs = cast(list[TextRun], list(references))
+        runs = list(references)
         line = LayoutLine(runs)
         reconstructed = line.reconstructed_text()
         text = reconstructed.text.strip()

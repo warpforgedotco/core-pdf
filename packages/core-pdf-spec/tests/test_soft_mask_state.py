@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -10,7 +10,7 @@ from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import CachedPdfObject, PdfDict
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
@@ -49,7 +49,7 @@ class Sink:
 
 def make_state() -> tuple[ContentInterpreter, Sink]:
     sink = Sink()
-    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None)), sink
+    return ContentInterpreter(ObjectResolver(b"", {}), sink, None), sink  # ty: ignore[invalid-argument-type]
 
 
 def make_group(**entries: object) -> PdfStream:
@@ -65,7 +65,7 @@ def make_group(**entries: object) -> PdfStream:
 
 
 def make_mask(group: PdfStream | None = None, **entries: object) -> PdfDict:
-    return cast(PdfDict, {"S": PdfName.of("Alpha"), "G": group or make_group(), **entries})
+    return {"S": PdfName.of("Alpha"), "G": group or make_group(), **entries}
 
 
 def test_alpha_descriptor_preserves_group_identity_without_decoding_or_resource_traversal() -> None:
@@ -91,7 +91,7 @@ def test_alpha_descriptor_preserves_group_identity_without_decoding_or_resource_
     assert descriptor.transfer is descriptor.backdrop_color is descriptor.color_space is None
     assert state.graphics.fill_opacity == 0.4
     with pytest.raises(AttributeError):
-        cast(Any, descriptor).ctm = Matrix(2, 0, 0, 2, 0, 0)
+        descriptor.ctm = Matrix(2, 0, 0, 2, 0, 0)  # ty: ignore[invalid-assignment]
 
 
 @pytest.mark.parametrize("indirect", [False, True])
@@ -99,10 +99,10 @@ def test_soft_mask_freezes_gs_CTM_and_omission_differs_from_None(indirect: bool)
     state, _ = make_state()
     state.graphics.ctm = Matrix(2, 0, 0, 3, 5, 7)
     group = make_group(Matrix=[1, 0, 0, 1, 11, 13])
-    resolver = cast(ObjectResolver, state.resolver)
-    resolver.objects[key_for(1, 0)] = group
+    resolver = state.resolver
+    resolver.objects[key_for(1, 0)] = group  # ty: ignore[unresolved-attribute]
     mask = make_mask(G=PdfReference(1, 0) if indirect else group)
-    resolver.objects[key_for(2, 0)] = cast(CachedPdfObject, mask)
+    resolver.objects[key_for(2, 0)] = mask  # ty: ignore[unresolved-attribute]
     state.apply_extgstate({"SMask": PdfReference(2, 0) if indirect else mask})
     descriptor = state.graphics.soft_mask
     assert descriptor is not None
@@ -112,7 +112,7 @@ def test_soft_mask_freezes_gs_CTM_and_omission_differs_from_None(indirect: bool)
     assert descriptor.ctm != state.graphics.ctm
     state.apply_extgstate({})
     state.apply_extgstate({"SMask": None})
-    resolver.objects[key_for(3, 0)] = None
+    resolver.objects[key_for(3, 0)] = None  # ty: ignore[unresolved-attribute]
     state.apply_extgstate({"SMask": PdfReference(3, 0)})
     assert state.graphics.soft_mask is descriptor
     state.op_q((), 0)
@@ -219,9 +219,9 @@ def test_identity_transfer_defaults(transfer: object) -> None:
 
 def test_resolved_transfer_clips_its_single_output_and_defines_nonzero_outside_alpha() -> None:
     state, _ = make_state()
-    resolver = cast(ObjectResolver, state.resolver)
-    resolver.objects[key_for(1, 0)] = [PdfReference(2, 0), 1]
-    resolver.objects[key_for(2, 0)] = 0
+    resolver = state.resolver
+    resolver.objects[key_for(1, 0)] = [PdfReference(2, 0), 1]  # ty: ignore[unresolved-attribute]
+    resolver.objects[key_for(2, 0)] = 0  # ty: ignore[unresolved-attribute]
     transfer = {"FunctionType": 2, "Domain": PdfReference(1, 0), "C0": [1.5], "C1": [-0.5], "N": 1}
     mask = parse_soft_mask(make_mask(TR=transfer), resolver, ctm=IDENTITY_MATRIX)
     assert mask is not None
@@ -344,8 +344,8 @@ def test_luminosity_requires_a_group_space_and_defaults_to_its_initial_color(
 
 def test_luminosity_resolves_only_selected_indirect_space_and_backdrop_values() -> None:
     state, _ = make_state()
-    resolver = cast(ObjectResolver, state.resolver)
-    resolver.objects.update(
+    resolver = state.resolver
+    resolver.objects.update(  # ty: ignore[unresolved-attribute]
         {
             key_for(1, 0): {"S": PdfName.of("Transparency"), "CS": PdfReference(2, 0)},
             key_for(2, 0): [PdfName.of("CalGray"), PdfReference(3, 0)],
@@ -369,7 +369,7 @@ def test_luminosity_resolves_only_selected_indirect_space_and_backdrop_values() 
     assert mask.backdrop_color == (0.4,)
     assert mask.color_space is not None
     assert mask.color_space.kind == "CalGray"
-    assert key_for(99, 0) not in resolver.objects
+    assert key_for(99, 0) not in resolver.objects  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.parametrize("backdrop", [[0.1, 0.2], [0.1, 0.2, True], [0.1, 0.2, float("nan")]])
@@ -425,9 +425,9 @@ def test_invalid_soft_masks_reject_without_replacing_existing_state(value: objec
 
 def test_cyclic_group_reference_rejects_without_recursing() -> None:
     state, _ = make_state()
-    resolver = cast(ObjectResolver, state.resolver)
-    resolver.objects[key_for(1, 0)] = PdfReference(2, 0)
-    resolver.objects[key_for(2, 0)] = PdfReference(1, 0)
-    resolver.objects[key_for(3, 0)] = cast(CachedPdfObject, make_mask(G=PdfReference(1, 0)))
+    resolver = state.resolver
+    resolver.objects[key_for(1, 0)] = PdfReference(2, 0)  # ty: ignore[unresolved-attribute]
+    resolver.objects[key_for(2, 0)] = PdfReference(1, 0)  # ty: ignore[unresolved-attribute]
+    resolver.objects[key_for(3, 0)] = make_mask(G=PdfReference(1, 0))  # ty: ignore[unresolved-attribute]
     with pytest.raises(ValueError, match="cyclic"):
         state.apply_extgstate({"SMask": PdfReference(3, 0)})

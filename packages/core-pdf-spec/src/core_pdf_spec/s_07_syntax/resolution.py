@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar, Self, cast
+from typing import Any, ClassVar, Self
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.types import PdfReference
 
 CONTAINER_TYPES = (dict, list, tuple, PdfStream)
@@ -92,8 +91,8 @@ def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> 
     reference_values: dict[tuple[int, int], object] = {}
 
     def resolve_once(reference: object) -> object:
-        ref = cast(PdfReference, reference)
-        marker = (ref.object_number, ref.generation_number)
+        ref = reference
+        marker = (ref.object_number, ref.generation_number)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         if marker not in reference_values:
             reference_values[marker] = resolve(ref)
         return reference_values[marker]
@@ -111,11 +110,11 @@ def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> 
         if type(original) is PdfStream:
             values: list[object] = [original.dictionary]
         elif type(original) is dict:
-            mapping = cast(dict[object, object], original)
+            mapping = original
             node.keys = tuple(mapping)
             values = list(mapping.values())
         else:
-            values = list(cast(list[object] | tuple[object, ...], original))
+            values = list(original)  # type: ignore[call-overload]  # ty: ignore[invalid-argument-type]
             node.changed = type(original) is tuple
 
         for item in values:
@@ -148,7 +147,7 @@ def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> 
     for marker, node in nodes.items():
         if node.changed and type(node.original) is PdfStream:
             results[marker] = node.original.replace(
-                dictionary=cast(PdfDict, results[id(node.original.dictionary)])
+                dictionary=results[id(node.original.dictionary)]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             )
 
     for marker, node in nodes.items():
@@ -158,11 +157,9 @@ def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> 
             results[id(item)] if type(item) in CONTAINER_TYPES else item for item in node.values
         ]
         if type(node.original) is dict:
-            cast(dict[object, object], results[marker]).update(
-                zip(node.keys, resolved_values, strict=True)
-            )
+            results[marker].update(zip(node.keys, resolved_values, strict=True))  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         else:
-            cast(list[object], results[marker]).extend(resolved_values)
+            results[marker].extend(resolved_values)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     return results[id(root)]
 
 

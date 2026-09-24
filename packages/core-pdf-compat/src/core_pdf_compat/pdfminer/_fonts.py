@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from typing import Any, ClassVar, Self, cast
+from typing import Any, ClassVar, Self
 
 from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
 from core_pdf.impl.exceptions import PdfError
@@ -506,7 +506,7 @@ def pdfminer_normalized_width(glyph: Any) -> float:
     if getattr(glyph.font_decoder, "is_type3", False):
         font_matrix = _font_value(glyph.font_decoder.font, "FontMatrix")
         if isinstance(font_matrix, (tuple, list)) and len(font_matrix) >= 4:
-            width_scale = float(cast(Any, font_matrix[0])) + float(cast(Any, font_matrix[2]))
+            width_scale = float(font_matrix[0]) + float(font_matrix[2])
         raw_widths = _font_value(glyph.font_decoder.font, "Widths")
         first_char = _font_value(glyph.font_decoder.font, "FirstChar")
         if isinstance(raw_widths, (tuple, list)) and isinstance(first_char, int):
@@ -567,17 +567,17 @@ def pdfminer_descent(glyph: Any) -> float:
     if getattr(decoder, "is_type3", False):
         font_matrix = _font_value(decoder.font, "FontMatrix")
         if isinstance(font_matrix, (tuple, list)) and len(font_matrix) == 6:
-            descent_scale = float(cast(Any, font_matrix[1])) + float(cast(Any, font_matrix[3]))
+            descent_scale = float(font_matrix[1]) + float(font_matrix[3])
         descriptor = _font_value(decoder.font, "FontDescriptor")
         descriptor_bbox = _mapping_value(descriptor, "FontBBox")
         if descriptor is not None:
             descent_value = (
-                float(cast(Any, descriptor_bbox[1]))
+                float(descriptor_bbox[1])
                 if isinstance(descriptor_bbox, (tuple, list)) and len(descriptor_bbox) == 4
                 else 0.0
             )
         else:
             font_bbox = _font_value(decoder.font, "FontBBox")
             if isinstance(font_bbox, (tuple, list)) and len(font_bbox) == 4:
-                descent_value = float(cast(Any, font_bbox[1]))
+                descent_value = float(font_bbox[1])
     return descent_value * descent_scale

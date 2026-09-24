@@ -10,7 +10,7 @@ import os
 import secrets
 from importlib import import_module, metadata
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from unittest.mock import patch
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -56,8 +56,8 @@ def pyhanko() -> tuple[Any, Any]:
         ) from exc
     if installed_version != PYHANKO_VERSION:
         raise SystemExit(f"expected pyHanko {PYHANKO_VERSION}, got {installed_version}")
-    writer = cast(Any, import_module("pyhanko.pdf_utils.writer"))
-    reader = cast(Any, import_module("pyhanko.pdf_utils.reader"))
+    writer = import_module("pyhanko.pdf_utils.writer")
+    reader = import_module("pyhanko.pdf_utils.reader")
     return writer, reader.PdfFileReader
 
 

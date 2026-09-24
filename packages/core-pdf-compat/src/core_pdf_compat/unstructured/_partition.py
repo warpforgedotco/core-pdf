@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from os import PathLike
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
@@ -39,7 +39,7 @@ TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|
 
 
 def pdf_too_complex(filename: object, password: str) -> bool:
-    with PdfDocument.open(cast(Any, filename), password=password) as document:
+    with PdfDocument.open(filename, password=password) as document:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         strict_xref_error = document.strict_xref_validation_error()
         if strict_xref_error == "invalid hex string" or (
             strict_xref_error is not None and document.raw_data.find(b"%%EOF") < 0
@@ -78,12 +78,12 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     if (
         isinstance(filename, (str, PathLike))
         and not (isinstance(filename, str) and filename.startswith("%PDF"))
-        and not Path(cast(str | PathLike[str], filename)).exists()
+        and not Path(filename).exists()
     ):
         return []
     include_page_breaks = bool(kwargs.pop("include_page_breaks", False))
     include_metadata = bool(kwargs.pop("include_metadata", True))
-    word_margin = float(cast(Any, kwargs.pop("pdfminer_word_margin", 0.185) or 0.185))
+    word_margin = float(kwargs.pop("pdfminer_word_margin", 0.185) or 0.185)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     password = str(kwargs.pop("password", "") or "")
     try:
         if pdf_too_complex(filename, password):
@@ -98,7 +98,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
         raise
     result: list[Element] = []
     document = PdfDocument.open(
-        cast(Any, filename),
+        filename,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         password=password,
         recovery_scan_all_revisions=False,
     )

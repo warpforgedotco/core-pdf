@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import Any, ClassVar, NoReturn, Self, cast
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl.capture.recovery import iter_content_operations
 from core_pdf.impl.document.recovery.lexer import PdfLexer
@@ -316,7 +316,7 @@ class OperatorTextProjection:
             ):
                 raise KeyError("DescendantFonts")
             resolved = self.resolver.resolve_font_dict(font)
-            decoder = FontDecoder(cast(dict[str, object], resolved))
+            decoder = FontDecoder(resolved)
             to_unicode = self.resolve_to_unicode(resolved, decoder)
             widths, default_width = self.resolve_widths(font, decoder)
             if subtype == "Type3" and not self.type3_interpretable(font):
@@ -672,7 +672,7 @@ class OperatorTextProjection:
                 case "cm":
                     state.flush()
                     try:
-                        matrix = [float(cast(Any, value)) for value in operands[:6]]
+                        matrix = [float(value) for value in operands[:6]]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                     except TypeError, ValueError:
                         matrix = []
                     state.cm = (
@@ -683,22 +683,20 @@ class OperatorTextProjection:
                 case "TL":
                     scale_x = math.hypot(state.tm[0], state.tm[2])
                     state.leading = (
-                        float(cast(Any, operands[0])) * state.font_size * scale_x
-                        if operands
-                        else 0.0
+                        float(operands[0]) * state.font_size * scale_x if operands else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                     )
                 case "Tf":
                     state.flush()
                     if operands:
                         state.font = state.fonts.get(str(operands[0]))
                     if len(operands) > 1:
-                        state.font_size = float(cast(Any, operands[1]))
+                        state.font_size = float(operands[1])  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                     state.half_space_width = (
                         state.font.space_width / 2.0 if state.font is not None else 125.0
                     )
                 case "Td" | "TD":
-                    tx = float(cast(Any, operands[0])) if operands else 0.0
-                    ty = float(cast(Any, operands[1])) if len(operands) > 1 else 0.0
+                    tx = float(operands[0]) if operands else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                    ty = float(operands[1]) if len(operands) > 1 else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                     if operator == "TD":
                         scale_x = math.hypot(state.tm[0], state.tm[2])
                         state.leading = -ty * state.font_size * scale_x
@@ -708,7 +706,7 @@ class OperatorTextProjection:
                     state.width = 0.0
                 case "Tm":
                     try:
-                        matrix = [float(cast(Any, value)) for value in operands[:6]]
+                        matrix = [float(value) for value in operands[:6]]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                     except TypeError, ValueError:
                         matrix = []
                     state.tm = matrix if len(matrix) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]

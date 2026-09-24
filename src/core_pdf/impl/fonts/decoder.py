@@ -10,7 +10,7 @@ from contextlib import suppress
 from copy import replace
 from functools import cache
 from io import BytesIO
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 import numpy
 
@@ -383,7 +383,7 @@ class DecodedGlyph(DecodedFontGlyph, ReplaceFields, ReprFields):
 # getattr because a type checker reads DecodedGlyph.code_bytes as the
 # attribute's type rather than as the slot descriptor it is at runtime.
 def slot_setter(owner: type, name: str) -> Callable[[object, Any], None]:
-    return cast("Callable[[object, Any], None]", getattr(owner, name).__set__)
+    return getattr(owner, name).__set__
 
 
 _set_code_bytes = slot_setter(DecodedGlyph, "code_bytes")

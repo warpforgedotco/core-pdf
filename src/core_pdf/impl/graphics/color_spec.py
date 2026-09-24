@@ -5,7 +5,6 @@ from __future__ import annotations
 from contextlib import suppress
 from math import isfinite
 from types import MappingProxyType
-from typing import cast
 
 from core_pdf.impl.graphics.icc_profiles import (
     IccProfileError,
@@ -122,7 +121,7 @@ def raw_color_space_paints(value: object) -> bool:
                 return True
         if any(name is None for name in names):
             return True
-        return color_space_paints(ColorSpace(kind, (), colorants=cast(tuple[str, ...], names)))
+        return color_space_paints(ColorSpace(kind, (), colorants=names))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     return True
 
 
@@ -178,10 +177,7 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                 )
             if kind == "ICCBased" and len(value) >= 2 and isinstance(value[1], (dict, PdfStream)):
                 stream = value[1]
-                source = cast(
-                    dict[object, object],
-                    stream.dictionary if isinstance(stream, PdfStream) else stream,
-                )
+                source = stream.dictionary if isinstance(stream, PdfStream) else stream
                 raw_count = source.get("N", 3)
                 count = parse_int(raw_count, None)
                 if type(raw_count) is bool or count is None or count <= 0:

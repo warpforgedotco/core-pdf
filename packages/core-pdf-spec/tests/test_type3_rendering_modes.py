@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -49,7 +49,7 @@ class Type3Font:
 def test_type3_invisible_modes_skip_programs_but_keep_width_spacing_and_scale(
     render_mode: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    state = ContentInterpreter(ObjectResolver(b"", {}), cast(Any, Sink()), cast(Any, None))
+    state = ContentInterpreter(ObjectResolver(b"", {}), Sink(), None)  # ty: ignore[invalid-argument-type]
     state.graphics.render_mode = render_mode
     state.graphics.font_size = 12
     state.graphics.char_space = 2
@@ -62,6 +62,6 @@ def test_type3_invisible_modes_skip_programs_but_keep_width_spacing_and_scale(
         "consume",
         lambda executor, stream, resources, ctm, depth: origins.append(ctm.e),
     )
-    state.append_text(b"A A", decoder=cast(Any, Type3Font()))
+    state.append_text(b"A A", decoder=Type3Font())  # ty: ignore[invalid-argument-type]
     assert origins == ([] if render_mode in {3, 7} else [5, 9, 14.5])
     assert state.text_matrix == Matrix(1, 0, 0, 1, 18.5, 7)

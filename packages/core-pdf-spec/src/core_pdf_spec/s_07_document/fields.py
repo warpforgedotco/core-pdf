@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import cast
-
 from core_pdf_spec.s_07_syntax.types import PdfObject
 
 
@@ -16,7 +14,7 @@ def field_children(value: object) -> list[PdfObject]:
         return []
     if not isinstance(value, list):
         raise ValueError("invalid AcroForm Kids array")
-    return cast(list[PdfObject], value)
+    return value
 
 
 __all__ = (

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, cast
+from typing import ClassVar
 
 from core_pdf.impl.graphics.filter_registry import (
     CCITT_FILTERS,
@@ -158,7 +158,7 @@ class FilterParams(PdfFilterParams, ReplaceFields, ReprFields):
                 raise ValueError(f"invalid DecodeParms {name}")
         if is_pdf_null(parms.get("JBIG2Globals")):
             normalized["JBIG2Globals"] = None
-        return cast("FilterParams", super().from_parms(normalized))
+        return super().from_parms(normalized)  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
 
 def with_ccitt_image_rows(parms: object, dictionary: object) -> object:

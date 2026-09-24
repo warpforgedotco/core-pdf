@@ -7,7 +7,7 @@ from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, cast
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl.extract.contracts import ObservationBatch, bbox_tuple
 from core_pdf.impl.extract.selection import (
@@ -417,7 +417,7 @@ def prepare_document_stroked_mappings(
             merge_document_stroked_alphabet(
                 alphabet,
                 ambiguous,
-                cast(tuple[tuple[GlyphSignature, str], ...], learned),
+                learned,
             )
         recognition_by_index[page_index] = recognition
     return MappingProxyType(recognition_by_index)

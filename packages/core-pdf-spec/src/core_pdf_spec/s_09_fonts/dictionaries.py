@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar, NoReturn, Self, cast
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
@@ -146,7 +146,7 @@ def font_descriptor(value: object) -> dict[str, Any] | None:
         return None
     if not isinstance(value, dict):
         raise ValueError("invalid font descriptor")
-    return cast(dict[str, Any], value)
+    return value
 
 
 def descriptor_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStream | None:

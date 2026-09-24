@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from collections.abc import Iterator
-from typing import cast
 
 import pytest
 
@@ -9,7 +8,7 @@ from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import CachedPdfObject, PdfObject
+from core_pdf_spec.s_07_syntax.types import PdfObject
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.types import PdfReference
 
@@ -50,7 +49,7 @@ def test_changed_mutual_cycle_reconnects_backedges_and_retains_unaffected_siblin
     resolved_first = result[0]
     resolved_second = result[2]
     assert isinstance(resolved_first, dict)
-    resolved_first = cast(dict[str, object], resolved_first)
+    resolved_first = resolved_first
     assert isinstance(resolved_second, list)
     assert result[1] is resolved_first
     assert resolved_first is not first
@@ -75,10 +74,10 @@ def test_unchanged_mutual_cycle_is_not_copied(resolver: ObjectResolver) -> None:
 def test_indirect_backedge_becomes_a_shared_resolved_container(resolver: ObjectResolver) -> None:
     reference = PdfReference(2)
     source = {"Self": reference, "Missing": PdfReference(99)}
-    resolver.objects[key_for(2)] = cast(CachedPdfObject, source)
+    resolver.objects[key_for(2)] = source  # ty: ignore[invalid-assignment]
     result = resolver.deep_resolve(reference)
     assert isinstance(result, dict)
-    result = cast(dict[str, object], result)
+    result = result
     assert result is not source
     assert result["Self"] is result
     assert result["Missing"] is None
@@ -91,7 +90,7 @@ def test_non_caching_resolver_still_forms_one_indirect_cycle() -> None:
 
         def resolve(self, ref: object) -> PdfObject:
             if not isinstance(ref, PdfReference):
-                return cast(PdfObject, ref)
+                return ref  # ty: ignore[invalid-return-type]
             self.calls += 1
             if self.calls > 1:
                 raise AssertionError("indirect container was resolved more than once")
@@ -103,7 +102,7 @@ def test_non_caching_resolver_still_forms_one_indirect_cycle() -> None:
         assert isinstance(result, list)
         assert result[0] is result[1]
         assert isinstance(result[0], dict)
-        resolved = cast(dict[str, object], result[0])
+        resolved = result[0]
         assert resolved["Self"] is resolved
         assert resolver.calls == 1
     finally:
@@ -114,7 +113,7 @@ def test_shared_unchanged_container_reached_by_reference_keeps_identity(
     resolver: ObjectResolver,
 ) -> None:
     child = {"Direct": [1, 2]}
-    resolver.objects[key_for(2)] = cast(CachedPdfObject, child)
+    resolver.objects[key_for(2)] = child  # ty: ignore[invalid-assignment]
     source = [PdfReference(2), child]
     result = resolver.deep_resolve(source)
     assert isinstance(result, list)
@@ -207,7 +206,7 @@ def test_failed_resolution_does_not_modify_partially_discovered_graph() -> None:
     resolver = FailingResolver(b"", {})
     source: dict[str, object] = {"Value": PdfReference(1), "Failure": PdfReference(3)}
     source["Self"] = source
-    resolver.objects[key_for(1)] = cast(CachedPdfObject, [42])
+    resolver.objects[key_for(1)] = [42]
     try:
         with pytest.raises(ValueError, match="resolution failed"):
             resolver.deep_resolve(source)
@@ -220,9 +219,7 @@ def test_failed_resolution_does_not_modify_partially_discovered_graph() -> None:
 
 def test_scalar_chain_does_not_traverse_terminal_containers(resolver: ObjectResolver) -> None:
     terminal = {"Unused": PdfReference(99)}
-    resolver.objects.update(
-        {key_for(2): PdfReference(3), key_for(3): cast(CachedPdfObject, terminal)}
-    )
+    resolver.objects.update({key_for(2): PdfReference(3), key_for(3): terminal})  # ty: ignore[no-matching-overload]
     assert resolve_reference_chain(PdfReference(2), resolver.resolve) is terminal
     assert key_for(99) not in resolver.objects
     assert resolve_reference_chain(terminal, resolver.resolve) is terminal

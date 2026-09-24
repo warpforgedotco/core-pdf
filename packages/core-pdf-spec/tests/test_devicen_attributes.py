@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -55,13 +55,13 @@ def test_nchannel_rgb_preserves_process_space_order_and_raw_attributes() -> None
     assert attributes.process.component_indices == (0, 1, 2)
     assert not attributes.colorants
     assert space.params["Attributes"] == raw
-    cast(dict[str, Any], raw["Process"])["Components"][0] = "Changed"
+    raw["Process"]["Components"][0] = "Changed"  # ty: ignore[not-subscriptable]
     assert attributes.process.components == ("R", "G", "B")
-    assert cast(dict[str, object], space.params["Attributes"])["MixingHints"] is hints
+    assert space.params["Attributes"]["MixingHints"] is hints  # ty: ignore[not-subscriptable]
     with pytest.raises(TypeError):
-        cast(Any, attributes.colorants)["Spot"] = parse_color_space(spot("Spot"))
+        attributes.colorants["Spot"] = parse_color_space(spot("Spot"))  # ty: ignore[invalid-assignment]
     with pytest.raises(AttributeError):
-        cast(Any, attributes.process).components = ()
+        attributes.process.components = ()  # ty: ignore[invalid-assignment]
 
 
 @pytest.mark.parametrize("version", [None, PdfVersion(1, 3), PdfVersion(1, 6), PdfVersion(2, 0)])
@@ -268,7 +268,7 @@ def test_attributes_parser_is_independent_of_the_outer_alternate_and_tint_transf
 def test_process_cycle_to_parent_color_space_is_rejected() -> None:
     attributes = make_attributes()
     space = make_space(("R", "G", "B"), attributes)
-    cast(dict[str, object], attributes["Process"])["ColorSpace"] = space
+    attributes["Process"]["ColorSpace"] = space  # ty: ignore[invalid-assignment]
     with pytest.raises(ValueError, match="cycle"):
         parse_color_space(space)
     with pytest.raises(ValueError, match="cycle"):
@@ -306,7 +306,7 @@ def test_public_attributes_parser_validates_its_colorant_names(names: Any) -> No
 def test_pdf_name_objects_are_accepted_as_resolved_names() -> None:
     raw = make_attributes()
     raw["Subtype"] = PdfName.of("NChannel")
-    cast(dict[str, object], raw["Process"])["Components"] = [PdfName.of(name) for name in "RGB"]
+    raw["Process"]["Components"] = [PdfName.of(name) for name in "RGB"]  # ty: ignore[invalid-assignment]
     attributes = parse_device_n_attributes(raw, ("R", "G", "B"))
     assert attributes.process is not None
     assert attributes.process.components == ("R", "G", "B")

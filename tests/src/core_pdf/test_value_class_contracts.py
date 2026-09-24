@@ -23,7 +23,7 @@ import pickle
 import pkgutil
 from copy import replace
 from types import ModuleType
-from typing import Any, ClassVar, Protocol, cast
+from typing import Any, ClassVar, Protocol
 
 import pytest
 
@@ -98,7 +98,7 @@ def value_classes() -> dict[str, type[ValueClass]]:
                 continue
             if "__fields__" in value.__dict__:
                 key = f"{value.__module__}.{value.__qualname__}"
-                classes[key] = cast("type[ValueClass]", value)
+                classes[key] = value
     return classes
 
 

@@ -10,7 +10,7 @@ companion font in the same resource dictionary still carries those starters.
 
 from __future__ import annotations
 
-from typing import Any, Protocol, cast
+from typing import Protocol
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts.font_program import (
@@ -199,7 +199,7 @@ def detect_ligature_overrides(
             if 0 <= width_index < len(lig_widths_raw):
                 width_value = lig_widths_raw[width_index]
                 if type(width_value) in (int, float):
-                    lig_width = float(cast(Any, width_value))
+                    lig_width = float(width_value)
 
         if lig_width and 0.85 <= lig_width / ft_width <= 0.98:
             overrides[pdf_code] = "ft"

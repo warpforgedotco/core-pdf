@@ -7,7 +7,7 @@ import re
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import Any
 
 import numpy
 
@@ -37,7 +37,6 @@ from core_pdf.impl.model.glyphs import (
 )
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.model.text import collapse_ws
-from core_pdf.impl.types import Rectangle
 
 
 class StructureUnset:
@@ -139,7 +138,7 @@ def discard_duplicate_nested_layers(runs: tuple[TextRun, ...]) -> tuple[TextRun,
                 (value for key, value in reversed(run.provenance) if key == "layout_form_id"),
                 None,
             )
-            group = cast(LayoutFormId, form_id) if isinstance(form_id, tuple) else run.stream_order
+            group = form_id if isinstance(form_id, tuple) else run.stream_order
             by_form.setdefault((run.xobject_depth, group), []).append(index)
     if not page_indices or not by_form:
         return runs
@@ -244,9 +243,7 @@ def apply_structure_actual_text(
         replacement.y0 = min(replacement.y0, run.y0)
         replacement.x1 = max(replacement.x1, run.x1)
         replacement.y1 = max(replacement.y1, run.y1)
-        replacement.advance_bbox = cast(
-            Rectangle, union_bbox(replacement.advance_bbox, run.advance_bbox)
-        )
+        replacement.advance_bbox = union_bbox(replacement.advance_bbox, run.advance_bbox)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         replacement.union_ink_bbox(run.ink_bbox)
         replacement.baseline = extend_baseline(replacement.baseline, run.baseline)
         replacement.confidence = min_optional_confidence(replacement.confidence, run.confidence)

@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from copy import replace
 from io import BytesIO
 from os import PathLike
-from typing import Any, cast
+from typing import Any
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfUnsupportedError
@@ -291,8 +291,8 @@ class PdfReader(ClosingMixin):
         except PdfUnsupportedError:
             if password:
                 raise
-            self._document = cast(Any, None)
-            self.pages = cast(Any, LockedPages())
+            self._document = None
+            self.pages = LockedPages()
             self.metadata: dict[str, Any] = {}
             self.trailer: dict[str, Any] = {}
             self._decryption_pending = True
@@ -302,7 +302,7 @@ class PdfReader(ClosingMixin):
         self.trailer = {}
 
     def _bind(self, document: StructuredState) -> None:
-        self._document = document
+        self._document = document  # type: ignore[assignment]
         self.__dict__.pop("pages", None)
         self.__dict__.pop("metadata", None)
 
@@ -314,8 +314,8 @@ class PdfReader(ClosingMixin):
 
     def _materialize(self) -> None:
         document = self._document
-        self.pages = tuple(PdfPageObject(document, page) for page in document.pages)
-        raw_metadata = document.source_pdf.get_metadata()
+        self.pages = tuple(PdfPageObject(document, page) for page in document.pages)  # type: ignore[arg-type,attr-defined]  # ty: ignore[invalid-argument-type,unresolved-attribute]
+        raw_metadata = document.source_pdf.get_metadata()  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         info = raw_metadata.get("info", {}) if isinstance(raw_metadata, dict) else {}
         self.metadata = (
             {f"/{str(key).lstrip('/')}": value for key, value in info.items()}

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 from math import isfinite
-from typing import Any, ClassVar, NoReturn, Self, cast
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf_spec.s_07_syntax.inherited_values import inherited_dictionary_value
-from core_pdf_spec.s_07_syntax.types import CachedPdfObject, InheritedValueMap, PdfDict
+from core_pdf_spec.s_07_syntax.types import InheritedValueMap, PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 from core_pdf_spec.types import Rectangle
 
@@ -95,7 +95,7 @@ def page_user_unit(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("invalid page UserUnit value")
     try:
-        unit = float(cast(int | float, value))
+        unit = float(value)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     except OverflowError as error:
         raise ValueError("invalid page UserUnit value") from error
     if not isfinite(unit) or unit <= 0.0:
@@ -115,7 +115,7 @@ def page_inherited_values(
                 continue
             value = inherited_dictionary_value(node, key, None, resolve)
             if value is not None:
-                values[key] = cast(CachedPdfObject, value)
+                values[key] = value  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
     return values
 
 
@@ -140,7 +140,7 @@ def iter_page_nodes(
             if depth and on_invalid_child is not None and on_invalid_child(current):
                 continue
             raise ValueError("invalid page tree node")
-        current = cast(PdfDict, current)
+        current = current
         if id(current) in ancestors:
             raise ValueError("page tree cycle detected")
         kind = (

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar, Literal, NoReturn, Self, cast
+from typing import Any, ClassVar, Literal, NoReturn, Self
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
@@ -128,7 +128,7 @@ def resolve(value: object, resolver: PdfValueResolver) -> PdfObject:
             raise ValueError("cyclic soft-mask reference")
         seen.add(key)
         value = resolver.resolve(value)
-    return cast(PdfObject, value)
+    return value  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
 
 def array(value: object, resolver: PdfValueResolver) -> PdfObject:
@@ -147,9 +147,7 @@ def function(value: object, resolver: PdfValueResolver, active: set[int]) -> Pdf
         raise ValueError("cyclic soft-mask transfer function")
     active.add(identity)
     try:
-        dictionary: PdfDict = dict(
-            value.dictionary if isinstance(value, PdfStream) else cast(PdfDict, value)
-        )
+        dictionary: PdfDict = dict(value.dictionary if isinstance(value, PdfStream) else value)
         for key in ("FunctionType", "BitsPerSample", "Order", "N"):
             if key in dictionary:
                 dictionary[key] = resolve(dictionary[key], resolver)

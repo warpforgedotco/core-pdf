@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -193,9 +193,7 @@ def test_nested_content_streams_share_the_document_name_rules(version: str, expe
 
     resolver = ObjectResolver(b"", {})
     context = SemanticContext(PdfVersion.parse(version))
-    state = ContentInterpreter(
-        resolver, cast(Any, Sink()), cast(Any, None), semantic_context=context
-    )
+    state = ContentInterpreter(resolver, Sink(), None, semantic_context=context)  # ty: ignore[invalid-argument-type]
 
     def record_tag(operands: ContentOperands, depth: int) -> None:
         tags.append(str(operands[0]))
@@ -233,9 +231,9 @@ def test_content_tokens_and_inline_image_boundaries_use_selected_whitespace() ->
 def test_unconfigured_interpreter_retains_a_custom_factory_context() -> None:
     context = SemanticContext(PdfVersion(1, 1))
     state = ContentInterpreter(
-        cast(Any, None),
-        cast(Any, None),
-        cast(Any, None),
+        None,  # ty: ignore[invalid-argument-type]
+        None,  # ty: ignore[invalid-argument-type]
+        None,  # ty: ignore[invalid-argument-type]
         lexer_factory=lambda data: PdfLexer(data, semantic_context=context),
     )
     lexer = state.create_lexer(b"/A#42")

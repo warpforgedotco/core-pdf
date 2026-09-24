@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from typing import Any, cast
+from typing import Any
 
 from core_pdf import PdfPage
 from core_pdf.impl.exceptions import PdfError
@@ -372,7 +372,7 @@ def project_page(
             continue
         clip_bbox = provenance.get("clip_bbox")
         if isinstance(clip_bbox, (tuple, list)) and len(clip_bbox) == 4:
-            clip = tuple(float(cast(Any, value)) for value in clip_bbox)
+            clip = tuple(float(value) for value in clip_bbox)
             if any(overlap_ratio_of(clip, annotation) > 0.5 for annotation in annotation_boxes):
                 continue
         raw_stream_order = provenance.get("stream_order")
@@ -387,32 +387,25 @@ def project_page(
                     and isinstance(ancestor_entry[1], (tuple, list))
                     and len(ancestor_entry[1]) == 4
                 ):
-                    form_ancestor_boxes[layout_form_id[:ancestor_index]] = cast(
-                        tuple[float, float, float, float],
-                        tuple(float(cast(Any, value)) for value in ancestor_entry[1]),
+                    form_ancestor_boxes[layout_form_id[:ancestor_index]] = tuple(  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+                        float(value) for value in ancestor_entry[1]
                     )
         if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
-            resolved_layout_bbox = cast(
-                tuple[float, float, float, float],
-                tuple(float(cast(Any, value)) for value in layout_bbox),
-            )
+            resolved_layout_bbox = tuple(float(value) for value in layout_bbox)
             figure_key: tuple[object, ...] = (
                 "form",
                 layout_form_id if layout_form_id is not None else stream_order,
                 *resolved_layout_bbox,
             )
             figure_identifiers[figure_key] = layout_form_id
-            figure_boxes[figure_key] = resolved_layout_bbox
+            figure_boxes[figure_key] = resolved_layout_bbox  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         else:
             figure_key = ("stream", stream_order)
             layout_bbox = provenance.get("clip_bbox")
         figure_chars.setdefault(figure_key, []).append((character, glyph.seqno))
         figure_depths[figure_key] = xobject_depth
         if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
-            figure_boxes[figure_key] = cast(
-                tuple[float, float, float, float],
-                tuple(float(cast(Any, value)) for value in layout_bbox),
-            )
+            figure_boxes[figure_key] = tuple(float(value) for value in layout_bbox)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
     lines = _group_objects(chars, params)
     empty_lines = [line for line in lines if line.get_text().isspace()]
     layout_width, layout_height = (

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, ClassVar, NoReturn, Self, cast
+from typing import Any, ClassVar, NoReturn, Self
 
 import numpy
 
@@ -754,7 +754,7 @@ def drawing_segments(
                 float(x1),
                 float(y1),
                 style_id,
-                cast(float, style[2]),
+                style[2],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             )
         )
         candidate_count += 1
@@ -1116,7 +1116,7 @@ def sequence_run(
         rotation_angle=angle,
         visible=True,
         seqno=matches[0].start,
-        fill_color=cast(tuple[float, ...] | None, styles[concrete[0].style][0]),
+        fill_color=styles[concrete[0].style][0],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         advance_bbox=(x0, y0, x1, y1),
         ink_bbox=(x0, y0, x1, y1),
         baseline=(float(origin[0]), float(origin[1]), float(advance[0]), float(advance[1])),

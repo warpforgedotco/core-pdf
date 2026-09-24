@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
-
 import pytest
 
 from core_adobe_fonts.cff.charstrings import (
@@ -470,13 +468,13 @@ def test_type2_operand_stack_limit_has_positive_control(count):
 @pytest.mark.parametrize("value", [True, "1", b"1", float("inf"), float("nan"), 10**400])
 def test_cff_matrix_numbers_are_strict(value: object) -> None:
     with pytest.raises(ValueError, match="CFF FontMatrix"):
-        cff_font_matrix(cast(Any, {(12, 7): [value, 0, 0, 1, 0, 0]}))
+        cff_font_matrix({(12, 7): [value, 0, 0, 1, 0, 0]})  # ty: ignore[invalid-argument-type]
 
 
 @pytest.mark.parametrize("values", [[1, 0, 0, 1, 0], [1, 0, 0, 1, 0, 0, 0], (1, 0, 0, 1, 0, 0)])
 def test_cff_matrix_requires_a_six_number_list(values: object) -> None:
     with pytest.raises(ValueError, match="CFF FontMatrix"):
-        cff_font_matrix(cast(Any, {(12, 7): values}))
+        cff_font_matrix({(12, 7): values})  # ty: ignore[invalid-argument-type]
 
 
 @pytest.mark.parametrize(

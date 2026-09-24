@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from itertools import batched
-from typing import Any, ClassVar, Literal, NoReturn, Protocol, Self, cast
+from typing import Any, ClassVar, Literal, NoReturn, Protocol, Self
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -416,17 +416,17 @@ class XRefScanner:
             raise PdfParseError("invalid xref stream size")
         if not isinstance(widths, list):
             raise PdfParseError("invalid xref stream W")
-        w = cast(list[int], widths)
+        w = widths
         row_size = validate_xref_widths(w)
         index = dictionary.get("Index")
         if index is None:
             index = [0, size]
         if not isinstance(index, list):
             raise PdfParseError("invalid xref stream Index")
-        indices = cast(list[int], index)
+        indices = index
         row_count = validate_xref_index(indices, size)
         return (
-            decode_xref_row_table(stream.data, w, indices, row_size, row_count),
+            decode_xref_row_table(stream.data, w, indices, row_size, row_count),  # type: ignore[arg-type]
             dictionary,
         )
 

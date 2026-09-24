@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar, NoReturn, Self, cast
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_number_array
 from core_pdf_spec.s_08_graphics.pdf_function import (
@@ -192,8 +192,8 @@ def parse_shading(
         shading_type,
         coords,
         (domain[0], domain[1]),
-        cast(bool, extend[0]),
-        cast(bool, extend[1]),
+        extend[0],
+        extend[1],
         color_space,
         bbox,
         compile_function(dictionary.get("Function")),

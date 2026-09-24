@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from typing import TypeAlias, TypedDict, cast
+from typing import TypeAlias, TypedDict
 
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as defused_fromstring
@@ -78,11 +78,8 @@ def resolve_info_metadata(
         info = info_dictionary(resolver, trailer)
         if info is None:
             return {}
-        coerced = cast(dict[object, object], coerce_value(info, decode_pdf_text_string))
-        return {
-            str(recover_pdf_name(key) or key): cast(MetadataValue, value)
-            for key, value in coerced.items()
-        }
+        coerced = coerce_value(info, decode_pdf_text_string)
+        return {str(recover_pdf_name(key) or key): value for key, value in coerced.items()}  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     except PdfError, RecursionError, ValueError:
         if recover:
             return {}

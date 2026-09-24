@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Self, cast
+from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl.graphics.color_spec import describe_color_space
@@ -396,8 +396,8 @@ def display_item_box(
             pad = max(0.5 / scale, item.line_width * 0.5)
             box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
         return box
-    generic_item = cast(DisplayListItem, item)
-    data = generic_item.data
+    generic_item = item
+    data = generic_item.data  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
     if generic_item.kind in {"text", "glyph"}:
         value = data.get("bbox")
     elif generic_item.kind in {"annotation", "widget"}:

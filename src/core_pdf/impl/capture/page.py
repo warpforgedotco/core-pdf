@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import Any
 
 from core_pdf.impl.capture.program import AppearanceProgram, PageProgram
 from core_pdf.impl.capture.recording import TextState
@@ -18,7 +18,6 @@ from core_pdf_spec.s_07_document.annotation_appearance import (
     normal_appearance_stream,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
 SKIPPED_SUBTYPES = frozenset({"Popup", "Link"})
@@ -132,7 +131,7 @@ def capture_annotation_appearances(
             resolved_resources = resolve_resource_dict(
                 stream.dictionary.get("Resources"), document.resolver
             )
-            resources = cast(PdfDict, resolved_resources or page.resources)
+            resources = resolved_resources or page.resources
 
             previous_source = state.capture_source
             state.run_accumulator.flush()

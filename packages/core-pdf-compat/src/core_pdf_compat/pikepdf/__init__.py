@@ -4,7 +4,7 @@ import re
 from collections.abc import Iterable, Iterator, MutableMapping, MutableSequence
 from decimal import Decimal
 from os import PathLike
-from typing import Any, cast, overload
+from typing import Any, overload
 
 from core_pdf import PdfDocument
 from core_pdf.impl.document.metadata import resolve_info_metadata
@@ -27,11 +27,8 @@ class Rectangle(tuple[Decimal, Decimal, Decimal, Decimal]):
     def __new__(cls, *values: object) -> Rectangle:
         if len(values) != 4:
             raise ValueError("rectangle must contain four coordinates")
-        coordinates = cast(
-            tuple[Decimal, Decimal, Decimal, Decimal],
-            tuple(Decimal(str(value)) for value in values),
-        )
-        return super().__new__(cls, coordinates)
+        coordinates = tuple(Decimal(str(value)) for value in values)
+        return super().__new__(cls, coordinates)  # ty: ignore[invalid-argument-type]
 
     @property
     def width(self) -> Decimal:
@@ -107,8 +104,8 @@ class Page(PdfPageObject):
         engine_box = None
         if document.pdf is not None and media_box is None:
             engine_box = document.source_pdf.pages[page.page_number - 1].media_box
-        self.mediabox = cast(Any, Rectangle(*(media_box or engine_box or self.mediabox)))
-        self.cropbox = cast(Any, Rectangle(*self.cropbox))
+        self.mediabox = Rectangle(*(media_box or engine_box or self.mediabox))  # type: ignore[assignment]
+        self.cropbox = Rectangle(*self.cropbox)  # type: ignore[assignment]
 
 
 def _validate_pikepdf_object_graph(document: StructuredState) -> None:
@@ -198,10 +195,7 @@ def _raw_media_box(
     )
     if match is None:
         return None
-    return cast(
-        tuple[Decimal, Decimal, Decimal, Decimal],
-        tuple(Decimal(value.decode("ascii")) for value in match.groups()),
-    )
+    return tuple(Decimal(value.decode("ascii")) for value in match.groups())  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
 
 def _pikepdf_page_boxes(
@@ -314,10 +308,10 @@ class Pages(MutableSequence[PdfPageObject]):
 
     def _sync(self) -> None:
         pages = tuple(item._page for item in self._values)
-        self._owner._document = StructuredState.synthetic(
-            Document(pages=pages, metadata=self._owner._document.structured.metadata)
+        self._owner._document = StructuredState.synthetic(  # type: ignore[assignment]
+            Document(pages=pages, metadata=self._owner._document.structured.metadata)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         )
-        self._values = [Page(self._owner._document, page) for page in pages]
+        self._values = [Page(self._owner._document, page) for page in pages]  # type: ignore[arg-type]
 
 
 class Pdf(PdfReader):
@@ -326,7 +320,7 @@ class Pdf(PdfReader):
     @classmethod
     def new(cls) -> Pdf:
         instance = cls.__new__(cls)
-        instance._document = StructuredState.synthetic(Document())
+        instance._document = StructuredState.synthetic(Document())  # type: ignore[assignment]
         instance.__dict__["pages"] = Pages(instance)
         instance.metadata = {}
         instance.trailer = {}
@@ -341,11 +335,11 @@ class Pdf(PdfReader):
         password = kwargs.pop("password", None)
         if kwargs:
             raise TypeError(f"unsupported open options: {', '.join(kwargs)}")
-        return cls(cast(str | PathLike[str] | bytes, stream), cast(str | None, password))
+        return cls(stream, password)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
     def __init__(self, stream: object, password: str | None = None) -> None:
         self._source_name = str(stream) if isinstance(stream, (str, PathLike)) else None
-        pdf = PdfDocument.open(cast(str | PathLike[str] | bytes, stream), password=password or "")
+        pdf = PdfDocument.open(stream, password=password or "")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         try:
             pages = tuple(
                 StructuredPage(
@@ -358,16 +352,16 @@ class Pdf(PdfReader):
                 for index, page in enumerate(pdf.pages, 1)
             )
             metadata = _pikepdf_info_metadata(pdf)
-            self._document = StructuredState(pdf, Document(pages=pages, metadata=metadata))
+            self._document = StructuredState(pdf, Document(pages=pages, metadata=metadata))  # type: ignore[assignment]
             self.metadata = dict(metadata)
             self.trailer = {}
-            _validate_pikepdf_object_graph(self._document)
+            _validate_pikepdf_object_graph(self._document)  # type: ignore[arg-type]
             media_boxes = _pikepdf_page_boxes(pdf)
             self.__dict__["pages"] = Pages(
                 self,
                 tuple(
                     Page(
-                        self._document,
+                        self._document,  # type: ignore[arg-type]
                         page,
                         media_boxes[index] if index < len(media_boxes) else None,
                     )
@@ -386,7 +380,7 @@ class Pdf(PdfReader):
             self._attachments = Attachments(
                 {
                     embedded.filename: embedded.data
-                    for embedded in self._document.source_pdf.embedded_files()
+                    for embedded in self._document.source_pdf.embedded_files()  # type: ignore[attr-defined]
                 }
             )
         except Exception:

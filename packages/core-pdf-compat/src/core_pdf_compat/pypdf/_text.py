@@ -4,7 +4,7 @@ import math
 import re
 from collections.abc import Mapping
 from contextlib import suppress
-from typing import Any, ClassVar, Self, cast
+from typing import Any, ClassVar, Self
 
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_pdf.impl.capture.recovery import iter_content_operations
@@ -592,7 +592,7 @@ class LegacyTextExtractor:
             ):
                 return {}, 500.0, 200.0
             with suppress(ValueError):
-                widths = parse_font_widths(cast(Any, font), subtype).widths
+                widths = parse_font_widths(font, subtype).widths
 
         default_width = decoder.default_width
         if not decoder.is_cid_font:
@@ -700,7 +700,7 @@ class LegacyTextExtractor:
             case "cm":
                 self.flush()
                 try:
-                    values = [float(cast(Any, value)) for value in operands[:6]]
+                    values = [float(value) for value in operands[:6]]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                 except TypeError, ValueError:
                     values = []
                 self.cm = (
@@ -716,20 +716,18 @@ class LegacyTextExtractor:
                         self.font.space_width if self.font is not None else 250.0
                     ) / 2.0
                 if len(operands) > 1:
-                    self.font_size = float(cast(Any, operands[1]))
+                    self.font_size = float(operands[1])  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             case "TL":
                 scale_x = math.hypot(self.tm[0], self.tm[2])
-                self.leading = (
-                    float(cast(Any, operands[0])) * self.font_size * scale_x if operands else 0.0
-                )
+                self.leading = float(operands[0]) * self.font_size * scale_x if operands else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             case "Td" | "TD":
-                tx = float(cast(Any, operands[0])) if operands else 0.0
-                ty = float(cast(Any, operands[1])) if len(operands) > 1 else 0.0
+                tx = float(operands[0]) if operands else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                ty = float(operands[1]) if len(operands) > 1 else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                 if operator == "TD":
                     self.process("TL", (-ty,))
                 self.move_text(tx, ty)
             case "Tm":
-                values = [float(cast(Any, value)) for value in operands[:6]]
+                values = [float(value) for value in operands[:6]]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                 self.tm = values if len(values) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
                 self.check_position(self.accumulated_width / 1000.0)
                 self.accumulated_width = 0.0
@@ -740,7 +738,7 @@ class LegacyTextExtractor:
                 self.show(bytes(value.data) if isinstance(value, PdfString) else b"")
             case "TJ":
                 threshold = self.current_space_width * 0.95
-                for item in cast(list[object], operands[0] if operands else []):
+                for item in operands[0] if operands else []:  # type: ignore[attr-defined]  # ty: ignore[not-iterable]
                     match item:
                         case PdfString(data=data):
                             self.show(bytes(data))

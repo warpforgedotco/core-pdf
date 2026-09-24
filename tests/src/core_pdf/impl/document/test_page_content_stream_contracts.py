@@ -1,5 +1,3 @@
-from typing import Any, cast
-
 import pytest
 
 from core_pdf import PdfDocument
@@ -65,7 +63,7 @@ def test_content_consumption_retries_or_skips_only_when_safe(
         page.contents = [make_stream(data) for data in streams]
         state = TextState(document)
         executor = RecordingExecutor(failures)
-        cast(Any, state).stream_executor = executor
+        state.stream_executor = executor  # ty: ignore[invalid-assignment]
         if raises:
             with pytest.raises(PdfParseError, match="injected"):
                 page.consume_contents(state)

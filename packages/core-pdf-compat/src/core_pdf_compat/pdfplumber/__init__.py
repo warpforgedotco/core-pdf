@@ -9,7 +9,7 @@ from io import BytesIO
 from itertools import accumulate, groupby, pairwise
 from operator import itemgetter
 from types import SimpleNamespace
-from typing import Any, ClassVar, NoReturn, Self, TypeAlias, cast
+from typing import Any, ClassVar, NoReturn, Self, TypeAlias
 
 from core_pdf import PdfDocument
 from core_pdf.impl.model.geometry import (
@@ -42,7 +42,7 @@ LIGATURE_EXPANSIONS = {
 
 
 def flip_box(box: object, height: float) -> BBox:
-    return flip_rect_vertical(cast(Any, box), height)
+    return flip_rect_vertical(box, height)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 def cluster_by(
@@ -1178,7 +1178,7 @@ class Page:
             if regex and isinstance(pattern, str) and " " in pattern
             else pattern
             if regex
-            else re.escape(cast(str, pattern))
+            else re.escape(pattern)  # type: ignore[type-var]  # ty: ignore[invalid-argument-type]
         )
         flags = 0 if case else re.IGNORECASE
 
@@ -1440,7 +1440,7 @@ class TableFinder:
                 if isinstance(value, Mapping):
                     selected.extend(
                         edge
-                        for edge in _edges(cast(ObjectDict, value))
+                        for edge in _edges(value)  # type: ignore[arg-type]
                         if edge["orientation"] == orientation
                     )
                     continue
@@ -1685,7 +1685,7 @@ class PageImage:
         if kwargs.get("quantize") is False:
             png += png_chunk(b"tEXt", b"quantize\x00false")
         if hasattr(path, "write"):
-            cast(Any, path).write(png)
+            path.write(png)  # ty: ignore[call-non-callable]
         else:
             with builtins.open(path, "wb") as stream:
                 stream.write(png)
@@ -1815,9 +1815,9 @@ class PDF(ClosingMixin):
     ) -> None:
         self._unicode_norm = unicode_norm
         if source is None:
-            source = cast(PdfInput, document)
+            source = document
             document = _source(source)
-        self._document = cast(PdfDocument, document)
+        self._document = document
         self.doc = document
         self.source = source
         self.stream = source
@@ -2008,8 +2008,8 @@ def obj_to_bbox(obj: ObjectDict) -> BBox:
 def intersects_bbox(obj: ObjectDict | Iterable[ObjectDict], bbox: BBox) -> bool | list[ObjectDict]:
     if not isinstance(obj, Mapping):
         return [item for item in obj if intersects_bbox(item, bbox)]
-    obj = cast(ObjectDict, obj)
-    return bbox_overlap(bbox, obj_to_bbox(obj)) is not None
+    obj = obj
+    return bbox_overlap(bbox, obj_to_bbox(obj)) is not None  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 def crop_to_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:

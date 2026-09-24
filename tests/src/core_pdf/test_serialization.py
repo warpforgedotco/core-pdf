@@ -242,13 +242,12 @@ def test_json_table_without_associated_text_preserves_null_values() -> None:
 
 
 def test_element_dispatch_rejects_unknown_runtime_types() -> None:
-    from typing import cast
 
     from core_pdf.impl.output.serialize import map_page_element
 
     with pytest.raises(TypeError, match="unsupported page element: object"):
         map_page_element(
-            cast(Any, object()),
+            object(),  # ty: ignore[invalid-argument-type]
             block=lambda item: item.order,
             table=lambda item: item.order,
             figure=lambda item: item.order,

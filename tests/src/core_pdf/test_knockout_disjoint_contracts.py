@@ -7,7 +7,7 @@ eligible, what gets recorded as painted, and that a genuine overlap is never
 skipped."""
 
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import numpy
 import pytest
@@ -27,7 +27,7 @@ def make_target() -> RasterTarget:
     target = RasterTarget.__new__(RasterTarget)
     # Only clipped_pixel_box is reached; the rest of ClipState is irrelevant
     # to the decision under test.
-    target.clip = cast(Any, SimpleNamespace)(
+    target.clip = SimpleNamespace(  # ty: ignore[invalid-assignment]
         clipped_pixel_box=lambda bbox: (
             None,
             (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])),
@@ -150,7 +150,7 @@ def test_a_bounded_but_ineligible_fill_records_only_its_own_box() -> None:
 
 def test_a_fill_that_lands_nowhere_records_nothing() -> None:
     target, group = make_target(), knockout_group()
-    target.clip = cast(Any, SimpleNamespace)(clipped_pixel_box=lambda bbox: None)
+    target.clip = SimpleNamespace(clipped_pixel_box=lambda bbox: None)  # ty: ignore[invalid-assignment]
     assert needs_group(target, group, fill_item((0, 0, 10, 10))) is False
     assert group.painted_boxes == []
 

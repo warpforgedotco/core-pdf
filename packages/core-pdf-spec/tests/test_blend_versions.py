@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import cast
 
 import numpy
 import pytest
@@ -83,10 +82,10 @@ def test_components_must_be_unit_range_finite_values(value: float) -> None:
 
 
 def test_invalid_blend_mode_and_incompatible_shapes_are_rejected() -> None:
-    invalid_mode = cast(BlendMode, "Unknown")
+    invalid_mode = "Unknown"
     with pytest.raises(PdfUnsupportedError, match="blend mode"):
-        blend_component(0.2, 0.5, invalid_mode)
+        blend_component(0.2, 0.5, invalid_mode)  # ty: ignore[invalid-argument-type]
     with pytest.raises(PdfUnsupportedError, match="blend mode"):
-        blend_components(0.2, 0.5, invalid_mode)
+        blend_components(0.2, 0.5, invalid_mode)  # ty: ignore[invalid-argument-type]
     with pytest.raises(ValueError):
         blend_components(numpy.zeros(2), numpy.zeros(3), "ColorBurn")

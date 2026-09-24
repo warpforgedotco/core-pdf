@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -9,7 +9,7 @@ from core_pdf_spec.s_07_content.model import PdfPath, TilingPattern
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName, PdfReference
@@ -35,7 +35,7 @@ class PaintSink:
 
 def make_state() -> tuple[ContentInterpreter, PaintSink]:
     sink = PaintSink()
-    return ContentInterpreter(ObjectResolver(b"", {}), cast(Any, sink), cast(Any, None)), sink
+    return ContentInterpreter(ObjectResolver(b"", {}), sink, None), sink  # ty: ignore[invalid-argument-type]
 
 
 @pytest.mark.parametrize("isolated", [False, True])
@@ -47,8 +47,8 @@ def test_knockout_is_independent_boolean_group_attribute(
     state, _ = make_state()
     group: PdfDict = {"S": PdfName.of("Transparency"), "I": isolated}
     if knockout is not None:
-        cast(ObjectResolver, state.resolver).objects[key_for(1, 0)] = cast(PdfObject, knockout)
-        group["K"] = PdfReference(1, 0) if indirect else cast(PdfObject, knockout)
+        state.resolver.objects[key_for(1, 0)] = knockout  # ty: ignore[unresolved-attribute]
+        group["K"] = PdfReference(1, 0) if indirect else knockout
     frame = state.append_form_xobject(
         PdfStream(dictionary={"BBox": [0, 0, 1, 1], "Group": group}), 0
     )
@@ -79,7 +79,7 @@ def test_alpha_source_resolves_booleans_and_preserves_q_Q_state(
     assert state.graphics.alpha_is_shape is False
     state.graphics.alpha_is_shape = not value
     state.op_q((), 0)
-    cast(ObjectResolver, state.resolver).objects[key_for(1, 0)] = value
+    state.resolver.objects[key_for(1, 0)] = value  # ty: ignore[unresolved-attribute]
     state.apply_extgstate({"AIS": PdfReference(1, 0) if indirect else value})
     assert state.graphics.alpha_is_shape is value
     state.apply_extgstate({"ca": 0.4})

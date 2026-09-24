@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import typing
 import zlib
 from collections.abc import Iterator
-from typing import cast
 
 from core_pdf.impl.document.recovery.lexer import PdfLexer, matches_keyword_with_one_substitution
 from core_pdf.impl.document.recovery.objects import PdfObjectStream
@@ -420,7 +418,7 @@ class XRefScanner(SyntaxXRefScanner):
             if isinstance(w, list) and isinstance(index, list):
                 row_size = sum(item for item in w if type(item) is int)
                 row_count = sum(
-                    cast(int, index[i + 1])
+                    index[i + 1]  # type: ignore[misc]
                     for i in range(0, len(index) - 1, 2)
                     if type(index[i + 1]) is int
                 )
@@ -716,7 +714,7 @@ class XRefScanner(SyntaxXRefScanner):
             raise PdfParseError("invalid xref stream W")
         if not all(type(x) is int for x in w_raw):
             raise PdfParseError("invalid xref stream W")
-        w = [int(cast(typing.Any, x)) for x in w_raw[:3]]
+        w = [int(x) for x in w_raw[:3]]  # type: ignore[arg-type]
         if any(width < 0 for width in w):
             raise PdfParseError("invalid xref stream W")
 
@@ -726,7 +724,7 @@ class XRefScanner(SyntaxXRefScanner):
         elif not isinstance(index_raw, (list, tuple)) or not all(type(x) is int for x in index_raw):
             raise PdfParseError("invalid xref stream Index")
         else:
-            index = [int(cast(typing.Any, x)) for x in index_raw]
+            index = [int(x) for x in index_raw]  # type: ignore[arg-type]
             if len(index) % 2 != 0:
                 index = index[:-1]
         effective_size = size
@@ -832,11 +830,7 @@ def iter_indirect_object_headers(
     search_end = min(len(data), search_end)
     source = source_buffer
     if source is None:
-        source = (
-            full_source_buffer(data, len(data))
-            if isinstance(data, memoryview)
-            else cast(FindableSizedBuffer, data)
-        )
+        source = full_source_buffer(data, len(data)) if isinstance(data, memoryview) else data  # type: ignore[assignment]
     copied_region = bytes(data[search_start:search_end]) if source is None else None
     pos = search_start
     while pos < search_end:

@@ -3,9 +3,8 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Mapping
 from enum import StrEnum
-from os import PathLike
 from pathlib import Path
-from typing import Any, ClassVar, NoReturn, Self, cast
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf import PdfDocument
 from core_pdf.impl.document.recovery.xref import XRefScanner
@@ -391,7 +390,7 @@ def load_data(
     **kwargs: object,
 ) -> list[Document]:
     del kwargs, max_characters
-    source_path = Path(cast(str | PathLike[str], source))
+    source_path = Path(source)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     source_data = source_path.read_bytes()
     if b"startxref" not in source_data or b"%%EOF" not in source_data:
         raise ValueError("incomplete PDF cross-reference terminator")
@@ -420,7 +419,7 @@ def load_data(
 
 def get_nodes_from_documents(source: object, *, max_characters: int = 2000) -> list[Node]:
     if isinstance(source, (list, tuple)) and all(isinstance(item, Document) for item in source):
-        documents = list(cast(list[Document] | tuple[Document, ...], source))
+        documents = list(source)
     else:
         documents = load_data(source, max_characters=max_characters)
     return [

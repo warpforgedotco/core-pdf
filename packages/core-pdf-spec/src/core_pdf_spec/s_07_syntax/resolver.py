@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import mmap
 import threading
-from typing import cast
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -16,7 +15,6 @@ from core_pdf_spec.s_07_syntax.resolution import (
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import (
-    CachedPdfObject,
     Decipher,
     ObjectCache,
     PdfDict,
@@ -122,9 +120,9 @@ class ObjectResolver:
         # This is where an unknown becomes a PDF object: the parser hands in
         # whatever the file contained, and everything downstream is entitled
         # to treat the result as an object of the model.
-        # cast() is a call that returns its argument, and this method is the
-        # most frequently called in the corpus profile, so the two returns on
-        # its hot path assert the type rather than route through one.
+        # The two returns on the hot path assert the type in a comment rather
+        # than through typing.cast, which would be a call per resolve, and this
+        # is the most frequently called method in the corpus profile.
         if type(ref) is not PdfReference:
             return ref  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
@@ -143,19 +141,19 @@ class ObjectResolver:
 
         resolving.add(cache_key)
         try:
-            resolved = cast(PdfObject, self.resolve_reference(ref))
+            resolved = self.resolve_reference(ref)
         finally:
             resolving.remove(cache_key)
 
         with self.lock:
             cached = self.objects.get(cache_key, MISSING)
             if cached is not MISSING:
-                return cast(PdfObject, cached)
-            self.objects[cache_key] = cast(CachedPdfObject, resolved)
-        return resolved
+                return cached  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+            self.objects[cache_key] = resolved  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        return resolved  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
     def deep_resolve(self, value: object) -> PdfObject:
-        return cast(PdfObject, resolve_object_graph(value, self.resolve))
+        return resolve_object_graph(value, self.resolve)  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
     def resolve_dict(self, value: object) -> PdfDict | None:
         resolved = self.deep_resolve(value)
@@ -264,7 +262,7 @@ class ObjectResolver:
         if resolved is selected:
             return stream
         dictionary = dict(stream.dictionary)
-        dictionary.update(cast(PdfDict, resolved))
+        dictionary.update(resolved)  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
         return stream.replace(dictionary=dictionary)
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:

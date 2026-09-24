@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from types import SimpleNamespace
-from typing import Any, cast
 
 import pytest
 
@@ -56,8 +55,8 @@ def test_extgstate_absent_and_resolved_null_entries_preserve_state() -> None:
     resolver = ObjectResolver(b"", {})
     state = ContentInterpreter(
         resolver,
-        cast(Any, SimpleNamespace(save_graphics=lambda *_: None, restore_graphics=lambda *_: None)),
-        cast(Any, None),
+        SimpleNamespace(save_graphics=lambda *_: None, restore_graphics=lambda *_: None),  # ty: ignore[invalid-argument-type]
+        None,  # ty: ignore[invalid-argument-type]
     )
     assert state.graphics.color_rendering == DEFAULT_COLOR_RENDERING
     state.apply_extgstate({"RI": PdfName.of("Saturation"), "UseBlackPtComp": PdfName.of("ON")})

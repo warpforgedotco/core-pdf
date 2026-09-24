@@ -6,7 +6,7 @@ from collections import defaultdict
 from math import ceil, floor
 from os import PathLike
 from pathlib import Path
-from typing import Any, ClassVar, Self, cast
+from typing import Any, ClassVar, Self
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
@@ -362,7 +362,7 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
             return _RecoveredFont(
                 ToUnicodeCMap(stream.data),
                 first_char,
-                tuple(float(cast(Any, width)) for width in widths),
+                tuple(float(width) for width in widths),
             )
         except TypeError, ValueError:
             continue
@@ -382,15 +382,13 @@ def _page_redactions(
 ) -> list[dict[str, object]]:
     source_crop_box = page.crop_box or page.media_box
     user_unit = page.user_unit
-    crop_box = cast(
-        tuple[float, float, float, float], tuple(float(value) for value in source_crop_box)
-    )
+    crop_box = tuple(float(value) for value in source_crop_box)
     program = page.get_page_program()
     drawings = page.drawing_records(program.drawings)
     rectangles = [
         rectangle
         for drawing in drawings
-        for rectangle in _path_rectangles(drawing, crop_box, user_unit)
+        for rectangle in _path_rectangles(drawing, crop_box, user_unit)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     ]
     if not rectangles:
         return []
@@ -493,7 +491,7 @@ def _page_redactions(
             continue
         if not _OK_WORDS.sub("", collapse_ws(text)):
             continue
-        fitz_box = _fitz_box(rectangle.bbox, crop_box, user_unit)
+        fitz_box = _fitz_box(rectangle.bbox, crop_box, user_unit)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         if rectangle.bbox in annotation_boxes:
             fitz_box = (*fitz_box[:2], _next_float32(fitz_box[2]), fitz_box[3])
         integer_aligned = all(abs(value * 2 - round(value * 2)) < 0.0001 for value in fitz_box)
@@ -535,7 +533,7 @@ def _page_redactions(
                 )
             ):
                 continue
-            drawing_rectangles = _path_rectangles(drawing, crop_box, user_unit)
+            drawing_rectangles = _path_rectangles(drawing, crop_box, user_unit)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             if not any(
                 candidate.bbox[0] <= center[0] <= candidate.bbox[2]
                 and candidate.bbox[1] <= center[1] <= candidate.bbox[3]
@@ -652,17 +650,14 @@ def _raw_highlight_redactions(page: Any) -> list[dict[str, object]]:
                 )
             )
             x = x1
-    crop_box = cast(
-        tuple[float, float, float, float],
-        tuple(float(value) for value in (page.crop_box or page.media_box)),
-    )
+    crop_box = tuple(float(value) for value in (page.crop_box or page.media_box))
     output: list[dict[str, object]] = []
     for highlight in highlights:
         text = "".join(
             character.text for character in recovered if bbox_intersects(character.bbox, highlight)
         )
         if text.strip():
-            fitz_box = _fitz_box(highlight, crop_box, page.user_unit)
+            fitz_box = _fitz_box(highlight, crop_box, page.user_unit)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             output.append(
                 {
                     "bbox": (*fitz_box[:2], _next_float32(fitz_box[2]), fitz_box[3]),
@@ -677,7 +672,7 @@ def _source_bytes(source: object) -> bytes | None:
         return source
     if isinstance(source, (str, PathLike)) and not str(source).startswith("https://"):
         try:
-            return Path(cast(str | PathLike[str], source)).read_bytes()
+            return Path(source).read_bytes()
         except OSError:
             return None
     return None
@@ -686,7 +681,7 @@ def _source_bytes(source: object) -> bytes | None:
 def _requires_password(document: PdfDocument) -> bool:
     if document.decipher is None:
         return False
-    handler = cast(Any, document.decipher).__self__
+    handler = document.decipher.__self__  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     if getattr(handler, "r", 0) < 5:
         return False
     empty_hash = handler.password_hash(b"", handler.u_validation_salt)

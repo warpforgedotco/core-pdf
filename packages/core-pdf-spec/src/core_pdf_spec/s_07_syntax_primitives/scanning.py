@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax_primitives.numbers import parse_identifier_tokens
@@ -63,14 +63,14 @@ def full_source_buffer(data: memoryview, data_len: int) -> bytes | FindableSized
         return source_bytes
     source = data.obj
     if hasattr(source, "find") and hasattr(source, "rfind") and hasattr(source, "__len__"):
-        buffer = cast(FindableSizedBuffer, source)
+        buffer = source
         if (
             data.c_contiguous
             and data.itemsize == 1
             and data.nbytes == data_len
-            and len(buffer) == data_len
+            and len(buffer) == data_len  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         ):
-            return buffer
+            return buffer  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
     return None
 
 

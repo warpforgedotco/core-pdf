@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, TypeAlias, cast, overload
+from typing import TYPE_CHECKING, Any, TypeAlias, overload
 
 from core_pdf.impl.document.recovery.trees import iter_number_tree_items
 from core_pdf.impl.model.pdf_values import coerce_value
@@ -189,7 +189,7 @@ class StructureElement(StructureNode):
     @property
     def role_resolution(self) -> StructureRole | None:
         if self.role_resolution_value is not MISSING:
-            return cast(StructureRole | None, self.role_resolution_value)
+            return self.role_resolution_value  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
         resolver = self.document.resolver
         context = resolver.semantic_context
         if context is not None and (context.version is None or not context.version.recognized):

@@ -1,5 +1,3 @@
-from typing import cast
-
 import pytest
 
 from core_pdf.impl.capture.recovery import (
@@ -8,7 +6,6 @@ from core_pdf.impl.capture.recovery import (
     recover_inline_image_data,
     recover_inline_image_position,
 )
-from core_pdf.impl.types import PdfString
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.inline_images import InlineImage, InlineImageDataLengthError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -193,8 +190,8 @@ def test_inline_fast_path_matches_token_parser_for_simple_operands() -> None:
     assert str(operands[2]) == "Name"
     assert operands[3] is True
     assert operands[4] is None
-    assert cast(PdfString, operands[5]).data == b"str"
-    assert cast(PdfString, operands[6]).data == b"A"
+    assert operands[5].data == b"str"  # ty: ignore[unresolved-attribute]
+    assert operands[6].data == b"A"  # ty: ignore[unresolved-attribute]
     assert operands[7] == [1, 2]
     assert operands[8] == 12345678901234567
     assert operations[1] == ("Do", ())
