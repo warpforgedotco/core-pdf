@@ -2,9 +2,9 @@
 """Cython build hook.
 
 Kept as a setup.py because the extension list has to be produced by
-cythonize() at build time, and because the float-contraction flags have to be
-chosen per compiler; everything else about the distribution is declared in
-pyproject.toml.
+cythonize() at build time, and because the float-contraction and optimization
+flags have to be chosen per compiler; everything else about the distribution
+is declared in pyproject.toml.
 """
 
 from pathlib import Path
@@ -32,20 +32,38 @@ CONTRACTION_FLAGS = {
     "msvc": ["/fp:precise"],
 }
 
+# Stated rather than inherited. setuptools takes the optimization level from
+# the interpreter's CFLAGS, and a CFLAGS in the environment replaces that
+# rather than adding to it -- so a shell that exports CFLAGS for include
+# paths, as a Homebrew setup commonly does, silently built every kernel at
+# -O0. Nothing failed: the golden vectors pass at any level. The kernels just
+# ran up to ten times slower, and a benchmark taken on such a build measured
+# the wrong thing. These come after CFLAGS on the command line, so they win.
+#
+# -O3 is what CPython itself is built with. None of these levels licenses
+# float reassociation; that takes -ffast-math, which nothing here passes.
+OPTIMIZATION_FLAGS = {
+    "unix": ["-O3"],
+    "mingw32": ["-O3"],
+    "msvc": ["/O2"],
+}
+
 SOURCES = sorted(str(path) for path in Path("src").rglob("*.pyx"))
 
 
 class BuildExtWithStrictFloats(build_ext):
-    """Apply the contraction flags once the compiler is actually known."""
+    """Apply the per-compiler flags once the compiler is actually known."""
 
     def build_extensions(self) -> None:
-        flags = CONTRACTION_FLAGS.get(self.compiler.compiler_type)
+        compiler_type = self.compiler.compiler_type
+        flags = CONTRACTION_FLAGS.get(compiler_type)
         if flags is None:
             raise RuntimeError(
-                f"unknown compiler {self.compiler.compiler_type!r}: refusing to build "
+                f"unknown compiler {compiler_type!r}: refusing to build "
                 "without a float-contraction flag, because the kernels would compile "
                 "with semantics the golden vectors do not describe"
             )
+        flags = [*OPTIMIZATION_FLAGS[compiler_type], *flags]
         for extension in self.extensions:
             extension.extra_compile_args = [*extension.extra_compile_args, *flags]
         super().build_extensions()
