@@ -36,7 +36,6 @@ from core_pdf.impl.render.blend import (
     clamp01,
     color_rgba,
     composite_blended_group_numpy,
-    composite_normal_group_numpy,
     resolve_constant_alpha,
     scale_rgba_alpha,
 )
@@ -78,6 +77,7 @@ from core_pdf_cythonized import (
     composite_elementary_normal,
     composite_knockout_group,
     composite_masked_normal,
+    composite_normal_group,
     glyph_coverage_plane,
     rect_coverage_plane,
     supersampled_coverage_plane,
@@ -1241,7 +1241,7 @@ class RasterTarget:
             numpy.rint(child[..., 3].astype(numpy.float64) * source_scale), 0.0, 255.0
         ).astype(numpy.uint8)
         if normalized_blend_mode in {None, "normal"} and len(group.pixels) >= 4_096:
-            composite_normal_group_numpy(destination, child, source_scale)
+            composite_normal_group(destination, child, source_scale)
             return effective_alpha
         composite_blended_group_numpy(
             destination,

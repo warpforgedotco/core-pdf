@@ -15,3 +15,9 @@ def composite_masked_normal(
     opacity: float,
     mask_alpha: numpy.ndarray[Any, Any],
 ) -> numpy.ndarray[Any, Any]: ...
+def composite_normal_group(
+    destination: numpy.ndarray[Any, Any],
+    rendered: numpy.ndarray[Any, Any],
+    source_alpha_scale: float,
+    target_alpha_scale: float = ...,
+) -> None: ...

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from core_pdf.impl.render import blend
-from core_pdf_cythonized import blend_normal_alpha_array_numpy
+from core_pdf_cythonized import blend_normal_alpha_array_numpy, composite_normal_group
 
 
 def source_over(destination, source, mode=None):
@@ -99,7 +99,7 @@ def test_normal_group_routes_match_general_compositing(
     )
     expected = destination.copy()
     blend.composite_blended_group_numpy(expected, source, source_scale, target_scale, None)
-    blend.composite_normal_group_numpy(destination, source, source_scale, target_scale)
+    composite_normal_group(destination, source, source_scale, target_scale)
     np.testing.assert_array_equal(destination, expected)
 
 
@@ -114,7 +114,7 @@ def test_normal_group_onto_an_empty_backdrop_writes_only_visible_pixels_through_
     )
     expected = destination.copy()
     blend.composite_blended_group_numpy(expected, source, 1.0, 1.0, None)
-    blend.composite_normal_group_numpy(destination, source, 1.0)
+    composite_normal_group(destination, source, 1.0)
     np.testing.assert_array_equal(destination, expected)
     np.testing.assert_array_equal(destination[:, 0], [(51, 102, 153, 0)] * 2)
     np.testing.assert_array_equal(backing[:, 1::2], 17)

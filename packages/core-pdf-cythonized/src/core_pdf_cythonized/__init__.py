@@ -35,6 +35,7 @@ from core_pdf_cythonized._blend import blend_normal_alpha_array_numpy
 from core_pdf_cythonized._composite import (
     composite_elementary_normal,
     composite_masked_normal,
+    composite_normal_group,
 )
 from core_pdf_cythonized._content import SCAN_NAME, SCAN_OPERATOR, ContentScanner
 from core_pdf_cythonized._coverage import glyph_coverage_plane, signed_area_coverage
@@ -60,6 +61,7 @@ __all__ = (
     "composite_knockout_element",
     "composite_knockout_group",
     "composite_masked_normal",
+    "composite_normal_group",
     "cubic_sample_times",
     "flatten_path_commands",
     "glyph_coverage_plane",
