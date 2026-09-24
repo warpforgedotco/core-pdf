@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import heapq
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from copy import replace
 from typing import Any
 
@@ -192,23 +193,11 @@ def paint_stroke_once(
     line_join: int,
 ) -> None:
     pixels = target.pixels
-    source_alpha = target.group_source_alpha
-    source_shape = target.group_source_shape
-    paint_window = target.paint_window
     coverage_buffer = bytearray(len(pixels))
-    target.pixels = coverage_buffer
-    target.group_source_alpha = None
-    target.group_source_shape = None
-    target.paint_window = None
-    try:
+    with target.detached_buffer(coverage_buffer):
         target.stroke_path(
             path, line_width, (0, 0, 0, 255), dash_pattern, None, line_cap, line_join
         )
-    finally:
-        target.pixels = pixels
-        target.group_source_alpha = source_alpha
-        target.group_source_shape = source_shape
-        target.paint_window = paint_window
     coverage = target.pixel_view(coverage_buffer)[..., 3]
     covered_rows = numpy.flatnonzero(coverage.any(axis=1))
     if covered_rows.size == 0:
@@ -487,14 +476,16 @@ class RasterTarget:
         page_view: UInt8Array,
         semantic_context: SemanticContext | None = None,
     ) -> None:
-        self.pixels = pixels
         self.semantic_context = blend_context(semantic_context)
         self.buffer_stack = [RasterGroup(pixels)]
-        self.group_source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None
-        self.group_source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None
-        # The innermost group's window, or None at page level where nothing
-        # composites and tracking one would be pure cost.
-        self.paint_window: list[int] | None = None
+        # pixels, group_source_alpha, group_source_shape and paint_window mirror
+        # the innermost group for the paint loops, which read them per pixel.
+        # sync_group_mirrors is the only thing that sets them.
+        self.pixels: bytearray
+        self.group_source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
+        self.group_source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
+        self.paint_window: list[int] | None
+        self.sync_group_mirrors()
         self.paint_alpha_is_shape = False
         self.shape_alpha = 1.0
         self.clip = clip
@@ -878,10 +869,7 @@ class RasterTarget:
                 mask_alpha=mask_alpha,
             )
         )
-        self.pixels = buffer
-        self.group_source_alpha = source_alpha
-        self.group_source_shape = self.buffer_stack[-1].source_shape
-        self.paint_window = self.buffer_stack[-1].paint_window
+        self.sync_group_mirrors()
 
     def release_elementary_group(self, child: RasterGroup) -> None:
         scratch = self.elementary_scratch.get(len(self.buffer_stack))
@@ -927,19 +915,40 @@ class RasterTarget:
                 painted_boxes=[] if knockout else None,
             )
         )
-        self.pixels = buffer
-        self.group_source_alpha = source_alpha
-        self.group_source_shape = source_shape
-        self.paint_window = self.buffer_stack[-1].paint_window
+        self.sync_group_mirrors()
 
     def pop_group(self) -> RasterGroup:
         child = self.buffer_stack.pop()
-        parent = self.buffer_stack[-1]
-        self.pixels = parent.pixels
-        self.group_source_alpha = parent.source_alpha
-        self.group_source_shape = parent.source_shape
-        self.paint_window = parent.paint_window if len(self.buffer_stack) > 1 else None
+        self.sync_group_mirrors()
         return child
+
+    def sync_group_mirrors(self) -> None:
+        """Point the paint loops' attributes at the innermost group.
+
+        The page level keeps no paint window: nothing composites it, so
+        tracking one there would be pure cost.
+        """
+        group = self.buffer_stack[-1]
+        self.pixels = group.pixels
+        self.group_source_alpha = group.source_alpha
+        self.group_source_shape = group.source_shape
+        self.paint_window = group.paint_window if len(self.buffer_stack) > 1 else None
+
+    @contextmanager
+    def detached_buffer(self, buffer: bytearray) -> Iterator[None]:
+        """Paint into `buffer` alone, with no group planes and no paint window.
+
+        For a pass that paints coverage into scratch and records it into the
+        group itself afterwards; the group's mirrors come back on the way out.
+        """
+        self.pixels = buffer
+        self.group_source_alpha = None
+        self.group_source_shape = None
+        self.paint_window = None
+        try:
+            yield
+        finally:
+            self.sync_group_mirrors()
 
     def set_shape_alpha(self, alpha: float) -> None:
         self.shape_alpha = clamp01(alpha) if self.paint_alpha_is_shape else 1.0
