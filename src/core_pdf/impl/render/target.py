@@ -599,31 +599,24 @@ class RasterTarget:
     KNOCKOUT_DISJOINT_LIMIT = 96
 
     def knockout_paint_box(self, item: DisplayItem) -> PixelBox | None:
-        """The pixel box `item` can paint into, or None if it is not bounded.
+        """The pixel box `item` would paint straight into a knockout group, or
+        None if it cannot skip its elementary group at all.
 
-        Only a superset of the pixels it touches is wanted, so that a later
-        element missing this box provably misses every pixel this one wrote.
-        A fill and an image are bounded; a stroke reaches half a line width
-        beyond the path bbox and a shading paints an extent the item does not
-        carry, so neither is. Pattern fills, blend modes and images stay
-        bounded even though they cannot skip the group, because they do paint
-        inside the box and nowhere else.
+        Only a plain fill qualifies: an edge-array fill, where fill_path
+        provably paints inside item.bbox, with no pattern and a Normal blend.
+        Anything else composites through a group, and composite_group records
+        what that group actually painted, so nothing else needs predicting.
         """
-        if isinstance(item, ImagePaintItem):
-            # blit_image ignores item.bbox and derives this same box from the
-            # placement quad, then paints inside it.
-            quad = image_placement(item)
-            bbox = None if quad is None else points_bbox(quad)
-        elif isinstance(item, PathPaintItem) and item.paint_kind is PathPaintKind.FILL:
-            # Without an edge array, fill_path derives its own bbox from the
-            # path and may not land on the box computed here. Only the glyph
-            # case, where it provably uses item.bbox, is bounded.
-            bbox = item.bbox if item.edge_array is not None else None
-        else:
+        if not (
+            isinstance(item, PathPaintItem)
+            and item.paint_kind is PathPaintKind.FILL
+            and item.edge_array is not None
+            and item.bbox is not None
+            and item.fill_pattern is None
+            and item.blend_mode in (None, "Normal")
+        ):
             return None
-        if bbox is None:
-            return None
-        clipped = self.clip.clipped_pixel_box(bbox)
+        clipped = self.clip.clipped_pixel_box(item.bbox)
         if clipped is None:
             # Nothing of it lands on the page, so it paints nothing at all.
             return EMPTY_PIXEL_BOX
@@ -634,28 +627,28 @@ class RasterTarget:
         # contiguously and a one-pixel margin makes every neighbour an overlap.
         return clipped[1]
 
-    def record_knockout_paint(self, box: PixelBox | None) -> None:
-        """Record what an element painted into the innermost knockout group.
+    def record_knockout_paint(self, box: PixelBox) -> None:
+        """Record a box painted into the innermost group, if it knocks out.
 
-        Everything painted into the group has to be recorded, not only the
-        elements that skipped its elementary group: one composited in through
-        a group leaves pixels behind just the same, and a later element
-        landing on them would no longer be painting over the initial backdrop.
-        A None box means the pixels could not be bounded, so the whole page is
-        recorded instead and the test retires for the rest of the group.
+        Everything painted into the group is recorded, not only the elements
+        that skipped its elementary group: one composited in through a group
+        leaves pixels behind just the same, and a later element landing on them
+        would no longer be painting over the initial backdrop. composite_group
+        records those from the window the group actually painted.
         """
         boxes = self.buffer_stack[-1].painted_boxes
-        if boxes is None:
+        if boxes is None or box == EMPTY_PIXEL_BOX:
             return
-        if box is None or len(boxes) >= self.KNOCKOUT_DISJOINT_LIMIT:
+        if len(boxes) >= self.KNOCKOUT_DISJOINT_LIMIT:
             boxes.clear()
             boxes.append((0, 0, self.width, self.height))
-        elif box != EMPTY_PIXEL_BOX:
+        else:
             boxes.append(box)
 
-    def knockout_paint_is_disjoint(self, item: DisplayItem, boxes: list[PixelBox]) -> bool:
-        """Whether `item` misses every pixel painted into the knockout group so
-        far, so that it can knock out without an elementary group.
+    def knockout_skip_box(self, item: DisplayItem, boxes: list[PixelBox]) -> PixelBox | None:
+        """The box `item` paints, when it misses every pixel painted into the
+        knockout group so far and so can knock out without an elementary group;
+        None when it needs the group.
 
         Knockout composites each element against the group's *initial*
         backdrop rather than the accumulated result. Where nothing has been
@@ -664,31 +657,16 @@ class RasterTarget:
         `colour * complete - backdrop * initial` vanish, `rga` becomes the
         element's own alpha and `ra` equals it, so the component reduces to the
         element itself. Painting straight into the parent produces that.
-
-        Records what the element paints on the way out, so this must be called
-        exactly once for every element painted into a knockout group.
         """
         box = self.knockout_paint_box(item)
         if box is None or box == EMPTY_PIXEL_BOX:
-            self.record_knockout_paint(box)
-            # An unbounded element needs the group; one that paints nothing
-            # would have the group paint nothing either.
-            return box is not None
+            # One that paints nothing would have its group paint nothing either.
+            return box
         x0, y0, x1, y1 = box
-        disjoint = True
         for bx0, by0, bx1, by1 in boxes:
             if x0 < bx1 and bx0 < x1 and y0 < by1 and by0 < y1:
-                disjoint = False
-                break
-        self.record_knockout_paint(box)
-        if not disjoint or not isinstance(item, PathPaintItem):
-            # An image is bounded, and so worth recording, but blit_affine_image
-            # does its own alpha and shape bookkeeping; only a fill is known to
-            # reduce to a direct paint.
-            return False
-        # A pattern fill or a blend mode does not composite the way the
-        # collapsed formula assumes either, though it does stay in its box.
-        return item.fill_pattern is None and item.blend_mode in (None, "Normal")
+                return None
+        return box
 
     def paint_item(self, item: DisplayItem) -> None:
         if isinstance(item, (PathPaintItem, ImagePaintItem)) or item.kind in {"glyph", "shading"}:
@@ -707,11 +685,11 @@ class RasterTarget:
                     isinstance(item, PathPaintItem) and item.paint_kind is PathPaintKind.FILL_STROKE
                 )
                 elementary_group = knockout or mask_alpha is not None
-                parent = self.buffer_stack[-1]
-                boxes = parent.painted_boxes
-                if knockout and boxes is not None:
-                    disjoint = self.knockout_paint_is_disjoint(item, boxes)
-                    if disjoint and mask_alpha is None:
+                boxes = self.buffer_stack[-1].painted_boxes
+                skip_box = None
+                if knockout and boxes is not None and mask_alpha is None:
+                    skip_box = self.knockout_skip_box(item, boxes)
+                    if skip_box is not None:
                         elementary_group = False
                 if elementary_group:
                     self.push_elementary_group(
@@ -728,6 +706,8 @@ class RasterTarget:
                             self.composite_group(child)
                         finally:
                             self.release_elementary_group(child)
+                    elif skip_box is not None:
+                        self.record_knockout_paint(skip_box)
             finally:
                 self.paint_alpha_is_shape, self.shape_alpha = previous_shape_state
             return
@@ -780,10 +760,6 @@ class RasterTarget:
                 )
             case "group-end" if len(self.buffer_stack) > self.group_floor:
                 self.composite_group(self.pop_group())
-                # A nested group composites straight into its parent without
-                # passing through paint_item, and what it painted is not
-                # bounded by anything the item carries.
-                self.record_knockout_paint(None)
             case "glyph" if data.get("visible") is not False:
                 rgba = color_rgba(data.get("fill_color"), data.get("fill_opacity"))
                 if is_pdf_number(mask := data.get("soft_mask_alpha")):
@@ -1170,6 +1146,11 @@ class RasterTarget:
         if window is None:
             return
         rows, columns = window
+        if parent.painted_boxes is not None:
+            # Whatever reached the knockout parent -- an element's elementary
+            # group, a nested group, a pattern cell -- touched these pixels and
+            # no others, so they are what a later element has to miss.
+            self.record_knockout_paint((columns.start, rows.start, columns.stop, rows.stop))
         shape = group.source_shape[rows, columns] if group.source_shape is not None else None
         if shape is not None and group.alpha_is_shape:
             shape = shape * group.source_scale
