@@ -180,10 +180,12 @@ def paint_stroke_once(
     pixels = target.pixels
     source_alpha = target.group_source_alpha
     source_shape = target.group_source_shape
+    paint_window = target.paint_window
     coverage_buffer = bytearray(len(pixels))
     target.pixels = coverage_buffer
     target.group_source_alpha = None
     target.group_source_shape = None
+    target.paint_window = None
     try:
         target.stroke_path(
             path, line_width, (0, 0, 0, 255), dash_pattern, None, line_cap, line_join
@@ -192,6 +194,7 @@ def paint_stroke_once(
         target.pixels = pixels
         target.group_source_alpha = source_alpha
         target.group_source_shape = source_shape
+        target.paint_window = paint_window
     coverage = target.pixel_view(coverage_buffer)[..., 3]
     covered_rows = numpy.flatnonzero(coverage.any(axis=1))
     if covered_rows.size == 0:
@@ -448,6 +451,7 @@ class RasterTarget:
         "buffer_stack",
         "group_source_alpha",
         "group_source_shape",
+        "paint_window",
         "paint_alpha_is_shape",
         "shape_alpha",
         "clip",
@@ -505,6 +509,9 @@ class RasterTarget:
         self.buffer_stack = [RasterGroup(pixels)]
         self.group_source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None
         self.group_source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None
+        # The innermost group's window, or None at page level where nothing
+        # composites and tracking one would be pure cost.
+        self.paint_window: list[int] | None = None
         self.paint_alpha_is_shape = False
         self.shape_alpha = 1.0
         self.clip = clip
@@ -891,6 +898,7 @@ class RasterTarget:
         self.pixels = buffer
         self.group_source_alpha = source_alpha
         self.group_source_shape = self.buffer_stack[-1].source_shape
+        self.paint_window = self.buffer_stack[-1].paint_window
 
     def release_elementary_group(self, child: RasterGroup) -> None:
         scratch = self.elementary_scratch.get(len(self.buffer_stack))
@@ -939,21 +947,37 @@ class RasterTarget:
         self.pixels = buffer
         self.group_source_alpha = source_alpha
         self.group_source_shape = source_shape
+        self.paint_window = self.buffer_stack[-1].paint_window
 
     def pop_group(self) -> RasterGroup:
         child = self.buffer_stack.pop()
-        self.pixels = self.buffer_stack[-1].pixels
-        self.group_source_alpha = self.buffer_stack[-1].source_alpha
-        self.group_source_shape = self.buffer_stack[-1].source_shape
+        parent = self.buffer_stack[-1]
+        self.pixels = parent.pixels
+        self.group_source_alpha = parent.source_alpha
+        self.group_source_shape = parent.source_shape
+        self.paint_window = parent.paint_window if len(self.buffer_stack) > 1 else None
         return child
 
     def set_shape_alpha(self, alpha: float) -> None:
         self.shape_alpha = clamp01(alpha) if self.paint_alpha_is_shape else 1.0
 
     def extend_paint_window(self, rows: int | slice, columns: int | slice) -> None:
+        window = self.paint_window
+        if window is None:
+            return
         y0, y1 = index_extent(rows, self.height)
         x0, x1 = index_extent(columns, self.width)
-        self.buffer_stack[-1].extend_paint_window(y0, y1, x0, x1)
+        if window:
+            if y0 < window[0]:
+                window[0] = y0
+            if y1 > window[1]:
+                window[1] = y1
+            if x0 < window[2]:
+                window[2] = x0
+            if x1 > window[3]:
+                window[3] = x1
+        else:
+            window[:] = (y0, y1, x0, x1)
 
     def record_source_coverage(
         self,
@@ -964,6 +988,9 @@ class RasterTarget:
         shape: int | UInt8Array = 255,
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
     ) -> None:
+        if self.group_source_alpha is None and self.group_source_shape is None:
+            self.extend_paint_window(rows, columns)
+            return
         self.record_source_alpha(rows, columns, alpha, visible=visible)
         self.record_source_shape(rows, columns, shape, visible=visible)
 
@@ -976,7 +1003,9 @@ class RasterTarget:
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
     ) -> None:
         plane = self.group_source_alpha
-        if plane is not None:
+        if plane is None:
+            self.extend_paint_window(rows, columns)
+        else:
             self.record_plane(plane, rows, columns, alpha / 255.0, visible)
 
     def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
@@ -1008,7 +1037,9 @@ class RasterTarget:
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None = None,
     ) -> None:
         plane = self.group_source_shape
-        if plane is not None:
+        if plane is None:
+            self.extend_paint_window(rows, columns)
+        else:
             self.record_plane(plane, rows, columns, shape / 255.0 * self.shape_alpha, visible)
 
     def record_plane(
@@ -1039,12 +1070,19 @@ class RasterTarget:
     ) -> None:
         pixels = self.pixels
         sr, sg, sb, sa = rgba
+        alpha_plane = self.group_source_alpha
         if self.group_source_shape is not None:
             row, column = divmod(idx // 4, self.width)
             self.record_source_shape(row, column, shape)
+        elif alpha_plane is None and self.paint_window is not None:
+            # Neither plane is recording, so nothing else will note that the
+            # group's buffer was written here, and the window it composites
+            # over would miss this pixel.
+            row, column = divmod(idx // 4, self.width)
+            self.extend_paint_window(row, column)
         if sa <= 0:
             return
-        if self.group_source_alpha is not None:
+        if alpha_plane is not None:
             row, column = divmod(idx // 4, self.width)
             self.record_source_alpha(row, column, sa)
         if sa >= 255 and mode is None:
@@ -1134,11 +1172,18 @@ class RasterTarget:
             pixels[idx + 3] = max(0, min(255, out_a_i))
 
     def group_window(self, group: RasterGroup) -> tuple[slice, slice] | None:
-        if group.backdrop is None:
-            return slice(0, self.height), slice(0, self.width)
-        if not group.paint_window:
+        """The rows and columns `group` has to be composited over.
+
+        Outside the window the group is untouched -- transparent if it was
+        isolated, equal to the backdrop it was seeded with if it was not -- and
+        every compositing formula here leaves the destination alone where the
+        source contributes nothing. So the window is the whole of the work, and
+        an empty one means the group painted nothing at all.
+        """
+        window = group.paint_window
+        if not window:
             return None
-        y0, y1, x0, x1 = group.paint_window
+        y0, y1, x0, x1 = window
         return slice(y0, y1), slice(x0, x1)
 
     def composite_group(self, group: RasterGroup) -> None:
