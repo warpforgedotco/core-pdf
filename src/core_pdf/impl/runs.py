@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
+from typing import Any, ClassVar, Self, TypeAlias
 
+from core_pdf.impl.geometry import extend_baseline
+from core_pdf.impl.glyphs import GlyphClusterLike, min_optional_confidence
 from core_pdf.impl.types import Record, ReprFields, frozen_setattr
-
-if TYPE_CHECKING:
-    from core_pdf.impl.glyphs import GlyphClusterLike
 
 
 class LayoutLineTextSegment(Record):
@@ -336,6 +335,18 @@ class TextRun(ReprFields):
         self.provenance = provenance
         self.confidence = confidence
         self.glyph_clusters = glyph_clusters
+
+    def absorb_extent(self, other: TextRun) -> None:
+        """Grow the box, advance box, baseline and confidence to cover `other`."""
+        self.x0 = min(self.x0, other.x0)
+        self.y0 = min(self.y0, other.y0)
+        self.x1 = max(self.x1, other.x1)
+        self.y1 = max(self.y1, other.y1)
+        x0, y0, x1, y1 = self.advance_bbox
+        bx0, by0, bx1, by1 = other.advance_bbox
+        self.advance_bbox = (min(x0, bx0), min(y0, by0), max(x1, bx1), max(y1, by1))
+        self.baseline = extend_baseline(self.baseline, other.baseline)
+        self.confidence = min_optional_confidence(self.confidence, other.confidence)
 
     def union_ink_bbox(self, bbox: tuple[float, float, float, float]) -> None:
         x0, y0, x1, y1 = self.ink_bbox

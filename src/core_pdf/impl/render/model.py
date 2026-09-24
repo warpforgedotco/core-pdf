@@ -597,18 +597,6 @@ class RasterGroup(Record):
     def source_scale(self) -> float:
         return clamp01(float(self.composite_alpha)) if is_pdf_number(self.composite_alpha) else 1.0
 
-    def extend_paint_window(self, y0: int, y1: int, x0: int, x1: int) -> None:
-        window = self.paint_window
-        if window:
-            window[:] = (
-                min(window[0], y0),
-                max(window[1], y1),
-                min(window[2], x0),
-                max(window[3], x1),
-            )
-        else:
-            window[:] = y0, y1, x0, x1
-
 
 class RasterImage(Record):
     __slots__ = ("pixels", "width", "height", "channels")

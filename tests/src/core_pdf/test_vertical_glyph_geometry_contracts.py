@@ -44,7 +44,7 @@ def test_unclipped_vertical_glyphs_are_visible_with_default_bitmaps() -> None:
     assert len(baseline) == 2
     # Vertical always builds a transform: only the horizontal kernel skips it.
     assert all(t is not None and len(t) == 6 for t in transform)
-    # glyph_bitmap_dimensions returns the default for a missing bbox.
+    # The kernel falls back to the default bitmap for a missing bbox.
     assert bitmap == [24, 32, 24, 32]
 
 

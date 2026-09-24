@@ -20,14 +20,12 @@ from core_pdf.impl.capture.glyph_boxes import (
     text_basis_rect,
     transformed_text_line,
 )
+from core_pdf.impl.glyphs import Matrix6
 from core_pdf.impl.types import Rectangle
 
 # A glyph with no bbox of its own. NaN rather than a sentinel value so the
 # kernel never has to branch on a Python None.
 NO_BOX = float("nan")
-ZERO_BOX: Rectangle = (0.0, 0.0, 0.0, 0.0)
-Matrix6 = tuple[float, float, float, float, float, float]
-ZERO_MATRIX: Matrix6 = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 # advance boxes, baselines, glyph transforms, ink boxes, visibility, bitmaps
 # The transform entries are None when the caller asked for no render detail.

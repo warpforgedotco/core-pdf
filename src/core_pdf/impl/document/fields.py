@@ -113,7 +113,6 @@ def collect_field_records(
                 continue
             raise ValueError("invalid AcroForm field entry")
         seen.add(id(current_node))
-        current_node = current_node
         record = field_record(
             resolver,
             current_node,

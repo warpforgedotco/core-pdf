@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import ceil
 
 from core_pdf.impl.capture.glyph_boxes import (
+    TextBasis,
     glyph_text_space_boxes,
     text_basis_rect,
     transformed_text_line,
@@ -22,9 +22,6 @@ from core_pdf.impl.glyphs import (
 )
 from core_pdf.impl.types import Rectangle
 from core_pdf_cythonized import horizontal_glyph_geometry
-
-TextBasis = tuple[float, float, float, float, float, float]
-
 
 GLYPH_BITMAP_REPAIR_LABELS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-+/()[]{}<>|_~"
@@ -51,22 +48,6 @@ def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
         return False
     punctuation = sum(not char.isalnum() for char in nonspace)
     return punctuation >= 1 and punctuation / len(nonspace) >= 0.25
-
-
-def glyph_bitmap_dimensions(
-    glyph_bbox: Rectangle | None,
-    font_size: float,
-) -> tuple[int, int]:
-    if glyph_bbox is None:
-        return (24, 32)
-    x0, y0, x1, y1 = glyph_bbox
-    width = x1 - x0
-    height = y1 - y0
-    if width <= 0.0 or height <= 0.0:
-        return (24, 32)
-    bitmap_h = max(16, min(64, ceil(max(font_size, 1.0) * 2.5)))
-    bitmap_w = max(1, min(96, ceil(bitmap_h * width / height)))
-    return (bitmap_w, bitmap_h)
 
 
 @dataclass(slots=True, eq=False)
@@ -322,7 +303,7 @@ def capture_glyphs(
         bitmap_height = bitmap_f[2 * index + 1]
         bitmap_code = glyph.bitmap_code if want_bitmap[index] else None
 
-        cluster_id = cluster_start + result.cluster_count
+        cluster_id = cluster_start + index
         cluster_provenance_id = (seqno, cluster_id)
         observation_confidence = glyph_unicode_confidence(
             chunk_text,
@@ -414,11 +395,11 @@ def capture_glyphs(
             if capture_run_details:
                 cluster_observations.append(observation)
                 add_run_geometry(advance_rect, ink, confidence)
-        result.cluster_count += 1
         if capture_run_details:
             cluster = glyph_cluster_from_observations(
                 cluster_id, chunk_text, tuple(cluster_observations)
             )
             if cluster is not None:
                 result.clusters.append(cluster)
+    result.cluster_count = len(kept)
     return result

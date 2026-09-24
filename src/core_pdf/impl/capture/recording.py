@@ -43,12 +43,10 @@ from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.geometry import (
-    extend_baseline,
     intersect_bbox,
     transform_bbox,
-    union_bbox,
 )
-from core_pdf.impl.glyphs import GlyphObservation, min_optional_confidence
+from core_pdf.impl.glyphs import GlyphObservation
 from core_pdf.impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import raw_color_space_paints
 from core_pdf.impl.graphics.soft_masks import image_overrides_graphics_soft_mask
@@ -124,13 +122,7 @@ class MarkedContentEntry:
             self.font_decoder = font_decoder
             self.effective_font_height = effective_font_height
             return
-        captured.x0 = min(captured.x0, run.x0)
-        captured.y0 = min(captured.y0, run.y0)
-        captured.x1 = max(captured.x1, run.x1)
-        captured.y1 = max(captured.y1, run.y1)
-        captured.advance_bbox = union_bbox(captured.advance_bbox, run.advance_bbox)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-        captured.baseline = extend_baseline(captured.baseline, run.baseline)
-        captured.confidence = min_optional_confidence(captured.confidence, run.confidence)
+        captured.absorb_extent(run)
 
 
 MATRIX_TOLERANCE = 0.1
@@ -302,7 +294,7 @@ class TextState(RecoveringTextState):
         tuple[int, tuple[float, ...], ColorRendering], tuple[object, tuple[float, ...] | None]
     ]
     capture_soft_masks: dict[
-        tuple[int, tuple[object, ...]], tuple[PdfSoftMask, GraphicsState, CapturedSoftMask | None]
+        tuple[int, tuple[object, ...]], tuple[PdfSoftMask, CapturedSoftMask | None]
     ]
     capture_mask_resources: dict[int, tuple[PdfSoftMask, PdfDict]]
     capture_active_mask_groups: set[int]
@@ -1321,13 +1313,13 @@ class TextState(RecoveringTextState):
         )
         cached = self.capture_soft_masks.get(key)
         if cached is not None:
-            return cached[2]
+            return cached[1]
         graphics = copy(self.graphics)
         graphics.ctm = mask.ctm
         graphics.soft_mask = None
         graphics.fill_opacity = graphics.stroke_opacity = 1.0
         graphics.blend_mode = None
-        self.capture_soft_masks[key] = (mask, graphics, None)
+        self.capture_soft_masks[key] = (mask, None)
         group_key = id(mask.group)
         if mask.subtype != "Alpha" or group_key in self.capture_active_mask_groups:
             return None
@@ -1347,7 +1339,7 @@ class TextState(RecoveringTextState):
             if not nested.text_boundaries:
                 return None
             result = CapturedSoftMask(nested.captured_program(), mask.transfer)
-            self.capture_soft_masks[key] = (mask, graphics, result)
+            self.capture_soft_masks[key] = (mask, result)
             return result
         except PdfParseError, TypeError, ValueError, ArithmeticError:
             return None

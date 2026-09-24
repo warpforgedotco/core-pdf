@@ -200,7 +200,6 @@ class PdfPage:
             link_type = None
             url = None
             if isinstance(action, dict):
-                action = action
                 raw_type = action.get("S")
                 link_type = resolver.resolve_name(raw_type)
                 url = link_target_direct(action, link_type)

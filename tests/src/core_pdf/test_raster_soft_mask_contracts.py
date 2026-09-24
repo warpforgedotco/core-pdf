@@ -229,15 +229,19 @@ def make_mask() -> CapturedSoftMask:
     return CapturedSoftMask(mask_program())
 
 
+def store_plane(cache, key, plane) -> None:
+    cache.store(key, (make_mask(), plane), 0 if plane is None else plane.nbytes)
+
+
 def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
     # A resolved plane covers the whole page in float32, so a page using many
     # distinct masks kept far more than it could afford: one corpus page held
     # 1,598 planes totalling 3,208MB, 91% of its peak resident set.
-    from core_pdf.impl.render.target import SoftMaskCache
+    from core_pdf.impl.render.target import ByteBudgetCache
 
-    cache = SoftMaskCache(budget=10_000_000)
+    cache = ByteBudgetCache(budget=10_000_000)
     for index in range(4):
-        cache.store(plane_key(index), make_mask(), make_plane(3))
+        store_plane(cache, plane_key(index), make_plane(3))
     assert cache.size <= cache.budget
     # The oldest went first, the newest are still there.
     assert cache.get(plane_key(0)) is None
@@ -245,10 +249,10 @@ def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
 
 
 def test_a_plane_larger_than_the_budget_is_not_cached_at_all() -> None:
-    from core_pdf.impl.render.target import SoftMaskCache
+    from core_pdf.impl.render.target import ByteBudgetCache
 
-    cache = SoftMaskCache(budget=1_000_000)
-    cache.store(plane_key(1), make_mask(), make_plane(5))
+    cache = ByteBudgetCache(budget=1_000_000)
+    store_plane(cache, plane_key(1), make_plane(5))
     # The plane is dropped rather than blowing the budget, and the key is left
     # absent with it. Keeping the key with a None plane would read back as
     # "this mask resolves to nothing", because resolve_soft_mask returns the
@@ -258,19 +262,19 @@ def test_a_plane_larger_than_the_budget_is_not_cached_at_all() -> None:
 
 
 def test_restoring_a_key_does_not_double_count_its_bytes() -> None:
-    from core_pdf.impl.render.target import SoftMaskCache
+    from core_pdf.impl.render.target import ByteBudgetCache
 
-    cache = SoftMaskCache(budget=10_000_000)
-    cache.store(plane_key(1), make_mask(), make_plane(2))
+    cache = ByteBudgetCache(budget=10_000_000)
+    store_plane(cache, plane_key(1), make_plane(2))
     first = cache.size
-    cache.store(plane_key(1), make_mask(), make_plane(2))
+    store_plane(cache, plane_key(1), make_plane(2))
     assert cache.size == first
 
 
 def test_a_cached_none_plane_costs_nothing() -> None:
-    from core_pdf.impl.render.target import SoftMaskCache
+    from core_pdf.impl.render.target import ByteBudgetCache
 
-    cache = SoftMaskCache(budget=1_000)
-    cache.store(plane_key(1), make_mask(), None)
+    cache = ByteBudgetCache(budget=1_000)
+    store_plane(cache, plane_key(1), None)
     assert cache.size == 0
     assert cache.get(plane_key(1)) is not None

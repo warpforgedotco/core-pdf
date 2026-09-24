@@ -25,15 +25,12 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.quality import analyze_text
 from core_pdf.impl.geometry import (
     bbox_union,
-    extend_baseline,
     interval_overlap,
     rect_tuple,
-    union_bbox,
 )
 from core_pdf.impl.glyphs import (
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
-    min_optional_confidence,
 )
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.text import collapse_ws
@@ -239,14 +236,8 @@ def apply_structure_actual_text(
             replacements[marker] = replacement
             output.append(replacement)
             continue
-        replacement.x0 = min(replacement.x0, run.x0)
-        replacement.y0 = min(replacement.y0, run.y0)
-        replacement.x1 = max(replacement.x1, run.x1)
-        replacement.y1 = max(replacement.y1, run.y1)
-        replacement.advance_bbox = union_bbox(replacement.advance_bbox, run.advance_bbox)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        replacement.absorb_extent(run)
         replacement.union_ink_bbox(run.ink_bbox)
-        replacement.baseline = extend_baseline(replacement.baseline, run.baseline)
-        replacement.confidence = min_optional_confidence(replacement.confidence, run.confidence)
         replacement.glyph_clusters += run.glyph_clusters
         replacement.visible = replacement.visible or run.visible
         replacement.inside_active_clip = replacement.inside_active_clip or run.inside_active_clip

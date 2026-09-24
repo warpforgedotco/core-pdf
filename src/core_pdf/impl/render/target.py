@@ -117,35 +117,49 @@ def prepared_image_bytes(prepared: PreparedImage | None) -> int:
     return prepared.raster.array.nbytes + (0 if soft_mask is None else soft_mask.array.nbytes)
 
 
-class PreparedImageCache:
+class ByteBudgetCache[K, V]:
+    """Values evicted oldest first once the bytes they hold exceed the budget."""
+
     __slots__ = ("budget", "entries", "size")
 
-    def __init__(self, budget: int = PREPARED_IMAGE_CACHE_BYTES) -> None:
+    def __init__(self, budget: int) -> None:
         self.budget = budget
-        self.entries: dict[int, tuple[ImageSource, PreparedImage | None, int]] = {}
+        self.entries: dict[K, tuple[V, int]] = {}
         self.size = 0
 
-    def store(self, source: ImageSource, prepared: PreparedImage | None) -> None:
-        size = prepared_image_bytes(prepared)
-        if size > self.budget:
-            return
+    def get(self, key: K) -> V | None:
+        entry = self.entries.get(key)
+        return None if entry is None else entry[0]
+
+    def store(self, key: K, value: V, size: int) -> None:
         entries = self.entries
+        previous = entries.pop(key, None)
+        if previous is not None:
+            self.size -= previous[1]
+        if size > self.budget:
+            # Too large to keep. Leave the key absent so the value is built
+            # again: a stored placeholder would read back as a real result.
+            return
         while entries and self.size + size > self.budget:
-            oldest = next(iter(entries))
-            self.size -= entries.pop(oldest)[2]
-        entries[id(source)] = (source, prepared, size)
+            self.size -= entries.pop(next(iter(entries)))[1]
+        entries[key] = (value, size)
         self.size += size
 
 
+# Keyed by id(source); the entry holds the source, so the id cannot be reused
+# while it is cached.
+type PreparedImageCache = ByteBudgetCache[int, tuple[ImageSource, PreparedImage | None]]
+
+
 def prepared_image(cache: PreparedImageCache, source: ImageSource) -> PreparedImage | None:
-    cached = cache.entries.get(id(source))
+    cached = cache.get(id(source))
     if cached is not None and cached[0] is source:
         return cached[1]
     try:
         prepared = prepare_image(source)
     except Exception:
         prepared = None
-    cache.store(source, prepared)
+    cache.store(id(source), (source, prepared), prepared_image_bytes(prepared))
     return prepared
 
 
@@ -331,38 +345,7 @@ type PixelBox = tuple[int, int, int, int]
 EMPTY_PIXEL_BOX: PixelBox = (0, 0, 0, 0)
 
 
-class SoftMaskCache:
-    """Resolved mask planes, evicted oldest first once the budget is spent."""
-
-    __slots__ = ("budget", "entries", "size")
-
-    def __init__(self, budget: int = SOFT_MASK_CACHE_BYTES) -> None:
-        self.budget = budget
-        self.entries: dict[SoftMaskKey, tuple[CapturedSoftMask, SoftMaskPlane | None, int]] = {}
-        self.size = 0
-
-    def get(self, key: SoftMaskKey) -> tuple[CapturedSoftMask, SoftMaskPlane | None] | None:
-        entry = self.entries.get(key)
-        return None if entry is None else (entry[0], entry[1])
-
-    def store(self, key: SoftMaskKey, mask: CapturedSoftMask, plane: SoftMaskPlane | None) -> None:
-        size = 0 if plane is None else plane.nbytes
-        entries = self.entries
-        previous = entries.pop(key, None)
-        if previous is not None:
-            self.size -= previous[2]
-        if size > self.budget:
-            # Too large to keep. Storing None here would be read back as "this
-            # mask resolves to nothing", and every later use of the mask would
-            # paint unmasked. Leave the key absent and resolve it again.
-            return
-        while entries and self.size + size > self.budget:
-            self.size -= entries.pop(next(iter(entries)))[2]
-        entries[key] = (mask, plane, size)
-        self.size += size
-
-    def __contains__(self, key: object) -> bool:
-        return key in self.entries
+type SoftMaskCache = ByteBudgetCache[SoftMaskKey, tuple[CapturedSoftMask, SoftMaskPlane | None]]
 
 
 def graphics_soft_mask(item: DisplayItem) -> CapturedSoftMask | None:
@@ -398,7 +381,7 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
         result = None
     finally:
         target.active_soft_masks.remove(key)
-    target.soft_mask_cache.store(key, mask, result)
+    target.soft_mask_cache.store(key, (mask, result), 0 if result is None else result.nbytes)
     return result
 
 
@@ -537,8 +520,8 @@ class RasterTarget:
         self.clip_floor = 0
         self.group_floor = 1
         self.scope_stack: list[tuple[int, list[int], int, int, int]] = []
-        self.soft_mask_cache = SoftMaskCache()
-        self.prepared_image_cache = PreparedImageCache()
+        self.soft_mask_cache: SoftMaskCache = ByteBudgetCache(SOFT_MASK_CACHE_BYTES)
+        self.prepared_image_cache: PreparedImageCache = ByteBudgetCache(PREPARED_IMAGE_CACHE_BYTES)
         self.tiling_cell_cache: TilingCellCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, ElementaryScratch] = {}
@@ -2930,7 +2913,6 @@ class RasterTarget:
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
         target_box_type = type(target_box)
         if target_box_type is list or target_box_type is tuple:
-            target_box = target_box
             if len(target_box) == 4:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                 try:
                     x0, y0, x1, y1 = (float(value) for value in target_box)  # type: ignore[union-attr]  # ty: ignore[not-iterable]
