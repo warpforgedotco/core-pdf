@@ -77,6 +77,7 @@ from core_pdf_cythonized import (
     blend_normal_alpha_array_numpy,
     composite_elementary_normal,
     composite_knockout_group,
+    composite_masked_normal,
     glyph_coverage_plane,
     rect_coverage_plane,
 )
@@ -299,6 +300,12 @@ def composite_masked_group(
             semantic_context=semantic_context,
             mask_alpha=mask_alpha,
         )
+    mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
+    if mode in {None, "normal"}:
+        # Every soft-masked group in the corpus lands here. The planes run to
+        # tens of thousands of pixels, and boolean-mask gathers and scatters
+        # around the arithmetic were almost all of what numpy spent on them.
+        return composite_masked_normal(destination, rendered, opacity, mask_alpha)
     effective_alpha = numpy.clip(
         numpy.rint(rendered[..., 3].astype(numpy.float64) * opacity * mask_alpha), 0, 255
     ).astype(numpy.uint8)
@@ -313,7 +320,7 @@ def composite_masked_group(
         colors[:, 1],
         colors[:, 2],
         effective_alpha[visible].astype(numpy.float64) / 255.0,
-        blend_mode.casefold() if isinstance(blend_mode, str) else None,
+        mode,
         semantic_context=semantic_context,
     )
     return effective_alpha

@@ -71,6 +71,7 @@ the wheel.
 | `glyph_coverage_plane` | the device-edge preparation in `core_pdf.impl.render.target.fill_path` (deleted) | 8.3us of numpy prep per call removed, against 3.3us of actual coverage; -10.6% / -7.5% on text-page render |
 | `ContentScanner` | the regular-expression fast path in `core_pdf.impl.capture.recovery.iter_content_operations` (deleted) | 1.1x to 2.1x on the tokenizer, by document; -16% on a vector-heavy page render, nothing on text pages |
 | `composite_elementary_normal` | the opaque-normal branch of `core_pdf.impl.render.target.composite_nonisolated_group` (deleted) | nine numpy passes over an 8-to-32-pixel plane removed; -4.2 to -4.8% on text-page render |
+| `composite_masked_normal` | the isolated normal branch of `core_pdf.impl.render.target.composite_masked_group` (deleted) | 16.6x on the kernel over 400 corpus planes (39.4 to 2.4 ns/px); every soft-masked group on test_3450 |
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render.target` (both deleted) | 7.06x on the fused wrapper |
 
 `glyph_coverage_plane` and `signed_area_coverage` share one accumulation core.
