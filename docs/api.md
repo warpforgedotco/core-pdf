@@ -38,6 +38,16 @@ facades follow their reference library's conventions: pypdf exposes raw boxes an
 `user_unit`, pdfplumber keeps its reference's raw geometry and raster sizing, and x-ray
 uses MuPDF-style physical coordinates.
 
+## Page programs and capture options
+
+`PdfPage.get_page_program(options=CaptureOptions(...))` returns the captured page
+program that extraction and rendering both consume. `CaptureOptions` selects what the
+capture records beyond the text: `ink_bounds` (glyph ink boxes), `text_runs` (layout
+runs and clusters), and `render_details` (glyph transforms and bitmap requests). All
+three default to on. A program captured with `render_details=False` describes the text
+correctly but cannot be drawn, and rendering it raises `ValueError` rather than
+producing a page without glyphs.
+
 ## Extraction adapters
 
 `DocumentAdapter` describes one method, `apply(document: Document) -> Document`.

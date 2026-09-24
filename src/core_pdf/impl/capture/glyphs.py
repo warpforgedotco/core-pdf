@@ -11,6 +11,7 @@ from core_pdf.impl.capture.glyph_boxes import (
     transformed_text_line,
 )
 from core_pdf.impl.capture.glyph_geometry import NO_BOX, vertical_glyph_geometry
+from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts.font_program import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.glyphs import (
@@ -152,9 +153,7 @@ def capture_glyphs(
     seqno: int,
     text_object_id: int,
     cluster_start: int,
-    capture_ink_bounds: bool = True,
-    capture_run_details: bool = True,
-    capture_render_details: bool = True,
+    options: CaptureOptions = DEFAULT_CAPTURE,
 ) -> GlyphCapture:
     """Lay out and record one show-text operation's glyphs.
 
@@ -184,10 +183,11 @@ def capture_glyphs(
     glyph_width = decoder.glyph_width
     glyph_bbox_for_code = decoder.glyph_bbox
     vertical_position = decoder.vertical_glyph_position
-    want_ink = capture_ink_bounds and not is_vertical
+    want_ink = options.ink_bounds and not is_vertical
     # The glyph transform and the bitmap request exist for the rasterizer.
     # A caller that only wants text says so, and neither is computed.
-    want_render = capture_render_details
+    want_render = options.render_details
+    want_runs = options.text_runs
 
     # ---- pass one: the decoder and the source text ------------------------
     kept: list[DecodedGlyph] = []
@@ -392,10 +392,10 @@ def capture_glyphs(
                 paint.graphics_soft_mask,
             )
             append_glyph(observation)
-            if capture_run_details:
+            if want_runs:
                 cluster_observations.append(observation)
                 add_run_geometry(advance_rect, ink, confidence)
-        if capture_run_details:
+        if want_runs:
             cluster = glyph_cluster_from_observations(
                 cluster_id, chunk_text, tuple(cluster_observations)
             )

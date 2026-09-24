@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.capture.program import EXTRACTION_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture.records import LayoutFormId
 from core_pdf.impl.extract.contracts import (
     FULL_PAGE_IMAGE_COVERAGE,
@@ -600,12 +600,11 @@ def capture_page(
     hidden_layers: frozenset[str] | None = None,
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
-    render_details: bool = False,
+    options: CaptureOptions = EXTRACTION_CAPTURE,
 ) -> PageAnalysis:
-    # Extraction never rasterizes: core composes blocks, not pixels. Skipping
-    # the rasterizer's per-glyph payload is the point of the flag. OCR asks for
-    # it back, because it renders the page it extracted.
-    capture_options: dict[str, object] = {"render_details": render_details}
+    # Extraction never rasterizes, so it defaults to EXTRACTION_CAPTURE. OCR
+    # asks for the render payload back, because it renders the page it extracted.
+    capture_options: dict[str, object] = {"options": options}
     if hidden_layers is not None:
         capture_options["hidden_layers"] = hidden_layers
     if fields is not None:

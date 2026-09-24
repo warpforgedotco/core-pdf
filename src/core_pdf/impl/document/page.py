@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from core_pdf.impl.capture.page import (
     capture_page_program,
 )
-from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.document.page_links import (
     link_target_direct,
@@ -319,14 +319,14 @@ class PdfPage:
         hidden_layers: frozenset[str] | None = None,
         fields: Iterable[RawFormField] | None = None,
         annotations: Iterable[RawAnnotation] | None = None,
-        render_details: bool = True,
+        options: CaptureOptions = DEFAULT_CAPTURE,
     ) -> PageProgram:
         return capture_page_program(
             self,
             hidden_layers=hidden_layers,
             fields=fields,
             annotations=annotations,
-            render_details=render_details,
+            options=options,
         )
 
     def collect_inherited_values(self) -> InheritedValueMap:

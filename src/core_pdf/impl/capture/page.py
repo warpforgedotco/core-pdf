@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from core_pdf.impl.capture.program import AppearanceProgram, PageProgram
+from core_pdf.impl.capture.program import (
+    DEFAULT_CAPTURE,
+    AppearanceProgram,
+    CaptureOptions,
+    PageProgram,
+)
 from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.document.records import RawAnnotation, RawFormField
 from core_pdf.impl.document.recovery.resolver import resolve_resource_dict
@@ -171,7 +176,7 @@ def capture_page_program(
     hidden_layers: frozenset[str] | None = None,
     fields: Iterable[RawFormField] | None = None,
     annotations: Iterable[RawAnnotation] | None = None,
-    render_details: bool = True,
+    options: CaptureOptions = DEFAULT_CAPTURE,
 ) -> PageProgram:
     state = TextState(
         page.document,
@@ -179,7 +184,7 @@ def capture_page_program(
             page.document.oc_hidden_layers() if hidden_layers is None else hidden_layers
         ),
         page_clip=page.effective_page_clip(),
-        capture_render_details=render_details,
+        options=options,
     )
     page.consume_contents(state)
     state.run_accumulator.flush()
@@ -190,5 +195,4 @@ def capture_page_program(
         appearances=capture_annotation_appearances(
             page, state, fields=fields, annotations=annotations
         ),
-        render_details=render_details,
     )

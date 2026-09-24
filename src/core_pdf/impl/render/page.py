@@ -338,12 +338,6 @@ def compose_page(
     annotations: Iterable[Any] | None = None,
     semantic_context: SemanticContext | None = None,
 ) -> RenderedPage:
-    if page_program is not None and not page_program.render_details:
-        # A program captured for text extraction has no glyph transforms and no
-        # bitmap requests, so every glyph would report no paint and the page
-        # would come out blank. Silently drawing nothing is the worst available
-        # answer, so this is checked before any work is done.
-        raise ValueError("compose_page requires a page program captured with render_details=True")
     options = options or RenderOptions()
     fields = tuple(fields) if fields is not None else None
     annotations = tuple(annotations) if annotations is not None else None

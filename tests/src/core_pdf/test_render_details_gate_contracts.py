@@ -3,55 +3,49 @@
 """Capture skips the rasterizer's per-glyph payload when the caller only wants
 text. The danger in that is silent: a program captured without it has no glyph
 transforms, so every glyph reports no paint and the page renders blank. These
-pin the two halves -- that the flag is recorded on the program, and that
-compose_page refuses such a program instead of drawing nothing."""
+pin the two halves -- that the options are recorded on the program, and that
+its commands, the only thing a renderer draws from, refuse such a program
+instead of drawing nothing."""
 
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.capture.program import (
+    EXTRACTION_CAPTURE,
+    CapturedProgram,
+    CaptureOptions,
+    PageProgram,
+)
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
 
 
 def test_a_program_defaults_to_carrying_render_detail() -> None:
-    assert PageProgram().render_details is True
+    assert PageProgram().options == CaptureOptions()
+    assert PageProgram().options.render_details is True
 
 
-class UnreadPage:
-    """A page whose every member fails, so reading any of them fails the test."""
-
-    width = height = 0.0
-    media_box = None
-
-    def get_page_program(self, *, fields=None, annotations=None):
-        raise AssertionError("read the page")
-
-    def get_fields(self):
-        raise AssertionError("read the page")
-
-    def get_annotations(self):
-        raise AssertionError("read the page")
-
-    def resolve_transparency_group_alpha(self):
-        raise AssertionError("read the page")
-
-
-def test_compose_page_refuses_a_text_only_program() -> None:
+def test_a_text_only_program_refuses_to_give_commands() -> None:
     with pytest.raises(ValueError, match="render_details=True"):
-        # A page-shaped stub: the check runs before anything is read off it,
-        # which is the point of putting it first.
-        compose_page(UnreadPage(), RenderOptions(), page_program=PageProgram(render_details=False))
+        _ = PageProgram(CapturedProgram(options=EXTRACTION_CAPTURE)).commands
+
+
+def test_compose_page_refuses_a_text_only_program(text_pdf_bytes: bytes) -> None:
+    with PdfDocument(text_pdf_bytes) as document:
+        page = document.pages[0]
+        program = page.get_page_program(options=EXTRACTION_CAPTURE)
+        with pytest.raises(ValueError, match="render_details=True"):
+            compose_page(page, RenderOptions(), page_program=program)
 
 
 def test_extraction_captures_without_render_detail(text_pdf_bytes: bytes) -> None:
     with PdfDocument(text_pdf_bytes) as document:
         page = document.pages[0]
-        text_only = page.get_page_program(render_details=False)
+        text_only = page.get_page_program(options=EXTRACTION_CAPTURE)
         full = page.get_page_program()
 
-    assert text_only.render_details is False
-    assert full.render_details is True
+    assert text_only.options.render_details is False
+    assert full.options.render_details is True
     # Same text, same boxes: only the rasterizer's payload differs.
     assert [glyph.text for glyph in text_only.glyphs] == [glyph.text for glyph in full.glyphs]
     assert [glyph.advance_bbox for glyph in text_only.glyphs] == [
@@ -80,7 +74,7 @@ def test_a_text_only_capture_splits_glyphs_the_same_way(text_pdf_bytes: bytes) -
     """
     with PdfDocument(text_pdf_bytes) as document:
         page = document.pages[0]
-        text_only = page.get_page_program(render_details=False)
+        text_only = page.get_page_program(options=EXTRACTION_CAPTURE)
         full = page.get_page_program()
 
     assert len(text_only.glyphs) == len(full.glyphs)

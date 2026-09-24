@@ -18,7 +18,7 @@ from core_pdf.impl.capture.glyphs import (
     TextGeometry,
     capture_glyphs,
 )
-from core_pdf.impl.capture.program import CapturedProgram
+from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CapturedProgram, CaptureOptions
 from core_pdf.impl.capture.records import (
     CapturedDrawing,
     CapturedInlineImage,
@@ -269,9 +269,7 @@ class TextState(RecoveringTextState):
     inline_images: list[CapturedInlineImage]
     hidden_layers: frozenset[str]
     page_clip: Rectangle | None
-    capture_ink_bounds: bool
-    capture_text_runs: bool
-    capture_render_details: bool
+    options: CaptureOptions
     clip_bbox: Rectangle | None
     layout_form_bbox: Rectangle | None
     layout_form_id: LayoutFormId
@@ -312,9 +310,7 @@ class TextState(RecoveringTextState):
         hidden_layers: frozenset[str] = frozenset(),
         page_clip: Rectangle | None = None,
         *,
-        capture_ink_bounds: bool = True,
-        capture_text_runs: bool = True,
-        capture_render_details: bool = True,
+        options: CaptureOptions = DEFAULT_CAPTURE,
     ):
         self.document = document
         self.name_resolver = document.resolver
@@ -326,9 +322,7 @@ class TextState(RecoveringTextState):
         self.inline_images = []
         self.hidden_layers = hidden_layers
         self.page_clip = page_clip
-        self.capture_ink_bounds = capture_ink_bounds
-        self.capture_text_runs = capture_text_runs
-        self.capture_render_details = capture_render_details
+        self.options = options
         self.clip_bbox = None
         self.layout_form_bbox = None
         self.layout_form_id = None
@@ -415,6 +409,7 @@ class TextState(RecoveringTextState):
             inline_images=tuple(self.inline_images[inline_images:]),
             lines=tuple(self.lines[lines:]),
             text_boundaries=tuple(self.text_boundaries[text_boundaries:]),
+            options=self.options,
         )
 
     def resolve_soft_mask(self, value: object) -> PdfSoftMask | None:
@@ -573,9 +568,7 @@ class TextState(RecoveringTextState):
             seqno=self.sequence,
             text_object_id=self.text_object_id,
             cluster_start=self.glyph_cluster_count,
-            capture_ink_bounds=self.capture_ink_bounds,
-            capture_run_details=self.capture_text_runs,
-            capture_render_details=self.capture_render_details,
+            options=self.options,
         )
 
     def emit_actual_text_span(self, entry: MarkedContentEntry) -> None:
@@ -683,7 +676,7 @@ class TextState(RecoveringTextState):
             )
             self.glyphs.extend(captured.glyphs)
             self.glyph_cluster_count += captured.cluster_count
-            if not self.capture_text_runs:
+            if not self.options.text_runs:
                 self.sequence = seqno + 1
                 return
 
@@ -1226,9 +1219,7 @@ class TextState(RecoveringTextState):
         nested = TextState(
             self.document,
             hidden_layers=self.hidden_layers,
-            capture_ink_bounds=self.capture_ink_bounds,
-            capture_text_runs=self.capture_text_runs,
-            capture_render_details=self.capture_render_details,
+            options=self.options,
         )
         nested.parsed_soft_masks = self.parsed_soft_masks
         nested.capture_soft_masks = self.capture_soft_masks
@@ -1299,6 +1290,7 @@ class TextState(RecoveringTextState):
                     drawings=tuple(nested.drawings),
                     inline_images=tuple(nested.inline_images),
                     text_boundaries=tuple(nested.text_boundaries),
+                    options=nested.options,
                 ),
             )
         self.capture_patterns[key] = (pattern, result)

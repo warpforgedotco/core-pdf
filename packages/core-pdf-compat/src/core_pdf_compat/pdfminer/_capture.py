@@ -5,7 +5,7 @@ from typing import Any
 
 from core_pdf import PdfPage
 from core_pdf.impl.capture.glyphs import GlyphPaint
-from core_pdf.impl.capture.program import CapturedProgram
+from core_pdf.impl.capture.program import CapturedProgram, CaptureOptions
 from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.capture.recovery import CaptureRecovery
 from core_pdf.impl.document.recovery.lexer import PdfLexer
@@ -64,7 +64,7 @@ class PdfminerRecovery(CaptureRecovery):
 class PdfminerTextState(TextState):
     def __init__(self, document: Any, *, page_clip: Rectangle | None = None) -> None:
         super().__init__(
-            document, page_clip=page_clip, capture_ink_bounds=False, capture_text_runs=False
+            document, page_clip=page_clip, options=CaptureOptions(ink_bounds=False, text_runs=False)
         )
         self.cursor = 0.0
         self.frame_cursors: dict[int, float] = {}
@@ -168,6 +168,7 @@ def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
         inline_images=tuple(state.inline_images),
         lines=tuple(state.lines),
         text_boundaries=tuple(state.text_boundaries),
+        options=state.options,
     )
 
 

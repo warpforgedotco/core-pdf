@@ -22,6 +22,27 @@ PageCommand: TypeAlias = (
 
 
 @dataclass(frozen=True, slots=True)
+class CaptureOptions:
+    """What a capture records beyond the text itself.
+
+    ink_bounds: each horizontal glyph's ink box, from the font's glyph bbox.
+    text_runs: the layout runs, clusters and run geometry extraction builds on.
+    render_details: the rasterizer's per-glyph payload -- glyph transforms and
+    bitmap requests. A program captured without it describes the page's text
+    correctly but cannot be drawn.
+    """
+
+    ink_bounds: bool = True
+    text_runs: bool = True
+    render_details: bool = True
+
+
+DEFAULT_CAPTURE = CaptureOptions()
+# Extraction composes blocks, not pixels, so it skips the render payload.
+EXTRACTION_CAPTURE = CaptureOptions(render_details=False)
+
+
+@dataclass(frozen=True, slots=True)
 class CapturedProgram:
     runs: tuple[TextRun, ...] = ()
     glyphs: tuple[GlyphObservation, ...] = ()
@@ -29,7 +50,10 @@ class CapturedProgram:
     inline_images: tuple[CapturedInlineImage, ...] = ()
     lines: tuple[CapturedLine, ...] = ()
     text_boundaries: tuple[CapturedTextBoundary, ...] = field(default=(), kw_only=True)
-    # Derived from the six above, and built only when something asks for it.
+    # What the capture recorded. commands refuses a program captured without
+    # render details rather than draw a page with no glyphs on it.
+    options: CaptureOptions = field(default=DEFAULT_CAPTURE, kw_only=True)
+    # Derived from the six products above, and built only when something asks for it.
     # init=False keeps it out of __init__, __match_args__ and copy.replace,
     # which is what the hand-written __replace__ arranged by listing the other
     # six explicitly. compare=False because it is a function of them.
@@ -54,6 +78,14 @@ class CapturedProgram:
     def commands(self) -> tuple[PageCommand, ...]:
         commands = self._commands
         if commands is None:
+            if not self.options.render_details:
+                # Without glyph transforms and bitmap requests every glyph
+                # reports no paint, so the page would draw with no text on it.
+                # Refusing is better than silently drawing that.
+                raise ValueError(
+                    "page program was captured without render details and cannot be drawn; "
+                    "capture it with CaptureOptions(render_details=True)"
+                )
             ordered: list[PageCommand] = [*self.text_boundaries, *self.runs]
             ordered.extend(glyph for glyph in self.glyphs if glyph.has_paint)
             ordered.extend(self.drawings)
@@ -76,11 +108,6 @@ class AppearanceProgram:
 class PageProgram:
     body: CapturedProgram = field(default_factory=CapturedProgram)
     appearances: tuple[AppearanceProgram, ...] = ()
-    # False when the capture skipped the rasterizer's per-glyph payload -- the
-    # glyph transforms and the bitmap requests. Such a program describes the
-    # page's text correctly but cannot be drawn, and compose_page refuses it
-    # rather than rendering a page with no glyphs on it.
-    render_details: bool = field(default=True, kw_only=True)
     # Concatenations of body and appearances, rebuilt by __post_init__.
     runs: tuple[TextRun, ...] = field(init=False)
     glyphs: tuple[GlyphObservation, ...] = field(init=False)
@@ -121,6 +148,11 @@ class PageProgram:
         set_derived("text_boundaries", tuple(merge(p.text_boundaries for p in programs)))
 
     @property
+    def options(self) -> CaptureOptions:
+        # One TextState captures the body and every appearance, so they share it.
+        return self.body.options
+
+    @property
     def commands(self) -> tuple[PageCommand, ...]:
         commands = self._commands
         if commands is None:
@@ -134,7 +166,10 @@ class PageProgram:
 
 
 __all__ = (
+    "DEFAULT_CAPTURE",
+    "EXTRACTION_CAPTURE",
     "AppearanceProgram",
+    "CaptureOptions",
     "CapturedProgram",
     "PageCommand",
     "PageProgram",

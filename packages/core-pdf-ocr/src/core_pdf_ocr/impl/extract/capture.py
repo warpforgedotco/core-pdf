@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine
 from core_pdf.impl.extract.capture import (
     STRUCTURE_UNSET,
@@ -524,7 +524,7 @@ def capture_page(
     hidden_layers: frozenset[str] | None = None,
     fields: tuple[Any, ...] | None = None,
     annotations: tuple[Any, ...] | None = None,
-    render_details: bool = True,
+    options: CaptureOptions = DEFAULT_CAPTURE,
 ) -> PageAnalysis:
     return enrich_capture(
         native_capture_page(
@@ -536,7 +536,7 @@ def capture_page(
             # OCR rasterizes the page it just captured -- OcrSession hands this
             # very program to compose_page -- so it defaults to keeping the
             # per-glyph payload that core's own extraction skips. A caller that
-            # overrides this gets compose_page's error, not a blank render.
-            render_details=render_details,
+            # overrides this gets PageProgram.commands' error, not a blank render.
+            options=options,
         )
     )

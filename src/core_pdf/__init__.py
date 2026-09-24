@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from core_pdf.impl import install_lazy_module_exports
 
 if TYPE_CHECKING:
+    from core_pdf.impl.capture.program import CaptureOptions
     from core_pdf.impl.document.document import DocumentAdapter, PdfDocument
     from core_pdf.impl.document.page import PdfPage
     from core_pdf.impl.exceptions import (
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
         TextWord,
     )
 EXPORTS = {
+    "CaptureOptions": ("core_pdf.impl.capture.program", "CaptureOptions"),
     "DocumentAdapter": ("core_pdf.impl.document.document", "DocumentAdapter"),
     "Document": ("core_pdf.impl.output.model", "Document"),
     "PageSelection": ("core_pdf.impl.page_selection", "PageSelection"),
@@ -92,6 +94,7 @@ install_lazy_module_exports(globals(), EXPORTS)
 
 
 __all__ = (
+    "CaptureOptions",
     "DocumentAdapter",
     "Document",
     "PageSelection",
