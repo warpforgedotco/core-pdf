@@ -109,7 +109,4 @@ def convert_cmyk(
 
 
 def image_dimension(image_dict: ImageDict, key: str) -> int:
-    value = image_dict.get(key)
-    if type(value) is bool:
-        return 0
-    return parse_int(value, 0) or 0
+    return parse_int(image_dict.get(key), 0)

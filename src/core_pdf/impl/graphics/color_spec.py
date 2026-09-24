@@ -88,7 +88,7 @@ def recover_image_bits_per_component(image_dict: object) -> int:
     dictionary = image_dict if isinstance(image_dict, dict) else {}
     raw = dictionary.get("BitsPerComponent", 8)
     value = parse_int(raw, None)
-    if type(raw) is bool or value is None or value <= 0:
+    if value is None or value <= 0:
         raise ValueError("invalid image bits-per-component")
     return value
 
@@ -180,7 +180,7 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                 source = stream.dictionary if isinstance(stream, PdfStream) else stream
                 raw_count = source.get("N", 3)
                 count = parse_int(raw_count, None)
-                if type(raw_count) is bool or count is None or count <= 0:
+                if count is None or count <= 0:
                     raise ValueError("invalid ICCBased color space")
                 profile = stream.data if isinstance(stream, PdfStream) else None
                 alternate = (

@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Self
 from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.fonts.cmap_resources import resolve_cmap_decoder
-from core_pdf.impl.fonts.metrics import FONT_DATA
+from core_pdf.impl.fonts.metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
@@ -15,8 +15,6 @@ from core_pdf_spec.s_09_fonts.data.base_encodings import (
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-
-from .._shared import LIGATURES
 
 
 def legacy_glyph_name_text(name: str) -> str:
@@ -403,8 +401,10 @@ def pdfminer_ligature_overrides(
         encoded_ligature = (
             base_table[glyph.char_code] if 0 <= glyph.char_code < len(base_table) else ""
         )
-        expected_ligature = LIGATURES.get(str(glyph_name) if glyph_name else "", encoded_ligature)
-        if expected_ligature not in LIGATURES.values():
+        expected_ligature = LIGATURE_TEXT_TO_CHAR.get(
+            str(glyph_name) if glyph_name else "", encoded_ligature
+        )
+        if expected_ligature not in LIGATURE_TEXT_TO_CHAR.values():
             continue
         ligature_cluster: tuple[Any, ...] | None = None
         legacy_text: str | None = None
@@ -413,7 +413,7 @@ def pdfminer_ligature_overrides(
             if len(candidate) != cluster_size:
                 continue
             decomposition = "".join(item.text for item in candidate)
-            candidate_text = LIGATURES.get(decomposition)
+            candidate_text = LIGATURE_TEXT_TO_CHAR.get(decomposition)
             if candidate_text is None or candidate_text != expected_ligature:
                 continue
             if any(

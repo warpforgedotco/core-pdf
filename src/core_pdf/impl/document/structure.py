@@ -90,14 +90,6 @@ def find_all(
         stack.extend(child for child in reversed(list(el)) if isinstance(child, StructureElement))
 
 
-def literal_name(value: Any) -> str | None:
-    if isinstance(value, PdfReference):
-        return None
-    if value is None:
-        return None
-    return recover_pdf_name(value)
-
-
 def structure_key_name(key: Any) -> str:
     return recover_pdf_name(key) or str(key)
 
@@ -307,7 +299,7 @@ class StructureElement(StructureNode):
             return None
         if isinstance(classes, list) and classes:
             classes = classes[-2] if len(classes) >= 2 else classes[-1]
-        name = literal_name(classes)
+        name = recover_pdf_name(classes)
         if name is None:
             raise ValueError("invalid structure class name")
         self.class_name_value = name

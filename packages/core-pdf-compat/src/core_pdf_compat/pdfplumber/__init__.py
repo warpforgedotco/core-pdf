@@ -20,9 +20,11 @@ from core_pdf.impl.model.geometry import (
 from core_pdf.impl.output.model import Table as StructuredTable
 from core_pdf.impl.output.model import TableCell
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.render.paths import intersect_box
+from core_pdf.impl.runtime.codec_backends import png_chunk
 from core_pdf.impl.types import DrawingRecord, ImageRecord, PdfReference
 
-from .._shared import ClosingMixin, PdfInput, encode_png, png_chunk
+from .._shared import ClosingMixin, PdfInput, encode_png
 from .exceptions import PdfminerException
 
 frozen_setattr = object.__setattr__
@@ -1098,15 +1100,10 @@ class Page:
         for top, bottom in zip(horizontal, horizontal[1:]):
             grid_row: list[_CompatCell] = []
             for left, right in zip(vertical, vertical[1:]):
-                bbox = (
-                    max(left, self.bbox[0]),
-                    max(top, self.bbox[1]),
-                    min(right, self.bbox[2]),
-                    min(bottom, self.bbox[3]),
-                )
-                if bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
+                cell_bbox = intersect_box((left, top, right, bottom), self.bbox)
+                if cell_bbox is None:
                     continue
-                grid_row.append(_CompatCell(bbox, cell_text(bbox)))
+                grid_row.append(_CompatCell(cell_bbox, cell_text(cell_bbox)))
             grid_rows.append(grid_row)
         if not grid_rows:
             return []

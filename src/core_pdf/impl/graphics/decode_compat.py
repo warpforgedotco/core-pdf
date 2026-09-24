@@ -140,7 +140,7 @@ class FilterParams(PdfFilterParams, ReplaceFields, ReprFields):
             if name == "DamagedRowsBeforeError" and type(value) is bool:
                 normalized[name] = int(value)
                 continue
-            if type(value) is bool or not isinstance(value, (int, bytes, str)):
+            if not isinstance(value, (int, bytes, str)):
                 raise ValueError(f"invalid DecodeParms {name}")
             parsed = parse_int(value, None)
             if parsed is None:
