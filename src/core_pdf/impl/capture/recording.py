@@ -42,20 +42,20 @@ from core_pdf.impl.capture.tolerant_state import COLOR_CACHE_LIMIT, RecoveringTe
 from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts.ligatures import detect_ligature_overrides
-from core_pdf.impl.graphics.color import color_operands_to_srgb
-from core_pdf.impl.graphics.color_spec import raw_color_space_paints
-from core_pdf.impl.graphics.soft_masks import image_overrides_graphics_soft_mask
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl.geometry import (
     extend_baseline,
     intersect_bbox,
     transform_bbox,
     union_bbox,
 )
-from core_pdf.impl.model.glyphs import GlyphObservation, min_optional_confidence
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.model.text import normalize_extracted_text
+from core_pdf.impl.glyphs import GlyphObservation, min_optional_confidence
+from core_pdf.impl.graphics.color import color_operands_to_srgb
+from core_pdf.impl.graphics.color_spec import raw_color_space_paints
+from core_pdf.impl.graphics.soft_masks import image_overrides_graphics_soft_mask
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.runtime.scalars import parse_float_strict, parse_int_strict
+from core_pdf.impl.runs import TextRun
+from core_pdf.impl.scalars import parse_float_strict, parse_int_strict
+from core_pdf.impl.text import normalize_extracted_text
 from core_pdf.impl.types import (
     PdfName,
     Rectangle,

@@ -10,7 +10,6 @@ from html import escape
 from io import StringIO
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from core_pdf.impl.model.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.output.model import (
     Annotation,
     Block,
@@ -31,6 +30,7 @@ from core_pdf.impl.output.model import (
     TableRowBand,
     TextLine,
 )
+from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 
 LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•▪◦]|(?:\d+|[^\W_])[.)])[ \t]*")
 

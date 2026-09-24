@@ -10,16 +10,22 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl.array_views import (
+    ByteBuffer,
+    UInt8Array,
+    uint8_image_view,
+    uint8_view,
+)
 from core_pdf.impl.capture.records import (
     CapturedPath,
     CapturedSoftMask,
     ShadingPattern,
     TilingPattern,
 )
+from core_pdf.impl.geometry import normalize_rect, points_bbox, rect_tuple
 from core_pdf.impl.graphics.images import PreparedImage, prepare_image
 from core_pdf.impl.graphics.shading import PreparedShading, prepare_shading
 from core_pdf.impl.graphics.soft_masks import image_color_key_mask_is_shape
-from core_pdf.impl.model.geometry import normalize_rect, points_bbox, rect_tuple
 from core_pdf.impl.render.blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     blend_context,
@@ -65,13 +71,7 @@ from core_pdf.impl.render.patterns import (
     tiling_cell,
     tiling_pattern_uses_normal_blends,
 )
-from core_pdf.impl.runtime.array_views import (
-    ByteBuffer,
-    UInt8Array,
-    uint8_image_view,
-    uint8_view,
-)
-from core_pdf.impl.runtime.scalars import parse_int
+from core_pdf.impl.scalars import parse_int
 from core_pdf_cythonized import (
     blend_normal_alpha_array_numpy,
     composite_elementary_normal,

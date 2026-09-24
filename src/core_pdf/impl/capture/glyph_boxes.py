@@ -8,7 +8,7 @@ the ink box its sibling used to compute is the compiled kernel's job now.
 
 from __future__ import annotations
 
-from core_pdf.impl.model.geometry import transform_bbox
+from core_pdf.impl.geometry import transform_bbox
 from core_pdf.impl.types import Rectangle
 
 TextBasis = tuple[float, float, float, float, float, float]

@@ -1,7 +1,7 @@
 import pytest
 
 from core_pdf.impl.layout.reconstruction import reconstruct_layout_line_text
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.runs import TextRun
 
 
 def run(text, x=0, y=0, width=10, rotation=0):

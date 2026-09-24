@@ -6,8 +6,8 @@ from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, TypeAlias, overload
 
 from core_pdf.impl.document.recovery.trees import iter_number_tree_items
-from core_pdf.impl.model.pdf_values import coerce_value
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import coerce_value
 from core_pdf.impl.types import MISSING, PdfReference
 from core_pdf_spec.exceptions import PdfError
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject

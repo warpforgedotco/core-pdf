@@ -47,12 +47,12 @@ from core_pdf.impl.exceptions import (
     PdfSourceError,
     PdfUnsupportedError,
 )
+from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.selection import extract_document
 from core_pdf.impl.fonts.fallback import RasterFontRepository
-from core_pdf.impl.model.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.output.model import Document as StructuredDocument
+from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf.impl.types import (
     ImageRecord,
     PageScoped,

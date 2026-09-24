@@ -1,7 +1,7 @@
 import pytest
 
 from core_pdf.impl.layout import text_rules as rules
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.runs import TextRun
 
 
 def make_run(

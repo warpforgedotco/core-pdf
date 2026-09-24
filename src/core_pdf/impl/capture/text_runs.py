@@ -6,9 +6,9 @@ from collections import deque
 from itertools import chain
 from typing import Literal, TypeAlias
 
-from core_pdf.impl.model.glyphs import GlyphClusterLike
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.model.text import word_gap_threshold
+from core_pdf.impl.glyphs import GlyphClusterLike
+from core_pdf.impl.runs import TextRun
+from core_pdf.impl.text import word_gap_threshold
 
 # The three run edges a merge can advance. try_append picks one per
 # direction; nothing else is reachable.

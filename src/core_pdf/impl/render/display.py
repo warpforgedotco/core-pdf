@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
+from core_pdf.impl.geometry import rect_tuple, union_bbox
 from core_pdf.impl.graphics.color_spec import describe_color_space
 from core_pdf.impl.graphics.filter_registry import declared_filter_names
-from core_pdf.impl.model.geometry import rect_tuple, union_bbox
 from core_pdf.impl.render.model import (
     DisplayItem,
     DisplayListItem,
@@ -15,7 +15,7 @@ from core_pdf.impl.render.model import (
     PathPaintItem,
     PathPaintKind,
 )
-from core_pdf.impl.runtime.scalars import parse_int
+from core_pdf.impl.scalars import parse_int
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 

@@ -61,7 +61,7 @@ from core_pdf.impl.fonts.widths import (
     get_descendant,
     parse_font_widths,
 )
-from core_pdf.impl.model.glyphs import UnicodeSource
+from core_pdf.impl.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import (
     PdfString,

@@ -23,7 +23,9 @@ from core_pdf.impl.document.records import RawAnnotation, RawLink
 from core_pdf.impl.document.recovery.resolver import resolve_resource_dict
 from core_pdf.impl.document.structure import PageStructure
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.pipeline import extract_page
+from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.graphics.images import decode_image
 from core_pdf.impl.layout.lines import (
     LayoutGeometrySummary,
@@ -31,12 +33,10 @@ from core_pdf.impl.layout.lines import (
     page_layout_geometry_issues,
     page_layout_geometry_summary,
 )
-from core_pdf.impl.model.geometry import rect_tuple
 from core_pdf.impl.output.model import Page as StructuredPage
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
-from core_pdf.impl.runtime.execution import ExtractionScope
-from core_pdf.impl.runtime.scalars import clamp01
+from core_pdf.impl.scalars import clamp01
 from core_pdf.impl.types import (
     DrawingRecord,
     ImageMetadata,
@@ -69,7 +69,7 @@ PAGE_INHERITED_KEYS = (
 if TYPE_CHECKING:
     from core_pdf.impl.document.document import PdfDocument
     from core_pdf.impl.document.records import RawFormField
-    from core_pdf.impl.model.runs import TextRun
+    from core_pdf.impl.runs import TextRun
 
 
 class PdfPage:

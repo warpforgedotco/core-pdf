@@ -4,8 +4,8 @@ import struct
 import zlib
 from typing import Any
 
-from core_pdf.impl.model.geometry import rect_tuple
-from core_pdf.impl.runtime.codec_backends import PNG_SIGNATURE, png_chunk
+from core_pdf.impl.geometry import rect_tuple
+from core_pdf.impl.graphics.codec_backends import PNG_SIGNATURE, png_chunk
 
 BBox = tuple[float, float, float, float]
 PdfInput = Any

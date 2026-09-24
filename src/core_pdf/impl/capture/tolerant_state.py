@@ -14,7 +14,7 @@ from core_pdf.impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl.graphics.color_spec import parse_color_space
 from core_pdf.impl.graphics.functions import compile_pdf_function
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.runtime.scalars import clamp01
+from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import PatternPaint, ShadingPattern, TilingPattern

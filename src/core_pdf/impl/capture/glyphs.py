@@ -13,7 +13,7 @@ from core_pdf.impl.capture.glyph_boxes import (
 from core_pdf.impl.capture.glyph_geometry import NO_BOX, vertical_glyph_geometry
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts.font_program import LEGITIMATE_MULTI_CHAR_GLYPHS
-from core_pdf.impl.model.glyphs import (
+from core_pdf.impl.glyphs import (
     GlyphClusterLike,
     GlyphObservation,
     glyph_cluster_from_observations,

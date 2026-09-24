@@ -5,7 +5,7 @@ from typing import Any
 
 from core_pdf import PdfPage
 from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.model.geometry import bbox_union, overlap_ratio_of
+from core_pdf.impl.geometry import bbox_union, overlap_ratio_of
 
 from ._capture import (
     pdfminer_page_program,

@@ -10,9 +10,9 @@ from core_pdf.impl.graphics.icc_profiles import (
     IccProfileError,
     parse_icc_transform,
 )
-from core_pdf.impl.model.pdf_values import coerce_to_bytes
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.runtime.scalars import parse_float, parse_int
+from core_pdf.impl.pdf_values import coerce_to_bytes
+from core_pdf.impl.scalars import parse_float, parse_int
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream

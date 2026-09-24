@@ -6,13 +6,13 @@ from copy import replace
 from itertools import islice
 from typing import TYPE_CHECKING, ClassVar
 
-from core_pdf.impl.model.geometry import bbox_union, finite_rect, overlap_ratio_of
-from core_pdf.impl.model.glyphs import glyph_text_has_unsupported_codepoint
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.geometry import bbox_union, finite_rect, overlap_ratio_of
+from core_pdf.impl.glyphs import glyph_text_has_unsupported_codepoint
+from core_pdf.impl.runs import TextRun
 from core_pdf.impl.types import Record, Rectangle, TextWord, frozen_setattr
 
 if TYPE_CHECKING:
-    from core_pdf.impl.model.runs import (
+    from core_pdf.impl.runs import (
         LayoutLineText,
         LayoutLineTextSegment,
     )

@@ -8,6 +8,7 @@ from typing import Any, ClassVar
 
 import numpy
 
+from core_pdf.impl.array_views import readonly
 from core_pdf.impl.graphics.color import (
     convert_cmyk,
     convert_image_data,
@@ -35,8 +36,7 @@ from core_pdf.impl.graphics.stream_decoding import (
     decode_stream_data,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.runtime.array_views import readonly
-from core_pdf.impl.runtime.scalars import parse_int
+from core_pdf.impl.scalars import parse_int
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_08_graphics.color_kernels import (

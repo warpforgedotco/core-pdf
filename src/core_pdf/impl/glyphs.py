@@ -4,7 +4,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, ClassVar, Self, TypeAlias
 
-from core_pdf.impl.model.geometry import bbox_union
+from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.types import Rectangle
 
 Matrix6 = tuple[float, float, float, float, float, float]

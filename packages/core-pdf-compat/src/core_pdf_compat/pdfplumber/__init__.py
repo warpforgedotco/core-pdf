@@ -12,16 +12,16 @@ from types import SimpleNamespace
 from typing import Any, ClassVar, NoReturn, Self, TypeAlias
 
 from core_pdf import PdfDocument
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl.geometry import (
     bbox_contains,
     bbox_union,
     flip_rect_vertical,
 )
+from core_pdf.impl.graphics.codec_backends import png_chunk
 from core_pdf.impl.output.model import Table as StructuredTable
 from core_pdf.impl.output.model import TableCell
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.render.paths import intersect_box
-from core_pdf.impl.runtime.codec_backends import png_chunk
 from core_pdf.impl.types import DrawingRecord, ImageRecord, PdfReference
 
 from .._shared import ClosingMixin, PdfInput, encode_png

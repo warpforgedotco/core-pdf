@@ -8,7 +8,7 @@ from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf.impl.fonts.metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
-from core_pdf.impl.model.geometry import bbox_union
+from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,

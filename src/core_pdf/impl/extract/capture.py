@@ -23,20 +23,20 @@ from core_pdf.impl.extract.contracts import (
     TextQualityStats,
 )
 from core_pdf.impl.extract.quality import analyze_text
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl.geometry import (
     bbox_union,
     extend_baseline,
     interval_overlap,
     rect_tuple,
     union_bbox,
 )
-from core_pdf.impl.model.glyphs import (
+from core_pdf.impl.glyphs import (
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
     min_optional_confidence,
 )
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.model.text import collapse_ws
+from core_pdf.impl.runs import TextRun
+from core_pdf.impl.text import collapse_ws
 
 
 class StructureUnset:

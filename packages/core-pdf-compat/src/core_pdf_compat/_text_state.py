@@ -4,7 +4,7 @@ import math
 from collections.abc import Sequence
 
 from core_pdf.impl.fonts.helpers import build_decode_table
-from core_pdf.impl.model.text import is_neutral_character, is_rtl_character
+from core_pdf.impl.text import is_neutral_character, is_rtl_character
 from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 
 PREDEFINED_ENCODING_CODECS = {

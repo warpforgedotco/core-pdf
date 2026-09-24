@@ -10,14 +10,14 @@ from typing import ClassVar
 
 import numpy
 
+from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl.geometry import (
     bbox_union,
     horizontal_overlap_ratio,
     interval_overlap,
     union_bbox,
 )
-from core_pdf.impl.model.text import collapse_ws
 from core_pdf.impl.output.model import (
     Table,
     TableAssociatedText,
@@ -25,7 +25,7 @@ from core_pdf.impl.output.model import (
     TableColumnBand,
     TableRowBand,
 )
-from core_pdf.impl.runtime.array_views import finite_median
+from core_pdf.impl.text import collapse_ws
 from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
 
 TABLE_MERGE_GAP = 36.0

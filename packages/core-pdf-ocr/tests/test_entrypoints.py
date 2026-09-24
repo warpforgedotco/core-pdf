@@ -7,8 +7,8 @@ import pytest
 
 from core_pdf.impl.capture.program import CapturedProgram, PageProgram
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSubpath
+from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr import PdfDocument, cli
 from core_pdf_ocr.impl.extract import pipeline
 from core_pdf_ocr.impl.extract.contracts import (

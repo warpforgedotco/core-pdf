@@ -245,7 +245,7 @@ def test_numeric_hidden_layer_verification_requires_clean_mapped_scan_evidence(
 def test_template_text_promotion_preserves_program_drawings_and_updates_evidence(
     ocr_capture: PageAnalysis,
 ) -> None:
-    from core_pdf.impl.model.runs import TextRun
+    from core_pdf.impl.runs import TextRun
     from core_pdf_ocr.impl.extract.ocr.newstroke import NewstrokeDecode
 
     run = TextRun("R123", 10, 20, 30, 25, 10, 25, 5, 2, 0, 0, 0)
@@ -267,7 +267,7 @@ def test_template_text_promotion_preserves_program_drawings_and_updates_evidence
 def test_promoted_hidden_text_prefers_normalized_observation_references(
     ocr_capture: PageAnalysis,
 ) -> None:
-    from core_pdf.impl.model.runs import TextRun
+    from core_pdf.impl.runs import TextRun
 
     raw = TextRun("old", 10, 20, 30, 25, 10, 25, 5, 2, 0, 0, 0, visible=False)
     normalized = replace(raw, text="new")

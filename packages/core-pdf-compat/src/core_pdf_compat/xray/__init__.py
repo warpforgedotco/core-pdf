@@ -14,13 +14,13 @@ from core_pdf.impl.capture.program import PageProgram
 from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl.geometry import (
     bbox_intersects,
     flip_rect_vertical,
     overlap_ratio_of,
 )
-from core_pdf.impl.model.text import collapse_ws
 from core_pdf.impl.render.page import compose_page
+from core_pdf.impl.text import collapse_ws
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 

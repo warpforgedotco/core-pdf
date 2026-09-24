@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from copy import replace
 from typing import TYPE_CHECKING
 
+from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.capture import STRUCTURE_UNSET
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.extract.pipeline import (
@@ -15,7 +16,6 @@ from core_pdf.impl.extract.pipeline import (
     PageProducts,
 )
 from core_pdf.impl.output.model import Page
-from core_pdf.impl.runtime.execution import ExtractionScope
 from core_pdf_ocr.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf_ocr.impl.extract.capture import capture_page
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult, WorkPlan

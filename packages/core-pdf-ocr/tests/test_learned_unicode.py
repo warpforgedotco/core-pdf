@@ -3,8 +3,8 @@ from copy import replace
 import pytest
 
 from core_pdf.impl.extract.contracts import PageAnalysis as NativePageAnalysis
-from core_pdf.impl.model.glyphs import GlyphCluster, GlyphObservation
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.glyphs import GlyphCluster, GlyphObservation
+from core_pdf.impl.runs import TextRun
 from core_pdf_ocr.impl.extract import capture
 
 

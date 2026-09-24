@@ -6,9 +6,9 @@ from collections.abc import Iterable, Sequence
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
+from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.pipeline import PageExtraction
 from core_pdf.impl.output.model import SCHEMA_VERSION, Document, Page
-from core_pdf.impl.runtime.execution import ExtractionScope
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.document import PdfDocument

@@ -8,8 +8,8 @@ from core_pdf.impl.extract.capture import (
     discard_duplicate_nested_layers,
     glyphs_covered_by_extended_run,
 )
-from core_pdf.impl.model.glyphs import GlyphCluster
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.glyphs import GlyphCluster
+from core_pdf.impl.runs import TextRun
 
 
 def run(text: str, depth: int = 0, x: float = 0) -> TextRun:

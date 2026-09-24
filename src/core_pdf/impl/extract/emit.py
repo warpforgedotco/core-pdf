@@ -18,7 +18,7 @@ from core_pdf.impl.extract.block_layout import (
 )
 from core_pdf.impl.extract.contracts import ParsedBlock
 from core_pdf.impl.extract.table_cleanup import table_with_bands
-from core_pdf.impl.model.geometry import (
+from core_pdf.impl.geometry import (
     bbox_area,
     bbox_intersects,
     bbox_union,
@@ -28,7 +28,6 @@ from core_pdf.impl.model.geometry import (
     overlap_ratio_of,
     rect_tuple,
 )
-from core_pdf.impl.model.text import collapse_ws, complete_text_covered, content_tokens
 from core_pdf.impl.output.model import (
     Block,
     BlockKind,
@@ -39,6 +38,7 @@ from core_pdf.impl.output.model import (
     TableCell,
     TextLine,
 )
+from core_pdf.impl.text import collapse_ws, complete_text_covered, content_tokens
 from core_pdf.impl.types import Record, Rectangle, frozen_setattr
 
 

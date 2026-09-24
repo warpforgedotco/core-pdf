@@ -49,7 +49,7 @@ from core_pdf.impl.fonts.raster_kernel import (
     scale_contours,
     transform_contours,
 )
-from core_pdf.impl.model.geometry import points_bbox, transform_bbox
+from core_pdf.impl.geometry import points_bbox, transform_bbox
 from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf_cythonized import type2_glyph_geometry
 from core_pdf_spec.s_08_graphics.matrix import Matrix

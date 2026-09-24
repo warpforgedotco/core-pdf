@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
 from core_pdf.impl.types import Record, ReprFields, frozen_setattr
 
 if TYPE_CHECKING:
-    from core_pdf.impl.model.glyphs import GlyphClusterLike
+    from core_pdf.impl.glyphs import GlyphClusterLike
 
 
 class LayoutLineTextSegment(Record):

@@ -35,15 +35,15 @@ from core_pdf.impl.extract.contracts import (
     PageAnalysis as NativePageAnalysis,
 )
 from core_pdf.impl.extract.quality import analyze_text
-from core_pdf.impl.graphics.filter_registry import declared_filter_names
-from core_pdf.impl.model.geometry import bbox_union, rect_tuple
-from core_pdf.impl.model.glyphs import (
+from core_pdf.impl.geometry import bbox_union, rect_tuple
+from core_pdf.impl.glyphs import (
     GlyphObservation,
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.model.text import normalize_extracted_text
+from core_pdf.impl.graphics.filter_registry import declared_filter_names
+from core_pdf.impl.runs import TextRun
+from core_pdf.impl.text import normalize_extracted_text
 from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
     PageAnalysis,

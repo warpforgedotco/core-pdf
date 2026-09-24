@@ -10,7 +10,7 @@ from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.document.records import RawAnnotation, RawFormField
 from core_pdf.impl.document.recovery.resolver import resolve_resource_dict
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.geometry import normalize_rect, transform_bbox
+from core_pdf.impl.geometry import normalize_rect, transform_bbox
 from core_pdf_spec.s_07_document.annotation_appearance import (
     ANNOTATION_FLAG_HIDDEN,
     ANNOTATION_FLAG_NO_VIEW,

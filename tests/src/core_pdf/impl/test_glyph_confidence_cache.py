@@ -1,5 +1,5 @@
-import core_pdf.impl.model.glyphs as glyphs_module
-from core_pdf.impl.model.glyphs import glyph_unicode_confidence
+import core_pdf.impl.glyphs as glyphs_module
+from core_pdf.impl.glyphs import glyph_unicode_confidence
 
 
 def test_confidence_is_memoised_and_bounded(monkeypatch) -> None:

@@ -9,15 +9,15 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract.contracts import ObservationBatch, bbox_tuple
-from core_pdf.impl.model.geometry import rect_tuple
+from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.render.display import DisplayList
 from core_pdf.impl.render.model import (
     PathPaintItem,
     PathPaintKind,
 )
 from core_pdf.impl.render.page import RenderedPage
-from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, ObservationSource, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.atlas import rasterize_packed_stroked_paths
 from core_pdf_ocr.impl.extract.ocr.raster import fit_raster_scale

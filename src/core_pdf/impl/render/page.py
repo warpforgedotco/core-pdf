@@ -8,12 +8,15 @@ from typing import Any, ClassVar, Protocol, Self
 
 import numpy
 
+from core_pdf.impl.array_views import (
+    uint8_image_view,
+)
 from core_pdf.impl.capture.program import PageProgram
 from core_pdf.impl.capture.records import (
     CapturedPath,
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
-from core_pdf.impl.model.geometry import rect_tuple
+from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.commands import append_captured_program
 from core_pdf.impl.render.display import (
@@ -30,9 +33,6 @@ from core_pdf.impl.render.model import (
     RenderOptions,
 )
 from core_pdf.impl.render.target import RasterTarget
-from core_pdf.impl.runtime.array_views import (
-    uint8_image_view,
-)
 from core_pdf.impl.types import ReprFields
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.standards import SemanticContext

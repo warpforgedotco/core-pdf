@@ -13,8 +13,8 @@ from core_pdf.impl.capture.records import (
     CapturedLine,
     CapturedTextBoundary,
 )
-from core_pdf.impl.model.glyphs import GlyphObservation
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.glyphs import GlyphObservation
+from core_pdf.impl.runs import TextRun
 
 PageCommand: TypeAlias = (
     TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage | CapturedTextBoundary

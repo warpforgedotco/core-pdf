@@ -364,14 +364,13 @@ layers = [
     "extract",
     "render",
     "output : layout",
-    "model",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Serialization stays below processing and the specification"
 type = "forbidden"
 source_modules = ["core_pdf.impl.output.serialize"]
-ignore_imports = ["core_pdf.impl.model.geometry -> core_pdf_spec.s_08_graphics.geometry"]
+ignore_imports = ["core_pdf.impl.geometry -> core_pdf_spec.s_08_graphics.geometry"]
 forbidden_modules = [
     "core_pdf.impl.document",
     "core_pdf.impl.capture",
@@ -380,7 +379,9 @@ forbidden_modules = [
     "core_pdf.impl.extract",
     "core_pdf.impl.layout",
     "core_pdf.impl.render",
-    "core_pdf.impl.runtime",
+    "core_pdf.impl.array_views",
+    "core_pdf.impl.execution",
+    "core_pdf.impl.scalars",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
     "core_pdf_spec.s_07_filters",
@@ -419,15 +420,25 @@ source_modules = [
 ]
 forbidden_modules = ["core_pdf", "core_pdf_ocr", "core_pdf_spec", "core_pdf_validate", "core_pdf_compat"]
 
-# types, exceptions, and pdf_names sit at the impl root and nearly every
-# subpackage imports them, so they must not import any subpackage back.
+# Shared code lives in modules at the impl root, one feature per subpackage
+# beneath it. tests/src/core_pdf/test_impl_root_contracts.py keeps this list
+# complete, so a new root module cannot escape these contracts.
 [[tool.importlinter.contracts]]
-name = "impl root modules are the floor"
+name = "impl root modules never import an impl subpackage"
 type = "forbidden"
 source_modules = [
-    "core_pdf.impl.types",
+    "core_pdf.impl.array_views",
     "core_pdf.impl.exceptions",
+    "core_pdf.impl.execution",
+    "core_pdf.impl.geometry",
+    "core_pdf.impl.glyphs",
+    "core_pdf.impl.page_selection",
     "core_pdf.impl.pdf_names",
+    "core_pdf.impl.pdf_values",
+    "core_pdf.impl.runs",
+    "core_pdf.impl.scalars",
+    "core_pdf.impl.text",
+    "core_pdf.impl.types",
 ]
 forbidden_modules = [
     "core_pdf.impl.document",
@@ -436,45 +447,46 @@ forbidden_modules = [
     "core_pdf.impl.graphics",
     "core_pdf.impl.extract",
     "core_pdf.impl.layout",
-    "core_pdf.impl.model",
     "core_pdf.impl.output",
     "core_pdf.impl.render",
-    "core_pdf.impl.runtime",
 ]
 
 [[tool.importlinter.contracts]]
-name = "impl/runtime is the floor"
+name = "Pure helpers at the impl root import no PDF code"
 type = "forbidden"
-source_modules = ["core_pdf.impl.runtime"]
+source_modules = [
+    "core_pdf.impl.array_views",
+    "core_pdf.impl.execution",
+    "core_pdf.impl.scalars",
+]
 forbidden_modules = [
-    "core_pdf.impl.document",
-    "core_pdf.impl.capture",
-    "core_pdf.impl.fonts",
-    "core_pdf.impl.graphics",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.model",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
+    "core_pdf.impl.exceptions",
+    "core_pdf.impl.pdf_names",
+    "core_pdf.impl.types",
+    "core_pdf.impl.geometry",
+    "core_pdf.impl.glyphs",
+    "core_pdf.impl.page_selection",
+    "core_pdf.impl.pdf_values",
+    "core_pdf.impl.runs",
+    "core_pdf.impl.text",
     "core_pdf_spec",
 ]
 
 [[tool.importlinter.contracts]]
-name = "The shared model depends on nothing above it"
+name = "The shared model at the impl root depends on nothing above it"
 type = "forbidden"
-source_modules = ["core_pdf.impl.model"]
-# Spec's geometry module is a leaf (only core_pdf_spec.types); the model
-# re-exports its bbox helpers rather than duplicating them.
-ignore_imports = ["core_pdf.impl.model.geometry -> core_pdf_spec.s_08_graphics.geometry"]
+source_modules = [
+    "core_pdf.impl.geometry",
+    "core_pdf.impl.glyphs",
+    "core_pdf.impl.page_selection",
+    "core_pdf.impl.pdf_values",
+    "core_pdf.impl.runs",
+    "core_pdf.impl.text",
+]
+# Spec's geometry module is a leaf (only core_pdf_spec.types); the geometry
+# module re-exports its bbox helpers rather than duplicating them.
+ignore_imports = ["core_pdf.impl.geometry -> core_pdf_spec.s_08_graphics.geometry"]
 forbidden_modules = [
-    "core_pdf.impl.document",
-    "core_pdf.impl.capture",
-    "core_pdf.impl.fonts",
-    "core_pdf.impl.graphics",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
     "core_pdf_spec.s_07_filters",
@@ -509,7 +521,6 @@ forbidden_modules = [
     "core_pdf_spec.s_14_structure",
     "core_pdf.impl.extract",
     "core_pdf.impl.layout",
-    "core_pdf.impl.model",
     "core_pdf.impl.output",
     "core_pdf.impl.render",
     # Predictors and JBIG2 are reached through s_07_filters by design.
@@ -538,7 +549,6 @@ forbidden_modules = [
     "core_pdf_spec.s_14_structure",
     "core_pdf.impl.extract",
     "core_pdf.impl.layout",
-    "core_pdf.impl.model",
     "core_pdf.impl.output",
     "core_pdf.impl.render",
     "core_postscript",
@@ -555,15 +565,15 @@ source_modules = [
     "core_pdf.impl.types",
 ]
 forbidden_modules = [
-    "core_pdf.impl.document",
-    "core_pdf.impl.capture",
-    "core_pdf.impl.fonts",
-    "core_pdf.impl.graphics",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.model",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
+    "core_pdf.impl.array_views",
+    "core_pdf.impl.execution",
+    "core_pdf.impl.scalars",
+    "core_pdf.impl.geometry",
+    "core_pdf.impl.glyphs",
+    "core_pdf.impl.page_selection",
+    "core_pdf.impl.pdf_values",
+    "core_pdf.impl.runs",
+    "core_pdf.impl.text",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
     "core_pdf_spec.s_07_filters",

@@ -13,8 +13,8 @@ from importlib.resources import files
 from statistics import median_low
 from typing import ClassVar
 
-from core_pdf.impl.model.geometry import interval_overlap
-from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.geometry import interval_overlap
+from core_pdf.impl.runs import TextRun
 from core_pdf.impl.types import Record, frozen_setattr
 
 WORDLIST_PACKAGE = "core_pdf.impl.layout.data.wordlists"

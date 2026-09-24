@@ -10,6 +10,7 @@ from typing import ClassVar
 
 import numpy
 
+from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract.contracts import (
     ObservationBatch,
     PageAnalysis,
@@ -38,9 +39,8 @@ from core_pdf.impl.extract.table_cleanup import (
     table_quality,
     table_with_bands,
 )
-from core_pdf.impl.model.geometry import bbox_union, interval_overlap, overlap_ratio_min
+from core_pdf.impl.geometry import bbox_union, interval_overlap, overlap_ratio_min
 from core_pdf.impl.output.model import Table, TableCell
-from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.types import Record, frozen_setattr
 
 
