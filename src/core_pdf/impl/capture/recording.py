@@ -236,12 +236,24 @@ class CaptureStreamExecutor(ContentStreamExecutor):
     def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
         state = self.state
         assert frame.lexer is not None
+        # execute_operation stays the documented entry point, but the loop
+        # below runs millions of times per corpus page and every frame of it
+        # showed up in the profile. The overrides are resolved once here
+        # instead, which is also the last moment one can be installed and
+        # still take effect for this stream.
+        handlers = state.default_handlers
+        if state.operator_overrides:
+            handlers = {**handlers, **state.operator_overrides}
+        depth = frame.depth
         for name, operands in iter_content_operations(
             frame.lexer,
             recovery=state.recovery,
             is_operator=self.operator_names().__contains__,
         ):
-            child = state.execute_operation(name, operands, frame.depth)
+            handler = handlers.get(name)
+            if handler is None:
+                continue
+            child = handler(operands, depth)
             if child is not None:
                 return child
         return None

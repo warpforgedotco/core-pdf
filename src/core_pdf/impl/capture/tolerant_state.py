@@ -360,14 +360,17 @@ class RecoveringTextState(ContentInterpreter):
                 kind = type(value)
                 # `type(...) is int` rather than isinstance: bool subclasses
                 # int and must keep failing the way the full coercion fails it.
+                # No typing.cast around these: `kind is float` has already
+                # established the type for a reader, and cast is a function
+                # call that returns its argument, run here once per operand of
+                # every path segment on the page.
                 if kind is float:
-                    number = typing.cast(float, value)
-                    if not isfinite(number):
+                    if not isfinite(value):  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                         raise ValueError("invalid numeric operand")
-                    append(number)
+                    append(value)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                 elif kind is int:
                     try:
-                        append(float(typing.cast(int, value)))
+                        append(float(value))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                     except OverflowError:
                         raise ValueError("invalid numeric operand") from None
                 else:

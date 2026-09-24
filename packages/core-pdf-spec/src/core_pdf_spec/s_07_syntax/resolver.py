@@ -122,14 +122,17 @@ class ObjectResolver:
         # This is where an unknown becomes a PDF object: the parser hands in
         # whatever the file contained, and everything downstream is entitled
         # to treat the result as an object of the model.
+        # cast() is a call that returns its argument, and this method is the
+        # most frequently called in the corpus profile, so the two returns on
+        # its hot path assert the type rather than route through one.
         if type(ref) is not PdfReference:
-            return cast(PdfObject, ref)
+            return ref  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
         cache_key = key_for(ref.object_number, ref.generation_number)
         with self.lock:
             cached = self.objects.get(cache_key, MISSING)
             if cached is not MISSING:
-                return cast(PdfObject, cached)
+                return cached  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
         resolving = getattr(self.thread_state, "resolving", None)
         if resolving is None:
