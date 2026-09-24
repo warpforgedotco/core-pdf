@@ -8,9 +8,10 @@ from itertools import chain
 from typing import Literal, TypeAlias
 
 from core_pdf.impl.capture.records import (
+    EMPTY_LINES,
     CapturedDrawing,
     CapturedInlineImage,
-    CapturedLine,
+    CapturedLines,
     CapturedTextBoundary,
 )
 from core_pdf.impl.glyphs import GlyphObservation
@@ -48,7 +49,7 @@ class CapturedProgram:
     glyphs: tuple[GlyphObservation, ...] = ()
     drawings: tuple[CapturedDrawing, ...] = ()
     inline_images: tuple[CapturedInlineImage, ...] = ()
-    lines: tuple[CapturedLine, ...] = ()
+    lines: CapturedLines = EMPTY_LINES
     text_boundaries: tuple[CapturedTextBoundary, ...] = field(default=(), kw_only=True)
     # What the capture recorded. commands refuses a program captured without
     # render details rather than draw a page with no glyphs on it.
@@ -71,7 +72,10 @@ class CapturedProgram:
         object.__setattr__(self, "glyphs", tuple(self.glyphs))
         object.__setattr__(self, "drawings", tuple(self.drawings))
         object.__setattr__(self, "inline_images", tuple(self.inline_images))
-        object.__setattr__(self, "lines", tuple(self.lines))
+        # Accepted as any iterable of CapturedLine for construction by hand;
+        # capture itself always hands over a CapturedLines.
+        if type(self.lines) is not CapturedLines:
+            object.__setattr__(self, "lines", CapturedLines(self.lines))
         object.__setattr__(self, "text_boundaries", tuple(self.text_boundaries))
 
     @property
@@ -113,7 +117,7 @@ class PageProgram:
     glyphs: tuple[GlyphObservation, ...] = field(init=False)
     drawings: tuple[CapturedDrawing, ...] = field(init=False)
     inline_images: tuple[CapturedInlineImage, ...] = field(init=False)
-    lines: tuple[CapturedLine, ...] = field(init=False)
+    lines: CapturedLines = field(init=False)
     text_boundaries: tuple[CapturedTextBoundary, ...] = field(init=False)
     # Lazy for the same reason as CapturedProgram.commands, and it has to be:
     # reading body.commands here would force the body's.
@@ -144,7 +148,7 @@ class PageProgram:
         set_derived("glyphs", tuple(merge(p.glyphs for p in programs)))
         set_derived("drawings", tuple(merge(p.drawings for p in programs)))
         set_derived("inline_images", tuple(merge(p.inline_images for p in programs)))
-        set_derived("lines", tuple(merge(p.lines for p in programs)))
+        set_derived("lines", CapturedLines.concatenate(p.lines for p in programs))
         set_derived("text_boundaries", tuple(merge(p.text_boundaries for p in programs)))
 
     @property

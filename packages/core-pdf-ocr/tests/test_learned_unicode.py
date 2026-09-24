@@ -226,12 +226,14 @@ def test_capture_enrichment_promotes_only_trusted_template_results(
     from types import SimpleNamespace
 
     from core_pdf.impl.capture.program import CapturedProgram, PageProgram
-    from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine
+    from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine, CapturedLines
     from core_pdf_ocr.impl.extract.ocr.newstroke import NewstrokeDecode
 
     drawing = CapturedDrawing(0, None, None, kind="stroke", bbox=(0, 0, 2, 2))
     program = PageProgram(
-        CapturedProgram(drawings=(drawing,) * 10000, lines=(CapturedLine(0, 0, 2, 2),) * 70000)
+        CapturedProgram(
+            drawings=(drawing,) * 10000, lines=CapturedLines((CapturedLine(0, 0, 2, 2),) * 70000)
+        )
     )
     decoded = NewstrokeDecode(
         runs=(make_run("label"),),

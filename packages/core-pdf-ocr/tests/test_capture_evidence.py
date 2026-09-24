@@ -6,6 +6,7 @@ from core_pdf.impl.capture.program import CapturedProgram, PageProgram
 from core_pdf.impl.capture.records import (
     CapturedDrawing,
     CapturedLine,
+    CapturedLines,
     CapturedPath,
     CapturedSubpath,
     DrawingKind,
@@ -47,9 +48,9 @@ def test_vector_complexity_counts_paints_and_segments_but_not_control_records() 
         "image",
     )
     drawings = tuple(CapturedDrawing(i, None, None, kind=kind) for i, kind in enumerate(kinds))
-    lines = (CapturedLine(0, 0, 1, 1),) * 10
+    lines = CapturedLines((CapturedLine(0, 0, 1, 1),) * 10)
     assert capture.vector_complexity(drawings, lines) == 19
-    assert capture.vector_complexity((), ()) == 0
+    assert capture.vector_complexity((), CapturedLines()) == 0
 
 
 @pytest.mark.parametrize(

@@ -3,7 +3,7 @@ from copy import replace
 import pytest
 
 from core_pdf.impl.capture.program import CapturedProgram, PageProgram
-from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine, CapturedLines
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.contracts import OcrPass, OcrPassScope, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr import regions
@@ -166,7 +166,7 @@ def test_outline_detection_requires_many_small_paths_distributed_across_page(
 
 
 def test_grid_geometry_yields_grid_and_label_regions(ocr_capture: PageAnalysis) -> None:
-    lines = tuple(
+    lines = CapturedLines(
         [CapturedLine(20, y, 100, y) for y in (20, 60, 100)]
         + [CapturedLine(x, 20, x, 100) for x in (20, 60, 100)]
     )
@@ -178,7 +178,7 @@ def test_grid_geometry_yields_grid_and_label_regions(ocr_capture: PageAnalysis) 
 
 
 def test_off_page_grid_does_not_propose_grid_or_label_crops(ocr_capture: PageAnalysis) -> None:
-    lines = tuple(
+    lines = CapturedLines(
         [CapturedLine(700, y, 780, y) for y in (20, 60, 100)]
         + [CapturedLine(x, 20, x, 100) for x in (700, 740, 780)]
     )
@@ -259,7 +259,7 @@ def test_degenerate_large_and_offpage_shapes_do_not_create_uncovered_vector_regi
 
 
 def test_large_grid_is_not_mistaken_for_a_compact_label_region(ocr_capture: PageAnalysis) -> None:
-    lines = tuple(
+    lines = CapturedLines(
         [CapturedLine(0, y, 600, y) for y in (0, 400, 800)]
         + [CapturedLine(x, 0, x, 800) for x in (0, 300, 600)]
     )

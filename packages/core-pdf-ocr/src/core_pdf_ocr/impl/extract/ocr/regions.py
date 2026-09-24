@@ -8,7 +8,6 @@ from core_pdf.impl.extract.contracts import bbox_tuple
 from core_pdf.impl.extract.grids import (
     axis_segments,
     grid_components,
-    line_coordinate_columns,
     split_grid_component,
 )
 from core_pdf.impl.geometry import (
@@ -272,7 +271,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
         vector_density[row * columns + column] += 1.0
     grid_lines = capture.program.lines
     if len(grid_lines):
-        line_x0, line_y0, line_x1, line_y1 = line_coordinate_columns(grid_lines)
+        line_x0, line_y0, line_x1, line_y1 = grid_lines.columns()
         line_columns = numpy.clip(
             ((line_x0 + line_x1) * 0.5 * columns / max(1.0, page_width)).astype(numpy.int64),
             0,

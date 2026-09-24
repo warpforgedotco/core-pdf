@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, overload
+
+import numpy
 
 from core_pdf.impl.geometry import bbox_union, normalize_rect, points_bbox
 from core_pdf.impl.types import Rectangle
@@ -44,6 +46,91 @@ class CapturedLine:
     x1: float
     y1: float
     line_width: float = 1.0
+
+
+class CapturedLines(Sequence[CapturedLine]):
+    """A page's stroke lines as one array: a row of x0, y0, x1, y1, line_width each.
+
+    A path's stroke lines used to be a CapturedLine object per segment -- 733,122
+    of them for one corpus page -- built by a Python walk of the flattened path
+    and walked again by table detection, which turned them straight back into
+    arrays. Capture now writes rows and table detection reads columns.
+
+    It is still a sequence of CapturedLine, built on access, for code that wants
+    records rather than columns. Those are new objects on every access, so a line
+    has no identity to keep; nothing compares lines by identity.
+    """
+
+    __slots__ = ("array",)
+
+    array: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
+
+    def __init__(self, lines: Iterable[CapturedLine] = ()) -> None:
+        rows = [(line.x0, line.y0, line.x1, line.y1, line.line_width) for line in lines]
+        self.array = read_only(numpy.array(rows, dtype=numpy.float64).reshape(-1, 5))
+
+    @classmethod
+    def from_array(cls, array: numpy.ndarray[Any, Any]) -> CapturedLines:
+        """Lines over an (n, 5) float64 array, which must not change afterwards."""
+        lines = cls.__new__(cls)
+        lines.array = read_only(array)
+        return lines
+
+    @classmethod
+    def concatenate(cls, parts: Iterable[CapturedLines]) -> CapturedLines:
+        arrays = [part.array for part in parts]
+        if not arrays:
+            return EMPTY_LINES
+        if len(arrays) == 1:
+            return cls.from_array(arrays[0])
+        return cls.from_array(numpy.concatenate(arrays))
+
+    def columns(
+        self,
+    ) -> tuple[
+        numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+        numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+        numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+        numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    ]:
+        """The x0, y0, x1 and y1 columns."""
+        array = self.array
+        return array[:, 0], array[:, 1], array[:, 2], array[:, 3]
+
+    def __len__(self) -> int:
+        return len(self.array)
+
+    @overload
+    def __getitem__(self, index: int) -> CapturedLine: ...
+    @overload
+    def __getitem__(self, index: slice) -> CapturedLines: ...
+    def __getitem__(self, index: int | slice) -> CapturedLine | CapturedLines:
+        if isinstance(index, slice):
+            return CapturedLines.from_array(self.array[index])
+        return CapturedLine(*self.array[index].tolist())
+
+    def __iter__(self) -> Iterator[CapturedLine]:
+        for x0, y0, x1, y1, line_width in self.array.tolist():
+            yield CapturedLine(x0, y0, x1, y1, line_width)
+
+    def __eq__(self, other: object) -> bool:
+        if type(other) is not CapturedLines:
+            return NotImplemented
+        return self.array.shape == other.array.shape and bytes(self.array) == bytes(other.array)
+
+    def __hash__(self) -> int:
+        return hash(bytes(self.array))
+
+    def __repr__(self) -> str:
+        return f"CapturedLines(<{len(self.array)} lines>)"
+
+
+def read_only(array: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
+    array.setflags(write=False)
+    return array
+
+
+EMPTY_LINES = CapturedLines()
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,12 +198,23 @@ class CapturedSubpath:
         return edges
 
 
+# What a deferred path's point lists are rebuilt from: the point columns, a
+# (start, end, flag) span per subpath, and whether it is a glyph outline. For an
+# outline the flag is the outline kernel's and every subpath is closed; for a
+# flattened path the flag is the subpath's own closed state.
+DeferredPoints: TypeAlias = tuple[Any, Any, list[tuple[int, int, bool]], bool]
+
+
 class CapturedPath:
-    __slots__ = ("subpaths", "_deferred")
+    __slots__ = ("subpaths", "_deferred", "_summary")
 
     def __init__(self, subpaths: list[CapturedSubpath] | None = None) -> None:
         self.subpaths = subpaths if subpaths is not None else []
-        self._deferred: tuple[Any, Any, list[tuple[int, int, bool]]] | None = None
+        self._deferred: DeferredPoints | None = None
+        # bbox() and has_segments() of a deferred flattened path, known without
+        # its points. Read only while _deferred is set: once the subpaths exist
+        # they can change, and are asked instead.
+        self._summary: tuple[Rectangle | None, bool] | None = None
 
     @classmethod
     def deferred_outline(
@@ -149,7 +247,29 @@ class CapturedPath:
         subpaths.
         """
         path = cls.__new__(cls)
-        path._deferred = (column_x, column_y, spans)
+        path._deferred = (column_x, column_y, spans, True)
+        path._summary = None
+        return path
+
+    @classmethod
+    def deferred_flattened(
+        cls,
+        column_x: Any,
+        column_y: Any,
+        spans: list[tuple[int, int, bool]],
+        bbox: Rectangle | None,
+        has_segments: bool,
+    ) -> CapturedPath:
+        """A flattened path, from flatten_path_commands, whose point lists wait.
+
+        Extraction asks a painted path for its bounding box and whether it has a
+        segment, both of which the kernel already computed, and for nothing
+        else. The renderer and OCR read the subpaths, and build them then, as a
+        deferred outline does.
+        """
+        path = cls.__new__(cls)
+        path._deferred = (column_x, column_y, spans, False)
+        path._summary = (bbox, has_segments)
         return path
 
     def __getattr__(self, name: str) -> Any:
@@ -158,14 +278,15 @@ class CapturedPath:
         if name == "subpaths":
             deferred = self._deferred
             if deferred is not None:
-                column_x, column_y, spans = deferred
+                column_x, column_y, spans, outline = deferred
                 xs = column_x.tolist()
                 ys = column_y.tolist()
                 subpaths = [
                     CapturedSubpath(
-                        list(zip(xs[start:end], ys[start:end], strict=True)), closed=True
+                        list(zip(xs[start:end], ys[start:end], strict=True)),
+                        closed=outline or flag,
                     )
-                    for start, end, _closes in spans
+                    for start, end, flag in spans
                 ]
                 self.subpaths = subpaths
                 self._deferred = None
@@ -199,7 +320,7 @@ class CapturedPath:
 
     def axis_aligned_rect(self) -> Rectangle | None:
         deferred = self._deferred
-        if deferred is not None:
+        if deferred is not None and deferred[3]:
             # A rectangle is one subpath of exactly four points. The kernel has
             # already dropped any duplicated closing point, so the span lengths
             # are final and this settles it without building anything.
@@ -241,9 +362,13 @@ class CapturedPath:
         )
 
     def has_segments(self) -> bool:
+        if self._deferred is not None and self._summary is not None:
+            return self._summary[1]
         return any(subpath.has_segments() for subpath in self.subpaths)
 
     def bbox(self) -> Rectangle | None:
+        if self._deferred is not None and self._summary is not None:
+            return self._summary[0]
         return bbox_union(box for subpath in self.subpaths if (box := subpath.bbox()))
 
     def fill_edges(self) -> list[tuple[float, float, float, float]]:
@@ -251,16 +376,6 @@ class CapturedPath:
         for subpath in self.subpaths:
             edges.extend(subpath.edges(close_open=True))
         return edges
-
-    def derived_lines(self, line_width: float) -> list[CapturedLine]:
-        lines: list[CapturedLine] = []
-        append_line = lines.append
-        for subpath in self.subpaths:
-            points = subpath.points
-            for (x0, y0), (x1, y1) in zip(points, points[1:]):
-                if abs(x1 - x0) > 0.01 or abs(y1 - y0) > 0.01:
-                    append_line(CapturedLine(x0, y0, x1, y1, line_width))
-        return lines
 
 
 DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
@@ -420,6 +535,7 @@ __all__ = (
     "DrawingKind",
     "CapturedInlineImage",
     "CapturedLine",
+    "CapturedLines",
     "CapturedPath",
     "CapturedSoftMask",
     "CapturedSubpath",

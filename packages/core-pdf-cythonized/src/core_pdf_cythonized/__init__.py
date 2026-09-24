@@ -45,6 +45,7 @@ from core_pdf_cythonized._knockout import (
 )
 from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import outline_edges
+from core_pdf_cythonized._paths import flatten_path_commands
 from core_pdf_cythonized._rect import rect_coverage_plane
 from core_pdf_cythonized._supersample import supersampled_coverage_plane
 from core_pdf_cythonized._type2 import type2_glyph_geometry
@@ -60,6 +61,7 @@ __all__ = (
     "composite_knockout_group",
     "composite_masked_normal",
     "cubic_sample_times",
+    "flatten_path_commands",
     "glyph_coverage_plane",
     "horizontal_glyph_geometry",
     "outline_edges",

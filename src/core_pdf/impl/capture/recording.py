@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from contextlib import suppress
 from copy import copy
 from dataclasses import dataclass
-from math import ceil, hypot, isfinite
+from math import hypot, isfinite
 from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numpy
@@ -20,9 +20,10 @@ from core_pdf.impl.capture.glyphs import (
 )
 from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CapturedProgram, CaptureOptions
 from core_pdf.impl.capture.records import (
+    EMPTY_LINES,
     CapturedDrawing,
     CapturedInlineImage,
-    CapturedLine,
+    CapturedLines,
     CapturedPath,
     CapturedSoftMask,
     CapturedSubpath,
@@ -60,6 +61,7 @@ from core_pdf.impl.types import (
     PdfName,
     Rectangle,
 )
+from core_pdf_cythonized import flatten_path_commands
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES, GraphicsState, PdfPath
 from core_pdf_spec.s_07_content.model import (
@@ -264,7 +266,7 @@ class TextState(RecoveringTextState):
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
     glyph_cluster_count: int
-    lines: list[CapturedLine]
+    lines: StrokeLineRows
     drawings: list[CapturedDrawing]
     inline_images: list[CapturedInlineImage]
     hidden_layers: frozenset[str]
@@ -317,7 +319,7 @@ class TextState(RecoveringTextState):
         self.runs = []
         self.glyphs = []
         self.glyph_cluster_count = 0
-        self.lines = []
+        self.lines = StrokeLineRows()
         self.drawings = []
         self.inline_images = []
         self.hidden_layers = hidden_layers
@@ -395,7 +397,7 @@ class TextState(RecoveringTextState):
             len(self.glyphs),
             len(self.drawings),
             len(self.inline_images),
-            len(self.lines),
+            self.lines.count,
             len(self.text_boundaries),
         )
 
@@ -407,7 +409,7 @@ class TextState(RecoveringTextState):
             glyphs=tuple(self.glyphs[glyphs:]),
             drawings=tuple(self.drawings[drawings:]),
             inline_images=tuple(self.inline_images[inline_images:]),
-            lines=tuple(self.lines[lines:]),
+            lines=self.lines.since(lines),
             text_boundaries=tuple(self.text_boundaries[text_boundaries:]),
             options=self.options,
         )
@@ -807,19 +809,11 @@ class TextState(RecoveringTextState):
         fill_paints = color_space_paints(self.graphics.fill_space)
         stroke_paints = color_space_paints(self.graphics.stroke_space)
 
-        captured_path = flatten_path(source)
-        if self.graphics.ctm == IDENTITY_MATRIX:
-            path = captured_path
-        else:
-            path = captured_path.transformed(self.graphics.ctm)
+        ctm = self.graphics.ctm
+        path, line_endpoints = flatten_path(source, None if ctm == IDENTITY_MATRIX else ctm)
         if path.has_segments():
             line_width = self.transformed_line_width()
-            if len(path.subpaths) == 1 and len(path.subpaths[0].points) == 2:
-                (x0, y0), (x1, y1) = path.subpaths[0].points
-                if abs(x1 - x0) > 0.01 or abs(y1 - y0) > 0.01:
-                    self.lines.append(CapturedLine(x0, y0, x1, y1, line_width))
-            else:
-                self.lines.extend(path.derived_lines(line_width))
+            self.lines.append(line_endpoints, line_width)
             self.drawings.append(
                 CapturedDrawing(
                     seqno=self.sequence,
@@ -853,7 +847,7 @@ class TextState(RecoveringTextState):
             self.sequence += 1
 
     def clip_path(self, state: object, source: PdfPath, fill_rule: str) -> None:
-        path = flatten_path(source).transformed(self.graphics.ctm)
+        path, _ = flatten_path(source, self.graphics.ctm)
         if not path.has_segments():
             return
         clip_bbox = path.bbox()
@@ -1376,43 +1370,55 @@ def image_source_from_stream(
     return source, mask_alpha
 
 
-def flatten_path(source: PdfPath) -> CapturedPath:
-    path = CapturedPath()
-    for command in source.commands:
-        values = command.operands
-        match command.operator:
-            case "m":
-                path.move_to(*values)
-            case "l":
-                path.line_to(*values)
-            case "h":
-                path.close()
-            case "re":
-                path.rect(*values)
-            case "c":
-                x0, y0, x1, y1, x2, y2, x3, y3 = values
-                matrix = command.ctm
-                scale = max(hypot(matrix.a, matrix.b), hypot(matrix.c, matrix.d), 1.0)
-                control_len = (
-                    hypot(x1 - x0, y1 - y0) + hypot(x2 - x1, y2 - y1) + hypot(x3 - x2, y3 - y2)
-                )
-                flatness = max(0.1, command.flatness or 0.25)
-                segments = max(4, min(128, ceil(control_len * scale / (flatness * 8.0))))
-                previous_x, previous_y = x0, y0
-                segment_step = 1.0 / segments
-                for i in range(1, segments + 1):
-                    t = i * segment_step
-                    mt = 1.0 - t
-                    mt2 = mt * mt
-                    t2 = t * t
-                    b0, b1, b2, b3 = mt2 * mt, 3.0 * mt2 * t, 3.0 * mt * t2, t2 * t
-                    x = b0 * x0 + b1 * x1 + b2 * x2 + b3 * x3
-                    y = b0 * y0 + b1 * y1 + b2 * y2 + b3 * y3
-                    if not path.subpaths:
-                        path.move_to(previous_x, previous_y)
-                    path.line_to(x, y)
-                    previous_x, previous_y = x, y
-    return path
+def flatten_path(
+    source: PdfPath, matrix: Matrix | None
+) -> tuple[CapturedPath, numpy.ndarray[Any, numpy.dtype[numpy.float64]]]:
+    """The path flattened and put through `matrix`, and its stroke-line endpoints.
+
+    The path's point lists wait until something reads them; see
+    CapturedPath.deferred_flattened.
+    """
+    xs, ys, spans, bbox, has_segments, lines = flatten_path_commands(source.commands, matrix, hypot)
+    return CapturedPath.deferred_flattened(xs, ys, spans, bbox, has_segments), lines
+
+
+class StrokeLineRows:
+    """The stroke lines captured so far, in arrays, cut into programs by count."""
+
+    __slots__ = ("chunks", "count")
+
+    def __init__(self) -> None:
+        self.chunks: list[numpy.ndarray[Any, numpy.dtype[numpy.float64]]] = []
+        self.count = 0
+
+    def append(
+        self, endpoints: numpy.ndarray[Any, numpy.dtype[numpy.float64]], line_width: float
+    ) -> None:
+        rows = len(endpoints)
+        if not rows:
+            return
+        chunk = numpy.empty((rows, 5), dtype=numpy.float64)
+        chunk[:, :4] = endpoints
+        chunk[:, 4] = line_width
+        self.chunks.append(chunk)
+        self.count += rows
+
+    def since(self, mark: int) -> CapturedLines:
+        """The lines appended after the first `mark`."""
+        if mark >= self.count:
+            return EMPTY_LINES
+        kept: list[numpy.ndarray[Any, numpy.dtype[numpy.float64]]] = []
+        offset = self.count
+        for chunk in reversed(self.chunks):
+            offset -= len(chunk)
+            if offset >= mark:
+                kept.append(chunk)
+            else:
+                kept.append(chunk[mark - offset :])
+            if offset <= mark:
+                break
+        kept.reverse()
+        return CapturedLines.from_array(kept[0] if len(kept) == 1 else numpy.concatenate(kept))
 
 
 GRAPHICS_STATE_FIELDS = GraphicsState.__fields__

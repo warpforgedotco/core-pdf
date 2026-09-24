@@ -166,7 +166,7 @@ def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
         glyphs=tuple(state.glyphs),
         drawings=tuple(state.drawings),
         inline_images=tuple(state.inline_images),
-        lines=tuple(state.lines),
+        lines=state.lines.since(0),
         text_boundaries=tuple(state.text_boundaries),
         options=state.options,
     )

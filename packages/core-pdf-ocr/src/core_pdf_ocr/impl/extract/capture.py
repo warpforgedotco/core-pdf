@@ -10,7 +10,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
-from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedLines
 from core_pdf.impl.extract.capture import (
     STRUCTURE_UNSET,
     capture_runs,
@@ -165,9 +165,7 @@ def apply_learned_unicode_to_run(
     )
 
 
-def vector_complexity(
-    drawings: tuple[CapturedDrawing, ...], grid_lines: tuple[CapturedLine, ...]
-) -> int:
+def vector_complexity(drawings: tuple[CapturedDrawing, ...], grid_lines: CapturedLines) -> int:
     paint_operations = sum(drawing.kind in VECTOR_PAINT_KINDS for drawing in drawings)
     return len(grid_lines) + paint_operations * VECTOR_PAINT_OPERATION_WEIGHT
 

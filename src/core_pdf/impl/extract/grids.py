@@ -21,23 +21,6 @@ GRID_CROSSING_MASK_ELEMENTS = 1 << 20
 TABLE_REGION_GAP = 22.0
 
 
-def line_coordinate_columns(
-    lines: Any,
-) -> tuple[
-    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-]:
-    values = tuple(lines)
-    coordinates = numpy.fromiter(
-        (value for line in values for value in (line.x0, line.y0, line.x1, line.y1)),
-        dtype=numpy.float64,
-        count=len(values) * 4,
-    ).reshape((-1, 4))
-    return coordinates[:, 0], coordinates[:, 1], coordinates[:, 2], coordinates[:, 3]
-
-
 class DisjointSet:
     def __init__(self, size: int) -> None:
         self.parent = list(range(size))
@@ -66,7 +49,7 @@ def axis_segments(
         empty = numpy.empty((0, 3), dtype=numpy.float32)
         return empty, empty
 
-    x0, y0, x1, y1 = line_coordinate_columns(lines)
+    x0, y0, x1, y1 = lines.columns()
     horizontal_mask = (numpy.abs(y1 - y0) <= AXIS_TOLERANCE) & (
         numpy.abs(x1 - x0) >= page_width * 0.02
     )
