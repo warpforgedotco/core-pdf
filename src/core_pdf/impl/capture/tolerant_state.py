@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typing
+from collections.abc import Mapping
 from math import isfinite
 from typing import Any
 
@@ -20,6 +21,7 @@ from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import PatternPaint, ShadingPattern, TilingPattern
 from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
+    OperationHandler,
 )
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -133,10 +135,22 @@ class RecoveringTextState(ContentInterpreter):
         cache[key] = (value, resources, mask)
         return mask
 
+    def operation_table(self) -> Mapping[str, OperationHandler]:
+        """Every operator this state handles, an override winning over its default.
+
+        Both dispatch routes read this: the capture executor once per content
+        stream, execute_operation once per call. Overrides are empty outside
+        tests, so the common answer is the default table itself.
+        """
+        overrides = self.operator_overrides
+        if not overrides:
+            return self.default_handlers
+        return {**self.default_handlers, **overrides}
+
     def execute_operation(
         self, name: str, operands: ContentOperands, depth: int
     ) -> ContentStreamFrame | None:
-        handler = self.operator_overrides.get(name) or self.default_handlers.get(name)
+        handler = self.operation_table().get(name)
         return handler(operands, depth) if handler is not None else None
 
     capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import suppress
 from copy import copy
 from dataclasses import dataclass
@@ -66,6 +67,7 @@ from core_pdf_spec.s_07_content.model import (
 )
 from core_pdf_spec.s_07_content.model import ShadingPattern as PdfShadingPattern
 from core_pdf_spec.s_07_content.model import TilingPattern as PdfTilingPattern
+from core_pdf_spec.s_07_content.operations import OperationHandler
 from core_pdf_spec.s_07_content.streams import (
     ContentStreamExecutor,
     ContentStreamFrame,
@@ -212,36 +214,34 @@ class CaptureStreamExecutor(ContentStreamExecutor):
             return False
         return super().enter(frame)
 
-    def operator_names(self) -> frozenset[bytes]:
+    def operator_names(self, table: Mapping[str, OperationHandler]) -> frozenset[bytes]:
         # Encoding all 71 handler names costs 6us, and iter_content_operations
         # wants the set once per frame -- a page of form XObjects, tiling
-        # patterns and soft masks has thousands. The handler tables are built
-        # in the interpreter's __init__ and nothing mutates them afterwards.
+        # patterns and soft masks has thousands. The default table is built in
+        # the interpreter's __init__ and never changes, so its names are cached;
+        # a table with overrides in it (only tests install one) is encoded as is.
+        state = self.state
+        if table is not state.default_handlers:
+            return frozenset(name.encode("latin-1") for name in table)
         names = self._operator_names
         if names is None:
-            state = self.state
-            names = self._operator_names = frozenset(
-                name.encode("latin-1")
-                for name in (*state.default_handlers, *state.operator_overrides)
-            )
+            names = self._operator_names = frozenset(name.encode("latin-1") for name in table)
         return names
 
     def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
         state = self.state
         assert frame.lexer is not None
-        # execute_operation stays the documented entry point, but the loop
-        # below runs millions of times per corpus page and every frame of it
-        # showed up in the profile. The overrides are resolved once here
-        # instead, which is also the last moment one can be installed and
-        # still take effect for this stream.
-        handlers = state.default_handlers
-        if state.operator_overrides:
-            handlers = {**handlers, **state.operator_overrides}
+        # The loop below runs millions of times per corpus page, so it calls
+        # handlers straight from the state's operation table rather than going
+        # through execute_operation, which reads the same table per call. The
+        # table is taken once per stream, the last moment an override can be
+        # installed and still take effect for it.
+        handlers = state.operation_table()
         depth = frame.depth
         for name, operands in iter_content_operations(
             frame.lexer,
             recovery=state.recovery,
-            is_operator=self.operator_names().__contains__,
+            is_operator=self.operator_names(handlers).__contains__,
         ):
             handler = handlers.get(name)
             if handler is None:
