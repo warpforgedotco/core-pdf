@@ -10,10 +10,11 @@ from typing import Any
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics.stream_decoding import decode_stream_data
-from core_pdf.impl.types import PdfByteBuffer, PdfName, PdfReference
+from core_pdf.impl.types import PdfByteBuffer, PdfName, PdfReference, PdfString
+from core_pdf_cythonized import ObjectScanner
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecoder
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
-from core_pdf_spec.s_07_syntax.types import Decipher
+from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
 from core_pdf_spec.s_07_syntax_primitives.numbers import is_integer_token, parse_integer_token
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
     HEX_VALUE,
@@ -67,6 +68,22 @@ READER_RULES: dict[LexicalRules, LexicalRules] = {
 }
 
 
+# The names the object scanner has produced, so a repeated one is a dict hit in
+# C rather than a call into PdfName.of. It is filled only through PdfName.of,
+# so every entry is the instance that returned, and bounded like spec's own
+# table.
+SCANNED_NAMES: dict[bytes, PdfName] = {}
+SCANNED_NAME_LIMIT = 1 << 16
+
+
+def scanned_name(raw: bytes) -> PdfName:
+    name = PdfName.of(raw)
+    if len(SCANNED_NAMES) >= SCANNED_NAME_LIMIT:
+        SCANNED_NAMES.clear()
+    SCANNED_NAMES[raw] = name
+    return name
+
+
 def drop_unknown_escape(_byte: int) -> bytes:
     return b""
 
@@ -76,7 +93,12 @@ def reader_eol_pair(first: int, second: int) -> bool:
 
 
 class PdfLexer(SyntaxLexer):
-    __slots__ = ("recover_malformed_objects", "recover_dictionary_structure")
+    __slots__ = (
+        "recover_malformed_objects",
+        "recover_dictionary_structure",
+        "scanner",
+        "scanner_rules",
+    )
 
     def __init__(
         self,
@@ -89,6 +111,8 @@ class PdfLexer(SyntaxLexer):
         stream_decoder: StreamDecoder | None = None,
         semantic_context: SemanticContext | None = None,
     ) -> None:
+        self.scanner: ObjectScanner | None = None
+        self.scanner_rules: LexicalRules | None = None
         super().__init__(
             data,
             reference_resolver=reference_resolver,
@@ -98,6 +122,60 @@ class PdfLexer(SyntaxLexer):
         )
         self.recover_malformed_objects = recover_malformed_objects
         self.recover_dictionary_structure = recover_dictionary_structure
+
+    def close(self) -> None:
+        # The scanner holds an export of raw_data, and a memoryview with a
+        # live export refuses to release.
+        if self.scanner is not None:
+            self.scanner.release()
+            self.scanner = None
+        super().close()
+
+    def object_scanner(self) -> ObjectScanner:
+        """The compiled scanner for this lexer's data and rules."""
+        rules = self.lexical_rules
+        scanner = self.scanner
+        if scanner is None or self.scanner_rules is not rules:
+            scanner = self.scanner = ObjectScanner(
+                self.raw_data,
+                rules.whitespace_table,
+                rules.separator_table,
+                rules.name_escapes,
+                rules.split_whitespace_compatible,
+                SCANNED_NAMES,
+                scanned_name,
+                PdfString,
+                PdfReference,
+            )
+            self.scanner_rules = rules
+        return scanner
+
+    def parse_dictionary(self) -> PdfDict:
+        # The scanner owns well-formed syntax and declines the rest, which the
+        # Python below then parses from the same position -- including every
+        # recovery hook this class overrides.
+        if self.decipher is not None and self.current_obj_num is not None:
+            parsed = self.object_scanner().parse_dictionary(
+                self.pos, self.decipher, self.current_obj_num, self.current_gen_num or 0
+            )
+        else:
+            parsed = self.object_scanner().parse_dictionary(self.pos)
+        if parsed is None:
+            return super().parse_dictionary()
+        dictionary, self.pos = parsed
+        return dictionary
+
+    def parse_array(self) -> list[Any]:
+        if self.decipher is not None and self.current_obj_num is not None:
+            parsed = self.object_scanner().parse_array(
+                self.pos, self.decipher, self.current_obj_num, self.current_gen_num or 0
+            )
+        else:
+            parsed = self.object_scanner().parse_array(self.pos)
+        if parsed is None:
+            return super().parse_array()
+        values, self.pos = parsed
+        return values
 
     def select_lexical_rules(self, context: SemanticContext | None) -> LexicalRules:
         if context is not None and (context.version is None or not context.version.recognized):

@@ -43,6 +43,7 @@ from core_pdf_cythonized._knockout import (
     composite_knockout_element,
     composite_knockout_group,
 )
+from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import outline_edges
 from core_pdf_cythonized._rect import rect_coverage_plane
 from core_pdf_cythonized._supersample import supersampled_coverage_plane
@@ -52,6 +53,7 @@ __all__ = (
     "SCAN_NAME",
     "SCAN_OPERATOR",
     "ContentScanner",
+    "ObjectScanner",
     "blend_normal_alpha_array_numpy",
     "composite_elementary_normal",
     "composite_knockout_element",

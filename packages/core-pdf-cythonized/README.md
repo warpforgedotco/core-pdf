@@ -4,7 +4,7 @@ Compiled kernels for `core-pdf` hot paths.
 
 `core-pdf` depends on this distribution and imports from it directly. There is
 no pure-Python fallback: when a kernel lands here, the Python it replaced is
-deleted. That makes `core-pdf` a compiled distribution — it needs a wheel for
+deleted -- with one exception, `ObjectScanner`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
 ## One kernel owns its algorithm
@@ -20,6 +20,28 @@ It came here because 60% of the cost sat in core's wrapper — a mask, three
 boolean fancy-index copies and a scatter, all of it marshalling to hand
 compacted arrays to a Python callee. Marshalling cannot be removed while the
 callee stays in Python, so the two had to be compiled together.
+
+## One kernel keeps its Python
+
+`ObjectScanner` is the other exception, in the opposite direction: it mirrors
+code that is not deleted. The Python it mirrors is `core-pdf-spec`'s object
+lexer, which stays the parser for everyone using spec without core, and core's
+reader subclass of it still parses everything the scanner declines. So the
+scanner owns a subset of the grammar exactly -- well-formed dictionaries and
+arrays under the reader's rules -- and returns None for the rest, after which
+the reader parses the same bytes in Python from the same position.
+
+That makes divergence possible where elsewhere it is not, and two guards stand
+against it. `test_object_scanner_kernel.py` pins both the accepted results and
+which inputs are declined, standalone, on every wheel.
+`tests/src/core_pdf/test_object_scanner_contracts.py` compares the composed
+reader -- scanner, fallback and all -- with the Python alone, error for error.
+
+It also looks like it breaks the object-churn rule below, and does not: it
+builds dicts, lists, ints and floats, which cost the same from C as from the
+interpreter, and a repeated name is a dict hit. Rebuilding the object graphs
+of the benchmark corpus in Python costs 12% of parsing them; the other 88% was
+per-token dispatch, which is what compiling removes.
 
 ## What belongs here
 
@@ -73,6 +95,7 @@ the wheel.
 | `ContentScanner` | the regular-expression fast path in `core_pdf.impl.capture.recovery.iter_content_operations` (deleted) | 1.1x to 2.1x on the tokenizer, by document; -16% on a vector-heavy page render, nothing on text pages |
 | `composite_elementary_normal` | the opaque-normal branch of `core_pdf.impl.render.target.composite_nonisolated_group` (deleted) | nine numpy passes over an 8-to-32-pixel plane removed; -4.2 to -4.8% on text-page render |
 | `composite_masked_normal` | the isolated normal branch of `core_pdf.impl.render.target.composite_masked_group` (deleted) | 16.6x on the kernel over 400 corpus planes (39.4 to 2.4 ns/px); every soft-masked group on test_3450 |
+| `ObjectScanner` | nothing deleted: mirrors `parse_dictionary` and `parse_array` of `core_pdf.impl.document.recovery.lexer.PdfLexer`, which falls back to them | 5.5x on parsing the indirect objects of the benchmark corpus (201 to 37 ms), 99% of calls taking the compiled path; -30 to -46% on document open, -3 to -55% on first-page extraction |
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render.target` (both deleted) | 7.06x on the fused wrapper |
 
 `glyph_coverage_plane` and `signed_area_coverage` share one accumulation core.

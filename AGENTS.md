@@ -46,7 +46,13 @@ and it is pinned by golden vectors generated from the original before deletion.
 One kernel, `composite_knockout_element`, owns its algorithm outright: ISO 32000-2
 11.4.x knockout compositing moved out of spec, with its conformance tests, so that
 spec could stay pure Python rather than become a compiled distribution. That is the
-only member of the package that is not a mirror of code owned elsewhere. The build
+only member of the package that is not a mirror of code owned elsewhere. One kernel,
+`ObjectScanner`, is the reverse exception: it mirrors spec's object lexer, which is not
+deleted, for the parse_dictionary and parse_array of core's reader lexer, and declines
+anything outside the well-formed grammar so the Python parses it. Its golden vectors pin
+what it declines as well as what it returns, and
+`tests/src/core_pdf/test_object_scanner_contracts.py` compares the composed reader with
+the Python alone; change either lexer and both must still pass. The build
 disables float contraction -- `-ffp-contract=off` on GCC/Clang, `/fp:precise` on MSVC,
 chosen per compiler in `setup.py` because passing the wrong spelling would build with
 semantics the golden vectors do not describe. The kernels must reproduce CPython float
