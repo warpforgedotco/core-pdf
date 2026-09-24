@@ -69,6 +69,7 @@ the wheel.
 | `rect_coverage_plane` | `core_pdf.impl.render.paths` (deleted) | 8.57x on the kernel; -21% on a vector-heavy page render, -7 to -9% elsewhere |
 | `outline_edges` | `core_pdf.impl.render.commands` (edge half only) | 2.01x on the kernel; -2.5 to -4.4% on text-page render |
 | `glyph_coverage_plane` | the device-edge preparation in `core_pdf.impl.render.target.fill_path` (deleted) | 8.3us of numpy prep per call removed, against 3.3us of actual coverage; -10.6% / -7.5% on text-page render |
+| `supersampled_coverage_plane` | the 4x4 supersampling deltas loop of `core_pdf.impl.render.target.fill_path` (deleted), which is what even-odd fills took | 15,426 corpus fills in 0.2 s against about 4.7 s; -31% on test_3806 rasterize (5.55 to 3.85 s), the slowest page in the corpus |
 | `ContentScanner` | the regular-expression fast path in `core_pdf.impl.capture.recovery.iter_content_operations` (deleted) | 1.1x to 2.1x on the tokenizer, by document; -16% on a vector-heavy page render, nothing on text pages |
 | `composite_elementary_normal` | the opaque-normal branch of `core_pdf.impl.render.target.composite_nonisolated_group` (deleted) | nine numpy passes over an 8-to-32-pixel plane removed; -4.2 to -4.8% on text-page render |
 | `composite_masked_normal` | the isolated normal branch of `core_pdf.impl.render.target.composite_masked_group` (deleted) | 16.6x on the kernel over 400 corpus planes (39.4 to 2.4 ns/px); every soft-masked group on test_3450 |

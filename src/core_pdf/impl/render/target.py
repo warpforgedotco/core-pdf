@@ -80,6 +80,7 @@ from core_pdf_cythonized import (
     composite_masked_normal,
     glyph_coverage_plane,
     rect_coverage_plane,
+    supersampled_coverage_plane,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING
@@ -2331,6 +2332,31 @@ class RasterTarget:
                     slice(iy0, iy1), slice(ix0, ix1), numpy.rint(coverage * 255).astype(numpy.uint8)
                 )
             return
+        if normal_fast and rectangular_clip and pixel_area < 10_000:
+            # What reaches here is a fill glyph_coverage_plane cannot take --
+            # in practice an even-odd one -- and 4x4 supersampling covers it.
+            # A row the sampling misses is left out of the plane, as the
+            # row-by-row original skipped it.
+            source = (
+                edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
+            )
+            sampled = supersampled_coverage_plane(
+                source, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
+            )
+            if sampled is None:
+                return
+            counts, first_row = sampled
+            rows = slice(iy0 + first_row, iy0 + first_row + len(counts))
+            columns = slice(ix0, ix1)
+            coverage = counts.astype(numpy.float32)
+            alpha_plane = numpy.rint(coverage * rgba[3] / 16).astype(numpy.uint8)
+            blend_normal_alpha_array_numpy(self.pixel_array[rows, columns], rgba, alpha_plane)
+            self.record_source_alpha(rows, columns, alpha_plane)
+            if self.group_source_shape is not None:
+                self.record_source_shape(
+                    rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
+                )
+            return
         if edges is None:
             edges = edge_tuples(edge_array)
         edge_segments = [
@@ -2382,44 +2408,6 @@ class RasterTarget:
                     page_y = crop_y1 - (py + (sy + 0.5) / samples) / scale
                     crossings = fill_path_sample_crossings(edge_segments, page_y)
                     sample_spans.append(fill_path_crossing_spans(crossings, fill_rule))
-            if normal_fast and rectangular_clip:
-                deltas = [0] * (ix1 - ix0 + 1)
-                covered_any = False
-                for spans in sample_spans:
-                    for start_x, end_x in spans:
-                        span_start = (start_x - crop_x0) * scale
-                        span_end = (end_x - crop_x0) * scale
-                        for sx in range(samples):
-                            sample_offset = (sx + 0.5) / samples
-                            start = max(ix0, math.ceil(span_start - sample_offset))
-                            end = min(ix1, math.ceil(span_end - sample_offset))
-                            if end > start:
-                                deltas[start - ix0] += 1
-                                deltas[end - ix0] -= 1
-                                covered_any = True
-                if covered_any:
-                    coverage = numpy.cumsum(numpy.asarray(deltas[:-1], dtype=numpy.int16)).astype(
-                        numpy.uint8
-                    )
-                    target = self.pixel_array[py, ix0:ix1]
-                    alpha_plane = numpy.rint(
-                        coverage.astype(numpy.float32) * rgba[3] / (samples * samples)
-                    ).astype(numpy.uint8)
-                    blend_normal_alpha_array_numpy(
-                        target,
-                        rgba,
-                        alpha_plane,
-                    )
-                    self.record_source_alpha(py, slice(ix0, ix1), alpha_plane)
-                    if self.group_source_shape is not None:
-                        self.record_source_shape(
-                            py,
-                            slice(ix0, ix1),
-                            numpy.rint(
-                                coverage.astype(numpy.float32) * 255 / (samples * samples)
-                            ).astype(numpy.uint8),
-                        )
-                continue
             for px in range(ix0, ix1):
                 covered = 0
                 sample_x0 = crop_x0 + (px + 0.5 / samples) / scale
