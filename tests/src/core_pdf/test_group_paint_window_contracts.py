@@ -122,3 +122,23 @@ def test_every_written_pixel_lies_inside_the_window() -> None:
     assert y1 >= int(rows[-1]) + 1
     assert x0 <= int(columns[0])
     assert x1 >= int(columns[-1]) + 1
+
+
+def test_a_diagonal_line_with_no_plane_recording_extends_the_window() -> None:
+    """A slanted segment over more than 64 pixels of box is rasterized by numpy
+    and recorded through the planes; with neither plane recording, nothing
+    extended the window. On pdfminer.six cmp_itext_logo that left a stroke's
+    rows outside it."""
+    target = grouped_target(width=60, height=60)
+    assert target.group_source_alpha is None
+    assert target.group_source_shape is None
+    target.fill_line(5.0, 10.0, 40.0, 30.0, 2.5, (0, 0, 255, 255))
+    view: Any = numpy.frombuffer(bytes(target.pixels), dtype=numpy.uint8).reshape(60, 60, 4)
+    rows = numpy.flatnonzero((view[..., 3] != 0).any(axis=1))
+    columns = numpy.flatnonzero((view[..., 3] != 0).any(axis=0))
+    assert rows.size
+    y0, y1, x0, x1 = window(target)
+    assert y0 <= int(rows[0])
+    assert y1 >= int(rows[-1]) + 1
+    assert x0 <= int(columns[0])
+    assert x1 >= int(columns[-1]) + 1

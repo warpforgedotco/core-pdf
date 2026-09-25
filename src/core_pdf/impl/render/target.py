@@ -2691,6 +2691,10 @@ class RasterTarget:
                 self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
             if shape_plane is not None:
                 self.record_source_shape(slice(iy0, iy1), slice(ix0, ix1), shape_plane)
+            if alpha_plane is None and shape_plane is None:
+                # Neither plane recorded the box, which is what extends the
+                # paint window, and the pixels in it were written all the same.
+                self.extend_paint_window(slice(iy0, iy1), slice(ix0, ix1))
             return
         if (
             blend_resolved_mode is None
