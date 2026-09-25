@@ -1017,7 +1017,7 @@ class ContentInterpreter:
         return parse_soft_mask(value, self.resolver, ctm=self.graphics.ctm)
 
     def op_q(self, operands: ContentOperands, depth: int) -> None:
-        self.stack.append(copy(self.graphics))
+        self.stack.append(self.graphics.__copy__())
         self.sink.save_graphics(self)
 
     def pop_graphics_save(self) -> GraphicsState:
