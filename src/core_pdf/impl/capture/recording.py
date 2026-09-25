@@ -303,6 +303,7 @@ class TextState(RecoveringTextState):
     capture_mask_resources: dict[int, tuple[PdfSoftMask, PdfDict]]
     capture_active_mask_groups: set[int]
     scale_cache: tuple[Matrix, float] | None
+    tj_glyph_paint: GlyphPaint | bool | None
     stream_executor: CaptureStreamExecutor
     stream_executor_type = CaptureStreamExecutor
 
@@ -374,6 +375,9 @@ class TextState(RecoveringTextState):
         self.normalized_colors = {}
         self.parsed_soft_masks = {}
         self.scale_cache = None
+        # Inside a TJ array, the one paint its strings share once built; True
+        # until then, None outside one. See append_tj_array.
+        self.tj_glyph_paint = None
 
         self.graphics.font_size = 12.0
         self.graphics.fill_color = (0.0, 0.0, 0.0)
@@ -630,6 +634,19 @@ class TextState(RecoveringTextState):
         self.drawings.append(marker_drawing("state-push", self.sequence))
         self.sequence += 1
 
+    def append_tj_array(self, array: Any) -> None:
+        # Between the strings of one TJ array only the text position moves, so
+        # the paint every glyph records -- colours, line state, clip, masks --
+        # is built once for all of them, as the pdfminer facade already does.
+        # A Type 3 font runs its glyph programs between the strings and never
+        # shares one; a TJ inside one of those programs keeps its own.
+        outer = self.tj_glyph_paint
+        self.tj_glyph_paint = True
+        try:
+            super().append_tj_array(array)
+        finally:
+            self.tj_glyph_paint = outer
+
     def show_text(
         self,
         state: object,
@@ -646,6 +663,13 @@ class TextState(RecoveringTextState):
         # the spec's FontService protocol is far narrower than what capture reads.
         font_decoder: FontDecoder = decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         decoded_glyphs: tuple[DecodedGlyph, ...] = glyphs  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        shared_paint = self.tj_glyph_paint
+        if glyph_paint is None and shared_paint is not None and not font_decoder.is_type3:
+            if shared_paint is True:
+                shared_paint = self.tj_glyph_paint = self.glyph_paint(
+                    self.capture_color(stroke=False)
+                )
+            glyph_paint = shared_paint  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         visible = self.is_text_visible(text)
         if 4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible():
             self.emit_clip_scope_push()
