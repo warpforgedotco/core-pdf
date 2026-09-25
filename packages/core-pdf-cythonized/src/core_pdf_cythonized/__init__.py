@@ -63,6 +63,7 @@ from core_pdf_cythonized._source_plane import accumulate_source_plane
 from core_pdf_cythonized._stroke_segment import stroke_segment_samples
 from core_pdf_cythonized._supersample import supersampled_coverage_plane
 from core_pdf_cythonized._type2 import type2_glyph_geometry
+from core_pdf_cythonized._xref_headers import object_headers_match
 
 __all__ = (
     "ContentScanner",
@@ -78,17 +79,18 @@ __all__ = (
     "composite_masked_normal",
     "composite_normal_group",
     "cubic_sample_times",
-    "distinct_uint16_rows",
     "decode_arithmetic_generic_template0",
-    "flatten_path_commands",
-    "gather_uint8_rows",
+    "distinct_uint16_rows",
     "fill_glyph_coverage",
     "fill_glyph_knockout",
-    "glyph_coverage_plane",
-    "interleave_soft_mask",
-    "horizontal_glyph_geometry",
-    "outline_edges",
     "fill_rect_coverage",
+    "flatten_path_commands",
+    "gather_uint8_rows",
+    "glyph_coverage_plane",
+    "horizontal_glyph_geometry",
+    "interleave_soft_mask",
+    "object_headers_match",
+    "outline_edges",
     "rect_coverage_plane",
     "sample_opaque_pixels",
     "signed_area_coverage",

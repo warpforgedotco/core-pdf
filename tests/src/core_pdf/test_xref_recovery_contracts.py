@@ -3,7 +3,7 @@ import zlib
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.document.document import OBJECT_HEADER_RE
+from core_pdf.impl.document.document import object_headers_present
 from core_pdf.impl.document.recovery import xref
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -374,13 +374,11 @@ def test_eof_recovery_keeps_raw_fallback_but_prefers_delimited_exact_marker(data
 
 @pytest.mark.parametrize("delimiter", [b"<<", b"[", b"(", b"/", b"%", b"{"])
 def test_an_object_header_may_end_in_a_delimiter(delimiter: bytes) -> None:
-    header = OBJECT_HEADER_RE.match(b"12 0 obj" + delimiter)
-    assert header is not None
-    assert (header[1], header[2]) == (b"12", b"0")
+    assert object_headers_present(b"12 0 obj" + delimiter, [(key_for(12, 0), 0)]) == [True]
 
 
 def test_an_object_header_keyword_is_not_a_prefix_match() -> None:
-    assert OBJECT_HEADER_RE.match(b"12 0 objx") is None
+    assert object_headers_present(b"12 0 objx", [(key_for(12, 0), 0)]) == [False]
 
 
 def pdf_with_headers_ending_in_dictionaries() -> bytes:
