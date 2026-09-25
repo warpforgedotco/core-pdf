@@ -2037,7 +2037,14 @@ def create_recovered_security_handler(
 
 # "N G obj" at an object header, with the inter-token whitespace PDF allows
 # and a trailing separator so a longer keyword cannot match.
-OBJECT_HEADER_RE = re.compile(rb"(\d+)[\0\t\n\f\r ]+(\d+)[\0\t\n\f\r ]+obj(?=[\0\t\n\f\r ]|\Z)")
+# A delimiter may end the keyword as well as whitespace: "12 0 obj<<" is a
+# well-formed header (ISO 32000-2 7.2, delimiter characters), and some writers
+# emit every object that way. Accepting only whitespace sent all of PDF
+# Reference 1.7's 110,755 entries down the slow fallback, and from there into a
+# brute-force scan of the whole file for replacement offsets.
+OBJECT_HEADER_RE = re.compile(
+    rb"(\d+)[\0\t\n\f\r ]+(\d+)[\0\t\n\f\r ]+obj(?=[\0\t\n\f\r ()<>\[\]{}/%]|\Z)"
+)
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
 
