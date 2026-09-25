@@ -134,11 +134,20 @@ FONT_PROJECTION_CACHE_MAX_ENTRIES = 128
 FONT_PROJECTION_CACHE: OrderedDict[int, _FontProjection] = OrderedDict()
 
 
+# The entry returned last, which is always the cache's most recent: a run of
+# lookups for one font -- ten per glyph shown -- skips the move to the end.
+LAST_FONT_PROJECTION: list[_FontProjection | None] = [None]
+
+
 def _font_projection(font: dict[Any, Any]) -> _FontProjection:
+    last = LAST_FONT_PROJECTION[0]
+    if last is not None and last.font is font:
+        return last
     cache_key = id(font)
     entry = FONT_PROJECTION_CACHE.get(cache_key)
     if entry is not None and entry.font is font:
         FONT_PROJECTION_CACHE.move_to_end(cache_key)
+        LAST_FONT_PROJECTION[0] = entry
         return entry
     values: dict[str, Any] = {}
     for raw_key, value in font.items():
@@ -171,6 +180,7 @@ def _font_projection(font: dict[Any, Any]) -> _FontProjection:
     FONT_PROJECTION_CACHE[cache_key] = entry
     while len(FONT_PROJECTION_CACHE) > FONT_PROJECTION_CACHE_MAX_ENTRIES:
         FONT_PROJECTION_CACHE.popitem(last=False)
+    LAST_FONT_PROJECTION[0] = entry
     return entry
 
 
@@ -312,10 +322,29 @@ def pdfminer_glyph_text(glyph: Any) -> str:
     return glyph.text
 
 
+# A decoder's answer, keyed by its identity and holding it so the identity
+# stays its own: every glyph asks, twice, and a CID font's answer runs two
+# regular expressions over its CMap. A missing /DescendantFonts raises and is
+# not kept, so it raises every time as it did.
+EMBEDDED_CMAP_UNUSABLE: dict[int, tuple[object, bool]] = {}
+EMBEDDED_CMAP_UNUSABLE_LIMIT = 256
+
+
 def pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
     decoder = glyph.font_decoder
     if not getattr(decoder, "is_cid_font", False):
         return False
+    known = EMBEDDED_CMAP_UNUSABLE.get(id(decoder))
+    if known is not None and known[0] is decoder:
+        return known[1]
+    unusable = embedded_cmap_is_unusable(decoder)
+    if len(EMBEDDED_CMAP_UNUSABLE) >= EMBEDDED_CMAP_UNUSABLE_LIMIT:
+        EMBEDDED_CMAP_UNUSABLE.clear()
+    EMBEDDED_CMAP_UNUSABLE[id(decoder)] = (decoder, unusable)
+    return unusable
+
+
+def embedded_cmap_is_unusable(decoder: Any) -> bool:
     descendants = _font_value(decoder.font, "DescendantFonts")
     if not isinstance(descendants, list) or not descendants:
         raise PdfError("Type0 font is missing /DescendantFonts")
