@@ -81,6 +81,7 @@ from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
+    BlackPointCompensation,
     ColorRendering,
     override_color_rendering,
 )
@@ -318,7 +319,8 @@ class TextState(RecoveringTextState):
         tuple[int, ColorRendering], tuple[PdfStream, ImageSource, float | None]
     ]
     capture_colors: dict[
-        tuple[int, tuple[float, ...], ColorRendering], tuple[object, tuple[float, ...] | None]
+        tuple[int, tuple[float, ...], str | None, BlackPointCompensation],
+        tuple[object, tuple[float, ...] | None],
     ]
     capture_soft_masks: dict[
         tuple[int, tuple[object, ...]], tuple[PdfSoftMask, CapturedSoftMask | None]
@@ -847,8 +849,17 @@ class TextState(RecoveringTextState):
             return
         if not self.is_graphics_visible():
             return
-        fills = kind in {"fill", "fillstroke"} and not self.initial_pattern(stroke=False)
-        strokes = kind in {"stroke", "fillstroke"} and not self.initial_pattern(stroke=True)
+        graphics = self.graphics
+        fill_space = graphics.fill_space
+        stroke_space = graphics.stroke_space
+        # initial_pattern, inlined: a Pattern colour space with no pattern set
+        # yet paints nothing.
+        fills = kind != "stroke" and not (
+            fill_space.kind == "Pattern" and graphics.fill_pattern is None
+        )
+        strokes = kind != "fill" and not (
+            stroke_space.kind == "Pattern" and graphics.stroke_pattern is None
+        )
         if not fills and not strokes:
             return
         # The operator asked for one of the three; what actually paints after
@@ -856,44 +867,47 @@ class TextState(RecoveringTextState):
         painted: PaintedDrawingKind = (
             "fillstroke" if fills and strokes else "fill" if fills else "stroke"
         )
-        fill_paints = color_space_paints(self.graphics.fill_space)
-        stroke_paints = color_space_paints(self.graphics.stroke_space)
+        fill_paints = color_space_paints(fill_space)
+        stroke_paints = color_space_paints(stroke_space)
 
-        ctm = self.graphics.ctm
+        ctm = graphics.ctm
         line_width = self.transformed_line_width()
         path = flatten_path(source, None if ctm == IDENTITY_MATRIX else ctm, self.lines, line_width)
-        if path.has_segments():
-            self.drawings.append(
-                CapturedDrawing(
-                    seqno=self.sequence,
-                    fill=self.capture_color(stroke=False),
-                    fill_pattern=self.capture_pattern(self.graphics.fill_pattern)
-                    if fill_paints and fills
-                    else None,
-                    fill_opacity=self.graphics.fill_opacity,
-                    stroke_color=self.capture_color(stroke=True),
-                    stroke_pattern=self.capture_pattern(self.graphics.stroke_pattern)
-                    if stroke_paints and strokes
-                    else None,
-                    stroke_opacity=self.graphics.stroke_opacity,
-                    line_width=line_width,
-                    line_cap=self.graphics.line_cap,
-                    line_join=self.graphics.line_join,
-                    dash_pattern=self.transformed_dash_pattern(),
-                    fill_rule=fill_rule,
-                    blend_mode=self.graphics.blend_mode,
-                    soft_mask_alpha=self.group_alpha,
-                    alpha_is_shape=self.graphics.alpha_is_shape,
-                    kind=painted,
-                    graphics_soft_mask=self.capture_graphics_soft_mask(),
-                    fill_paints=fill_paints,
-                    stroke_paints=stroke_paints,
-                    path=path,
-                    stream_order=self.stream_order,
-                    xobject_depth=self.xobject_depth,
-                )
+        if not path.has_segments():
+            return
+        self.drawings.append(
+            CapturedDrawing(
+                seqno=self.sequence,
+                fill=self.capture_color(stroke=False),
+                fill_pattern=self.capture_pattern(graphics.fill_pattern)
+                if fill_paints and fills
+                else None,
+                fill_opacity=graphics.fill_opacity,
+                stroke_color=self.capture_color(stroke=True),
+                stroke_pattern=self.capture_pattern(graphics.stroke_pattern)
+                if stroke_paints and strokes
+                else None,
+                stroke_opacity=graphics.stroke_opacity,
+                line_width=line_width,
+                line_cap=graphics.line_cap,
+                line_join=graphics.line_join,
+                dash_pattern=self.transformed_dash_pattern() if graphics.dash_pattern else None,
+                fill_rule=fill_rule,
+                blend_mode=graphics.blend_mode,
+                soft_mask_alpha=self.group_alpha,
+                alpha_is_shape=graphics.alpha_is_shape,
+                kind=painted,
+                graphics_soft_mask=self.capture_graphics_soft_mask()
+                if graphics.soft_mask is not None
+                else None,
+                fill_paints=fill_paints,
+                stroke_paints=stroke_paints,
+                path=path,
+                stream_order=self.stream_order,
+                xobject_depth=self.xobject_depth,
             )
-            self.sequence += 1
+        )
+        self.sequence += 1
 
     def clip_path(self, state: object, source: PdfPath, fill_rule: str) -> None:
         path = flatten_path(source, self.graphics.ctm)
@@ -1231,24 +1245,30 @@ class TextState(RecoveringTextState):
         return paint + (4 if mode >= 4 else 0)
 
     def capture_color(self, *, stroke: bool) -> tuple[float, ...] | None:
-        color = self.graphics.stroke_color if stroke else self.graphics.fill_color
-        spec = self.graphics.stroke_space if stroke else self.graphics.fill_space
-        if color is not None and spec is not None:
-            if not color_space_paints(spec):
-                return color
-            key = (id(spec), color, self.graphics.color_rendering)
-            previous = self.capture_colors.get(key)
-            if previous is not None:
-                return previous[1]
-            converted = color_operands_to_srgb(
-                spec, list(color), rendering=self.graphics.color_rendering
-            )
-            result = converted if converted is not None else color
-            if len(self.capture_colors) >= COLOR_CACHE_LIMIT:
-                self.capture_colors.clear()
-            self.capture_colors[key] = (spec, result)
-            return result
-        return color
+        graphics = self.graphics
+        if stroke:
+            color = graphics.stroke_color
+            spec = graphics.stroke_space
+        else:
+            color = graphics.fill_color
+            spec = graphics.fill_space
+        if color is None or spec is None or not color_space_paints(spec):
+            return color
+        # Keyed on the two fields the rendering is made from rather than the
+        # ColorRendering itself, whose hash and equality run in Python: every
+        # painted path asks this twice.
+        intent = graphics.render_intent
+        black_point = graphics.black_point_compensation
+        key = (id(spec), color, intent, black_point)
+        previous = self.capture_colors.get(key)
+        if previous is not None:
+            return previous[1]
+        converted = color_operands_to_srgb(spec, list(color), rendering=graphics.color_rendering)
+        result = converted if converted is not None else color
+        if len(self.capture_colors) >= COLOR_CACHE_LIMIT:
+            self.capture_colors.clear()
+        self.capture_colors[key] = (spec, result)
+        return result
 
     def capture_shading_dictionary(self, dictionary: dict) -> dict:
         return {
