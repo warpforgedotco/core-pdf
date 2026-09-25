@@ -76,6 +76,7 @@ from core_pdf.impl.render.patterns import (
 from core_pdf.impl.scalars import parse_int
 from core_pdf_cythonized import (
     accumulate_source_plane,
+    blend_coverage_counts,
     blend_normal_alpha_array_numpy,
     box_downsample_blocks,
     composite_elementary_normal,
@@ -2432,6 +2433,41 @@ class RasterTarget:
                     rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
                 )
             return
+        if normal_fast and pixel_area < 10_000 and all(type(channel) is int for channel in rgba):
+            # A clip that is not rectangles, which the kernels above cannot
+            # take: the per-pixel loop below, compiled. supersampled_coverage_plane
+            # gives the same 4x4 counts the loop samples, and
+            # blend_coverage_counts does its clip test, blend_px's arithmetic
+            # and the per-pixel group-plane updates.
+            source = (
+                edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
+            )
+            sampled = supersampled_coverage_plane(
+                source, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
+            )
+            if sampled is None:
+                return
+            counts, first_row = sampled
+            top = iy0 + first_row
+            touched = blend_coverage_counts(
+                self.pixel_array,
+                counts,
+                ix0,
+                top,
+                None
+                if rectangular_clip
+                else self.clip_pixel_mask(ix0, top, ix1, top + len(counts)),
+                *rgba,
+                self.group_source_alpha,
+                self.group_source_shape,
+                self.group_source_shape is not None,
+                self.shape_alpha,
+            )
+            if touched is not None:
+                self.extend_paint_window(
+                    slice(touched[1], touched[3]), slice(touched[0], touched[2])
+                )
+            return
         if edges is None:
             edges = edge_tuples(edge_array)
         edge_segments = [
@@ -2507,6 +2543,24 @@ class RasterTarget:
                         track_shape=track_shape,
                         blend_resolved_mode=blend_resolved_mode,
                     )
+
+    def clip_pixel_mask(self, ix0: int, iy0: int, ix1: int, iy1: int) -> bytearray:
+        """One byte per pixel of the box, row by row: 1 where pixel_in_clip is true.
+
+        pixel_in_clip's own rule, with each row's spans fetched once, for the
+        kernels that take the place of a loop that asked it pixel by pixel.
+        """
+        box_width = ix1 - ix0
+        allowed = bytearray(box_width * (iy1 - iy0))
+        clip_row_visible_spans = self.clip.clip_row_visible_spans
+        for py in range(iy0, iy1):
+            spans = clip_row_visible_spans(py)
+            row_start = (py - iy0) * box_width - ix0
+            for px in range(ix0, ix1):
+                index = bisect_left(spans, (px + 1, -1))
+                if index > 0 and spans[index - 1][0] <= px < spans[index - 1][1]:
+                    allowed[row_start + px] = 1
+        return allowed
 
     def fill_line(
         self,
@@ -2649,19 +2703,7 @@ class RasterTarget:
             # goes in as the pixels the loop's per-pixel test would have let
             # through, from the same row spans. It returns the box it covered,
             # which is what blend_px's per-pixel paint-window extension adds up to.
-            allowed = None
-            if clip_regions:
-                box_width = ix1 - ix0
-                allowed = bytearray(box_width * (iy1 - iy0))
-                clip_row_visible_spans = clip.clip_row_visible_spans
-                for py in range(iy0, iy1):
-                    # pixel_in_clip's own rule, with the row's spans fetched once.
-                    spans = clip_row_visible_spans(py)
-                    row_start = (py - iy0) * box_width - ix0
-                    for px in range(ix0, ix1):
-                        index = bisect_left(spans, (px + 1, -1))
-                        if index > 0 and spans[index - 1][0] <= px < spans[index - 1][1]:
-                            allowed[row_start + px] = 1
+            allowed = self.clip_pixel_mask(ix0, iy0, ix1, iy1) if clip_regions else None
             covered_box = stroke_segment_samples(
                 self.pixel_array,
                 0,

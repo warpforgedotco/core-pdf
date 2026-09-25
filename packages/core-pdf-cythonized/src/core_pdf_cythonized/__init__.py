@@ -39,6 +39,7 @@ from core_pdf_cythonized._composite import (
 )
 from core_pdf_cythonized._content import SCAN_NAME, SCAN_OPERATOR, ContentScanner
 from core_pdf_cythonized._coverage import glyph_coverage_plane, signed_area_coverage
+from core_pdf_cythonized._coverage_blend import blend_coverage_counts
 from core_pdf_cythonized._distinct_rows import distinct_uint16_rows, gather_uint8_rows
 from core_pdf_cythonized._downsample import box_downsample_blocks
 from core_pdf_cythonized._glyphs import horizontal_glyph_geometry
@@ -62,6 +63,7 @@ __all__ = (
     "ContentScanner",
     "ObjectScanner",
     "accumulate_source_plane",
+    "blend_coverage_counts",
     "blend_normal_alpha_array_numpy",
     "box_downsample_blocks",
     "composite_elementary_normal",
