@@ -7,6 +7,7 @@ from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl.geometry import rect_tuple, union_bbox
+from core_pdf.impl.glyphs import GlyphStyle
 from core_pdf.impl.graphics.color_spec import describe_color_space
 from core_pdf.impl.graphics.filter_registry import declared_filter_names
 from core_pdf.impl.render.model import (
@@ -147,6 +148,7 @@ class DisplayList:
         "group_scope_floors",
         "open_group_indexes",
         "group_member_boxes",
+        "glyph_paint_fields",
     )
 
     width: float
@@ -165,6 +167,7 @@ class DisplayList:
         "group_scope_floors",
         "open_group_indexes",
         "group_member_boxes",
+        "glyph_paint_fields",
     )
     __match_args__ = ("width", "height", "items")
 
@@ -187,6 +190,9 @@ class DisplayList:
         # of its group-begin item: the page box they paint within, or None if
         # it has none. See plain_fill_members_box.
         self.group_member_boxes: dict[int, tuple[float, float, float, float] | None] = {}
+        # A glyph style's paint fields, normalized, keyed by the style's
+        # identity and holding the style so that identity stays its own.
+        self.glyph_paint_fields: dict[int, tuple[GlyphStyle, tuple[Any, ...]]] = {}
 
     def __repr__(self) -> str:
         return (
@@ -253,60 +259,51 @@ class DisplayList:
                     if plain and begin < len(self.items):
                         self.group_member_boxes[id(self.items[begin])] = box
 
-    def append_path_paint(
+    def append_glyph_paint(
         self,
         paint_kind: PathPaintKind,
         seqno: int,
-        *,
         bbox: Any,
         path: Any,
         edge_array: Any,
-        fill: Any,
-        fill_opacity: Any,
-        stroke_color: Any,
-        stroke_opacity: Any,
-        line_width: Any,
-        line_cap: Any,
-        line_join: Any,
-        dash_pattern: Any,
-        fill_rule: Any,
-        blend_mode: Any,
-        soft_mask_alpha: Any,
-        graphics_soft_mask: Any,
-        alpha_is_shape: Any,
+        style: GlyphStyle,
     ) -> None:
-        """append() for a path paint given every field, as each glyph is.
+        """append() for a glyph's path paint, whose other fields are its style's.
 
-        A page appends one per glyph drawn, and append's keyword dictionary
-        and a get() per field were most of it. The fields are normalized
-        exactly as append normalizes them; a pattern is never given.
+        A page appends one per glyph drawn, and every glyph of a text
+        operation shares one style, so its fields are normalized once, as
+        append normalizes them, and each item is built positionally from them;
+        the keyword calls this replaced were most of the cost. A pattern is
+        never given.
         """
-        self.items.append(
-            PathPaintItem(
-                paint_kind=paint_kind,
-                seqno=seqno,
-                bbox=bbox,
-                path=path,
-                fill=fill or None,
-                fill_opacity=fill_opacity,
-                stroke_color=stroke_color,
-                stroke_opacity=stroke_opacity,
-                line_width=float(line_width) if is_pdf_number(line_width) else 1.0,
-                line_cap=int(line_cap or 0),
-                line_join=int(line_join or 0),
-                dash_pattern=dash_pattern,
-                fill_rule=fill_rule or "nonzero",
-                blend_mode=blend_mode,
-                soft_mask_alpha=soft_mask_alpha,
-                alpha_is_shape=alpha_is_shape,
-                graphics_soft_mask=(
-                    graphics_soft_mask if isinstance(graphics_soft_mask, CapturedSoftMask) else None
-                ),
-                fill_pattern=None,
-                stroke_pattern=None,
-                edge_array=edge_array,
+        cached = self.glyph_paint_fields.get(id(style))
+        if cached is None or cached[0] is not style:
+            line_width = style.line_width
+            graphics_soft_mask = style.graphics_soft_mask
+            fields: tuple[Any, ...] = (
+                style.fill or None,
+                style.fill_opacity,
+                style.stroke_color,
+                style.stroke_opacity,
+                float(line_width) if is_pdf_number(line_width) else 1.0,
+                int(style.line_cap or 0),
+                int(style.line_join or 0),
+                style.dash_pattern,
+                "nonzero",
+                style.blend_mode,
+                style.soft_mask_alpha,
+                False,
+                None,
+                None,
+                style.alpha_is_shape,
+                graphics_soft_mask if isinstance(graphics_soft_mask, CapturedSoftMask) else None,
             )
-        )
+            self.glyph_paint_fields[id(style)] = (style, fields)
+        else:
+            fields = cached[1]
+        # Both checkers miscount a star argument followed by another positional.
+        item = PathPaintItem(paint_kind, seqno, bbox, path, *fields, edge_array)  # type: ignore[call-arg]  # ty: ignore[too-many-positional-arguments]
+        self.items.append(item)
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
         graphics_mask = data.get("graphics_soft_mask")

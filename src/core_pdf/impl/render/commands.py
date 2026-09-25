@@ -129,26 +129,7 @@ def append_glyph_paint(
         if mode in {1, 5}
         else PathPaintKind.FILL_STROKE
     )
-    display_list.append_path_paint(
-        paint_kind,
-        glyph.seqno,
-        bbox=bbox,
-        path=path,
-        edge_array=edge_array,
-        fill=glyph.fill,
-        fill_opacity=glyph.fill_opacity,
-        stroke_color=glyph.stroke_color,
-        stroke_opacity=glyph.stroke_opacity,
-        line_width=glyph.line_width,
-        line_cap=glyph.line_cap,
-        line_join=glyph.line_join,
-        dash_pattern=glyph.dash_pattern,
-        fill_rule="nonzero",
-        blend_mode=glyph.blend_mode,
-        soft_mask_alpha=glyph.soft_mask_alpha,
-        graphics_soft_mask=glyph.graphics_soft_mask,
-        alpha_is_shape=glyph.alpha_is_shape,
-    )
+    display_list.append_glyph_paint(paint_kind, glyph.seqno, bbox, path, edge_array, glyph.style)
     return True
 
 
