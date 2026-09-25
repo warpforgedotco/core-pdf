@@ -9,6 +9,7 @@ import imagecodecs
 import numpy
 
 from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
     ColorRendering,
@@ -121,7 +122,24 @@ def transform(
         )
         # A copy, so a caller that writes into the result cannot reach the cache.
         return numpy.frombuffer(converted, dtype=numpy.uint8).reshape(rows, 3).copy()
+    if rows > DISTINCT_ROWS_MINIMUM and channels <= 4:
+        # lcms converts each pixel on its own, so an image converted by its
+        # distinct colours and scattered back is the same image. A photograph
+        # uses few of the colours it could -- 2.5% of the pixels on one corpus
+        # page -- so this skips most of lcms's work; past a quarter distinct,
+        # the scatter would cost more than it saves.
+        found = distinct_uint16_rows(contiguous, rows // 4)
+        if found is not None:
+            distinct, inverse = found
+            distinct_colors = cms_transform(
+                transform.profile, transform.color_space, intent, flags, distinct
+            )
+            return gather_uint8_rows(numpy.ascontiguousarray(distinct_colors), inverse)
     return cms_transform(transform.profile, transform.color_space, intent, flags, contiguous)
+
+
+# Below this many pixels an image goes straight to lcms.
+DISTINCT_ROWS_MINIMUM = 1 << 16
 
 
 @lru_cache(maxsize=4096)
