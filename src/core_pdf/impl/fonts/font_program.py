@@ -688,6 +688,8 @@ class CFFUnicodeRepairIndex:
         "make_font",
         "label_names",
         "repairable_gids",
+        "feature_cache",
+        "candidate_arrays_cache",
     )
 
     def __init__(
@@ -707,6 +709,12 @@ class CFFUnicodeRepairIndex:
                 code_to_gid[code_bytes] = gid
 
         self.make_font = font
+        # A decoder asks again for every string it decodes, and each request
+        # compares against the same candidate glyphs. Features depend only on
+        # the glyph's outline, so they are computed once per glyph, and the
+        # candidates' arrays once per index.
+        self.feature_cache: dict[int, CFFGlyphFeature] = {}
+        self.candidate_arrays_cache: FeatureArrays | None = None
         self.label_names = labels
         self.code_to_gid_map = code_to_gid
         self.repairable_gids = frozenset(
@@ -740,8 +748,14 @@ class CFFUnicodeRepairIndex:
         }
 
     def repairs_for_gids(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
-        feature_gids = dict.fromkeys((*self.resolve_candidate_gids, *requested_gids))
-        features = {gid: self.make_font.glyph_feature(gid) for gid in feature_gids}
+        feature_cache = self.feature_cache
+        glyph_feature = self.make_font.glyph_feature
+        features: dict[int, CFFGlyphFeature] = {}
+        for gid in dict.fromkeys((*self.resolve_candidate_gids, *requested_gids)):
+            feature = feature_cache.get(gid)
+            if feature is None:
+                feature = feature_cache[gid] = glyph_feature(gid)
+            features[gid] = feature
 
         candidate_gids = tuple(gid for gid in self.resolve_candidate_gids if features[gid].cells)
         target_gids = tuple(gid for gid in requested_gids if features[gid].cells)
@@ -753,12 +767,14 @@ class CFFUnicodeRepairIndex:
         ):
             target_features = [features[gid] for gid in target_gids]
             candidate_features = [features[gid] for gid in candidate_gids]
-            candidate_arrays = feature_arrays(
-                [feature.cells for feature in candidate_features],
-                [feature.bitmap for feature in candidate_features],
-                [feature.aspect for feature in candidate_features],
-                [feature.contours for feature in candidate_features],
-            )
+            candidate_arrays = self.candidate_arrays_cache
+            if candidate_arrays is None:
+                candidate_arrays = self.candidate_arrays_cache = feature_arrays(
+                    [feature.cells for feature in candidate_features],
+                    [feature.bitmap for feature in candidate_features],
+                    [feature.aspect for feature in candidate_features],
+                    [feature.contours for feature in candidate_features],
+                )
             distance_matrix = feature_distance_matrix(
                 [feature.cells for feature in target_features],
                 [feature.bitmap for feature in target_features],
