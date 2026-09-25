@@ -144,22 +144,23 @@ cdef inline double python_min(double left, double right) noexcept:
     return right if right < left else left
 
 
-cdef int add_curve(PathBuilder path, command, tuple values, hypot) except -1:
-    if len(values) != 8:
-        raise ValueError(f"expected 8 values to unpack, got {len(values)}")
+cdef int add_curve(PathBuilder path, const double *values, hypot) except -1:
+    # values: the start point, two controls and the end point, then the
+    # linear part of the curve's CTM (a, b, c, d) and its flatness.
     cdef double x0 = values[0], y0 = values[1], x1 = values[2], y1 = values[3]
     cdef double x2 = values[4], y2 = values[5], x3 = values[6], y3 = values[7]
-    matrix = command.ctm
     cdef double scale = python_max(
-        python_max(<double> hypot(matrix.a, matrix.b), <double> hypot(matrix.c, matrix.d)), 1.0
+        python_max(<double> hypot(values[8], values[9]), <double> hypot(values[10], values[11])),
+        1.0,
     )
     cdef double control_len = (
         <double> hypot(x1 - x0, y1 - y0)
         + <double> hypot(x2 - x1, y2 - y1)
         + <double> hypot(x3 - x2, y3 - y2)
     )
-    flatness_value = command.flatness or 0.25
-    cdef double flatness = python_max(0.1, <double> flatness_value)
+    # flatness or 0.25: either zero is falsy, a NaN is not.
+    cdef double flatness_value = values[12] if values[12] != 0.0 else 0.25
+    cdef double flatness = python_max(0.1, flatness_value)
     cdef double steps = ceil(control_len * scale / (flatness * 8.0))
     check_integral(steps)
     # max(4, min(128, steps)), each keeping its first argument on a tie.
@@ -188,12 +189,15 @@ cdef int add_curve(PathBuilder path, command, tuple values, hypot) except -1:
     return 0
 
 
-def flatten_path_commands(commands, matrix, hypot):
+def flatten_path_commands(
+    const unsigned char[::1] ops, const double[::1] coords, matrix, hypot
+):
     """Flatten, transform and summarize a path, as capture needs it.
 
-    ``commands`` is a PdfPath's command list; ``matrix`` is the six-number
-    CTM to apply to every point, or None to leave them as flattened; ``hypot``
-    is math.hypot.
+    ``ops`` and ``coords`` are a PdfPath's operator bytes and numbers, laid
+    out as core_pdf_spec's PATH_OPERAND_COUNTS says; ``matrix`` is the
+    six-number CTM to apply to every point, or None to leave them as
+    flattened; ``hypot`` is math.hypot.
 
     Returns ``(xs, ys, spans, bbox, has_segments, lines)``: float64 point
     columns, a ``(start, end, closed)`` span per subpath, the bounding box or
@@ -202,27 +206,34 @@ def flatten_path_commands(commands, matrix, hypot):
     subpath that moves by more than 0.01 on either axis.
     """
     cdef PathBuilder path = PathBuilder()
-    cdef tuple values
-    cdef str operator
-    for command in commands:
-        operator = command.operator
-        values = command.operands
-        if operator == "m":
-            if len(values) != 2:
-                raise TypeError(f"move_to() takes 2 positional arguments but {len(values)} were given")
-            path.move_to(values[0], values[1])
-        elif operator == "l":
-            if len(values) != 2:
-                raise TypeError(f"line_to() takes 2 positional arguments but {len(values)} were given")
-            path.line_to(values[0], values[1])
-        elif operator == "h":
+    cdef Py_ssize_t op_index, at = 0, available = coords.shape[0]
+    cdef unsigned char op
+    for op_index in range(ops.shape[0]):
+        op = ops[op_index]
+        if op == 109:  # m
+            if at + 2 > available:
+                raise ValueError("path coordinates run short")
+            path.move_to(coords[at], coords[at + 1])
+            at += 2
+        elif op == 108:  # l
+            if at + 2 > available:
+                raise ValueError("path coordinates run short")
+            path.line_to(coords[at], coords[at + 1])
+            at += 2
+        elif op == 104:  # h
             path.close()
-        elif operator == "re":
-            if len(values) != 4:
-                raise TypeError(f"rect() takes 4 positional arguments but {len(values)} were given")
-            path.rect(values[0], values[1], values[2], values[3])
-        elif operator == "c":
-            add_curve(path, command, values, hypot)
+        elif op == 114:  # re
+            if at + 4 > available:
+                raise ValueError("path coordinates run short")
+            path.rect(coords[at], coords[at + 1], coords[at + 2], coords[at + 3])
+            at += 4
+        elif op == 99:  # c
+            if at + 13 > available:
+                raise ValueError("path coordinates run short")
+            add_curve(path, &coords[at], hypot)
+            at += 13
+        else:
+            raise ValueError(f"unknown path operator {op}")
     path.finish_subpath()
 
     cdef Py_ssize_t count = path.points.count

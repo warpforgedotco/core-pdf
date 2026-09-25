@@ -842,7 +842,7 @@ class TextState(RecoveringTextState):
         # mark that will not exist. Content streams hit this constantly: a
         # paint operator resets current_path, so the common "m l S f" idiom
         # runs f against an empty path. One corpus page does that 18,560 times.
-        if not source.commands:
+        if not source.ops:
             return
         if not self.is_graphics_visible():
             return
@@ -1444,7 +1444,9 @@ def flatten_path(
     The path's point lists wait until something reads them; see
     CapturedPath.deferred_flattened.
     """
-    xs, ys, spans, bbox, has_segments, lines = flatten_path_commands(source.commands, matrix, hypot)
+    xs, ys, spans, bbox, has_segments, lines = flatten_path_commands(
+        source.ops, source.coords, matrix, hypot
+    )
     return CapturedPath.deferred_flattened(xs, ys, spans, bbox, has_segments), lines
 
 

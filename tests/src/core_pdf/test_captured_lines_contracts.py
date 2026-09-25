@@ -24,12 +24,27 @@ from core_pdf.impl.capture.records import (
     CapturedPath,
     CapturedSubpath,
 )
-from core_pdf_spec.s_07_content.model import PathCommand, PdfPath
+from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
 
 def path_of(*commands: tuple[str, tuple[float, ...]]) -> PdfPath:
-    return PdfPath([PathCommand(op, values, IDENTITY_MATRIX, 0.0) for op, values in commands])
+    path = PdfPath()
+    for operator, values in commands:
+        match operator:
+            case "m":
+                path.move_to(*values)
+            case "l":
+                path.line_to(*values)
+            case "h":
+                path.close()
+            case "re":
+                path.rect(*values)
+            case "c":
+                path.cubic_to(values, IDENTITY_MATRIX, 0.0)
+            case _:
+                raise ValueError(operator)
+    return path
 
 
 def eager(path: CapturedPath) -> CapturedPath:

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import numpy
@@ -8,7 +8,8 @@ import numpy
 Rectangle = tuple[float, float, float, float]
 
 def flatten_path_commands(
-    commands: Iterable[Any],
+    ops: bytes | bytearray,
+    coords: Any,
     matrix: Sequence[float] | None,
     hypot: Callable[[float, float], float],
 ) -> tuple[

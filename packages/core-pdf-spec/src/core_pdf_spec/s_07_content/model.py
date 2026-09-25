@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from array import array
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Protocol, Self, TypeAlias
 
@@ -29,120 +30,89 @@ frozen_setattr = object.__setattr__
 NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
 
-class PathCommand:
-    __slots__ = ("operator", "operands", "ctm", "flatness")
-
-    operator: str
-    operands: tuple[float, ...]
-    ctm: Matrix
-    flatness: float
-
-    __fields__: ClassVar[tuple[str, ...]] = ("operator", "operands", "ctm", "flatness")
-    __match_args__ = ("operator", "operands", "ctm", "flatness")
-
-    def __init__(
-        self,
-        operator: str,
-        operands: tuple[float, ...],
-        ctm: Matrix = IDENTITY_MATRIX,
-        flatness: float = 0.0,
-    ) -> None:
-        frozen_setattr(self, "operator", operator)
-        frozen_setattr(self, "operands", operands)
-        frozen_setattr(self, "ctm", ctm)
-        frozen_setattr(self, "flatness", flatness)
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"operator={self.operator!r}, "
-            f"operands={self.operands!r}, "
-            f"ctm={self.ctm!r}, "
-            f"flatness={self.flatness!r}"
-            ")"
-        )
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.operator == other.operator
-            and self.operands == other.operands
-            and self.ctm == other.ctm
-            and self.flatness == other.flatness
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.operator, self.operands, self.ctm, self.flatness))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        operator = changes.pop("operator", self.operator)
-        operands = changes.pop("operands", self.operands)
-        ctm = changes.pop("ctm", self.ctm)
-        flatness = changes.pop("flatness", self.flatness)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(operator, operands, ctm, flatness)
+# One byte per path construction operator, and how many numbers each keeps in
+# PdfPath.coords: a curve keeps its start point, its three points, the linear
+# part of the CTM it was drawn under (a, b, c, d) and the flatness.
+PATH_MOVE = ord("m")
+PATH_LINE = ord("l")
+PATH_CLOSE = ord("h")
+PATH_RECT = ord("r")
+PATH_CURVE = ord("c")
+PATH_OPERAND_COUNTS = {PATH_MOVE: 2, PATH_LINE: 2, PATH_CLOSE: 0, PATH_RECT: 4, PATH_CURVE: 13}
 
 
 class PdfPath:
-    __slots__ = ("commands",)
+    """A path under construction, as flat storage rather than an object per operator.
 
-    commands: list[PathCommand]
+    ``ops`` holds one byte per operator and ``coords`` its numbers, in order,
+    as PATH_OPERAND_COUNTS lays them out: content streams build paths of
+    thousands of segments, and a command object with an operand tuple for
+    each was most of what building one cost.
+    """
 
-    __fields__: ClassVar[tuple[str, ...]] = ("commands",)
-    __match_args__ = ("commands",)
+    __slots__ = ("ops", "coords")
 
-    def __init__(self, commands: list[PathCommand] | None = None) -> None:
-        self.commands = [] if commands is None else commands
+    ops: bytearray
+    coords: array[float]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("ops", "coords")
+    __match_args__ = ("ops", "coords")
+
+    def __init__(self, ops: bytearray | None = None, coords: array[float] | None = None) -> None:
+        self.ops = bytearray() if ops is None else ops
+        self.coords = array("d") if coords is None else coords
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(commands={self.commands!r})"
+        name = self.__class__.__qualname__
+        return f"{name}(ops={bytes(self.ops)!r}, coords={self.coords.tolist()!r})"
 
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
         if other.__class__ is not self.__class__:
             return NotImplemented
-        return self.commands == other.commands
+        return self.ops == other.ops and self.coords == other.coords
 
     __hash__ = None  # type: ignore[assignment]
 
+    def __bool__(self) -> bool:
+        return bool(self.ops)
+
     def __replace__(self, /, **changes: Any) -> Self:
-        commands = changes.pop("commands", self.commands)
+        ops = changes.pop("ops", self.ops)
+        coords = changes.pop("coords", self.coords)
         if changes:
             raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(commands)
+        return self.__class__(ops, coords)
 
     def move_to(self, x: float, y: float) -> None:
-        self.commands.append(PathCommand("m", (x, y)))
+        self.ops.append(PATH_MOVE)
+        self.coords.append(x)
+        self.coords.append(y)
 
     def line_to(self, x: float, y: float) -> None:
-        self.commands.append(PathCommand("l", (x, y)))
+        self.ops.append(PATH_LINE)
+        self.coords.append(x)
+        self.coords.append(y)
 
     def close(self) -> None:
-        self.commands.append(PathCommand("h", ()))
+        self.ops.append(PATH_CLOSE)
 
     def rect(self, x: float, y: float, w: float, h: float) -> None:
-        self.commands.append(PathCommand("re", (x, y, w, h)))
+        self.ops.append(PATH_RECT)
+        self.coords.extend((x, y, w, h))
 
     def cubic_to(self, points: tuple[float, ...], ctm: Matrix, flatness: float) -> None:
-        self.commands.append(PathCommand("c", points, ctm, flatness))
+        """A curve from its eight numbers: start point, two controls, end point."""
+        if len(points) != 8:
+            raise ValueError(f"expected 8 values to unpack, got {len(points)}")
+        self.ops.append(PATH_CURVE)
+        self.coords.extend(points)
+        self.coords.extend((ctm.a, ctm.b, ctm.c, ctm.d, flatness))
+
+    def operators(self) -> list[str]:
+        """The operators in order, as content-stream names (re for a rectangle)."""
+        return ["re" if op == PATH_RECT else chr(op) for op in self.ops]
 
 
 class ShadingPattern:
@@ -862,7 +832,12 @@ __all__ = (
     "ContentSink",
     "GraphicsState",
     "MarkedContentEntry",
-    "PathCommand",
+    "PATH_CLOSE",
+    "PATH_CURVE",
+    "PATH_LINE",
+    "PATH_MOVE",
+    "PATH_OPERAND_COUNTS",
+    "PATH_RECT",
     "PatternPaint",
     "PdfPath",
     "ShadingPattern",
