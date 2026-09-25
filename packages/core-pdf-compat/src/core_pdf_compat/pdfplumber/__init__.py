@@ -266,6 +266,10 @@ class EnginePageAdapter:
         pdfminer_validate_page_resources(self.page)
         projected_glyphs: tuple[Any, ...] = pdfminer_page_program(self.page).glyphs
         ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
+        # The glyphs of a text operation share one provenance tuple, and what
+        # is made of it here is only read, so it is made once per tuple:
+        # whether it marks an annotation appearance, and its dict.
+        provenances: dict[int, tuple[object, bool, dict[str, Any]]] = {}
         for glyph in projected_glyphs:
             if pdfminer_embedded_cmap_is_unusable(glyph):
                 continue
@@ -273,11 +277,21 @@ class EnginePageAdapter:
                 continue
             ligature = ligatures.get(id(glyph))
             text = ligature[0] if ligature is not None else pdfminer_glyph_text(glyph)
-            if not text or ("source", "annotation_appearance") in glyph.provenance:
+            if not text:
+                continue
+            source_provenance = glyph.provenance
+            known = provenances.get(id(source_provenance))
+            if known is None or known[0] is not source_provenance:
+                known = provenances[id(source_provenance)] = (
+                    source_provenance,
+                    ("source", "annotation_appearance") in source_provenance,
+                    dict(source_provenance) if source_provenance else {},
+                )
+            if known[1]:
                 continue
             x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
             font_height = glyph.effective_font_height or glyph.font_size
-            provenance = dict(glyph.provenance) if glyph.provenance else {}
+            provenance = known[2]
             matrix = provenance.get("text_matrix")
             upright = glyph.rotation_angle % 180 == 0
             advance = x1 - x0
