@@ -131,6 +131,7 @@ class StructureElement(StructureNode):
         "alternate_description_value",
         "attributes_value",
         "class_name_value",
+        "element_cache",
         "language_value",
         "parent_value",
         "role_resolution_value",
@@ -145,8 +146,12 @@ class StructureElement(StructureNode):
         props: PdfDict,
         *,
         page_lookup: PageLookup[Any] | None = None,
+        element_cache: dict[int, StructureElement] | None = None,
     ) -> None:
         super().__init__(document, props, page_lookup=page_lookup)
+        # Shared with the page structure this element came from, so a parent
+        # that many elements share is one object, resolved once.
+        self.element_cache = element_cache
         self.role_resolution_value: StructureRole | None | object = MISSING
         self.role_error_value: str | None = None
         self.type_value: Any = MISSING
@@ -322,7 +327,17 @@ class StructureElement(StructureNode):
                 tree.page_lookup = self.page_lookup
             self.parent_value = tree
             return tree
-        self.parent_value = StructureElement(self.document, parent, page_lookup=self.page_lookup)
+        cache = self.element_cache
+        if cache is not None:
+            shared = cache.get(id(parent))
+            if shared is not None and shared.props is parent:
+                self.parent_value = shared
+                return shared
+        self.parent_value = StructureElement(
+            self.document, parent, page_lookup=self.page_lookup, element_cache=cache
+        )
+        if cache is not None:
+            cache[id(parent)] = self.parent_value
         return self.parent_value
 
     def kids_page(self) -> PdfPage | None:
@@ -471,7 +486,10 @@ class PageStructure(Sequence[StructureElement | None]):
             marker = id(obj)
             if marker not in self.elements:
                 self.elements[marker] = StructureElement(
-                    self.page.document, obj, page_lookup=self.page_lookup
+                    self.page.document,
+                    obj,
+                    page_lookup=self.page_lookup,
+                    element_cache=self.elements,
                 )
             return self.elements[marker]
         if isinstance(obj, PdfReference):
@@ -483,6 +501,7 @@ class PageStructure(Sequence[StructureElement | None]):
                         self.page.document,
                         resolved,
                         page_lookup=self.page_lookup,
+                        element_cache=self.elements,
                     )
                 return self.elements[marker]
             raise ValueError("invalid page structure parent entry")
