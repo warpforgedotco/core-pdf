@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Iterator, Sequence
 from itertools import batched
 from typing import Any, ClassVar, Literal, NoReturn, Protocol, Self
@@ -208,6 +209,11 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
     return int(row[:10]), generation, row[17] == 110, pos + 20
 
 
+# A run of rows parse_xref_entry_at accepts, but for the generation range.
+XREF_ROWS = re.compile(rb"(?:[0-9]{10} [0-9]{5} [fn](?: \r| \n|\r\n))*")
+XREF_ROW = re.compile(rb"([0-9]{10}) ([0-9]{5}) ([fn])")
+
+
 def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
     offset, generation, in_use, _ = parse_xref_entry_at(line, 0)
     return offset, generation, in_use
@@ -364,6 +370,24 @@ class XRefScanner:
         cls, data: PdfByteBuffer, pos: int, start_obj: int, num_objs: int
     ) -> tuple[XRefTable, int, int]:
         entries: XRefTable = {}
+        end = pos + 20 * num_objs
+        # Rows are fixed at 20 bytes, so a subsection that matches as a whole
+        # is read with one regex; anything else goes row by row and raises
+        # where parse_xref_entry_at does.
+        if (
+            num_objs > 0
+            and start_obj >= 0
+            and end <= len(data)
+            and XREF_ROWS.fullmatch(data, pos, end) is not None
+        ):
+            rows = XREF_ROW.findall(data, pos, end)
+            if all(int(generation) <= 65535 for _, generation, _ in rows):
+                for i, (offset, generation_digits, marker) in enumerate(rows):
+                    generation = int(generation_digits)
+                    entries[((start_obj + i) << 16) | generation] = PdfXRefEntry(
+                        int(offset), generation, marker == b"n"
+                    )
+                return entries, end, start_obj + num_objs - 1
         for i in range(num_objs):
             offset, generation, in_use, pos = parse_xref_entry_at(data, pos)
             entries[key_for(start_obj + i, generation)] = PdfXRefEntry(offset, generation, in_use)
