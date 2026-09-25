@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left
+from math import ceil, floor
 from typing import Any, ClassVar
 
 from core_pdf.impl.capture.records import CapturedPath
@@ -121,10 +122,21 @@ class ClipState:
     def page_box_to_pixels(
         self, x0: float, y0: float, x1: float, y1: float
     ) -> tuple[int, int, int, int] | None:
-        ix0 = max(0, min(self.width, math.floor((x0 - self.crop_x0) * self.scale)))
-        ix1 = max(0, min(self.width, math.ceil((x1 - self.crop_x0) * self.scale)))
-        iy0 = max(0, min(self.height, math.floor((self.crop_y1 - y1) * self.scale)))
-        iy1 = max(0, min(self.height, math.ceil((self.crop_y1 - y0) * self.scale)))
+        # max(0, min(size, v)) for each edge, as comparisons: every rendered
+        # element asks for its box, over a million times across the corpus.
+        width = self.width
+        height = self.height
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        scale = self.scale
+        ix0 = floor((x0 - crop_x0) * scale)
+        ix0 = width if ix0 > width else max(ix0, 0)
+        ix1 = ceil((x1 - crop_x0) * scale)
+        ix1 = width if ix1 > width else max(ix1, 0)
+        iy0 = floor((crop_y1 - y1) * scale)
+        iy0 = height if iy0 > height else max(iy0, 0)
+        iy1 = ceil((crop_y1 - y0) * scale)
+        iy1 = height if iy1 > height else max(iy1, 0)
         if ix1 <= ix0 or iy1 <= iy0:
             return None
         return ix0, iy0, ix1, iy1
