@@ -210,6 +210,11 @@ class TextLayout:
     stream's entry and exit drop it too, so a Type 3 glyph procedure run
     inside a TJ never sees its caller's.
 
+    A caller that passes show_text its own glyph paint -- the pdfminer
+    facade, a glyph at a time -- gets a layout of its own, reused only while
+    it passes that same paint; `given_paint` is it, or None for the paint
+    show_text works out.
+
     The text matrix's linear part is the operator's too, but the combined
     matrix is not quite: Matrix.multiply returns the CTM itself when the text
     matrix is the identity, and the product otherwise, which can differ in
@@ -219,6 +224,7 @@ class TextLayout:
 
     __slots__ = (
         "decoder",
+        "given_paint",
         "identity_text_matrix",
         "glyph_paint",
         "fill_color",
@@ -241,6 +247,7 @@ class TextLayout:
     )
 
     decoder: FontDecoder
+    given_paint: GlyphPaint | None
     identity_text_matrix: bool
     glyph_paint: GlyphPaint | None
     fill_color: tuple[float, ...] | None
@@ -687,6 +694,7 @@ class TextState(RecoveringTextState):
         graphics = self.graphics
         layout = TextLayout()
         layout.decoder = font_decoder
+        layout.given_paint = glyph_paint
         if glyph_paint is None and not font_decoder.is_type3 and graphics.soft_mask is None:
             glyph_paint = self.shared_glyph_paint
             if glyph_paint is None:
@@ -774,14 +782,13 @@ class TextState(RecoveringTextState):
         layout = self.text_layout
         if (
             layout is None
-            or glyph_paint is not None
+            or layout.given_paint is not glyph_paint
             or layout.decoder is not font_decoder
             or layout.identity_text_matrix is not identity_text_matrix
         ):
             layout = self.new_text_layout(font_decoder, glyph_paint, A, B, C, D)
             layout.identity_text_matrix = identity_text_matrix
-            if glyph_paint is None:
-                self.text_layout = layout
+            self.text_layout = layout
 
         # is_text_visible, with the part that does not read the text worked
         # out once in the layout.
