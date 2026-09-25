@@ -1,5 +1,7 @@
 """A canonical xref subsection read as columns reads as the per-row parse reads it."""
 
+import random
+
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
@@ -54,3 +56,30 @@ def test_entries_are_the_named_tuple() -> None:
         6 << 16: PdfXRefEntry(0, 0, False),
     }
     assert all(type(entry) is PdfXRefEntry for entry in table.values())
+
+
+def merged_row_by_row(sections: list[xref.XRefTable]) -> xref.XRefTable:
+    merged: xref.XRefTable = {}
+    claimed: set[int] = set()
+    for section in sections:
+        for key, entry in section.items():
+            if key >> 16 not in claimed:
+                merged[key] = entry  # noqa: PERF403 -- the reference is the loop itself
+        claimed.update(key >> 16 for key in section)
+    return merged
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_merged_sections_keep_what_the_row_loop_kept(seed: int) -> None:
+    rng = random.Random(seed)
+    sections = [
+        {
+            (rng.randrange(30) << 16) | rng.randrange(3): PdfXRefEntry(rng.randrange(1000))
+            for _ in range(rng.randrange(12))
+        }
+        for _ in range(rng.randrange(6))
+    ]
+    merged = xref.merge_xref_sections(iter(sections))
+    expected = merged_row_by_row(sections)
+    assert list(merged.items()) == list(expected.items())
+    assert all(merged[key] is expected[key] for key in merged)

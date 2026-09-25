@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Iterator, Sequence
 from functools import partial
-from itertools import batched, repeat
+from itertools import batched, compress, repeat
+from operator import not_
 from typing import Any, ClassVar, Literal, NamedTuple, NoReturn, Protocol, Self
 
 import numpy
@@ -725,13 +726,19 @@ def overlay_xref_entries(destination: XRefTable, newer: XRefTable) -> None:
 
 
 def merge_xref_sections(sections: Iterable[XRefTable]) -> XRefTable:
+    """Newest first: each section adds the entries whose object numbers no
+    newer section has claimed. The shifts and membership tests run in C,
+    through map() and compress(), not a Python loop per key."""
     merged: XRefTable = {}
     claimed: set[int] = set()
+    object_number = (16).__rrshift__
     for section in sections:
-        for key, entry in section.items():
-            if key >> 16 not in claimed:
-                merged[key] = entry
-        claimed.update(key >> 16 for key in section)
+        if claimed:
+            unclaimed = map(not_, map(claimed.__contains__, map(object_number, section)))
+            merged.update(compress(section.items(), unclaimed))
+        else:
+            merged.update(section)
+        claimed.update(map(object_number, section))
     return merged
 
 
