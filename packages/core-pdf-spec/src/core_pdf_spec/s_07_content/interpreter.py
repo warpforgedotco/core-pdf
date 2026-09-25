@@ -63,6 +63,16 @@ if TYPE_CHECKING:
     pass
 
 
+def moved_to(matrix: Matrix, e: float, f: float) -> Matrix:
+    """`matrix` with its translation replaced.
+
+    Matrix._replace(e=e, f=f) without its keyword handling and _make: the
+    text operators move the text and line matrices several times per string
+    shown, and this is a third of the cost.
+    """
+    return tuple.__new__(Matrix, (matrix[0], matrix[1], matrix[2], matrix[3], e, f))
+
+
 class ContentInterpreter:
     # The executor a subclass wants built for it. Overriding the attribute is
     # what keeps __init__ from constructing a base executor that the subclass
@@ -364,8 +374,8 @@ class ContentInterpreter:
         )
         if text:
             self.sink.show_text(self, text, data, glyphs, decoder, adv_x, adv_y)
-        self.text_matrix = self.text_matrix._replace(
-            e=te + adv_x * ta + adv_y * tc, f=tf + adv_x * tb + adv_y * td
+        self.text_matrix = moved_to(
+            self.text_matrix, te + adv_x * ta + adv_y * tc, tf + adv_x * tb + adv_y * td
         )
         self.sink.text_boundary(self, "shown")
 
@@ -417,9 +427,10 @@ class ContentInterpreter:
                 encoded_space=code == 32,
             )
             tm = self.text_matrix
-            self.text_matrix = tm._replace(
-                e=tm.e + (advance_x * tm.a + advance_y * tm.c),
-                f=tm.f + (advance_x * tm.b + advance_y * tm.d),
+            self.text_matrix = moved_to(
+                tm,
+                tm.e + (advance_x * tm.a + advance_y * tm.c),
+                tm.f + (advance_x * tm.b + advance_y * tm.d),
             )
 
     def tj_array_extra_bytes(self, item: object) -> bytes:
@@ -454,7 +465,7 @@ class ContentInterpreter:
                 pending_bytes.extend(item)
             elif t is int or t is float:
                 if pending_bytes:
-                    self.text_matrix = self.text_matrix._replace(e=te, f=tf)
+                    self.text_matrix = moved_to(self.text_matrix, te, tf)
                     self.append_text(data=bytes(pending_bytes), decoder=decoder)
                     te, tf = self.text_matrix.e, self.text_matrix.f
                     pending_bytes.clear()
@@ -470,11 +481,11 @@ class ContentInterpreter:
                 pending_bytes.extend(self.tj_array_extra_bytes(item))
 
         if pending_bytes:
-            self.text_matrix = self.text_matrix._replace(e=te, f=tf)
+            self.text_matrix = moved_to(self.text_matrix, te, tf)
             self.append_text(data=bytes(pending_bytes), decoder=decoder)
             te, tf = self.text_matrix.e, self.text_matrix.f
 
-        self.text_matrix = self.text_matrix._replace(e=te, f=tf)
+        self.text_matrix = moved_to(self.text_matrix, te, tf)
 
     def current_actual_text_span(self) -> MarkedContentEntry | None:
         for entry in reversed(self.marked_content_stack):
@@ -500,8 +511,8 @@ class ContentInterpreter:
         lm = self.line_matrix
         e = tx * lm.a + ty * lm.c + lm.e
         f = tx * lm.b + ty * lm.d + lm.f
-        self.text_matrix = self.text_matrix._replace(e=e, f=f)
-        self.line_matrix = lm._replace(e=e, f=f)
+        self.text_matrix = moved_to(self.text_matrix, e, f)
+        self.line_matrix = moved_to(lm, e, f)
 
     def op_BT(self, operands: ContentOperands, depth: int) -> None:
         self.in_text_object = True
