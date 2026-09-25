@@ -17,15 +17,18 @@ def glyph_coverage_plane(
     width: int,
     height: int,
 ) -> numpy.ndarray[Any, Any] | None: ...
-def glyph_alpha_planes(
+def fill_glyph_coverage(
     edges: numpy.ndarray[Any, Any],
     crop_x0: float,
     crop_y1: float,
     scale: float,
-    ix0: float,
-    iy0: float,
+    ix0: int,
+    iy0: int,
     width: int,
     height: int,
-    alpha: float,
-    want_shape: bool,
-) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any] | None] | None: ...
+    rgba: tuple[int, int, int, int],
+    target: numpy.ndarray[Any, Any],
+    source_alpha: numpy.ndarray[Any, Any] | None,
+    source_shape: numpy.ndarray[Any, Any] | None,
+    shape_scale: float,
+) -> bool | None: ...

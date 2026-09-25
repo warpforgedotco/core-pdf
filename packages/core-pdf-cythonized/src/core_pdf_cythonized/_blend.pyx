@@ -37,49 +37,7 @@ so the buffers are not contiguous, and reshaping one would silently copy and
 throw the in-place write away.
 """
 
-from libc.math cimport rintf
-
-
-cdef inline unsigned char opaque_channel(float value) noexcept nogil:
-    # blend_one's result for a channel when sa == 1: rintf((v * 1 + d * 0) / 1).
-    cdef float ZERO = 0.0
-    cdef float SCALE = 255.0
-    value = rintf(value)
-    return <unsigned char> (ZERO if value < ZERO else (SCALE if value > SCALE else value))
-
-
-cdef inline void blend_one(
-    unsigned char* c0,
-    unsigned char* c1,
-    unsigned char* c2,
-    unsigned char* c3,
-    int raw,
-    int cap,
-    float red,
-    float green,
-    float blue,
-) noexcept nogil:
-    cdef float ZERO = 0.0
-    cdef float ONE = 1.0
-    cdef float SCALE = 255.0
-    cdef float sa = <float> (raw if raw < cap else cap) / SCALE
-    cdef float d0 = <float> c0[0]
-    cdef float d1 = <float> c1[0]
-    cdef float d2 = <float> c2[0]
-    cdef float da = <float> c3[0] / SCALE
-    cdef float oa = sa + da * (ONE - sa)
-    cdef float safe = oa if oa > ZERO else ONE
-    cdef float weight = da * (ONE - sa)
-    cdef float value
-
-    value = rintf((red * sa + d0 * weight) / safe)
-    c0[0] = <unsigned char> (ZERO if value < ZERO else (SCALE if value > SCALE else value))
-    value = rintf((green * sa + d1 * weight) / safe)
-    c1[0] = <unsigned char> (ZERO if value < ZERO else (SCALE if value > SCALE else value))
-    value = rintf((blue * sa + d2 * weight) / safe)
-    c2[0] = <unsigned char> (ZERO if value < ZERO else (SCALE if value > SCALE else value))
-    value = rintf(oa * SCALE)
-    c3[0] = <unsigned char> (ZERO if value < ZERO else (SCALE if value > SCALE else value))
+from core_pdf_cythonized._alpha_blend cimport blend_one, opaque_channel
 
 
 def blend_normal_alpha_array_numpy(target, rgba, alpha):

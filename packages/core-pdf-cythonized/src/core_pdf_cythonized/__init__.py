@@ -39,7 +39,7 @@ from core_pdf_cythonized._composite import (
 )
 from core_pdf_cythonized._content import SCAN_NAME, SCAN_OPERATOR, ContentScanner
 from core_pdf_cythonized._coverage import (
-    glyph_alpha_planes,
+    fill_glyph_coverage,
     glyph_coverage_plane,
     signed_area_coverage,
 )
@@ -81,7 +81,7 @@ __all__ = (
     "decode_arithmetic_generic_template0",
     "flatten_path_commands",
     "gather_uint8_rows",
-    "glyph_alpha_planes",
+    "fill_glyph_coverage",
     "glyph_coverage_plane",
     "horizontal_glyph_geometry",
     "outline_edges",

@@ -102,7 +102,7 @@ the wheel.
 | `rect_coverage_plane` | `core_pdf.impl.render.paths` (deleted) | 8.57x on the kernel; -21% on a vector-heavy page render, -7 to -9% elsewhere |
 | `outline_edges` | `core_pdf.impl.render.commands` (edge half only) | 2.01x on the kernel; -2.5 to -4.4% on text-page render |
 | `glyph_coverage_plane` | the device-edge preparation in `core_pdf.impl.render.target.fill_path` (deleted) | 8.3us of numpy prep per call removed, against 3.3us of actual coverage; -10.6% / -7.5% on text-page render |
-| `glyph_alpha_planes` | the uint8 quantization of that plane in `fill_path` (deleted) | the float64 plane and two numpy passes per glyph removed; -2.5% / -5% on text-page render |
+| `fill_glyph_coverage` | the uint8 quantization of that plane, its blend and both group-plane records in `fill_path` (deleted) | four kernel round trips and two numpy passes per glyph become one pass; text-page render -6% (ISO 32000-2) / -8% (lyft, glyphs in knockout groups) |
 | `sample_opaque_pixels` | the tiled advanced-indexing gather of `core_pdf.impl.render.target.blit_opaque_sampled_tiles` (deleted) | one byte copy per pixel instead of a scratch tile and a copy; PyMuPDF test_5001 render 0.80 to 0.65 s |
 | `supersampled_coverage_plane` | the 4x4 supersampling deltas loop of `core_pdf.impl.render.target.fill_path` (deleted), which is what even-odd fills took | 15,426 corpus fills in 0.2 s against about 4.7 s; -31% on test_3806 rasterize (5.55 to 3.85 s), the slowest page in the corpus |
 | `flatten_path_commands` | `flatten_path`, `CapturedPath.derived_lines` and the CTM transform in `core_pdf.impl.capture`, and `line_coordinate_columns` in `core_pdf.impl.extract.grids` (all deleted) | one pass instead of four walks and a `CapturedLine` per segment (733,122 on one page); -39% / -34% on the two stroke-heavy extraction pages, nothing elsewhere |
@@ -114,8 +114,8 @@ the wheel.
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render.target` (both deleted) | 7.06x on the fused wrapper |
 | `decode_arithmetic_generic_template0` | `core_jbig2.codec` (deleted, with `JBIG2MQDecoder` and the `MQ_*` tables) | 69x over the 18 generic regions the JBIG2 fixtures decode (168 to 2.4 ns/px); render of no_bad_redactions.4.1 1424 to 77 ms, the two SCORE-Bench JBIG2 scans -31% and -40% |
 
-`glyph_coverage_plane`, `glyph_alpha_planes` and `signed_area_coverage` share one accumulation core;
-`glyph_coverage_plane` is kept as the golden-pinned reference the quantized planes are checked against.
+`glyph_coverage_plane`, `fill_glyph_coverage` and `signed_area_coverage` share one accumulation core;
+`glyph_coverage_plane` is kept as the golden-pinned reference the fused fill is checked against.
 Core reaches it through the fused entry point only; the device-space entry stays
 public because it is what the coverage golden vectors pin directly, and pinning
 the core through an affine transform instead would weaken them.

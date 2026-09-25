@@ -23,6 +23,8 @@ Bit-exactness with numpy follows its promotion step by step:
 setup.py builds with -ffp-contract=off, so none of this is fused into FMAs.
 """
 
+from core_pdf_cythonized._alpha_blend cimport accumulate_plane
+
 __all__ = ("accumulate_source_plane",)
 
 
@@ -33,15 +35,7 @@ def accumulate_source_plane(float[:, :] plane, const unsigned char[:, :] coverag
     if coverage.shape[0] != rows or coverage.shape[1] != cols:
         raise ValueError("coverage and plane windows differ in shape")
     cdef Py_ssize_t i, j
-    cdef float ONE = 1.0
-    cdef double SCALE = 255.0
-    cdef float previous
-    cdef float remaining
-    cdef double source
     with nogil:
         for i in range(rows):
             for j in range(cols):
-                previous = plane[i, j]
-                remaining = ONE - previous
-                source = (<double> coverage[i, j] / SCALE) * scale
-                plane[i, j] = <float> (<double> previous + <double> remaining * source)
+                plane[i, j] = accumulate_plane(plane[i, j], coverage[i, j], scale)

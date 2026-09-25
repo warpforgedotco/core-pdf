@@ -16,6 +16,8 @@ identical. The two accumulate loops at the bottom are that split.
 from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
 from libc.math cimport ceil, fabs, floor, rint
 
+from core_pdf_cythonized._alpha_blend cimport accumulate_plane, blend_one, opaque_channel
+
 import numpy
 
 
@@ -251,49 +253,65 @@ cdef double* _device_edges(
     return device
 
 
-def glyph_alpha_planes(
+def fill_glyph_coverage(
     edges,
     double crop_x0,
     double crop_y1,
     double scale,
-    double ix0,
-    double iy0,
+    Py_ssize_t ix0,
+    Py_ssize_t iy0,
     int width,
     int height,
-    double alpha,
-    bint want_shape,
+    rgba,
+    unsigned char[:, :, :] target,
+    float[:, :] source_alpha,
+    float[:, :] source_shape,
+    double shape_scale,
 ):
-    """glyph_coverage_plane, quantized: the uint8 alpha plane and, if asked, shape.
+    """A glyph fill, fused: coverage, its alpha, the blend and both plane records.
 
-    fill_path turned the float64 coverage plane into what it blends and
-    records with numpy.rint(coverage * alpha).astype(uint8), and a second
-    pass at 255 for a group's shape plane: three array operations and two
-    temporaries per glyph, around a kernel of a few microseconds. This
-    writes both from the running sum directly. The coverage is the same
-    double glyph_coverage_plane would store, and rint rounds half to even
-    as numpy.rint does, so each byte is the one numpy produced.
+    fill_path took glyph_coverage_plane's float64 plane, quantized it with
+    numpy.rint(coverage * alpha).astype(uint8) (and again at 255 for the
+    shape), blended it with blend_normal_alpha_array_numpy and recorded it
+    with accumulate_source_plane once per group plane: four kernel calls
+    behind Python wrappers that slice and check, and two numpy passes, per
+    glyph -- and in a text knockout group every glyph is one. This makes the
+    same bytes and floats in one pass: the coverage glyph_coverage_plane
+    stores, rint's half-to-even quantization as numpy.rint's, blend_one's
+    compositing into ``target`` and accumulate_plane's update of each plane
+    that is given, the shape one at ``shape_scale``.
 
-    Returns None where glyph_coverage_plane does, else (alpha, shape or None).
+    Returns None where glyph_coverage_plane does, else True.
     """
     cdef double[:, ::1] view = numpy.ascontiguousarray(edges, dtype=numpy.float64)
     cdef Py_ssize_t kept = _sloped_edge_count(view)
     if kept == 0:
         return None
-    alpha_plane = numpy.zeros((max(height, 0), max(width, 0)), numpy.uint8)
-    shape_plane = (
-        numpy.zeros((max(height, 0), max(width, 0)), numpy.uint8) if want_shape else None
-    )
     if height <= 0 or width <= 0:
-        return alpha_plane, shape_plane
-    cdef unsigned char[:, ::1] alpha_out = alpha_plane
-    cdef unsigned char[:, ::1] shape_out
-    if want_shape:
-        shape_out = shape_plane
+        return True
+    if target.shape[0] != height or target.shape[1] != width or target.shape[2] != 4:
+        raise ValueError("target differs from the plane in shape")
+    cdef bint has_alpha = source_alpha is not None
+    cdef bint has_shape = source_shape is not None
+    if has_alpha and (source_alpha.shape[0] != height or source_alpha.shape[1] != width):
+        raise ValueError("source_alpha differs from the plane in shape")
+    if has_shape and (source_shape.shape[0] != height or source_shape.shape[1] != width):
+        raise ValueError("source_shape differs from the plane in shape")
+    cdef float red = <float> <int> rgba[0]
+    cdef float green = <float> <int> rgba[1]
+    cdef float blue = <float> <int> rgba[2]
+    cdef int cap = <int> rgba[3]
+    cdef double alpha = <double> rgba[3]
+    cdef int opaque_from = 255 if cap >= 255 else 256
+    cdef unsigned char opaque_red = opaque_channel(red)
+    cdef unsigned char opaque_green = opaque_channel(green)
+    cdef unsigned char opaque_blue = opaque_channel(blue)
     cdef Py_ssize_t stride = width + 2
     cdef double* device = _device_edges(view, kept, crop_x0, crop_y1, scale, ix0, iy0)
     cdef double* acc = NULL
     cdef Py_ssize_t r, c
     cdef double running, coverage
+    cdef unsigned char raw, shape
     try:
         acc = _zeroed_cells(height * stride)
         _accumulate_device(device, kept, width, height, acc)
@@ -303,10 +321,26 @@ def glyph_alpha_planes(
                 for c in range(width):
                     running += acc[r * stride + c]
                     coverage = dmin(fabs(running), 1.0)
-                    alpha_out[r, c] = <unsigned char> rint(coverage * alpha)
-                    if want_shape:
-                        shape_out[r, c] = <unsigned char> rint(coverage * 255.0)
+                    raw = <unsigned char> rint(coverage * alpha)
+                    if raw != 0:
+                        if raw >= opaque_from:
+                            target[r, c, 0] = opaque_red
+                            target[r, c, 1] = opaque_green
+                            target[r, c, 2] = opaque_blue
+                            target[r, c, 3] = 255
+                        else:
+                            blend_one(
+                                &target[r, c, 0], &target[r, c, 1], &target[r, c, 2],
+                                &target[r, c, 3], raw, cap, red, green, blue,
+                            )
+                    if has_alpha:
+                        source_alpha[r, c] = accumulate_plane(source_alpha[r, c], raw, 1.0)
+                    if has_shape:
+                        shape = <unsigned char> rint(coverage * 255.0)
+                        source_shape[r, c] = accumulate_plane(
+                            source_shape[r, c], shape, shape_scale
+                        )
     finally:
         PyMem_Free(device)
         PyMem_Free(acc)
-    return alpha_plane, shape_plane
+    return True

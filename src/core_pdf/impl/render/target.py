@@ -83,7 +83,7 @@ from core_pdf_cythonized import (
     composite_knockout_group,
     composite_masked_normal,
     composite_normal_group,
-    glyph_alpha_planes,
+    fill_glyph_coverage,
     rect_coverage_plane,
     sample_opaque_pixels,
     stroke_segment_samples,
@@ -2438,7 +2438,11 @@ class RasterTarget:
             # pass over the edges. None means no edge spans any y, which is the
             # early return the sloped mask used to give: coverage would be zero
             # everywhere and the blend a no-op.
-            planes = glyph_alpha_planes(
+            rows = slice(iy0, iy1)
+            columns = slice(ix0, ix1)
+            source_alpha = self.group_source_alpha
+            source_shape = self.group_source_shape
+            drawn = fill_glyph_coverage(
                 source,
                 crop_x0,
                 crop_y1,
@@ -2447,23 +2451,19 @@ class RasterTarget:
                 iy0,
                 ix1 - ix0,
                 iy1 - iy0,
-                rgba[3],
-                self.group_source_shape is not None,
-            )
-            if planes is None:
-                return
-            alpha_plane, shape_plane = planes
-            blend_normal_alpha_array_numpy(
-                self.pixel_array[iy0:iy1, ix0:ix1],
                 rgba,
-                alpha_plane,
+                self.pixel_array[rows, columns],
+                source_alpha[rows, columns] if source_alpha is not None else None,
+                source_shape[rows, columns] if source_shape is not None else None,
+                self.shape_alpha,
             )
-            self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
-            if shape_plane is not None:
-                self.record_source_shape(slice(iy0, iy1), slice(ix0, ix1), shape_plane)
+            if drawn is not None:
+                # Both plane records extended the window by the whole box, as
+                # the no-plane path does.
+                self.extend_paint_window(rows, columns)
             return
         if normal_fast and rectangular_clip and pixel_area < 10_000:
-            # What reaches here is a fill glyph_alpha_planes cannot take --
+            # What reaches here is a fill fill_glyph_coverage cannot take --
             # in practice an even-odd one -- and 4x4 supersampling covers it.
             # A row the sampling misses is left out of the plane, as the
             # row-by-row original skipped it.

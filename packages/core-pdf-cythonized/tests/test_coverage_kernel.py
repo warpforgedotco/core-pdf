@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from core_pdf_cythonized import glyph_alpha_planes, signed_area_coverage
+from core_pdf_cythonized import fill_glyph_coverage, signed_area_coverage
 
 GOLDEN_PATH = Path(__file__).parent / "coverage_golden.pkl.gz"
 GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
@@ -64,7 +64,7 @@ def test_render_target_uses_the_kernel():
     pytest.importorskip("core_pdf")
     from core_pdf.impl.render import paths, target
 
-    assert target.glyph_alpha_planes is glyph_alpha_planes
+    assert target.fill_glyph_coverage is fill_glyph_coverage
     assert not hasattr(paths, "signed_area_coverage")
     # The device-space entry point is the one the golden vectors pin; core
     # reaches the shared core through the fused glyph front end instead.
