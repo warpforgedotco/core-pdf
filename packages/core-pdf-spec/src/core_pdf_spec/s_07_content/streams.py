@@ -384,11 +384,27 @@ class ContentStreamFrame:
 
 
 class ContentStreamExecutor:
-    __slots__ = ("state", "active_streams")
+    __slots__ = ("state", "active_streams", "decoded_streams")
 
     def __init__(self, state: ContentInterpreter) -> None:
         self.state = state
         self.active_streams: set[StreamKey] = set()
+        # Nested streams are entered again and again: a Type 3 glyph's CharProc
+        # once per glyph shown, a form once per Do. Decoding is a pure function
+        # of the stream, so each is decoded once. The stream is kept beside its
+        # bytes so its id cannot be reused while the entry exists.
+        self.decoded_streams: dict[int, tuple[PdfStream, bytes]] = {}
+
+    def stream_data(self, frame: ContentStreamFrame) -> bytes:
+        stream = frame.stream
+        if frame.depth <= 0:
+            return stream.data
+        cached = self.decoded_streams.get(id(stream))
+        if cached is not None and cached[0] is stream:
+            return cached[1]
+        data = stream.data
+        self.decoded_streams[id(stream)] = (stream, data)
+        return data
 
     @staticmethod
     def execution_key(stream: PdfStream) -> StreamKey:
@@ -427,7 +443,7 @@ class ContentStreamExecutor:
         stream_key = frame.stream_key or self.execution_key(frame.stream)
         if stream_key in self.active_streams:
             raise PdfParseError("recursive content stream")
-        frame.lexer = state.create_lexer(frame.stream.data)
+        frame.lexer = state.create_lexer(self.stream_data(frame))
         frame.old_state = state.capture_stream_state()
         state.initial_alpha_is_shape = state.graphics.alpha_is_shape
         state.initial_text_knockout = state.graphics.text_knockout
