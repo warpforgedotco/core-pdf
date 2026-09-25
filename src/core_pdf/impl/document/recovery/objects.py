@@ -18,9 +18,25 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
 if typing.TYPE_CHECKING:
     from typing import Any
 
+    from core_pdf_spec.s_07_syntax.types import PdfDict
+    from core_pdf_spec.standards import SemanticContext
+
 
 class PdfObjectStream(SyntaxObjectStream):
-    __slots__ = ()
+    __slots__ = ("body_lexer",)
+
+    def __init__(
+        self, stream: PdfStream, *, semantic_context: SemanticContext | None = None
+    ) -> None:
+        self.body_lexer: PdfLexer | None = None
+        super().__init__(stream, semantic_context=semantic_context)
+
+    def close(self) -> None:
+        with self.lock:
+            if self.body_lexer is not None:
+                self.body_lexer.close()
+                self.body_lexer = None
+            super().close()
 
     def build_index(self, pairs: list[tuple[int, int]], body_length: int) -> dict[int, int]:
         index_map: dict[int, int] = {}
@@ -35,10 +51,44 @@ class PdfObjectStream(SyntaxObjectStream):
         return index_map
 
     def parse_object_at(self, offset: int, end: int) -> Any:
+        dictionary = self.scan_dictionary_at(offset, end)
+        if dictionary is not None:
+            return dictionary
         try:
             return super().parse_object_at(offset, end)
         except PdfParseError:
             return self.handle_object_error(offset)
+
+    def scan_dictionary_at(self, offset: int, end: int) -> PdfDict | None:
+        """The dictionary spanning [offset, end), scanned in place, or None.
+
+        The base parses each object through a lexer of its own over just its
+        bytes -- on a document with thousands of compressed annotations,
+        building those lexers costs as much as parsing. This reads a
+        dictionary with one compiled scanner over the whole body instead, and
+        keeps the result only where the per-object lexer must agree: the
+        object starts with its "<<", and the scanner's closing ">>" lies
+        within the object's span followed by nothing but whitespace. The
+        scanner reads no byte past that ">>", so it saw what the object's own
+        lexer would, which would find the same dictionary, no stream keyword
+        after it and no trailing data. Anything else, including every
+        declined dictionary, takes the base path unchanged.
+        """
+        body = self.raw_body
+        if not 0 <= offset < end <= len(body) or body[offset : offset + 2] != b"<<":
+            return None
+        lexer = self.body_lexer
+        if lexer is None:
+            lexer = self.body_lexer = self.create_lexer(body)
+        parsed = lexer.object_scanner().parse_dictionary(offset)
+        if parsed is None:
+            return None
+        dictionary, dictionary_end = parsed
+        if dictionary_end > end:
+            return None
+        if dictionary_end < end and body[dictionary_end:end].strip(lexer.lexical_rules.whitespace):
+            return None
+        return dictionary
 
     def read_header(
         self, stream: PdfStream, decoded_data: bytes
