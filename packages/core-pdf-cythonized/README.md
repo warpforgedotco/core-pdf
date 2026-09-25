@@ -100,6 +100,7 @@ the wheel.
 | `signed_area_coverage` | `core_pdf.impl.render.paths` (deleted, with `group_offsets`) | 4.26x on the kernel; ~20% off full render on glyph-heavy pages |
 | `blend_normal_alpha_array_numpy` | `core_pdf.impl.render.blend` (deleted) | 9.04x on the kernel, over 26,315 calls averaging 38 elements |
 | `rect_coverage_plane` | `core_pdf.impl.render.paths` (deleted) | 8.57x on the kernel; -21% on a vector-heavy page render, -7 to -9% elsewhere |
+| `fill_rect_coverage` | the blend and group-plane records of `fill_rect`'s partially covered rectangles, and their two `rect_coverage_plane` calls (deleted); `rect_coverage_plane` stays as the golden-pinned reference | five kernel round trips per rectangle become one pass; -5% render on final-r3-report-emergency p4, test_2533, chinese-tables |
 | `outline_edges` | `core_pdf.impl.render.commands` (edge half only) | 2.01x on the kernel; -2.5 to -4.4% on text-page render |
 | `glyph_coverage_plane` | the device-edge preparation in `core_pdf.impl.render.target.fill_path` (deleted) | 8.3us of numpy prep per call removed, against 3.3us of actual coverage; -10.6% / -7.5% on text-page render |
 | `fill_glyph_coverage` | the uint8 quantization of that plane, its blend and both group-plane records in `fill_path` (deleted) | four kernel round trips and two numpy passes per glyph become one pass; text-page render -6% (ISO 32000-2) / -8% (lyft, glyphs in knockout groups) |

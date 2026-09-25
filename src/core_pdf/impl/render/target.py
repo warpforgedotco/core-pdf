@@ -84,7 +84,7 @@ from core_pdf_cythonized import (
     composite_masked_normal,
     composite_normal_group,
     fill_glyph_coverage,
-    rect_coverage_plane,
+    fill_rect_coverage,
     sample_opaque_pixels,
     stroke_segment_samples,
     supersampled_coverage_plane,
@@ -1913,19 +1913,28 @@ class RasterTarget:
                 and bottom >= iy1 - 1e-9
             )
         ):
-            alpha_plane = rect_coverage_plane(ix0, ix1, iy0, iy1, left, right, top, bottom, rgba[3])
-            blend_normal_alpha_array_numpy(
-                self.pixel_array[iy0:iy1, ix0:ix1],
+            rows = slice(iy0, iy1)
+            columns = slice(ix0, ix1)
+            source_alpha = self.group_source_alpha
+            source_shape = self.group_source_shape
+            fill_rect_coverage(
+                ix0,
+                ix1,
+                iy0,
+                iy1,
+                left,
+                right,
+                top,
+                bottom,
                 rgba,
-                alpha_plane,
+                self.pixel_array[rows, columns],
+                source_alpha[rows, columns] if source_alpha is not None else None,
+                source_shape[rows, columns] if source_shape is not None else None,
+                self.shape_alpha,
             )
-            self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
-            if self.group_source_shape is not None:
-                self.record_source_shape(
-                    slice(iy0, iy1),
-                    slice(ix0, ix1),
-                    rect_coverage_plane(ix0, ix1, iy0, iy1, left, right, top, bottom, 255),
-                )
+            # Both plane records extended the window by the whole box, as the
+            # no-plane path does.
+            self.extend_paint_window(rows, columns)
             return
         if rgba[3] == 255 and blend_mode is None and rectangular_clip:
             span = ix1 - ix0

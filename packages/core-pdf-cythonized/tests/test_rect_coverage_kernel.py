@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from core_pdf_cythonized import rect_coverage_plane
+from core_pdf_cythonized import fill_rect_coverage, rect_coverage_plane
 
 GOLDEN_PATH = Path(__file__).parent / "rect_coverage_golden.pkl.gz"
 GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
@@ -64,5 +64,5 @@ def test_render_target_uses_the_kernel():
     pytest.importorskip("core_pdf")
     from core_pdf.impl.render import paths, target
 
-    assert target.rect_coverage_plane is rect_coverage_plane
+    assert target.fill_rect_coverage is fill_rect_coverage
     assert not hasattr(paths, "rect_coverage_plane")
