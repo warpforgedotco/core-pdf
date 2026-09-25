@@ -49,6 +49,13 @@ def png_predict(
     n = len(data)
     if n % (row_length + 1):
         raise PredictorError("truncated PNG predictor row")
+    if n:
+        rows = uint8_view(data, count=n).reshape(-1, row_length + 1)
+        if (rows[:, 0] == 2).all():
+            # Every row Up, as a cross-reference stream's usually are: each
+            # row is the sum mod 256 of the rows up to it, which a uint8
+            # cumulative sum down the columns computes for all of them at once.
+            return numpy.cumsum(rows[:, 1:], axis=0, dtype=numpy.uint8).tobytes()
     out = bytearray((n // (row_length + 1)) * row_length)
     out_view = numpy.frombuffer(out, dtype=numpy.uint8)
     previous = memoryview(bytes(row_length))
