@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from functools import lru_cache
+from math import copysign
 from typing import Any
 
 import imagecodecs
@@ -29,6 +30,7 @@ from core_pdf.impl.scalars import parse_float
 from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
+from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color_kernels import (
     color_key_alpha,
     decode_sample_values,
@@ -45,6 +47,7 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
     use_black_point_compensation,
 )
 from core_pdf_spec.s_11_transparency.images import unblend_matte_components
+from core_pdf_spec.types import PdfName
 
 
 def quantize(values: numpy.ndarray[Any, Any], maximum: int = 255) -> numpy.ndarray:
@@ -89,6 +92,91 @@ def distinct_component_rows(
         distinct, inverse = numpy.unique(values[:, 0], return_inverse=True)
         return distinct.reshape(-1, 1), inverse
     return numpy.unique(values, axis=0, return_inverse=True)
+
+
+type TintFunction = Callable[..., tuple[float, ...]]
+
+# Keyed by tint_function_key, or failing that by id(tint_fn), whose entry
+# then holds the function object so the id cannot be reused while cached.
+TINT_FUNCTION_CACHE: dict[object, tuple[object, TintFunction]] = {}
+TINT_FUNCTION_CACHE_LIMIT = 64
+TINT_OUTPUT_CACHE_LIMIT = 4096
+
+
+def plain_function_value(value: object) -> bool:
+    kind = type(value)
+    if kind is int or kind is float or kind is PdfName:
+        return True
+    return (kind is list or kind is tuple) and all(
+        type(item) is int or type(item) is float
+        for item in value  # type: ignore[attr-defined]  # ty: ignore[not-iterable]
+    )
+
+
+def tint_function_key(tint_fn: object) -> object | None:
+    """What compile_pdf_function reads of a stream function, if it can be a key.
+
+    It reads the dictionary and the decoded data, nothing else; the source
+    object differs per image, since deep_resolve rebuilds a stream whose
+    dictionary held a reference. Only a dictionary of numbers, names and
+    number arrays -- whose reprs say exactly what they hold -- is keyed by
+    content, and a stream that does not decode is left to the compiler.
+    """
+    if type(tint_fn) is not PdfStream:
+        return None
+    items: list[tuple[str, str]] = []
+    for key, value in tint_fn.dictionary.items():
+        if not plain_function_value(value):
+            return None
+        items.append((repr(key), repr(value)))
+    try:
+        data = tint_fn.data
+    except Exception:  # noqa: BLE001 -- the compiler raises it, uncached
+        return None
+    return tuple(sorted(items)), bytes(data)
+
+
+def tint_function(tint_fn: object) -> TintFunction:
+    """`tint_fn` compiled, remembering its output for each input it is given.
+
+    Every image in a Separation or DeviceN space compiled its tint transform
+    again -- decoding a calculator's stream and parsing its program -- and
+    evaluated it once per distinct colour. Images on one page share their
+    functions and, at 8 bits, their input levels: PyMuPDF test_3806 renders
+    176 images through 8,430 function runs, 14 distinct functions among them.
+    A PDF function is a pure function of its inputs, so the compiled function
+    and the outputs it has produced are kept, and an input seen before costs a
+    lookup. Exceptions are not remembered; the next call raises again.
+    """
+    key = tint_function_key(tint_fn)
+    if key is None:
+        key = id(tint_fn)
+        cached = TINT_FUNCTION_CACHE.get(key)
+        if cached is not None and cached[0] is tint_fn:
+            return cached[1]
+    else:
+        cached = TINT_FUNCTION_CACHE.get(key)
+        if cached is not None:
+            return cached[1]
+    compiled = compile_pdf_function(tint_fn)
+    outputs: dict[tuple[float, ...], tuple[float, ...]] = {}
+
+    def remembered(*inputs: float) -> tuple[float, ...]:
+        # -0.0 equals 0.0 as a key, but a program can tell them apart.
+        if 0.0 in inputs and any(copysign(1.0, value) < 0.0 for value in inputs):
+            return compiled(*inputs)
+        output = outputs.get(inputs)
+        if output is None:
+            output = compiled(*inputs)
+            if len(outputs) >= TINT_OUTPUT_CACHE_LIMIT:
+                outputs.clear()
+            outputs[inputs] = output
+        return output
+
+    if len(TINT_FUNCTION_CACHE) >= TINT_FUNCTION_CACHE_LIMIT:
+        TINT_FUNCTION_CACHE.clear()
+    TINT_FUNCTION_CACHE[key] = (tint_fn, remembered)
+    return remembered
 
 
 def convert_components(
@@ -158,7 +246,7 @@ def convert_components(
         try:
             if space.alternate is None:
                 raise ValueError("missing tint alternate")
-            function = compile_pdf_function(space.tint_fn)
+            function = tint_function(space.tint_fn)
             distinct, inverse = distinct_component_rows(values)
             tinted = numpy.asarray(
                 [function(*(float(component) for component in row)) for row in distinct],
