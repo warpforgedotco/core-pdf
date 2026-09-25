@@ -158,13 +158,13 @@ def test_the_scan_gives_up_past_its_limit() -> None:
 def grouped(target: RasterTarget, items: list[Any], monkeypatch: pytest.MonkeyPatch) -> list[bool]:
     """Whether each item went through an elementary group, painting for real."""
     used: list[bool] = []
-    original = RasterTarget.push_elementary_group
+    original = RasterTarget.push_scratch_group
 
-    def counting(self: RasterTarget, **kwargs: Any) -> None:
+    def counting(self: RasterTarget, *args: Any, **kwargs: Any) -> None:
         used[-1] = True
-        original(self, **kwargs)
+        original(self, *args, **kwargs)
 
-    monkeypatch.setattr(RasterTarget, "push_elementary_group", counting)
+    monkeypatch.setattr(RasterTarget, "push_scratch_group", counting)
     for item in items:
         used.append(False)
         target.paint_item(item)

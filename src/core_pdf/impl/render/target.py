@@ -719,7 +719,9 @@ class RasterTarget:
                     if skip_box is not None:
                         elementary_group = False
                 if elementary_group:
-                    self.push_elementary_group(
+                    self.push_scratch_group(
+                        None,
+                        None,
                         track_shape=mask_alpha is not None,
                         mask_alpha=None if fillstroke else mask_alpha,
                         alpha_is_shape=self.paint_alpha_is_shape,
@@ -728,11 +730,7 @@ class RasterTarget:
                     self.paint_display_item(item)
                 finally:
                     if elementary_group:
-                        child = self.pop_group()
-                        try:
-                            self.composite_group(child)
-                        finally:
-                            self.release_elementary_group(child)
+                        self.composite_group(self.pop_group())
                     elif skip_box is not None:
                         self.record_knockout_paint(skip_box)
             finally:
@@ -773,18 +771,37 @@ class RasterTarget:
                 mask = data.get("soft_mask_alpha")
                 if is_pdf_number(mask):
                     opacity = (float(opacity) if is_pdf_number(opacity) else 1.0) * float(mask)
-                self.push_group(
-                    bytearray(self.width * self.height * 4),
-                    opacity,
-                    data.get("blend_mode"),
-                    isolated=data.get("group_isolated", True),
-                    knockout=data.get("group_knockout", False),
-                    alpha_is_shape=data.get("alpha_is_shape", False),
-                    track_shape=data.get("group_track_shape", False),
-                    mask_alpha=resolve_soft_mask(self, graphics_mask)
+                isolated = data.get("group_isolated", True)
+                knockout = data.get("group_knockout", False)
+                group_mask_alpha = (
+                    resolve_soft_mask(self, graphics_mask)
                     if (graphics_mask := data.get("graphics_soft_mask")) is not None
-                    else None,
+                    else None
                 )
+                if not isolated and not knockout:
+                    # A non-isolated group starts as its backdrop, as an
+                    # elementary group does, so it takes the same per-depth
+                    # scratch: a page of Type 3 text inside a knockout group
+                    # opened 9,956 of these, each copying the whole page and
+                    # zeroing two page-sized planes to paint a glyph.
+                    self.push_scratch_group(
+                        opacity,
+                        data.get("blend_mode"),
+                        track_shape=data.get("group_track_shape", False),
+                        mask_alpha=group_mask_alpha,
+                        alpha_is_shape=data.get("alpha_is_shape", False),
+                    )
+                else:
+                    self.push_group(
+                        bytearray(self.width * self.height * 4),
+                        opacity,
+                        data.get("blend_mode"),
+                        isolated=isolated,
+                        knockout=knockout,
+                        alpha_is_shape=data.get("alpha_is_shape", False),
+                        track_shape=data.get("group_track_shape", False),
+                        mask_alpha=group_mask_alpha,
+                    )
             case "group-end" if len(self.buffer_stack) > self.group_floor:
                 self.composite_group(self.pop_group())
             case "glyph" if data.get("visible") is not False:
@@ -806,20 +823,29 @@ class RasterTarget:
                 )
                 self.paint_shading(data, blend_mode)
 
-    def push_elementary_group(
+    def push_scratch_group(
         self,
+        group_alpha: float | None,
+        blend_mode: str | None,
         *,
         track_shape: bool,
         mask_alpha: SoftMaskPlane | None,
         alpha_is_shape: bool,
     ) -> None:
+        """Push a non-isolated, non-knockout group onto this depth's scratch buffer.
+
+        Such a group starts as a copy of its backdrop with empty source planes.
+        The scratch keeps that state between uses, and pop_group records what
+        the last group painted, so when the backdrop is a knockout parent's
+        (which does not change) only that window is restored.
+        """
         parent = self.buffer_stack[-1]
         backdrop = parent.backdrop if parent.knockout else self.pixels
         if backdrop is None:
             self.push_group(
                 bytearray(len(self.pixels)),
-                None,
-                None,
+                group_alpha,
+                blend_mode,
                 isolated=False,
                 track_shape=track_shape,
                 mask_alpha=mask_alpha,
@@ -851,8 +877,8 @@ class RasterTarget:
         self.buffer_stack.append(
             RasterGroup(
                 buffer,
-                None,
-                None,
+                group_alpha,
+                blend_mode,
                 view=scratch.view,
                 backdrop=backdrop,
                 source_alpha=source_alpha,
@@ -865,11 +891,6 @@ class RasterTarget:
             )
         )
         self.sync_group_mirrors()
-
-    def release_elementary_group(self, child: RasterGroup) -> None:
-        scratch = self.elementary_scratch.get(len(self.buffer_stack))
-        if scratch is not None and child.pixels is scratch.buffer:
-            scratch.dirty = list(child.paint_window) if child.paint_window else None
 
     def push_group(
         self,
@@ -915,6 +936,12 @@ class RasterTarget:
 
     def pop_group(self) -> RasterGroup:
         child = self.buffer_stack.pop()
+        # A scratch group leaves its buffer and planes changed only inside
+        # its paint window, which the next push at this depth restores.
+        # Recorded here so every way of popping it does.
+        scratch = self.elementary_scratch.get(len(self.buffer_stack))
+        if scratch is not None and child.pixels is scratch.buffer:
+            scratch.dirty = list(child.paint_window) if child.paint_window else None
         self.sync_group_mirrors()
         return child
 
