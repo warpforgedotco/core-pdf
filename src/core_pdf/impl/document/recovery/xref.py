@@ -6,6 +6,9 @@ import mmap
 import re
 import zlib
 from collections.abc import Iterator
+from typing import Any
+
+import numpy
 
 from core_pdf.impl.document.recovery.lexer import PdfLexer, matches_keyword_with_one_substitution
 from core_pdf.impl.document.recovery.objects import PdfObjectStream
@@ -793,6 +796,8 @@ class XRefScanner(SyntaxXRefScanner):
             count = min(count, remaining)
             available_index.extend((start_obj, count))
             remaining -= count
+        if w[1] != 0 and max(w) <= 8:
+            return decode_xref_stream_rows(data, w, available_index, effective_size), dict_obj
         entries: XRefTable = {}
         pos = 0
         for i in range(0, len(available_index), 2):
@@ -813,6 +818,62 @@ class XRefScanner(SyntaxXRefScanner):
                     continue
                 entries[key] = entry
         return entries, dict_obj
+
+
+def xref_stream_column(
+    rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], start: int, width: int
+) -> list[int]:
+    """The big-endian field `width` bytes wide at `start` of every row, as ints."""
+    values = numpy.zeros(len(rows), dtype=numpy.uint64)
+    for column in range(start, start + width):
+        values = (values << numpy.uint64(8)) | rows[:, column]
+    return values.tolist()
+
+
+def decode_xref_stream_rows(
+    data: bytes, w: list[int], available_index: list[int], effective_size: int
+) -> XRefTable:
+    """parse_stream's rows, for a W of fields up to eight bytes and a nonzero middle.
+
+    decode_xref_row read each row's three fields with int.from_bytes, one
+    row at a time: 532,000 rows across a 300-document corpus sample. Fields
+    of up to eight bytes fit a uint64, so each is read for every row at once
+    and the rows then built as decode_xref_row builds them -- a type-0 or
+    type-1 row with a generation over 65535 is skipped, as the error it
+    raised was.
+    """
+    row_size = sum(w)
+    row_count = sum(available_index[1::2])
+    rows = numpy.frombuffer(data, dtype=numpy.uint8, count=row_count * row_size).reshape(
+        row_count, row_size
+    )
+    kinds = xref_stream_column(rows, 0, w[0]) if w[0] else [1] * row_count
+    values = xref_stream_column(rows, w[0], w[1])
+    generations = xref_stream_column(rows, w[0] + w[1], w[2]) if w[2] else [0] * row_count
+    entries: XRefTable = {}
+    row = 0
+    for i in range(0, len(available_index), 2):
+        start, count = available_index[i : i + 2]
+        for object_number in range(start, start + count):
+            kind = kinds[row]
+            value = values[row]
+            generation = generations[row]
+            row += 1
+            if object_number >= effective_size:
+                continue
+            if kind < 2:
+                if generation > 65535:
+                    continue
+                entries[(object_number << 16) | generation] = PdfXRefEntry(
+                    value, generation, kind == 1
+                )
+            elif kind == 2:
+                entries[object_number << 16] = PdfXRefEntry(
+                    0, 0, True, object_stream=value, index_in_stream=generation
+                )
+            else:
+                entries[object_number << 16] = PdfXRefEntry(0, 0, False)
+    return entries
 
 
 def find_eof_marker(data: PdfByteBuffer, *, semantic_context: SemanticContext | None = None) -> int:
