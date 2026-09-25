@@ -197,6 +197,33 @@ def convert_components(
     raise ValueError("unsupported image color space")
 
 
+def convert_distinct_codes(
+    codes: numpy.ndarray[Any, Any],
+    space: ColorSpace,
+    pairs: tuple[tuple[float, float], ...],
+    maximum: int,
+    rendering: ColorRendering,
+) -> numpy.ndarray:
+    """Convert a one-component image by the sample codes it uses, not by pixel.
+
+    Without a matte every output pixel depends only on its own sample, so
+    converting each code the image uses once and scattering the results is
+    the same image. Finding those codes from a table of at most 65,536 entries
+    replaces the sort distinct_component_rows would otherwise run over the
+    decoded floats: 0.7s on a 9.9-megapixel page in PyMuPDF test_3806.
+    """
+    # Sized by the codes present rather than by `maximum`: damaged data can
+    # hold samples above it, which decode the same way here as elsewhere.
+    size = max(maximum, int(codes.max())) + 1
+    present = numpy.zeros(size, dtype=numpy.bool_)
+    present[codes] = True
+    used = numpy.flatnonzero(present)
+    position = numpy.zeros(size, dtype=numpy.intp)
+    position[used] = numpy.arange(len(used), dtype=numpy.intp)
+    values = decode_sample_values(used.reshape(-1, 1), pairs, maximum)
+    return convert_components(values, space, rendering=rendering)[position[codes]]
+
+
 def convert_integer_samples(
     samples: numpy.ndarray,
     dictionary: dict[Any, Any],
@@ -220,8 +247,11 @@ def convert_integer_samples(
         if numbers.shape != (count * 2,) or not numpy.isfinite(numbers).all():
             raise ValueError("invalid image Decode array")
         pairs = tuple((float(low), float(high)) for low, high in numbers.reshape(-1, 2))
-    values = decode_sample_values(integers, pairs, maximum)
-    output = convert_components(values, space, matte=matte, alpha=alpha, rendering=rendering)
+    if matte is None and count == 1 and len(integers) > maximum + 1:
+        output = convert_distinct_codes(integers[:, 0], space, pairs, maximum, rendering)
+    else:
+        values = decode_sample_values(integers, pairs, maximum)
+        output = convert_components(values, space, matte=matte, alpha=alpha, rendering=rendering)
     mask = dictionary.get("Mask")
     if isinstance(mask, (list, tuple)) and dictionary.get("SMask") is None:
         output = numpy.column_stack((output, color_key_alpha(integers, tuple(mask), maximum)))

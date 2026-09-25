@@ -187,3 +187,52 @@ def test_distinct_component_rows_collapses_nan_rows():
     # each of them the same colour either way.
     assert np.isnan(distinct[inverse][0, 0])
     assert np.isnan(distinct[inverse][2, 0])
+
+
+@pytest.mark.parametrize(
+    "space",
+    [
+        "DeviceGray",
+        ["Indexed", "DeviceRGB", 3, bytes(range(12))],
+        ["Separation", "Spot", "DeviceGray", lambda tint: 1 - tint],
+        ["Separation", "Spot", "DeviceRGB", lambda tint: (tint, 1 - tint, tint / 2)],
+        ["ICCBased", {"N": 1, "Alternate": "DeviceGray"}],
+    ],
+)
+@pytest.mark.parametrize(("bits", "reverse_decode"), [(8, False), (8, True), (16, False)])
+def test_one_component_images_convert_by_code_exactly_as_by_pixel(space, bits, reverse_decode):
+    # Past a table's worth of pixels, one-component samples convert once per
+    # code they use and are scattered back; it must be the per-pixel result.
+    from core_pdf.impl.graphics.image_samples import convert_components
+    from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values
+
+    spec = parse_color_space(space)
+    maximum = (1 << bits) - 1
+    top = 3 if spec.kind == "Indexed" else maximum
+    rng = np.random.default_rng(bits)
+    samples = rng.integers(0, top + 1, size=maximum + 2 + 5000, dtype=np.uint16)
+    dictionary = {"ColorSpace": space, "BitsPerComponent": bits}
+    pairs = ((0.0, float(maximum)),) if spec.kind == "Indexed" else spec.component_ranges
+    if reverse_decode and spec.kind != "Indexed":
+        pairs = tuple((high, low) for low, high in pairs)
+        dictionary["Decode"] = [n for low, high in pairs for n in (low, high)]
+    expected = convert_components(
+        decode_sample_values(samples.reshape(-1, 1), pairs, maximum), spec
+    )
+    actual = convert_integer_samples(samples, dictionary, bits_per_component=bits)
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_a_sample_above_its_bit_depth_still_decodes_by_code() -> None:
+    from core_pdf.impl.graphics.image_samples import convert_components
+    from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values
+
+    samples = np.full(300, 3, dtype=np.uint16)
+    samples[::7] = 900  # malformed: over the 8-bit maximum
+    dictionary = {"ColorSpace": "DeviceGray", "BitsPerComponent": 8}
+    expected = convert_components(
+        decode_sample_values(samples.reshape(-1, 1), ((0.0, 1.0),), 255),
+        parse_color_space("DeviceGray"),
+    )
+    actual = convert_integer_samples(samples, dictionary, bits_per_component=8)
+    np.testing.assert_array_equal(actual, expected)
