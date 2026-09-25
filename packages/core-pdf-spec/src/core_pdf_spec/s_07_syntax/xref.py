@@ -7,6 +7,8 @@ from collections.abc import Iterable, Iterator, Sequence
 from itertools import batched
 from typing import Any, ClassVar, Literal, NoReturn, Protocol, Self
 
+import numpy
+
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -529,11 +531,63 @@ def decode_xref_rows(data: bytes, w: list[int], index: list[int], size: int) -> 
     return decode_xref_row_table(data, w, index, row_size, row_count)
 
 
+def xref_column(
+    rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], start: int, width: int
+) -> list[int]:
+    values = numpy.zeros(len(rows), dtype=numpy.uint64)
+    for column in range(start, start + width):
+        values = (values << numpy.uint64(8)) | rows[:, column]
+    return values.tolist()
+
+
+def decode_xref_columns(
+    data: bytes, widths: list[int], index: list[int], row_size: int, row_count: int
+) -> XRefTable:
+    """decode_xref_row_table with each field read for every row at once.
+
+    A field of up to eight bytes fits a uint64, so a column of them is one
+    pass rather than an int.from_bytes per row. The one row that
+    decode_xref_row_at rejects -- type 0 or 1 with a generation over 65535
+    -- rejects the whole table, as it did.
+    """
+    rows = numpy.frombuffer(data, dtype=numpy.uint8, count=row_count * row_size).reshape(
+        row_count, row_size
+    )
+    kinds = xref_column(rows, 0, widths[0]) if widths[0] else [1] * row_count
+    values = xref_column(rows, widths[0], widths[1])
+    generations = (
+        xref_column(rows, widths[0] + widths[1], widths[2]) if widths[2] else [0] * row_count
+    )
+    entries: XRefTable = {}
+    row = 0
+    for start, count in batched(index, 2, strict=True):
+        for object_number in range(start, start + count):
+            kind = kinds[row]
+            value = values[row]
+            generation = generations[row]
+            row += 1
+            if kind < 2:
+                if generation > 65535:
+                    raise PdfParseError("invalid xref generation number")
+                entries[key_for(object_number, generation)] = PdfXRefEntry(
+                    value, generation, kind == 1
+                )
+            elif kind == 2:
+                entries[key_for(object_number)] = PdfXRefEntry(
+                    0, 0, True, object_stream=value, index_in_stream=generation
+                )
+            else:
+                entries[key_for(object_number)] = PdfXRefEntry(0, 0, False)
+    return entries
+
+
 def decode_xref_row_table(
     data: bytes, widths: list[int], index: list[int], row_size: int, row_count: int
 ) -> XRefTable:
     if len(data) != row_count * row_size:
         raise PdfParseError("xref stream length mismatch")
+    if max(widths) <= 8:
+        return decode_xref_columns(data, widths, index, row_size, row_count)
     entries: XRefTable = {}
     pos = 0
     for start, count in batched(index, 2, strict=True):
