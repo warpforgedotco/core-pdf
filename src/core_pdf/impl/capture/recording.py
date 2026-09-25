@@ -179,6 +179,17 @@ CaptureMarks: TypeAlias = tuple[int, int, int, int, int, int]
 NO_MARKS: CaptureMarks = (0, 0, 0, 0, 0, 0)
 
 
+# The operators that change nothing a glyph's paint reads -- colours and
+# colour spaces, line state, the CTM, clip, opacity, blend, masks, render
+# mode, marked-content visibility -- only the text position, text state and
+# font, and showing text. Any other operator drops the shared paint. A soft
+# mask is captured under the whole graphics state, text state included, so
+# text shown under one never shares a paint.
+GLYPH_PAINT_KEEPING_OPERATORS = frozenset(
+    ("BT", "Td", "TD", "Tm", "T*", "Tj", "TJ", "'", '"', "Tc", "Tw", "Tz", "TL", "Ts", "Tf")
+)
+
+
 class CaptureStreamExecutor(ContentStreamExecutor):
     state: TextState
     _operator_names: frozenset[bytes] | None = None
@@ -214,7 +225,16 @@ class CaptureStreamExecutor(ContentStreamExecutor):
     def enter(self, frame: ContentStreamFrame) -> bool:
         if self.is_reentrant(frame.stream, frame.stream_key, frame.depth):
             return False
+        # A stream starts under its own clip, group alpha and state, and on
+        # the way out the caller's come back: either way the paint is stale.
+        self.state.shared_glyph_paint = None
         return super().enter(frame)
+
+    def exit(self, frame: ContentStreamFrame) -> None:
+        try:
+            super().exit(frame)
+        finally:
+            self.state.shared_glyph_paint = None
 
     def operator_names(self, table: Mapping[str, OperationHandler]) -> frozenset[bytes]:
         # Encoding all 71 handler names costs 6us, and iter_content_operations
@@ -248,6 +268,8 @@ class CaptureStreamExecutor(ContentStreamExecutor):
             handler = handlers.get(name)
             if handler is None:
                 continue
+            if name not in GLYPH_PAINT_KEEPING_OPERATORS:
+                state.shared_glyph_paint = None
             child = handler(operands, depth)
             if child is not None:
                 return child
@@ -303,7 +325,7 @@ class TextState(RecoveringTextState):
     capture_mask_resources: dict[int, tuple[PdfSoftMask, PdfDict]]
     capture_active_mask_groups: set[int]
     scale_cache: tuple[Matrix, float] | None
-    tj_glyph_paint: GlyphPaint | bool | None
+    shared_glyph_paint: GlyphPaint | None
     stream_executor: CaptureStreamExecutor
     stream_executor_type = CaptureStreamExecutor
 
@@ -375,9 +397,9 @@ class TextState(RecoveringTextState):
         self.normalized_colors = {}
         self.parsed_soft_masks = {}
         self.scale_cache = None
-        # Inside a TJ array, the one paint its strings share once built; True
-        # until then, None outside one. See append_tj_array.
-        self.tj_glyph_paint = None
+        # The paint the last text shown recorded, while nothing it reads can
+        # have changed since; see GLYPH_PAINT_KEEPING_OPERATORS.
+        self.shared_glyph_paint = None
 
         self.graphics.font_size = 12.0
         self.graphics.fill_color = (0.0, 0.0, 0.0)
@@ -634,19 +656,6 @@ class TextState(RecoveringTextState):
         self.drawings.append(marker_drawing("state-push", self.sequence))
         self.sequence += 1
 
-    def append_tj_array(self, array: Any) -> None:
-        # Between the strings of one TJ array only the text position moves, so
-        # the paint every glyph records -- colours, line state, clip, masks --
-        # is built once for all of them, as the pdfminer facade already does.
-        # A Type 3 font runs its glyph programs between the strings and never
-        # shares one; a TJ inside one of those programs keeps its own.
-        outer = self.tj_glyph_paint
-        self.tj_glyph_paint = True
-        try:
-            super().append_tj_array(array)
-        finally:
-            self.tj_glyph_paint = outer
-
     def show_text(
         self,
         state: object,
@@ -663,13 +672,12 @@ class TextState(RecoveringTextState):
         # the spec's FontService protocol is far narrower than what capture reads.
         font_decoder: FontDecoder = decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         decoded_glyphs: tuple[DecodedGlyph, ...] = glyphs  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-        shared_paint = self.tj_glyph_paint
-        if glyph_paint is None and shared_paint is not None and not font_decoder.is_type3:
-            if shared_paint is True:
-                shared_paint = self.tj_glyph_paint = self.glyph_paint(
+        if glyph_paint is None and not font_decoder.is_type3 and self.graphics.soft_mask is None:
+            glyph_paint = self.shared_glyph_paint
+            if glyph_paint is None:
+                glyph_paint = self.shared_glyph_paint = self.glyph_paint(
                     self.capture_color(stroke=False)
                 )
-            glyph_paint = shared_paint  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         visible = self.is_text_visible(text)
         if 4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible():
             self.emit_clip_scope_push()
