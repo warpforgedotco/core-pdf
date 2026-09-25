@@ -374,11 +374,11 @@ def test_eof_recovery_keeps_raw_fallback_but_prefers_delimited_exact_marker(data
 
 @pytest.mark.parametrize("delimiter", [b"<<", b"[", b"(", b"/", b"%", b"{"])
 def test_an_object_header_may_end_in_a_delimiter(delimiter: bytes) -> None:
-    assert object_headers_present(b"12 0 obj" + delimiter, [(key_for(12, 0), 0)]) == [True]
+    assert object_headers_present(b"12 0 obj" + delimiter, [key_for(12, 0)], [0]) == [True]
 
 
 def test_an_object_header_keyword_is_not_a_prefix_match() -> None:
-    assert object_headers_present(b"12 0 objx", [(key_for(12, 0), 0)]) == [False]
+    assert object_headers_present(b"12 0 objx", [key_for(12, 0)], [0]) == [False]
 
 
 def pdf_with_headers_ending_in_dictionaries() -> bytes:

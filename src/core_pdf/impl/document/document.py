@@ -10,9 +10,13 @@ from array import array
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import AbstractContextManager
 from functools import partial
+from itertools import compress, repeat
+from operator import and_, is_, itemgetter, not_, truth
 from os import PathLike
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVar
+
+import numpy
 
 from core_pdf.impl.document.fields import collect_field_records
 from core_pdf.impl.document.metadata import MetadataRecord, resolve_metadata
@@ -1567,18 +1571,33 @@ class PdfDocument(Generic[PageT]):
         header_offset = self.pdf_header_offset()
         recovered_xref: dict[int, PdfXRefEntry] | None = None
         repaired = False
-        candidates = [
-            (key, entry)
-            for key, entry in self.xref.items()
-            if entry.in_use and entry.object_stream is None and entry.offset >= 0
-        ]
+        # In use, uncompressed, at a non-negative offset: selected with
+        # map() and compress() over the entry tuples, not a loop per entry.
+        keys = list(self.xref)
+        entries = list(self.xref.values())
+        offsets = list(map(ENTRY_OFFSET, entries))
+        selected = list(
+            map(
+                and_,
+                map(
+                    and_,
+                    map(truth, map(ENTRY_IN_USE, entries)),
+                    map(is_, map(ENTRY_OBJECT_STREAM, entries), repeat(None), strict=False),
+                    strict=True,
+                ),
+                map((0).__le__, offsets),
+                strict=True,
+            )
+        )
+        keys = list(compress(keys, selected))
+        entries = list(compress(entries, selected))
         # Every entry's check reads only the data and that entry, and an entry
         # is only changed after its own check, so they are all made up front.
-        matched = object_headers_present(
-            self.raw_data, [(key, entry.offset) for key, entry in candidates]
-        )
-        for index, (key, entry) in enumerate(candidates):
-            if matched[index] or self.xref_entry_header_nearby(key, entry):
+        matched = object_headers_present(self.raw_data, keys, list(compress(offsets, selected)))
+        for index in compress(range(len(keys)), map(not_, matched)):
+            key = keys[index]
+            entry = entries[index]
+            if self.xref_entry_header_nearby(key, entry):
                 continue
             if header_offset and self.xref_entry_matches_header(
                 key,
@@ -1644,7 +1663,7 @@ class PdfDocument(Generic[PageT]):
         return None
 
     def xref_entry_matches_header(self, key: int, entry: PdfXRefEntry) -> bool:
-        return object_headers_present(self.raw_data, [(key, entry.offset)])[
+        return object_headers_present(self.raw_data, [key], [entry.offset])[
             0
         ] or self.xref_entry_header_nearby(key, entry)
 
@@ -2068,33 +2087,55 @@ def create_recovered_security_handler(
 HUGE_OBJECT_NUMBER = 1 << 63
 
 
-def object_headers_present(data: Any, entries: list[tuple[int, int]]) -> list[bool]:
-    """For each (key, offset), whether the object header for key starts at offset.
+ENTRY_OFFSET = itemgetter(0)
+ENTRY_IN_USE = itemgetter(2)
+ENTRY_OBJECT_STREAM = itemgetter(3)
+
+
+def object_headers_present(data: Any, keys: list[int], offsets: list[int]) -> list[bool]:
+    """For each key and offset, whether the object header for key starts at offset.
 
     The header is "N G obj" with the maximal digit and whitespace runs and a
     delimiter or the end of the data after it, and N and G read as integers;
-    object_headers_match checks them all in one pass.
+    object_headers_match checks them all in one pass. Its columns are made
+    in numpy when every key and offset fits an int64, which is every real
+    table; otherwise an entry at a time.
     """
+    data_len = len(data)
+    try:
+        key_column = numpy.array(keys, dtype=numpy.int64)
+        offset_column = numpy.array(offsets, dtype=numpy.int64)
+    except OverflowError:
+        return object_headers_present_by_entry(data, keys, offsets)
+    numbers = key_column >> 16
+    generations = key_column & 0xFFFF
+    offset_column[(offset_column < 0) | (offset_column >= data_len)] = -1
+    states = object_headers_match(data, numbers, generations, offset_column)
+    return (states == 1).tolist()
+
+
+def object_headers_present_by_entry(data: Any, keys: list[int], offsets: list[int]) -> list[bool]:
+    """object_headers_present for keys or offsets past int64."""
     data_len = len(data)
     numbers = array("q")
     generations = array("q")
-    offsets = array("q")
-    for key, offset in entries:
+    clamped = array("q")
+    for key, offset in zip(keys, offsets, strict=True):
         number = key >> 16
         numbers.append(number if number < HUGE_OBJECT_NUMBER else -2)
         generations.append(key & 0xFFFF)
-        offsets.append(offset if 0 <= offset < data_len else -1)
-    states = object_headers_match(data, numbers, generations, offsets)
+        clamped.append(offset if 0 <= offset < data_len else -1)
+    states = object_headers_match(data, numbers, generations, clamped)
     present = [state == 1 for state in states.tolist()]
     for index, state in enumerate(states.tolist()):
         if state == 2:
             # The header is there with a run too long for 63 bits, and so is
             # the number it must equal: compare them as integers.
-            offset = offsets[index]
+            offset = clamped[index]
             end = offset
             while end < data_len and 0x30 <= data[end] <= 0x39:
                 end += 1
-            present[index] = int(bytes(data[offset:end])) == entries[index][0] >> 16
+            present[index] = int(bytes(data[offset:end])) == keys[index] >> 16
     return present
 
 
