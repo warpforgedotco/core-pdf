@@ -1590,7 +1590,7 @@ class PdfDocument(Generic[PageT]):
                     index_in_stream=entry.index_in_stream,
                 ),
             ):
-                entry.offset += header_offset
+                self.xref[key] = entry._replace(offset=entry.offset + header_offset)
                 repaired = True
                 continue
             if header_offset:
@@ -1599,7 +1599,7 @@ class PdfDocument(Generic[PageT]):
                     entry.offset + header_offset,
                 )
                 if shifted_offset is not None:
-                    entry.offset = shifted_offset
+                    self.xref[key] = entry._replace(offset=shifted_offset)
                     repaired = True
                     continue
             if recovered_xref is None:

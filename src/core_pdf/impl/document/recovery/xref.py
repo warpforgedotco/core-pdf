@@ -23,6 +23,7 @@ from core_pdf_spec.s_07_syntax.xref import (
     ParsedXRefSection,
     PdfXRefEntry,
     XRefTable,
+    canonical_table_entries,
     decode_xref_row,
     key_for,
 )
@@ -141,14 +142,13 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
 # A run of canonical xref rows: ten digits, five, n or f, and a two-byte
 # end of line (ISO 32000-2 7.5.4). See read_subsection.
 CANONICAL_XREF_ROWS = re.compile(rb"(?:[0-9]{10} [0-9]{5} [fn](?: \r| \n|\r\n))*")
-CANONICAL_XREF_ROW = re.compile(rb"([0-9]{10}) ([0-9]{5}) ([fn])")
 CANONICAL_XREF_ROW_SIZE = 20
 
 
-def canonical_xref_rows(
-    data: PdfByteBuffer, pos: int, count: int
-) -> list[tuple[bytes, ...]] | None:
-    """The first `count` rows at `pos`, if they and the row after start canonically.
+def canonical_xref_entries(
+    data: PdfByteBuffer, pos: int, start_obj: int, count: int
+) -> XRefTable | None:
+    """The entries of the first `count` rows at `pos`, if they and the row after start canonically.
 
     Each such row reads the same in parse_xref_entry_at: it starts where
     skip_ws leaves it, is not a trailer, and ends 20 bytes on, since the
@@ -163,10 +163,7 @@ def canonical_xref_rows(
         or CANONICAL_XREF_ROWS.fullmatch(data, pos, end) is None
     ):
         return None
-    rows = CANONICAL_XREF_ROW.findall(data, pos, end)
-    if any(int(generation) > 65535 for _, generation, _ in rows):
-        return None
-    return rows
+    return canonical_table_entries(data, pos, start_obj, count)
 
 
 class XRefScanner(SyntaxXRefScanner):
@@ -599,14 +596,10 @@ class XRefScanner(SyntaxXRefScanner):
         actual_count = 0
         # All but the last row, whose line end may run into what follows it,
         # read at once when they are canonical, as they are in most tables.
-        rows = canonical_xref_rows(data, pos, num_objs - 1)
-        if rows is not None:
-            for i, (offset_digits, generation_digits, marker) in enumerate(rows):
-                generation = int(generation_digits)
-                entries[((start_obj + i) << 16) | generation] = PdfXRefEntry(
-                    int(offset_digits), generation, marker == b"n"
-                )
-            actual_count = len(rows)
+        table = canonical_xref_entries(data, pos, start_obj, num_objs - 1)
+        if table is not None:
+            entries = table
+            actual_count = num_objs - 1
             pos += CANONICAL_XREF_ROW_SIZE * actual_count
         for i in range(actual_count, num_objs):
             entry_pos = cls.skip_ws(data, pos)

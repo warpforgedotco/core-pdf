@@ -303,11 +303,11 @@ def test_object_stream_recovery_skips_unusable_containers(kind):
     entry = PdfXRefEntry(100, 0, True)
     parsed = {key_for(1): (100, stream)}
     if kind == "free":
-        entry.in_use = False
+        entry = entry._replace(in_use=False)
     elif kind == "compressed":
-        entry.object_stream = 9
+        entry = entry._replace(object_stream=9)
     elif kind == "negative":
-        entry.offset = -1
+        entry = entry._replace(offset=-1)
     elif kind == "absent":
         parsed.clear()
     elif kind == "stale":
