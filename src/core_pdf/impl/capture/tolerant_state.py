@@ -405,8 +405,13 @@ class RecoveringTextState(ContentInterpreter):
         if not operands:
             self.handle_operand_error(PdfParseError("missing numeric operand"), "integer-operand")
             return None
+        value = operands[0]
+        # An int operand is its own answer; as_int's three frames only reach
+        # the same `type(value) is int` test. J and j run this per path.
+        if type(value) is int:
+            return value
         try:
-            return self.as_int(operands[0])
+            return self.as_int(value)
         except (TypeError, ValueError) as error:
             self.handle_operand_error(error, "integer-operand")
             return None
