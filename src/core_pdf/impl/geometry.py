@@ -17,6 +17,18 @@ def float_value(value: object) -> float:
 
 
 def rect_tuple(value: object) -> Rectangle | None:
+    # Almost every rectangle is already a tuple of four floats, which the
+    # conversion below would copy value for value; float() of a float is
+    # that float, and a tuple cannot change, so it serves as it is.
+    if (
+        type(value) is tuple
+        and len(value) == 4
+        and type(value[0]) is float
+        and type(value[1]) is float
+        and type(value[2]) is float
+        and type(value[3]) is float
+    ):
+        return value  # ty: ignore[invalid-return-type]
     if isinstance(value, (list, tuple)) and len(value) == 4:
         try:
             return (
