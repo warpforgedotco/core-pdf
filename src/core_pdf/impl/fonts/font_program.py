@@ -1049,13 +1049,33 @@ def parse_truetype_program(data: bytes) -> TTFont:
     return font
 
 
+def glyph_set_of(font: Any) -> Any:
+    """font.getGlyphSet(), built once per font and thread.
+
+    Each call built a fresh glyph set -- reading fvar, hmtx and the glyf
+    table's mapping -- to draw one glyph: 57 ms of a 240 ms profiled page
+    render on PyMuPDF test_3357, 166 glyphs. The set is equivalent every
+    time, but drawing tracks composite depth and variation location on it,
+    so one is kept per thread. It lives on the font, whose lifetime it
+    shares; a thread id reused after its thread ended takes over that set.
+    """
+    sets = font.__dict__.get("_core_pdf_glyph_sets")
+    if sets is None:
+        sets = font.__dict__["_core_pdf_glyph_sets"] = {}
+    thread = threading.get_ident()
+    glyph_set = sets.get(thread)
+    if glyph_set is None:
+        glyph_set = sets[thread] = font.getGlyphSet()
+    return glyph_set
+
+
 def fonttools_bbox(
     font: Any,
     glyph_id: int,
     scale: float,
 ) -> tuple[float, float, float, float] | None:
     glyph_name = font.getGlyphName(glyph_id)
-    glyph_set = font.getGlyphSet()
+    glyph_set = glyph_set_of(font)
     bounds_pen = BoundsPen(glyph_set)
     glyph_set[glyph_name].draw(TransformPen(bounds_pen, (scale, 0.0, 0.0, scale, 0.0, 0.0)))
     if bounds_pen.bounds is None:
@@ -1111,7 +1131,7 @@ FONT_PROGRAM_ERRORS = Exception
 
 def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
     glyph_name = font.getGlyphName(glyph_id)
-    glyph_set = font.getGlyphSet()
+    glyph_set = glyph_set_of(font)
     pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
     glyph_set[glyph_name].draw(pen)
     return tuple(tuple(contour) for contour in recording_to_contours(pen.value))
