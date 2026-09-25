@@ -683,6 +683,7 @@ class GlyphCluster:
 
 CONFIDENCE_CACHE: dict[tuple[str, str, tuple[str, ...]], float] = {}
 CONFIDENCE_CACHE_LIMIT = 8192
+SEMANTICS_CACHE: dict[tuple[str, str], GlyphUnicodeSemantics] = {}
 
 
 def min_optional_confidence(left: float | None, right: float | None) -> float | None:
@@ -734,6 +735,17 @@ def compute_glyph_unicode_confidence(
 
 
 def glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSemantics:
+    # Read for every glyph of a page by its evidence, over few distinct pairs.
+    key = (text, unicode_source)
+    semantics = SEMANTICS_CACHE.get(key)
+    if semantics is None:
+        if len(SEMANTICS_CACHE) >= CONFIDENCE_CACHE_LIMIT:
+            SEMANTICS_CACHE.clear()
+        semantics = SEMANTICS_CACHE[key] = compute_glyph_unicode_semantics(text, unicode_source)
+    return semantics
+
+
+def compute_glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSemantics:
     if not text or glyph_text_has_unsupported_codepoint(text):
         return GlyphUnicodeSemantics.UNSUPPORTED
     if unicode_source in AUTHORITATIVE_UNICODE_SOURCES:
