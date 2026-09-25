@@ -24,6 +24,7 @@ from core_pdf.impl.render.model import (
     DisplayListItem,
     ImagePaintItem,
     PathPaintItem,
+    PathPaintKind,
 )
 from core_pdf.impl.render.paths import translate_rect
 from core_pdf.impl.runs import TextRun
@@ -121,8 +122,14 @@ def append_glyph_paint(
         clipping_subpaths.extend(path.subpaths)
     if not include_paint or mode in NON_PAINTING_RENDER_MODES or glyph.visible is False:
         return True
-    paint_kind = "fill" if mode in {0, 4} else "stroke" if mode in {1, 5} else "fillstroke"
-    display_list.append(
+    paint_kind = (
+        PathPaintKind.FILL
+        if mode in {0, 4}
+        else PathPaintKind.STROKE
+        if mode in {1, 5}
+        else PathPaintKind.FILL_STROKE
+    )
+    display_list.append_path_paint(
         paint_kind,
         glyph.seqno,
         bbox=bbox,
