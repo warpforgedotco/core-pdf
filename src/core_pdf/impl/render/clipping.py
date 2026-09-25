@@ -176,28 +176,73 @@ class ClipState:
         row = py - region.rows_origin
         return region.rows[row] if 0 <= row < len(region.rows) else ()
 
-    def path_row_spans(
+    def path_rows_spans(
         self,
         edges: tuple[tuple[float, float, float, float], ...],
-        py: int,
+        row_start: int,
+        row_stop: int,
         fill_rule: str,
-    ) -> RowSpans:
-        page_y = self.crop_y1 - (py + 0.5) / self.scale
-        crossings: list[tuple[float, int]] = []
-        for x0, y0, x1, y1 in edges:
-            if y0 == y1:
-                continue
+    ) -> list[RowSpans]:
+        """The path's spans for each row in [row_start, row_stop).
+
+        A row's spans come from the edges its centre line crosses. Testing
+        every edge on every row made a clip push rows x edges -- 1.4 million
+        comparisons for PyMuPDF test_5001's page. Rows go down the page, so
+        the centre line only descends: an edge becomes a candidate once the
+        line drops below its top and stays one until the line drops below its
+        bottom. The candidates are kept in the edges' own order and put
+        through the same crossing test, so each row's crossings are the ones
+        the full scan found, in the order it found them.
+        """
+        crop_y1 = self.crop_y1
+        scale = self.scale
+        # A line that does not descend -- a scale that is not positive --
+        # keeps every edge a candidate on every row.
+        descending = scale > 0
+        tops: list[tuple[float, int]] = []
+        lows: list[float] = []
+        for index, (_, y0, _, y1) in enumerate(edges):
             low = min(y1, y0)
-            high = max(y0, y1)
-            if low <= page_y < high:
-                offset = (page_y - y0) / (y1 - y0)
-                crossings.append((x0 + offset * (x1 - x0), 1 if y1 > y0 else -1))
-        spans: list[PixelSpan] = []
-        for start_x, end_x in fill_path_crossing_spans(crossings, fill_rule):
-            span = self.page_x_to_pixel_span(start_x, end_x)
-            if span is not None:
-                spans.append(span)
-        return tuple(spans)
+            lows.append(low)
+            top = max(y0, y1)
+            # A NaN top is never above the line, so that edge never crosses.
+            if y0 != y1 and (top == top or not descending):
+                tops.append((top, index))
+        if descending:
+            tops.sort(key=lambda top: top[0], reverse=True)
+        next_top = 0
+        candidates: list[int] = []
+        rows: list[RowSpans] = []
+        for py in range(row_start, row_stop):
+            page_y = crop_y1 - (py + 0.5) / scale
+            added = False
+            while next_top < len(tops) and (page_y < tops[next_top][0] or not descending):
+                candidates.append(tops[next_top][1])
+                next_top += 1
+                added = True
+            if added:
+                candidates.sort()
+            crossings: list[tuple[float, int]] = []
+            live: list[int] = []
+            for index in candidates:
+                # Once the line is below an edge's bottom it stays there.
+                if descending and page_y < lows[index]:
+                    continue
+                live.append(index)
+                x0, y0, x1, y1 = edges[index]
+                low = lows[index]
+                high = max(y0, y1)
+                if low <= page_y < high:
+                    offset = (page_y - y0) / (y1 - y0)
+                    crossings.append((x0 + offset * (x1 - x0), 1 if y1 > y0 else -1))
+            candidates = live
+            spans: list[PixelSpan] = []
+            for start_x, end_x in fill_path_crossing_spans(crossings, fill_rule):
+                span = self.page_x_to_pixel_span(start_x, end_x)
+                if span is not None:
+                    spans.append(span)
+            rows.append(tuple(spans))
+        return rows
 
     def push(self, path: CapturedPath, fill_rule: str) -> None:
         parent = self.current_region()
@@ -225,12 +270,17 @@ class ClipState:
         rect_pixel_box = self.page_box_to_pixels(*rect) if rect is not None else None
         edges = tuple(path.fill_edges()) if rect is None else ()
         row_start, row_stop = (0, 0) if pixel_box is None else (pixel_box[1], pixel_box[3])
+        path_rows = (
+            None
+            if rect is not None
+            else self.path_rows_spans(edges, row_start, row_stop, fill_rule)
+        )
         rows: list[RowSpans] = []
         for py in range(row_start, row_stop):
             path_spans = (
                 self.rect_row_spans(rect_pixel_box, py)
-                if rect is not None
-                else self.path_row_spans(edges, py, fill_rule)
+                if path_rows is None
+                else path_rows[py - row_start]
             )
             rows.append(intersect_spans(self.region_row_spans(parent, py), path_spans))
         self.regions.append(ClipRegion(box, pixel_box, False, tuple(rows), row_start))
