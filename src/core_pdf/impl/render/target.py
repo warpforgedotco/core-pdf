@@ -73,6 +73,7 @@ from core_pdf.impl.render.patterns import (
 )
 from core_pdf.impl.scalars import parse_int
 from core_pdf_cythonized import (
+    accumulate_source_plane,
     blend_normal_alpha_array_numpy,
     composite_elementary_normal,
     composite_knockout_group,
@@ -985,7 +986,7 @@ class RasterTarget:
         plane = self.group_source_alpha
         if plane is None:
             self.extend_paint_window(rows, columns)
-        else:
+        elif not self.accumulate_coverage(plane, rows, columns, alpha, 1.0, visible):
             self.record_plane(plane, rows, columns, alpha / 255.0, visible)
 
     def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
@@ -1010,8 +1011,45 @@ class RasterTarget:
         plane = self.group_source_shape
         if plane is None:
             self.extend_paint_window(rows, columns)
-        else:
+        elif not self.accumulate_coverage(plane, rows, columns, shape, self.shape_alpha, visible):
             self.record_plane(plane, rows, columns, shape / 255.0 * self.shape_alpha, visible)
+
+    def accumulate_coverage(
+        self,
+        plane: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
+        rows: int | slice,
+        columns: int | slice,
+        coverage: int | UInt8Array,
+        scale: float,
+        visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None,
+    ) -> bool:
+        """record_plane for a uint8 coverage window, compiled; False if not that call.
+
+        Every painted element in a group records its coverage here, over a
+        window of about thirty pixels, so numpy's temporaries were the cost.
+        The kernel reproduces record_plane's float32/float64 promotion for a
+        two-dimensional uint8 window of the plane's exact shape with no mask;
+        a scalar coverage, a row or a mask promotes differently and stays in
+        numpy.
+        """
+        if (
+            visible is not None
+            # isinstance narrows the type; the exact check keeps subclasses
+            # (masked arrays) on numpy, whose arithmetic they override.
+            or not isinstance(coverage, numpy.ndarray)
+            or type(coverage) is not numpy.ndarray
+            or coverage.dtype != numpy.uint8
+            or type(rows) is not slice
+            or type(columns) is not slice
+            or plane.dtype != numpy.float32
+        ):
+            return False
+        window = plane[rows, columns]
+        if window.shape != coverage.shape:
+            return False
+        self.extend_paint_window(rows, columns)
+        accumulate_source_plane(window, coverage, float(scale))
+        return True
 
     def record_plane(
         self,

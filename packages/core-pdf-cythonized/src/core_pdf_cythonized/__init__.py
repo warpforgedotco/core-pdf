@@ -49,6 +49,7 @@ from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import outline_edges
 from core_pdf_cythonized._paths import flatten_path_commands
 from core_pdf_cythonized._rect import rect_coverage_plane
+from core_pdf_cythonized._source_plane import accumulate_source_plane
 from core_pdf_cythonized._supersample import supersampled_coverage_plane
 from core_pdf_cythonized._type2 import type2_glyph_geometry
 
@@ -57,6 +58,7 @@ __all__ = (
     "SCAN_OPERATOR",
     "ContentScanner",
     "ObjectScanner",
+    "accumulate_source_plane",
     "blend_normal_alpha_array_numpy",
     "composite_elementary_normal",
     "composite_knockout_element",
