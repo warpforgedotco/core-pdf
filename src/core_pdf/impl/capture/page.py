@@ -186,13 +186,16 @@ def capture_page_program(
         page_clip=page.effective_page_clip(),
         options=options,
     )
-    page.consume_contents(state)
-    state.run_accumulator.flush()
-    # Snapshot before the appearances run: they append to the same state.
-    body = state.captured_program()
-    return PageProgram(
-        body=body,
-        appearances=capture_annotation_appearances(
-            page, state, fields=fields, annotations=annotations
-        ),
-    )
+    try:
+        page.consume_contents(state)
+        state.run_accumulator.flush()
+        # Snapshot before the appearances run: they append to the same state.
+        body = state.captured_program()
+        return PageProgram(
+            body=body,
+            appearances=capture_annotation_appearances(
+                page, state, fields=fields, annotations=annotations
+            ),
+        )
+    finally:
+        state.release()

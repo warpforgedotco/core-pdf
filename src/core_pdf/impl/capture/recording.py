@@ -414,6 +414,23 @@ class TextState(RecoveringTextState):
             options=self.options,
         )
 
+    def release(self) -> None:
+        """Break the state's reference cycles once its program has been taken.
+
+        The state is its own sink, its handler table holds its bound methods,
+        and its stream executor points back at it. Left like that, a finished
+        state -- and every glyph observation, run and drawing it still lists --
+        is freed only when the cycle collector next runs. On lyft_2021 that
+        collector took 17% of a whole-document extraction, and a page's
+        garbage outlived it by up to a full collection cycle.
+
+        The state cannot run content afterwards. Dictionaries shared with a
+        parent or nested state (soft masks, image sources) are left alone.
+        """
+        del self.sink
+        del self.stream_executor
+        self.default_handlers.clear()
+
     def resolve_soft_mask(self, value: object) -> PdfSoftMask | None:
         mask = super().resolve_soft_mask(value)
         # The parse cache keys on the resource scope, so a mask only ever comes
@@ -1250,45 +1267,59 @@ class TextState(RecoveringTextState):
             )
         elif isinstance(pattern, PdfTilingPattern):
             nested = self.nested_capture_state()
-            nested.graphics.render_intent = self.graphics.render_intent
-            nested.graphics.black_point_compensation = self.graphics.black_point_compensation
-            nested.graphics.alpha_is_shape = initial_alpha_is_shape
-            nested.graphics.text_knockout = initial_text_knockout
             try:
-                nested.stream_executor.consume(pattern.stream, pattern.resources, pattern.matrix, 0)
-            except Exception:
-                self.capture_patterns[key] = (pattern, None)
-                return None
-            if pattern.paint_type == 2:
-                base_color = pattern.base_color
-                if base_color is not None and pattern.base_color_spec is not None:
-                    converted = color_operands_to_srgb(
-                        pattern.base_color_spec, base_color, rendering=rendering
-                    )
-                    if converted is not None:
-                        base_color = converted
-                for drawing in nested.drawings:
-                    if drawing.kind in {"fill", "fillstroke"}:
-                        drawing.fill = base_color
-                    if drawing.kind in {"stroke", "fillstroke"}:
-                        drawing.stroke_color = base_color
-                for glyph in nested.glyphs:
-                    glyph.fill = base_color
-                    glyph.stroke_color = base_color
-            result = TilingPattern(
-                pattern.bbox,
-                pattern.x_step,
-                pattern.y_step,
-                CapturedProgram(
-                    glyphs=tuple(glyph for glyph in nested.glyphs if glyph.has_paint),
-                    drawings=tuple(nested.drawings),
-                    inline_images=tuple(nested.inline_images),
-                    text_boundaries=tuple(nested.text_boundaries),
-                    options=nested.options,
-                ),
-            )
+                result = self.capture_tiling_pattern(
+                    nested, pattern, rendering, initial_alpha_is_shape, initial_text_knockout
+                )
+            finally:
+                nested.release()
         self.capture_patterns[key] = (pattern, result)
         return result
+
+    def capture_tiling_pattern(
+        self,
+        nested: TextState,
+        pattern: PdfTilingPattern,
+        rendering: ColorRendering,
+        initial_alpha_is_shape: bool,
+        initial_text_knockout: bool,
+    ) -> TilingPattern | None:
+        nested.graphics.render_intent = self.graphics.render_intent
+        nested.graphics.black_point_compensation = self.graphics.black_point_compensation
+        nested.graphics.alpha_is_shape = initial_alpha_is_shape
+        nested.graphics.text_knockout = initial_text_knockout
+        try:
+            nested.stream_executor.consume(pattern.stream, pattern.resources, pattern.matrix, 0)
+        except Exception:
+            return None
+        if pattern.paint_type == 2:
+            base_color = pattern.base_color
+            if base_color is not None and pattern.base_color_spec is not None:
+                converted = color_operands_to_srgb(
+                    pattern.base_color_spec, base_color, rendering=rendering
+                )
+                if converted is not None:
+                    base_color = converted
+            for drawing in nested.drawings:
+                if drawing.kind in {"fill", "fillstroke"}:
+                    drawing.fill = base_color
+                if drawing.kind in {"stroke", "fillstroke"}:
+                    drawing.stroke_color = base_color
+            for glyph in nested.glyphs:
+                glyph.fill = base_color
+                glyph.stroke_color = base_color
+        return TilingPattern(
+            pattern.bbox,
+            pattern.x_step,
+            pattern.y_step,
+            CapturedProgram(
+                glyphs=tuple(glyph for glyph in nested.glyphs if glyph.has_paint),
+                drawings=tuple(nested.drawings),
+                inline_images=tuple(nested.inline_images),
+                text_boundaries=tuple(nested.text_boundaries),
+                options=nested.options,
+            ),
+        )
 
     def capture_graphics_soft_mask(self) -> CapturedSoftMask | None:
         mask = self.graphics.soft_mask
@@ -1318,6 +1349,7 @@ class TextState(RecoveringTextState):
         if len(self.capture_active_mask_groups) >= 10:
             return None
         self.capture_active_mask_groups.add(group_key)
+        nested: TextState | None = None
         try:
             nested = self.nested_capture_state()
             nested.graphics = copy(graphics)
@@ -1337,6 +1369,8 @@ class TextState(RecoveringTextState):
             return None
         finally:
             self.capture_active_mask_groups.remove(group_key)
+            if nested is not None:
+                nested.release()
 
     def named_value(self, value: object, *, allow_text: bool = False) -> str | None:
         resolver = self.name_resolver

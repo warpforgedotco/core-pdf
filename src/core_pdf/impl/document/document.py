@@ -247,6 +247,8 @@ class PdfDocument(Generic[PageT]):
         "_standards",
         "standards_complete",
         "font_decoders",
+        "page_cache",
+        "fields_by_page_cache",
     )
 
     source: PdfSource
@@ -269,6 +271,8 @@ class PdfDocument(Generic[PageT]):
     _standards: DocumentStandards
     standards_complete: bool
     font_decoders: dict[object, object]
+    page_cache: tuple[PageT, ...] | None
+    fields_by_page_cache: dict[int, list[RawFormField]] | None
 
     def __init__(
         self,
@@ -297,6 +301,12 @@ class PdfDocument(Generic[PageT]):
         self._standards = DocumentStandards()
         self.standards_complete = False
         self.font_decoders = {}
+        # The document is read-only once open, so its page tree and form fields
+        # are built once. Every page.extract() asks for the fields, and building
+        # them walks every page, so without this a whole-document pass is
+        # quadratic in its page count.
+        self.page_cache = None
+        self.fields_by_page_cache = None
         try:
             self.raw_data = self.load_data(source)
             self._standards = discover_header_standards(self.raw_data)
@@ -354,6 +364,10 @@ class PdfDocument(Generic[PageT]):
                 self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=selected)
                 self.scan_xref()
                 self.resolver.xref = self.xref
+            # Anything built above belongs to a resolver that may since have
+            # been replaced.
+            self.page_cache = None
+            self.fields_by_page_cache = None
         except BaseException:
             self.close()
             raise
@@ -425,6 +439,8 @@ class PdfDocument(Generic[PageT]):
             return
         self._closed = True
         self.font_decoders.clear()
+        self.page_cache = None
+        self.fields_by_page_cache = None
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
@@ -871,7 +887,10 @@ class PdfDocument(Generic[PageT]):
 
     @property
     def pages(self) -> tuple[PageT, ...]:
-        return self.build_pages(self.iter_recovered_page_nodes())
+        pages = self.page_cache
+        if pages is None:
+            pages = self.page_cache = self.build_pages(self.iter_recovered_page_nodes())
+        return pages
 
     def build_pages(self, nodes: Iterable[PageNode]) -> tuple[PageT, ...]:
         page_class = self.page_class
@@ -1212,7 +1231,22 @@ class PdfDocument(Generic[PageT]):
         self,
         pages: Sequence[PageT] | None = None,
     ) -> dict[int, list[RawFormField]]:
-        page_sequence = self.pages if pages is None else tuple(pages)
+        if pages is not None:
+            return self.group_fields_by_page(tuple(pages))
+        return {
+            page_index: list(fields) for page_index, fields in self.cached_fields_by_page().items()
+        }
+
+    def cached_fields_by_page(self) -> dict[int, list[RawFormField]]:
+        """The whole document's fields by page, shared: callers must not mutate it."""
+        grouped = self.fields_by_page_cache
+        if grouped is None:
+            grouped = self.fields_by_page_cache = self.group_fields_by_page(self.pages)
+        return grouped
+
+    def group_fields_by_page(
+        self, page_sequence: tuple[PageT, ...]
+    ) -> dict[int, list[RawFormField]]:
         page_indexes_by_dict = {
             id(page.page_dict): page.page_number - 1
             for page in page_sequence
