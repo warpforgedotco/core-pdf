@@ -125,6 +125,43 @@ class GlyphCapture:
     geometry: RunGeometry = field(default_factory=RunGeometry)
 
 
+def glyph_style(
+    paint: GlyphPaint,
+    decoder: FontDecoder,
+    font_size: float,
+    rotation_angle: int,
+    effective_font_size: float,
+    effective_font_height: float,
+    provenance: tuple[tuple[str, object], ...],
+    text_object_id: int,
+) -> GlyphStyle:
+    """Everything a show-text operation paints its glyphs with, held once for all of them."""
+    return GlyphStyle(
+        font_size,
+        rotation_angle,
+        paint.fill,
+        decoder,
+        effective_font_size,
+        effective_font_height,
+        provenance,
+        paint.render_mode,
+        paint.fill_opacity,
+        paint.stroke_color,
+        paint.stroke_opacity,
+        paint.line_width,
+        paint.blend_mode,
+        paint.group_alpha,
+        text_object_id,
+        paint.line_cap,
+        paint.line_join,
+        paint.dash_pattern,
+        paint.clip_glyph and not decoder.is_type3,
+        paint.alpha_is_shape,
+        decoder.is_type3,
+        paint.graphics_soft_mask,
+    )
+
+
 def capture_glyphs(
     text: str,
     glyphs: tuple[DecodedGlyph, ...],
@@ -139,15 +176,12 @@ def capture_glyphs(
     word_space: float,
     horizontal_scale: float,
     rise: float,
-    rotation_angle: int,
-    effective_font_size: float,
-    effective_font_height: float,
-    paint: GlyphPaint,
+    style: GlyphStyle,
+    clip_bbox: Rectangle | None,
+    page_clip: Rectangle | None,
     visible: bool,
     font_name: str | None,
-    provenance: tuple[tuple[str, object], ...],
     seqno: int,
-    text_object_id: int,
     cluster_start: int,
     options: CaptureOptions,
     /,
@@ -250,8 +284,8 @@ def capture_glyphs(
             rise=rise,
             font_scale=font_scale,
             advance_scale=advance_scale,
-            clip_primary=paint.clip_bbox,
-            clip_page=paint.page_clip,
+            clip_primary=clip_bbox,
+            clip_page=page_clip,
             visible=visible,
             want_bitmap=want_bitmap,
             want_transform=want_render,
@@ -269,39 +303,14 @@ def capture_glyphs(
             font_scale,
             advance_scale,
             font_size,
-            paint.clip_bbox,
-            paint.page_clip,
+            clip_bbox,
+            page_clip,
             visible,
             want_bitmap,
             want_render,
         )
 
     # ---- pass three: the observations -------------------------------------
-    # Everything the operation paints its glyphs with, held once for all of them.
-    style = GlyphStyle(
-        font_size,
-        rotation_angle,
-        paint.fill,
-        decoder,
-        effective_font_size,
-        effective_font_height,
-        provenance,
-        paint.render_mode,
-        paint.fill_opacity,
-        paint.stroke_color,
-        paint.stroke_opacity,
-        paint.line_width,
-        paint.blend_mode,
-        paint.group_alpha,
-        text_object_id,
-        paint.line_cap,
-        paint.line_join,
-        paint.dash_pattern,
-        paint.clip_glyph and not decoder.is_type3,
-        paint.alpha_is_shape,
-        decoder.is_type3,
-        paint.graphics_soft_mask,
-    )
     styled_observation = GlyphObservation.styled
     add_run_geometry = result.geometry.add
     append_glyph = result.glyphs.append

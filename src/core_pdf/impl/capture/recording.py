@@ -16,6 +16,7 @@ from core_pdf.impl.capture.glyphs import (
     GlyphCapture,
     GlyphPaint,
     capture_glyphs,
+    glyph_style,
 )
 from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CapturedProgram, CaptureOptions
 from core_pdf.impl.capture.records import (
@@ -48,7 +49,7 @@ from core_pdf.impl.geometry import (
     intersect_bbox,
     transform_bbox,
 )
-from core_pdf.impl.glyphs import GlyphObservation
+from core_pdf.impl.glyphs import GlyphObservation, GlyphStyle
 from core_pdf.impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import raw_color_space_paints
 from core_pdf.impl.graphics.soft_masks import image_overrides_graphics_soft_mask
@@ -190,6 +191,77 @@ GLYPH_PAINT_KEEPING_OPERATORS = frozenset(
 )
 
 
+# Of those, the ones that change nothing a TextLayout holds, and the ones
+# that move only the line origin, which its glyph style records.
+TEXT_LAYOUT_KEEPING_OPERATORS = frozenset(("Tj", "TJ", "TL", "Tw"))
+LINE_MOVING_OPERATORS = frozenset(("Td", "TD", "T*", "'"))
+
+
+class TextLayout:
+    """What a text-showing operator's strings share, worked out once for all of them.
+
+    A TJ array shows each of its strings through show_text, and between them
+    only the text position moves: the graphics and text state, the font, the
+    marked content and the clip are all the operator's. Everything here is a
+    function of those, so the strings after the first reuse it, and so do the
+    operators after it that change none of them: dispatch_frame keeps it
+    across TEXT_LAYOUT_KEEPING_OPERATORS, drops only the style across
+    LINE_MOVING_OPERATORS, and drops the rest before any other operator. A
+    stream's entry and exit drop it too, so a Type 3 glyph procedure run
+    inside a TJ never sees its caller's.
+
+    The text matrix's linear part is the operator's too, but the combined
+    matrix is not quite: Matrix.multiply returns the CTM itself when the text
+    matrix is the identity, and the product otherwise, which can differ in
+    the sign of a zero. `identity_text_matrix` records which branch this was
+    built under, and a string under the other branch builds its own.
+    """
+
+    __slots__ = (
+        "decoder",
+        "identity_text_matrix",
+        "glyph_paint",
+        "fill_color",
+        "paints_text",
+        "pushes_clip_scope",
+        "font_size",
+        "rise",
+        "font_scale",
+        "ascent",
+        "descent",
+        "advance_scale",
+        "rotation",
+        "scale_factor",
+        "effective_font_size",
+        "effective_font_height",
+        "actual_text_span",
+        "style",
+        "space_width",
+        "run_provenance",
+    )
+
+    decoder: FontDecoder
+    identity_text_matrix: bool
+    glyph_paint: GlyphPaint | None
+    fill_color: tuple[float, ...] | None
+    paints_text: bool
+    pushes_clip_scope: bool
+    font_size: float
+    rise: float
+    font_scale: float
+    ascent: float
+    descent: float
+    advance_scale: float
+    rotation: int
+    scale_factor: float
+    effective_font_size: float
+    effective_font_height: float
+    actual_text_span: MarkedContentEntry | None
+    style: GlyphStyle | None
+    space_width: float
+    run_provenance: tuple[tuple[str, object], ...]
+
+
 class CaptureStreamExecutor(ContentStreamExecutor):
     state: TextState
     _operator_names: frozenset[bytes] | None = None
@@ -228,6 +300,7 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         # A stream starts under its own clip, group alpha and state, and on
         # the way out the caller's come back: either way the paint is stale.
         self.state.shared_glyph_paint = None
+        self.state.text_layout = None
         return super().enter(frame)
 
     def exit(self, frame: ContentStreamFrame) -> None:
@@ -235,6 +308,7 @@ class CaptureStreamExecutor(ContentStreamExecutor):
             super().exit(frame)
         finally:
             self.state.shared_glyph_paint = None
+            self.state.text_layout = None
 
     def operator_names(self, table: Mapping[str, OperationHandler]) -> frozenset[bytes]:
         # Encoding all 71 handler names costs 6us, and iter_content_operations
@@ -270,6 +344,12 @@ class CaptureStreamExecutor(ContentStreamExecutor):
                 continue
             if name not in GLYPH_PAINT_KEEPING_OPERATORS:
                 state.shared_glyph_paint = None
+                state.text_layout = None
+            elif name in LINE_MOVING_OPERATORS:
+                if (layout := state.text_layout) is not None:
+                    layout.style = None
+            elif name not in TEXT_LAYOUT_KEEPING_OPERATORS:
+                state.text_layout = None
             child = handler(operands, depth)
             if child is not None:
                 return child
@@ -327,6 +407,7 @@ class TextState(RecoveringTextState):
     capture_active_mask_groups: set[int]
     scale_cache: tuple[Matrix, float] | None
     shared_glyph_paint: GlyphPaint | None
+    text_layout: TextLayout | None
     stream_executor: CaptureStreamExecutor
     stream_executor_type = CaptureStreamExecutor
 
@@ -401,6 +482,7 @@ class TextState(RecoveringTextState):
         # The paint the last text shown recorded, while nothing it reads can
         # have changed since; see GLYPH_PAINT_KEEPING_OPERATORS.
         self.shared_glyph_paint = None
+        self.text_layout = None
 
         self.graphics.font_size = 12.0
         self.graphics.fill_color = (0.0, 0.0, 0.0)
@@ -593,6 +675,76 @@ class TextState(RecoveringTextState):
         self.drawings.append(marker_drawing("state-push", self.sequence))
         self.sequence += 1
 
+    def new_text_layout(
+        self,
+        font_decoder: FontDecoder,
+        glyph_paint: GlyphPaint | None,
+        A: float,
+        B: float,
+        C: float,
+        D: float,
+    ) -> TextLayout:
+        graphics = self.graphics
+        layout = TextLayout()
+        layout.decoder = font_decoder
+        if glyph_paint is None and not font_decoder.is_type3 and graphics.soft_mask is None:
+            glyph_paint = self.shared_glyph_paint
+            if glyph_paint is None:
+                glyph_paint = self.shared_glyph_paint = self.glyph_paint(
+                    self.capture_color(stroke=False)
+                )
+        layout.glyph_paint = glyph_paint
+        graphics_visible = self.is_graphics_visible()
+        fs = graphics.font_size
+        layout.paints_text = (
+            self.text_paint_mode(check_colorants=False) not in NON_PAINTING_RENDER_MODES
+            and not fs < 0.1
+            and graphics_visible
+        )
+        layout.pushes_clip_scope = 4 <= graphics.render_mode <= 7 and graphics_visible
+        rise = graphics.rise
+        font_scale = fs / 1000.0
+        metrics_decoder: FontDecoder | None = graphics.current_decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        layout.font_size = fs
+        layout.rise = rise
+        layout.font_scale = font_scale
+        layout.ascent = metrics_decoder.ascent * font_scale if metrics_decoder is not None else 0.0
+        layout.descent = (
+            metrics_decoder.descent * font_scale if metrics_decoder is not None else 0.0
+        )
+        layout.advance_scale = fs * graphics.horizontal_scale / 100000.0
+        layout.space_width = (
+            metrics_decoder.glyph_width(32) * fs * 0.001 if metrics_decoder is not None else 0.0
+        )
+        # Each of these reads the linear part only through hypot and abs, so a
+        # zero's sign, the one thing identity_text_matrix guards, cannot move them.
+        layout.rotation = detect_rotation_from_linear(A, B, C, D)
+        if font_decoder.is_vertical:
+            layout.scale_factor = hypot(C, D)
+            layout.effective_font_height = fs * hypot(A, B)
+        else:
+            layout.scale_factor = hypot(A, B)
+            layout.effective_font_height = fs * hypot(C, D)
+        layout.effective_font_size = fs * layout.scale_factor
+        layout.fill_color = (
+            self.capture_color(stroke=False) if glyph_paint is None else glyph_paint.fill
+        )
+        layout.actual_text_span = self.current_capture_actual_text_span()
+        layout.style = None
+        mcid = self.current_marked_content_mcid()
+        layout.run_provenance = (
+            ("font_name", graphics.current_font),
+            ("stream_order", self.stream_order),
+            ("xobject_depth", self.xobject_depth),
+            ("text_render_mode", graphics.render_mode),
+            ("font_size", fs),
+            ("clip_bbox", self.clip_bbox),
+            ("layout_form_bbox", self.layout_form_bbox),
+            ("layout_form_id", self.layout_form_id),
+            *((("mcid", mcid),) if mcid is not None else ()),
+        )
+        return layout
+
     def show_text(
         self,
         state: object,
@@ -609,43 +761,80 @@ class TextState(RecoveringTextState):
         # the spec's FontService protocol is far narrower than what capture reads.
         font_decoder: FontDecoder = decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         decoded_glyphs: tuple[DecodedGlyph, ...] = glyphs  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-        if glyph_paint is None and not font_decoder.is_type3 and self.graphics.soft_mask is None:
-            glyph_paint = self.shared_glyph_paint
-            if glyph_paint is None:
-                glyph_paint = self.shared_glyph_paint = self.glyph_paint(
-                    self.capture_color(stroke=False)
-                )
-        visible = self.is_text_visible(text)
-        if 4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible():
-            self.emit_clip_scope_push()
-
-        fs = self.graphics.font_size
-        rise = self.graphics.rise
-
-        font_scale = fs / 1000.0
-        metrics_decoder: FontDecoder | None = self.graphics.current_decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-        ascent = metrics_decoder.ascent * font_scale if metrics_decoder is not None else 0.0
-        descent = metrics_decoder.descent * font_scale if metrics_decoder is not None else 0.0
-        advance_scale = fs * self.graphics.horizontal_scale / 100000.0
-
         text_matrix = self.text_matrix
-        combined = text_matrix.multiply(self.graphics.ctm)
+        ctm = self.graphics.ctm
+        combined = text_matrix.multiply(ctm)
         # combined already carries the translation: multiply_affine's last two
         # terms are te * ca + tf * cc + ce and te * cb + tf * cd + cf, which is
         # what this used to recompute by hand. Checked bit for bit over 44,001
         # matrix pairs, including both of multiply's identity short circuits.
         A, B, C, D, E, F = combined
         te, tf = text_matrix.e, text_matrix.f
+        identity_text_matrix = text_matrix == IDENTITY_MATRIX
+        layout = self.text_layout
+        if (
+            layout is None
+            or glyph_paint is not None
+            or layout.decoder is not font_decoder
+            or layout.identity_text_matrix is not identity_text_matrix
+        ):
+            layout = self.new_text_layout(font_decoder, glyph_paint, A, B, C, D)
+            layout.identity_text_matrix = identity_text_matrix
+            if glyph_paint is None:
+                self.text_layout = layout
 
-        rot = detect_rotation_from_linear(A, B, C, D)
+        # is_text_visible, with the part that does not read the text worked
+        # out once in the layout.
+        visible = False
+        if text and layout.paints_text:
+            first_code = ord(text[0])
+            visible = not (
+                (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and is_garbage_text(text)
+            )
+        if layout.pushes_clip_scope:
+            self.emit_clip_scope_push()
+
+        fs = layout.font_size
+        rise = layout.rise
+        ascent = layout.ascent
+        descent = layout.descent
+        rot = layout.rotation
+        scale_factor = layout.scale_factor
+        effective_font_size = layout.effective_font_size
+        effective_font_height = layout.effective_font_height
+        fill_color = layout.fill_color
         seqno = self.sequence
-        scale_factor = hypot(C, D) if font_decoder.is_vertical else hypot(A, B)
-        effective_font_size = fs * scale_factor
-        effective_font_height = fs * (hypot(A, B) if font_decoder.is_vertical else hypot(C, D))
-        fill_color = self.capture_color(stroke=False) if glyph_paint is None else glyph_paint.fill
-        actual_text_span = self.current_capture_actual_text_span()
+        actual_text_span = layout.actual_text_span
         captured: GlyphCapture | None = None
         if actual_text_span is None:
+            style = layout.style
+            if style is None:
+                graphics = self.graphics
+                style = layout.style = glyph_style(
+                    self.glyph_paint(fill_color)
+                    if layout.glyph_paint is None
+                    else layout.glyph_paint,
+                    font_decoder,
+                    fs,
+                    rot,
+                    effective_font_size,
+                    effective_font_height,
+                    (
+                        ("source", self.capture_source),
+                        ("stream_order", self.stream_order),
+                        ("xobject_depth", self.xobject_depth),
+                        ("clip_bbox", self.clip_bbox),
+                        ("layout_form_bbox", self.layout_form_bbox),
+                        ("layout_form_id", self.layout_form_id),
+                        ("text_matrix", (A, B, C, D)),
+                        ("text_render_mode", graphics.render_mode),
+                        ("line_matrix_origin", (self.line_matrix.e, self.line_matrix.f)),
+                        ("horizontal_scale", graphics.horizontal_scale),
+                        ("char_space", graphics.char_space),
+                        ("text_rise", rise),
+                    ),
+                    self.text_object_id,
+                )
             graphics = self.graphics
             captured = capture_glyphs(
                 text,
@@ -653,36 +842,20 @@ class TextState(RecoveringTextState):
                 font_decoder,
                 (E, F, A, B, C, D),
                 fs,
-                font_scale,
+                layout.font_scale,
                 ascent,
                 descent,
-                advance_scale,
+                layout.advance_scale,
                 graphics.char_space,
                 graphics.word_space,
                 graphics.horizontal_scale,
                 rise,
-                rot,
-                effective_font_size,
-                effective_font_height,
-                self.glyph_paint(fill_color) if glyph_paint is None else glyph_paint,
+                style,
+                self.clip_bbox,
+                self.page_clip,
                 visible,
                 graphics.current_font,
-                (
-                    ("source", self.capture_source),
-                    ("stream_order", self.stream_order),
-                    ("xobject_depth", self.xobject_depth),
-                    ("clip_bbox", self.clip_bbox),
-                    ("layout_form_bbox", self.layout_form_bbox),
-                    ("layout_form_id", self.layout_form_id),
-                    ("text_matrix", (A, B, C, D)),
-                    ("text_render_mode", graphics.render_mode),
-                    ("line_matrix_origin", (self.line_matrix.e, self.line_matrix.f)),
-                    ("horizontal_scale", graphics.horizontal_scale),
-                    ("char_space", graphics.char_space),
-                    ("text_rise", rise),
-                ),
                 seqno,
-                self.text_object_id,
                 self.glyph_cluster_count,
                 self.options,
             )
@@ -691,10 +864,6 @@ class TextState(RecoveringTextState):
             if not self.options.text_runs:
                 self.sequence = seqno + 1
                 return
-
-        space_width = (
-            metrics_decoder.glyph_width(32) * fs * 0.001 if metrics_decoder is not None else 0.0
-        )
 
         if font_decoder.is_vertical:
             c0_x = descent * A + rise * C + E
@@ -726,30 +895,14 @@ class TextState(RecoveringTextState):
         x1 = max(c0_x, c1_x, c2_x, c3_x)
         y1 = max(c0_y, c1_y, c2_y, c3_y)
 
-        effective_space_width = space_width * scale_factor
+        effective_space_width = layout.space_width * scale_factor
         baseline = (
             E,
             F,
             E + adv_x * A + adv_y * C,
             F + adv_x * B + adv_y * D,
         )
-        provenance = (
-            ("source", self.capture_source),
-            ("seqno", seqno),
-            ("font_name", self.graphics.current_font),
-            ("stream_order", self.stream_order),
-            ("xobject_depth", self.xobject_depth),
-            ("text_render_mode", self.graphics.render_mode),
-            ("font_size", fs),
-            ("clip_bbox", self.clip_bbox),
-            ("layout_form_bbox", self.layout_form_bbox),
-            ("layout_form_id", self.layout_form_id),
-            *(
-                (("mcid", mcid),)
-                if (mcid := self.current_marked_content_mcid()) is not None
-                else ()
-            ),
-        )
+        provenance = (("source", self.capture_source), ("seqno", seqno), *layout.run_provenance)
         advance_bbox = (x0, y0, x1, y1)
 
         # Positional: a keyword call matches each of these 24 names at the
