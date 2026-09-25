@@ -26,6 +26,7 @@ from core_pdf.impl.graphics.icc_profiles import (
     srgb_profile,
 )
 from core_pdf.impl.scalars import parse_float
+from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_08_graphics.color_kernels import (
@@ -229,6 +230,36 @@ def convert_distinct_codes(
     return numpy.take(table, codes, axis=0)
 
 
+# Below this many pixels a multi-component image converts pixel by pixel.
+DISTINCT_SAMPLES_MINIMUM = 1 << 16
+
+
+def convert_distinct_samples(
+    integers: numpy.ndarray[Any, Any],
+    space: ColorSpace,
+    pairs: tuple[tuple[float, float], ...],
+    maximum: int,
+    rendering: ColorRendering,
+) -> numpy.ndarray | None:
+    """Convert a two- to four-component image by its distinct sample rows.
+
+    Without a matte every output pixel depends only on its own samples, so
+    converting each distinct row once and scattering the results is the same
+    image -- the decode to float64, the clip and the colour transform all run
+    per row. Rows are found by a hash table on the raw integers; past a
+    quarter of the pixels distinct this gives up and returns None.
+    """
+    found = distinct_uint16_rows(numpy.ascontiguousarray(integers), len(integers) // 4)
+    if found is None:
+        return None
+    distinct, inverse = found
+    values = decode_sample_values(distinct, pairs, maximum)
+    converted = convert_components(values, space, rendering=rendering)
+    if converted.dtype != numpy.uint8 or converted.ndim != 2:
+        return numpy.take(converted, inverse, axis=0)
+    return gather_uint8_rows(numpy.ascontiguousarray(converted), inverse)
+
+
 def convert_integer_samples(
     samples: numpy.ndarray,
     dictionary: dict[Any, Any],
@@ -252,9 +283,12 @@ def convert_integer_samples(
         if numbers.shape != (count * 2,) or not numpy.isfinite(numbers).all():
             raise ValueError("invalid image Decode array")
         pairs = tuple((float(low), float(high)) for low, high in numbers.reshape(-1, 2))
+    output = None
     if matte is None and count == 1 and len(integers) > maximum + 1:
         output = convert_distinct_codes(integers[:, 0], space, pairs, maximum, rendering)
-    else:
+    elif matte is None and 1 < count <= 4 and len(integers) > DISTINCT_SAMPLES_MINIMUM:
+        output = convert_distinct_samples(integers, space, pairs, maximum, rendering)
+    if output is None:
         values = decode_sample_values(integers, pairs, maximum)
         output = convert_components(values, space, matte=matte, alpha=alpha, rendering=rendering)
     mask = dictionary.get("Mask")
