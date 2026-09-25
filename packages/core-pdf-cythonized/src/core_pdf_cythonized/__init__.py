@@ -40,6 +40,7 @@ from core_pdf_cythonized._composite import (
 from core_pdf_cythonized._content import SCAN_NAME, SCAN_OPERATOR, ContentScanner
 from core_pdf_cythonized._coverage import glyph_coverage_plane, signed_area_coverage
 from core_pdf_cythonized._glyphs import horizontal_glyph_geometry
+from core_pdf_cythonized._jbig2 import decode_arithmetic_generic_template0
 from core_pdf_cythonized._knockout import (
     composite_knockout_element,
     composite_knockout_group,
@@ -63,6 +64,7 @@ __all__ = (
     "composite_masked_normal",
     "composite_normal_group",
     "cubic_sample_times",
+    "decode_arithmetic_generic_template0",
     "flatten_path_commands",
     "glyph_coverage_plane",
     "horizontal_glyph_geometry",

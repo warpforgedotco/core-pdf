@@ -16,8 +16,8 @@ dependencies = [
     "numpy>=2.5.1",
     "imagecodecs>=2026.6.26",
     "defusedxml>=0.7.1",
-    "core-pdf-spec>=0.6.0,<0.7.0",
-    "core-jbig2>=0.1.0,<0.2.0",
+    "core-pdf-spec>=0.7.0,<0.8.0",
+    "core-jbig2>=0.2.0,<0.3.0",
     "core-adobe-fonts>=0.1.0,<0.2.0",
     "core-pdf-cythonized>=0.1.0,<0.2.0",
 ]
@@ -42,9 +42,9 @@ members = [
 ]
 
 [tool.uv.sources]
-core-jbig2 = { workspace = true }
 core-adobe-fonts = { workspace = true }
 core-pdf-cythonized = { workspace = true }
+core-jbig2 = { workspace = true }
 core-pdf-spec = { workspace = true }
 
 # [tool.uv.sources]

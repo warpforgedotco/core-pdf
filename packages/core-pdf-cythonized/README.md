@@ -7,7 +7,7 @@ no pure-Python fallback: when a kernel lands here, the Python it replaced is
 deleted -- with one exception, `ObjectScanner`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
-## One kernel owns its algorithm
+## Two kernels own their algorithms
 
 `composite_knockout_element` is the exception to everything below. It is not
 a mirror of code owned elsewhere — it *is* the ISO 32000-2 11.4.x knockout
@@ -20,6 +20,17 @@ It came here because 60% of the cost sat in core's wrapper — a mask, three
 boolean fancy-index copies and a scatter, all of it marshalling to hand
 compacted arrays to a Python callee. Marshalling cannot be removed while the
 callee stays in Python, so the two had to be compiled together.
+
+`decode_arithmetic_generic_template0` is the second, on the same terms: the
+ITU-T T.88 MQ arithmetic decoder and generic region template 0, moved out of
+`core-jbig2`. Compiling it in place would have made `core-jbig2` -- and spec,
+which depends on it -- compiled distributions; mirroring it would have left
+two decoders to drift. So `core-jbig2` 0.2.0 dropped `JBIG2MQDecoder`, the
+`MQ_*` tables and both `decode_arithmetic_generic_*` functions, and its base
+decoder now reports arithmetic generic regions as unsupported, as it already
+did MMR and text regions. Core's `RecoveryJBIG2PageDecoder` checks the region
+header and calls the kernel. The one conformance test the decoder had moved
+here with it; spec's test now asserts that it declines.
 
 ## One kernel keeps its Python
 
@@ -99,6 +110,7 @@ the wheel.
 | `composite_masked_normal` | the isolated normal branch of `core_pdf.impl.render.target.composite_masked_group` (deleted) | 16.6x on the kernel over 400 corpus planes (39.4 to 2.4 ns/px); every soft-masked group on test_3450 |
 | `ObjectScanner` | nothing deleted: mirrors `parse_dictionary` and `parse_array` of `core_pdf.impl.document.recovery.lexer.PdfLexer`, which falls back to them | 5.5x on parsing the indirect objects of the benchmark corpus (201 to 37 ms), 99% of calls taking the compiled path; -30 to -46% on document open, -3 to -55% on first-page extraction |
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render.target` (both deleted) | 7.06x on the fused wrapper |
+| `decode_arithmetic_generic_template0` | `core_jbig2.codec` (deleted, with `JBIG2MQDecoder` and the `MQ_*` tables) | 69x over the 18 generic regions the JBIG2 fixtures decode (168 to 2.4 ns/px); render of no_bad_redactions.4.1 1424 to 77 ms, the two SCORE-Bench JBIG2 scans -31% and -40% |
 
 `glyph_coverage_plane` and `signed_area_coverage` share one accumulation core.
 Core reaches it through the fused entry point only; the device-space entry stays

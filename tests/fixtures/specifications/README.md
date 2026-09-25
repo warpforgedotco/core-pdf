@@ -46,7 +46,7 @@ see `PDF/README.md`.
 | `reference/png/png-3rd-edition.html` | `core-pdf-spec` (`s_07_filters.predictors`) |
 | `reference/unicode/*.txt` | `core-pdf` layout and text |
 | `reference/pdfa/*.pdf` | `core_pdf_spec.s_14_structure`, `core_pdf_spec.standards`, `core-pdf-validate` |
-| `restricted/itu-t/T.88-JBIG2.pdf` | `core-jbig2` with `core_pdf_spec.s_07_filters.jbig2` glue |
+| `restricted/itu-t/T.88-JBIG2.pdf` | `core-jbig2` with `core_pdf_spec.s_07_filters.jbig2` glue; the MQ decoder (Annex E) and generic template 0 are in `core-pdf-cythonized` |
 | `restricted/itu-t/T.81`, `T.4`, `T.6`, `T.800` | decoders supplied by `core-pdf` (imagecodecs) through the spec filter registry |
 | `restricted/icc/*.pdf` | `core_pdf_spec.s_08_graphics` structure only; profiles applied by `core-pdf` |
 | `restricted/pdfa/*.pdf` | `core-pdf-validate` and `core_pdf_spec.s_14_structure` |

@@ -43,10 +43,14 @@ and an interpreted path. A kernel belongs there only if it is measured against a
 workload, its inner loop touches no Python objects (Cython loses to CPython's specializing
 interpreter on object-heavy code, measured at roughly 2x slower for per-item construction),
 and it is pinned by golden vectors generated from the original before deletion.
-One kernel, `composite_knockout_element`, owns its algorithm outright: ISO 32000-2
-11.4.x knockout compositing moved out of spec, with its conformance tests, so that
-spec could stay pure Python rather than become a compiled distribution. That is the
-only member of the package that is not a mirror of code owned elsewhere. One kernel,
+Two kernels own their algorithms outright, moved rather than copied so that the
+distributions they came from stay pure Python: `composite_knockout_element` (ISO
+32000-2 11.4.x knockout compositing, out of spec) and
+`decode_arithmetic_generic_template0` (the T.88 MQ decoder and generic template 0,
+out of `core-jbig2`), each with its conformance tests. Those are the only members of
+the package that are not mirrors of code owned elsewhere. `core-jbig2`'s base decoder,
+and so spec's `decode_jbig2`, report arithmetic generic regions as unsupported; core's
+recovery decoder decodes them with the kernel. One kernel,
 `ObjectScanner`, is the reverse exception: it mirrors spec's object lexer, which is not
 deleted, for the parse_dictionary and parse_array of core's reader lexer, and declines
 anything outside the well-formed grammar so the Python parses it. Its golden vectors pin

@@ -13,11 +13,13 @@ import numpy
 import core_pdf_spec.s_07_filters.codecs as strict
 from core_jbig2.bitmap import compose_packed_bitmap_data
 from core_jbig2.codec import (
+    GENERIC_TEMPLATE_0_DEFAULT_AT,
     JBIG2GenericRegionHeader,
     JBIG2PageDecoder,
     Jbig2ParseError,
     JBIG2Region,
     JBIG2Segment,
+    Jbig2UnsupportedError,
     compose_packed_bitmap_region,
 )
 from core_pdf.impl.graphics import codec_backends
@@ -32,6 +34,7 @@ from core_pdf.impl.graphics.filter_registry import (
     PREDICTOR_FILTERS,
 )
 from core_pdf.impl.pdf_values import is_pdf_null
+from core_pdf_cythonized import decode_arithmetic_generic_template0
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import (
@@ -178,7 +181,19 @@ class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
                     self.page_info,
                 )
             return
-        super().decode_generic_region(header)
+        # core_jbig2 declines arithmetic regions; the decoder lives in
+        # core_pdf_cythonized, which implements template 0 only.
+        if (
+            header.template != 0
+            or header.prediction
+            or header.adaptive_pixels != GENERIC_TEMPLATE_0_DEFAULT_AT
+        ):
+            raise Jbig2UnsupportedError("unsupported JBIG2 generic bitmap template")
+        bitmap = decode_arithmetic_generic_template0(
+            region.raw[header.bitmap_start :], region.width, region.height
+        )
+        if self.image is not None:
+            compose_packed_bitmap_region(region, bitmap, self.image, self.page_info)
 
 
 def decode(

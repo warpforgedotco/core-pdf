@@ -152,6 +152,13 @@ RENDER_SAMPLES = (
         "rules and fills rather than glyph outlines",
     ),
     Sample(
+        "SCORE-Bench/src/NASA-SNA-8-D-027III-Rev2-CsmLmSpacecraftOperationalDataBook-"
+        "Volume3-MassProperties-Pg54.pdf",
+        "jbig2",
+        90,
+        "a 2550x3300 JBIG2 scan; the arithmetic decoder was 90% of rasterize",
+    ),
+    Sample(
         "pdf20examples/Simple PDF 2.0 file.pdf",
         "control",
         8,
