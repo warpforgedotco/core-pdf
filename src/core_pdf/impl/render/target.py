@@ -79,6 +79,7 @@ from core_pdf_cythonized import (
     blend_coverage_counts,
     blend_normal_alpha_array_numpy,
     box_downsample_blocks,
+    composite_elementary_knockout,
     composite_elementary_normal,
     composite_knockout_group,
     composite_masked_normal,
@@ -1340,6 +1341,33 @@ class RasterTarget:
             shape = shape * group.source_scale
             if group.mask_alpha is not None:
                 shape = shape * group.mask_alpha[rows, columns]
+        if (
+            parent.knockout
+            and parent.backdrop is not None
+            and group.backdrop is not None
+            and group.mask_alpha is None
+            and group.source_alpha is not None
+            and group.source_scale == 1.0
+            and (
+                group.blend_mode is None
+                or (isinstance(group.blend_mode, str) and group.blend_mode.casefold() == "normal")
+            )
+        ):
+            # An opaque normal elementary group into its knockout parent: the
+            # element, its knockout and the shape record in one pass.
+            assert parent.source_alpha is not None
+            assert shape is not None
+            composite_elementary_knockout(
+                parent.view[rows, columns],
+                self.pixel_view(parent.backdrop)[rows, columns],
+                group.view[rows, columns],
+                group.source_alpha[rows, columns],
+                parent.source_alpha[rows, columns],
+                shape,
+                parent.source_shape[rows, columns] if parent.source_shape is not None else None,
+            )
+            self.extend_paint_window(rows, columns)
+            return
         if parent.knockout:
             assert parent.source_alpha is not None
             assert shape is not None

@@ -27,3 +27,12 @@ def composite_knockout_group(
     element_alpha: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     shape: numpy.ndarray[Any, Any],
 ) -> None: ...
+def composite_elementary_knockout(
+    destination: numpy.ndarray[Any, Any],
+    backdrop: numpy.ndarray[Any, Any],
+    rendered: numpy.ndarray[Any, Any],
+    source_alpha: numpy.ndarray[Any, Any],
+    group_alpha: numpy.ndarray[Any, Any],
+    shape: numpy.ndarray[Any, Any],
+    parent_shape: numpy.ndarray[Any, Any] | None,
+) -> None: ...

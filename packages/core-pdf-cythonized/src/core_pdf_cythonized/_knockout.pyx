@@ -20,11 +20,16 @@ with -ffp-contract=off so the compiler does not fold these expressions into
 FMAs and shift the results.
 """
 
+from cpython.mem cimport PyMem_Free, PyMem_Malloc
 from libc.math cimport rint
 
 import numpy
 
-__all__ = ("composite_knockout_element", "composite_knockout_group")
+__all__ = (
+    "composite_elementary_knockout",
+    "composite_knockout_element",
+    "composite_knockout_group",
+)
 
 
 cdef inline double clamp_byte(double value) noexcept nogil:
@@ -217,3 +222,101 @@ def composite_knockout_group(destination, backdrop, element, group_alpha, elemen
                     dst[i, j, k] = <unsigned char> clamp_byte(colour[k])
                 dst[i, j, 3] = <unsigned char> clamp_byte(ra)
                 group[i, j] = <float> rga
+
+
+def composite_elementary_knockout(
+    unsigned char[:, :, :] destination,
+    const unsigned char[:, :, :] backdrop,
+    const unsigned char[:, :, :] rendered,
+    const float[:, :] source_alpha,
+    float[:, :] group_alpha,
+    const float[:, :] shape,
+    float[:, :] parent_shape,
+):
+    """An opaque normal elementary group composited into its knockout parent.
+
+    composite_group made the element as a copy of the parent's initial
+    backdrop, composite_elementary_normal copied the rendered pixels over it
+    where the group's quantized alpha is non-zero, composite_knockout_group
+    knocked the element into the parent, and numpy recorded the shape as
+    parent_shape += (1.0 - parent_shape) * shape, all in float32. A text
+    object's knockout group does this for every glyph that touches another.
+    This is those steps per pixel in one pass: the same quantization, with
+    every value checked before anything is written as the original checked
+    it, the same knockout arithmetic in float64, the same float32 shape
+    update when the parent records shape.
+    """
+    cdef Py_ssize_t rows = source_alpha.shape[0], cols = source_alpha.shape[1]
+    if destination.shape[0] != rows or destination.shape[1] != cols or destination.shape[2] != 4:
+        raise ValueError("destination must be source_alpha.shape + (4,)")
+    if backdrop.shape[0] != rows or backdrop.shape[1] != cols or backdrop.shape[2] != 4:
+        raise ValueError("backdrop must be source_alpha.shape + (4,)")
+    if rendered.shape[0] != rows or rendered.shape[1] != cols or rendered.shape[2] != 4:
+        raise ValueError("rendered must be source_alpha.shape + (4,)")
+    if group_alpha.shape[0] != rows or group_alpha.shape[1] != cols:
+        raise ValueError("group_alpha differs from source_alpha in shape")
+    if shape.shape[0] != rows or shape.shape[1] != cols:
+        raise ValueError("shape differs from source_alpha in shape")
+    cdef bint has_parent_shape = parent_shape is not None
+    if has_parent_shape and (parent_shape.shape[0] != rows or parent_shape.shape[1] != cols):
+        raise ValueError("parent_shape differs from source_alpha in shape")
+    if rows == 0 or cols == 0:
+        return
+    cdef unsigned char* quantized = <unsigned char*> PyMem_Malloc(rows * cols)
+    if quantized == NULL:
+        raise MemoryError
+    cdef Py_ssize_t i, j, k
+    cdef double scaled, eff, sh, remaining, rga, ra, complete, initial, ec
+    cdef double colour[3]
+    cdef const unsigned char* element
+    cdef float ONE = 1.0
+    cdef float previous, cover
+    try:
+        # composite_elementary_normal quantized, and rejected, every value
+        # before it copied a pixel.
+        for i in range(rows):
+            for j in range(cols):
+                scaled = rint(<double> source_alpha[i, j] * 255.0)
+                if scaled < 0.0 or scaled > 255.0:
+                    raise ValueError("source_alpha must lie in [0, 1]")
+                quantized[i * cols + j] = <unsigned char> <int> scaled
+        with nogil:
+            for i in range(rows):
+                for j in range(cols):
+                    # The element: the rendered pixel where the group shows,
+                    # the initial backdrop elsewhere.
+                    if quantized[i * cols + j] > 0:
+                        element = &rendered[i, j, 0]
+                    else:
+                        element = &backdrop[i, j, 0]
+                    eff = <double> quantized[i * cols + j] / 255.0
+                    sh = <double> shape[i, j]
+                    if sh < 0.0:
+                        sh = 0.0
+                    elif sh > 1.0:
+                        sh = 1.0
+                    if eff > sh:
+                        sh = eff
+                    if sh > 0.0:
+                        complete = <double> destination[i, j, 3] / 255.0
+                        initial = <double> backdrop[i, j, 3] / 255.0
+                        ec = <double> element[3] / 255.0
+                        remaining = 1.0 - sh
+                        rga = eff + remaining * <double> group_alpha[i, j]
+                        ra = initial + (1.0 - initial) * rga
+                        for k in range(3):
+                            colour[k] = knockout_component(
+                                <double> element[k] / 255.0, ec, remaining,
+                                <double> destination[i, j, k] / 255.0, complete,
+                                <double> backdrop[i, j, k] / 255.0, initial, ra,
+                            )
+                        for k in range(3):
+                            destination[i, j, k] = <unsigned char> clamp_byte(colour[k])
+                        destination[i, j, 3] = <unsigned char> clamp_byte(ra)
+                        group_alpha[i, j] = <float> rga
+                    if has_parent_shape:
+                        previous = parent_shape[i, j]
+                        cover = shape[i, j]
+                        parent_shape[i, j] = previous + (ONE - previous) * cover
+    finally:
+        PyMem_Free(quantized)

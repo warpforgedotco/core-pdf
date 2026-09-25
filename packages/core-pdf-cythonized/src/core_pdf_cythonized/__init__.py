@@ -49,6 +49,7 @@ from core_pdf_cythonized._downsample import box_downsample_blocks
 from core_pdf_cythonized._glyphs import horizontal_glyph_geometry
 from core_pdf_cythonized._jbig2 import decode_arithmetic_generic_template0
 from core_pdf_cythonized._knockout import (
+    composite_elementary_knockout,
     composite_knockout_element,
     composite_knockout_group,
 )
@@ -71,6 +72,7 @@ __all__ = (
     "blend_coverage_counts",
     "blend_normal_alpha_array_numpy",
     "box_downsample_blocks",
+    "composite_elementary_knockout",
     "composite_elementary_normal",
     "composite_knockout_element",
     "composite_knockout_group",
