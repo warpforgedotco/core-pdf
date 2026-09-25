@@ -104,6 +104,10 @@ COLOR_CACHE_LIMIT = 4096
 SOFT_MASK_CACHE_LIMIT = COLOR_CACHE_LIMIT
 
 
+# Exactly these: bool subclasses int and must keep failing as it does.
+NUMERIC_TYPES = frozenset((int, float))
+
+
 class RecoveringTextState(ContentInterpreter):
     recovery: CaptureRecovery
     normalized_colors: dict[tuple[ColorSpace, tuple[object, ...]], tuple[float, ...]]
@@ -373,6 +377,19 @@ class RecoveringTextState(ContentInterpreter):
                     break
             else:
                 return operands  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+            # Ints and floats alike -- "0 0 612 792 re", a glyph procedure's
+            # integer curves -- convert in C: float() of each, the value the
+            # loop below appends, then its finiteness. An overflow or a
+            # non-finite value falls through to the loop, which raises as it
+            # always has.
+            if all(map(NUMERIC_TYPES.__contains__, map(type, operands))):
+                try:
+                    converted = tuple(map(float, operands))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                except OverflowError:
+                    pass
+                else:
+                    if all(map(isfinite, converted)):
+                        return converted
         try:
             values: list[float] = []
             append = values.append
