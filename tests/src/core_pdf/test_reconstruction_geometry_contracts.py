@@ -202,3 +202,26 @@ def test_formula_context_controls_numeric_subscript_normalization(formula, expec
     assert builder.build().text == expected
     assert previous.text == "x"
     assert current.text == "2"
+
+
+def recent(*entries: tuple[tuple[float, float, float, float], str]) -> list:
+    tracked = []
+    reach = float("-inf")
+    for box, text in entries:
+        reach = max(reach, box[2])
+        tracked.append((box, text, reach))
+    return tracked
+
+
+def test_duplicate_overlap_is_found_behind_an_entry_further_left() -> None:
+    # The early stop may only skip entries that cannot reach the run: here the
+    # newest entry ends left of it, but an older one still overlaps.
+    run = make_run("a", x=12)
+    entries = recent(((10.0, 0.0, 20.0, 10.0), "a"), ((0.0, 0.0, 5.0, 10.0), "b"))
+    assert GlyphLineBuilder([run]).is_recent_duplicate_overlap(entries, run, "a")
+
+
+def test_duplicate_overlap_stops_once_nothing_older_can_reach() -> None:
+    run = make_run("a", x=30)
+    entries = recent(((0.0, 0.0, 5.0, 10.0), "a"), ((10.0, 0.0, 20.0, 10.0), "a"))
+    assert not GlyphLineBuilder([run]).is_recent_duplicate_overlap(entries, run, "a")

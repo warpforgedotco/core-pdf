@@ -223,6 +223,13 @@ def check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
                 pending.append((value, False))
 
 
+class NotBuilt:
+    """Marks a document cache whose value may legitimately be None."""
+
+
+NOT_BUILT = NotBuilt()
+
+
 class PdfDocument(Generic[PageT]):
     page_class: type | None = None
 
@@ -249,6 +256,7 @@ class PdfDocument(Generic[PageT]):
         "font_decoders",
         "page_cache",
         "fields_by_page_cache",
+        "structure_cache",
     )
 
     source: PdfSource
@@ -273,6 +281,7 @@ class PdfDocument(Generic[PageT]):
     font_decoders: dict[object, object]
     page_cache: tuple[PageT, ...] | None
     fields_by_page_cache: dict[int, list[RawFormField]] | None
+    structure_cache: StructureTree | None | NotBuilt
 
     def __init__(
         self,
@@ -307,6 +316,7 @@ class PdfDocument(Generic[PageT]):
         # quadratic in its page count.
         self.page_cache = None
         self.fields_by_page_cache = None
+        self.structure_cache = NOT_BUILT
         try:
             self.raw_data = self.load_data(source)
             self._standards = discover_header_standards(self.raw_data)
@@ -368,6 +378,7 @@ class PdfDocument(Generic[PageT]):
             # been replaced.
             self.page_cache = None
             self.fields_by_page_cache = None
+            self.structure_cache = NOT_BUILT
         except BaseException:
             self.close()
             raise
@@ -441,6 +452,7 @@ class PdfDocument(Generic[PageT]):
         self.font_decoders.clear()
         self.page_cache = None
         self.fields_by_page_cache = None
+        self.structure_cache = NOT_BUILT
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
@@ -501,8 +513,16 @@ class PdfDocument(Generic[PageT]):
 
     @property
     def structure(self) -> StructureTree | None:
+        # Built once: page.structure asks on every page.extract(), and a tree
+        # walks the whole ParentTree to answer -- 6 ms a page on PDF Reference
+        # 1.7, whose ParentTree has 33,162 entries.
+        cached = self.structure_cache
+        if not isinstance(cached, NotBuilt):
+            return cached
         root = self.catalog_dict("StructTreeRoot")
-        return None if root is None else StructureTree(self, root, page_lookup=PageLookup(self))
+        tree = None if root is None else StructureTree(self, root, page_lookup=PageLookup(self))
+        self.structure_cache = tree
+        return tree
 
     @property
     def recovery_enabled(self) -> bool:

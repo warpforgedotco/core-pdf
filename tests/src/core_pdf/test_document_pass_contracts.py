@@ -14,10 +14,13 @@ from core_pdf.impl.extract.pipeline import PageExtraction
 PAGE_COUNT = 3
 
 
-def multi_page_pdf(count: int = PAGE_COUNT) -> bytes:
+def multi_page_pdf(count: int = PAGE_COUNT, *, tagged: bool = False) -> bytes:
     page_numbers = [3 + 2 * index for index in range(count)]
+    tree_number = 4 + 2 * count
+    catalog = b"<< /Type /Catalog /Pages 2 0 R"
+    catalog += f" /StructTreeRoot {tree_number} 0 R >>".encode() if tagged else b" >>"
     objects: dict[int, bytes] = {
-        1: b"<< /Type /Catalog /Pages 2 0 R >>",
+        1: catalog,
         2: b"<< /Type /Pages /Kids ["
         + b" ".join(f"{number} 0 R".encode() for number in page_numbers)
         + f"] /Count {count} >>".encode(),
@@ -34,6 +37,8 @@ def multi_page_pdf(count: int = PAGE_COUNT) -> bytes:
         objects[number + 1] = (
             f"<< /Length {len(content)} >>\nstream\n".encode() + content + b"\nendstream"
         )
+    if tagged:
+        objects[tree_number] = b"<< /Type /StructTreeRoot /K [] >>"
     data = bytearray(b"%PDF-1.4\n")
     offsets: dict[int, int] = {}
     for number in sorted(objects):
@@ -125,3 +130,30 @@ def test_document_extraction_assembles_each_page_before_capturing_the_next(
     assert [page.text.strip() for page in result.pages] == [
         f"Page {n}" for n in range(1, PAGE_COUNT + 1)
     ]
+
+
+def test_a_tagged_document_builds_its_structure_tree_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import core_pdf.impl.document.document as document_module
+
+    built: list[int] = []
+    original = document_module.StructureTree
+
+    class CountedTree(original):  # type: ignore[misc, valid-type]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            built.append(1)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(document_module, "StructureTree", CountedTree)
+    with PdfDocument(multi_page_pdf(tagged=True)) as document:
+        texts = [page.extract().text.strip() for page in document.pages]
+        assert document.structure is document.structure
+    assert texts == [f"Page {n}" for n in range(1, PAGE_COUNT + 1)]
+    assert built == [1]
+
+
+def test_an_untagged_document_remembers_it_has_no_structure_tree() -> None:
+    with PdfDocument(multi_page_pdf()) as document:
+        assert document.structure is None
+        assert document.structure_cache is None

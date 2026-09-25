@@ -109,7 +109,10 @@ class TextGeometry:
     effective_font_height: float
 
 
-@dataclass(frozen=True, slots=True)
+# Not frozen, like GlyphStyle: one is built per text-showing operation, and a
+# frozen dataclass sets its 16 fields through object.__setattr__ at about
+# five times the cost. Nothing changes one after it is built.
+@dataclass(slots=True)
 class GlyphPaint:
     """The painting state a run of glyphs is drawn with."""
 
@@ -318,6 +321,7 @@ def capture_glyphs(
     styled_observation = GlyphObservation.styled
     add_run_geometry = result.geometry.add
     append_glyph = result.glyphs.append
+    append_cluster = result.clusters.append
     for index, glyph in enumerate(kept):
         chunk_text = chunk_texts[index]
         chunk_length = len(chunk_text)
@@ -338,32 +342,61 @@ def capture_glyphs(
             glyph.alternates,
         )
 
+        if not (glyph.split_unicode and chunk_length != 1 and not suspicious_flags[index]):
+            # The usual glyph: one observation, which is also its own cluster
+            # (glyph_cluster_from_observations returns a lone observation as
+            # is), so the fragment and cluster lists below are skipped.
+            observation = styled_observation(
+                style,
+                chunk_text,
+                rect,
+                advance_bbox,
+                seqno,
+                glyph.code_bytes,
+                glyph.char_code,
+                glyph.cid,
+                glyph.gid,
+                effective_font_name,
+                baseline,
+                observation_visible,
+                observation_confidence,
+                glyph.unicode_source,
+                glyph.alternates,
+                (),
+                bitmap_width,
+                bitmap_height,
+                bitmap_code,
+                outline_transform,
+                True,
+                cluster_provenance_id,
+            )
+            append_glyph(observation)
+            if want_runs:
+                add_run_geometry(advance_bbox, rect, observation_confidence)
+                append_cluster(observation)
+            continue
+
         fragments: list[tuple[str, Rectangle, Rectangle, Rectangle, float]] = []
-        if glyph.split_unicode and chunk_length != 1 and not suspicious_flags[index]:
-            # One code that stands for several characters: re-cut the advance
-            # per character. Rare, and the kernel deliberately does not model it.
-            per_char_advance = advances[index] / chunk_length
-            char_offset = offsets[index]
-            for ch in chunk_text:
-                char_confidence = glyph_unicode_confidence(
-                    ch, glyph.unicode_source, glyph.alternates
-                )
-                char_box, char_baseline_text = glyph_text_space_boxes(
-                    char_offset,
-                    per_char_advance,
-                    is_vertical=is_vertical,
-                    rise=rise,
-                    font_ascent=font_ascent,
-                    font_descent=font_descent,
-                )
-                char_advance_rect = text_basis_rect(*char_box, text_basis)
-                char_baseline = transformed_text_line(*char_baseline_text, text_basis)
-                fragments.append(
-                    (ch, char_advance_rect, char_advance_rect, char_baseline, char_confidence)
-                )
-                char_offset += per_char_advance
-        else:
-            fragments.append((chunk_text, rect, advance_bbox, baseline, observation_confidence))
+        # One code that stands for several characters: re-cut the advance
+        # per character. Rare, and the kernel deliberately does not model it.
+        per_char_advance = advances[index] / chunk_length
+        char_offset = offsets[index]
+        for ch in chunk_text:
+            char_confidence = glyph_unicode_confidence(ch, glyph.unicode_source, glyph.alternates)
+            char_box, char_baseline_text = glyph_text_space_boxes(
+                char_offset,
+                per_char_advance,
+                is_vertical=is_vertical,
+                rise=rise,
+                font_ascent=font_ascent,
+                font_descent=font_descent,
+            )
+            char_advance_rect = text_basis_rect(*char_box, text_basis)
+            char_baseline = transformed_text_line(*char_baseline_text, text_basis)
+            fragments.append(
+                (ch, char_advance_rect, char_advance_rect, char_baseline, char_confidence)
+            )
+            char_offset += per_char_advance
 
         cluster_observations: list[GlyphObservation] = []
         for position, (
