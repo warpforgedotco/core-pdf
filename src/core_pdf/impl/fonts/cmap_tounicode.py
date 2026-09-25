@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from binascii import unhexlify
 from collections.abc import Callable
 
 from core_adobe_fonts.cmap.ranges import (
@@ -80,14 +81,27 @@ def parse_mapping_blocks(program: CMapProgram, mappings: dict[bytes, str]) -> No
 
 
 def parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> None:
-    for record in block.records():
-        src_tok = record.source
-        dst_tok = record.destination
+    # A bfchar block's operands are source, destination pairs, and records()
+    # made a frozen record of each: they are paired here directly. A hex
+    # string whose inside is an even run of letters and digits decodes as
+    # unhexlify of that inside, which is what decode_cmap_token comes to
+    # through three frames -- and raises the same ValueError when it is not
+    # hex; anything else still takes decode_cmap_token.
+    operands = block.operands
+    for src_tok, dst_tok in zip(operands[0::2], operands[1::2], strict=False):
         try:
-            src = decode_cmap_token(src_tok)
+            raw = src_tok[1:-1]
+            if src_tok[:1] == b"<" and raw.isalnum() and not len(raw) & 1:
+                src = unhexlify(raw)
+            else:
+                src = decode_cmap_token(src_tok)
             if not src:
                 continue
-            dst = decode_utf16be_text(decode_cmap_token(dst_tok))
+            raw = dst_tok[1:-1]
+            if dst_tok[:1] == b"<" and raw.isalnum() and not len(raw) & 1:
+                dst = decode_utf16be_text(unhexlify(raw))
+            else:
+                dst = decode_utf16be_text(decode_cmap_token(dst_tok))
         except ValueError, UnicodeDecodeError:
             if dst_tok.startswith(b"<") and b"<" in dst_tok[1:]:
                 prefix = dst_tok[1 : dst_tok.find(b"<", 1)]
