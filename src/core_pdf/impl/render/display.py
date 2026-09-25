@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from math import isfinite
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
@@ -100,6 +101,41 @@ def image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
     return None
 
 
+def plain_fill_members_box(
+    items: list[DisplayItem], start: int
+) -> tuple[float, float, float, float] | None:
+    """The union of the bboxes of items[start:], if every one is a plain fill.
+
+    A plain fill -- an edge-array fill with no pattern and a Normal blend,
+    what RasterTarget.knockout_paint_box accepts -- paints inside its bbox as
+    clipped, so a group of nothing else paints inside the union of theirs. A
+    text item, which the rasterizer does not paint, may sit among them.
+    Anything else in the group, or no fill at all, gives None.
+    """
+    box: tuple[float, float, float, float] | None = None
+    for index in range(start, len(items)):
+        item = items[index]
+        if type(item) is DisplayListItem and item.kind == "text":
+            continue
+        if not (
+            type(item) is PathPaintItem
+            and item.paint_kind is PathPaintKind.FILL
+            and item.edge_array is not None
+            and item.bbox is not None
+            and item.fill_pattern is None
+            and item.blend_mode in (None, "Normal")
+        ):
+            return None
+        x0, y0, x1, y1 = item.bbox
+        if not (isfinite(x0) and isfinite(y0) and isfinite(x1) and isfinite(y1)):
+            return None
+        if box is None:
+            box = (x0, y0, x1, y1)
+        else:
+            box = (min(box[0], x0), min(box[1], y0), max(box[2], x1), max(box[3], y1))
+    return box
+
+
 class DisplayList:
     __slots__ = (
         "width",
@@ -108,6 +144,8 @@ class DisplayList:
         "preserve_object_boundaries",
         "shape_tracking_groups",
         "group_scope_floors",
+        "open_group_indexes",
+        "group_member_boxes",
     )
 
     width: float
@@ -124,6 +162,8 @@ class DisplayList:
         "preserve_object_boundaries",
         "shape_tracking_groups",
         "group_scope_floors",
+        "open_group_indexes",
+        "group_member_boxes",
     )
     __match_args__ = ("width", "height", "items")
 
@@ -141,6 +181,11 @@ class DisplayList:
         self.preserve_object_boundaries = preserve_object_boundaries
         self.shape_tracking_groups = []
         self.group_scope_floors = []
+        self.open_group_indexes: list[int] = []
+        # For a group whose members are all plain fills, keyed by the identity
+        # of its group-begin item: the page box they paint within. See
+        # plain_fill_members_box.
+        self.group_member_boxes: dict[int, tuple[float, float, float, float]] = {}
 
     def __repr__(self) -> str:
         return (
@@ -195,10 +240,17 @@ class DisplayList:
                 self.shape_tracking_groups.append(
                     data.get("group_knockout") is True or data.get("group_track_shape") is True
                 )
+                # The group-begin item is appended next, at this index.
+                self.open_group_indexes.append(len(self.items))
             case "group-end":
                 floor = self.group_scope_floors[-1] if self.group_scope_floors else 0
                 if len(self.shape_tracking_groups) > floor:
                     self.shape_tracking_groups.pop()
+                if self.open_group_indexes:
+                    begin = self.open_group_indexes.pop()
+                    box = plain_fill_members_box(self.items, begin + 1)
+                    if box is not None and begin < len(self.items):
+                        self.group_member_boxes[id(self.items[begin])] = box
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
         graphics_mask = data.get("graphics_soft_mask")

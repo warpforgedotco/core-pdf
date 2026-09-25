@@ -484,6 +484,7 @@ class RasterTarget:
         "tiling_cell_cache",
         "active_soft_masks",
         "elementary_scratch",
+        "group_member_boxes",
         "stroke_scratch",
     )
 
@@ -549,6 +550,8 @@ class RasterTarget:
         self.tiling_cell_cache: TilingCellCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, ElementaryScratch] = {}
+        # DisplayList.group_member_boxes of the list being painted, if known.
+        self.group_member_boxes: dict[int, tuple[float, float, float, float]] | None = None
         # paint_stroke_once's coverage buffer, all zero between strokes.
         self.stroke_scratch: bytearray | None = None
         if group_alpha is not None:
@@ -640,6 +643,28 @@ class RasterTarget:
     # Past this many boxes the linear scan stops paying for itself, and a
     # knockout group with that many elements is not the text case this is for.
     KNOCKOUT_DISJOINT_LIMIT = 96
+
+    def knockout_group_region(self, item: DisplayItem) -> PixelBox | None:
+        """The pixels a non-isolated knockout group can touch, or None if unknown.
+
+        A text object's knockout group copied the whole page as its backdrop
+        and cleared two page-sized planes, to paint a line of glyphs: on
+        pdfminer.six issue_495 that was half the page's render. When every
+        member is a plain fill, each paints inside its clipped bbox (see
+        knockout_paint_box), and so does an elementary group composited in
+        for one; the group is composited over what it painted. Nothing reads
+        or writes the group outside the union of those boxes under the clip
+        it begins in -- which a member's own clip only narrows, since a plain
+        fill group holds no clip -- so that union is all it needs set up.
+        """
+        boxes = self.group_member_boxes
+        if boxes is None:
+            return None
+        bbox = boxes.get(id(item))
+        if bbox is None:
+            return None
+        clipped = self.clip.clipped_pixel_box(bbox)
+        return EMPTY_PIXEL_BOX if clipped is None else clipped[1]
 
     def knockout_paint_box(self, item: DisplayItem) -> PixelBox | None:
         """The pixel box `item` would paint straight into a knockout group, or
@@ -807,6 +832,19 @@ class RasterTarget:
                         mask_alpha=group_mask_alpha,
                         alpha_is_shape=data.get("alpha_is_shape", False),
                     )
+                elif (
+                    not isolated
+                    and knockout
+                    and (region := self.knockout_group_region(item)) is not None
+                ):
+                    self.push_scratch_group(
+                        opacity,
+                        data.get("blend_mode"),
+                        track_shape=data.get("group_track_shape", False),
+                        mask_alpha=group_mask_alpha,
+                        alpha_is_shape=data.get("alpha_is_shape", False),
+                        region=region,
+                    )
                 else:
                     self.push_group(
                         bytearray(self.width * self.height * 4),
@@ -847,22 +885,29 @@ class RasterTarget:
         track_shape: bool,
         mask_alpha: SoftMaskPlane | None,
         alpha_is_shape: bool,
+        region: PixelBox | None = None,
     ) -> None:
-        """Push a non-isolated, non-knockout group onto this depth's scratch buffer.
+        """Push a non-isolated group onto this depth's scratch buffer.
 
         Such a group starts as a copy of its backdrop with empty source planes.
         The scratch keeps that state between uses, and pop_group records what
         the last group painted, so when the backdrop is a knockout parent's
         (which does not change) only that window is restored.
+
+        With a `region`, the group is a knockout group that reads and writes
+        nothing outside it, and only the region is set up: see
+        knockout_group_region.
         """
         parent = self.buffer_stack[-1]
         backdrop = parent.backdrop if parent.knockout else self.pixels
+        knockout = region is not None
         if backdrop is None:
             self.push_group(
                 bytearray(len(self.pixels)),
                 group_alpha,
                 blend_mode,
                 isolated=False,
+                knockout=knockout,
                 track_shape=track_shape,
                 mask_alpha=mask_alpha,
                 alpha_is_shape=alpha_is_shape,
@@ -877,18 +922,28 @@ class RasterTarget:
         buffer = scratch.buffer
         source_alpha = scratch.source_alpha
         source_shape = scratch.source_shape
-        if parent.knockout and scratch.synced_parent is parent:
+        if region is not None:
+            x0, y0, x1, y1 = region
+            if x1 > x0 and y1 > y0:
+                scratch.view[y0:y1, x0:x1] = self.pixel_view(backdrop)[y0:y1, x0:x1]
+                source_alpha[y0:y1, x0:x1] = 0.0
+                source_shape[y0:y1, x0:x1] = 0.0
+            # Outside the region the scratch is left as it was, so the next
+            # group at this depth cannot count on it matching any backdrop.
+            scratch.synced_parent = None
+        elif parent.knockout and scratch.synced_parent is parent:
             dirty = scratch.dirty
             if dirty:
                 y0, y1, x0, x1 = dirty
                 scratch.view[y0:y1, x0:x1] = self.pixel_view(backdrop)[y0:y1, x0:x1]
                 source_alpha[y0:y1, x0:x1] = 0.0
                 source_shape[y0:y1, x0:x1] = 0.0
+            scratch.synced_parent = parent
         else:
             buffer[:] = backdrop
             source_alpha.fill(0.0)
             source_shape.fill(0.0)
-        scratch.synced_parent = parent if parent.knockout else None
+            scratch.synced_parent = parent if parent.knockout else None
         scratch.dirty = None
         self.buffer_stack.append(
             RasterGroup(
@@ -899,11 +954,14 @@ class RasterTarget:
                 backdrop=backdrop,
                 source_alpha=source_alpha,
                 source_shape=(
-                    source_shape if track_shape or parent.source_shape is not None else None
+                    source_shape
+                    if knockout or track_shape or parent.source_shape is not None
+                    else None
                 ),
-                knockout=False,
+                knockout=knockout,
                 alpha_is_shape=alpha_is_shape,
                 mask_alpha=mask_alpha,
+                painted_boxes=[] if knockout else None,
             )
         )
         self.sync_group_mirrors()
