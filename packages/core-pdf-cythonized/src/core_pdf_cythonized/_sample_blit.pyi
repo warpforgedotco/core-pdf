@@ -13,3 +13,10 @@ def sample_opaque_pixels(
     valid_columns: numpy.ndarray[Any, Any],
     transposed: bool,
 ) -> None: ...
+def interleave_soft_mask(
+    raster: numpy.ndarray[Any, Any],
+    channels: int,
+    mask: numpy.ndarray[Any, Any],
+    mask_rows: numpy.ndarray[Any, Any],
+    mask_columns: numpy.ndarray[Any, Any],
+) -> numpy.ndarray[Any, Any]: ...

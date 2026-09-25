@@ -38,6 +38,7 @@ from core_pdf.impl.graphics.stream_decoding import (
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.scalars import parse_int
 from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf_cythonized import interleave_soft_mask
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_08_graphics.color_kernels import (
     decode_sample_values,
@@ -291,11 +292,16 @@ def apply_soft_mask(raster: ImageRaster, mask: ImageRaster) -> ImageRaster:
         mask.width - 1,
         (numpy.arange(raster.width) * mask.width) // raster.width,
     )
-    alpha = mask_array[y[:, None], x[None, :]]
     channels = raster.channels - int(raster.has_alpha)
-    array = numpy.empty((raster.height, raster.width, channels + 1), dtype=numpy.uint8)
-    array[:, :, :channels] = raster.array[:, :, :channels]
-    array[:, :, channels] = alpha
+    # The mask sampled at those rows and columns, after the raster's colour
+    # channels, written in one pass.
+    array = interleave_soft_mask(
+        raster.array,
+        channels,
+        mask_array,
+        numpy.ascontiguousarray(y, dtype=numpy.intp),
+        numpy.ascontiguousarray(x, dtype=numpy.intp),
+    )
     return ImageRaster(array, raster.color_model)
 
 

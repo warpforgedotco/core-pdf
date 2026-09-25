@@ -13,7 +13,9 @@ three, and 255 for alpha, only where both the row and the column are valid.
 The indices come in already clamped to the image, as numpy needed them.
 """
 
-__all__ = ("sample_opaque_pixels",)
+import numpy
+
+__all__ = ("interleave_soft_mask", "sample_opaque_pixels")
 
 
 def sample_opaque_pixels(
@@ -77,3 +79,44 @@ def sample_opaque_pixels(
                     pixel[1] = sample[1]
                     pixel[2] = sample[2]
                 pixel[3] = 255
+
+
+def interleave_soft_mask(
+    const unsigned char[:, :, :] raster,
+    Py_ssize_t channels,
+    const unsigned char[:, :] mask,
+    const Py_ssize_t[::1] mask_rows,
+    const Py_ssize_t[::1] mask_columns,
+):
+    """raster's first `channels` channels with mask[mask_rows[r], mask_columns[c]] after them.
+
+    core_pdf.impl.graphics.images.apply_soft_mask gathered the soft mask to
+    the image's size with advanced indexing, then built the RGBA array with
+    two strided copies -- three passes over an image that can run to tens of
+    megapixels. This writes each output pixel once. It is a byte copy; the
+    nearest-sample indices come in already clamped to the mask, as numpy
+    computed them.
+    """
+    cdef Py_ssize_t rows = raster.shape[0], cols = raster.shape[1]
+    if channels < 0 or channels > raster.shape[2]:
+        raise ValueError("channels exceeds the raster's")
+    if mask_rows.shape[0] != rows or mask_columns.shape[0] != cols:
+        raise ValueError("mask indices differ from the raster in size")
+    cdef Py_ssize_t i, j, k
+    for i in range(rows):
+        if not 0 <= mask_rows[i] < mask.shape[0]:
+            raise IndexError("mask row out of range")
+    for j in range(cols):
+        if not 0 <= mask_columns[j] < mask.shape[1]:
+            raise IndexError("mask column out of range")
+    output = numpy.empty((rows, cols, channels + 1), dtype=numpy.uint8)
+    cdef unsigned char[:, :, ::1] out = output
+    cdef Py_ssize_t row
+    with nogil:
+        for i in range(rows):
+            row = mask_rows[i]
+            for j in range(cols):
+                for k in range(channels):
+                    out[i, j, k] = raster[i, j, k]
+                out[i, j, channels] = mask[row, mask_columns[j]]
+    return output
