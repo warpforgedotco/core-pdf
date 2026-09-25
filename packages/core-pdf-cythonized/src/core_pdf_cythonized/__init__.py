@@ -37,7 +37,7 @@ from core_pdf_cythonized._composite import (
     composite_masked_normal,
     composite_normal_group,
 )
-from core_pdf_cythonized._content import SCAN_NAME, SCAN_OPERATOR, ContentScanner
+from core_pdf_cythonized._content import ContentScanner
 from core_pdf_cythonized._coverage import (
     fill_glyph_coverage,
     glyph_coverage_plane,
@@ -64,8 +64,6 @@ from core_pdf_cythonized._supersample import supersampled_coverage_plane
 from core_pdf_cythonized._type2 import type2_glyph_geometry
 
 __all__ = (
-    "SCAN_NAME",
-    "SCAN_OPERATOR",
     "ContentScanner",
     "ObjectScanner",
     "accumulate_source_plane",

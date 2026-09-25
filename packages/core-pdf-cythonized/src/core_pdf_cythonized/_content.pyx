@@ -28,29 +28,26 @@ arrays, dictionaries, inline images and anything malformed are handed back to
 the caller as a byte offset, so every recovery path stays in Python where it
 was. On the densest corpus page that hand-back happens for one operation in
 seven -- the dash arrays -- and the scan is still more than twice as fast.
+
+An operation comes back whole: the operator's name interned as the str the
+handler tables are keyed by, and its operands as the tuple the handler is
+passed. The caller's loop then runs once per operation and does nothing but
+hand it on; building the pair in Python, with its two dictionary lookups, was
+most of what that loop cost.
 """
 
 from cpython.bytes cimport PyBytes_FromStringAndSize
-from cpython.list cimport PyList_Append, PyList_GET_SIZE
+from cpython.list cimport PyList_Append, PyList_AsTuple, PyList_GET_SIZE
+from cpython.object cimport PyObject
 from cpython.long cimport PyLong_FromString
 
 cdef extern from "Python.h":
     double PyOS_string_to_double(
         const char* s, char** endptr, object overflow_exception
     ) except? -1.0
-
-# Returned in place of a byte offset. A caller sees a negative code as a
-# status and any other value as the position it must parse from.
-SCAN_OPERATOR = -1
-SCAN_NAME = -2
-
-cdef Py_ssize_t C_SCAN_OPERATOR = SCAN_OPERATOR
-cdef Py_ssize_t C_SCAN_NAME = SCAN_NAME
-
-# Returned alongside a byte offset. An operator token and a name token are both
-# non-empty, so an empty word is unambiguous, and keeping the type of the pair
-# fixed saves the caller a narrowing check on its hottest loop.
-cdef bytes EMPTY = b""
+    # Declared here rather than cimported: cpython.list types the item list as
+    # an object, which cannot be NULL, and NULL is what deletes the slice.
+    int PyList_SetSlice(object list, Py_ssize_t low, Py_ssize_t high, PyObject* items) except -1
 
 # An operand list never grows past this; the tokenizer has always dropped the
 # rest rather than let a malformed stream accumulate without bound.
@@ -84,20 +81,30 @@ for _i in range(0x30, 0x3A):   # 0-9
 
 
 cdef class ContentScanner:
-    """Scans content stream tokens, deferring anything it does not own."""
+    """Scans content stream operations, deferring anything it does not own."""
 
     cdef const unsigned char[::1] view
     cdef const unsigned char* buf
     cdef Py_ssize_t size
     cdef Py_ssize_t cursor
     cdef object keywords
+    cdef object object_keywords
+    cdef object make_name
+    cdef dict names
+    cdef dict operators
+    cdef readonly list operands
 
-    def __cinit__(self, data, keywords):
+    def __cinit__(self, data, keywords, object_keywords, make_name):
         self.view = data
         self.size = self.view.shape[0]
         self.buf = &self.view[0] if self.size else NULL
         self.cursor = 0
         self.keywords = keywords
+        self.object_keywords = object_keywords
+        self.make_name = make_name
+        self.names = {}
+        self.operators = {}
+        self.operands = []
 
     @property
     def pos(self):
@@ -123,14 +130,15 @@ cdef class ContentScanner:
                 break
         return p
 
-    def next_operation(self, list operands, dict names):
-        """Scan up to and including the next operator.
+    def next_operation(self):
+        """Scan up to and including the next operation.
 
-        Appends operands to ``operands`` as it goes and returns a pair. The
-        second element is ``SCAN_OPERATOR`` when the first is an operator's
-        bytes, ``SCAN_NAME`` when it is a name token whose interned form is not
-        yet in ``names`` and the caller must add it, and otherwise a byte
-        offset the caller must parse from, with the first element ``None``.
+        Appends operands to ``operands`` as it goes. Returns the operation as
+        a ``(name, operands)`` pair, with the operand list emptied into the
+        tuple, or else a byte offset the caller must parse from; what the
+        caller parses there goes on the same list. Operations named in
+        ``object_keywords`` are dropped with their operands, as the caller
+        dropped them.
         """
         cdef const unsigned char* b = self.buf
         cdef Py_ssize_t n = self.size
@@ -140,6 +148,9 @@ cdef class ContentScanner:
         cdef char* end
         cdef bytes word
         cdef object value
+        cdef object name
+        cdef tuple arguments
+        cdef list operands = self.operands
 
         while True:
             with nogil:
@@ -149,7 +160,7 @@ cdef class ContentScanner:
                 # Nothing but whitespace left. The caller's parser turns this
                 # into the end of the stream; reproducing that here would be a
                 # second place for it to be decided.
-                return EMPTY, p
+                return p
             c = b[p]
 
             if IS_NUMERIC_START[c]:
@@ -171,13 +182,13 @@ cdef class ContentScanner:
                 # [0-9]+\.?[0-9]*  or  \.[0-9]+ -- a lone sign, a lone dot and
                 # a sign followed by a dot are all rejected, as they were.
                 if digits_before == 0 and not (has_dot and digits_after > 0):
-                    return EMPTY, start
+                    return start
                 # A second dot, a letter, an exponent: the expression required
                 # a delimiter here and so does this.
                 if p < n and not IS_DELIM[b[p]]:
-                    return EMPTY, start
+                    return start
                 if p - start >= NUMBER_LIMIT:
-                    return EMPTY, start
+                    return start
                 self.cursor = p
                 if PyList_GET_SIZE(operands) < OPERAND_LIMIT:
                     if has_dot:
@@ -201,19 +212,19 @@ cdef class ContentScanner:
                 while p < n and not (IS_DELIM[b[p]] or b[p] == 0x23):
                     p += 1
                 if p < n and not IS_DELIM[b[p]]:
-                    return EMPTY, start
+                    return start
                 word = PyBytes_FromStringAndSize(<const char*> (b + start), p - start)
                 self.cursor = p
-                value = names.get(word)
+                value = self.names.get(word)
                 if value is None:
-                    return word, C_SCAN_NAME
+                    value = self.names[word] = self.make_name(word[1:])
                 if PyList_GET_SIZE(operands) < OPERAND_LIMIT:
                     PyList_Append(operands, value)
                 continue
 
             if IS_DELIM[c]:
                 # A string, array, dictionary or stray delimiter.
-                return EMPTY, p
+                return p
 
             # An operator: the first byte is neither numeric nor a delimiter,
             # which is exactly the expression's first character class.
@@ -225,6 +236,13 @@ cdef class ContentScanner:
             if word in self.keywords:
                 # BI, true, false and null are not operators; the expression
                 # declined them too and left them to the parser.
-                return EMPTY, start
+                return start
             self.cursor = p
-            return word, C_SCAN_OPERATOR
+            name = self.operators.get(word)
+            if name is None:
+                name = self.operators[word] = word.decode("latin-1")
+            arguments = PyList_AsTuple(operands)
+            PyList_SetSlice(operands, 0, PyList_GET_SIZE(operands), NULL)
+            if name in self.object_keywords:
+                continue
+            return name, arguments
