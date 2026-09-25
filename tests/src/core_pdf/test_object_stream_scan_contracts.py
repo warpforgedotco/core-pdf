@@ -1,8 +1,11 @@
-"""A compressed dictionary scanned in place reads as its own lexer would read it."""
+"""Object stream headers and dictionaries read without a lexer read as the lexer reads them."""
 
 import pytest
 
-from core_pdf.impl.document.recovery.objects import PdfObjectStream
+from core_pdf.impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl.document.recovery.objects import PdfObjectStream, scan_object_stream_pairs
+from core_pdf.impl.exceptions import PdfParseError
+from core_pdf_spec.s_07_syntax.objects import parse_object_stream_pair
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 BODIES = [
@@ -71,3 +74,28 @@ def test_close_releases_the_body_scanner() -> None:
     assert container.body_lexer is not None
     container.close()
     assert container.body_lexer is None
+
+
+def lexer_pairs(data: bytes, n: int) -> tuple[list[tuple[int, int]], int]:
+    lexer = PdfLexer(data)
+    pairs: list[tuple[int, int]] = []
+    last_end = 0
+    try:
+        while len(pairs) < n:
+            try:
+                pairs.append(parse_object_stream_pair(lexer))
+            except PdfParseError:
+                break
+            last_end = lexer.pos
+        return pairs, last_end
+    finally:
+        lexer.close()
+
+
+@pytest.mark.parametrize(
+    "header",
+    [b"", b"10 0 11 9 ", b"10 0 11", b"\x0010\t007\r\n11\x0c12  ", b"99999999999999999999 1"],
+)
+@pytest.mark.parametrize("n", [0, 1, 2, 5])
+def test_a_digit_header_reads_as_the_lexer_reads_it(header: bytes, n: int) -> None:
+    assert scan_object_stream_pairs(header, n) == lexer_pairs(header, n)

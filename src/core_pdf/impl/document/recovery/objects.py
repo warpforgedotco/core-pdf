@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import re
 import typing
 
 from core_pdf.impl.document.recovery.lexer import PdfLexer
@@ -14,6 +15,7 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
+from core_pdf_spec.s_07_syntax_primitives.tokens import WHITESPACE
 
 if typing.TYPE_CHECKING:
     from typing import Any
@@ -159,7 +161,13 @@ def parse_object_stream_header(
     return scan_object_stream_pairs(data[:first], n)[0]
 
 
+HEADER_BYTES = b"0123456789" + WHITESPACE
+DIGIT_RUN_RE = re.compile(rb"[0-9]+")
+
+
 def scan_object_stream_pairs(data: bytes | memoryview, n: int) -> tuple[list[tuple[int, int]], int]:
+    if type(data) is bytes and not data.translate(None, HEADER_BYTES):
+        return scan_digit_pairs(data, n)
     lexer = PdfLexer(data)
     pairs: list[tuple[int, int]] = []
     last_end = 0
@@ -174,3 +182,23 @@ def scan_object_stream_pairs(data: bytes | memoryview, n: int) -> tuple[list[tup
         return pairs, last_end
     finally:
         lexer.close()
+
+
+def scan_digit_pairs(data: bytes, n: int) -> tuple[list[tuple[int, int]], int]:
+    """scan_object_stream_pairs for a header of nothing but digits and whitespace.
+
+    The lexer's words there are the digit runs, each an integer token, so the
+    pairs are the runs taken two at a time; an unpaired last run ends the
+    scan as the lexer's failed second read did.
+    """
+    pairs: list[tuple[int, int]] = []
+    last_end = 0
+    runs = DIGIT_RUN_RE.finditer(data)
+    while len(pairs) < n:
+        first = next(runs, None)
+        second = None if first is None else next(runs, None)
+        if first is None or second is None:
+            break
+        pairs.append((int(first[0]), int(second[0])))
+        last_end = second.end()
+    return pairs, last_end
