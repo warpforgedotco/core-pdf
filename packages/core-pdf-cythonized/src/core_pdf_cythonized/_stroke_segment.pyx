@@ -10,12 +10,12 @@ and blends it through blend_px: 11 us a segment, 388 ms of that page's
 This is that loop, for normal blending with no group source planes to
 record into. A clip is passed as `allowed`, one byte per pixel of the box,
 built by the caller from the same row spans the loop tested each pixel
-against. It reproduces
-the Python arithmetic step by step in double -- the sample positions, the
-projection and cross-product tests (squared, not the linearised form the
-numpy path for larger boxes uses), the coverage-to-alpha rounding and
-blend_px's normal-mode compositing -- from _pixel_blend.pxd, with rint standing
-in for Python's round, both rounding half to even. setup.py builds with -ffp-contract=off.
+against. It reproduces the Python arithmetic step by step in double -- the
+sample positions, the projection and cross-product tests (squared, not the
+linearised form the numpy path for larger boxes uses), the coverage-to-alpha
+rounding and blend_px's normal-mode compositing, the last two from
+_pixel_blend.pxd, with rint standing in for Python's round, both rounding
+half to even. setup.py builds with -ffp-contract=off.
 
 The caller computes the segment's scalars (length squared, half width
 squared, cap extension) exactly as before and passes them in, so no square
