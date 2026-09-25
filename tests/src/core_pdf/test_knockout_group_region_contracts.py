@@ -122,3 +122,21 @@ def test_a_region_set_up_group_renders_as_a_page_sized_one(
     assert all(region is not None for region in regions)
     monkeypatch.setattr(display, "plain_fill_members_box", lambda *_: (False, None))
     assert rendered() == bounded
+
+
+def test_a_glyph_fill_skips_its_elementary_group_and_paints_the_same(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    taken: list[bool] = []
+    original = RasterTarget.knockout_glyph_fill
+
+    def recorded(self: RasterTarget, item: DisplayItem) -> bool:
+        result = original(self, item)
+        taken.append(result)
+        return result
+
+    monkeypatch.setattr(RasterTarget, "knockout_glyph_fill", recorded)
+    direct = rendered()
+    assert any(taken)
+    monkeypatch.setattr(RasterTarget, "knockout_glyph_fill", lambda *_: False)
+    assert rendered() == direct

@@ -646,6 +646,89 @@ class RasterTarget:
     # knockout group with that many elements is not the text case this is for.
     KNOCKOUT_DISJOINT_LIMIT = 96
 
+    def knockout_glyph_fill(self, item: DisplayItem) -> bool:
+        """Paint a plain glyph fill into a knockout parent without its elementary group.
+
+        Every glyph of a text knockout group that touches another went
+        through a scratch group: pushed as a copy of the parent's backdrop
+        with empty planes, filled, popped and composited in. Over the fill's
+        box that group holds exactly the backdrop and zeros, and nothing
+        outside the box is read, so the fill goes into a copy of the
+        backdrop's window with zero planes of its own, and fill_glyph_coverage
+        and composite_elementary_knockout -- the kernels the group ran -- carry
+        it into the parent. This follows paint_typed_path and fill_path to
+        their glyph branch; wherever they would go another way it returns
+        False and the group is used after all.
+        """
+        if type(item) is not PathPaintItem or item.paint_kind is not PathPaintKind.FILL:
+            return False
+        edge_array = item.edge_array
+        bbox = item.bbox
+        if (
+            type(item.path) is not CapturedPath
+            or edge_array is None
+            or bbox is None
+            or item.fill_pattern is not None
+            or item.blend_mode not in (None, "Normal")
+            or item.fill_rule != "nonzero"
+        ):
+            return False
+        parent = self.buffer_stack[-1]
+        if parent.backdrop is None or parent.source_alpha is None or parent.source_shape is None:
+            return False
+        if item.path.axis_aligned_rect() is not None:
+            return False
+        rgba = color_rgba(item.fill, item.fill_opacity)
+        if is_pdf_number(item.soft_mask_alpha):
+            rgba = scale_rgba_alpha(rgba, item.soft_mask_alpha)
+        if len(edge_array) == 0:
+            return True
+        clipped = self.clip.clipped_pixel_box(bbox)
+        if clipped is None:
+            return True
+        ix0, iy0, ix1, iy1 = clipped[1]
+        if not (
+            (ix1 - ix0) * (iy1 - iy0) < 10_000 and self.clip.clip_paths_are_axis_aligned_rects()
+        ):
+            return False
+        self.set_shape_alpha(rgba[3] / 255.0)
+        rows = slice(iy0, iy1)
+        columns = slice(ix0, ix1)
+        backdrop = self.pixel_view(parent.backdrop)[rows, columns]
+        rendered = backdrop.copy()
+        source_alpha = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.float32)
+        source_shape = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.float32)
+        drawn = fill_glyph_coverage(
+            edge_array,
+            self.crop_x0,
+            self.crop_y1,
+            self.scale,
+            ix0,
+            iy0,
+            ix1 - ix0,
+            iy1 - iy0,
+            rgba,
+            rendered,
+            source_alpha,
+            source_shape,
+            self.shape_alpha,
+        )
+        if drawn is None:
+            return True
+        if parent.painted_boxes is not None:
+            self.record_knockout_paint((ix0, iy0, ix1, iy1))
+        composite_elementary_knockout(
+            parent.view[rows, columns],
+            backdrop,
+            rendered,
+            source_alpha,
+            parent.source_alpha[rows, columns],
+            source_shape,
+            parent.source_shape[rows, columns],
+        )
+        self.extend_paint_window(rows, columns)
+        return True
+
     def knockout_group_region(self, item: DisplayItem) -> PixelBox | None:
         """The pixels a non-isolated knockout group can touch, or None if unknown.
 
@@ -762,6 +845,13 @@ class RasterTarget:
                     skip_box = self.knockout_skip_box(item, boxes)
                     if skip_box is not None:
                         elementary_group = False
+                if (
+                    elementary_group
+                    and knockout
+                    and mask_alpha is None
+                    and self.knockout_glyph_fill(item)
+                ):
+                    return
                 if elementary_group:
                     self.push_scratch_group(
                         None,
