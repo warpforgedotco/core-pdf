@@ -135,6 +135,36 @@ PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
 
 
 @final
+class SoftMaskPlane:
+    """A resolved soft mask: its luminosity or alpha as a page of float32, by the window.
+
+    The plane is the mask group's rendered alpha divided by 255, or put
+    through the mask's transfer table. A masked group reads it only over the
+    window it painted, so the page-sized float32 array was a conversion of
+    every pixel to use a band of them; indexing converts just the window,
+    to the same values. `nbytes` is what the plane holds, for the cache.
+    """
+
+    __slots__ = ("alpha", "table")
+
+    def __init__(
+        self, alpha: UInt8Array, table: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
+    ) -> None:
+        self.alpha = alpha
+        self.table = table
+
+    def __getitem__(self, index: Any) -> numpy.ndarray[Any, numpy.dtype[numpy.float32]]:
+        window = self.alpha[index]
+        if self.table is None:
+            return window.astype(numpy.float32) / 255.0
+        return self.table[window]
+
+    @property
+    def nbytes(self) -> int:
+        return self.alpha.nbytes
+
+
+@final
 class PathPaintItem(ReplaceFields, ReprFields):
     __slots__ = (
         "paint_kind",
@@ -487,7 +517,7 @@ class RasterGroup(Record):
     source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
     knockout: bool
     alpha_is_shape: bool
-    mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
+    mask_alpha: SoftMaskPlane | None
     paint_window: list[int]
     # Pixel boxes already painted into this group, when it knocks out.
     # An element that misses all of them sees an accumulated result equal
@@ -522,7 +552,7 @@ class RasterGroup(Record):
         source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
         knockout: bool = False,
         alpha_is_shape: bool = False,
-        mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
+        mask_alpha: SoftMaskPlane | None = None,
         paint_window: list[int] | None = None,
         painted_boxes: list[tuple[int, int, int, int]] | None = None,
     ) -> None:

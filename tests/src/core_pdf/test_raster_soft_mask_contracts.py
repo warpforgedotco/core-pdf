@@ -50,9 +50,12 @@ def test_mask_pixels_ignore_destination_clip_and_backdrop(
     expected = np.zeros((4, 4), dtype=np.float32)
     x, y = offset
     expected[2 - y : 4 - y, x : x + 2] = 1
-    np.testing.assert_array_equal(result, 1 - expected if invert else expected)
-    assert result.dtype == np.float32
-    assert not result.flags.writeable
+    plane = result[...]
+    np.testing.assert_array_equal(plane, 1 - expected if invert else expected)
+    assert plane.dtype == np.float32
+    assert not result.alpha.flags.writeable
+    # A window reads as the same window of the whole plane.
+    np.testing.assert_array_equal(result[1:3, 2:4], plane[1:3, 2:4])
     assert bytes(target.pixels) == original_pixels
     assert target.clip.depth == 1
     assert not target.active_soft_masks
@@ -91,8 +94,8 @@ def test_transfer_runs_only_on_alphas_the_mask_holds() -> None:
     result = resolve_soft_mask(target, CapturedSoftMask(mask_program(), transfer))
     assert result is not None
     assert samples == [0.0, 1.0]
-    assert sorted(set(result.ravel().tolist())) == [0.25, 0.75]
-    assert np.count_nonzero(result == np.float32(0.75)) == 4
+    assert sorted(set(result[...].ravel().tolist())) == [0.25, 0.75]
+    assert np.count_nonzero(result[...] == np.float32(0.75)) == 4
 
 
 def test_transfer_failure_is_cached_and_does_not_poison_other_masks() -> None:
@@ -112,7 +115,7 @@ def test_transfer_failure_is_cached_and_does_not_poison_other_masks() -> None:
     assert calls == 1
     valid = resolve_soft_mask(target, CapturedSoftMask(program))
     assert valid is not None
-    assert np.count_nonzero(valid) == 4
+    assert np.count_nonzero(valid[...]) == 4
     assert not target.active_soft_masks
 
 

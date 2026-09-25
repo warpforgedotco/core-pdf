@@ -51,6 +51,7 @@ from core_pdf.impl.render.model import (
     PathPaintItem,
     PathPaintKind,
     RasterGroup,
+    SoftMaskPlane,
 )
 from core_pdf.impl.render.paths import (
     RASTER_CIRCLE_MIN_PIXEL_AREA,
@@ -347,7 +348,6 @@ def composite_masked_group(
     return effective_alpha
 
 
-SoftMaskPlane = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 SoftMaskKey = tuple[int, int, tuple[float, float]]
 # A resolved plane covers the whole page in float32, so a page that uses many
 # distinct masks keeps far more of them than it can afford: one corpus page,
@@ -387,9 +387,12 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
         display = DisplayList(target.width, target.height, preserve_object_boundaries=True)
         append_captured_program(display, mask.program, include_text=True)
         nested.paint_items(display.items, translation=mask.offset)
-        alpha = view[..., 3]
+        # A contiguous copy of the alpha alone: a view would keep the
+        # sibling's whole RGBA page alive, four times what the cache counts.
+        alpha = view[..., 3].copy()
+        alpha.setflags(write=False)
         if mask.transfer is None:
-            result = alpha.astype(numpy.float32) / 255.0
+            result = SoftMaskPlane(alpha, None)
         else:
             # The transfer runs once per alpha the plane holds, in ascending
             # order -- not over all 256, since a transfer that fails on a value
@@ -402,8 +405,8 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
             values = [mask.transfer(int(sample) / 255.0)[0] for sample in samples]
             table = numpy.zeros(256, dtype=numpy.float32)
             table[samples] = numpy.asarray(values, dtype=numpy.float32)
-            result = table[alpha]
-        result.setflags(write=False)
+            table.setflags(write=False)
+            result = SoftMaskPlane(alpha, table)
     except Exception:
         result = None
     finally:
