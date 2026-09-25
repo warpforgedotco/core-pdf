@@ -365,6 +365,14 @@ class RecoveringTextState(ContentInterpreter):
         # that is already a float. Path operators run this per segment, so the
         # already-numeric cases are handled inline and anything else still
         # falls back to the full coercion.
+        # Operands that are exactly the finite floats asked for already form
+        # the tuple the loop below would build, so it is returned as it is.
+        if len(operands) == count and type(operands) is tuple:
+            for value in operands:
+                if type(value) is not float or not isfinite(value):
+                    break
+            else:
+                return operands  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
         try:
             values: list[float] = []
             append = values.append
