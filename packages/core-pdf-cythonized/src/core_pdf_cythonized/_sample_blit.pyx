@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+"""Nearest-sample blit of an opaque image (core_pdf.impl.render.target).
+
+An axis-aligned opaque image is drawn by picking, for every device pixel, the
+source sample its centre falls on: a row index per device row, a column index
+per device column. numpy did that with an advanced-indexing gather into a
+scratch tile, then a copy into the page, tile by tile to bound the scratch --
+about 5 ns a pixel, 0.15 s of PyMuPDF test_5001's render.
+
+This copies each sampled pixel straight into the target. It is a byte copy:
+the first three channels of the sample, or its one grey channel into all
+three, and 255 for alpha, only where both the row and the column are valid.
+The indices come in already clamped to the image, as numpy needed them.
+"""
+
+__all__ = ("sample_opaque_pixels",)
+
+
+def sample_opaque_pixels(
+    unsigned char[:, :, :] target,
+    const unsigned char[:, :, ::1] source,
+    const Py_ssize_t[::1] source_y,
+    const Py_ssize_t[::1] source_x,
+    const unsigned char[::1] valid_rows,
+    const unsigned char[::1] valid_columns,
+    bint transposed,
+):
+    """target[r, c] = source[source_y[r], source_x[c]] (or [source_y[c], source_x[r]])."""
+    cdef Py_ssize_t rows = target.shape[0]
+    cdef Py_ssize_t columns = target.shape[1]
+    cdef Py_ssize_t channels = source.shape[2]
+    if target.shape[2] != 4:
+        raise ValueError("target must be RGBA")
+    if channels != 1 and channels < 3:
+        raise ValueError("source must have one channel or at least three")
+    if valid_rows.shape[0] != rows or valid_columns.shape[0] != columns:
+        raise ValueError("validity masks differ from the target in size")
+    cdef Py_ssize_t row_count = columns if transposed else rows
+    cdef Py_ssize_t column_count = rows if transposed else columns
+    if source_y.shape[0] != row_count or source_x.shape[0] != column_count:
+        raise ValueError("sample indices differ from the target in size")
+    cdef Py_ssize_t height = source.shape[0]
+    cdef Py_ssize_t width = source.shape[1]
+    cdef Py_ssize_t i
+    for i in range(row_count):
+        if not 0 <= source_y[i] < height:
+            raise IndexError("sample row out of range")
+    for i in range(column_count):
+        if not 0 <= source_x[i] < width:
+            raise IndexError("sample column out of range")
+    cdef Py_ssize_t r, c, sy, sx
+    cdef const unsigned char* sample
+    cdef unsigned char* pixel
+    if target.strides[2] != 1:
+        raise ValueError("target channels must be contiguous")
+    with nogil:
+        for r in range(rows):
+            if not valid_rows[r]:
+                continue
+            for c in range(columns):
+                if not valid_columns[c]:
+                    continue
+                if transposed:
+                    sy = source_y[c]
+                    sx = source_x[r]
+                else:
+                    sy = source_y[r]
+                    sx = source_x[c]
+                sample = &source[sy, sx, 0]
+                pixel = &target[r, c, 0]
+                if channels == 1:
+                    pixel[0] = sample[0]
+                    pixel[1] = sample[0]
+                    pixel[2] = sample[0]
+                else:
+                    pixel[0] = sample[0]
+                    pixel[1] = sample[1]
+                    pixel[2] = sample[2]
+                pixel[3] = 255

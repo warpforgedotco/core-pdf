@@ -85,6 +85,7 @@ from core_pdf_cythonized import (
     composite_normal_group,
     glyph_alpha_planes,
     rect_coverage_plane,
+    sample_opaque_pixels,
     stroke_segment_samples,
     supersampled_coverage_plane,
 )
@@ -1486,71 +1487,29 @@ class RasterTarget:
         source_x: numpy.ndarray[Any, Any],
         valid_rows: numpy.ndarray[Any, Any],
         valid_columns: numpy.ndarray[Any, Any],
-        comps: int,
         *,
         transposed: bool = False,
         target_origin: tuple[int, int] = (0, 0),
     ) -> None:
         target_x, target_y = target_origin
-        row_count = len(valid_rows)
-        column_count = len(valid_columns)
+        rows = slice(target_y, target_y + target_region.shape[0])
+        columns = slice(target_x, target_x + target_region.shape[1])
         all_valid = bool(valid_rows.all() and valid_columns.all())
-        sampled_channels = 1 if comps == 1 else 3
-        scratch_bytes_per_pixel = sampled_channels if all_valid else sampled_channels + 8
-        tile_columns = min(
-            column_count,
-            max(1, AFFINE_BLIT_SCRATCH_BYTES // scratch_bytes_per_pixel),
+        sample_opaque_pixels(
+            target_region,
+            numpy.ascontiguousarray(source_pixels),
+            numpy.ascontiguousarray(source_y, dtype=numpy.intp),
+            numpy.ascontiguousarray(source_x, dtype=numpy.intp),
+            numpy.ascontiguousarray(valid_rows, dtype=numpy.bool_).view(numpy.uint8),
+            numpy.ascontiguousarray(valid_columns, dtype=numpy.bool_).view(numpy.uint8),
+            transposed,
         )
-        tile_rows = min(
-            row_count,
-            max(
-                1,
-                AFFINE_BLIT_SCRATCH_BYTES // max(1, tile_columns * scratch_bytes_per_pixel),
-            ),
-        )
-        for row_start in range(0, row_count, tile_rows):
-            row_end = min(row_count, row_start + tile_rows)
-            for column_start in range(0, column_count, tile_columns):
-                column_end = min(column_count, column_start + tile_columns)
-                if transposed:
-                    sampled = source_pixels[
-                        source_y[None, column_start:column_end],
-                        source_x[row_start:row_end, None],
-                        :sampled_channels,
-                    ]
-                else:
-                    sampled = source_pixels[
-                        source_y[row_start:row_end, None],
-                        source_x[None, column_start:column_end],
-                        :sampled_channels,
-                    ]
-                target_tile = target_region[
-                    row_start:row_end,
-                    column_start:column_end,
-                ]
-                if all_valid:
-                    target_tile[:, :, 0:3] = sampled
-                    target_tile[:, :, 3] = 255
-                    self.record_source_coverage(
-                        slice(target_y + row_start, target_y + row_end),
-                        slice(target_x + column_start, target_x + column_end),
-                        255,
-                    )
-                    del sampled
-                    continue
-                visible = (
-                    valid_rows[row_start:row_end, None]
-                    & valid_columns[None, column_start:column_end]
-                )
-                numpy.copyto(target_tile[:, :, 0:3], sampled, where=visible[:, :, None])
-                numpy.copyto(target_tile[:, :, 3], 255, where=visible)
-                self.record_source_coverage(
-                    slice(target_y + row_start, target_y + row_end),
-                    slice(target_x + column_start, target_x + column_end),
-                    255,
-                    visible=visible,
-                )
-                del sampled, visible
+        if all_valid:
+            self.record_source_coverage(rows, columns, 255)
+        else:
+            self.record_source_coverage(
+                rows, columns, 255, visible=valid_rows[:, None] & valid_columns[None, :]
+            )
 
     def blit_affine_image(
         self,
@@ -1664,7 +1623,6 @@ class RasterTarget:
                 safe_x,
                 valid_y,
                 valid_x,
-                comps,
                 target_origin=(ix0, iy0),
             )
             return True
@@ -1729,7 +1687,6 @@ class RasterTarget:
                 source_x,
                 valid_y,
                 valid_x,
-                comps,
                 transposed=not u_from_x,
                 target_origin=(ix0, iy0),
             )

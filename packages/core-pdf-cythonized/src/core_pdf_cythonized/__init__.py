@@ -56,6 +56,7 @@ from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import outline_edges
 from core_pdf_cythonized._paths import flatten_path_commands
 from core_pdf_cythonized._rect import rect_coverage_plane
+from core_pdf_cythonized._sample_blit import sample_opaque_pixels
 from core_pdf_cythonized._source_plane import accumulate_source_plane
 from core_pdf_cythonized._stroke_segment import stroke_segment_samples
 from core_pdf_cythonized._supersample import supersampled_coverage_plane
@@ -85,6 +86,7 @@ __all__ = (
     "horizontal_glyph_geometry",
     "outline_edges",
     "rect_coverage_plane",
+    "sample_opaque_pixels",
     "signed_area_coverage",
     "stroke_segment_samples",
     "supersampled_coverage_plane",
