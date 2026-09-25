@@ -449,7 +449,7 @@ def capture_runs(
         if majority is None or majority == run.font_name:
             enriched_runs.append(run)
         else:
-            enriched_runs.append(run.replace(font_name=majority))
+            enriched_runs.append(run.with_font_name(majority))
     structured_runs = apply_structure_actual_text(page, tuple(enriched_runs), structure)
     return extractable_runs(structured_runs)
 

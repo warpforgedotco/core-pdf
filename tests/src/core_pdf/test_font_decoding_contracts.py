@@ -1,5 +1,8 @@
+from collections.abc import Iterable
+
 import pytest
 
+import core_pdf.impl.fonts.decoder as decoder_module
 from core_pdf.impl.fonts.cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts.decoder import FontDecoder, single_code_mapping, split_code_bytes
@@ -181,3 +184,70 @@ def test_invalid_type1_length_metadata_does_not_prevent_font_recovery(length):
     )
     assert font.font_program is None
     assert font.decode_glyphs(b"A")[0].unicode == "A"
+
+
+def test_a_short_string_is_decoded_once_and_shared() -> None:
+    font = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
+    first = font.decode_glyphs(b"AB")
+    assert [glyph.unicode for glyph in first] == ["A", "B"]
+    assert font.decode_glyphs(b"AB") is first
+    assert font.decode_glyphs(memoryview(b"AB")) is first
+    assert font.decode_glyphs(bytearray(b"AB")) is first
+
+
+def test_long_strings_are_not_kept() -> None:
+    font = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
+    text = b"A" * (decoder_module.STRING_GLYPH_CACHE_MAX_BYTES + 1)
+    assert "".join(glyph.unicode for glyph in font.decode_glyphs(text)) == text.decode()
+    assert text not in font.string_glyph_cache
+
+
+def test_the_string_cache_is_cleared_when_full(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(decoder_module, "STRING_GLYPH_CACHE_MAX_ENTRIES", 2)
+    font = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
+    for text in (b"A", b"B", b"C"):
+        assert font.decode_glyphs(text)[0].unicode == text.decode()
+    assert len(font.string_glyph_cache) <= 2
+
+
+def test_a_cff_repair_that_changes_a_mapping_clears_cached_strings() -> None:
+    from core_pdf_spec.s_07_syntax.stream import PdfStream
+
+    to_unicode = (
+        b"/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n"
+        b"1 begincodespacerange <0000> <FFFF> endcodespacerange\n"
+        b"2 beginbfchar <0041> <FFFD> <0042> <0042> endbfchar\n"
+        b"endcmap CMapName currentdict /CMap defineresource pop end end"
+    )
+    font = FontDecoder(
+        {
+            "Subtype": "Type0",
+            "BaseFont": "X",
+            "Encoding": "Identity-H",
+            "DescendantFonts": [
+                {
+                    "Subtype": "CIDFontType0",
+                    "BaseFont": "X",
+                    "CIDSystemInfo": {"Registry": "Adobe", "Ordering": "Identity", "Supplement": 0},
+                }
+            ],
+            "ToUnicode": PdfStream({}, to_unicode),
+        }
+    )
+
+    class Repairs:
+        answer: dict[bytes, str] = {}
+
+        def repairs_for_codes(self, codes: Iterable[bytes]) -> dict[bytes, str]:
+            list(codes)
+            return dict(self.answer)
+
+    repairs = Repairs()
+    font.cff_unicode_repair_index = repairs  # ty: ignore[invalid-assignment]
+    assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x41")] == ["�"]
+    assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x41\x00\x42")] == ["�", "B"]
+    # A later string repairs code 0041; the string cached before must not
+    # keep answering with the old mapping.
+    repairs.answer = {b"\x00\x41": "A"}
+    assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x42\x00\x41")] == ["B", "A"]
+    assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x41")] == ["A"]
