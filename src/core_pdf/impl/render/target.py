@@ -75,6 +75,7 @@ from core_pdf.impl.scalars import parse_int
 from core_pdf_cythonized import (
     accumulate_source_plane,
     blend_normal_alpha_array_numpy,
+    box_downsample_blocks,
     composite_elementary_normal,
     composite_knockout_group,
     composite_masked_normal,
@@ -417,6 +418,12 @@ def box_downsample(
     column_edges = (numpy.arange(target_width + 1, dtype=numpy.int64) * source_width) // (
         target_width
     )
+    if grid.dtype == numpy.uint8:
+        # Compiled: one pass over the source, integer sums with reduceat's
+        # uint32 width. numpy's reduceat spent 376 ms taking one 33-megapixel
+        # scan to 788x788, casting element by element.
+        reduced = box_downsample_blocks(grid, row_edges, column_edges)
+        return reduced.reshape(-1), target_width, target_height
     totals = numpy.add.reduceat(grid, row_edges[:-1], axis=0, dtype=numpy.uint32)
     totals = numpy.add.reduceat(totals, column_edges[:-1], axis=1, dtype=numpy.uint32)
     counts = numpy.diff(row_edges)[:, None, None] * numpy.diff(column_edges)[None, :, None]
