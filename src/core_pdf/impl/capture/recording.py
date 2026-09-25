@@ -15,8 +15,6 @@ import numpy
 from core_pdf.impl.capture.glyphs import (
     GlyphCapture,
     GlyphPaint,
-    TextBasis,
-    TextGeometry,
     capture_glyphs,
 )
 from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CapturedProgram, CaptureOptions
@@ -555,70 +553,6 @@ class TextState(RecoveringTextState):
             clip_glyph=4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible(),
         )
 
-    def record_glyph_observations(
-        self,
-        text: str,
-        decoder: FontDecoder,
-        rotation_angle: int,
-        visible: bool,
-        *,
-        fill_color: tuple[float, ...] | None,
-        paint: GlyphPaint | None = None,
-        glyphs: tuple[DecodedGlyph, ...],
-        text_basis: TextBasis,
-        effective_font_size: float,
-        effective_font_height: float,
-        font_scale: float,
-        font_ascent: float,
-        font_descent: float,
-        advance_scale: float,
-    ) -> GlyphCapture:
-        geometry = TextGeometry(
-            basis=text_basis,
-            font_size=self.graphics.font_size,
-            font_scale=font_scale,
-            font_ascent=font_ascent,
-            font_descent=font_descent,
-            advance_scale=advance_scale,
-            char_space=self.graphics.char_space,
-            word_space=self.graphics.word_space,
-            horizontal_scale=self.graphics.horizontal_scale,
-            rise=self.graphics.rise,
-            rotation_angle=rotation_angle,
-            effective_font_size=effective_font_size,
-            effective_font_height=effective_font_height,
-        )
-        if paint is None:
-            paint = self.glyph_paint(fill_color)
-        provenance = (
-            ("source", self.capture_source),
-            ("stream_order", self.stream_order),
-            ("xobject_depth", self.xobject_depth),
-            ("clip_bbox", self.clip_bbox),
-            ("layout_form_bbox", self.layout_form_bbox),
-            ("layout_form_id", self.layout_form_id),
-            ("text_matrix", text_basis[2:]),
-            ("text_render_mode", self.graphics.render_mode),
-            ("line_matrix_origin", (self.line_matrix.e, self.line_matrix.f)),
-            ("horizontal_scale", self.graphics.horizontal_scale),
-            ("char_space", self.graphics.char_space),
-            ("text_rise", self.graphics.rise),
-        )
-        return capture_glyphs(
-            text,
-            glyphs,
-            decoder,
-            geometry=geometry,
-            paint=paint,
-            visible=visible,
-            font_name=self.graphics.current_font,
-            provenance=provenance,
-            seqno=self.sequence,
-            text_object_id=self.text_object_id,
-            cluster_start=self.glyph_cluster_count,
-            options=self.options,
-        )
-
     def emit_actual_text_span(self, entry: MarkedContentEntry) -> None:
         actual_text = entry.actual_text
         captured = entry.run
@@ -712,21 +646,45 @@ class TextState(RecoveringTextState):
         actual_text_span = self.current_capture_actual_text_span()
         captured: GlyphCapture | None = None
         if actual_text_span is None:
-            captured = self.record_glyph_observations(
+            graphics = self.graphics
+            captured = capture_glyphs(
                 text,
+                decoded_glyphs,
                 font_decoder,
+                (E, F, A, B, C, D),
+                fs,
+                font_scale,
+                ascent,
+                descent,
+                advance_scale,
+                graphics.char_space,
+                graphics.word_space,
+                graphics.horizontal_scale,
+                rise,
                 rot,
+                effective_font_size,
+                effective_font_height,
+                self.glyph_paint(fill_color) if glyph_paint is None else glyph_paint,
                 visible,
-                fill_color=fill_color,
-                paint=glyph_paint,
-                glyphs=decoded_glyphs,
-                text_basis=(E, F, A, B, C, D),
-                effective_font_size=effective_font_size,
-                effective_font_height=effective_font_height,
-                font_scale=font_scale,
-                font_ascent=ascent,
-                font_descent=descent,
-                advance_scale=advance_scale,
+                graphics.current_font,
+                (
+                    ("source", self.capture_source),
+                    ("stream_order", self.stream_order),
+                    ("xobject_depth", self.xobject_depth),
+                    ("clip_bbox", self.clip_bbox),
+                    ("layout_form_bbox", self.layout_form_bbox),
+                    ("layout_form_id", self.layout_form_id),
+                    ("text_matrix", (A, B, C, D)),
+                    ("text_render_mode", graphics.render_mode),
+                    ("line_matrix_origin", (self.line_matrix.e, self.line_matrix.f)),
+                    ("horizontal_scale", graphics.horizontal_scale),
+                    ("char_space", graphics.char_space),
+                    ("text_rise", rise),
+                ),
+                seqno,
+                self.text_object_id,
+                self.glyph_cluster_count,
+                self.options,
             )
             self.glyphs.extend(captured.glyphs)
             self.glyph_cluster_count += captured.cluster_count

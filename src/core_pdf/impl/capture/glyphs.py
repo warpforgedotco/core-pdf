@@ -11,7 +11,7 @@ from core_pdf.impl.capture.glyph_boxes import (
     transformed_text_line,
 )
 from core_pdf.impl.capture.glyph_geometry import NO_BOX, vertical_glyph_geometry
-from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions
+from core_pdf.impl.capture.program import CaptureOptions
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts.font_program import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.glyphs import (
@@ -90,25 +90,6 @@ class RunGeometry:
         self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
-@dataclass(frozen=True, slots=True)
-class TextGeometry:
-    """The text-state geometry a run of glyphs is laid out under."""
-
-    basis: TextBasis
-    font_size: float
-    font_scale: float
-    font_ascent: float
-    font_descent: float
-    advance_scale: float
-    char_space: float
-    word_space: float
-    horizontal_scale: float
-    rise: float
-    rotation_angle: int
-    effective_font_size: float
-    effective_font_height: float
-
-
 # Not frozen, like GlyphStyle: one is built per text-showing operation, and a
 # frozen dataclass sets its 16 fields through object.__setattr__ at about
 # five times the cost. Nothing changes one after it is built.
@@ -148,8 +129,19 @@ def capture_glyphs(
     text: str,
     glyphs: tuple[DecodedGlyph, ...],
     decoder: FontDecoder,
-    *,
-    geometry: TextGeometry,
+    text_basis: TextBasis,
+    font_size: float,
+    font_scale: float,
+    font_ascent: float,
+    font_descent: float,
+    advance_scale: float,
+    char_space: float,
+    word_space: float,
+    horizontal_scale: float,
+    rise: float,
+    rotation_angle: int,
+    effective_font_size: float,
+    effective_font_height: float,
     paint: GlyphPaint,
     visible: bool,
     font_name: str | None,
@@ -157,7 +149,8 @@ def capture_glyphs(
     seqno: int,
     text_object_id: int,
     cluster_start: int,
-    options: CaptureOptions = DEFAULT_CAPTURE,
+    options: CaptureOptions,
+    /,
 ) -> GlyphCapture:
     """Lay out and record one show-text operation's glyphs.
 
@@ -172,18 +165,8 @@ def capture_glyphs(
     result = GlyphCapture()
     if not glyphs:
         return result
-    text_basis = geometry.basis
-    font_size = geometry.font_size
-    font_scale = geometry.font_scale
-    font_ascent = geometry.font_ascent
-    font_descent = geometry.font_descent
-    rise = geometry.rise
-    advance_scale = geometry.advance_scale
     effective_font_name = decoder.font_name or font_name
     is_vertical = decoder.is_vertical
-    char_space = geometry.char_space
-    word_space = geometry.word_space
-    horizontal_scale = geometry.horizontal_scale
     glyph_width = decoder.glyph_width
     glyph_bbox_for_code = decoder.glyph_bbox
     vertical_position = decoder.vertical_glyph_position
@@ -296,11 +279,11 @@ def capture_glyphs(
     # Everything the operation paints its glyphs with, held once for all of them.
     style = GlyphStyle(
         font_size,
-        geometry.rotation_angle,
+        rotation_angle,
         paint.fill,
         decoder,
-        geometry.effective_font_size,
-        geometry.effective_font_height,
+        effective_font_size,
+        effective_font_height,
         provenance,
         paint.render_mode,
         paint.fill_opacity,
