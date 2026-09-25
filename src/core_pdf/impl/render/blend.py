@@ -242,7 +242,31 @@ def blend_visible_pixels(
     destination[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(numpy.uint8)
 
 
+# color_rgba results for colours of plain floats. A page paints with a handful
+# of colours thousands of times, and a CMYK one goes through a colour transform
+# each time. The opacity's type is part of the key: False and 0 compare equal
+# but convert differently.
+COLOR_RGBA_CACHE: dict[tuple[tuple[float, ...], object, type], tuple[int, int, int, int]] = {}
+COLOR_RGBA_CACHE_LIMIT = 4096
+
+
 def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
+    if type(color) is not tuple or not all(type(component) is float for component in color):
+        return convert_color_rgba(color, opacity)
+    key = (color, opacity, type(opacity))
+    try:
+        return COLOR_RGBA_CACHE[key]
+    except KeyError:
+        pass
+    except TypeError:
+        return convert_color_rgba(color, opacity)
+    if len(COLOR_RGBA_CACHE) >= COLOR_RGBA_CACHE_LIMIT:
+        COLOR_RGBA_CACHE.clear()
+    rgba = COLOR_RGBA_CACHE[key] = convert_color_rgba(color, opacity)
+    return rgba
+
+
+def convert_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
     alpha = 255
     if type(opacity) in {int, float}:
         alpha = color_component(opacity, 255)
