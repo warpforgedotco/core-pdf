@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import heapq
 import math
+from bisect import bisect_left
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from copy import replace
@@ -82,6 +83,7 @@ from core_pdf_cythonized import (
     composite_normal_group,
     glyph_coverage_plane,
     rect_coverage_plane,
+    stroke_segment_samples,
     supersampled_coverage_plane,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
@@ -2607,6 +2609,60 @@ class RasterTarget:
                 self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
             if shape_plane is not None:
                 self.record_source_shape(slice(iy0, iy1), slice(ix0, ix1), shape_plane)
+            return
+        if (
+            blend_resolved_mode is None
+            and self.group_source_alpha is None
+            and self.group_source_shape is None
+            and all(type(channel) is int for channel in rgba)
+        ):
+            # The loop below, compiled, for the case short flattened strokes
+            # take: normal blending and no group planes to record into. A clip
+            # goes in as the pixels the loop's per-pixel test would have let
+            # through, from the same row spans. It returns the box it covered,
+            # which is what blend_px's per-pixel paint-window extension adds up to.
+            allowed = None
+            if clip_regions:
+                box_width = ix1 - ix0
+                allowed = bytearray(box_width * (iy1 - iy0))
+                clip_row_visible_spans = clip.clip_row_visible_spans
+                for py in range(iy0, iy1):
+                    # pixel_in_clip's own rule, with the row's spans fetched once.
+                    spans = clip_row_visible_spans(py)
+                    row_start = (py - iy0) * box_width - ix0
+                    for px in range(ix0, ix1):
+                        index = bisect_left(spans, (px + 1, -1))
+                        if index > 0 and spans[index - 1][0] <= px < spans[index - 1][1]:
+                            allowed[row_start + px] = 1
+            covered_box = stroke_segment_samples(
+                self.pixel_array,
+                0,
+                0,
+                ix0,
+                iy0,
+                ix1,
+                iy1,
+                crop_x0,
+                crop_y1,
+                scale,
+                x0,
+                y0,
+                x1,
+                y1,
+                dx,
+                dy,
+                seg_len2,
+                inv_seg_len2,
+                half2,
+                projection_extension,
+                line_cap not in {0, 2},
+                *rgba,
+                allowed,
+            )
+            if covered_box is not None and self.paint_window is not None:
+                self.extend_paint_window(
+                    slice(covered_box[1], covered_box[3]), slice(covered_box[0], covered_box[2])
+                )
             return
         for py in range(iy0, iy1):
             row = py * width * 4
