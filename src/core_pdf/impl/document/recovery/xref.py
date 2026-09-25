@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import mmap
+import re
 import zlib
 from collections.abc import Iterator
 
@@ -132,6 +133,37 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
     entry_line, next_pos = XRefScanner.read_line(data, pos)
     offset, generation, in_use = parse_xref_entry_line(entry_line)
     return offset, generation, in_use, next_pos
+
+
+# A run of canonical xref rows: ten digits, five, n or f, and a two-byte
+# end of line (ISO 32000-2 7.5.4). See read_subsection.
+CANONICAL_XREF_ROWS = re.compile(rb"(?:[0-9]{10} [0-9]{5} [fn](?: \r| \n|\r\n))*")
+CANONICAL_XREF_ROW = re.compile(rb"([0-9]{10}) ([0-9]{5}) ([fn])")
+CANONICAL_XREF_ROW_SIZE = 20
+
+
+def canonical_xref_rows(
+    data: PdfByteBuffer, pos: int, count: int
+) -> list[tuple[bytes, ...]] | None:
+    """The first `count` rows at `pos`, if they and the row after start canonically.
+
+    Each such row reads the same in parse_xref_entry_at: it starts where
+    skip_ws leaves it, is not a trailer, and ends 20 bytes on, since the
+    next row starts with a digit and so no line end runs into it. A
+    generation over 65535, which the per-row parse rejects, leaves this to it.
+    """
+    end = pos + CANONICAL_XREF_ROW_SIZE * count
+    if (
+        count <= 0
+        or end >= len(data)
+        or not 48 <= data[end] <= 57
+        or CANONICAL_XREF_ROWS.fullmatch(data, pos, end) is None
+    ):
+        return None
+    rows = CANONICAL_XREF_ROW.findall(data, pos, end)
+    if any(int(generation) > 65535 for _, generation, _ in rows):
+        return None
+    return rows
 
 
 class XRefScanner(SyntaxXRefScanner):
@@ -562,7 +594,18 @@ class XRefScanner(SyntaxXRefScanner):
         entries: XRefTable = {}
         max_object_number = start_obj + num_objs - 1
         actual_count = 0
-        for i in range(num_objs):
+        # All but the last row, whose line end may run into what follows it,
+        # read at once when they are canonical, as they are in most tables.
+        rows = canonical_xref_rows(data, pos, num_objs - 1)
+        if rows is not None:
+            for i, (offset_digits, generation_digits, marker) in enumerate(rows):
+                generation = int(generation_digits)
+                entries[((start_obj + i) << 16) | generation] = PdfXRefEntry(
+                    int(offset_digits), generation, marker == b"n"
+                )
+            actual_count = len(rows)
+            pos += CANONICAL_XREF_ROW_SIZE * actual_count
+        for i in range(actual_count, num_objs):
             entry_pos = cls.skip_ws(data, pos)
             if data[entry_pos : entry_pos + 7].startswith((b"trailer", b"<<")):
                 pos = entry_pos
