@@ -83,7 +83,7 @@ from core_pdf_cythonized import (
     composite_knockout_group,
     composite_masked_normal,
     composite_normal_group,
-    glyph_coverage_plane,
+    glyph_alpha_planes,
     rect_coverage_plane,
     stroke_segment_samples,
     supersampled_coverage_plane,
@@ -2481,25 +2481,32 @@ class RasterTarget:
             # pass over the edges. None means no edge spans any y, which is the
             # early return the sloped mask used to give: coverage would be zero
             # everywhere and the blend a no-op.
-            coverage = glyph_coverage_plane(
-                source, crop_x0, crop_y1, scale, ix0, iy0, ix1 - ix0, iy1 - iy0
+            planes = glyph_alpha_planes(
+                source,
+                crop_x0,
+                crop_y1,
+                scale,
+                ix0,
+                iy0,
+                ix1 - ix0,
+                iy1 - iy0,
+                rgba[3],
+                self.group_source_shape is not None,
             )
-            if coverage is None:
+            if planes is None:
                 return
-            alpha_plane = numpy.rint(coverage * rgba[3]).astype(numpy.uint8)
+            alpha_plane, shape_plane = planes
             blend_normal_alpha_array_numpy(
                 self.pixel_array[iy0:iy1, ix0:ix1],
                 rgba,
                 alpha_plane,
             )
             self.record_source_alpha(slice(iy0, iy1), slice(ix0, ix1), alpha_plane)
-            if self.group_source_shape is not None:
-                self.record_source_shape(
-                    slice(iy0, iy1), slice(ix0, ix1), numpy.rint(coverage * 255).astype(numpy.uint8)
-                )
+            if shape_plane is not None:
+                self.record_source_shape(slice(iy0, iy1), slice(ix0, ix1), shape_plane)
             return
         if normal_fast and rectangular_clip and pixel_area < 10_000:
-            # What reaches here is a fill glyph_coverage_plane cannot take --
+            # What reaches here is a fill glyph_alpha_planes cannot take --
             # in practice an even-odd one -- and 4x4 supersampling covers it.
             # A row the sampling misses is left out of the plane, as the
             # row-by-row original skipped it.

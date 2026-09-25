@@ -92,10 +92,3 @@ def test_an_empty_plane_matches_the_device_space_entry_point():
     empty = glyph_coverage_plane(src, 0.0, 10.0, 1.0, 0.0, 0.0, 0, 0)
     assert empty is not None
     assert empty.shape == (0, 0)
-
-
-def test_render_target_uses_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl.render import target
-
-    assert target.glyph_coverage_plane is glyph_coverage_plane

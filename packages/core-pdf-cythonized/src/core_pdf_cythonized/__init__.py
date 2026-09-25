@@ -38,7 +38,11 @@ from core_pdf_cythonized._composite import (
     composite_normal_group,
 )
 from core_pdf_cythonized._content import SCAN_NAME, SCAN_OPERATOR, ContentScanner
-from core_pdf_cythonized._coverage import glyph_coverage_plane, signed_area_coverage
+from core_pdf_cythonized._coverage import (
+    glyph_alpha_planes,
+    glyph_coverage_plane,
+    signed_area_coverage,
+)
 from core_pdf_cythonized._coverage_blend import blend_coverage_counts
 from core_pdf_cythonized._distinct_rows import distinct_uint16_rows, gather_uint8_rows
 from core_pdf_cythonized._downsample import box_downsample_blocks
@@ -76,6 +80,7 @@ __all__ = (
     "decode_arithmetic_generic_template0",
     "flatten_path_commands",
     "gather_uint8_rows",
+    "glyph_alpha_planes",
     "glyph_coverage_plane",
     "horizontal_glyph_geometry",
     "outline_edges",
