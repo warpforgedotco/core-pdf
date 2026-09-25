@@ -142,3 +142,31 @@ def test_a_diagonal_line_with_no_plane_recording_extends_the_window() -> None:
     assert y1 >= int(rows[-1]) + 1
     assert x0 <= int(columns[0])
     assert x1 >= int(columns[-1]) + 1
+
+
+def test_a_stroke_leaves_its_reused_scratch_zeroed() -> None:
+    """paint_stroke_once keeps its coverage buffer between strokes and clears
+    only the window it painted, so a later stroke starts from zeros and paints
+    what it would into a fresh buffer."""
+    from core_pdf.impl.capture.records import CapturedPath
+    from core_pdf.impl.render.target import paint_stroke_once
+
+    def stroke(target: RasterTarget, x0: float, y0: float, x1: float, y1: float) -> None:
+        path = CapturedPath()
+        path.move_to(x0, y0)
+        path.line_to(x1, y1)
+        paint_stroke_once(target, path, 2.0, (255, 0, 0, 128), None, None, 1, 0)
+
+    reused = grouped_target(width=60, height=60)
+    stroke(reused, 5.0, 10.0, 40.0, 30.0)
+    assert reused.stroke_scratch is not None
+    assert not any(reused.stroke_scratch)
+    stroke(reused, 10.0, 50.0, 50.0, 45.0)
+    assert not any(reused.stroke_scratch)
+
+    fresh = grouped_target(width=60, height=60)
+    stroke(fresh, 5.0, 10.0, 40.0, 30.0)
+    fresh.stroke_scratch = None
+    stroke(fresh, 10.0, 50.0, 50.0, 45.0)
+    assert bytes(reused.pixels) == bytes(fresh.pixels)
+    assert window(reused) == window(fresh)

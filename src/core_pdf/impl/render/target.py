@@ -98,13 +98,6 @@ from core_pdf_spec.s_11_transparency.groups import (
 from core_pdf_spec.standards import SemanticContext
 
 
-def index_extent(index: int | slice, size: int) -> tuple[int, int]:
-    if isinstance(index, slice):
-        start, stop, _ = index.indices(size)
-        return start, max(start, stop)
-    return index, index + 1
-
-
 class ElementaryScratch:
     __slots__ = ("buffer", "dirty", "source_alpha", "source_shape", "synced_parent", "view")
 
@@ -201,20 +194,38 @@ def paint_stroke_once(
     line_cap: int,
     line_join: int,
 ) -> None:
-    pixels = target.pixels
-    coverage_buffer = bytearray(len(pixels))
-    with target.detached_buffer(coverage_buffer):
-        target.stroke_path(
-            path, line_width, (0, 0, 0, 255), dash_pattern, None, line_cap, line_join
-        )
-    coverage = target.pixel_view(coverage_buffer)[..., 3]
-    covered_rows = numpy.flatnonzero(coverage.any(axis=1))
-    if covered_rows.size == 0:
-        return
-    covered_columns = numpy.flatnonzero(coverage.any(axis=0))
-    rows = slice(int(covered_rows[0]), int(covered_rows[-1]) + 1)
-    columns = slice(int(covered_columns[0]), int(covered_columns[-1]) + 1)
-    coverage = coverage[rows, columns]
+    # The stroke paints its coverage into a page-sized scratch buffer, and
+    # only its paint window can hold any: the window covers every write, as
+    # a group's compositing relies on. So the covered box is found inside the
+    # window rather than across the page, and the buffer is kept and zeroed
+    # over the window afterwards rather than allocated again per stroke.
+    size = len(target.pixels)
+    coverage_buffer = target.stroke_scratch
+    if coverage_buffer is None or len(coverage_buffer) != size:
+        coverage_buffer = bytearray(size)
+    target.stroke_scratch = None
+    window: list[int] = []
+    scratch = target.pixel_view(coverage_buffer)
+    try:
+        with target.detached_buffer(coverage_buffer, window):
+            target.stroke_path(
+                path, line_width, (0, 0, 0, 255), dash_pattern, None, line_cap, line_join
+            )
+        if not window:
+            return
+        y0, y1, x0, x1 = window
+        coverage = scratch[y0:y1, x0:x1, 3]
+        covered_rows = numpy.flatnonzero(coverage.any(axis=1))
+        if covered_rows.size == 0:
+            return
+        covered_columns = numpy.flatnonzero(coverage.any(axis=0))
+        rows = slice(y0 + int(covered_rows[0]), y0 + int(covered_rows[-1]) + 1)
+        columns = slice(x0 + int(covered_columns[0]), x0 + int(covered_columns[-1]) + 1)
+        coverage = scratch[rows, columns, 3].copy()
+    finally:
+        if window:
+            scratch[window[0] : window[1], window[2] : window[3]] = 0
+        target.stroke_scratch = coverage_buffer
     alpha = numpy.rint(coverage.astype(numpy.float64) * (rgba[3] / 255.0)).astype(numpy.uint8)
     target.record_source_coverage(rows, columns, alpha, shape=coverage)
     visible = alpha > 0
@@ -473,6 +484,7 @@ class RasterTarget:
         "tiling_cell_cache",
         "active_soft_masks",
         "elementary_scratch",
+        "stroke_scratch",
     )
 
     def blend_coverage_pixel(
@@ -537,6 +549,8 @@ class RasterTarget:
         self.tiling_cell_cache: TilingCellCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, ElementaryScratch] = {}
+        # paint_stroke_once's coverage buffer, all zero between strokes.
+        self.stroke_scratch: bytearray | None = None
         if group_alpha is not None:
             self.push_group(bytearray(len(pixels)), group_alpha, None)
             self.group_floor = len(self.buffer_stack)
@@ -961,17 +975,19 @@ class RasterTarget:
         self.paint_window = group.paint_window if len(self.buffer_stack) > 1 else None
 
     @contextmanager
-    def detached_buffer(self, buffer: bytearray) -> Iterator[None]:
-        """Paint into `buffer` alone, with no group planes and no paint window.
+    def detached_buffer(self, buffer: bytearray, window: list[int] | None = None) -> Iterator[None]:
+        """Paint into `buffer` alone, with no group planes, tracking `window`.
 
         For a pass that paints coverage into scratch and records it into the
         group itself afterwards; the group's mirrors come back on the way out.
+        `window`, if given, collects the pass's paint window, which covers
+        every pixel it writes.
         """
         self.pixels = buffer
         self.pixel_array = self.pixel_view(buffer)
         self.group_source_alpha = None
         self.group_source_shape = None
-        self.paint_window = None
+        self.paint_window = window
         try:
             yield
         finally:
@@ -981,11 +997,26 @@ class RasterTarget:
         self.shape_alpha = clamp01(alpha) if self.paint_alpha_is_shape else 1.0
 
     def extend_paint_window(self, rows: int | slice, columns: int | slice) -> None:
+        if self.paint_window is None:
+            return
+        # Every painted element comes through here, so the extents are inline.
+        if isinstance(rows, slice):
+            y0, y1, _ = rows.indices(self.height)
+            y1 = max(y0, y1)
+        else:
+            y0, y1 = rows, rows + 1
+        if isinstance(columns, slice):
+            x0, x1, _ = columns.indices(self.width)
+            x1 = max(x0, x1)
+        else:
+            x0, x1 = columns, columns + 1
+        self.extend_paint_box(y0, y1, x0, x1)
+
+    def extend_paint_box(self, y0: int, y1: int, x0: int, x1: int) -> None:
+        """extend_paint_window for rows [y0, y1) and columns [x0, x1), already in range."""
         window = self.paint_window
         if window is None:
             return
-        y0, y1 = index_extent(rows, self.height)
-        x0, x1 = index_extent(columns, self.width)
         if window:
             if y0 < window[0]:
                 window[0] = y0
@@ -2734,8 +2765,8 @@ class RasterTarget:
                 allowed,
             )
             if covered_box is not None and self.paint_window is not None:
-                self.extend_paint_window(
-                    slice(covered_box[1], covered_box[3]), slice(covered_box[0], covered_box[2])
+                self.extend_paint_box(
+                    covered_box[1], covered_box[3], covered_box[0], covered_box[2]
                 )
             return
         for py in range(iy0, iy1):
