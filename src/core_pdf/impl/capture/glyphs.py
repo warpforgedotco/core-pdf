@@ -257,22 +257,23 @@ def capture_glyphs(
             want_transform=want_render,
         )
     else:
+        # Positional: the kernel's keyword parsing matched each name per call.
         advance_f, baseline_f, transform_f, ink_f, visible_f, bitmap_f = horizontal_glyph_geometry(
             offsets,
             advances,
             glyph_boxes,
-            basis=text_basis,
-            font_ascent=font_ascent,
-            font_descent=font_descent,
-            rise=rise,
-            font_scale=font_scale,
-            advance_scale=advance_scale,
-            font_size=font_size,
-            clip_primary=paint.clip_bbox,
-            clip_page=paint.page_clip,
-            visible=visible,
-            want_bitmap=want_bitmap,
-            want_transform=want_render,
+            text_basis,
+            font_ascent,
+            font_descent,
+            rise,
+            font_scale,
+            advance_scale,
+            font_size,
+            paint.clip_bbox,
+            paint.page_clip,
+            visible,
+            want_bitmap,
+            want_render,
         )
 
     # ---- pass three: the observations -------------------------------------

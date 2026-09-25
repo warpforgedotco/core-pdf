@@ -47,7 +47,6 @@ def horizontal_glyph_geometry(
     list offsets,
     list advances,
     list glyph_boxes,
-    *,
     tuple basis,
     double font_ascent,
     double font_descent,
