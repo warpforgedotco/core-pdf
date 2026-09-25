@@ -551,7 +551,7 @@ class RasterTarget:
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, ElementaryScratch] = {}
         # DisplayList.group_member_boxes of the list being painted, if known.
-        self.group_member_boxes: dict[int, tuple[float, float, float, float]] | None = None
+        self.group_member_boxes: dict[int, tuple[float, float, float, float] | None] | None = None
         # paint_stroke_once's coverage buffer, all zero between strokes.
         self.stroke_scratch: bytearray | None = None
         if group_alpha is not None:
@@ -660,10 +660,11 @@ class RasterTarget:
         boxes = self.group_member_boxes
         if boxes is None:
             return None
-        bbox = boxes.get(id(item))
-        if bbox is None:
+        key = id(item)
+        if key not in boxes:
             return None
-        clipped = self.clip.clipped_pixel_box(bbox)
+        bbox = boxes[key]
+        clipped = self.clip.clipped_pixel_box(bbox) if bbox is not None else None
         return EMPTY_PIXEL_BOX if clipped is None else clipped[1]
 
     def knockout_paint_box(self, item: DisplayItem) -> PixelBox | None:

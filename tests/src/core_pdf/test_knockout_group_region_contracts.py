@@ -38,7 +38,7 @@ def fill(bbox: tuple[float, float, float, float] | None, **changes: Any) -> Path
 
 def test_plain_fills_give_the_union_of_their_boxes() -> None:
     items: list[DisplayItem] = [fill((1.0, 2.0, 3.0, 4.0)), fill((0.5, 3.0, 2.0, 6.0))]
-    assert plain_fill_members_box(items, 0) == (0.5, 2.0, 3.0, 6.0)
+    assert plain_fill_members_box(items, 0) == (True, (0.5, 2.0, 3.0, 6.0))
 
 
 @pytest.mark.parametrize(
@@ -54,22 +54,21 @@ def test_plain_fills_give_the_union_of_their_boxes() -> None:
     ],
 )
 def test_any_other_member_leaves_the_group_unbounded(member: DisplayItem) -> None:
-    assert plain_fill_members_box([fill((1.0, 2.0, 3.0, 4.0)), member], 0) is None
+    assert plain_fill_members_box([fill((1.0, 2.0, 3.0, 4.0)), member], 0) == (False, None)
 
 
 def test_text_items_paint_nothing_and_are_passed_over() -> None:
     text = DisplayListItem(kind="text", seqno=1, data={})
     assert plain_fill_members_box([text, fill((1.0, 2.0, 3.0, 4.0)), text], 0) == (
-        1.0,
-        2.0,
-        3.0,
-        4.0,
+        True,
+        (1.0, 2.0, 3.0, 4.0),
     )
 
 
-def test_no_fills_leave_the_group_unbounded() -> None:
-    assert plain_fill_members_box([], 0) is None
-    assert plain_fill_members_box([DisplayListItem(kind="text", seqno=1, data={})], 0) is None
+def test_a_group_of_no_fills_paints_nothing() -> None:
+    assert plain_fill_members_box([], 0) == (True, None)
+    text = DisplayListItem(kind="text", seqno=1, data={})
+    assert plain_fill_members_box([text], 0) == (True, None)
 
 
 CONTENT = (
@@ -121,5 +120,5 @@ def test_a_region_set_up_group_renders_as_a_page_sized_one(
     bounded = rendered()
     assert regions
     assert all(region is not None for region in regions)
-    monkeypatch.setattr(display, "plain_fill_members_box", lambda *_: None)
+    monkeypatch.setattr(display, "plain_fill_members_box", lambda *_: (False, None))
     assert rendered() == bounded
