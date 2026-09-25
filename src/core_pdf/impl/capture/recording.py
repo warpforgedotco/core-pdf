@@ -1496,7 +1496,12 @@ class TextState(RecoveringTextState):
 
     def capture_graphics_soft_mask(self) -> CapturedSoftMask | None:
         mask = self.graphics.soft_mask
-        if mask is None:
+        # A soft mask is captured to be rasterized under what it masks: a
+        # nested capture of its whole group, once per placement, since its
+        # CTM is baked in. A program without render details is never drawn
+        # -- CapturedProgram.commands refuses it -- so it records none. On
+        # PyMuPDF test_3450 that was 8,125 nested streams of a 2.6 s extract.
+        if mask is None or not self.options.render_details:
             return None
         # The five fields the nested capture overrides carry no information: four
         # are the same literals every time, and the fifth is mask.ctm, which id(mask)
