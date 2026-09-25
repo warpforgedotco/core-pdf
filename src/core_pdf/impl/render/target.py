@@ -85,6 +85,7 @@ from core_pdf_cythonized import (
     composite_masked_normal,
     composite_normal_group,
     fill_glyph_coverage,
+    fill_glyph_knockout,
     fill_rect_coverage,
     sample_opaque_pixels,
     stroke_segment_samples,
@@ -653,12 +654,12 @@ class RasterTarget:
         through a scratch group: pushed as a copy of the parent's backdrop
         with empty planes, filled, popped and composited in. Over the fill's
         box that group holds exactly the backdrop and zeros, and nothing
-        outside the box is read, so the fill goes into a copy of the
-        backdrop's window with zero planes of its own, and fill_glyph_coverage
-        and composite_elementary_knockout -- the kernels the group ran -- carry
-        it into the parent. This follows paint_typed_path and fill_path to
-        their glyph branch; wherever they would go another way it returns
-        False and the group is used after all.
+        outside the box is read, so fill_glyph_knockout does what the group's
+        two kernels, fill_glyph_coverage and composite_elementary_knockout,
+        did with that copy and those planes, per pixel and straight into the
+        parent. This follows paint_typed_path and fill_path to their glyph
+        branch; wherever they would go another way it returns False and the
+        group is used after all.
         """
         if type(item) is not PathPaintItem or item.paint_kind is not PathPaintKind.FILL:
             return False
@@ -694,11 +695,7 @@ class RasterTarget:
         self.set_shape_alpha(rgba[3] / 255.0)
         rows = slice(iy0, iy1)
         columns = slice(ix0, ix1)
-        backdrop = self.pixel_view(parent.backdrop)[rows, columns]
-        rendered = backdrop.copy()
-        source_alpha = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.float32)
-        source_shape = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.float32)
-        drawn = fill_glyph_coverage(
+        drawn = fill_glyph_knockout(
             edge_array,
             self.crop_x0,
             self.crop_y1,
@@ -708,24 +705,16 @@ class RasterTarget:
             ix1 - ix0,
             iy1 - iy0,
             rgba,
-            rendered,
-            source_alpha,
-            source_shape,
+            parent.view[rows, columns],
+            self.pixel_view(parent.backdrop)[rows, columns],
+            parent.source_alpha[rows, columns],
+            parent.source_shape[rows, columns],
             self.shape_alpha,
         )
         if drawn is None:
             return True
         if parent.painted_boxes is not None:
             self.record_knockout_paint((ix0, iy0, ix1, iy1))
-        composite_elementary_knockout(
-            parent.view[rows, columns],
-            backdrop,
-            rendered,
-            source_alpha,
-            parent.source_alpha[rows, columns],
-            source_shape,
-            parent.source_shape[rows, columns],
-        )
         self.extend_paint_window(rows, columns)
         return True
 

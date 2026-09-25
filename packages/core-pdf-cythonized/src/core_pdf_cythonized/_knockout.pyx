@@ -23,6 +23,8 @@ FMAs and shift the results.
 from cpython.mem cimport PyMem_Free, PyMem_Malloc
 from libc.math cimport rint
 
+from core_pdf_cythonized._knockout_math cimport clamp_byte, knockout_component
+
 import numpy
 
 __all__ = (
@@ -30,38 +32,6 @@ __all__ = (
     "composite_knockout_element",
     "composite_knockout_group",
 )
-
-
-cdef inline double clamp_byte(double value) noexcept nogil:
-    value = rint(value * 255.0)
-    if value < 0.0:
-        return 0.0
-    if value > 255.0:
-        return 255.0
-    return value
-
-
-cdef inline double knockout_component(
-    double element_k,
-    double element_complete,
-    double remaining,
-    double color_k,
-    double complete,
-    double backdrop_k,
-    double initial,
-    double result_alpha,
-) noexcept nogil:
-    # numpy computed this as
-    #   element * element_complete + remaining * (color * complete - backdrop * initial)
-    # then divided by result_alpha where that was non-zero, leaving zero
-    # elsewhere. The order is reproduced exactly.
-    cdef double premultiplied = (
-        element_k * element_complete
-        + remaining * (color_k * complete - backdrop_k * initial)
-    )
-    if result_alpha == 0.0:
-        return 0.0
-    return premultiplied / result_alpha
 
 
 def unit_range(*arrays):

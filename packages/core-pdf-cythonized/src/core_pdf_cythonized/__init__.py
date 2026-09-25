@@ -40,6 +40,7 @@ from core_pdf_cythonized._composite import (
 from core_pdf_cythonized._content import ContentScanner
 from core_pdf_cythonized._coverage import (
     fill_glyph_coverage,
+    fill_glyph_knockout,
     glyph_coverage_plane,
     signed_area_coverage,
 )
@@ -82,6 +83,7 @@ __all__ = (
     "flatten_path_commands",
     "gather_uint8_rows",
     "fill_glyph_coverage",
+    "fill_glyph_knockout",
     "glyph_coverage_plane",
     "interleave_soft_mask",
     "horizontal_glyph_geometry",

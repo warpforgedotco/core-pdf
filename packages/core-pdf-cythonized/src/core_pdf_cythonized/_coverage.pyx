@@ -17,6 +17,7 @@ from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
 from libc.math cimport ceil, fabs, floor, rint
 
 from core_pdf_cythonized._alpha_blend cimport accumulate_plane, blend_one, opaque_channel
+from core_pdf_cythonized._knockout_math cimport clamp_byte, knockout_component
 
 import numpy
 
@@ -340,6 +341,147 @@ def fill_glyph_coverage(
                         source_shape[r, c] = accumulate_plane(
                             source_shape[r, c], shape, shape_scale
                         )
+    finally:
+        PyMem_Free(device)
+        PyMem_Free(acc)
+    return True
+
+
+def fill_glyph_knockout(
+    edges,
+    double crop_x0,
+    double crop_y1,
+    double scale,
+    Py_ssize_t ix0,
+    Py_ssize_t iy0,
+    int width,
+    int height,
+    rgba,
+    unsigned char[:, :, :] destination,
+    const unsigned char[:, :, :] backdrop,
+    float[:, :] group_alpha,
+    float[:, :] parent_shape,
+    double shape_scale,
+):
+    """A glyph fill knocked straight into its knockout parent, fused.
+
+    core's knockout_glyph_fill copied the parent's backdrop window, zeroed
+    two float32 planes, ran fill_glyph_coverage into them, and then
+    composite_elementary_knockout carried the result into the parent: three
+    scratch arrays and two passes per glyph of a text knockout group. The
+    scratch values are per pixel -- each depends on nothing but that pixel's
+    coverage and backdrop -- so this computes them where they are consumed:
+    the rendered pixel from the backdrop pixel as blend_one or the opaque
+    fill writes it, both plane values as accumulate_plane makes them from
+    zero, and the composite with composite_elementary_knockout's
+    quantization and arithmetic. ``destination``, ``backdrop``,
+    ``group_alpha`` and ``parent_shape`` are the parent's windows over the
+    fill's box, which is ``height`` rows by ``width`` columns.
+
+    Returns None where fill_glyph_coverage does, and paints nothing then;
+    else True.
+    """
+    cdef double[:, ::1] view = numpy.ascontiguousarray(edges, dtype=numpy.float64)
+    cdef Py_ssize_t kept = _sloped_edge_count(view)
+    if kept == 0:
+        return None
+    if height <= 0 or width <= 0:
+        return True
+    if destination.shape[0] != height or destination.shape[1] != width or destination.shape[2] != 4:
+        raise ValueError("destination differs from the plane in shape")
+    if backdrop.shape[0] != height or backdrop.shape[1] != width or backdrop.shape[2] != 4:
+        raise ValueError("backdrop differs from the plane in shape")
+    if group_alpha.shape[0] != height or group_alpha.shape[1] != width:
+        raise ValueError("group_alpha differs from the plane in shape")
+    cdef bint has_parent_shape = parent_shape is not None
+    if has_parent_shape and (parent_shape.shape[0] != height or parent_shape.shape[1] != width):
+        raise ValueError("parent_shape differs from the plane in shape")
+    cdef float red = <float> <int> rgba[0]
+    cdef float green = <float> <int> rgba[1]
+    cdef float blue = <float> <int> rgba[2]
+    cdef int cap = <int> rgba[3]
+    cdef double alpha = <double> rgba[3]
+    cdef int opaque_from = 255 if cap >= 255 else 256
+    cdef unsigned char opaque_red = opaque_channel(red)
+    cdef unsigned char opaque_green = opaque_channel(green)
+    cdef unsigned char opaque_blue = opaque_channel(blue)
+    cdef Py_ssize_t stride = width + 2
+    cdef double* device = _device_edges(view, kept, crop_x0, crop_y1, scale, ix0, iy0)
+    cdef double* acc = NULL
+    cdef Py_ssize_t r, c, k
+    cdef double running, coverage, scaled, eff, sh, remaining, rga, ra, complete, initial, ec
+    cdef double colour[3]
+    cdef unsigned char raw, shape_byte, quantized
+    cdef unsigned char rendered[4]
+    cdef const unsigned char* element
+    cdef float ZERO = 0.0
+    cdef float ONE = 1.0
+    cdef float source_alpha, source_shape, previous
+    try:
+        acc = _zeroed_cells(height * stride)
+        _accumulate_device(device, kept, width, height, acc)
+        with nogil:
+            for r in range(height):
+                running = 0.0
+                for c in range(width):
+                    running += acc[r * stride + c]
+                    coverage = dmin(fabs(running), 1.0)
+                    # fill_glyph_coverage into a copy of the backdrop and two
+                    # zeroed planes.
+                    raw = <unsigned char> rint(coverage * alpha)
+                    source_alpha = accumulate_plane(ZERO, raw, 1.0)
+                    shape_byte = <unsigned char> rint(coverage * 255.0)
+                    source_shape = accumulate_plane(ZERO, shape_byte, shape_scale)
+                    # composite_elementary_knockout's quantization. The plane
+                    # holds raw / 255 as a float32, so this is always in range
+                    # and always non-zero where raw is.
+                    scaled = rint(<double> source_alpha * 255.0)
+                    quantized = <unsigned char> <int> scaled
+                    if quantized > 0:
+                        for k in range(4):
+                            rendered[k] = backdrop[r, c, k]
+                        if raw != 0:
+                            if raw >= opaque_from:
+                                rendered[0] = opaque_red
+                                rendered[1] = opaque_green
+                                rendered[2] = opaque_blue
+                                rendered[3] = 255
+                            else:
+                                blend_one(
+                                    &rendered[0], &rendered[1], &rendered[2], &rendered[3],
+                                    raw, cap, red, green, blue,
+                                )
+                        element = &rendered[0]
+                    else:
+                        element = &backdrop[r, c, 0]
+                    eff = <double> quantized / 255.0
+                    sh = <double> source_shape
+                    if sh < 0.0:
+                        sh = 0.0
+                    elif sh > 1.0:
+                        sh = 1.0
+                    if eff > sh:
+                        sh = eff
+                    if sh > 0.0:
+                        complete = <double> destination[r, c, 3] / 255.0
+                        initial = <double> backdrop[r, c, 3] / 255.0
+                        ec = <double> element[3] / 255.0
+                        remaining = 1.0 - sh
+                        rga = eff + remaining * <double> group_alpha[r, c]
+                        ra = initial + (1.0 - initial) * rga
+                        for k in range(3):
+                            colour[k] = knockout_component(
+                                <double> element[k] / 255.0, ec, remaining,
+                                <double> destination[r, c, k] / 255.0, complete,
+                                <double> backdrop[r, c, k] / 255.0, initial, ra,
+                            )
+                        for k in range(3):
+                            destination[r, c, k] = <unsigned char> clamp_byte(colour[k])
+                        destination[r, c, 3] = <unsigned char> clamp_byte(ra)
+                        group_alpha[r, c] = <float> rga
+                    if has_parent_shape:
+                        previous = parent_shape[r, c]
+                        parent_shape[r, c] = previous + (ONE - previous) * source_shape
     finally:
         PyMem_Free(device)
         PyMem_Free(acc)
