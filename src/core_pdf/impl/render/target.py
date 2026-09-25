@@ -67,6 +67,7 @@ from core_pdf.impl.render.paths import (
 from core_pdf.impl.render.patterns import (
     TilingCellCache,
     axial_shading_t,
+    cell_paints_nothing,
     radial_shading_t,
     shading_color_rgba,
     tiling_cell,
@@ -3008,6 +3009,11 @@ class RasterTarget:
         if not program.drawings and not program.glyphs and not program.inline_images:
             return False
         display, cell_clip = tiling_cell(self, pattern)
+        if cell_paints_nothing(display.items, cell_clip, scale):
+            # Every tile would be clipped to nothing, wherever it lands: PyMuPDF
+            # test_4388_BUL1 spent 24 s replaying 353,626 such tiles. The group
+            # they would have composited stays empty, so nothing is pushed.
+            return True
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
         if type(target_box) is list or type(target_box) is tuple:
             if len(target_box) == 4:

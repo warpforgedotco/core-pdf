@@ -2,9 +2,10 @@ import numpy
 import pytest
 
 from core_pdf.impl.capture.program import CapturedProgram
-from core_pdf.impl.capture.records import CapturedDrawing, TilingPattern
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, TilingPattern
 from core_pdf.impl.render import patterns
 from core_pdf.impl.render.clipping import ClipState
+from core_pdf.impl.render.model import DisplayListItem, PathPaintItem, PathPaintKind
 from core_pdf.impl.render.target import RasterTarget
 
 
@@ -145,3 +146,64 @@ def test_tiling_cell_cache_reuses_display_and_clip_for_same_pattern():
     grouped = patterns.tiling_cell(target, pattern)
     assert grouped[0] is not first[0]
     assert len(target.tiling_cell_cache) == 2
+
+
+def cell_item(box, line_width=0.0):
+    path = CapturedPath()
+    path.rect(box[0], box[1], box[2] - box[0], box[3] - box[1])
+    return PathPaintItem(
+        PathPaintKind.STROKE if line_width else PathPaintKind.FILL,
+        0,
+        box,
+        path,
+        None,
+        None,
+        (0, 0, 0, 255),
+        None,
+        line_width,
+        0,
+        0,
+        None,
+        "nonzero",
+        None,
+        None,
+    )
+
+
+def unit_cell_clip():
+    clip = CapturedPath()
+    clip.rect(0.0, 0.0, 1.0, 1.0)
+    return clip
+
+
+def test_a_cell_whose_content_lies_outside_its_clip_paints_nothing():
+    items = [
+        DisplayListItem("scope-begin", 0),
+        DisplayListItem("clip", 0, {"bbox": (-2434.8, -26661.5, -2414.8, -26641.5)}),
+        cell_item((-2434.8, -26661.5, -2414.8, -26641.5)),
+        DisplayListItem("glyph", 0, {"bbox": (50.0, 50.0, 52.0, 52.0)}),
+        DisplayListItem("scope-end", 0),
+    ]
+    assert patterns.cell_paints_nothing(items, unit_cell_clip(), 1.0)
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        pytest.param(cell_item((0.5, 0.5, 2.0, 2.0)), id="overlapping fill"),
+        pytest.param(cell_item((1.5, 1.5, 3.0, 3.0)), id="fill within the pixel margin"),
+        pytest.param(
+            cell_item((3.0, 3.0, 4.0, 4.0), line_width=0.5), id="stroke whose joins reach"
+        ),
+    ],
+)
+def test_content_that_can_reach_the_clip_is_painted(item):
+    assert not patterns.cell_paints_nothing([item], unit_cell_clip(), 1.0)
+
+
+@pytest.mark.parametrize(
+    ("kind", "data"),
+    [("shading", {"bbox": (100.0, 100.0, 101.0, 101.0)}), ("glyph", {}), ("annotation", {})],
+)
+def test_an_item_of_unknown_extent_is_assumed_to_paint(kind, data):
+    assert not patterns.cell_paints_nothing([DisplayListItem(kind, 0, data)], unit_cell_clip(), 1.0)

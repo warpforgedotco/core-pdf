@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 from core_pdf.impl.capture.records import (
     CapturedPath,
     TilingPattern,
 )
+from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.graphics.device_profiles import cmyk_floats_to_srgb
 from core_pdf.impl.render.blend import (
     clamp01,
@@ -16,6 +18,7 @@ from core_pdf.impl.render.blend import (
 )
 from core_pdf.impl.render.commands import append_captured_program
 from core_pdf.impl.render.display import DisplayList
+from core_pdf.impl.render.model import DisplayItem, ImagePaintItem, PathPaintItem
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 if TYPE_CHECKING:
@@ -41,6 +44,64 @@ def tiling_cell(target: RasterTarget, pattern: TilingPattern) -> tuple[DisplayLi
     append_captured_program(display, pattern.program, include_text=True)
     target.tiling_cell_cache[key] = (pattern, display, cell_clip)
     return display, cell_clip
+
+
+# Display items that change what later items paint into, but paint nothing.
+NON_PAINTING_KINDS = frozenset(
+    {"scope-begin", "scope-end", "state-push", "state-pop", "clip", "group-begin", "group-end"}
+)
+
+
+def cell_paints_nothing(
+    items: Iterable[DisplayItem], cell_clip: CapturedPath, scale: float
+) -> bool:
+    """Whether a tiling cell's items all lie outside the cell clip they are painted under.
+
+    A tile paints its items translated, under the cell clip translated by the
+    same amount, so whether anything lands inside the clip does not depend on
+    which tile it is. Conservative: an item whose extent is not known -- a
+    shading, an unknown kind, a missing box -- answers no. Strokes are widened
+    by ten line widths for miter joins, and every box by two device pixels,
+    so a partly covered pixel at either edge cannot slip through.
+    """
+    clip_box = cell_clip.bbox()
+    if clip_box is None:
+        return False
+    margin = 2.0 / scale if scale > 0 else 2.0
+    left, bottom, right, top = clip_box
+    left -= margin
+    bottom -= margin
+    right += margin
+    top += margin
+    for item in items:
+        if isinstance(item, PathPaintItem):
+            path = item.path
+            box = item.bbox
+            if box is None and type(path) is CapturedPath:
+                box = path.bbox()
+            spread = 10.0 * abs(float(item.line_width or 0.0))
+        elif isinstance(item, ImagePaintItem):
+            box = item.bbox
+            spread = 0.0
+        elif item.kind in NON_PAINTING_KINDS:
+            continue
+        elif item.kind == "glyph":
+            box = item.data.get("bbox")
+            spread = 0.0
+        else:
+            return False
+        extent = rect_tuple(box)
+        if extent is None:
+            return False
+        pad = spread + margin
+        if (
+            extent[0] - pad <= right
+            and extent[2] + pad >= left
+            and extent[1] - pad <= top
+            and extent[3] + pad >= bottom
+        ):
+            return False
+    return True
 
 
 def axial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:
