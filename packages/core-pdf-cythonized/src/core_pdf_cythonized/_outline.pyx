@@ -18,6 +18,8 @@ The span bookkeeping is returned rather than recomputed, so the caller builds
 point lists for exactly the spans that were kept, with the same adjusted ends.
 """
 
+from libc.math cimport isnan
+
 import numpy
 
 
@@ -70,3 +72,66 @@ def outline_edges(double[::1] xs, double[::1] ys, spans):
             out[w, 3] = ys[start]
             w += 1
     return edges, kept, dropped
+
+
+cdef object column_extreme(double[::1] values, object column, bint maximum):
+    """numpy's column.min() or column.max() as a float, for a non-empty column.
+
+    A NaN anywhere is the answer, as numpy propagates it. Two zeros of
+    opposite sign compare equal, and which of them numpy's reduction returns
+    is its own business, so a column holding both is handed to numpy.
+    """
+    cdef Py_ssize_t i, count = values.shape[0]
+    cdef double best = values[0], value
+    cdef bint positive_zero = False, negative_zero = False
+    for i in range(count):
+        value = values[i]
+        if isnan(value):
+            return value
+        if value == 0.0:
+            if 1.0 / value > 0.0:
+                positive_zero = True
+            else:
+                negative_zero = True
+        if (value > best) if maximum else (value < best):
+            best = value
+    if positive_zero and negative_zero:
+        return float(column.max() if maximum else column.min())
+    return best
+
+
+def translated_outline_edges(double[::1] linear_x, double[::1] linear_y, double e, double f, spans):
+    """outline_edges over the columns linear_x + e and linear_y + f, with their bounds.
+
+    transformed_outline added the translation to the cached linear columns
+    with numpy, called outline_edges, and took the bounds with four numpy
+    reductions -- six array operations around one kernel, per glyph drawn.
+    This makes the translated columns, the edges and the bounds in one call:
+    each column entry is the same double sum, the edges come from
+    outline_edges on those columns, and each bound is what numpy's min or max
+    of the column gives.
+
+    Returns (column_x, column_y, edges, kept, dropped, bounds), where edges is
+    None as outline_edges returns it, and bounds is (min x, min y, max x,
+    max y), or None when there are no edges.
+    """
+    cdef Py_ssize_t count = linear_x.shape[0], i
+    if linear_y.shape[0] != count:
+        raise ValueError("columns differ in length")
+    column_x = numpy.empty(count, numpy.float64)
+    column_y = numpy.empty(count, numpy.float64)
+    cdef double[::1] xs = column_x
+    cdef double[::1] ys = column_y
+    for i in range(count):
+        xs[i] = linear_x[i] + e
+        ys[i] = linear_y[i] + f
+    edges, kept, dropped = outline_edges(xs, ys, spans)
+    if edges is None:
+        return column_x, column_y, None, kept, dropped, None
+    bounds = (
+        column_extreme(xs, column_x, False),
+        column_extreme(ys, column_y, False),
+        column_extreme(xs, column_x, True),
+        column_extreme(ys, column_y, True),
+    )
+    return column_x, column_y, edges, kept, dropped, bounds

@@ -53,7 +53,7 @@ from core_pdf_cythonized._knockout import (
     composite_knockout_group,
 )
 from core_pdf_cythonized._objects import ObjectScanner
-from core_pdf_cythonized._outline import outline_edges
+from core_pdf_cythonized._outline import outline_edges, translated_outline_edges
 from core_pdf_cythonized._paths import flatten_path_commands
 from core_pdf_cythonized._rect import fill_rect_coverage, rect_coverage_plane
 from core_pdf_cythonized._sample_blit import sample_opaque_pixels
@@ -91,5 +91,6 @@ __all__ = (
     "signed_area_coverage",
     "stroke_segment_samples",
     "supersampled_coverage_plane",
+    "translated_outline_edges",
     "type2_glyph_geometry",
 )

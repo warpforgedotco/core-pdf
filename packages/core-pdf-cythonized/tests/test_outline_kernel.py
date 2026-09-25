@@ -72,7 +72,10 @@ def test_a_two_point_span_with_equal_ends_is_dropped_not_kept():
 
 
 def test_render_commands_use_the_kernel():
+    # Through translated_outline_edges, which runs outline_edges on the
+    # translated columns.
     pytest.importorskip("core_pdf")
     from core_pdf.impl.render import commands
+    from core_pdf_cythonized import translated_outline_edges
 
-    assert commands.outline_edges is outline_edges
+    assert commands.translated_outline_edges is translated_outline_edges
