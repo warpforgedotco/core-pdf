@@ -96,6 +96,9 @@ def intersect_spans(
 class ClipState:
     __slots__ = (
         "regions",
+        "last_box",
+        "last_region",
+        "last_clipped",
         "crop_x0",
         "crop_y1",
         "scale",
@@ -113,6 +116,11 @@ class ClipState:
         height: int,
     ) -> None:
         self.regions: list[ClipRegion] = []
+        self.last_box: tuple[float, float, float, float] | None = None
+        self.last_region: ClipRegion | None = None
+        self.last_clipped: (
+            tuple[tuple[float, float, float, float], tuple[int, int, int, int]] | None
+        ) = None
         self.crop_x0 = crop_x0
         self.crop_y1 = crop_y1
         self.scale = scale
@@ -309,16 +317,25 @@ class ClipState:
         self, box: tuple[float, float, float, float]
     ) -> tuple[tuple[float, float, float, float], tuple[int, int, int, int]] | None:
         region = self.current_region()
-        if region is not None:
-            if region.empty:
-                return None
-            if region.box is not None:
-                clipped = intersect_box(box, region.box)
-                if clipped is None:
-                    return None
-                box = clipped
-        pixel_box = self.page_box_to_pixels(*box)
-        return None if pixel_box is None else (box, pixel_box)
+        # A painted item asks for its box more than once -- whether it can
+        # skip its knockout group, then again to paint -- and half of all
+        # calls repeat the one before. Regions are frozen and both objects
+        # are held here, so identity is enough to know the answer stands.
+        if box is self.last_box and region is self.last_region:
+            return self.last_clipped
+        self.last_box = box
+        self.last_region = region
+        result = None
+        if region is None or not region.empty:
+            clipped = (
+                box if region is None or region.box is None else intersect_box(box, region.box)
+            )
+            if clipped is not None:
+                pixel_box = self.page_box_to_pixels(*clipped)
+                if pixel_box is not None:
+                    result = (clipped, pixel_box)
+        self.last_clipped = result
+        return result
 
     @staticmethod
     def path_bbox(path: Any) -> tuple[float, float, float, float] | None:
