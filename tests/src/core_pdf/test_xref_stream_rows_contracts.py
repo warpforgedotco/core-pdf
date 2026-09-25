@@ -31,8 +31,7 @@ def row_by_row(
 
 def flat(entries: XRefTable) -> list[tuple[object, ...]]:
     return [
-        (key, e.offset, e.generation, e.in_use, e.object_stream, e.index_in_stream)
-        for key, e in entries.items()
+        (key, tuple(e), tuple(type(field) for field in e), type(e)) for key, e in entries.items()
     ]
 
 
@@ -43,7 +42,8 @@ def test_columns_read_as_rows(seed: int) -> None:
     index: list[int] = []
     start = 0
     for _ in range(rng.randint(1, 4)):
-        start += rng.randint(0, 5)
+        # Subsections may overlap, so a later row can replace an earlier key.
+        start = max(0, start + rng.randint(-8, 5))
         count = rng.randint(0, 20)
         index += [start, count]
         start += count
@@ -52,7 +52,7 @@ def test_columns_read_as_rows(seed: int) -> None:
         rng.choice([0, 1, 2, 3, 255]) if rng.random() < 0.3 else rng.randrange(256)
         for _ in range(rows * sum(w))
     )
-    effective_size = rng.randint(0, start + 2)
+    effective_size = rng.choice([rng.randint(0, start + 2), 1 << 70])
     assert flat(decode_xref_stream_rows(data, w, index, effective_size)) == flat(
         row_by_row(data, w, index, effective_size)
     )

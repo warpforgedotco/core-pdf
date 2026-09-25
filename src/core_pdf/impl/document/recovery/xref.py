@@ -6,6 +6,7 @@ import mmap
 import re
 import zlib
 from collections.abc import Iterator
+from itertools import batched
 from typing import Any
 
 import numpy
@@ -26,6 +27,7 @@ from core_pdf_spec.s_07_syntax.xref import (
     canonical_table_entries,
     decode_xref_row,
     key_for,
+    new_xref_entry,
 )
 from core_pdf_spec.s_07_syntax.xref import XRefScanner as SyntaxXRefScanner
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -823,6 +825,75 @@ def xref_stream_column(
     return values.tolist()
 
 
+# Object numbers below this make keys that fit an int64 column.
+XREF_STREAM_KEY_LIMIT = 1 << 46
+
+
+def xref_stream_array(
+    rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], start: int, width: int
+) -> numpy.ndarray[Any, numpy.dtype[numpy.uint64]]:
+    """xref_stream_column, left as a uint64 array."""
+    values = numpy.zeros(len(rows), dtype=numpy.uint64)
+    for column in range(start, start + width):
+        values = (values << numpy.uint64(8)) | rows[:, column]
+    return values
+
+
+def xref_stream_entries(
+    rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    w: list[int],
+    available_index: list[int],
+    effective_size: int,
+) -> XRefTable:
+    """decode_xref_stream_rows's table, built from columns.
+
+    Every row's entry and key are worked out in numpy -- a type-0 or type-1
+    row keeps its offset and generation, a type-2 row its object stream and
+    index, any other kind is free -- the rows the row loop skips are masked
+    out, and the entries are made from the surviving columns in row order,
+    so a later row for the same key replaces an earlier one as it did.
+    """
+    row_count = len(rows)
+    kinds = xref_stream_array(rows, 0, w[0]) if w[0] else numpy.ones(row_count, numpy.uint64)
+    values = xref_stream_array(rows, w[0], w[1])
+    generations = (
+        xref_stream_array(rows, w[0] + w[1], w[2]) if w[2] else numpy.zeros(row_count, numpy.uint64)
+    )
+    object_numbers = numpy.concatenate(
+        [
+            numpy.arange(start, start + count, dtype=numpy.int64)
+            for start, count in batched(available_index, 2, strict=True)
+        ]
+        or [numpy.zeros(0, numpy.int64)]
+    )
+    direct = kinds < 2
+    compressed = kinds == 2
+    # Every object number here is below the key limit, so a larger Size
+    # compares as the limit does, and numpy never sees an int past int64.
+    size = min(effective_size, XREF_STREAM_KEY_LIMIT)
+    keep = (object_numbers < size) & ~(direct & (generations > 65535))
+    direct = direct[keep]
+    compressed = compressed[keep]
+    values = values[keep]
+    generations = generations[keep]
+    keys = (object_numbers[keep] << 16) | numpy.where(direct, generations, 0).astype(numpy.int64)
+    streams = numpy.full(len(keys), None, dtype=object)
+    streams[compressed] = values[compressed].tolist()
+    indexes = numpy.full(len(keys), None, dtype=object)
+    indexes[compressed] = generations[compressed].tolist()
+    entries = map(
+        new_xref_entry,
+        zip(
+            numpy.where(direct, values, 0).tolist(),
+            numpy.where(direct, generations, 0).tolist(),
+            numpy.where(direct, kinds[keep] == 1, compressed).tolist(),
+            streams.tolist(),
+            indexes.tolist(),
+        ),
+    )
+    return dict(zip(keys.tolist(), entries))
+
+
 def decode_xref_stream_rows(
     data: bytes, w: list[int], available_index: list[int], effective_size: int
 ) -> XRefTable:
@@ -840,6 +911,12 @@ def decode_xref_stream_rows(
     rows = numpy.frombuffer(data, dtype=numpy.uint8, count=row_count * row_size).reshape(
         row_count, row_size
     )
+    last_object = max(
+        (start + count for start, count in batched(available_index, 2, strict=True)),
+        default=0,
+    )
+    if last_object < XREF_STREAM_KEY_LIMIT:
+        return xref_stream_entries(rows, w, available_index, effective_size)
     kinds = xref_stream_column(rows, 0, w[0]) if w[0] else [1] * row_count
     values = xref_stream_column(rows, w[0], w[1])
     generations = xref_stream_column(rows, w[0] + w[1], w[2]) if w[2] else [0] * row_count
