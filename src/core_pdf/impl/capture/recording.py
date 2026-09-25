@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from array import array
 from collections.abc import Mapping
 from contextlib import suppress
 from copy import copy
@@ -859,10 +860,9 @@ class TextState(RecoveringTextState):
         stroke_paints = color_space_paints(self.graphics.stroke_space)
 
         ctm = self.graphics.ctm
-        path, line_endpoints = flatten_path(source, None if ctm == IDENTITY_MATRIX else ctm)
+        line_width = self.transformed_line_width()
+        path = flatten_path(source, None if ctm == IDENTITY_MATRIX else ctm, self.lines, line_width)
         if path.has_segments():
-            line_width = self.transformed_line_width()
-            self.lines.append(line_endpoints, line_width)
             self.drawings.append(
                 CapturedDrawing(
                     seqno=self.sequence,
@@ -896,7 +896,7 @@ class TextState(RecoveringTextState):
             self.sequence += 1
 
     def clip_path(self, state: object, source: PdfPath, fill_rule: str) -> None:
-        path, _ = flatten_path(source, self.graphics.ctm)
+        path = flatten_path(source, self.graphics.ctm)
         if not path.has_segments():
             return
         clip_bbox = path.bbox()
@@ -1437,56 +1437,50 @@ def image_source_from_stream(
 
 
 def flatten_path(
-    source: PdfPath, matrix: Matrix | None
-) -> tuple[CapturedPath, numpy.ndarray[Any, numpy.dtype[numpy.float64]]]:
-    """The path flattened and put through `matrix`, and its stroke-line endpoints.
+    source: PdfPath,
+    matrix: Matrix | None,
+    lines: StrokeLineRows | None = None,
+    line_width: float = 0.0,
+) -> CapturedPath:
+    """The path flattened and put through `matrix`, its stroke lines added to `lines`.
 
     The path's point lists wait until something reads them; see
     CapturedPath.deferred_flattened.
     """
-    xs, ys, spans, bbox, has_segments, lines = flatten_path_commands(
-        source.ops, source.coords, matrix, hypot
+    xs, ys, spans, bbox, has_segments = flatten_path_commands(
+        source.ops,
+        source.coords,
+        matrix,
+        hypot,
+        None if lines is None else lines.rows,
+        line_width,
     )
-    return CapturedPath.deferred_flattened(xs, ys, spans, bbox, has_segments), lines
+    return CapturedPath.deferred_flattened(xs, ys, spans, bbox, has_segments)
 
 
 class StrokeLineRows:
-    """The stroke lines captured so far, in arrays, cut into programs by count."""
+    """The stroke lines captured so far, as one growing table of five-float rows.
 
-    __slots__ = ("chunks", "count")
+    flatten_path_commands appends to it in place, so a painted path costs no
+    array of its own; programs are cut out of it by row count.
+    """
+
+    __slots__ = ("rows",)
 
     def __init__(self) -> None:
-        self.chunks: list[numpy.ndarray[Any, numpy.dtype[numpy.float64]]] = []
-        self.count = 0
+        self.rows: array[float] = array("d")
 
-    def append(
-        self, endpoints: numpy.ndarray[Any, numpy.dtype[numpy.float64]], line_width: float
-    ) -> None:
-        rows = len(endpoints)
-        if not rows:
-            return
-        chunk = numpy.empty((rows, 5), dtype=numpy.float64)
-        chunk[:, :4] = endpoints
-        chunk[:, 4] = line_width
-        self.chunks.append(chunk)
-        self.count += rows
+    @property
+    def count(self) -> int:
+        return len(self.rows) // 5
 
     def since(self, mark: int) -> CapturedLines:
         """The lines appended after the first `mark`."""
         if mark >= self.count:
             return EMPTY_LINES
-        kept: list[numpy.ndarray[Any, numpy.dtype[numpy.float64]]] = []
-        offset = self.count
-        for chunk in reversed(self.chunks):
-            offset -= len(chunk)
-            if offset >= mark:
-                kept.append(chunk)
-            else:
-                kept.append(chunk[mark - offset :])
-            if offset <= mark:
-                break
-        kept.reverse()
-        return CapturedLines.from_array(kept[0] if len(kept) == 1 else numpy.concatenate(kept))
+        # A copy: a view would pin the table's buffer and stop it growing.
+        table = numpy.frombuffer(self.rows, dtype=numpy.float64)
+        return CapturedLines.from_array(table[mark * 5 :].reshape(-1, 5).copy())
 
 
 GRAPHICS_STATE_FIELDS = GraphicsState.__fields__

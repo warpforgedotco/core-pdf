@@ -77,7 +77,10 @@ def encode(commands):
 def flatten(commands, matrix, hypot=math.hypot):
     encoded = encode(commands)
     assert encoded is not None
-    return flatten_path_commands(encoded[0], encoded[1], matrix, hypot)
+    rows = array("d")
+    flattened = flatten_path_commands(encoded[0], encoded[1], matrix, hypot, rows, 0.0)
+    lines = numpy.frombuffer(rows, dtype=numpy.float64).reshape(-1, 5)[:, :4]
+    return (*flattened, lines)
 
 
 def identity(operator, operands):
@@ -88,12 +91,19 @@ def run(case):
     encoded = encode(case["commands"])
     if encoded is None:
         return None
+    rows = array("d", [7.0] * 5)
     try:
-        xs, ys, spans, bbox, has_segments, lines = flatten_path_commands(
-            encoded[0], encoded[1], case["matrix"], math.hypot
+        xs, ys, spans, bbox, has_segments = flatten_path_commands(
+            encoded[0], encoded[1], case["matrix"], math.hypot, rows, 2.5
         )
     except Exception as error:
         return ("raises", type(error).__name__)
+    # The line table is appended to, never rewritten, and every row carries
+    # the width it was given.
+    assert rows[:5] == array("d", [7.0] * 5)
+    lines = numpy.frombuffer(rows, dtype=numpy.float64).reshape(-1, 5)[1:]
+    assert (lines[:, 4] == 2.5).all()
+    lines = lines[:, :4]
     return (
         xs.tolist(),
         ys.tolist(),
@@ -206,3 +216,13 @@ def test_arrays_are_float64():
     ]
     xs, ys, _, _, _, lines = flatten(path, None)
     assert xs.dtype == ys.dtype == lines.dtype == numpy.float64
+
+
+def test_no_line_table_collects_no_lines():
+    encoded = encode([identity("m", (0.0, 0.0)), identity("l", (5.0, 0.0))])
+    assert encoded is not None
+    xs, _, _, _, has_segments = flatten_path_commands(
+        encoded[0], encoded[1], None, math.hypot, None, 1.0
+    )
+    assert xs.tolist() == [0.0, 5.0]
+    assert has_segments

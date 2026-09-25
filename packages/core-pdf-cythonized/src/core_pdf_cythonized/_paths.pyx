@@ -24,6 +24,7 @@ a count. The box follows points_bbox and union_bbox exactly, including which
 of two equal values survives, which matters only for signed zeros.
 """
 
+from cpython cimport array
 from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
 from libc.math cimport ceil, fabs, isinf, isnan
 
@@ -190,7 +191,12 @@ cdef int add_curve(PathBuilder path, const double *values, hypot) except -1:
 
 
 def flatten_path_commands(
-    const unsigned char[::1] ops, const double[::1] coords, matrix, hypot
+    const unsigned char[::1] ops,
+    const double[::1] coords,
+    matrix,
+    hypot,
+    array.array line_rows,
+    double line_width,
 ):
     """Flatten, transform and summarize a path, as capture needs it.
 
@@ -199,11 +205,15 @@ def flatten_path_commands(
     six-number CTM to apply to every point, or None to leave them as
     flattened; ``hypot`` is math.hypot.
 
-    Returns ``(xs, ys, spans, bbox, has_segments, lines)``: float64 point
-    columns, a ``(start, end, closed)`` span per subpath, the bounding box or
-    None, whether any subpath has two points, and an (n, 4) float64 array of
-    the stroke-line endpoints -- every consecutive pair of points within a
-    subpath that moves by more than 0.01 on either axis.
+    Returns ``(xs, ys, spans, bbox, has_segments)``: float64 point columns,
+    a ``(start, end, closed)`` span per subpath, the bounding box or None, and
+    whether any subpath has two points.
+
+    The stroke lines -- every consecutive pair of points within a subpath
+    that moves by more than 0.01 on either axis -- are appended to
+    ``line_rows``, an ``array('d')``, as ``x0, y0, x1, y1, line_width`` rows;
+    it is the page's one line table, so a path adds no array of its own. With
+    ``line_rows`` None they are not collected.
     """
     cdef PathBuilder path = PathBuilder()
     cdef Py_ssize_t op_index, at = 0, available = coords.shape[0]
@@ -300,19 +310,23 @@ def flatten_path_commands(
             box_x1 = python_max(box_x1, sx1)
             box_y1 = python_max(box_y1, sy1)
 
-    lines = numpy.empty((line_count, 4), dtype=numpy.float64)
-    cdef double[:, ::1] out_lines = lines
-    cdef Py_ssize_t row = 0
-    for index in range(subpath_count):
-        start = starts[index]
-        end = starts[index + 1] if index + 1 < subpath_count else count
-        for i in range(start + 1, end):
-            if fabs(px[i] - px[i - 1]) > 0.01 or fabs(py[i] - py[i - 1]) > 0.01:
-                out_lines[row, 0] = px[i - 1]
-                out_lines[row, 1] = py[i - 1]
-                out_lines[row, 2] = px[i]
-                out_lines[row, 3] = py[i]
-                row += 1
+    cdef Py_ssize_t row
+    cdef double* out
+    if line_rows is not None and line_count:
+        row = len(line_rows)
+        array.resize_smart(line_rows, row + line_count * 5)
+        out = line_rows.data.as_doubles + row
+        for index in range(subpath_count):
+            start = starts[index]
+            end = starts[index + 1] if index + 1 < subpath_count else count
+            for i in range(start + 1, end):
+                if fabs(px[i] - px[i - 1]) > 0.01 or fabs(py[i] - py[i - 1]) > 0.01:
+                    out[0] = px[i - 1]
+                    out[1] = py[i - 1]
+                    out[2] = px[i]
+                    out[3] = py[i]
+                    out[4] = line_width
+                    out += 5
 
     bbox = (box_x0, box_y0, box_x1, box_y1) if have_box else None
-    return xs, ys, spans, bbox, has_segments, lines
+    return xs, ys, spans, bbox, has_segments
