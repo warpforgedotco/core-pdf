@@ -17,6 +17,7 @@ from core_pdf.impl.fonts.font_program import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.glyphs import (
     GlyphClusterLike,
     GlyphObservation,
+    GlyphStyle,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
     min_optional_confidence,
@@ -289,6 +290,32 @@ def capture_glyphs(
         )
 
     # ---- pass three: the observations -------------------------------------
+    # Everything the operation paints its glyphs with, held once for all of them.
+    style = GlyphStyle(
+        font_size,
+        geometry.rotation_angle,
+        paint.fill,
+        decoder,
+        geometry.effective_font_size,
+        geometry.effective_font_height,
+        provenance,
+        paint.render_mode,
+        paint.fill_opacity,
+        paint.stroke_color,
+        paint.stroke_opacity,
+        paint.line_width,
+        paint.blend_mode,
+        paint.group_alpha,
+        text_object_id,
+        paint.line_cap,
+        paint.line_join,
+        paint.dash_pattern,
+        paint.clip_glyph and not decoder.is_type3,
+        paint.alpha_is_shape,
+        decoder.is_type3,
+        paint.graphics_soft_mask,
+    )
+    styled_observation = GlyphObservation.styled
     add_run_geometry = result.geometry.add
     append_glyph = result.glyphs.append
     for index, glyph in enumerate(kept):
@@ -346,7 +373,8 @@ def capture_glyphs(
             fragment_baseline,
             confidence,
         ) in enumerate(fragments):
-            observation = GlyphObservation(
+            observation = styled_observation(
+                style,
                 fragment_text,
                 ink,
                 advance_rect,
@@ -356,10 +384,7 @@ def capture_glyphs(
                 glyph.cid,
                 glyph.gid,
                 effective_font_name,
-                font_size,
                 fragment_baseline,
-                geometry.rotation_angle,
-                paint.fill,
                 observation_visible,
                 confidence,
                 glyph.unicode_source,
@@ -368,28 +393,9 @@ def capture_glyphs(
                 bitmap_width,
                 bitmap_height,
                 bitmap_code,
-                decoder,
-                geometry.effective_font_size,
-                geometry.effective_font_height,
-                provenance,
                 outline_transform,
-                paint.render_mode,
-                paint.fill_opacity,
-                paint.stroke_color,
-                paint.stroke_opacity,
-                paint.line_width,
-                paint.blend_mode,
-                paint.group_alpha,
                 position == 0,
-                text_object_id,
-                paint.line_cap,
-                paint.line_join,
-                paint.dash_pattern,
                 cluster_provenance_id,
-                paint.clip_glyph and not decoder.is_type3,
-                paint.alpha_is_shape,
-                decoder.is_type3,
-                paint.graphics_soft_mask,
             )
             append_glyph(observation)
             if want_runs:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from contextlib import suppress
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import hypot, isfinite
 from typing import TYPE_CHECKING, Any, TypeAlias
 
@@ -1306,8 +1306,8 @@ class TextState(RecoveringTextState):
                 if drawing.kind in {"stroke", "fillstroke"}:
                     drawing.stroke_color = base_color
             for glyph in nested.glyphs:
-                glyph.fill = base_color
-                glyph.stroke_color = base_color
+                # One copy of the shared style, not one per field.
+                glyph.style = replace(glyph.style, fill=base_color, stroke_color=base_color)
         return TilingPattern(
             pattern.bbox,
             pattern.x_step,
