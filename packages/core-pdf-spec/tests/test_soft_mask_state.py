@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -65,7 +65,7 @@ def make_group(**entries: object) -> PdfStream:
 
 
 def make_mask(group: PdfStream | None = None, **entries: object) -> PdfDict:
-    return {"S": PdfName.of("Alpha"), "G": group or make_group(), **entries}
+    return cast(PdfDict, {"S": PdfName.of("Alpha"), "G": group or make_group(), **entries})
 
 
 def test_alpha_descriptor_preserves_group_identity_without_decoding_or_resource_traversal() -> None:

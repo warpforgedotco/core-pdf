@@ -45,7 +45,7 @@ def test_knockout_is_independent_boolean_group_attribute(
     isolated: bool, knockout: object, indirect: bool
 ) -> None:
     state, _ = make_state()
-    group: PdfDict = {"S": PdfName.of("Transparency"), "I": isolated}
+    group: dict[str, Any] = {"S": PdfName.of("Transparency"), "I": isolated}
     if knockout is not None:
         state.resolver.objects[key_for(1, 0)] = knockout  # ty: ignore[unresolved-attribute]
         group["K"] = PdfReference(1, 0) if indirect else knockout

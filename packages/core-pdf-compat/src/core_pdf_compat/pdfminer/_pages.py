@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Iterator
 from functools import partial
-from typing import Any
+from typing import Any, cast
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf.impl.document.recovery.lexer import PdfLexer
@@ -207,7 +207,8 @@ def pdfminer_resolvable_pages(  # noqa: C901
     if start is None:
         yield from fallback_projection()
         return
-    section_start = start
+    # Declared, so the reassignment from a trailer value below cannot widen it.
+    section_start: int = start
     section_pos = XRefScanner.skip_ws(data, section_start)
     section_is_direct = data[section_pos : section_pos + 4] == b"xref"
     section_is_stream = re.match(rb"\d+\s+\d+\s+obj\b", data[section_pos:]) is not None
@@ -244,13 +245,14 @@ def pdfminer_resolvable_pages(  # noqa: C901
             previous = section.trailer.get("Prev")
             xref_stream = section.trailer.get("XRefStm") if section.kind == "table" else None
             if xref_stream is not None:
-                supplemental = read_section(xref_stream, stream_only=True)  # type: ignore[arg-type]
+                supplemental = read_section(cast(int, xref_stream), stream_only=True)
                 entries = dict(entries)
                 entries.update(supplemental.entries)
             xref_sections.append(entries)
             if previous is None:
                 break
-            section_start = previous  # type: ignore[assignment]
+            # Any value goes on to read_section, which rejects a non-integer.
+            section_start = cast(int, previous)
     except Exception:
         xref_sections = [strict_xref]
 

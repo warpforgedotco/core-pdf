@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -27,7 +27,7 @@ def test_annotation_validation_and_recovery(
             if malformation == "entry"
             else [malformed, valid]
         )
-        document.build_page_dicts()[0]["Annots"] = annots
+        document.build_page_dicts()[0]["Annots"] = cast(Any, annots)
         page = document.pages[0]
         discovered = page.annotation_dicts()
         assert discovered[-1] is valid
