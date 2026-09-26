@@ -2521,6 +2521,10 @@ class RasterTarget:
             return
         edges: list[tuple[float, float, float, float]] | None
         if edge_array is None:
+            # A flattened path's edges come as an array from its point
+            # columns, without building its subpaths.
+            edge_array = path.fill_edge_array()
+        if edge_array is None:
             edges = path.fill_edges()
             if not edges:
                 return

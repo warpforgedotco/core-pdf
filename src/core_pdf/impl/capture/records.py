@@ -320,38 +320,32 @@ class CapturedPath:
 
     def axis_aligned_rect(self) -> Rectangle | None:
         deferred = self._deferred
-        if deferred is not None and deferred[3]:
-            # A rectangle is one subpath of exactly four points. The kernel has
-            # already dropped any duplicated closing point, so the span lengths
-            # are final and this settles it without building anything.
-            spans = deferred[2]
-            if len(spans) != 1 or spans[0][1] - spans[0][0] != 4:
+        if deferred is not None:
+            # Settled from the spans and the last one's points, without
+            # building a subpath: flattened paths reach here several thousand
+            # times a page, and building them all to answer no cost 15us each.
+            column_x, column_y, spans, outline = deferred
+            if not spans:
                 return None
+            start, end, flag = spans[-1]
+            if outline and (len(spans) != 1 or end - start != 4):
+                # A rectangle is one subpath of exactly four points, and the
+                # outline kernel has already dropped a duplicated closing one.
+                return None
+            # The path's only subpath with segments must be its last.
+            if end - start < 2 or any(e - s > 1 for s, e, _ in spans[:-1]):
+                return None
+            if end - start > 5:
+                return None
+            points = list(
+                zip(column_x[start:end].tolist(), column_y[start:end].tolist(), strict=True)
+            )
+            return rect_from_points(points, outline or flag)
         segment_subpaths = [subpath for subpath in self.subpaths if subpath.has_segments()]
         if len(segment_subpaths) != 1 or self.subpaths[-1] is not segment_subpaths[0]:
             return None
         subpath = segment_subpaths[0]
-        points = list(subpath.points)
-        if len(points) >= 2 and points[0] == points[-1]:
-            points.pop()
-        if len(points) != 4:
-            return None
-        if not subpath.closed and subpath.points[0] != subpath.points[-1]:
-            return None
-        xs = {point[0] for point in points}
-        ys = {point[1] for point in points}
-        if len(xs) != 2 or len(ys) != 2:
-            return None
-        x0, x1 = min(xs), max(xs)
-        y0, y1 = min(ys), max(ys)
-        if x1 <= x0 or y1 <= y0:
-            return None
-        if set(points) != {(x0, y0), (x0, y1), (x1, y0), (x1, y1)}:
-            return None
-        for (px0, py0), (px1, py1) in zip(points, points[1:] + points[:1], strict=False):
-            if px0 != px1 and py0 != py1:
-                return None
-        return (x0, y0, x1, y1)
+        return rect_from_points(subpath.points, subpath.closed)
 
     def rect(self, x: float, y: float, w: float, h: float) -> None:
         self.subpaths.append(
@@ -370,6 +364,41 @@ class CapturedPath:
         if self._deferred is not None and self._summary is not None:
             return self._summary[0]
         return bbox_union(box for subpath in self.subpaths if (box := subpath.bbox()))
+
+    def fill_edge_array(self) -> numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None:
+        """fill_edges as an (n, 4) array, for a deferred path; None for any other.
+
+        The edges come straight from the point columns, in fill_edges' order:
+        each subpath's consecutive pairs, then its closing edge when its last
+        point differs from its first. No subpath is built.
+        """
+        deferred = self._deferred
+        if deferred is None:
+            return None
+        column_x, column_y, spans, _ = deferred
+        starts: list[int] = []
+        ends: list[int] = []
+        closing: list[bool] = []
+        for start, end, _flag in spans:
+            if end - start < 2:
+                continue
+            starts.extend(range(start, end - 1))
+            ends.extend(range(start + 1, end))
+            closing.extend([False] * (end - 1 - start))
+            starts.append(end - 1)
+            ends.append(start)
+            closing.append(True)
+        if not starts:
+            return numpy.empty((0, 4), dtype=numpy.float64)
+        first = numpy.asarray(starts, dtype=numpy.intp)
+        second = numpy.asarray(ends, dtype=numpy.intp)
+        x0 = column_x[first]
+        y0 = column_y[first]
+        x1 = column_x[second]
+        y1 = column_y[second]
+        # A closing edge is kept where the points differ, as tuples compare.
+        keep = ~numpy.asarray(closing, dtype=numpy.bool_) | (x0 != x1) | (y0 != y1)
+        return numpy.column_stack((x0, y0, x1, y1))[keep]
 
     def fill_edges(self) -> list[tuple[float, float, float, float]]:
         edges: list[tuple[float, float, float, float]] = []
@@ -544,3 +573,28 @@ __all__ = (
     "ShadingPattern",
     "TilingPattern",
 )
+
+
+def rect_from_points(subpath_points: list[tuple[float, float]], closed: bool) -> Rectangle | None:
+    """The rectangle one subpath's points trace, axis-aligned, or None."""
+    points = list(subpath_points)
+    if len(points) >= 2 and points[0] == points[-1]:
+        points.pop()
+    if len(points) != 4:
+        return None
+    if not closed and subpath_points[0] != subpath_points[-1]:
+        return None
+    xs = {point[0] for point in points}
+    ys = {point[1] for point in points}
+    if len(xs) != 2 or len(ys) != 2:
+        return None
+    x0, x1 = min(xs), max(xs)
+    y0, y1 = min(ys), max(ys)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    if set(points) != {(x0, y0), (x0, y1), (x1, y0), (x1, y1)}:
+        return None
+    for (px0, py0), (px1, py1) in zip(points, points[1:] + points[:1], strict=False):
+        if px0 != px1 and py0 != py1:
+            return None
+    return (x0, y0, x1, y1)
