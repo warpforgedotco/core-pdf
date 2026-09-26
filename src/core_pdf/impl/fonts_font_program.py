@@ -5,7 +5,7 @@ import re
 import struct
 import threading
 from abc import abstractmethod
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from io import BytesIO
 from math import inf, isfinite
 from typing import Any, ClassVar, TypeAlias
@@ -24,6 +24,7 @@ from core_adobe_fonts.cff.font import CFFFont as PdfCFFFont
 from core_adobe_fonts.cff.font import (
     cff_font_matrix as pdf_cff_font_matrix,
 )
+from core_adobe_fonts.type1.program import binary_entries, eexec_ciphertext
 from core_adobe_fonts.type1.program import parse_type1_font_program_encoding as parse_encoding
 from core_pdf._vendor.fontTools.cffLib import (
     cffExpertSubsetStrings,
@@ -1709,42 +1710,23 @@ FONT_MATRIX_RE = re.compile(
 )
 SUBR_RE = re.compile(rb"\bdup\s+(\d+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
 CHARSTRING_RE = re.compile(rb"/([^\s/]+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
-HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
 MAX_SUBROUTINES = 4096
 
 
-def type1_binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> Iterator[tuple[bytes, bytes]]:
-    """Each `pattern` match's name and the binary payload after it; truncated ones are skipped."""
-    for match in pattern.finditer(data):
-        length = int(match.group(2))
-        start = match.end()
-        if length >= 0 and start + length <= len(data):
-            yield match.group(1), data[start : start + length]
-
-
 def type1_charstring(encrypted: bytes, len_iv: int, subrs: list[T1CharString]) -> T1CharString:
-    decoded = decrypt_type1(encrypted, 4330)
-    return T1CharString(decoded[len_iv:] if len_iv >= 0 else decoded, subrs=subrs)
+    """core_adobe_fonts' decode_charstring, decrypted with the compiled kernel.
+
+    A lenIV of -1 says the charstring is not encrypted. A charstring shorter
+    than its lenIV prefix decodes to nothing rather than raising.
+    """
+    if len_iv == -1:
+        return T1CharString(encrypted, subrs=subrs)
+    return T1CharString(decrypt_type1(encrypted, 4330)[len_iv:], subrs=subrs)
 
 
 def eexec_payload(data: bytes, length1: int | None) -> bytes:
-    if length1 is not None and 0 < length1 < len(data):
-        encrypted = data[length1:]
-    else:
-        marker = data.find(b"currentfile eexec")
-        if marker < 0:
-            raise ValueError("Type 1 eexec section is missing")
-        encrypted = data[marker + len(b"currentfile eexec") :].lstrip()
-    sample = encrypted[: min(len(encrypted), 512)]
-    if sample and all(byte in HEX_BYTES for byte in sample):
-        compact = bytes(byte for byte in encrypted if byte not in b" \t\r\n")
-        if len(compact) % 2:
-            compact = compact[:-1]
-        try:
-            encrypted = bytes.fromhex(compact.decode("ascii"))
-        except ValueError as exc:
-            raise ValueError("invalid hexadecimal Type 1 eexec section") from exc
-    decrypted = decrypt_type1(encrypted, 55665)
+    """core_adobe_fonts' decode_eexec_payload, tolerant, decrypted with the compiled kernel."""
+    decrypted = decrypt_type1(eexec_ciphertext(data, length1, tolerant=True), 55665)
     if len(decrypted) < 4:
         raise ValueError("truncated Type 1 eexec section")
     return decrypted[4:]
@@ -1767,7 +1749,8 @@ class Type1FontProgram(BitmapFromContours):
             raise ValueError("invalid Type 1 lenIV")
 
         subr_data = {
-            int(index): payload for index, payload in type1_binary_entries(private, SUBR_RE)
+            int(index): payload
+            for index, payload in binary_entries(private, SUBR_RE, skip_truncated=True)
         }
         subr_count = max(subr_data, default=-1) + 1
         if subr_count > MAX_SUBROUTINES:
@@ -1782,7 +1765,7 @@ class Type1FontProgram(BitmapFromContours):
 
         charstrings = {
             name.decode("latin-1"): payload
-            for name, payload in type1_binary_entries(private, CHARSTRING_RE)
+            for name, payload in binary_entries(private, CHARSTRING_RE, skip_truncated=True)
         }
         self.charstrings = {
             name: type1_charstring(encrypted, len_iv, subrs)
