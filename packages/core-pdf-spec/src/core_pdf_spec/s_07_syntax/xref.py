@@ -20,7 +20,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
 from core_pdf_spec.s_07_syntax_primitives.numbers import parse_identifier_tokens
-from core_pdf_spec.s_07_syntax_primitives.tokens import lexical_rules
+from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules, lexical_rules
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfByteBuffer
 from core_records import Record, frozen_setattr
@@ -187,6 +187,19 @@ def canonical_table_entries(
     return dict(zip(keys, entries))
 
 
+WHITESPACE_TRANSLATIONS: dict[bytes, bytes] = {}
+
+
+def whitespace_to_space(rules: LexicalRules) -> bytes:
+    """A bytes.translate table mapping each of the rules' whitespace to a space."""
+    table = WHITESPACE_TRANSLATIONS.get(rules.whitespace)
+    if table is None:
+        table = WHITESPACE_TRANSLATIONS[rules.whitespace] = bytes.maketrans(
+            rules.whitespace, b" " * len(rules.whitespace)
+        )
+    return table
+
+
 def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
     offset, generation, in_use, _ = parse_xref_entry_at(line, 0)
     return offset, generation, in_use
@@ -274,7 +287,6 @@ class XRefScanner:
         semantic_context: SemanticContext | None = None,
     ) -> tuple[XRefTable, PdfDict]:
         rules = lexical_rules(semantic_context)
-        translation = bytes.maketrans(rules.whitespace, b" " * len(rules.whitespace))
         pos = cls.skip_ws(data, start_pos, semantic_context=semantic_context)
         if data[pos : pos + 4] != b"xref":
             raise PdfParseError("expected xref table")
@@ -289,19 +301,18 @@ class XRefScanner:
             if line.startswith(b"trailer"):
                 pos += len(b"trailer")
                 break
-            if line.lstrip(rules.whitespace).startswith(b"<<"):
-                raise PdfParseError("expected trailer keyword")
+            if cls.trailer_without_keyword(line, rules):
+                break
             if 11 in line:
                 raise PdfParseError("invalid xref table subsection")
-            normalized = line.translate(translation)
-            parts = [part for part in normalized.split(b" ") if part]
+            parts = cls.subsection_line_parts(line, rules)
             if not parts:
                 pos = next_pos
                 continue
             if len(parts) == 2:
                 try:
-                    start_obj = parse_int_strict(parts[0], "invalid PDF integer")
-                    num_objs = parse_int_strict(parts[1], "invalid PDF integer")
+                    start_obj = cls.parse_subsection_integer(parts[0])
+                    num_objs = cls.parse_subsection_integer(parts[1])
                 except ValueError as error:
                     raise PdfParseError("invalid xref table subsection") from error
                 if start_obj < 0 or num_objs < 0:
@@ -310,17 +321,14 @@ class XRefScanner:
                 if num_objs > 0:
                     max_object_number = max(max_object_number, start_obj + num_objs - 1)
                 subsection, pos, maximum = cls.read_subsection(data, pos, start_obj, num_objs)
-                numbers = {key >> 16 for key in subsection}
-                if not object_numbers.isdisjoint(numbers):
-                    raise PdfParseError("overlapping xref table subsections")
-                object_numbers.update(numbers)
+                cls.check_subsection_overlap(object_numbers, subsection)
                 entries.update(subsection)
                 max_object_number = max(max_object_number, maximum)
 
             else:
                 raise PdfParseError("invalid xref table subsection")
 
-        lexer = PdfLexer(data, semantic_context=semantic_context) if lexer is None else lexer
+        lexer = cls.create_trailer_lexer(data, semantic_context) if lexer is None else lexer
         if semantic_context is not None:
             lexer.semantic_context = semantic_context
         lexer.pos = cls.skip_ws(data, pos, semantic_context=semantic_context)
@@ -330,6 +338,41 @@ class XRefScanner:
             lexer.close()
         trailer_dict = cls.validate_trailer_size(trailer_dict, max_object_number)
         return entries, trailer_dict
+
+    @staticmethod
+    def trailer_without_keyword(line: bytes, rules: LexicalRules) -> bool:
+        """Whether line starts the trailer dictionary without the trailer
+        keyword before it, which 7.5.5 requires: strict parsing raises."""
+        if line.lstrip(rules.whitespace).startswith(b"<<"):
+            raise PdfParseError("expected trailer keyword")
+        return False
+
+    @staticmethod
+    def subsection_line_parts(line: bytes, rules: LexicalRules) -> list[bytes]:
+        """The words of a subsection header line, split at PDF whitespace."""
+        return [part for part in line.translate(whitespace_to_space(rules)).split(b" ") if part]
+
+    @staticmethod
+    def parse_subsection_integer(token: bytes) -> int:
+        """A subsection header's first object number or count; ValueError if
+        it is not a PDF integer."""
+        return parse_int_strict(token, "invalid PDF integer")
+
+    @staticmethod
+    def check_subsection_overlap(object_numbers: set[int], subsection: XRefTable) -> None:
+        """Record subsection's object numbers in object_numbers, raising if
+        an earlier subsection of the section already listed one."""
+        numbers = {key >> 16 for key in subsection}
+        if not object_numbers.isdisjoint(numbers):
+            raise PdfParseError("overlapping xref table subsections")
+        object_numbers.update(numbers)
+
+    @classmethod
+    def create_trailer_lexer(
+        cls, data: PdfByteBuffer, semantic_context: SemanticContext | None
+    ) -> PdfLexer:
+        """The lexer that reads the trailer dictionary after the table."""
+        return PdfLexer(data, semantic_context=semantic_context)
 
     @classmethod
     def read_subsection(
