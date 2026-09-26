@@ -19,4 +19,4 @@ def malformed_policy(recover: bool) -> MalformedFn:
     return skip_malformed if recover else raise_malformed
 
 
-__all__ = ("MalformedFn", "malformed_policy", "raise_malformed", "skip_malformed")
+__all__ = ("MalformedFn", "malformed_policy")
