@@ -42,7 +42,7 @@ class SkippingInterpreter(ContentInterpreter):
 
 def chain(length: int) -> PdfDict:
     """Forms F0 .. F{length-1}, each drawing the next."""
-    forms: dict[str, PdfStream] = {}
+    forms: PdfDict = {}
     resources: PdfDict = {"XObject": forms}
     for index in range(length):
         forms[f"F{index}"] = form(f"/F{index + 1} Do".encode() if index + 1 < length else b"")
