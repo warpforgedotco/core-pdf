@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import typing
 from collections.abc import Mapping
-from math import isfinite
 
 from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.fonts_helpers import strip_subset_tag
@@ -100,10 +99,6 @@ COLOR_CACHE_LIMIT = 4096
 # and refill on exactly the pages this exists for: that page peaks at 2,397
 # entries, and reaches it without a single clear at this limit.
 SOFT_MASK_CACHE_LIMIT = COLOR_CACHE_LIMIT
-
-
-# Exactly these: bool subclasses int and must keep failing as it does.
-NUMERIC_TYPES = frozenset((int, float))
 
 
 class RecoveringTextState(ContentInterpreter):
@@ -252,76 +247,6 @@ class RecoveringTextState(ContentInterpreter):
         except (ValueError, TypeError) as error:
             base = value[0] if isinstance(value, (list, tuple)) and value else value
             return self.reject(error, "color-space", ColorSpace(recover_pdf_name(base) or name, ()))
-
-    def as_floats(self, operands: ContentOperands, count: int) -> tuple[float, ...] | None:
-        if len(operands) < count:
-            return self.reject(PdfParseError("missing numeric operand"), "numeric-operands", None)
-        # The content tokenizer already produced int and float operands, but
-        # reaching them through as_float costs four call frames each
-        # (as_float -> parse_float_strict -> parse_float) to re-derive a value
-        # that is already a float. Path operators run this per segment, so the
-        # already-numeric cases are handled inline and anything else still
-        # falls back to the full coercion.
-        # Operands that are exactly the finite floats asked for already form
-        # the tuple the loop below would build, so it is returned as it is.
-        if len(operands) == count and type(operands) is tuple:
-            for value in operands:
-                if type(value) is not float or not isfinite(value):
-                    break
-            else:
-                return operands  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
-            # Ints and floats alike -- "0 0 612 792 re", a glyph procedure's
-            # integer curves -- convert in C: float() of each, the value the
-            # loop below appends, then its finiteness. An overflow or a
-            # non-finite value falls through to the loop, which raises as it
-            # always has.
-            if all(map(NUMERIC_TYPES.__contains__, map(type, operands))):
-                try:
-                    converted = tuple(map(float, operands))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                except OverflowError:
-                    pass
-                else:
-                    if all(map(isfinite, converted)):
-                        return converted
-        try:
-            values: list[float] = []
-            append = values.append
-            for index in range(count):
-                value = operands[index]
-                kind = type(value)
-                # `type(...) is int` rather than isinstance: bool subclasses
-                # int and must keep failing the way the full coercion fails it.
-                # No typing.cast around these: `kind is float` has already
-                # established the type for a reader, and cast is a function
-                # call that returns its argument, run here once per operand of
-                # every path segment on the page.
-                if kind is float:
-                    if not isfinite(value):  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                        raise ValueError("invalid numeric operand")
-                    append(value)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                elif kind is int:
-                    try:
-                        append(float(value))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                    except OverflowError:
-                        raise ValueError("invalid numeric operand") from None
-                else:
-                    append(self.as_float(value))
-            return tuple(values)
-        except (TypeError, ValueError) as error:
-            return self.reject(error, "numeric-operands", None)
-
-    def as_int_operand(self, operands: ContentOperands) -> int | None:
-        if not operands:
-            return self.reject(PdfParseError("missing numeric operand"), "integer-operand", None)
-        value = operands[0]
-        # An int operand is its own answer; as_int's three frames only reach
-        # the same `type(value) is int` test. J and j run this per path.
-        if type(value) is int:
-            return value
-        try:
-            return self.as_int(value)
-        except (TypeError, ValueError) as error:
-            return self.reject(error, "integer-operand", None)
 
     def recover_color_components(
         self, components: typing.Sequence[object]

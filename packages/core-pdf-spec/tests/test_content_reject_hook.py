@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from _content_support import make_interpreter
 
@@ -128,3 +130,54 @@ def test_a_recovering_hook_moves_to_the_end_of_a_curve_without_a_point() -> None
     assert state.current_point == (5.0, 6.0)
     assert not state.current_path.ops
     assert [context for context, _message in state.rejected] == ["path"]
+
+
+NUMERIC_OPERANDS = [
+    (1.5, -2.0),
+    (1, 2),
+    (1, 2.5),
+    [1.0, 2.0],
+    (1.0, 2.0, 3.0),
+    (1.0,),
+    (float("nan"), 1.0),
+    (1.0, float("inf")),
+    (10**400, 1.0),
+    (True, 1.0),
+    ("1", 1.0),
+]
+
+
+@pytest.mark.parametrize("operands", NUMERIC_OPERANDS, ids=repr)
+def test_as_floats_matches_as_float_or_refuses_as_it_does(operands: Any) -> None:
+    state = make_interpreter()
+    try:
+        expected: object = tuple(state.as_float(value) for value in operands[:2])
+        if len(operands) < 2:
+            expected = PdfParseError
+    except PdfParseError:
+        expected = PdfParseError
+    if expected is PdfParseError:
+        with pytest.raises(PdfParseError, match="numeric operand"):
+            state.as_floats(operands, 2)
+        recovered = recovering()
+        assert recovered.as_floats(operands, 2) is None
+        assert [context for context, _message in recovered.rejected] == ["numeric-operands"]
+    else:
+        result = state.as_floats(operands, 2)
+        assert result == expected
+        assert result is not None
+        assert all(type(value) is float for value in result)
+
+
+@pytest.mark.parametrize(
+    ("operands", "expected"), [((2, 9), 2), ((), None), ((True,), None), ((2.0,), None)]
+)
+def test_as_int_operand_accepts_only_an_integer(operands: Any, expected: int | None) -> None:
+    state = recovering()
+    assert state.as_int_operand(operands) == expected
+    assert [context for context, _ in state.rejected] == (
+        [] if expected is not None else ["integer-operand"]
+    )
+    if expected is None:
+        with pytest.raises(PdfParseError, match="numeric operand|integer operand"):
+            make_interpreter().as_int_operand(operands)

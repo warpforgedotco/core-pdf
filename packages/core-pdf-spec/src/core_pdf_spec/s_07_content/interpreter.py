@@ -5,6 +5,7 @@ from __future__ import annotations
 import typing
 from collections.abc import Callable
 from copy import copy
+from math import isfinite
 from typing import Any, ClassVar
 
 from core_pdf_spec.exceptions import PdfParseError
@@ -59,6 +60,9 @@ from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontProvider, Fon
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
+
+# Exactly these: bool subclasses int and must keep failing as_float.
+NUMERIC_TYPES = frozenset((int, float))
 
 
 def moved_to(matrix: Matrix, e: float, f: float) -> Matrix:
@@ -1036,9 +1040,59 @@ class ContentInterpreter:
         raise PdfParseError("numeric operand must be a PDF number")
 
     def as_floats(self, operands: ContentOperands, count: int) -> tuple[float, ...] | None:
+        """The first `count` operands as floats, or the reject hook's None.
+
+        A missing operand, or one as_float refuses, is rejected (context
+        "numeric-operands"); a recovering reader skips the operator.
+        """
         if len(operands) < count:
-            raise PdfParseError("missing numeric operand")
-        return tuple(self.as_float(operand) for operand in operands[:count])
+            return self.reject(PdfParseError("missing numeric operand"), "numeric-operands", None)
+        # The tokenizer already produced int and float operands, and reaching
+        # them through as_float costs call frames to re-derive a value that is
+        # already a float. Path operators run this per segment, so the
+        # already-numeric cases are handled inline: each gives the value
+        # as_float would, and anything else still goes through as_float.
+        # Operands that are exactly the finite floats asked for already form
+        # the tuple, so it is returned as it is.
+        if len(operands) == count and type(operands) is tuple:
+            for value in operands:
+                if type(value) is not float or not isfinite(value):
+                    break
+            else:
+                return operands  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+            # Ints and floats alike -- "0 0 612 792 re", a glyph procedure's
+            # integer curves -- convert in C. An overflow or a non-finite
+            # value falls through to the loop, which refuses it.
+            if all(map(NUMERIC_TYPES.__contains__, map(type, operands))):
+                try:
+                    converted = tuple(map(float, operands))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                except OverflowError:
+                    pass
+                else:
+                    if all(map(isfinite, converted)):
+                        return converted
+        try:
+            values: list[float] = []
+            append = values.append
+            for index in range(count):
+                value = operands[index]
+                kind = type(value)
+                # `type(...) is int` rather than isinstance: bool subclasses
+                # int and must keep failing the way as_float fails it. No
+                # typing.cast around these: `kind is float` has already
+                # established the type, and cast is a call per operand.
+                if kind is float and isfinite(value):  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                    append(value)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                elif kind is int:
+                    try:
+                        append(float(value))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                    except OverflowError:
+                        append(self.as_float(value))
+                else:
+                    append(self.as_float(value))
+            return tuple(values)
+        except (TypeError, ValueError, PdfParseError) as error:
+            return self.reject(error, "numeric-operands", None)
 
     @staticmethod
     def as_int(value: Any) -> int:
@@ -1047,9 +1101,17 @@ class ContentInterpreter:
         raise PdfParseError("integer operand must be a PDF integer")
 
     def as_int_operand(self, operands: ContentOperands) -> int | None:
+        """The first operand as an int, or the reject hook's None ("integer-operand")."""
         if not operands:
-            raise PdfParseError("missing numeric operand")
-        return self.as_int(operands[0])
+            return self.reject(PdfParseError("missing numeric operand"), "integer-operand", None)
+        value = operands[0]
+        # An int operand is its own answer; J and j run this per path.
+        if type(value) is int:
+            return value
+        try:
+            return self.as_int(value)
+        except (TypeError, ValueError, PdfParseError) as error:
+            return self.reject(error, "integer-operand", None)
 
     def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
         extgstate = self.resolver.resolve(self.lookup_page_resource("ExtGState", name))
