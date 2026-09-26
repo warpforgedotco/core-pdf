@@ -24,6 +24,7 @@ def calculator(program: bytes, **extra: object) -> PdfStream:
 @pytest.fixture(autouse=True)
 def empty_cache() -> None:
     image_samples.TINT_FUNCTION_CACHE.clear()
+    image_samples.TINT_FUNCTION_OBJECTS.clear()
 
 
 def test_equal_streams_share_one_compiled_function() -> None:
@@ -78,3 +79,17 @@ def test_a_dictionary_with_references_is_cached_by_object_alone() -> None:
 def test_names_and_arrays_key_by_content() -> None:
     stream = calculator(b"{ 2 mul }", Name=PdfName(b"X"), Size=[2, 3])
     assert tint_function_key(stream) is not None
+
+
+def test_the_same_object_is_found_without_its_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    stream = calculator(b"{ 2 mul }")
+    other = calculator(b"{ 2 mul }")
+    function = tint_function(stream)
+    assert tint_function(other) is function
+    keys: list[object] = []
+    monkeypatch.setattr(
+        image_samples, "tint_function_key", lambda tint_fn: keys.append(tint_fn) or None
+    )
+    assert tint_function(stream) is function
+    assert tint_function(other) is function
+    assert keys == []
