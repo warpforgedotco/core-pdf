@@ -1378,6 +1378,10 @@ class RasterTarget:
         dst_r = dr / 255.0
         dst_g = dg / 255.0
         dst_b = db / 255.0
+        # The same formulas as render_blend.blend_channels_f64, kept scalar
+        # on purpose: one pixel through numpy costs far more than this.
+        # test_scalar_blend_agreement_contracts pins the two to the same
+        # bytes; change one and change the other.
         if mode == "multiply":
             src_r = src_r * (1.0 - dst_a) + dst_a * (src_r * dst_r)
             src_g = src_g * (1.0 - dst_a) + dst_a * (src_g * dst_g)

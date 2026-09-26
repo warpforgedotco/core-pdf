@@ -84,6 +84,8 @@ def blend_channels_f64(
     *,
     semantic_context: SemanticContext | None = None,
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    # RasterTarget.blend_px repeats these formulas for one pixel at a time;
+    # test_scalar_blend_agreement_contracts keeps the two in step.
     one_minus_src_a = 1.0 - src_a
     dst_a = da / 255.0
     if mode == "multiply":
