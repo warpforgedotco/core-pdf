@@ -184,12 +184,12 @@ class PageExtraction:
 
     def assembled_page(self, context: ExtractionScope) -> Page:
         capture = self.capture
-        policy = self.reading_order
+        full_page_image = capture.evidence.full_page_image
         products = self.run(context)
         blocks = products.blocks
         figures = (
             ()
-            if policy.full_page_image
+            if full_page_image
             else tuple(
                 Figure(order=index, bbox=box, kind="image", metadata={"source": "capture"})
                 for index, box in enumerate(capture.evidence.image_boxes)
@@ -205,7 +205,7 @@ class PageExtraction:
             tables=products.tables,
             figures=figures,
             diagnostics=(("reading-order-ambiguous",) if products.order_ambiguous else ()),
-            full_page_image=policy.full_page_image,
+            full_page_image=full_page_image,
             drawings=capture.program.drawings,
         )
         resolver = self.page.document.resolver

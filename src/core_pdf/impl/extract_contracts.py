@@ -745,23 +745,20 @@ IMAGE_MAX_AREA = 0.65
 class ReadingOrderPolicy(Record):
     """How a page's content is put in reading order, decided once from its evidence."""
 
-    __slots__ = ("use_xy_cut", "full_page_image", "image_obstacles")
+    __slots__ = ("use_xy_cut", "image_obstacles")
 
     use_xy_cut: bool
-    full_page_image: bool
     image_obstacles: tuple[tuple[float, float, float, float], ...]
 
-    __fields__: ClassVar[tuple[str, ...]] = ("use_xy_cut", "full_page_image", "image_obstacles")
-    __match_args__ = ("use_xy_cut", "full_page_image", "image_obstacles")
+    __fields__: ClassVar[tuple[str, ...]] = ("use_xy_cut", "image_obstacles")
+    __match_args__ = ("use_xy_cut", "image_obstacles")
 
     def __init__(
         self,
         use_xy_cut: bool = True,
-        full_page_image: bool = False,
         image_obstacles: tuple[tuple[float, float, float, float], ...] = (),
     ) -> None:
         frozen_setattr(self, "use_xy_cut", use_xy_cut)
-        frozen_setattr(self, "full_page_image", full_page_image)
         frozen_setattr(self, "image_obstacles", image_obstacles)
 
     def __eq__(self, other: object) -> bool:
@@ -769,14 +766,10 @@ class ReadingOrderPolicy(Record):
             return True
         if other.__class__ is not self.__class__:
             return NotImplemented
-        return (
-            self.use_xy_cut == other.use_xy_cut
-            and self.full_page_image == other.full_page_image
-            and self.image_obstacles == other.image_obstacles
-        )
+        return self.use_xy_cut == other.use_xy_cut and self.image_obstacles == other.image_obstacles
 
     def __hash__(self) -> int:
-        return hash((self.use_xy_cut, self.full_page_image, self.image_obstacles))
+        return hash((self.use_xy_cut, self.image_obstacles))
 
     @classmethod
     def from_evidence(cls, evidence: PageEvidence) -> ReadingOrderPolicy:
@@ -785,7 +778,6 @@ class ReadingOrderPolicy(Record):
                 evidence.image_count >= TILED_PAGE_MIN_IMAGES
                 and TILED_PAGE_MIN_IMAGE_AREA <= evidence.image_area_ratio < IMAGE_MAX_AREA
             ),
-            full_page_image=evidence.full_page_image,
             image_obstacles=tuple(
                 box
                 for box in evidence.image_boxes
