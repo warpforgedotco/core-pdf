@@ -133,7 +133,7 @@ class PdfPage:
         malformed = self.document.recovery.malformed
         results = []
         for annot in self._annotation_dicts(strict=True):
-            subtype = self.document.resolver.resolve_name(annot.get("Subtype"))
+            subtype = self.document.resolver.name_at(annot, "Subtype")
             try:
                 rect = self.document.resolver.resolve_box(annot.get("Rect"))
             except ValueError:
@@ -170,7 +170,7 @@ class PdfPage:
         resolve = self.document.resolve
         records: list[RawLink] = []
         for annot in annots:
-            subtype = resolver.resolve_name(annot.get("Subtype"))
+            subtype = resolver.name_at(annot, "Subtype")
             if subtype != "Link":
                 continue
 
@@ -186,7 +186,7 @@ class PdfPage:
             link_type = None
             url = None
             if isinstance(action, dict):
-                link_type = resolver.resolve_name(action.get("S"))
+                link_type = resolver.name_at(action, "S")
                 url = link_target(resolver, action, link_type)
 
             records.append(
@@ -334,12 +334,13 @@ class PdfPage:
         return media if clip[0] >= clip[2] or clip[1] >= clip[3] else clip
 
     def resolve_transparency_group_alpha(self) -> float | None:
-        group = self.document.resolver.resolve(self.page_dict.get("Group"))
-        if not isinstance(group, dict):
+        resolver = self.document.resolver
+        group = resolver.dict_at(self.page_dict, "Group")
+        if group is None:
             return None
-        if self.document.resolver.resolve_name(group.get("S")) != "Transparency":
+        if resolver.name_at(group, "S") != "Transparency":
             return None
-        ca = self.document.resolver.resolve_float(group.get("ca"), default=None)
+        ca = resolver.float_at(group, "ca", None)
         if ca is None:
             return None
         return clamp01(ca)

@@ -314,7 +314,7 @@ class StructureElement(StructureNode):
             return None
         if not isinstance(parent, dict):
             raise ValueError("invalid structure parent entry")
-        if self.document.resolver.resolve_name(parent.get("Type")) == "StructTreeRoot":
+        if self.document.resolver.name_at(parent, "Type") == "StructTreeRoot":
             tree = self.document.structure
             if tree is not None and self.page_lookup is not None:
                 tree.page_lookup = self.page_lookup
@@ -552,7 +552,7 @@ def make_kids(
             ktype_value = current.get("Type")
             ktype = document.resolver.resolve_name_or_text(ktype_value)
             if ktype == "MCR":
-                mcid = document.resolver.resolve_int(current.get("MCID"))
+                mcid = document.resolver.int_at(current, "MCID")
                 if mcid is None:
                     malformed("invalid structure content mcid")
                     continue
@@ -563,8 +563,8 @@ def make_kids(
                 )
                 continue
             if ktype == "OBJR":
-                obj = document.resolver.resolve(current.get("Obj"))
-                if not isinstance(obj, dict):
+                obj = document.resolver.dict_at(current, "Obj")
+                if obj is None:
                     malformed("invalid structure object reference")
                     continue
                 yield StructureContentObject(

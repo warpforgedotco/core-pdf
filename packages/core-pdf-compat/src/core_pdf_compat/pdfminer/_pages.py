@@ -384,8 +384,8 @@ def pdfminer_resolvable_pages(  # noqa: C901
         if node_type == "Pages":
             if not valid_reference or duplicate:
                 return
-            kids = document.resolver.resolve(node.get("Kids"))
-            if not isinstance(kids, list):
+            kids = document.resolver.array_at(node, "Kids")
+            if kids is None:
                 return
             for kid in kids:
                 yield from traverse(kid, depth + 1)

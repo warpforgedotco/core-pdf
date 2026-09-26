@@ -536,8 +536,8 @@ class PdfDocument(Generic[PageT]):
         root_ref = self.trailer_dict.get("Root")
         if root_ref is None:
             raise ValueError("missing catalog root")
-        root = self.resolve(root_ref)
-        if not isinstance(root, dict):
+        root = self.resolver.as_dict(root_ref)
+        if root is None:
             raise ValueError("invalid catalog root")
         return root
 
@@ -810,8 +810,8 @@ class PdfDocument(Generic[PageT]):
         pages_ref = self.catalog().get("Pages")
         if pages_ref is None:
             raise ValueError("missing page tree root")
-        pages_node = self.resolver.resolve(pages_ref)
-        if not isinstance(pages_node, dict):
+        pages_node = self.resolver.as_dict(pages_ref)
+        if pages_node is None:
             raise ValueError("invalid page tree root")
         return pages_node
 
@@ -1049,8 +1049,8 @@ class PdfDocument(Generic[PageT]):
         current: object | None = item
         seen: set[int] = set()
         while current is not None:
-            current = self.resolver.resolve(current)
-            if not isinstance(current, dict):
+            current = self.resolver.as_dict(current)
+            if current is None:
                 malformed("invalid outline item")
                 break
             marker = id(current)
@@ -1079,8 +1079,8 @@ class PdfDocument(Generic[PageT]):
                     raise
             first = current.get("First")
             if first is not None:
-                first = self.resolver.resolve(first)
-                if not isinstance(first, dict):
+                first = self.resolver.as_dict(first)
+                if first is None:
                     malformed("invalid outline child")
                     current = current.get("Next")
                     continue
@@ -1189,17 +1189,17 @@ class PdfDocument(Generic[PageT]):
     ) -> dict[str, RawNamedDestination]:
         lookup = self.page_lookup if page_lookup is None else page_lookup
         targets: dict[str, object] = {}
-        dests = self.resolver.resolve(self.catalog().get("Dests"))
-        if isinstance(dests, dict):
+        dests = self.resolver.dict_at(self.catalog(), "Dests")
+        if dests is not None:
             for name, val in dests.items():
                 resolved_name = self.resolver.resolve_name(name)
                 if resolved_name is None:
                     raise ValueError("invalid named destination key")
                 targets[resolved_name] = self.resolver.resolve(val)
-        names = self.resolver.resolve(self.catalog().get("Names"))
-        if isinstance(names, dict):
-            dests_tree = self.resolver.resolve(names.get("Dests"))
-            if isinstance(dests_tree, dict):
+        names = self.resolver.dict_at(self.catalog(), "Names")
+        if names is not None:
+            dests_tree = self.resolver.dict_at(names, "Dests")
+            if dests_tree is not None:
                 targets.update(
                     iter_name_tree_items(
                         dests_tree,
@@ -1315,11 +1315,8 @@ class PdfDocument(Generic[PageT]):
                 if not isinstance(field.kids, list):
                     raise ValueError("invalid field kids array")
                 for kid_ref in field.kids:
-                    kid = self.resolver.resolve(kid_ref)
-                    if (
-                        isinstance(kid, dict)
-                        and self.resolver.resolve_name(kid.get("Subtype")) == "Widget"
-                    ):
+                    kid = self.resolver.as_dict(kid_ref)
+                    if kid is not None and self.resolver.name_at(kid, "Subtype") == "Widget":
                         page_index = widget_page_index(kid)
                         if page_index is not None:
                             page_indexes.add(page_index)
@@ -1349,16 +1346,16 @@ class PdfDocument(Generic[PageT]):
         node = annot
         seen = {id(node)}
         for _ in range(50):
-            parent = self.resolver.resolve(node.get("Parent"))
-            if not isinstance(parent, dict) or id(parent) in seen:
+            parent = self.resolver.dict_at(node, "Parent")
+            if parent is None or id(parent) in seen:
                 break
             seen.add(id(parent))
             node = parent
         return node
 
     def embedded_files(self) -> list[RawEmbeddedFile]:
-        names = self.resolver.resolve(self.catalog().get("Names"))
-        if not isinstance(names, dict):
+        names = self.resolver.dict_at(self.catalog(), "Names")
+        if names is None:
             return []
         embedded_tree = self.resolver.resolve(names.get("EmbeddedFiles"))
         if embedded_tree is None:
@@ -1384,11 +1381,11 @@ class PdfDocument(Generic[PageT]):
         return records
 
     def embedded_file_record(self, name: str, value: object) -> RawEmbeddedFile:
-        filespec = self.resolver.resolve(value)
-        if not isinstance(filespec, dict):
+        filespec = self.resolver.as_dict(value)
+        if filespec is None:
             raise ValueError("invalid embedded file spec")
-        ef = self.resolver.resolve(filespec.get("EF"))
-        if not isinstance(ef, dict):
+        ef = self.resolver.dict_at(filespec, "EF")
+        if ef is None:
             raise ValueError("invalid embedded file stream")
         stream = self.resolver.resolve(ef.get("UF") or ef.get("F"))
         if not isinstance(stream, PdfStream):
@@ -1461,8 +1458,8 @@ class PdfDocument(Generic[PageT]):
                 if not isinstance(refs, list):
                     continue
                 for ref in refs:
-                    ocg_resolved = self.resolver.resolve(ref)
-                    if not isinstance(ocg_resolved, dict):
+                    ocg_resolved = self.resolver.as_dict(ref)
+                    if ocg_resolved is None:
                         malformed(f"invalid OCProperties {override_name} entry")
                         continue
                     key = self.ocg_key(ref, ocg_resolved)
@@ -1471,8 +1468,8 @@ class PdfDocument(Generic[PageT]):
 
         hidden_layers: set[str] = set()
         for ocg_ref in ocgs:
-            ocg_resolved = self.resolver.resolve(ocg_ref)
-            if not isinstance(ocg_resolved, dict):
+            ocg_resolved = self.resolver.as_dict(ocg_ref)
+            if ocg_resolved is None:
                 malformed("invalid OCProperties OCG entry")
                 continue
             name = self.resolver.resolve_str(ocg_resolved.get("Name"))
@@ -1709,13 +1706,13 @@ class PdfDocument(Generic[PageT]):
             semantic_context=self.xref_context,
         )
         try:
-            root = resolver.resolve(root_ref)
-            if not isinstance(root, dict):
+            root = resolver.as_dict(root_ref)
+            if root is None:
                 return False
             if recover_pdf_name(root.get("Type")) != "Catalog":
                 return False
-            pages = resolver.resolve(root.get("Pages"))
-            if not isinstance(pages, dict):
+            pages = resolver.dict_at(root, "Pages")
+            if pages is None:
                 return False
             node_type = resolve_page_tree_node_type(resolver, pages)
             if node_type != "Pages":

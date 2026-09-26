@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, overload
 
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
@@ -19,7 +20,7 @@ from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver as SyntaxResolver
 from core_pdf_spec.s_07_syntax.resources import resolve_resource_dict as resolve_spec_resources
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
+from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject, PdfValueResolver
 from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
@@ -169,6 +170,49 @@ class ObjectResolver(SyntaxResolver):
 
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
         return lenient_int(self.resolve(value), default)
+
+    def as_dict(self, value: object) -> PdfDict | None:
+        resolved = self.resolve(value)
+        return resolved if isinstance(resolved, dict) else None
+
+    def dict_at(self, container: Mapping[Any, object], key: object) -> PdfDict | None:
+        resolved = self.resolve(container.get(key))
+        return resolved if isinstance(resolved, dict) else None
+
+    def array_at(self, container: Mapping[Any, object], key: object) -> PdfArray | None:
+        resolved = self.resolve(container.get(key))
+        return resolved if isinstance(resolved, list) else None
+
+    @overload
+    def int_at(
+        self, container: Mapping[Any, object], key: object, default: None = None
+    ) -> int | None: ...
+
+    @overload
+    def int_at(self, container: Mapping[Any, object], key: object, default: int) -> int: ...
+
+    def int_at(
+        self, container: Mapping[Any, object], key: object, default: int | None = None
+    ) -> int | None:
+        return lenient_int(self.resolve(container.get(key)), default)
+
+    @overload
+    def float_at(
+        self, container: Mapping[Any, object], key: object, default: None
+    ) -> float | None: ...
+
+    @overload
+    def float_at(
+        self, container: Mapping[Any, object], key: object, default: float = 0.0
+    ) -> float: ...
+
+    def float_at(
+        self, container: Mapping[Any, object], key: object, default: float | None = 0.0
+    ) -> float | None:
+        return lenient_float(self.resolve(container.get(key)), default)
+
+    def name_at(self, container: Mapping[Any, object], key: object) -> str | None:
+        return self.resolve_name(container.get(key))
 
     def resolve_box(
         self, value: object, *, python_syntax: bool = True

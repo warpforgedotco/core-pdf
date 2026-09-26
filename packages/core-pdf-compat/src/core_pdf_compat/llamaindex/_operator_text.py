@@ -220,12 +220,14 @@ class OperatorTextProjection:
 
     def collect_fonts(self, resources: Mapping[object, object]) -> dict[str, Font]:
         result: dict[str, Font] = {}
-        fonts = self.resolver.resolve(resources.get("Font"))
-        if not isinstance(fonts, dict):
+        resolver = self.resolver
+        fonts = resolver.dict_at(resources, "Font")
+        if fonts is None:
             return result
+        as_dict = resolver.as_dict
         for name, raw_font in fonts.items():
-            font = self.resolver.resolve(raw_font)
-            if not isinstance(font, dict):
+            font = as_dict(raw_font)
+            if font is None:
                 continue
             self.validate_font_files(font)
             subtype = recover_pdf_name(font.get("Subtype"))
@@ -332,8 +334,8 @@ class OperatorTextProjection:
         return result
 
     def type1_alternative(self, font: Mapping[object, object]) -> dict[int, str]:
-        descriptor = self.resolver.resolve(font.get("FontDescriptor"))
-        if not isinstance(descriptor, dict):
+        descriptor = self.resolver.dict_at(font, "FontDescriptor")
+        if descriptor is None:
             return {}
         font_file = self.resolver.resolve(descriptor.get("FontFile"))
         if not isinstance(font_file, PdfStream):
@@ -350,8 +352,8 @@ class OperatorTextProjection:
     def type3_interpretable(self, font: Mapping[object, object]) -> bool:
         if font.get("ToUnicode") is not None:
             return True
-        char_procs = self.resolver.resolve(font.get("CharProcs"))
-        if not isinstance(char_procs, dict):
+        char_procs = self.resolver.dict_at(font, "CharProcs")
+        if char_procs is None:
             return True
         return all(
             (glyph_name := recover_pdf_name(name)) is not None
@@ -382,14 +384,15 @@ class OperatorTextProjection:
         owners: list[Mapping[object, object]] = [font]
         descendants = self.resolver.resolve(font.get("DescendantFonts"))
         if isinstance(descendants, (list, tuple)):
+            as_dict = self.resolver.as_dict
             owners.extend(
                 descendant
                 for raw_descendant in descendants
-                if isinstance((descendant := self.resolver.resolve(raw_descendant)), dict)
+                if (descendant := as_dict(raw_descendant)) is not None
             )
         for owner in owners:
-            descriptor = self.resolver.resolve(owner.get("FontDescriptor"))
-            if not isinstance(descriptor, dict):
+            descriptor = self.resolver.dict_at(owner, "FontDescriptor")
+            if descriptor is None:
                 continue
             if embedded_font_program_count(descriptor) > 1:
                 raise ValueError("font descriptor declares more than one embedded font program")
@@ -398,13 +401,11 @@ class OperatorTextProjection:
         descendants = self.resolver.resolve(font.get("DescendantFonts"))
         owner: Mapping[object, object] = font
         if isinstance(descendants, (list, tuple)) and descendants:
-            descendant = self.resolver.resolve(descendants[0])
-            if isinstance(descendant, dict):
+            descendant = self.resolver.as_dict(descendants[0])
+            if descendant is not None:
                 owner = descendant
-        descriptor = self.resolver.resolve(owner.get("FontDescriptor"))
-        flags = (
-            self.resolver.resolve(descriptor.get("Flags")) if isinstance(descriptor, dict) else None
-        )
+        descriptor = self.resolver.dict_at(owner, "FontDescriptor")
+        flags = self.resolver.resolve(descriptor.get("Flags")) if descriptor is not None else None
         return int(flags) if isinstance(flags, (int, float)) else 0
 
     def resolve_widths(
@@ -417,8 +418,8 @@ class OperatorTextProjection:
         descendants = self.resolver.resolve(font.get("DescendantFonts"))
         if isinstance(descendants, (list, tuple)):
             for raw_descendant in descendants:
-                descendant = self.resolver.resolve(raw_descendant)
-                if not isinstance(descendant, dict):
+                descendant = self.resolver.as_dict(raw_descendant)
+                if descendant is None:
                     continue
                 raw_w = self.resolver.resolve(descendant.get("W"))
                 if isinstance(raw_w, (list, tuple)):
@@ -461,8 +462,8 @@ class OperatorTextProjection:
                     )
                     for offset, value in enumerate(raw_widths)
                 )
-            descriptor = self.resolver.resolve(font.get("FontDescriptor"))
-            if isinstance(descriptor, dict):
+            descriptor = self.resolver.dict_at(font, "FontDescriptor")
+            if descriptor is not None:
                 missing = self.resolver.resolve(descriptor.get("MissingWidth"))
                 if isinstance(missing, (int, float)):
                     default_width = float(int(missing))
@@ -618,8 +619,8 @@ class OperatorTextProjection:
                         isinstance(form, PdfStream)
                         and str(form.dictionary.get("Subtype")) != "Image"
                     ):
-                        form_resources = self.resolver.resolve(form.dictionary.get("Resources"))
-                        if isinstance(form_resources, dict):
+                        form_resources = self.resolver.dict_at(form.dictionary, "Resources")
+                        if form_resources is not None:
                             form_id = id(form)
                             if form_id in self.active_forms:
                                 continue

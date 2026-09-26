@@ -53,9 +53,9 @@ def pdf_too_complex(filename: object, password: str) -> bool:
             if not isinstance(fonts, dict):
                 continue
             for raw_font in fonts.values():
-                font = document.resolver.resolve(raw_font)
+                font = document.resolver.as_dict(raw_font)
                 if (
-                    isinstance(font, dict)
+                    font is not None
                     and recover_pdf_name(font.get("Subtype")) == "Type0"
                     and font.get("DescendantFonts") is None
                 ):

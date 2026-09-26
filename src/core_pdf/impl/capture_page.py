@@ -50,21 +50,21 @@ def select_appearance_stream(
     except ValueError:
         if resolver.resolve_name(appearance_state) is not None:
             return None
-        appearances = resolver.resolve(appearance)
-        if not isinstance(appearances, dict):
+        appearances = resolver.as_dict(appearance)
+        if appearances is None:
             return None
-        normal = resolver.resolve(appearances.get("N"))
-        if isinstance(normal, dict) and len(normal) == 1:
+        normal = resolver.dict_at(appearances, "N")
+        if normal is not None and len(normal) == 1:
             only = resolver.resolve(next(iter(normal.values())))
             return only if isinstance(only, PdfStream) else None
         return None
 
 
 def should_render(document: Any, annot: dict) -> bool:
-    subtype = document.resolver.resolve_name(annot.get("Subtype")) or ""
+    subtype = document.resolver.name_at(annot, "Subtype") or ""
     if subtype in SKIPPED_SUBTYPES:
         return False
-    flags = document.resolver.resolve_int(annot.get("F")) or 0
+    flags = document.resolver.int_at(annot, "F") or 0
     if flags & (ANNOTATION_FLAG_HIDDEN | ANNOTATION_FLAG_NO_VIEW):
         return False
     if subtype == "Widget":
@@ -102,7 +102,7 @@ def capture_annotation_appearances(
         widget = field.widget or field.dict
         if (
             isinstance(widget, dict)
-            and document.resolver.resolve_name(widget.get("Subtype")) == "Widget"
+            and document.resolver.name_at(widget, "Subtype") == "Widget"
             and id(widget) not in seen
         ):
             seen.add(id(widget))
@@ -157,7 +157,7 @@ def capture_annotation_appearances(
                     AppearanceProgram(
                         kind=(
                             "widget"
-                            if document.resolver.resolve_name(annot.get("Subtype")) == "Widget"
+                            if document.resolver.name_at(annot, "Subtype") == "Widget"
                             else "annotation"
                         ),
                         source=annot,

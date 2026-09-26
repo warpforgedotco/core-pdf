@@ -36,8 +36,8 @@ def validate_pypdf_page_tree(pdf: PdfDocument) -> None:
             if key in seen:
                 raise ValueError("detected cyclic page references")
             seen.add(key)
-        node = pdf.resolver.resolve(value)
-        if not isinstance(node, dict):
+        node = pdf.resolver.as_dict(value)
+        if node is None:
             raise ValueError("invalid object in page tree")
         kids = pdf.resolver.resolve(node.get("Kids"))
         if isinstance(kids, (list, tuple)):

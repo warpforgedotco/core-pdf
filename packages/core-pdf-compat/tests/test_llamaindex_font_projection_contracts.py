@@ -3,13 +3,13 @@ from types import SimpleNamespace
 import pytest
 
 from core_pdf.impl.fonts_decoder import FontDecoder
+from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf_compat.llamaindex._operator_text import (
     Font,
     OperatorTextProjection,
     difference_text,
     legacy_glyph_name_to_unicode,
 )
-from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 
 
 @pytest.fixture

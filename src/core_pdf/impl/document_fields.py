@@ -19,6 +19,8 @@ from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 class FieldResolver(PdfValueResolver, Protocol):
     def resolve_name_or_text(self, value: object, *, name_like: bool = False) -> str | None: ...
 
+    def as_dict(self, value: object) -> PdfDict | None: ...
+
 
 FieldTraversalNode: TypeAlias = tuple[Literal["node"], object, str, str, object, int]
 FieldTraversalRecord: TypeAlias = tuple[Literal["record"], RawFormField]
@@ -100,8 +102,8 @@ def collect_field_records(
         if depth > 50:
             malformed("invalid AcroForm depth")
             continue
-        current_node = resolver.resolve(current_node)
-        if not isinstance(current_node, dict) or id(current_node) in seen:
+        current_node = resolver.as_dict(current_node)
+        if current_node is None or id(current_node) in seen:
             malformed("invalid AcroForm field entry")
             continue
         seen.add(id(current_node))
@@ -115,8 +117,8 @@ def collect_field_records(
         )
         records.append(record)
         for kid in reversed(record.kids):
-            resolved_kid = resolver.resolve(kid)
-            if not isinstance(resolved_kid, dict):
+            resolved_kid = resolver.as_dict(kid)
+            if resolved_kid is None:
                 malformed("invalid AcroForm kid entry")
                 continue
             if resolver.resolve_name_or_text(resolved_kid.get("Subtype")) == "Widget":

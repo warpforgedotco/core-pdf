@@ -144,13 +144,13 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
         )
         if marker in seen:
             raise PdfUnsupportedError("loop detected in page tree")
-        resolved = pdf.resolver.resolve(value)
-        if not isinstance(resolved, dict):
+        resolved = pdf.resolver.as_dict(value)
+        if resolved is None:
             return
         if resolve_page_tree_node_type(pdf.resolver, resolved) != "Pages":
             return
-        kids = pdf.resolver.resolve(resolved.get("Kids"))
-        if not isinstance(kids, list):
+        kids = pdf.resolver.array_at(resolved, "Kids")
+        if kids is None:
             return
         seen.add(marker)
         for kid in kids:
@@ -208,8 +208,8 @@ def _pikepdf_page_boxes(
         if not isinstance(value, PdfReference):
             return
         box = _raw_media_box(pdf, value) or inherited
-        resolved = pdf.resolver.resolve(value)
-        if not isinstance(resolved, dict):
+        resolved = pdf.resolver.as_dict(value)
+        if resolved is None:
             return
         node_type = resolve_page_tree_node_type(pdf.resolver, resolved)
         if node_type == "Page":
@@ -217,8 +217,8 @@ def _pikepdf_page_boxes(
             return
         if node_type != "Pages":
             return
-        kids = pdf.resolver.resolve(resolved.get("Kids"))
-        if isinstance(kids, list):
+        kids = pdf.resolver.array_at(resolved, "Kids")
+        if kids is not None:
             for kid in kids:
                 visit(kid, box)
 

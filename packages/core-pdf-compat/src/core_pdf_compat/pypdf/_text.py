@@ -237,17 +237,19 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         super().__init__(self.collect_fonts(self.resources))
 
     def collect_fonts(self, resources: object) -> dict[str, LegacyFont]:
-        resolved_resources = self.document.resolver.resolve(resources)
-        if not isinstance(resolved_resources, dict):
+        resolver = self.document.resolver
+        resolved_resources = resolver.as_dict(resources)
+        if resolved_resources is None:
             return {}
-        raw_fonts = self.document.resolver.resolve(resolved_resources.get("Font"))
-        if not isinstance(raw_fonts, dict):
+        raw_fonts = resolver.dict_at(resolved_resources, "Font")
+        if raw_fonts is None:
             return {}
         fonts: dict[str, LegacyFont] = {}
         font_cache = self.caches.fonts
+        as_dict = resolver.as_dict
         for resource_name, raw_font in raw_fonts.items():
-            font = self.document.resolver.resolve(raw_font)
-            if not isinstance(font, dict):
+            font = as_dict(raw_font)
+            if font is None:
                 continue
             known = font_cache.get(id(font))
             if known is None or known[0] is not font:
@@ -645,11 +647,11 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
     def paint_form_xobject(self, operands: tuple[object, ...]) -> None:
         if not operands:
             return
-        resources = self.document.resolver.resolve(self.resources)
-        if not isinstance(resources, dict):
+        resources = self.document.resolver.as_dict(self.resources)
+        if resources is None:
             return
-        xobjects = self.document.resolver.resolve(resources.get("XObject"))
-        if not isinstance(xobjects, dict):
+        xobjects = self.document.resolver.dict_at(resources, "XObject")
+        if xobjects is None:
             return
         xobject = self.document.resolver.resolve(xobjects.get(operands[0]))
         if not isinstance(xobject, PdfStream):
