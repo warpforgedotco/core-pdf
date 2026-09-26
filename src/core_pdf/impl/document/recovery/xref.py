@@ -45,8 +45,6 @@ from core_pdf_spec.standards import SemanticContext
 def parse_object_marker_prefix(
     data: PdfByteBuffer | memoryview,
     marker: int,
-    *,
-    semantic_context: SemanticContext | None = None,
 ) -> tuple[int, int, int] | None:
     if marker < 0 or data[marker : marker + 3] != b"obj":
         return None
@@ -253,7 +251,7 @@ class XRefScanner(SyntaxXRefScanner):
     def find_startxref(
         data: PdfByteBuffer, *, semantic_context: SemanticContext | None = None
     ) -> int | None:
-        eof_pos = find_eof_marker(data, semantic_context=semantic_context)
+        eof_pos = find_eof_marker(data)
         has_eof = eof_pos >= 0
         if not has_eof:
             eof_pos = len(data)
@@ -305,9 +303,7 @@ class XRefScanner(SyntaxXRefScanner):
             except ValueError:
                 continue
 
-        for candidate in XRefScanner.find_nearby_sections(
-            data, eof_pos, window=len(data), semantic_context=semantic_context
-        ):
+        for candidate in XRefScanner.find_nearby_sections(data, eof_pos, window=len(data)):
             if candidate >= eof_pos:
                 continue
             try:
@@ -395,9 +391,7 @@ class XRefScanner(SyntaxXRefScanner):
         header_marker = data.find(b"obj", pos, min(len(data), pos + 64))
         if header_marker < 0:
             return None
-        parsed_header = parse_object_marker_prefix(
-            data, header_marker, semantic_context=semantic_context
-        )
+        parsed_header = parse_object_marker_prefix(data, header_marker)
         if parsed_header is None or parsed_header[0] != pos:
             return None
         lexer.pos = header_marker + 3
@@ -472,8 +466,6 @@ class XRefScanner(SyntaxXRefScanner):
         data: PdfByteBuffer,
         start: int,
         window: int = 1024,
-        *,
-        semantic_context: SemanticContext | None = None,
     ) -> list[int]:
         n = len(data)
         if start < 0:
@@ -496,9 +488,7 @@ class XRefScanner(SyntaxXRefScanner):
         while type_pos >= 0:
             xref_pos = data.find(b"/XRef", type_pos, min(search_end, type_pos + 64))
             if xref_pos >= 0:
-                object_marker = find_previous_object_marker(
-                    data, type_pos, semantic_context=semantic_context
-                )
+                object_marker = find_previous_object_marker(data, type_pos)
                 if object_marker is not None:
                     candidates.add(object_marker)
             type_pos = data.find(b"/Type", type_pos + 5, search_end)
@@ -535,9 +525,7 @@ class XRefScanner(SyntaxXRefScanner):
             if marker < 0:
                 break
             search_pos = marker + 3
-            parsed_header = parse_object_marker_prefix(
-                data, marker, semantic_context=semantic_context
-            )
+            parsed_header = parse_object_marker_prefix(data, marker)
             if parsed_header is None:
                 continue
             offset, obj_num, gen_num = parsed_header
@@ -726,7 +714,7 @@ class XRefScanner(SyntaxXRefScanner):
                 semantic_context=semantic_context,
             )
         except PdfParseError as original_error:
-            for nearby in cls.find_nearby_sections(data, start, semantic_context=semantic_context):
+            for nearby in cls.find_nearby_sections(data, start):
                 if nearby == start:
                     continue
                 try:
@@ -937,7 +925,7 @@ def decode_xref_stream_rows(
     return entries
 
 
-def find_eof_marker(data: PdfByteBuffer, *, semantic_context: SemanticContext | None = None) -> int:
+def find_eof_marker(data: PdfByteBuffer) -> int:
     def is_delimited(marker: int) -> bool:
         before_ok = marker == 0 or data[marker - 1] in (10, 13)
         after = marker + 5
@@ -969,15 +957,13 @@ def find_eof_marker(data: PdfByteBuffer, *, semantic_context: SemanticContext | 
                 return marker
 
 
-def find_previous_object_marker(
-    data: PdfByteBuffer, before: int, *, semantic_context: SemanticContext | None = None
-) -> int | None:
+def find_previous_object_marker(data: PdfByteBuffer, before: int) -> int | None:
     search_end = min(before, len(data))
     while True:
         marker = data.rfind(b"obj", 0, search_end)
         if marker < 0:
             return None
-        parsed = parse_object_marker_prefix(data, marker, semantic_context=semantic_context)
+        parsed = parse_object_marker_prefix(data, marker)
         if parsed is not None:
             return parsed[0]
         search_end = marker
@@ -990,7 +976,6 @@ def iter_indirect_object_headers(
     *,
     source_buffer: bytes | FindableSizedBuffer | None = None,
     allow_prefix_before_start: bool = False,
-    semantic_context: SemanticContext | None = None,
 ) -> Iterator[tuple[int, int, int]]:
     search_start = max(0, search_start)
     search_end = min(len(data), search_end)
@@ -1009,7 +994,7 @@ def iter_indirect_object_headers(
             return
         if source is None:
             marker += search_start
-        parsed = parse_object_marker_prefix(data, marker, semantic_context=semantic_context)
+        parsed = parse_object_marker_prefix(data, marker)
         if parsed is not None and (allow_prefix_before_start or parsed[0] >= search_start):
             yield parsed
         pos = marker + 3

@@ -1653,7 +1653,6 @@ class PdfDocument(Generic[PageT]):
             search_start,
             search_end,
             allow_prefix_before_start=True,
-            semantic_context=self.xref_context,
         ):
             if (
                 object_number == expected_object_number
@@ -1681,7 +1680,6 @@ class PdfDocument(Generic[PageT]):
             offset,
             search_end,
             allow_prefix_before_start=True,
-            semantic_context=self.xref_context,
         ):
             return (
                 parsed_offset == offset
