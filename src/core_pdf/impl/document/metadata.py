@@ -56,7 +56,7 @@ def resolve_metadata(
 ) -> MetadataRecord:
     xmp: XmpNodeRecord | None
     try:
-        xmp = resolve_metadata_stream(resolver, trailer, recover=True)
+        xmp = resolve_metadata_stream(resolver, trailer)
     except PdfError, RecursionError, ValueError:
         xmp = {"parse_error": "invalid XMP metadata"}
     return {
@@ -106,7 +106,7 @@ def xml_node_to_value(node: ET.Element) -> XmpNodeRecord:
     return root
 
 
-def parse_xmp_metadata(stream: object, *, recover: bool = False) -> XmpNodeRecord | None:
+def parse_xmp_metadata(stream: object) -> XmpNodeRecord | None:
     if not isinstance(stream, PdfStream):
         return None
     raw = stream.data
@@ -114,10 +114,8 @@ def parse_xmp_metadata(stream: object, *, recover: bool = False) -> XmpNodeRecor
         return None
     try:
         root = defused_fromstring(raw)
-    except (ET.ParseError, DefusedXmlException) as error:
-        if recover:
-            return {"parse_error": "invalid XMP metadata"}
-        raise ValueError("invalid XMP metadata") from error
+    except ET.ParseError, DefusedXmlException:
+        return {"parse_error": "invalid XMP metadata"}
 
     packet: XmpNodeRecord = {
         "tag": local_name(root.tag),
@@ -133,16 +131,12 @@ def parse_xmp_metadata(stream: object, *, recover: bool = False) -> XmpNodeRecor
     return packet
 
 
-def resolve_metadata_stream(
-    resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool = False
-) -> XmpNodeRecord | None:
+def resolve_metadata_stream(resolver: PdfValueResolver, trailer: PdfDict) -> XmpNodeRecord | None:
     try:
         catalog = resolve_catalog(resolver, trailer)
         if catalog is None:
             return None
         metadata = catalog_metadata_stream(resolver, catalog)
     except ValueError:
-        if recover:
-            return None
-        raise
-    return parse_xmp_metadata(metadata, recover=recover) if metadata is not None else None
+        return None
+    return parse_xmp_metadata(metadata) if metadata is not None else None

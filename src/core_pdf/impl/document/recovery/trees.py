@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import TypeVar
 
 from core_pdf_spec.s_07_syntax.trees import NameDecodeFn, NumberDecodeFn, ResolveFn, tree_entry
 from core_pdf_spec.types import PdfReference
@@ -33,7 +32,6 @@ def iter_number_tree_items(
         decode,
         key_field="Nums",
         tree_name=tree_name,
-        key_error=f"invalid {tree_name} tree key",
         recover=recover,
         recover_entries=recover or recover_entries,
         resolve_values=resolve_values,
@@ -54,14 +52,10 @@ def iter_name_tree_items(
         decode_name,
         key_field="Names",
         tree_name="name",
-        key_error="invalid name tree key",
         recover=recover,
         recover_entries=recover,
         max_depth=100,
     )
-
-
-TreeKeyT = TypeVar("TreeKeyT")
 
 
 def iter_tree_items[TreeKeyT](
@@ -71,12 +65,12 @@ def iter_tree_items[TreeKeyT](
     *,
     key_field: str,
     tree_name: str,
-    key_error: str,
     recover: bool = False,
     recover_entries: bool = False,
     resolve_values: bool = True,
     max_depth: int,
 ) -> Iterator[tuple[TreeKeyT, object]]:
+    key_error = f"invalid {tree_name} tree key"
     # Keyed by id(); holding each node keeps its id from being reused.
     visited: dict[int, dict] = {}
     references: set[tuple[int, int]] = set()

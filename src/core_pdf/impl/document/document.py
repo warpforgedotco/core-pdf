@@ -14,7 +14,7 @@ from itertools import compress, repeat
 from operator import and_, is_, itemgetter, not_, truth
 from os import PathLike
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVar
+from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVar, cast
 
 import numpy
 
@@ -102,7 +102,6 @@ if TYPE_CHECKING:
 
 
 PageT = TypeVar("PageT", bound=PdfPage, default=PdfPage)
-LookupPageT = TypeVar("LookupPageT", bound=PdfPage)
 
 
 class DocumentAdapter(Protocol):
@@ -279,7 +278,7 @@ NOT_BUILT = NotBuilt()
 
 
 class PdfDocument(Generic[PageT]):
-    page_class: type | None = None
+    page_class: type[PdfPage] = PdfPage
 
     __slots__ = (
         "source",
@@ -426,9 +425,6 @@ class PdfDocument(Generic[PageT]):
                 self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=selected)
                 self.scan_xref()
                 self.resolver.xref = self.xref
-            # Anything built above belongs to a resolver that may since have
-            # been replaced.
-            self.reset_caches()
         except BaseException:
             self.close()
             raise
@@ -486,7 +482,6 @@ class PdfDocument(Generic[PageT]):
         return DocumentOperation(self)
 
     def release_operation(self) -> None:
-        should_close = False
         with self.operation_lock:
             self.active_operations = max(0, self.active_operations - 1)
             should_close = self.closing and self.active_operations == 0
@@ -771,9 +766,6 @@ class PdfDocument(Generic[PageT]):
             if isinstance(parent_obj, dict):
                 sources.append(parent_obj)
         sources.extend(pages_nodes)
-        if not sources:
-            return values
-
         for source in sources:
             source_values = self.collect_inherited_values_from_node(source, missing)
             values.update(source_values)
@@ -818,10 +810,6 @@ class PdfDocument(Generic[PageT]):
             return ("S", id(value))
         return value
 
-    def iter_page_dicts(self) -> Iterator[PdfDict]:
-        for page_node in self.iter_recovered_page_nodes():
-            yield page_node.dictionary
-
     def recovered_page_nodes(self) -> list[PageNode]:
         discovered = list(self.discover_page_nodes())
         if discovered:
@@ -839,10 +827,9 @@ class PdfDocument(Generic[PageT]):
 
     def iter_recovered_page_nodes(self) -> Iterator[PageNode]:
         try:
-            pages_node = self.page_tree_root()
-            page_dicts = list(
+            page_nodes = list(
                 iter_page_nodes(
-                    pages_node,
+                    self.page_tree_root(),
                     self.resolver.resolve,
                     inherited_keys=PAGE_INHERITED_KEYS,
                     node_type=lambda node: resolve_page_tree_node_type(self.resolver, node),
@@ -850,19 +837,9 @@ class PdfDocument(Generic[PageT]):
                     max_depth=MAX_PAGE_TREE_DEPTH,
                 )
             )
-            if page_dicts:
-                yield from page_dicts
-                return
-            discovered = self.recovered_page_nodes()
-            if discovered:
-                yield from discovered
-                return
         except PdfParseError, ValueError:
-            discovered = self.recovered_page_nodes()
-            if discovered:
-                yield from discovered
-                return
-            return
+            page_nodes = []
+        yield from page_nodes or self.recovered_page_nodes()
 
     def page_count(self) -> int:
         if not self.page_tree_was_recovered:
@@ -875,7 +852,7 @@ class PdfDocument(Generic[PageT]):
         return len(self.pages)
 
     def build_page_dicts(self) -> list[PdfDict]:
-        return list(self.iter_page_dicts())
+        return [page_node.dictionary for page_node in self.iter_recovered_page_nodes()]
 
     @property
     def metadata(self) -> dict[str, object]:
@@ -969,10 +946,8 @@ class PdfDocument(Generic[PageT]):
         return pages
 
     def build_pages(self, nodes: Iterable[PageNode]) -> tuple[PageT, ...]:
-        page_class = self.page_class
-        if page_class is None:
-            page_class = PdfPage
-        factory = page_class
+        # A subclass pairs its page_class with the PageT it declares.
+        factory = cast("type[PageT]", self.page_class)
         return tuple(
             factory(
                 self,
@@ -1134,12 +1109,6 @@ class PdfDocument(Generic[PageT]):
             current = current.get("Next")
         return result
 
-    @staticmethod
-    def validate_outline_count(value: object) -> int:
-        if type(value) is not int:
-            raise ValueError("invalid outline count")
-        return value
-
     def extract_outline_count(self, current: PdfDict) -> int:
         raw_count = current.get("Count")
         if raw_count is None:
@@ -1149,7 +1118,7 @@ class PdfDocument(Generic[PageT]):
             if self.recovery_enabled:
                 return 0
             raise ValueError("invalid outline count")
-        return self.validate_outline_count(current_count)
+        return current_count
 
     def resolve_destination(
         self, dest: object, *, page_lookup: PageLookup[PageT] | None = None
@@ -1173,15 +1142,14 @@ class PdfDocument(Generic[PageT]):
         self,
         resolved_list: PdfArray,
         *,
-        page_lookup: PageLookup[PageT] | None = None,
+        page_lookup: PageLookup[PageT],
     ) -> RawNamedDestination:
         if not resolved_list:
             raise ValueError("invalid destination array")
         page_obj = self.resolver.resolve(resolved_list[0])
         if page_obj is None:
             raise ValueError("invalid destination page reference")
-        lookup = self.page_lookup if page_lookup is None else page_lookup
-        page_index = lookup.page_index_for(page_obj)
+        page_index = page_lookup.page_index_for(page_obj)
         if page_index is None:
             raise ValueError("invalid destination page reference")
         dest_type = None
@@ -1191,7 +1159,7 @@ class PdfDocument(Generic[PageT]):
             dest_type = self.resolver.resolve_name_or_text(raw_type)
             if dest_type is None:
                 raise ValueError("invalid destination type")
-            args = list(resolved_list[2:]) if len(resolved_list) > 2 else []
+            args = list(resolved_list[2:])
         return RawNamedDestination(
             page_index=page_index, type=dest_type, args=args, raw=resolved_list
         )
@@ -1552,8 +1520,7 @@ class PdfDocument(Generic[PageT]):
 
     @property
     def xref_context(self) -> SemanticContext | None:
-        resolver: ObjectResolver | None = getattr(self, "resolver", None)
-        return None if resolver is None else resolver.semantic_context
+        return self.resolver.semantic_context
 
     def strict_xref_validation_error(self) -> str | None:
         start = XRefScanner.find_startxref(self.raw_data, semantic_context=self.xref_context)
@@ -1889,11 +1856,7 @@ class PdfDocument(Generic[PageT]):
                         entry.object_stream is not None,
                     )
                     for k, entry in self.xref.items()
-                    if entry.in_use
-                    and (
-                        (entry.object_stream is None and entry.offset >= 0)
-                        or entry.object_stream is not None
-                    )
+                    if entry.in_use and (entry.object_stream is not None or entry.offset >= 0)
                 },
                 key=lambda item: (item[3], item[2], item[0]),
             )
@@ -1931,11 +1894,11 @@ class PdfDocument(Generic[PageT]):
         missing_keys = [key for key in TRAILER_METADATA_KEYS if trailer.get(key) is None]
         if not missing_keys:
             return trailer
-        if not getattr(self, "xref_was_recovered", False) and not any(
+        if not self.xref_was_recovered and not any(
             self.raw_data.find(b"/" + key.encode("ascii")) >= 0 for key in missing_keys
         ):
             return trailer
-        if missing_keys == ["Encrypt"] and not getattr(self, "xref_was_recovered", False):
+        if missing_keys == ["Encrypt"] and not self.xref_was_recovered:
             return trailer
         if missing_keys == ["Encrypt"] and self.raw_data.find(b"Encrypt") < 0:
             return trailer
