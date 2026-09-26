@@ -357,9 +357,11 @@ class OcrSession:
             self.capture,
             max_pixels=ocr_pass.pixel_budget,
         )
-        raster = direct_region.raster if direct_region is not None else None
-        raster_page_box = direct_region.page_box if direct_region is not None else self.page_box
-        if raster is None:
+        raster: Raster | None
+        if direct_region is not None and direct_region.raster is not None:
+            raster = direct_region.raster
+            raster_page_box = direct_region.page_box
+        else:
             raster = self.render_raster(
                 ocr_pass.scale,
                 max_pixels=ocr_pass.pixel_budget,
@@ -492,9 +494,11 @@ class OcrSession:
             if direct_scan_allowed(self.capture, self.plan)
             else None
         )
-        raster = direct_region.raster if direct_region is not None else None
-        raster_page_box = direct_region.page_box if direct_region is not None else self.page_box
-        if raster is None:
+        raster: Raster | None
+        if direct_region is not None and direct_region.raster is not None:
+            raster = direct_region.raster
+            raster_page_box = direct_region.page_box
+        else:
             raster = self.render_raster(
                 ocr_pass.scale,
                 max_pixels=ocr_pass.pixel_budget,
