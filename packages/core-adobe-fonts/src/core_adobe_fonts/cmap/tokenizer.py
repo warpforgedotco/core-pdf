@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import binascii
 import typing
-from typing import ClassVar
+from typing import ClassVar, Self
 
 from core_adobe_fonts.cmap.lexical import (
     SEPARATOR_TABLE,
@@ -103,19 +103,33 @@ class CMapBlock(CMapTokenRun):
 class CMapProgram(CMapTokenRun):
     __slots__ = ()
 
+    # Parsing is strict. A subclass relaxes it through the hooks below: how the
+    # source is tokenised, which whole-program rules apply, and what a block's
+    # count, operands, and terminator must satisfy.
+
     @classmethod
-    def parse(cls, data: bytes | bytearray | memoryview) -> CMapProgram:
+    def parse(cls, data: bytes | bytearray | memoryview) -> Self:
         source = data if type(data) is bytes else bytes(data)
-        tokens = tuple(iter_cmap_tokens(source, group_arrays=True))
+        tokens = cls.read_tokens(source)
+        scoped_tokens = scope_cmap_tokens(tokens)
+        cls.validate_program(tokens, scoped_tokens)
+        return cls(source, scoped_tokens)
+
+    @classmethod
+    def read_tokens(cls, source: bytes) -> tuple[CMapToken, ...]:
+        return tuple(iter_cmap_tokens(source, group_arrays=True))
+
+    @classmethod
+    def validate_program(
+        cls, tokens: tuple[CMapToken, ...], scoped_tokens: tuple[CMapToken, ...]
+    ) -> None:
         if any(
             token.kind == "word" and token.value == b"begincmap" for token in tokens
         ) and not any(token.kind == "word" and token.value == b"endcmap" for token in tokens):
             raise ValueError("unterminated CMap program")
-        scoped_tokens = scope_cmap_tokens(tokens)
         operators = {token.value for token in scoped_tokens if token.kind == "word"}
         if {b"usecmap", b"begincodespacerange"} <= operators:
             raise ValueError("CMap usecmap cannot redefine codespacerange")
-        return cls(source, scoped_tokens)
 
     def blocks(self, begin: bytes, end: bytes) -> typing.Iterator[CMapBlock]:
         for ignored_begin, block in self.blocks_in_order({begin: end}):
@@ -135,42 +149,14 @@ class CMapProgram(CMapTokenRun):
                     token.kind == "word"
                     and (matched_end := delimiters.get(token.value)) is not None
                 ):
-                    if token_index == 0:
-                        raise ValueError("missing CMap block count")
-                    count = self.tokens[token_index - 1]
-                    if count.kind != "word" or not count.value.isdigit():
-                        raise ValueError("invalid CMap block count")
-                    declared_count = int(count.value)
-                    if not 0 <= declared_count <= 100:
-                        raise ValueError("CMap block count exceeds 100")
+                    declared_count = self.block_count(token_index)
                     begin_keyword = token.value
                     end_keyword = matched_end
                     block_start = token.end
                 continue
             if token.kind == "word" and token.value == end_keyword:
                 assert begin_keyword is not None
-                arity = (
-                    3
-                    if begin_keyword.endswith(b"range") and begin_keyword != b"begincodespacerange"
-                    else 2
-                )
-                if len(block_tokens) != declared_count * arity:
-                    raise ValueError("CMap block count does not match operands")
-                for index, operand in enumerate(block_tokens):
-                    position = index % arity
-                    if position < arity - 1 or begin_keyword == b"begincodespacerange":
-                        allowed = {"hex"}
-                    elif begin_keyword in {
-                        b"begincidchar",
-                        b"begincidrange",
-                        b"beginnotdefchar",
-                        b"beginnotdefrange",
-                    }:
-                        allowed = {"word"}
-                    else:
-                        allowed = {"hex", "array"} if begin_keyword == b"beginbfrange" else {"hex"}
-                    if operand.kind not in allowed:
-                        raise ValueError("invalid CMap mapping operand type")
+                self.validate_block(begin_keyword, block_tokens, declared_count)
                 yield (
                     begin_keyword,
                     CMapBlock(self.data[block_start : token.start], tuple(block_tokens)),
@@ -182,7 +168,47 @@ class CMapProgram(CMapTokenRun):
                 continue
             block_tokens.append(token)
         if block_start is not None:
-            raise ValueError("unterminated CMap mapping block")
+            self.reject_unterminated_block()
+
+    def block_count(self, begin_index: int) -> int:
+        """The entry count before the begin operator at `begin_index`."""
+        if begin_index == 0:
+            raise ValueError("missing CMap block count")
+        count = self.tokens[begin_index - 1]
+        if count.kind != "word" or not count.value.isdigit():
+            raise ValueError("invalid CMap block count")
+        declared_count = int(count.value)
+        if not 0 <= declared_count <= 100:
+            raise ValueError("CMap block count exceeds 100")
+        return declared_count
+
+    def validate_block(
+        self, begin_keyword: bytes, block_tokens: list[CMapToken], declared_count: int
+    ) -> None:
+        arity = (
+            3 if begin_keyword.endswith(b"range") and begin_keyword != b"begincodespacerange" else 2
+        )
+        if len(block_tokens) != declared_count * arity:
+            raise ValueError("CMap block count does not match operands")
+        for index, operand in enumerate(block_tokens):
+            position = index % arity
+            if position < arity - 1 or begin_keyword == b"begincodespacerange":
+                allowed = {"hex"}
+            elif begin_keyword in {
+                b"begincidchar",
+                b"begincidrange",
+                b"beginnotdefchar",
+                b"beginnotdefrange",
+            }:
+                allowed = {"word"}
+            else:
+                allowed = {"hex", "array"} if begin_keyword == b"beginbfrange" else {"hex"}
+            if operand.kind not in allowed:
+                raise ValueError("invalid CMap mapping operand type")
+
+    def reject_unterminated_block(self) -> None:
+        """A block without its end operator; returning drops the block."""
+        raise ValueError("unterminated CMap mapping block")
 
 
 def scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, bool]:
