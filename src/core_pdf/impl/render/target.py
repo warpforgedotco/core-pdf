@@ -72,6 +72,7 @@ from core_pdf.impl.render.patterns import (
 from core_pdf.impl.scalars import parse_int
 from core_pdf_cythonized import (
     accumulate_source_plane,
+    alpha_channel,
     blend_coverage_counts,
     blend_normal_alpha_array_numpy,
     box_downsample_blocks,
@@ -415,18 +416,15 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
         nested.paint_items(display.items, translation=mask.offset)
         # A contiguous copy of the alpha alone: a view would keep the
         # sibling's whole RGBA page alive, four times what the cache counts.
-        alpha = view[..., 3].copy()
+        alpha, present = alpha_channel(view, mask.transfer is not None)
         alpha.setflags(write=False)
-        if mask.transfer is None:
+        if mask.transfer is None or present is None:
             result = SoftMaskPlane(alpha, None)
         else:
             # The transfer runs once per alpha the plane holds, in ascending
             # order -- not over all 256, since a transfer that fails on a value
-            # the mask never uses must not fail the mask. Marking those values
-            # in a 256-entry table skips numpy.unique's sort of the plane, and
-            # bincount's widening copy of it.
-            present = numpy.zeros(256, dtype=numpy.bool_)
-            present[alpha] = True
+            # the mask never uses must not fail the mask. alpha_channel marks
+            # the values present as it copies the plane.
             samples = numpy.flatnonzero(present)
             values = [mask.transfer(int(sample) / 255.0)[0] for sample in samples]
             table = numpy.zeros(256, dtype=numpy.float32)

@@ -15,7 +15,7 @@ The indices come in already clamped to the image, as numpy needed them.
 
 import numpy
 
-__all__ = ("interleave_soft_mask", "sample_opaque_pixels")
+__all__ = ("alpha_channel", "interleave_soft_mask", "sample_opaque_pixels")
 
 
 def sample_opaque_pixels(
@@ -120,3 +120,38 @@ def interleave_soft_mask(
                     out[i, j, k] = raster[i, j, k]
                 out[i, j, channels] = mask[row, mask_columns[j]]
     return output
+
+
+def alpha_channel(const unsigned char[:, :, ::1] pixels, bint presence):
+    """The alpha channel of RGBA `pixels` as a contiguous plane, and which bytes it holds.
+
+    resolve_soft_mask kept a soft mask as a copy of its group's alpha and,
+    for a mask with a transfer function, marked the values present with
+    ``present[alpha] = True`` -- a fancy-indexed scatter over the page, 0.6
+    ms each for 799 masks on test_3450. Both are one pass over the same
+    bytes here. Returns (alpha, present), ``present`` a 256-entry bool array,
+    or None without `presence`.
+    """
+    if pixels.shape[2] != 4:
+        raise ValueError("pixels must be RGBA")
+    cdef Py_ssize_t height = pixels.shape[0], width = pixels.shape[1]
+    alpha = numpy.empty((height, width), dtype=numpy.uint8)
+    cdef unsigned char[:, ::1] out = alpha
+    present = numpy.zeros(256, dtype=numpy.bool_) if presence else None
+    cdef unsigned char[::1] marks
+    cdef unsigned char seen[256]
+    cdef Py_ssize_t y, x, k
+    cdef unsigned char value
+    for k in range(256):
+        seen[k] = 0
+    with nogil:
+        for y in range(height):
+            for x in range(width):
+                value = pixels[y, x, 3]
+                out[y, x] = value
+                seen[value] = 1
+    if presence:
+        marks = present.view(numpy.uint8)
+        for k in range(256):
+            marks[k] = seen[k]
+    return alpha, present

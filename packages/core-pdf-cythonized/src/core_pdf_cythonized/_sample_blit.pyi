@@ -20,3 +20,9 @@ def interleave_soft_mask(
     mask_rows: numpy.ndarray[Any, Any],
     mask_columns: numpy.ndarray[Any, Any],
 ) -> numpy.ndarray[Any, Any]: ...
+def alpha_channel(
+    pixels: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], presence: bool
+) -> tuple[
+    numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None,
+]: ...

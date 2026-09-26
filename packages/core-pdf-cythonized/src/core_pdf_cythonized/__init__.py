@@ -58,7 +58,11 @@ from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import outline_edges, translated_outline_edges
 from core_pdf_cythonized._paths import flatten_path_commands
 from core_pdf_cythonized._rect import fill_rect_coverage, rect_coverage_plane
-from core_pdf_cythonized._sample_blit import interleave_soft_mask, sample_opaque_pixels
+from core_pdf_cythonized._sample_blit import (
+    alpha_channel,
+    interleave_soft_mask,
+    sample_opaque_pixels,
+)
 from core_pdf_cythonized._shading import shading_blend, shading_t, shading_values
 from core_pdf_cythonized._source_plane import accumulate_source_plane
 from core_pdf_cythonized._stroke_segment import stroke_segment_samples
@@ -71,6 +75,7 @@ __all__ = (
     "ContentScanner",
     "ObjectScanner",
     "accumulate_source_plane",
+    "alpha_channel",
     "blend_coverage_counts",
     "blend_normal_alpha_array_numpy",
     "box_downsample_blocks",
