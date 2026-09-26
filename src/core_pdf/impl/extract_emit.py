@@ -16,7 +16,7 @@ from core_pdf.impl.extract_block_layout import (
     has_repeated_block_columns,
     layout_element_order,
 )
-from core_pdf.impl.extract_contracts import ParsedBlock, ReadingOrderPolicy
+from core_pdf.impl.extract_contracts import ParsedBlock
 from core_pdf.impl.extract_table_cleanup import table_with_bands
 from core_pdf.impl.geometry import (
     bbox_area,
@@ -207,9 +207,6 @@ def normalize_blocks(
     return blocks
 
 
-DEFAULT_READING_ORDER = ReadingOrderPolicy()
-
-
 def assemble_page(
     blocks: tuple[ParsedBlock, ...],
     *,
@@ -218,11 +215,11 @@ def assemble_page(
     height: float,
     rotation: int,
     route: str,
-    tables: tuple[Table, ...] = (),
-    figures: tuple[Figure, ...] = (),
-    diagnostics: tuple[str, ...] = (),
-    reading_order: ReadingOrderPolicy = DEFAULT_READING_ORDER,
-    drawings: tuple[CapturedDrawing, ...] = (),
+    tables: tuple[Table, ...],
+    figures: tuple[Figure, ...],
+    diagnostics: tuple[str, ...],
+    full_page_image: bool,
+    drawings: tuple[CapturedDrawing, ...],
 ) -> Page:
     normalized_blocks = normalize_blocks(blocks, drawings)
     normalized_blocks = remove_off_page_blocks(
@@ -242,7 +239,7 @@ def assemble_page(
         route=route,
         figures=figures,
         diagnostics=diagnostics,
-        reading_order=reading_order,
+        full_page_image=full_page_image,
     )
 
 
@@ -256,9 +253,9 @@ def compose_page(
     height: float,
     rotation: int,
     route: str,
-    figures: tuple[Figure, ...] = (),
-    diagnostics: tuple[str, ...] = (),
-    reading_order: ReadingOrderPolicy = DEFAULT_READING_ORDER,
+    figures: tuple[Figure, ...],
+    diagnostics: tuple[str, ...],
+    full_page_image: bool,
 ) -> Page:
     elements: list[tuple[str, object, tuple[float, float, float, float]]] = [
         ("block", block, block.bbox or (0.0, 0.0, 0.0, 0.0)) for block in normalized_blocks
@@ -271,11 +268,7 @@ def compose_page(
     ordered_tables: list[Table] = []
     ordered_figures: list[Figure] = []
     element_boxes = tuple(item[2] for item in elements)
-    if (
-        reading_order.full_page_image
-        and len(element_boxes) > 1
-        and has_repeated_block_columns(blocks)
-    ):
+    if full_page_image and len(element_boxes) > 1 and has_repeated_block_columns(blocks):
         element_order = tuple(
             sorted(
                 range(len(element_boxes)),

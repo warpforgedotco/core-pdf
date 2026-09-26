@@ -205,7 +205,7 @@ class PageExtraction:
             tables=products.tables,
             figures=figures,
             diagnostics=(("reading-order-ambiguous",) if products.order_ambiguous else ()),
-            reading_order=policy,
+            full_page_image=policy.full_page_image,
             drawings=capture.program.drawings,
         )
         resolver = self.page.document.resolver
