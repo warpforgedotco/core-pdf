@@ -39,20 +39,21 @@ def test_invalid_numeric_operands_leave_graphics_state_unchanged(
 
 
 @pytest.mark.parametrize(
-    ("operator", "field", "value", "expected"),
+    ("operator", "field", "value", "expected", "rejected"),
     [
-        ("w", "line_width", -5, 0),
-        ("w", "line_width", 2.5, 2.5),
-        ("M", "miter_limit", -5, 1),
-        ("M", "miter_limit", 2.5, 2.5),
+        ("w", "line_width", -5, 0, [(PdfParseError, "line-width")]),
+        ("w", "line_width", 2.5, 2.5, []),
+        ("M", "miter_limit", -5, 1, [(PdfParseError, "miter-limit")]),
+        ("M", "miter_limit", 2.5, 2.5, []),
     ],
 )
 def test_numeric_recovery_clamps_only_prescribed_reader_bounds(
-    state, operator, field, value, expected
+    state, operator, field, value, expected, rejected
 ):
+    # Spec rejects an out-of-range value, and recovery proceeds with the clamp.
     state.execute_operation(operator, (value, 99), 0)
     assert getattr(state.graphics, field) == expected
-    assert state.errors == []
+    assert state.errors == rejected
 
 
 @pytest.mark.parametrize("operands", [(), (True,), ("bad",), (None,)])

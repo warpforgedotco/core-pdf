@@ -338,14 +338,6 @@ class RecoveringTextState(ContentInterpreter):
             return
         super().append_cubic_curve(x1, y1, x2, y2, x3, y3)
 
-    def op_w(self, operands: ContentOperands, depth: int) -> None:
-        if (values := self.as_floats(operands, 1)) is not None:
-            self.graphics.line_width = max(0.0, values[0])
-
-    def op_M(self, operands: ContentOperands, depth: int) -> None:
-        if (values := self.as_floats(operands, 1)) is not None:
-            self.graphics.miter_limit = max(1.0, values[0])
-
     def recover_color_components(
         self, components: typing.Sequence[object]
     ) -> tuple[float, ...] | None:

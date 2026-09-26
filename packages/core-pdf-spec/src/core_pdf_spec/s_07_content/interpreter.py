@@ -687,8 +687,10 @@ class ContentInterpreter:
     def op_w(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
             if values[0] < 0:
-                raise PdfParseError("line width must not be negative")
-            self.graphics.line_width = values[0]
+                self.reject(PdfParseError("line width must not be negative"), "line-width", None)
+            # Recovery clamps a negative width to zero. max also turns -0.0,
+            # which the check above lets through, into 0.0.
+            self.graphics.line_width = max(0.0, values[0])
 
     def op_J(self, operands: ContentOperands, depth: int) -> None:
         if (value := self.as_int_operand(operands)) is not None:
@@ -701,8 +703,9 @@ class ContentInterpreter:
     def op_M(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
             if values[0] < 1:
-                raise PdfParseError("miter limit must be at least one")
-            self.graphics.miter_limit = values[0]
+                self.reject(PdfParseError("miter limit must be at least one"), "miter-limit", None)
+            # Recovery clamps a smaller limit to one.
+            self.graphics.miter_limit = max(1.0, values[0])
 
     def op_d(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) != 2:

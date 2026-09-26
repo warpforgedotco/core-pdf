@@ -63,3 +63,40 @@ def test_rejected_coercions_keep_their_cause() -> None:
         state.execute_operation("gs", (PdfName.of("G"),), 0)
     assert isinstance(caught.value.__cause__, ValueError)
     assert caught.value.__suppress_context__
+
+
+@pytest.mark.parametrize(
+    ("operator", "value", "message"),
+    [("w", -1, "line width"), ("M", 0.5, "miter limit")],
+)
+def test_the_default_hook_refuses_out_of_range_line_parameters(
+    operator: str, value: float, message: str
+) -> None:
+    # Called as a handler, past the operand check execute_operation makes first.
+    handler = getattr(make_interpreter(), f"op_{operator}")
+    with pytest.raises(PdfParseError, match=message):
+        handler((value,), 0)
+
+
+@pytest.mark.parametrize(
+    ("operator", "value", "attribute", "expected", "rejected"),
+    [
+        ("w", -2.5, "line_width", 0.0, ["line-width"]),
+        ("w", -0.0, "line_width", 0.0, []),
+        ("w", 0, "line_width", 0.0, []),
+        ("w", 3, "line_width", 3.0, []),
+        ("M", 0.25, "miter_limit", 1.0, ["miter-limit"]),
+        ("M", 1, "miter_limit", 1.0, []),
+        ("M", 4.5, "miter_limit", 4.5, []),
+    ],
+)
+def test_a_recovering_hook_clamps_line_parameters(
+    operator: str, value: float, attribute: str, expected: float, rejected: list[str]
+) -> None:
+    state = recovering()
+    getattr(state, f"op_{operator}")((value,), 0)
+    result = getattr(state.graphics, attribute)
+    assert result == expected
+    # The clamp keeps the sign of a zero exact: recovery never stores -0.0.
+    assert str(result) == str(expected)
+    assert [context for context, _message in state.rejected] == rejected
