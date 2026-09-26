@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, overload
 
 from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_08_graphics.geometry import points_bbox, transform_bbox
@@ -80,6 +80,14 @@ def finite_rect(box: object, *, require_positive: bool = True) -> Rectangle | No
     if require_positive and (x1 <= x0 or y1 <= y0):
         return None
     return (x0, y0, x1, y1)
+
+
+@overload
+def union_bbox(left: Rectangle, right: Rectangle) -> Rectangle: ...
+
+
+@overload
+def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None: ...
 
 
 def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
