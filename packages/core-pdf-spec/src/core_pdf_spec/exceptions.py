@@ -19,9 +19,14 @@ class PdfUnsupportedError(PdfError):
     pass
 
 
+class PdfPasswordError(PdfUnsupportedError):
+    """The password opens neither as the user nor as the owner password."""
+
+
 __all__ = (
     "PdfDecryptionError",
     "PdfError",
     "PdfParseError",
+    "PdfPasswordError",
     "PdfUnsupportedError",
 )
