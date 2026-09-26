@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from core_pdf.impl.recovery_text_strings import (
-    decode_pdf_text_string,
     parse_text_string,
 )
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 
 
@@ -33,25 +32,29 @@ def goto_action_destination(resolver: PdfValueResolver, action: object) -> PdfOb
     return None
 
 
-def resolve_destination_value(resolver: PdfValueResolver, value: object, depth: int = 0) -> object:
+def resolve_destination_references(
+    resolver: PdfValueResolver, value: object, depth: int = 0
+) -> object:
+    """A destination or action with its references to plain values resolved.
+
+    A reference to a dictionary or array stays a reference -- a destination's
+    page is one -- and so does anything nested deeper than eight levels. The
+    rest of the conversion to plain values is plain_pdf_value's.
+    """
     if depth > 8:
         return value
     if isinstance(value, PdfReference):
         resolved = resolver.resolve(value)
         if resolved is None or isinstance(resolved, (dict, list, tuple)):
             return value
-        return resolve_destination_value(resolver, resolved, depth + 1)
-    if isinstance(value, PdfString):
-        return decode_pdf_text_string(value.data)
-    if isinstance(value, PdfName):
-        return value.value
+        return resolve_destination_references(resolver, resolved, depth + 1)
     if isinstance(value, dict):
         return {
-            str(key): resolve_destination_value(resolver, item, depth + 1)
+            str(key): resolve_destination_references(resolver, item, depth + 1)
             for key, item in value.items()
         }
     if isinstance(value, (list, tuple)):
-        return [resolve_destination_value(resolver, item, depth + 1) for item in value]
+        return [resolve_destination_references(resolver, item, depth + 1) for item in value]
     return value
 
 
@@ -59,5 +62,5 @@ __all__ = (
     "goto_action_destination",
     "link_target",
     "resolve_annotation_dict",
-    "resolve_destination_value",
+    "resolve_destination_references",
 )

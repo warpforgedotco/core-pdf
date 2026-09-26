@@ -9,7 +9,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from core_pdf.impl.document_metadata import plain_pdf_value
-from core_pdf.impl.document_page_links import resolve_destination_value
+from core_pdf.impl.document_page_links import resolve_destination_references
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_block_layout import layout_blocks_with_evidence
 from core_pdf.impl.extract_capture import STRUCTURE_UNSET, capture_page
@@ -218,7 +218,7 @@ class PageExtraction:
                 bbox=record.rect,
                 contents=record.contents,
                 destination=plain_pdf_value(
-                    resolve_destination_value(resolver, record.dest or record.action)
+                    resolve_destination_references(resolver, record.dest or record.action)
                 ),
             ),
         )
