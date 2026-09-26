@@ -40,7 +40,11 @@ from core_pdf.impl.capture_text_runs import (
     RunAccumulator,
     is_garbage_text,
 )
-from core_pdf.impl.capture_tolerant_state import COLOR_CACHE_LIMIT, RecoveringTextState
+from core_pdf.impl.capture_tolerant_state import (
+    COLOR_CACHE_LIMIT,
+    SOFT_MASK_CACHE_LIMIT,
+    RecoveringTextState,
+)
 from core_pdf.impl.fonts_decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts_ligatures import detect_ligature_overrides
 from core_pdf.impl.geometry import (
@@ -1428,11 +1432,17 @@ class TextState(RecoveringTextState):
             hidden_layers=self.hidden_layers,
             options=self.options,
         )
+        # The caches are shared: every entry is checked against the identity
+        # of what it was made from, so a nested stream reaching the same
+        # fonts, colors, masks or images reuses the parent's work.
         nested.parsed_soft_masks = self.parsed_soft_masks
         nested.capture_soft_masks = self.capture_soft_masks
         nested.capture_mask_resources = self.capture_mask_resources
         nested.capture_active_mask_groups = self.capture_active_mask_groups
         nested.capture_image_sources = self.capture_image_sources
+        nested.capture_font_decoders = self.capture_font_decoders
+        nested.capture_font_companions = self.capture_font_companions
+        nested.capture_colors = self.capture_colors
         return nested
 
     def capture_pattern(self, pattern: object) -> PatternPaint | None:
@@ -1543,6 +1553,10 @@ class TextState(RecoveringTextState):
         graphics.soft_mask = None
         graphics.fill_opacity = graphics.stroke_opacity = 1.0
         graphics.blend_mode = None
+        # Bounded as parsed soft masks are: each placement of a mask with its
+        # CTM baked in is a new entry, so a page can make any number of them.
+        if len(self.capture_soft_masks) >= SOFT_MASK_CACHE_LIMIT:
+            self.capture_soft_masks.clear()
         self.capture_soft_masks[key] = (mask, None)
         group_key = id(mask.group)
         if mask.subtype != "Alpha" or group_key in self.capture_active_mask_groups:
