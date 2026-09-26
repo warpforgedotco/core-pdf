@@ -41,9 +41,9 @@ For Lab color conversion, `s_08_graphics.color_math.lab_components_to_xyz` accep
 NumPy float32 rows of actual `(L*, a*, b*)` components and a reference white point.
 Image sample decoding and range enforcement belong to the caller.
 
-The current spec version is `0.12.0`, released independently of core. During `0.x`, breaking
+The current spec version is `0.13.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.12.0,<0.13.0`; changes to that range require core integration and differential validation.
+`>=0.13.0,<0.14.0`; changes to that range require core integration and differential validation.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are
@@ -212,6 +212,14 @@ every operator's malformed-operand path now calls and which raises `error` by de
 `prepare_font_program_inputs`. One strict default tightens: an object stream named as an
 XObject resource is now rejected ("XObject resource is an object stream") rather than drawn
 when it claims a Form or Image subtype.
+
+`0.13.0` is breaking. `iter_tree_items` and its number and name tree wrappers drop
+`skip_null_nodes`: every non-dictionary node, a null among them, now reaches `on_malformed`
+as a `MalformedTreeNode`, a `str` carrying the message and the node, so a tolerant caller
+skips nulls by testing `node is None` in its callback. `require_tree_node`, `tree_array`,
+`tree_entry`, and `s_07_syntax.types.PdfNumber` are removed. The standard security handler
+raises `PdfPasswordError`, a `PdfUnsupportedError` with the same message, for a password
+that opens the document as neither user nor owner, so existing handlers still catch it.
 
 When migrating to `0.10.0`, stop using these exports, which nothing in the workspace called:
 
