@@ -14,14 +14,15 @@ import numpy
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 
 
-def env_int(name: str, default: int) -> int:
-    configured = os.environ.get(name)
+def thread_count(env_name: str) -> int:
+    """Worker threads: the environment setting, else the CPU count, bounded to 1..4."""
+    configured = os.environ.get(env_name)
     if configured:
         try:
-            return max(1, int(configured))
+            return min(4, max(1, int(configured)))
         except ValueError:
             pass
-    return default
+    return max(1, min(4, os.cpu_count() or 1))
 
 
 def raise_codec_error(
@@ -101,7 +102,7 @@ def decode_jpx_image(
 
 
 def jpx_thread_count() -> int:
-    return min(4, env_int("CORE_PDF_JPX_THREADS", max(1, min(4, os.cpu_count() or 1))))
+    return thread_count("CORE_PDF_JPX_THREADS")
 
 
 def decode_ccitt_fax_image(
