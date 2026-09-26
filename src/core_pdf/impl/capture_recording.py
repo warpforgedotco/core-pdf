@@ -1331,12 +1331,13 @@ class TextState(RecoveringTextState):
         old = self.capture_frames.pop(id(frame), None)
         if old is not None:
             self.layout_form_bbox, self.layout_form_id, self.pending_line_break = old
-        active_entries = {id(entry) for entry in self.marked_content_stack}
-        self.capture_marked_entries = {
-            key: value
-            for key, value in self.capture_marked_entries.items()
-            if key in active_entries
-        }
+        if self.capture_marked_entries:
+            active_entries = {id(entry) for entry in self.marked_content_stack}
+            self.capture_marked_entries = {
+                key: value
+                for key, value in self.capture_marked_entries.items()
+                if key in active_entries
+            }
         if frame.group_alpha is not None:
             self.drawings.append(
                 marker_drawing(
