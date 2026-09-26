@@ -23,7 +23,7 @@ def normalize_color_components(spec: ColorSpace, components: Sequence[object]) -
     if spec.kind == "Pattern":
         raise ValueError("Pattern color requires a pattern selection")
     count = len(spec.component_ranges)
-    if count == 0 and spec.kind != "Pattern":
+    if count == 0:
         raise ValueError("unsupported color space")
     if len(components) != count:
         raise ValueError("invalid color component operands")

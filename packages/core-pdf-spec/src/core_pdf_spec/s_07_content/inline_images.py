@@ -9,6 +9,7 @@ from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,
 )
+from core_pdf_spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -123,11 +124,12 @@ def inline_image_unfiltered_data_length(dictionary: PdfDict) -> int | None:
         if type(bits) is not int or bits <= 0:
             return None
         color_space = decoded_name(dictionary.get("ColorSpace"))
-        if color_space in {None, "G", "DeviceGray"}:
+        # normalize_inline_image_dictionary has expanded the abbreviated names.
+        if color_space in {None, "DeviceGray"}:
             colors = 1
-        elif color_space in {"RGB", "DeviceRGB"}:
+        elif color_space == "DeviceRGB":
             colors = 3
-        elif color_space in {"CMYK", "DeviceCMYK"}:
+        elif color_space == "DeviceCMYK":
             colors = 4
         else:
             return None
@@ -157,18 +159,19 @@ def filtered_inline_image_data_end(
     if not filters:
         return None
 
-    first_filter = filters[0].name
+    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filters[0].name)
+    first_filter = None if descriptor is None else descriptor.decoder
 
-    if first_filter in {"ASCII85Decode", "A85"}:
+    if first_filter == "ascii85":
         marker = data.find(b"~>", start)
         return None if marker < 0 else marker + 2
-    if first_filter in {"ASCIIHexDecode", "AHx"}:
+    if first_filter == "ascii_hex":
         marker = data.find(b">", start)
         return None if marker < 0 else marker + 1
-    if first_filter in {"DCTDecode", "DCT"}:
+    if first_filter == "jpeg":
         marker = data.find(b"\xff\xd9", start)
         return None if marker < 0 else marker + 2
-    if first_filter in {"RunLengthDecode", "RL"}:
+    if first_filter == "run_length":
         pos = start
         while pos < len(data):
             length = data[pos]

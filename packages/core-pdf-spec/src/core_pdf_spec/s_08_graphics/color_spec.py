@@ -105,9 +105,7 @@ class ColorSpace(Record):
     ) -> None:
         frozen_setattr(self, "kind", kind)
         frozen_setattr(self, "component_ranges", component_ranges)
-        frozen_setattr(
-            self, "params", (lambda: MappingProxyType({}))() if params is None else params
-        )
+        frozen_setattr(self, "params", MappingProxyType({}) if params is None else params)
         frozen_setattr(self, "base", base)
         frozen_setattr(self, "alternate", alternate)
         frozen_setattr(self, "colorants", colorants)
