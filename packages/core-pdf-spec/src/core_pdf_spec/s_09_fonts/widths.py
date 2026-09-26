@@ -164,7 +164,14 @@ def w2_metric(values: Any) -> tuple[float, float, float]:
     )
 
 
-def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
+def parse_font_widths(
+    font: dict[Any, Any], subtype: str | None, *, default_width: float = 0.0
+) -> FontMetrics:
+    """A font's glyph widths and defaults (ISO 32000-2 9.6.2.1, 9.7.4.3).
+
+    `default_width` is a simple font's width for codes outside Widths when its
+    descriptor gives no MissingWidth; the specification's value is 0.
+    """
     vertical: dict[int, tuple[float, float, float]] = {}
     vy, dy = 880.0, -1000.0
     if subtype == "Type0":
@@ -214,7 +221,9 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     descriptor = font_descriptor(font.get("FontDescriptor")) or {}
     missing_width = descriptor.get("MissingWidth")
     default = (
-        0.0 if missing_width is None else require_pdf_number(missing_width, "invalid MissingWidth")
+        default_width
+        if missing_width is None
+        else require_pdf_number(missing_width, "invalid MissingWidth")
     )
     values = font.get("Widths")
     if values is None:

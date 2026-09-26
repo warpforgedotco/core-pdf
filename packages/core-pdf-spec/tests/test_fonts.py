@@ -92,6 +92,14 @@ def test_malformed_font_descriptor_is_not_silently_discarded() -> None:
 
 def test_missing_width_is_spec_defined_zero() -> None:
     assert parse_font_widths({}, "Type1").default_width == 0.0
+    relaxed = parse_font_widths({}, "Type1", default_width=1000.0)
+    assert (relaxed.default_width, relaxed.default_width_explicit) == (1000.0, False)
+    described = {"FontDescriptor": {"MissingWidth": 250}}
+    assert parse_font_widths(described, "Type1", default_width=1000.0).default_width == 250.0
+    assert (
+        parse_font_widths({"DescendantFonts": [{}]}, "Type0", default_width=5.0).default_width
+        == 1000.0
+    )
     assert parse_font_widths(
         {"FontDescriptor": {"MissingWidth": 0}}, "Type1"
     ).default_width_explicit

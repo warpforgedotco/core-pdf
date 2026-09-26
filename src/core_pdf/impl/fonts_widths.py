@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import suppress
-from copy import replace
 from typing import Any
 
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -141,14 +140,9 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     if font.get("MissingWidth") is not None:
         return recover_font_widths(font, subtype)
     try:
-        metrics = pdf_font_widths(font, subtype)
+        return pdf_font_widths(font, subtype, default_width=1000.0)
     except ValueError, TypeError, IndexError:
         return recover_font_widths(font, subtype)
-    if subtype == "Type0":
-        return metrics
-    if not metrics.default_width_explicit:
-        return replace(metrics, default_width=1000.0)
-    return metrics
 
 
 def clipped_cid_bounds(first: int, last: int) -> tuple[int, int] | None:
