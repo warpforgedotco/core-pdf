@@ -55,6 +55,20 @@ def require_pdf_number_array(
     return tuple(require_pdf_number(item, message) for item in value)
 
 
+def require_pdf_number_pairs(
+    value: object,
+    message: str,
+    *,
+    count: int | None = None,
+    length_message: str | None = None,
+) -> tuple[tuple[float, float], ...]:
+    """(low, high) pairs of a number array: `count` pairs, or any nonzero number of them."""
+    values = require_pdf_number_array(value, message)
+    if len(values) != 2 * count if count is not None else not values or len(values) % 2:
+        raise ValueError(message if length_message is None else length_message)
+    return tuple(zip(values[::2], values[1::2], strict=True))
+
+
 def scalar_token(value: object) -> bytes | None:
     if type(value) is bytes:
         return value
@@ -226,6 +240,7 @@ __all__ = (
     "require_pdf_integer",
     "require_pdf_number",
     "require_pdf_number_array",
+    "require_pdf_number_pairs",
     "parse_text_string",
     "scalar_text",
 )

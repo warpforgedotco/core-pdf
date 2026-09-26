@@ -12,6 +12,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
     require_pdf_number,
     require_pdf_number_array,
+    require_pdf_number_pairs,
 )
 from core_pdf_spec.s_08_graphics.calculator import compile_calculator_function
 
@@ -26,10 +27,7 @@ def with_pdf_function_range(
 ) -> PdfFunctionEvaluator:
     if range_values is None:
         return evaluate
-    values = require_pdf_number_array(range_values, "invalid PDF function range")
-    if not values or len(values) % 2:
-        raise ValueError("invalid PDF function range")
-    ranges = tuple(zip(values[::2], values[1::2], strict=True))
+    ranges = require_pdf_number_pairs(range_values, "invalid PDF function range")
     if any(lower > upper for lower, upper in ranges):
         raise ValueError("invalid PDF function range")
     if output_count is not None and len(ranges) != output_count:
@@ -76,17 +74,16 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
     sizes: tuple[int, ...] = tuple(size_obj)  # type: ignore[arg-type]
     if not sizes or any(size <= 0 for size in sizes):
         raise ValueError("invalid sampled function size")
-    domain_values = require_pdf_number_array(domain_obj, "invalid PDF function domain")
-    if len(domain_values) != len(sizes) * 2:
-        raise ValueError("invalid sampled function domain")
-    domains = tuple(zip(domain_values[::2], domain_values[1::2], strict=True))
+    domains = require_pdf_number_pairs(
+        domain_obj,
+        "invalid PDF function domain",
+        count=len(sizes),
+        length_message="invalid sampled function domain",
+    )
     if any(upper <= lower for lower, upper in domains):
         raise ValueError("invalid sampled function domain")
 
-    range_values = require_pdf_number_array(range_obj, "invalid sampled function range")
-    if not range_values or len(range_values) % 2:
-        raise ValueError("invalid sampled function range")
-    ranges = tuple(zip(range_values[::2], range_values[1::2], strict=True))
+    ranges = require_pdf_number_pairs(range_obj, "invalid sampled function range")
     if any(upper < lower for lower, upper in ranges):
         raise ValueError("invalid sampled function range")
 
@@ -102,11 +99,8 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
     if decode_obj is None:
         decodes = tuple(ranges)
     else:
-        decode_values = require_pdf_number_array(decode_obj, "invalid sampled function decode")
-        if len(decode_values) != len(ranges) * 2:
-            raise ValueError("invalid sampled function decode")
-        decodes = tuple(
-            (decode_values[index * 2], decode_values[index * 2 + 1]) for index in range(len(ranges))
+        decodes = require_pdf_number_pairs(
+            decode_obj, "invalid sampled function decode", count=len(ranges)
         )
 
     encode_obj = dictionary.get("Encode")
