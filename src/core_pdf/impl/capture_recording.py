@@ -54,6 +54,7 @@ from core_pdf.impl.geometry import (
 from core_pdf.impl.glyphs import GlyphObservation, GlyphStyle
 from core_pdf.impl.graphics_color import color_operands_to_srgb
 from core_pdf.impl.graphics_color_spec import raw_color_space_paints
+from core_pdf.impl.graphics_images import decode_soft_mask
 from core_pdf.impl.graphics_soft_masks import image_overrides_graphics_soft_mask
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
@@ -1595,17 +1596,27 @@ def image_source_from_stream(
         semantic_context=getattr(resolver, "semantic_context", None),
         color_rendering=color_rendering,
     )
-    mask_alpha = None
+    return source, soft_mask_mean_alpha(source)
+
+
+def soft_mask_mean_alpha(source: ImageSource) -> float | None:
+    """The image's soft mask averaged over its samples, or None without one.
+
+    The mask's stream bytes are still filter-encoded, so its samples are
+    decoded as the renderer decodes them; a mask that does not decode has
+    no average.
+    """
     mask = source.soft_mask
-    if mask is not None:
-        width = resolver.resolve_int(mask.dictionary.get("Width")) or 0
-        height = resolver.resolve_int(mask.dictionary.get("Height")) or 0
-        data = mask.raw
-        if width > 0 and height > 0 and data:
-            total = min(len(data), width * height)
-            mask_sum = numpy.frombuffer(data, numpy.uint8, count=total).sum(dtype=numpy.uint64)
-            mask_alpha = int(mask_sum) / (255.0 * total)
-    return source, mask_alpha
+    if mask is None:
+        return None
+    try:
+        raster = decode_soft_mask(source, mask)
+    except PdfParseError, TypeError, ValueError, ArithmeticError:
+        return None
+    if raster is None or not raster.array.size:
+        return None
+    samples = raster.array[:, :, 0]
+    return int(samples.sum(dtype=numpy.uint64)) / (255.0 * samples.size)
 
 
 def flatten_path(
