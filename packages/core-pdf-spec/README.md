@@ -44,7 +44,7 @@ Image sample decoding and range enforcement belong to the caller. The existing
 
 The current spec version is `0.7.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.9.0,<0.10.0`; changes to that range require core integration and differential validation.
+`>=0.9.1,<0.10.0`; changes to that range require core integration and differential validation.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are

@@ -17,8 +17,7 @@ from core_pdf.impl.render.model import (
     PathPaintItem,
     PathPaintKind,
 )
-from core_pdf.impl.scalars import parse_int
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number, parse_int
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
 PATH_PAINT_KINDS = {
@@ -35,13 +34,15 @@ def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(dictionary, dict):
         return {}
 
-    width = parse_int(dictionary.get("Width"), 0)
-    height = parse_int(dictionary.get("Height"), 0)
+    width = parse_int(dictionary.get("Width"), 0, python_syntax=True)
+    height = parse_int(dictionary.get("Height"), 0, python_syntax=True)
     width = max(0, width)
     height = max(0, height)
     image_mask = dictionary.get("ImageMask") is True
     default_bpc = 1 if image_mask else 0
-    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), default_bpc)
+    bits_per_component = parse_int(
+        dictionary.get("BitsPerComponent"), default_bpc, python_syntax=True
+    )
     bits_per_component = bits_per_component if bits_per_component > 0 else default_bpc
     image_source = data.get("image_source")
     has_soft_mask = (

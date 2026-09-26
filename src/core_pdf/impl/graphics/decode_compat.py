@@ -8,11 +8,11 @@ from core_pdf.impl.graphics.filter_registry import (
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.pdf_values import is_pdf_null
-from core_pdf.impl.scalars import parse_int
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
 from core_pdf_spec.s_07_filters.decode_spec import FilterStep, StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterParseError
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
 
 
 class FilterParams(PdfFilterParams):
@@ -50,7 +50,7 @@ class FilterParams(PdfFilterParams):
                 continue
             if not isinstance(value, (int, bytes, str)):
                 raise ValueError(f"invalid DecodeParms {name}")
-            parsed = parse_int(value, None)
+            parsed = parse_int(value, None, python_syntax=True)
             if parsed is None:
                 raise ValueError(f"invalid DecodeParms {name}")
             normalized[name] = parsed

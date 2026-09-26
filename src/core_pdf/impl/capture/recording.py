@@ -55,7 +55,6 @@ from core_pdf.impl.graphics.color_spec import raw_color_space_paints
 from core_pdf.impl.graphics.soft_masks import image_overrides_graphics_soft_mask
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.runs import TextRun
-from core_pdf.impl.scalars import parse_float_strict, parse_int_strict
 from core_pdf.impl.text import normalize_extracted_text
 from core_pdf.impl.types import (
     PdfName,
@@ -78,6 +77,7 @@ from core_pdf_spec.s_07_content.streams import (
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
@@ -526,14 +526,14 @@ class TextState(RecoveringTextState):
 
     @staticmethod
     def as_float(value: Any) -> float:
-        parsed = parse_float_strict(value, "invalid numeric operand")
+        parsed = parse_float_strict(value, "invalid numeric operand", python_syntax=True)
         if not isfinite(parsed):
             raise ValueError("invalid numeric operand")
         return parsed
 
     @staticmethod
     def as_int(value: Any) -> int:
-        return parse_int_strict(value, "invalid numeric operand")
+        return parse_int_strict(value, "invalid numeric operand", python_syntax=True)
 
     def capture_marks(self) -> CaptureMarks:
         """Where each product list stands, to cut a later program from."""

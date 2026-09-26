@@ -26,7 +26,6 @@ from core_pdf.impl.graphics.icc_profiles import (
     parse_icc_transform,
     srgb_profile,
 )
-from core_pdf.impl.scalars import parse_float
 from core_pdf_cythonized import (
     code_presence,
     distinct_uint16_rows,
@@ -35,6 +34,7 @@ from core_pdf_cythonized import (
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float
 from core_pdf_spec.s_08_graphics.color_kernels import (
     color_key_alpha,
     decode_sample_values,
@@ -273,7 +273,7 @@ def convert_components(
                 values.astype(numpy.float32), (white[0], white[1], white[2])
             )
         elif kind == "CalGray":
-            exponent = parse_float(space.params.get("Gamma", 1), None)
+            exponent = parse_float(space.params.get("Gamma", 1), None, python_syntax=True)
             if exponent is None or exponent <= 0:
                 raise ValueError("invalid CalGray Gamma")
             xyz = (values**exponent * numpy.asarray(white)).astype(numpy.float32)
