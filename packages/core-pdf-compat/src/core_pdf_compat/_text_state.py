@@ -5,9 +5,8 @@ from collections.abc import Iterator, Mapping, Sequence
 
 from core_pdf.impl.fonts_helpers import build_decode_table
 from core_pdf.impl.text import is_neutral_character, is_rtl_character
-from core_pdf_spec.s_08_graphics.matrix import multiply_affine
+from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, multiply_affine
 
-IDENTITY_MATRIX = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 EMBEDDED_FONT_PROGRAM_KEYS = ("FontFile", "FontFile2", "FontFile3")
 
 PREDEFINED_ENCODING_CODECS = {
@@ -34,6 +33,17 @@ PREDEFINED_ENCODING_CODECS = {
     "UniJIS-UTF16-H": "utf-16-be",
     "UniJIS-UTF16-V": "utf-16-be",
 }
+
+
+def predefined_encoding_codec(name: str) -> str | None:
+    """The Python codec that decodes a predefined CMap's codes as text, if any.
+
+    Every UCS-2 CMap reads as UTF-16BE.
+    """
+    codec = PREDEFINED_ENCODING_CODECS.get(name)
+    if codec is None and "-UCS2-" in name:
+        return "utf-16-be"
+    return codec
 
 
 def orientation(matrix: Sequence[float]) -> int:
