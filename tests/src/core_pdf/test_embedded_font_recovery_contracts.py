@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 
 from core_pdf.impl import fonts_decoder as decoder
+from core_pdf.impl.fonts_ligatures import detect_ligature_overrides
 from core_pdf.impl.types import PdfName
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
@@ -124,3 +125,25 @@ def test_cid_system_info_normalizes_names_and_strings(value, descendant):
         "Adobe" if value not in (1, None) else None,
         "Identity",
     )
+
+
+class IdentityResolver:
+    def resolve(self, value: object, /) -> object:
+        return value
+
+
+@pytest.mark.parametrize("companion_widths", [None, [500, 600], 42])
+def test_ligature_detection_needs_loadable_tables_before_blaming_a_companion(companion_widths):
+    font = {
+        "BaseFont": PdfName(b"ABCDEF+Body"),
+        "FirstChar": 32,
+        "LastChar": 40,
+        "FontDescriptor": {"FontFile2": PdfStream({}, b"not a TrueType font")},
+    }
+    companion: dict[str, Any] = {"BaseFont": PdfName(b"Body"), "FirstChar": 102, "LastChar": 103}
+    if companion_widths is not None:
+        companion["Widths"] = companion_widths
+    resources = {"Font": {"F1": font, "F2": companion}}
+    # Neither the font's own program nor, so, a malformed companion Widths
+    # array (42) can yield overrides: both end with none.
+    assert detect_ligature_overrides(IdentityResolver(), resources, font) == {}

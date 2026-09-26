@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from copy import replace
 from enum import StrEnum
-from types import MappingProxyType
-from typing import Any, ClassVar, Self, TypeAlias
+from typing import Any, ClassVar, NoReturn, Self, TypeAlias
 
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.page_selection import PageSelection
@@ -18,14 +17,63 @@ SCHEMA_VERSION = "5.0"
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 
 
+class FrozenDict(dict[Any, Any]):
+    """A dict that refuses mutation, hashes by content, and pickles.
+
+    The mapping fields of frozen output records hold these, so a Document, a
+    Page or a Figure hashes and pickles like the rest of its fields; a
+    mappingproxy did neither. It is still a dict, so equality with a plain
+    dict and JSON encoding are unchanged.
+    """
+
+    __slots__ = ()
+
+    def __hash__(self) -> int:  # type: ignore[override]
+        return hash(frozenset(self.items()))
+
+    def __reduce__(self) -> tuple[type[FrozenDict], tuple[dict[Any, Any]]]:
+        return (FrozenDict, (dict(self),))
+
+    def _refuse(self, *_args: object, **_kwargs: object) -> NoReturn:
+        raise TypeError("FrozenDict is immutable")
+
+    __setitem__ = __delitem__ = __ior__ = _refuse
+    clear = pop = popitem = setdefault = update = _refuse
+
+
 def freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return MappingProxyType({key: freeze(item) for key, item in value.items()})
+        return FrozenDict({key: freeze(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
         return tuple(freeze(item) for item in value)
     if isinstance(value, set):
         return frozenset(freeze(item) for item in value)
     return value
+
+
+class ViewCache:
+    """Views derived from a record's fields, each built on first use.
+
+    Not a field: equality, hashing, repr, pickling and replace all ignore it,
+    and a copy starts empty. The views are tuples of frozen records, so every
+    caller can share one.
+    """
+
+    __slots__ = ("_views",)
+
+    _views: dict[str, Any]
+
+    def cached_view[T](self, name: str, build: Callable[[], T]) -> T:
+        try:
+            views = self._views
+        except AttributeError:
+            views = {}
+            object.__setattr__(self, "_views", views)
+        try:
+            return views[name]
+        except KeyError:
+            value = views[name] = build()
+            return value
 
 
 UNKNOWN = "unknown"
@@ -1030,7 +1078,7 @@ class ContentNode(Record):
         return (str(source),) if source else ()
 
 
-class TextView(Record):
+class TextView(ViewCache, Record):
     __slots__ = ("elements", "page_number")
 
     elements: tuple[PageElement, ...]
@@ -1063,6 +1111,9 @@ class TextView(Record):
 
     @property
     def words(self) -> tuple[TextWord, ...]:
+        return self.cached_view("words", self.build_words)
+
+    def build_words(self) -> tuple[TextWord, ...]:
         words: list[TextWord] = []
         line_index = 0
         for block_index, block in enumerate(self.blocks):
@@ -1271,7 +1322,7 @@ class DocumentTableView(Record):
         )
 
 
-class Page(Record):
+class Page(ViewCache, Record):
     __slots__ = (
         "page_number",
         "page_label",
@@ -1535,7 +1586,9 @@ class Page(Record):
 
     @property
     def text_view(self) -> TextView:
-        return TextView(self.elements, page_number=self.page_number)
+        return self.cached_view(
+            "text_view", lambda: TextView(self.elements, page_number=self.page_number)
+        )
 
     @property
     def words(self) -> tuple[TextWord, ...]:
@@ -1599,7 +1652,7 @@ class Diagnostic(Record):
         return hash((self.code, self.message, self.severity, self.page_number))
 
 
-class Document(Record):
+class Document(ViewCache, Record):
     __slots__ = ("pages", "metadata", "diagnostics", "schema_version")
 
     pages: tuple[Page, ...]
@@ -1653,6 +1706,9 @@ class Document(Record):
 
     @property
     def nodes(self) -> tuple[ContentNode, ...]:
+        return self.cached_view("nodes", self.build_nodes)
+
+    def build_nodes(self) -> tuple[ContentNode, ...]:
         nodes: list[ContentNode] = []
         for page in self.pages:
             nodes.extend(page.iter_nodes(start_id=len(nodes)))
@@ -1664,15 +1720,15 @@ class Document(Record):
 
     @property
     def words(self) -> tuple[TextWord, ...]:
-        return self.text_view.words
+        return self.cached_view("words", lambda: self.text_view.words)
 
     @property
     def lines(self) -> tuple[TextLine, ...]:
-        return self.text_view.lines
+        return self.cached_view("lines", lambda: self.text_view.lines)
 
     @property
     def blocks(self) -> tuple[Block, ...]:
-        return self.text_view.blocks
+        return self.cached_view("blocks", lambda: self.text_view.blocks)
 
     def to_json_dict(self) -> dict[str, JsonValue]:
         from core_pdf.impl.output_serialize import document_to_json_dict

@@ -392,21 +392,13 @@ class GlyphLineBuilder:
         text: str,
     ) -> tuple[LayoutLineTextAtom, ...]:
         clusters = run.glyph_clusters
+        # Text with spaces stays whole: its clusters would lose the gaps.
         if (
             clusters
             and text == run.text
             and "".join(cluster.text for cluster in clusters) == run.text
+            and not any(character.isspace() for character in text)
         ):
-            if any(character.isspace() for character in text):
-                return (
-                    LayoutLineTextAtom(
-                        text=text,
-                        run=run,
-                        advance_bbox=run.advance_bbox,
-                        baseline=run.baseline,
-                        has_glyph_geometry=False,
-                    ),
-                )
             atoms = [
                 LayoutLineTextAtom(
                     text=cluster.text,
@@ -685,6 +677,9 @@ class GlyphLineBuilder:
     ) -> bool:
         if not recent_runs:
             return False
+        # geometry.bbox_area and bbox_intersection_area, inline: this runs for
+        # every run against the recent ones, and their calls and float()
+        # coercions would cost more than the arithmetic.
         x0, y0, x1, y1 = run.advance_bbox
         box_area = (y1 - y0) * (x1 - x0)
         if box_area <= 0:

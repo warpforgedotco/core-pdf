@@ -294,11 +294,22 @@ def stream_table_reads_like_prose(table: Table) -> bool:
     return False
 
 
+def clean_stream_table(table: Table) -> Table | None:
+    """A stream-detected table with its text columns and wrapped rows merged.
+
+    None when the merged table reads as prose. The merges assume cells cut from
+    text rows and columns, so they apply to stream detection's tables alone.
+    """
+    merged = merge_wrapped_stream_rows(merge_stream_text_columns(table))
+    if stream_table_reads_like_prose(merged):
+        return None
+    return merge_wrapped_cell_rows(merged)
+
+
 def merge_stream_text_columns(table: Table) -> Table:
     columns = max((len(row) for row in table.rows), default=0)
     if (
-        table.metadata.get("source") != "stream"
-        or columns < 6
+        columns < 6
         or columns % 2
         or len(table.rows) < 4
         or TableFacts.from_rows(table.rows).numeric_density >= 0.25
@@ -338,7 +349,7 @@ LOGICAL_ROW_MIN_COLUMNS = 5
 
 
 def merge_wrapped_cell_rows(table: Table) -> Table:
-    if table.metadata.get("source") != "stream" or len(table.rows) < LOGICAL_ROW_MIN_ROWS:
+    if len(table.rows) < LOGICAL_ROW_MIN_ROWS:
         return table
     filled = [cell.text.strip() for row in table.rows for cell in row if cell.text.strip()]
     if filled:
@@ -415,8 +426,7 @@ def merge_wrapped_cell_rows(table: Table) -> Table:
 
 def merge_wrapped_stream_rows(table: Table) -> Table:
     if (
-        table.metadata.get("source") != "stream"
-        or len(table.rows) < 8
+        len(table.rows) < 8
         or max((len(row) for row in table.rows), default=0) < 5
         or table.metadata.get("numeric_cells", 0) > 2
     ):

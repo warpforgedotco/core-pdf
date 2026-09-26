@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left
+from collections.abc import Iterable
 from math import ceil, floor
 from typing import Any, ClassVar
 
@@ -132,9 +133,10 @@ class ClipState:
         self.scale = scale
         self.width = width
         self.height = height
-        # A clip path's rows as the stroke kernel reads them, per region.
-        # Regions are frozen, and the entry keeps its region alive, so the
-        # identity key cannot be reused while it is here.
+        # A clip path's rows as the stroke kernel reads them, per region on
+        # the stack. Regions are frozen, and the entry keeps its region
+        # alive, so the identity key cannot be reused while it is here; a
+        # region's entry goes when the region leaves the stack.
         self.span_arrays: dict[int, tuple[ClipRegion, RowSpanArrays]] = {}
 
     def row_span_arrays(self, region: ClipRegion) -> RowSpanArrays:
@@ -194,11 +196,21 @@ class ClipState:
         return len(self.regions)
 
     def restore(self, depth: int) -> None:
-        del self.regions[max(0, depth) :]
+        depth = max(0, depth)
+        if self.span_arrays:
+            self.forget_span_arrays(self.regions[depth:])
+        del self.regions[depth:]
 
     def pop(self) -> None:
         if self.regions:
-            self.regions.pop()
+            region = self.regions.pop()
+            if self.span_arrays:
+                self.forget_span_arrays((region,))
+
+    def forget_span_arrays(self, regions: Iterable[ClipRegion]) -> None:
+        span_arrays = self.span_arrays
+        for region in regions:
+            span_arrays.pop(id(region), None)
 
     def current_region(self) -> ClipRegion | None:
         return self.regions[-1] if self.regions else None

@@ -5,7 +5,6 @@ from __future__ import annotations
 import typing
 from collections.abc import Mapping
 from math import isfinite
-from typing import Any
 
 from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.fonts_helpers import strip_subset_tag
@@ -18,7 +17,6 @@ from core_pdf.impl.recovery_resolver import (
 from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
-from core_pdf_spec.s_07_content.model import PatternPaint, ShadingPattern, TilingPattern
 from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
     OperationHandler,
@@ -26,7 +24,7 @@ from core_pdf_spec.s_07_content.operations import (
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, ColorSpace
+from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
@@ -171,16 +169,14 @@ class RecoveringTextState(ContentInterpreter):
                 else None
             )
         except PdfParseError as error:
-            self.handle_operand_error(error, "font-resource")
-            font_obj_ref = None
+            font_obj_ref = self.reject(error, "font-resource", None)
         if font_obj_ref is None:
             return self.font_provider({}, self.resources)
 
         try:
             font_obj = self.resolver.resolve(font_obj_ref)
         except PdfParseError as error:
-            self.handle_operand_error(error, "font-resolution")
-            font_obj = None
+            font_obj = self.reject(error, "font-resolution", None)
         if isinstance(font_obj, PdfStream):
             font_obj = font_obj.dictionary
         resources = self.resources
@@ -228,40 +224,8 @@ class RecoveringTextState(ContentInterpreter):
         self.graphics.decoder_resources = resources
         return decoder
 
-    def append_xobject(self, name_obj: Any, depth: int) -> ContentStreamFrame | None:
-        name = self.resolver.resolve_name(name_obj)
-        if not name:
-            return None
-        raw_xobj = self.lookup_page_resource("XObject", name)
-        stream_key = (
-            ("ref", raw_xobj.object_number, raw_xobj.generation_number)
-            if isinstance(raw_xobj, PdfReference)
-            else None
-        )
-        xobj = self.resolver.resolve(raw_xobj)
-        if not isinstance(xobj, PdfStream):
-            return None
-        xobj_dict = xobj.dictionary
-        subtype = self.resolver.resolve_name(xobj_dict.get("Subtype"))
-        if self.resolver.resolve_name(xobj_dict.get("Type")) == "ObjStm":
-            return None
-        if subtype == "Image":
-            self.sink.paint_image(self, xobj)
-            return None
-        if subtype != "Form":
-            return None
-        return self.append_form_xobject(xobj, depth, stream_key=stream_key)
-
     def resolve_form_resources(self, value: object) -> PdfDict:
         return self.resolve_resources(value) or self.resources
-
-    def resolve_form_bbox(self, value: object) -> tuple[float, float, float, float] | None:
-        return self.resolver.resolve_box(value)
-
-    def append_tj_array(self, array: Any) -> None:
-        if not isinstance(array, (list, tuple)):
-            return
-        super().append_tj_array(array)
 
     def tj_array_extra_bytes(self, item: object) -> bytes:
         return item.encode("latin-1") if type(item) is str else b""
@@ -282,87 +246,16 @@ class RecoveringTextState(ContentInterpreter):
             data = text.encode("latin-1", "replace")
             self.append_decoded_text(text, data, decoder.decode_glyphs(data), decoder)
 
-    def resolve_color_space(self, name_obj: Any) -> ColorSpace:
-        name = self.resolver.resolve_name(name_obj)
-        if name is None:
-            return DEVICE_GRAY
-        value = (
-            name
-            if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}
-            else self.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
-        )
-        if value is None:
-            value = name
+    def parse_named_color_space(self, value: object, name: str) -> ColorSpace:
         try:
             return parse_color_space(value)
         except (ValueError, TypeError) as error:
-            self.handle_operand_error(error, "color-space")
             base = value[0] if isinstance(value, (list, tuple)) and value else value
-            return ColorSpace(recover_pdf_name(base) or name, ())
-
-    def prepare_color_components(
-        self, space: ColorSpace, operands: ContentOperands, *, allow_special: bool
-    ) -> tuple[float, ...] | None:
-        if allow_special and space.kind == "Pattern":
-            if not operands:
-                return None
-            if space.base is None:
-                return ()
-            return self.normalize_color_components(space.base, operands[:-1])
-        return self.normalize_color_components(space, operands)
-
-    def resolve_pattern_color(
-        self, pattern_name: object, *, space: ColorSpace, base_components: tuple[float, ...]
-    ) -> PatternPaint | None:
-        resource = self.resolve_pattern_resource(pattern_name)
-        if resource is None:
-            return None
-        pattern, pattern_dict = resource
-        pattern_type = self.resolver.resolve_int(pattern_dict.get("PatternType"))
-        if pattern_type == 2:
-            shading: object = pattern_dict.get("Shading")
-            shading = self.resolver.resolve(shading)
-            shading_dict = self.resolver.resolve_dict(shading) if shading is not None else None
-            if not isinstance(shading_dict, dict):
-                return None
-            return ShadingPattern(
-                dict(shading_dict),
-                extgstate=self.resolver.resolve_dict(pattern_dict.get("ExtGState")),
-            )
-        if pattern_type != 1 or not isinstance(pattern, PdfStream):
-            return None
-        paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"), 1)
-        if paint_type not in {1, 2}:
-            return None
-        base_spec = space.base
-        base_color = base_components if paint_type == 2 else None
-        bbox = self.resolver.resolve_box(pattern_dict.get("BBox"))
-        if bbox is None:
-            return None
-        x_step = self.resolver.resolve_float(pattern_dict.get("XStep"), default=None)
-        y_step = self.resolver.resolve_float(pattern_dict.get("YStep"), default=None)
-        if x_step is None or y_step is None or x_step == 0.0 or y_step == 0.0:
-            return None
-        matrix = self.matrix_operand(pattern_dict.get("Matrix"), "pattern")
-        resources = self.resolve_resources(pattern_dict.get("Resources")) or {}
-        return TilingPattern(
-            bbox=bbox,
-            x_step=float(x_step),
-            y_step=float(y_step),
-            stream=pattern,
-            resources=resources,
-            matrix=matrix,
-            paint_type=paint_type,
-            base_color=base_color,
-            base_color_spec=base_spec,
-            alpha_is_shape=self.initial_alpha_is_shape,
-            text_knockout=self.initial_text_knockout,
-        )
+            return self.reject(error, "color-space", ColorSpace(recover_pdf_name(base) or name, ()))
 
     def as_floats(self, operands: ContentOperands, count: int) -> tuple[float, ...] | None:
         if len(operands) < count:
-            self.handle_operand_error(PdfParseError("missing numeric operand"), "numeric-operands")
-            return None
+            return self.reject(PdfParseError("missing numeric operand"), "numeric-operands", None)
         # The content tokenizer already produced int and float operands, but
         # reaching them through as_float costs four call frames each
         # (as_float -> parse_float_strict -> parse_float) to re-derive a value
@@ -415,13 +308,11 @@ class RecoveringTextState(ContentInterpreter):
                     append(self.as_float(value))
             return tuple(values)
         except (TypeError, ValueError) as error:
-            self.handle_operand_error(error, "numeric-operands")
-            return None
+            return self.reject(error, "numeric-operands", None)
 
     def as_int_operand(self, operands: ContentOperands) -> int | None:
         if not operands:
-            self.handle_operand_error(PdfParseError("missing numeric operand"), "integer-operand")
-            return None
+            return self.reject(PdfParseError("missing numeric operand"), "integer-operand", None)
         value = operands[0]
         # An int operand is its own answer; as_int's three frames only reach
         # the same `type(value) is int` test. J and j run this per path.
@@ -430,39 +321,13 @@ class RecoveringTextState(ContentInterpreter):
         try:
             return self.as_int(value)
         except (TypeError, ValueError) as error:
-            self.handle_operand_error(error, "integer-operand")
-            return None
-
-    def op_Q(self, operands: ContentOperands, depth: int) -> None:
-        if len(self.stack) <= self.graphics_stack_floor:
-            return
-        self.graphics = self.pop_graphics_save()
+            return self.reject(error, "integer-operand", None)
 
     def op_BX(self, operands: ContentOperands, depth: int) -> None:
         self.compatibility_depth += 1
 
     def op_EX(self, operands: ContentOperands, depth: int) -> None:
         self.compatibility_depth = max(0, self.compatibility_depth - 1)
-
-    def op_l(self, operands: ContentOperands, depth: int) -> None:
-        if self.current_point is None or (values := self.as_floats(operands, 2)) is None:
-            return
-        x, y = values
-        self.current_path.line_to(x, y)
-        self.current_point = (x, y)
-
-    def op_v(self, operands: ContentOperands, depth: int) -> None:
-        if self.current_point is None or (values := self.as_floats(operands, 4)) is None:
-            return
-        x0, y0 = self.current_point
-        x2, y2, x3, y3 = values
-        self.append_cubic_curve(x0, y0, x2, y2, x3, y3)
-
-    def op_y(self, operands: ContentOperands, depth: int) -> None:
-        if self.current_point is None or (values := self.as_floats(operands, 4)) is None:
-            return
-        x1, y1, x3, y3 = values
-        self.append_cubic_curve(x1, y1, x3, y3, x3, y3)
 
     def append_cubic_curve(
         self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float
@@ -473,22 +338,6 @@ class RecoveringTextState(ContentInterpreter):
             return
         super().append_cubic_curve(x1, y1, x2, y2, x3, y3)
 
-    def op_d(self, operands: ContentOperands, depth: int) -> None:
-        if len(operands) < 2:
-            return
-        try:
-            phase = self.as_float(operands[1])
-            array_obj = operands[0]
-            dash_array = (
-                [self.as_float(value) for value in array_obj]
-                if isinstance(array_obj, (list, tuple))
-                else []
-            )
-        except (TypeError, ValueError) as error:
-            self.handle_operand_error(error, "dash-pattern")
-            return
-        self.graphics.dash_pattern = (tuple(dash_array), phase)
-
     def op_w(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
             self.graphics.line_width = max(0.0, values[0])
@@ -496,51 +345,6 @@ class RecoveringTextState(ContentInterpreter):
     def op_M(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
             self.graphics.miter_limit = max(1.0, values[0])
-
-    def resolve_font_name(self, value: object) -> str | None:
-        return self.resolver.resolve_name(value)
-
-    def parse_font_size(self, value: object) -> float | None:
-        try:
-            return self.as_float(value)
-        except (TypeError, ValueError) as error:
-            self.handle_operand_error(error, "font-size")
-            return None
-
-    def op_Tf(self, operands: ContentOperands, depth: int) -> None:
-        if len(operands) < 2:
-            return
-        super().op_Tf(operands[:2], depth)
-
-    def op_gs(self, operands: ContentOperands, depth: int) -> None:
-        if not operands:
-            return
-        name = self.resolver.resolve_name(operands[0])
-        if not name:
-            return
-        extgstate = self.resolve_extgstate(name)
-        if not extgstate:
-            return
-        try:
-            self.apply_extgstate(extgstate)
-        except (TypeError, ValueError) as error:
-            self.handle_operand_error(error, "extended-graphics-state")
-            return
-
-    def op_sh(self, operands: ContentOperands, depth: int) -> None:
-        if not operands:
-            return
-        name = self.resolver.resolve_name(operands[0])
-        if not name:
-            return
-        shading = self.resolver.resolve_dict(self.lookup_page_resource("Shading", name))
-        if isinstance(shading, dict):
-            self.sink.paint_shading(self, shading)
-
-    def op_EMC(self, operands: ContentOperands, depth: int) -> None:
-        if self.marked_content_stack:
-            self.sink.end_marked_content(self, self.marked_content_stack.pop())
-            self.sink.text_boundary(self, "marked")
 
     def recover_color_components(
         self, components: typing.Sequence[object]
@@ -550,8 +354,7 @@ class RecoveringTextState(ContentInterpreter):
             try:
                 values.append(clamp01(self.as_float(component)))
             except ValueError as error:
-                self.handle_operand_error(error, "color-components")
-                return None
+                return self.reject(error, "color-components", None)
         if not values:
             return None
         return tuple(values)
@@ -577,10 +380,10 @@ class RecoveringTextState(ContentInterpreter):
                 self.normalized_colors[cache_key] = normalized
             return normalized
         except (PdfParseError, TypeError, ValueError) as error:
-            self.handle_operand_error(error, "color-components")
             if spec.kind in {"Indexed", "Lab"}:
-                return None
-            return self.recover_color_components(components)
+                return self.reject(error, "color-components", None)
+            recovered = self.recover_color_components(components)
+            return self.reject(error, "color-components", recovered)
 
     def initial_color_components(
         self, spec: ColorSpace, *, stroke: bool
@@ -588,14 +391,19 @@ class RecoveringTextState(ContentInterpreter):
         try:
             return super().initial_color_components(spec, stroke=stroke)
         except PdfParseError as error:
-            self.handle_operand_error(error, "color-space")
-            return self.graphics.stroke_color if stroke else self.graphics.fill_color
+            return self.reject(
+                error,
+                "color-space",
+                self.graphics.stroke_color if stroke else self.graphics.fill_color,
+            )
 
     def resolve_resources(self, value: object) -> PdfDict | None:
         return recover_resources(value, self.resolver)
 
-    def handle_operand_error(self, error: Exception, context: str) -> None:
-        pass
+    def reject[T](self, error: Exception, context: str, fallback: T) -> T:
+        # Recovery proceeds with the reader's fallback wherever the spec
+        # interpreter would refuse the content.
+        return fallback
 
     def matrix_operand(self, value: object, context: str) -> Matrix:
         value = self.resolver.deep_resolve(value)

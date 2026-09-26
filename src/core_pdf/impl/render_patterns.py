@@ -109,6 +109,14 @@ def shading_color_rgba(
     opacity: Any,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int, int]:
+    """A shading function's output as RGBA, chosen by the shading's colour model.
+
+    Not render_blend.convert_color_rgba, which chooses by component count
+    alone: here a CMYK model takes four or more components, the conversion
+    follows the rendering intent, and anything else -- a CMYK model with
+    fewer components included -- is read as RGB. The two have drifted and
+    are kept apart so neither changes what it paints.
+    """
     alpha = color_component(opacity, 255) if type(opacity) in {int, float} else 255
     name = color_model or "DeviceRGB"
     if name.endswith("DeviceGray") or len(components) == 1:

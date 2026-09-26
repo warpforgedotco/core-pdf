@@ -7,7 +7,6 @@ import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
-from copy import replace
 from functools import cache
 from io import BytesIO
 from typing import Any, ClassVar
@@ -23,6 +22,7 @@ from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_cmap_resources import (
     CID_COLLECTION_UNICODE_OVERRIDES,
     CID_COLLECTION_UNICODE_SOURCES,
+    CMapUnicodeSource,
     predefined_cmap_unicode,
     resolve_cmap_decoder,
     resolve_cmap_resource,
@@ -66,7 +66,6 @@ from core_pdf.impl.types import (
     PdfString,
     Record,
     Rectangle,
-    frozen_setattr,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int_strict
@@ -188,7 +187,7 @@ def build_cff_unicode_repair_index(
     if not isinstance(font_file, PdfStream) or len(font_file.data) > 750_000:
         return None
     mapping = single_code_mapping(to_unicode, cmap)
-    if not any(is_repairable_to_unicode_label(value) for cid_value, value in mapping.values()):
+    if not any(is_repairable_to_unicode_label(value) for _, value in mapping.values()):
         return None
     mapping_items = tuple(sorted((code, cid, value) for code, (cid, value) in mapping.items()))
     return CFFUnicodeRepairIndex(font_program, mapping_items)
@@ -237,36 +236,23 @@ def opentype_font(inputs: FontProgramInputs) -> OpenTypeFontProgram | None:
         return None
 
 
+def recover_descriptor(value: object) -> dict[str, Any] | None:
+    return value if isinstance(value, dict) else None
+
+
+def recover_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStream | None:
+    value = descriptor.get(key) if descriptor is not None else None
+    return value if isinstance(value, PdfStream) else None
+
+
 def font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
-    try:
-        inputs = prepare_font_program_inputs(font)
-    except ValueError:
-        descendant = get_descendant(font)
-        font_dict = descendant if descendant is not None else font
-        descriptor = font_dict.get("FontDescriptor")
-        original_descriptor = font.get("FontDescriptor")
-        streams = (
-            original_descriptor.get("FontFile") if isinstance(original_descriptor, dict) else None,
-            descriptor.get("FontFile2") if isinstance(descriptor, dict) else None,
-            descriptor.get("FontFile3") if isinstance(descriptor, dict) else None,
-        )
-        first, second, third = (
-            value if isinstance(value, PdfStream) else None for value in streams
-        )
-        inputs = FontProgramInputs(
-            recover_pdf_name(font_dict.get("Subtype")),
-            recover_pdf_name(font.get("Subtype")),
-            descendant,
-            first,
-            second,
-            third,
-        )
-    else:
-        font_dict = inputs.descendant if inputs.descendant is not None else font
-        subtype = recover_pdf_name(font_dict.get("Subtype"))
-        original_subtype = recover_pdf_name(font.get("Subtype"))
-        if (subtype, original_subtype) != (inputs.subtype, inputs.original_subtype):
-            inputs = replace(inputs, subtype=subtype, original_subtype=original_subtype)
+    inputs = prepare_font_program_inputs(
+        font,
+        read_name=recover_pdf_name,
+        read_descendant=get_descendant,
+        read_descriptor=recover_descriptor,
+        read_font_file=recover_font_file,
+    )
     for resolver in (
         cff_font,
         tt_font,
@@ -571,8 +557,6 @@ class FontDecoder:
         "byte_decode_table",
         "widths",
         "default_width",
-        "width_fallback_value",
-        "space_width_fallback",
         "default_vertical_displacement_y",
         "default_vertical_origin_y",
         "vertical_metrics",
@@ -613,8 +597,6 @@ class FontDecoder:
     byte_decode_table: tuple[str, ...] | None
     widths: Mapping[int, float]
     default_width: float
-    width_fallback_value: float
-    space_width_fallback: float
     default_vertical_displacement_y: float
     default_vertical_origin_y: float
     vertical_metrics: dict[int, tuple[float, float, float]]
@@ -657,8 +639,6 @@ class FontDecoder:
         "byte_decode_table",
         "widths",
         "default_width",
-        "width_fallback_value",
-        "space_width_fallback",
         "default_vertical_displacement_y",
         "default_vertical_origin_y",
         "vertical_metrics",
@@ -730,7 +710,6 @@ class FontDecoder:
         font_metrics = parse_font_widths(font, subtype)
         widths = font_metrics.widths
         default_width = font_metrics.default_width
-        default_width_explicit = font_metrics.default_width_explicit
         is_cid_font = subtype == "Type0" and get_descendant(font) is not None
 
         base_font_name = resolve_base_font_name(font, subtype)
@@ -769,7 +748,6 @@ class FontDecoder:
                 widths = builtin
                 if font.get("MissingWidth") is None:
                     default_width = 0.0
-                    default_width_explicit = True
 
         self.to_unicode = to_unicode
         self.cmap = cmap
@@ -785,13 +763,9 @@ class FontDecoder:
         self.is_type3 = is_type3
         self.byte_decode_table = byte_decode_table
         self.widths = widths
+        # Every code without a width, the space included, takes the default:
+        # an explicit DW or MissingWidth, else 1000 from parse_font_widths.
         self.default_width = default_width
-        if default_width_explicit:
-            self.width_fallback_value = default_width
-            self.space_width_fallback = default_width
-        else:
-            self.width_fallback_value = default_width if default_width > 0.0 else 1000.0
-            self.space_width_fallback = default_width if default_width > 0.0 else 250.0
         self.default_vertical_displacement_y = font_metrics.default_vertical_displacement_y
         self.default_vertical_origin_y = font_metrics.default_vertical_origin_y
         self.vertical_metrics = font_metrics.vertical_metrics
@@ -1395,8 +1369,7 @@ class FontDecoder:
         )
 
     def glyph_width(self, code: int) -> float:
-        fallback = self.space_width_fallback if code == 32 else self.width_fallback_value
-        return self.widths.get(code, fallback)
+        return self.widths.get(code, self.default_width)
 
     def glyph_advance_vector(
         self,
@@ -1434,6 +1407,8 @@ class FontDecoder:
         if glyphs is None:
             glyphs = self.decode_glyphs(bytes(data))
 
+        # The sum of glyph_advance_vector over the glyphs, with the helper's
+        # arithmetic inlined per glyph; test_font_decoding_contracts pins them.
         if self.is_vertical:
             total_y = 0.0
             vertical_glyph_metric = self.vertical_glyph_metric
@@ -1443,14 +1418,12 @@ class FontDecoder:
             return (0.0, total_y)
 
         total_x = 0.0
-        width_fallback = self.width_fallback_value
-        space_fallback = self.space_width_fallback
+        default_width = self.default_width
         width_for = self.widths.get
         for glyph in glyphs:
-            code = glyph.width_code
-            fallback = space_fallback if code == 32 else width_fallback
+            width = width_for(glyph.width_code, default_width)
             spacing = char_space + (word_space if glyph.code_bytes == b" " else 0.0)
-            displacement_x = width_for(code, fallback) * font_size / 1000.0 + spacing
+            displacement_x = width * font_size / 1000.0 + spacing
             total_x += displacement_x * horizontal_scale / 100.0
         return (total_x, 0.0)
 
@@ -1466,29 +1439,8 @@ def dedupe_alternates(values: Iterable[str], selected: str) -> tuple[str, ...]:
     return tuple(alternates)
 
 
-class CompactCMap(Record):
-    __slots__ = ("effective_codes_by_cid",)
-
-    effective_codes_by_cid: dict[int, tuple[bytes, ...]]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("effective_codes_by_cid",)
-    __match_args__ = ("effective_codes_by_cid",)
-
-    def __init__(self, effective_codes_by_cid: dict[int, tuple[bytes, ...]]) -> None:
-        frozen_setattr(self, "effective_codes_by_cid", effective_codes_by_cid)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.effective_codes_by_cid == other.effective_codes_by_cid
-
-    def __hash__(self) -> int:
-        return hash((self.effective_codes_by_cid,))
-
-    def codes_for_cid(self, cid: int) -> tuple[bytes, ...]:
-        return self.effective_codes_by_cid.get(cid, ())
+# A predefined CMap inverted: each CID's codes that decode to it.
+CompactCMap = dict[int, tuple[bytes, ...]]
 
 
 def compact_cmap_from_decoder(decoder: CMapDecoder) -> CompactCMap:
@@ -1510,9 +1462,7 @@ def compact_cmap_from_decoder(decoder: CMapDecoder) -> CompactCMap:
                 continue
             seen.add(code)
             effective_codes_by_cid[cid_range.first_cid + offset].append(code)
-    return CompactCMap(
-        {cid: tuple(codes) for cid, codes in effective_codes_by_cid.items()},
-    )
+    return {cid: tuple(codes) for cid, codes in effective_codes_by_cid.items()}
 
 
 @cache
@@ -1529,7 +1479,7 @@ def preferred_unicode_for_cid(cmap_name: str, codec: str, cid: int) -> str | Non
         return None
     candidates = {
         text
-        for code in cmap.codes_for_cid(cid)
+        for code in cmap.get(cid, ())
         if (text := unicode_scalar_from_cmap_code(code, codec)) is not None
     }
     if not candidates:
@@ -1567,27 +1517,13 @@ class CIDUnicodeMap:
             return None
         sources = collection[self.vertical]
         opposite_sources = collection[not self.vertical]
-        candidates: Counter[str] = Counter()
-        for cmap_name, codec, weight in sources:
-            if weight <= 0:
-                continue
-            text = preferred_unicode_for_cid(cmap_name, codec, cid)
-            if text is not None:
-                candidates[text] += weight
-        if not candidates:
-            for cmap_name, codec, weight in opposite_sources:
-                if weight <= 0:
-                    continue
-                text = preferred_unicode_for_cid(cmap_name, codec, cid)
-                if text is not None:
-                    candidates[text] += weight
-        if not candidates:
-            for cmap_name, codec, weight in (*sources, *opposite_sources):
-                if weight > 0:
-                    continue
-                text = preferred_unicode_for_cid(cmap_name, codec, cid)
-                if text is not None:
-                    candidates[text] += 1
+        # Weighted votes from this writing mode's CMaps, else the other mode's,
+        # else one vote each from the CMaps given no weight.
+        candidates = (
+            tally_cid_votes(sources, cid)
+            or tally_cid_votes(opposite_sources, cid)
+            or tally_cid_votes((*sources, *opposite_sources), cid, unweighted=True)
+        )
         if not candidates:
             return None
         ranked = {
@@ -1595,6 +1531,20 @@ class CIDUnicodeMap:
             for text, weight in candidates.items()
         }
         return max(ranked, key=ranked.__getitem__)
+
+
+def tally_cid_votes(
+    sources: Iterable[CMapUnicodeSource], cid: int, *, unweighted: bool = False
+) -> Counter[str]:
+    """Each source's preferred text for `cid`, from the weighted or the unweighted sources."""
+    candidates: Counter[str] = Counter()
+    for cmap_name, codec, weight in sources:
+        if (weight <= 0) != unweighted:
+            continue
+        text = preferred_unicode_for_cid(cmap_name, codec, cid)
+        if text is not None:
+            candidates[text] += 1 if unweighted else weight
+    return candidates
 
 
 @cache

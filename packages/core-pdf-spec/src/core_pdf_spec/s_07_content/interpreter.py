@@ -71,6 +71,13 @@ def moved_to(matrix: Matrix, e: float, f: float) -> Matrix:
     return tuple.__new__(Matrix, (matrix[0], matrix[1], matrix[2], matrix[3], e, f))
 
 
+def parse_error_from(error: Exception) -> PdfParseError:
+    """`error` restated as a PdfParseError, chained as `raise ... from error` chains it."""
+    failure = PdfParseError(str(error))
+    failure.__cause__ = error
+    return failure
+
+
 class ContentInterpreter:
     # The executor a subclass wants built for it. Overriding the attribute is
     # what keeps __init__ from constructing a base executor that the subclass
@@ -123,6 +130,16 @@ class ContentInterpreter:
                 lexer.close()
                 raise
         return lexer
+
+    def reject[T](self, error: Exception, context: str, fallback: T) -> T:
+        """Refuse content ISO 32000 does not permit, or recover from it.
+
+        This interpreter raises `error`. A tolerant subclass may return
+        instead: the caller then proceeds with `fallback`, the value a reader
+        recovering from the failure uses, while `context` names the kind of
+        failure. Callers that can continue past a failure ignore the return.
+        """
+        raise error
 
     def append_cubic_curve(
         self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float
@@ -212,13 +229,21 @@ class ContentInterpreter:
             "Lab",
             "Indexed",
         }:
-            raise PdfParseError("color space requires SCN or scn")
-        if space.kind == "Pattern":
-            if not operands or not isinstance(operands[-1], PdfName):
-                raise PdfParseError("Pattern color requires a pattern name")
+            self.reject(PdfParseError("color space requires SCN or scn"), "color-operator", None)
+        if allow_special and space.kind == "Pattern":
+            if not operands:
+                return self.reject(
+                    PdfParseError("Pattern color requires a pattern name"), "color-components", None
+                )
+            if not isinstance(operands[-1], PdfName):
+                self.reject(
+                    PdfParseError("Pattern color requires a pattern name"), "color-components", None
+                )
             if space.base is None:
                 if len(operands) != 1:
-                    raise PdfParseError("invalid color component operands")
+                    self.reject(
+                        PdfParseError("invalid color component operands"), "color-components", None
+                    )
                 return ()
             return self.normalize_color_components(space.base, operands[:-1])
         return self.normalize_color_components(space, operands)
@@ -259,7 +284,7 @@ class ContentInterpreter:
     def append_xobject(self, name_obj: Any, depth: int) -> ContentStreamFrame | None:
         name = self.resolver.resolve_name(name_obj)
         if not name:
-            raise PdfParseError("XObject operand must be a name")
+            return self.reject(PdfParseError("XObject operand must be a name"), "xobject", None)
         raw_xobj = self.lookup_page_resource("XObject", name)
         stream_key = (
             ("ref", raw_xobj.object_number, raw_xobj.generation_number)
@@ -268,14 +293,19 @@ class ContentInterpreter:
         )
         xobj = self.resolver.resolve(raw_xobj)
         if not isinstance(xobj, PdfStream):
-            raise PdfParseError("XObject resource must be a stream")
+            return self.reject(PdfParseError("XObject resource must be a stream"), "xobject", None)
         xobj_dict = xobj.dictionary
         subtype = self.resolver.resolve_name(xobj_dict.get("Subtype"))
+        # 7.5.7: an object stream holds objects; it is never content to paint.
+        if self.resolver.resolve_name(xobj_dict.get("Type")) == "ObjStm":
+            return self.reject(
+                PdfParseError("XObject resource is an object stream"), "xobject", None
+            )
         if subtype == "Image":
             self.sink.paint_image(self, xobj)
             return None
         if subtype != "Form":
-            raise PdfParseError("unsupported XObject subtype")
+            return self.reject(PdfParseError("unsupported XObject subtype"), "xobject", None)
         return self.append_form_xobject(xobj, depth, stream_key=stream_key)
 
     def resolve_form_resources(self, value: object) -> PdfDict:
@@ -285,7 +315,7 @@ class ContentInterpreter:
     def resolve_form_bbox(self, value: object) -> tuple[float, float, float, float] | None:
         bbox = self.resolver.resolve_box(value)
         if bbox is None:
-            raise PdfParseError("Form XObject requires a BBox")
+            return self.reject(PdfParseError("Form XObject requires a BBox"), "form-bbox", None)
         return bbox
 
     def append_form_xobject(
@@ -430,7 +460,8 @@ class ContentInterpreter:
 
     def append_tj_array(self, array: Any) -> None:
         if not isinstance(array, (list, tuple)):
-            raise PdfParseError("TJ requires an array")
+            self.reject(PdfParseError("TJ requires an array"), "text-array", None)
+            return
         if not array:
             return
         pending_bytes = bytearray()
@@ -534,18 +565,21 @@ class ContentInterpreter:
     def resolve_font_name(self, value: object) -> str | None:
         name = self.resolver.resolve_name(value)
         if name is None:
-            raise PdfParseError("Tf requires a font name")
+            return self.reject(PdfParseError("Tf requires a font name"), "font-name", None)
         return name
 
     def parse_font_size(self, value: object) -> float | None:
         try:
             return self.as_float(value)
         except (TypeError, ValueError) as error:
-            raise PdfParseError(str(error)) from error
+            return self.reject(parse_error_from(error), "font-size", None)
 
     def op_Tf(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) != 2:
-            raise PdfParseError("Tf requires two operands")
+            self.reject(PdfParseError("Tf requires two operands"), "font-operands", None)
+            if len(operands) < 2:
+                return
+            operands = operands[:2]
         font_name = self.resolve_font_name(operands[0])
         if font_name is None:
             return
@@ -636,7 +670,8 @@ class ContentInterpreter:
 
     def op_EMC(self, operands: ContentOperands, depth: int) -> None:
         if not self.marked_content_stack:
-            raise PdfParseError("unmatched EMC operator")
+            self.reject(PdfParseError("unmatched EMC operator"), "marked-content", None)
+            return
         self.sink.end_marked_content(self, self.marked_content_stack.pop())
         self.sink.text_boundary(self, "marked")
 
@@ -671,15 +706,21 @@ class ContentInterpreter:
 
     def op_d(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) != 2:
-            raise PdfParseError("d requires two operands")
+            self.reject(PdfParseError("d requires two operands"), "dash-pattern", None)
+            if len(operands) < 2:
+                return
         try:
             phase = self.as_float(operands[1])
             array_obj = operands[0]
-            if not isinstance(array_obj, (list, tuple)):
-                raise PdfParseError("dash pattern must be an array")
-            dash_array = tuple(self.as_float(value) for value in array_obj)
+            if isinstance(array_obj, (list, tuple)):
+                dash_array = tuple(self.as_float(value) for value in array_obj)
+            else:
+                dash_array = self.reject(
+                    PdfParseError("dash pattern must be an array"), "dash-pattern", ()
+                )
         except (TypeError, ValueError) as error:
-            raise PdfParseError(str(error)) from error
+            self.reject(parse_error_from(error), "dash-pattern", None)
+            return
         self.graphics.dash_pattern = (dash_array, phase)
 
     def op_m(self, operands: ContentOperands, depth: int) -> None:
@@ -691,7 +732,8 @@ class ContentInterpreter:
 
     def op_l(self, operands: ContentOperands, depth: int) -> None:
         if self.current_point is None:
-            raise PdfParseError("path operator has no current point")
+            self.reject(PdfParseError("path operator has no current point"), "path", None)
+            return
         if (values := self.as_floats(operands, 2)) is None:
             return
         x, y = values
@@ -719,7 +761,8 @@ class ContentInterpreter:
 
     def op_v(self, operands: ContentOperands, depth: int) -> None:
         if self.current_point is None:
-            raise PdfParseError("path operator has no current point")
+            self.reject(PdfParseError("path operator has no current point"), "path", None)
+            return
         if (values := self.as_floats(operands, 4)) is None:
             return
         x0, y0 = self.current_point
@@ -728,7 +771,8 @@ class ContentInterpreter:
 
     def op_y(self, operands: ContentOperands, depth: int) -> None:
         if self.current_point is None:
-            raise PdfParseError("path operator has no current point")
+            self.reject(PdfParseError("path operator has no current point"), "path", None)
+            return
         if (values := self.as_floats(operands, 4)) is None:
             return
         x1, y1, x3, y3 = values
@@ -821,18 +865,24 @@ class ContentInterpreter:
     def resolve_color_space(self, name_obj: Any) -> ColorSpace:
         name = self.resolver.resolve_name(name_obj)
         if name is None:
-            raise PdfParseError("color space operand must be a name")
+            return self.reject(
+                PdfParseError("color space operand must be a name"), "color-space", DEVICE_GRAY
+            )
         value = (
             name
             if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}
             else self.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
         )
         if value is None:
-            raise PdfParseError("missing color space resource")
+            value = self.reject(PdfParseError("missing color space resource"), "color-space", name)
+        return self.parse_named_color_space(value, name)
+
+    def parse_named_color_space(self, value: object, name: str) -> ColorSpace:
+        """The color space `value`, the family or resource the operand `name` selects."""
         try:
             return parse_color_space(value)
         except (ValueError, TypeError) as error:
-            raise PdfParseError(str(error)) from error
+            return self.reject(parse_error_from(error), "color-space", ColorSpace(name, ()))
 
     def normalize_color_components(
         self, spec: ColorSpace, components: typing.Sequence[object]
@@ -952,18 +1002,21 @@ class ContentInterpreter:
     def op_d1(self, operands: ContentOperands, depth: int) -> None:
         self.type3_uncolored = True
 
-    def resource_operand_name(self, operands: ContentOperands) -> str:
+    def resource_operand_name(self, operands: ContentOperands) -> str | None:
         """The resource name a resource operator (sh, gs) takes as its operand."""
         name = self.resolver.resolve_name(operands[0]) if operands else None
         if not name:
-            raise PdfParseError("resource operator requires a name")
+            return self.reject(PdfParseError("resource operator requires a name"), "resource", None)
         return name
 
     def op_sh(self, operands: ContentOperands, depth: int) -> None:
         name = self.resource_operand_name(operands)
+        if name is None:
+            return
         shading = self.resolver.resolve_dict(self.lookup_page_resource("Shading", name))
         if not isinstance(shading, dict):
-            raise PdfParseError("missing shading resource")
+            self.reject(PdfParseError("missing shading resource"), "shading", None)
+            return
         self.sink.paint_shading(self, shading)
 
     @staticmethod
@@ -1021,7 +1074,8 @@ class ContentInterpreter:
 
     def op_Q(self, operands: ContentOperands, depth: int) -> None:
         if len(self.stack) <= self.graphics_stack_floor:
-            raise PdfParseError("unmatched Q operator")
+            self.reject(PdfParseError("unmatched Q operator"), "graphics-state", None)
+            return
         self.graphics = self.pop_graphics_save()
 
     def op_cm(self, operands: ContentOperands, depth: int) -> None:
@@ -1040,13 +1094,18 @@ class ContentInterpreter:
 
     def op_gs(self, operands: ContentOperands, depth: int) -> None:
         name = self.resource_operand_name(operands)
+        if name is None:
+            return
         extgstate = self.resolve_extgstate(name)
         if extgstate is None:
-            raise PdfParseError("missing ExtGState resource")
+            self.reject(
+                PdfParseError("missing ExtGState resource"), "extended-graphics-state", None
+            )
+            return
         try:
             self.apply_extgstate(extgstate)
         except (TypeError, ValueError) as error:
-            raise PdfParseError(str(error)) from error
+            self.reject(parse_error_from(error), "extended-graphics-state", None)
 
     def apply_extgstate(self, extgstate: dict[str, Any]) -> None:
         intent = self.resolver.resolve(extgstate.get("RI"))
@@ -1099,37 +1158,47 @@ class ContentInterpreter:
     def resolve_pattern_color(
         self, pattern_name: object, *, space: ColorSpace, base_components: tuple[float, ...]
     ) -> PatternPaint | None:
+        invalid = "invalid pattern resource or operands"
         resource = self.resolve_pattern_resource(pattern_name)
         if resource is None:
-            raise PdfParseError("invalid pattern resource or operands")
+            return self.reject(PdfParseError(invalid), "pattern", None)
         pattern, pattern_dict = resource
         pattern_type = self.resolver.resolve_int(pattern_dict.get("PatternType"))
         if pattern_type == 2:
             if space.base is not None:
-                raise PdfParseError("shading pattern requires a colored Pattern space")
+                self.reject(
+                    PdfParseError("shading pattern requires a colored Pattern space"),
+                    "pattern",
+                    None,
+                )
             shading: object = pattern_dict.get("Shading")
             shading = self.resolver.resolve(shading)
             shading_dict = self.resolver.resolve_dict(shading) if shading is not None else None
             if not isinstance(shading_dict, dict):
-                raise PdfParseError("invalid pattern resource or operands")
+                return self.reject(PdfParseError(invalid), "pattern", None)
             extgstate = self.resolver.resolve_dict(pattern_dict.get("ExtGState"))
             return ShadingPattern(dict(shading_dict), extgstate=extgstate)
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
-            raise PdfParseError("invalid pattern resource or operands")
+            return self.reject(PdfParseError(invalid), "pattern", None)
         paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"))
+        if paint_type is None:
+            # Recovery reads a missing or malformed PaintType as colored.
+            paint_type = self.reject(PdfParseError(invalid), "pattern", 1)
         if paint_type not in {1, 2}:
-            raise PdfParseError("invalid pattern resource or operands")
+            return self.reject(PdfParseError(invalid), "pattern", None)
         base_spec = space.base
         if (paint_type == 2) != (base_spec is not None):
-            raise PdfParseError("pattern PaintType does not match its color space")
+            self.reject(
+                PdfParseError("pattern PaintType does not match its color space"), "pattern", None
+            )
         base_color = base_components if paint_type == 2 else None
         bbox = self.resolver.resolve_box(pattern_dict.get("BBox"))
         if bbox is None:
-            raise PdfParseError("invalid pattern resource or operands")
+            return self.reject(PdfParseError(invalid), "pattern", None)
         x_step = self.resolver.resolve_float(pattern_dict.get("XStep"), default=None)
         y_step = self.resolver.resolve_float(pattern_dict.get("YStep"), default=None)
         if x_step is None or y_step is None or x_step == 0.0 or y_step == 0.0:
-            raise PdfParseError("invalid pattern resource or operands")
+            return self.reject(PdfParseError(invalid), "pattern", None)
         matrix = self.matrix_operand(pattern_dict.get("Matrix"), "pattern")
         resources = self.resolve_resources(pattern_dict.get("Resources")) or {}
         return TilingPattern(

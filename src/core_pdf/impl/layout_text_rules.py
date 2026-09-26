@@ -252,8 +252,7 @@ def runs_are_left_to_right(runs: list[TextRun]) -> bool:
             return False
         x1 = run.x1
         height = run.height
-        overlap = (min(x1, prev_x1)) - (max(x0, prev_x0))
-        if overlap > (min(height, prev_height)) * 0.25:
+        if interval_overlap(x0, x1, prev_x0, prev_x1) > min(height, prev_height) * 0.25:
             return False
         prev_x0 = x0
         prev_x1 = x1
@@ -300,7 +299,7 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
         x1 = run.x1
         space_width = run.space_width
         if previous is not None:
-            overlap = (min(x1, prev_x1)) - (max(x0, prev_x0))
+            overlap = interval_overlap(x0, x1, prev_x0, prev_x1)
             min_width = min(prev_x1 - prev_x0, x1 - x0)
             threshold = max(2.5, min_width * 0.45, max(prev_space_width, space_width) * 0.8)
             if overlap > threshold:

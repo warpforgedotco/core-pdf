@@ -412,7 +412,7 @@ wheels = [
 
 [[package]]
 name = "core-adobe-fonts"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "packages/core-adobe-fonts" }
 dependencies = [
     { name = "core-records" },
@@ -423,7 +423,7 @@ requires-dist = [{ name = "core-records", editable = "packages/core-records" }]
 
 [[package]]
 name = "core-jbig2"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "packages/core-jbig2" }
 dependencies = [
     { name = "core-records" },
@@ -614,7 +614,7 @@ requires-dist = [
 
 [[package]]
 name = "core-pdf-spec"
-version = "0.11.0"
+version = "0.12.0"
 source = { editable = "packages/core-pdf-spec" }
 dependencies = [
     { name = "core-adobe-fonts" },

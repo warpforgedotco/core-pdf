@@ -6,7 +6,7 @@ import pytest
 
 from core_pdf.impl import graphics_stream_decoding as recovery
 from core_pdf.impl.graphics_decode_compat import FilterParams
-from core_pdf_spec.s_07_filters.errors import FilterParseError
+from core_pdf_spec.s_07_filters.errors import FilterError, FilterParseError
 
 
 @pytest.mark.parametrize(
@@ -189,3 +189,43 @@ def test_flate_does_not_recover_a_corrupt_body_despite_a_valid_header():
 def test_ascii85_recovery_does_not_hide_invalid_digits_or_groups(encoded):
     with pytest.raises(ValueError):
         recovery.apply_ascii85(encoded, None)
+
+
+PREDICTED = {"Predictor": 12, "Columns": 2}
+
+
+def test_a_passed_through_content_stream_skips_the_predictor_only_alone():
+    content = b"q 1 0 0 1 0 0 cm Q"
+    assert recovery.inflate(content) == (content, True)
+    alone = {"Filter": "FlateDecode", "DecodeParms": PREDICTED}
+    assert recovery.decode_stream_data(content, alone) == content
+    chained = {"Filter": ["ASCIIHexDecode", "FlateDecode"], "DecodeParms": [None, PREDICTED]}
+    with pytest.raises(FilterError):
+        recovery.decode_stream_data(content.hex().encode(), chained)
+
+
+def test_inflated_data_is_never_passed_through():
+    payload = b"q 1 0 0 1 0 0 cm Q"
+    assert recovery.inflate(zlib.compress(payload)) == (payload, False)
+    assert recovery.inflate(b"") == (b"", False)
+
+
+def test_decode_parms_are_read_once_for_the_filters_that_read_them():
+    spec = recovery.normalize_stream_decode_spec(
+        {
+            "Filter": ["FlateDecode", "DCTDecode", "Crypt", "LZWDecode"],
+            "DecodeParms": [
+                PREDICTED,
+                {"ColorTransform": 0},
+                {"Name": "Identity"},
+                {"Columns": "x"},
+            ],
+        }
+    )
+    flate, dct, crypt, lzw = (step.params for step in spec.steps)
+    assert flate == FilterParams.from_parms(PREDICTED)
+    assert type(flate) is FilterParams
+    assert dct == {"ColorTransform": 0}
+    assert crypt == {"Name": "Identity"}
+    # Parameters that do not read stay as given, for the step to reject.
+    assert lzw == {"Columns": "x"}

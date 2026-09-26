@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import heapq
 import math
-from bisect import bisect_left
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from copy import replace
@@ -53,6 +52,7 @@ from core_pdf.impl.render_model import (
     PathPaintKind,
     RasterGroup,
     SoftMaskPlane,
+    is_plain_fill,
 )
 from core_pdf.impl.render_paths import (
     RASTER_CIRCLE_MIN_PIXEL_AREA,
@@ -178,6 +178,7 @@ class ByteBudgetCache[K, V]:
 # Keyed by id(source); the entry holds the source, so the id cannot be reused
 # while it is cached.
 type PreparedImageCache = ByteBudgetCache[int, tuple[ImageSource, PreparedImage | None]]
+type PreparedShadingCache = dict[tuple[int, ColorRendering], tuple[object, PreparedShading | None]]
 
 
 def prepared_image(cache: PreparedImageCache, source: ImageSource) -> PreparedImage | None:
@@ -556,6 +557,7 @@ class RasterTarget:
         "soft_mask_cache",
         "prepared_image_cache",
         "tiling_cell_cache",
+        "prepared_shading_cache",
         "active_soft_masks",
         "elementary_scratch",
         "group_member_boxes",
@@ -607,6 +609,10 @@ class RasterTarget:
         self.soft_mask_cache: SoftMaskCache = ByteBudgetCache(SOFT_MASK_CACHE_BYTES)
         self.prepared_image_cache: PreparedImageCache = ByteBudgetCache(PREPARED_IMAGE_CACHE_BYTES)
         self.tiling_cell_cache: TilingCellCache = {}
+        # A shading dictionary's prepared form, per dictionary and rendering.
+        # The entry keeps its dictionary alive, so the identity key cannot be
+        # reused while it is here.
+        self.prepared_shading_cache: PreparedShadingCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, ElementaryScratch] = {}
         # DisplayList.group_member_boxes of the list being painted, if known.
@@ -662,6 +668,7 @@ class RasterTarget:
         sibling.soft_mask_cache = self.soft_mask_cache
         sibling.prepared_image_cache = self.prepared_image_cache
         sibling.tiling_cell_cache = self.tiling_cell_cache
+        sibling.prepared_shading_cache = self.prepared_shading_cache
         sibling.active_soft_masks = self.active_soft_masks
         return sibling, view
 
@@ -806,14 +813,7 @@ class RasterTarget:
         Anything else composites through a group, and composite_group records
         what that group actually painted, so nothing else needs predicting.
         """
-        if not (
-            isinstance(item, PathPaintItem)
-            and item.paint_kind is PathPaintKind.FILL
-            and item.edge_array is not None
-            and item.bbox is not None
-            and item.fill_pattern is None
-            and item.blend_mode in (None, "Normal")
-        ):
+        if not is_plain_fill(item):
             return None
         clipped = self.clip.clipped_pixel_box(item.bbox)
         if clipped is None:
@@ -957,24 +957,15 @@ class RasterTarget:
                     if (graphics_mask := data.get("graphics_soft_mask")) is not None
                     else None
                 )
-                if not isolated and not knockout:
+                # A knockout group takes scratch only where the pixels it
+                # can touch are known.
+                region = self.knockout_group_region(item) if not isolated and knockout else None
+                if not isolated and (not knockout or region is not None):
                     # A non-isolated group starts as its backdrop, as an
                     # elementary group does, so it takes the same per-depth
                     # scratch: a page of Type 3 text inside a knockout group
                     # opened 9,956 of these, each copying the whole page and
                     # zeroing two page-sized planes to paint a glyph.
-                    self.push_scratch_group(
-                        opacity,
-                        data.get("blend_mode"),
-                        track_shape=data.get("group_track_shape", False),
-                        mask_alpha=group_mask_alpha,
-                        alpha_is_shape=data.get("alpha_is_shape", False),
-                    )
-                elif (
-                    not isolated
-                    and knockout
-                    and (region := self.knockout_group_region(item)) is not None
-                ):
                     self.push_scratch_group(
                         opacity,
                         data.get("blend_mode"),
@@ -1699,7 +1690,6 @@ class RasterTarget:
         blit_opaque_sampled_tiles = self.blit_opaque_sampled_tiles
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
-        clip_row_visible_spans = clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
         current_clip = clip.current_clip
@@ -1862,6 +1852,13 @@ class RasterTarget:
             height_px, width_px, comps
         )
         target_pixels = self.pixel_array
+        clip_mask = (
+            numpy.frombuffer(self.clip_pixel_mask(ix0, iy0, ix1, iy1), dtype=numpy.bool_).reshape(
+                iy1 - iy0, ix1 - ix0
+            )
+            if clip_regions and not rectangular_clip
+            else None
+        )
         tile_columns = min(ix1 - ix0, max(1, AFFINE_BLIT_SCRATCH_BYTES // 160))
         tile_rows = max(1, AFFINE_BLIT_SCRATCH_BYTES // (160 * tile_columns))
         for row_start in range(iy0, iy1, tile_rows):
@@ -1877,14 +1874,10 @@ class RasterTarget:
                 visible = (
                     (source_u >= 0.0) & (source_u <= 1.0) & (source_v >= 0.0) & (source_v <= 1.0)
                 )
-                if clip_regions and not rectangular_clip:
-                    allowed = numpy.zeros(visible.shape, dtype=numpy.bool_)
-                    for local_y, py in enumerate(range(row_start, row_end)):
-                        for start, end in clip_row_visible_spans(py):
-                            start, end = max(start, column_start), min(end, column_end)
-                            if end > start:
-                                allowed[local_y, start - column_start : end - column_start] = True
-                    visible &= allowed
+                if clip_mask is not None:
+                    visible &= clip_mask[
+                        row_start - iy0 : row_end - iy0, column_start - ix0 : column_end - ix0
+                    ]
                 if not numpy.any(visible):
                     continue
                 sample_x = numpy.clip((source_u * width_px).astype(numpy.intp), 0, width_px - 1)
@@ -2609,78 +2602,67 @@ class RasterTarget:
         pixel_area = (ix1 - ix0) * (iy1 - iy0)
         rectangular_clip = clip_paths_are_axis_aligned_rects()
         normal_fast = blend_mode is None
-        if normal_fast and rectangular_clip and fill_rule == "nonzero" and pixel_area < 10_000:
-            source = (
-                edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
-            )
-            # The transform and the flat-edge filter fuse into the kernel's own
-            # pass over the edges. None means no edge spans any y, which is the
-            # early return the sloped mask used to give: coverage would be zero
-            # everywhere and the blend a no-op.
-            rows = slice(iy0, iy1)
-            columns = slice(ix0, ix1)
-            source_alpha = self.group_source_alpha
-            source_shape = self.group_source_shape
-            drawn = fill_glyph_coverage(
-                source,
-                crop_x0,
-                crop_y1,
-                scale,
-                ix0,
-                iy0,
-                ix1 - ix0,
-                iy1 - iy0,
-                rgba,
-                self.pixel_array[rows, columns],
-                source_alpha[rows, columns] if source_alpha is not None else None,
-                source_shape[rows, columns] if source_shape is not None else None,
-                self.shape_alpha,
-            )
-            if drawn is not None:
-                # Both plane records extended the window by the whole box, as
-                # the no-plane path does.
-                self.extend_paint_window(rows, columns)
-            return
-        if normal_fast and rectangular_clip and pixel_area < 10_000:
-            # What reaches here is a fill fill_glyph_coverage cannot take --
-            # in practice an even-odd one -- and 4x4 supersampling covers it.
-            # A row the sampling misses is left out of the plane, as the
-            # row-by-row original skipped it.
-            source = (
-                edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
-            )
-            sampled = supersampled_coverage_plane(
-                source, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
-            )
-            if sampled is None:
-                return
-            counts, first_row = sampled
-            rows = slice(iy0 + first_row, iy0 + first_row + len(counts))
-            columns = slice(ix0, ix1)
-            coverage = counts.astype(numpy.float32)
-            alpha_plane = numpy.rint(coverage * rgba[3] / 16).astype(numpy.uint8)
-            blend_normal_alpha_array_numpy(self.pixel_array[rows, columns], rgba, alpha_plane)
-            self.record_source_alpha(rows, columns, alpha_plane)
-            if self.group_source_shape is not None:
-                self.record_source_shape(
-                    rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
-                )
-            return
         if pixel_area < 10_000:
-            # What is left of a small fill: a clip that is not rectangles, or
-            # a blend other than normal, which the kernels above cannot take.
-            # supersampled_coverage_plane gives the 4x4 counts the per-pixel
-            # loop this replaced sampled, and blend_counts its clip test,
-            # blend_px's arithmetic and the per-pixel group-plane updates.
             source = (
                 edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
             )
+            if normal_fast and rectangular_clip and fill_rule == "nonzero":
+                # The transform and the flat-edge filter fuse into the
+                # kernel's own pass over the edges. None means no edge spans
+                # any y, which is the early return the sloped mask used to
+                # give: coverage would be zero everywhere and the blend a
+                # no-op.
+                rows = slice(iy0, iy1)
+                columns = slice(ix0, ix1)
+                source_alpha = self.group_source_alpha
+                source_shape = self.group_source_shape
+                drawn = fill_glyph_coverage(
+                    source,
+                    crop_x0,
+                    crop_y1,
+                    scale,
+                    ix0,
+                    iy0,
+                    ix1 - ix0,
+                    iy1 - iy0,
+                    rgba,
+                    self.pixel_array[rows, columns],
+                    source_alpha[rows, columns] if source_alpha is not None else None,
+                    source_shape[rows, columns] if source_shape is not None else None,
+                    self.shape_alpha,
+                )
+                if drawn is not None:
+                    # Both plane records extended the window by the whole
+                    # box, as the no-plane path does.
+                    self.extend_paint_window(rows, columns)
+                return
+            # What is left of a small fill takes the 4x4 counts the per-pixel
+            # loop this replaced sampled. A row the sampling misses is left
+            # out of the plane, as the row-by-row original skipped it.
             sampled = supersampled_coverage_plane(
                 source, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
             )
             if sampled is None:
                 return
             counts, first_row = sampled
+            if normal_fast and rectangular_clip:
+                # A fill fill_glyph_coverage cannot take -- in practice an
+                # even-odd one.
+                rows = slice(iy0 + first_row, iy0 + first_row + len(counts))
+                columns = slice(ix0, ix1)
+                coverage = counts.astype(numpy.float32)
+                alpha_plane = numpy.rint(coverage * rgba[3] / 16).astype(numpy.uint8)
+                blend_normal_alpha_array_numpy(self.pixel_array[rows, columns], rgba, alpha_plane)
+                self.record_source_alpha(rows, columns, alpha_plane)
+                if self.group_source_shape is not None:
+                    self.record_source_shape(
+                        rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
+                    )
+                return
+            # A clip that is not rectangles, or a blend other than normal,
+            # which the kernels above cannot take: blend_counts gives the
+            # loop's clip test, blend_px's arithmetic and the per-pixel
+            # group-plane updates.
             top = iy0 + first_row
             self.blend_counts(
                 counts,
@@ -2772,14 +2754,17 @@ class RasterTarget:
         """
         box_width = ix1 - ix0
         allowed = bytearray(box_width * (iy1 - iy0))
+        ones = b"\x01" * box_width
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         for py in range(iy0, iy1):
-            spans = clip_row_visible_spans(py)
             row_start = (py - iy0) * box_width - ix0
-            for px in range(ix0, ix1):
-                index = bisect_left(spans, (px + 1, -1))
-                if index > 0 and spans[index - 1][0] <= px < spans[index - 1][1]:
-                    allowed[row_start + px] = 1
+            # A row's spans are sorted and do not overlap, so the pixels
+            # pixel_in_clip's bisect finds are exactly the spans' own.
+            for span_start, span_end in clip_row_visible_spans(py):
+                start = max(ix0, span_start)
+                end = min(ix1, span_end)
+                if end > start:
+                    allowed[row_start + start : row_start + end] = ones[: end - start]
         return allowed
 
     def fill_line(
@@ -3068,22 +3053,38 @@ class RasterTarget:
             self.extend_paint_box,
         )
 
+    def raster_page_box(self) -> tuple[float, float, float, float]:
+        """The page area the raster covers, the box of a paint that gives none."""
+        return (self.crop_x0, self.crop_y0, self.crop_x0 + self.width / self.scale, self.crop_y1)
+
     def shading_box(
         self,
         data: dict[str, Any],
         shading: PreparedShading,
     ) -> tuple[float, float, float, float]:
-        crop_x0 = self.crop_x0
-        crop_y0 = self.crop_y0
-        crop_y1 = self.crop_y1
-        scale = self.scale
-        width = self.width
         box = shading.bbox
         if box is None:
             box = rect_tuple(data.get("bbox"))
         if box is None:
-            box = (crop_x0, crop_y0, crop_x0 + width / scale, crop_y1)
+            box = self.raster_page_box()
         return normalize_rect(box)
+
+    def prepared_shading(
+        self, dictionary: object, rendering: ColorRendering
+    ) -> PreparedShading | None:
+        """prepare_shading's answer for the dictionary, prepared once per target.
+
+        A page that paints one shading many times -- a pattern fill per
+        path, an sh per tile -- parsed its function and colour space again
+        each time, and started a fresh colour cache.
+        """
+        key = (id(dictionary), rendering)
+        cached = self.prepared_shading_cache.get(key)
+        if cached is not None and cached[0] is dictionary:
+            return cached[1]
+        shading = prepare_shading(dictionary, rendering=rendering)
+        self.prepared_shading_cache[key] = (dictionary, shading)
+        return shading
 
     def paint_shading(self, data: dict[str, Any], blend_mode: str | None) -> None:
         """Paint an axial or radial shading over the clip, in two kernels.
@@ -3099,8 +3100,8 @@ class RasterTarget:
         raised at recorded as blend_px recorded it, and the same error
         raised.
         """
-        shading = prepare_shading(
-            data.get("dictionary"), rendering=data.get("color_rendering", DEFAULT_COLOR_RENDERING)
+        shading = self.prepared_shading(
+            data.get("dictionary"), data.get("color_rendering", DEFAULT_COLOR_RENDERING)
         )
         if shading is None:
             return
@@ -3113,14 +3114,9 @@ class RasterTarget:
         shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
         mode = BLEND_MODE_CODES.get(self.resolved_blend(blend_mode), 0)
         domain = shading.domain
-        allowed = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
-        clip_row_visible_spans = self.clip.clip_row_visible_spans
-        for py in range(iy0, iy1):
-            for span_start, span_end in clip_row_visible_spans(py):
-                start = max(ix0, span_start)
-                end = min(ix1, span_end)
-                if end > start:
-                    allowed[py - iy0, start - ix0 : end - ix0] = 1
+        allowed = numpy.frombuffer(
+            self.clip_pixel_mask(ix0, iy0, ix1, iy1), dtype=numpy.uint8
+        ).reshape(iy1 - iy0, ix1 - ix0)
         values, painted = shading_values(
             shading.shading_type,
             shading.coords,
@@ -3148,7 +3144,7 @@ class RasterTarget:
         reached = len(ordered)
         color_error: Exception | None = None
         color_model = shading.color_model
-        evaluate = shading.evaluate
+        evaluate = shading.evaluator
         rendering = shading.color_rendering
         for unique_index in by_first.tolist():
             position = int(first[unique_index])
@@ -3195,11 +3191,7 @@ class RasterTarget:
         target_data: PathPaintItem,
         blend_mode: str | None,
     ) -> bool:
-        crop_x0 = self.crop_x0
-        crop_y0 = self.crop_y0
-        crop_y1 = self.crop_y1
         scale = self.scale
-        width = self.width
         cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
         x_step = abs(pattern.x_step)
         y_step = abs(pattern.y_step)
@@ -3215,21 +3207,13 @@ class RasterTarget:
             # they would have composited stays empty, so nothing is pushed.
             return True
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
-        if type(target_box) is list or type(target_box) is tuple:
-            if len(target_box) == 4:
-                try:
-                    x0, y0, x1, y1 = (float(value) for value in target_box)
-                except TypeError, ValueError:
-                    return False
-            else:
-                x0, y0, x1, y1 = (
-                    crop_x0,
-                    crop_y0,
-                    crop_x0 + width / scale,
-                    crop_y1,
-                )
+        if (type(target_box) is list or type(target_box) is tuple) and len(target_box) == 4:
+            box = rect_tuple(target_box)
+            if box is None:
+                return False
         else:
-            x0, y0, x1, y1 = crop_x0, crop_y0, crop_x0 + width / scale, crop_y1
+            box = self.raster_page_box()
+        x0, y0, x1, y1 = box
         clip_box = self.clip.current_clip()
         if clip_box is not None:
             clipped = intersect_box((x0, y0, x1, y1), clip_box)

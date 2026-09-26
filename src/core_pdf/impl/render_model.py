@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 from operator import attrgetter
-from typing import Any, ClassVar, Self, final
+from typing import Any, ClassVar, Self, TypeIs, final
 
 import numpy
 
@@ -347,6 +347,23 @@ class PathPaintItem(ReplaceFields, ReprFields):
 
     def to_data(self) -> dict[str, Any]:
         return {"bbox": self.bbox, "path": self.path, **path_paint_fields(self)}
+
+
+def is_plain_fill(item: object) -> TypeIs[PathPaintItem]:
+    """An edge-array fill with a bbox, no pattern and a Normal blend.
+
+    fill_path provably paints such a fill inside its bbox as clipped, which
+    knockout groups rely on to set up only the pixels their members touch.
+    PathPaintItem is final, so its type is checked by identity.
+    """
+    return (
+        type(item) is PathPaintItem
+        and item.paint_kind is PathPaintKind.FILL
+        and item.edge_array is not None
+        and item.bbox is not None
+        and item.fill_pattern is None
+        and item.blend_mode in (None, "Normal")
+    )
 
 
 @final
@@ -735,4 +752,5 @@ __all__ = (
     "PathPaintKind",
     "RasterImage",
     "RenderOptions",
+    "is_plain_fill",
 )

@@ -22,6 +22,7 @@ from core_pdf_spec.s_09_fonts.cmap_tounicode import (
     decode_utf16be,
 )
 from core_pdf_spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap as PdfToUnicodeCMap
+from core_pdf_spec.s_09_fonts.font_program_truetype import is_unicode_scalar
 
 
 def decode_utf16be_text(data: bytes) -> str:
@@ -192,6 +193,8 @@ def parse_cidrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) ->
 class ToUnicodeCMap(PdfToUnicodeCMap):
     __slots__ = ()
 
+    max_inheritance_depth = 16
+
     @staticmethod
     def parse_program(data: bytes) -> ParsedToUnicodeCMap:
         return parse_to_unicode_cmap(data)
@@ -199,32 +202,8 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
     def validate_mappings(self) -> None:
         pass
 
-    def __init__(
-        self,
-        data: bytes | bytearray | memoryview,
-        *,
-        usecmap_resolver: Callable[[str], bytes | None] | None = None,
-        inheritance_depth: int = 0,
-        ancestor_names: tuple[str, ...] = (),
-    ) -> None:
-        if inheritance_depth > 16:
-            raise ValueError("ToUnicode CMap UseCMap recursion limit exceeded")
-        super().__init__(
-            data,
-            usecmap_resolver=usecmap_resolver,
-            inheritance_depth=inheritance_depth,
-            ancestor_names=ancestor_names,
-        )
-
-    def resolve_parent(
-        self,
-        name: str,
-        resolver: Callable[[str], bytes | None] | None,
-        depth: int,
-        ancestor_names: tuple[str, ...] = (),
-    ) -> PdfToUnicodeCMap | None:
-        data = resolver(name) if resolver is not None else None
-        return self.load_parent(data, resolver, depth) if data is not None else None
+    def reject_parent(self, reason: str) -> PdfToUnicodeCMap | None:  # noqa: ARG002
+        return None
 
     def load_parent(
         self,
@@ -234,7 +213,7 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
         ancestor_names: tuple[str, ...] = (),
     ) -> PdfToUnicodeCMap | None:
         try:
-            return type(self)(data, usecmap_resolver=resolver, inheritance_depth=depth)
+            return super().load_parent(data, resolver, depth, ancestor_names)
         except ValueError:
             return None
 
@@ -307,9 +286,7 @@ MAX_CMAP_RANGE_SPAN = 65536
 
 
 def unicode_scalar_or_replacement(codepoint: int) -> str:
-    if 0 <= codepoint < 0x110000 and not 0xD800 <= codepoint <= 0xDFFF:
-        return chr(codepoint)
-    return "\ufffd"
+    return chr(codepoint) if is_unicode_scalar(codepoint) else "\ufffd"
 
 
 def expand_range(start: int, end: int, source_hex_len: int, base_dst: str) -> dict[bytes, str]:

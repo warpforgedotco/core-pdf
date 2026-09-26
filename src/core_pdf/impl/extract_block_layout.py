@@ -332,17 +332,14 @@ def build_lines(
 def assign_columns(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     if len(blocks) < 2:
         return blocks
-    page_x0 = min(block.bbox[0] for block in blocks)
-    page_x1 = max(block.bbox[2] for block in blocks)
-    page_width = max(1.0, page_x1 - page_x0)
     bands: list[list[float]] = []
     assignments: list[int | None] = []
-    for block in blocks:
-        x0, y0, x1, y1 = block.bbox
-        width = x1 - x0
-        if width / page_width >= 0.70:
+    for block, spans_page in zip(blocks, full_width_blocks(blocks), strict=True):
+        if spans_page:
             assignments.append(None)
             continue
+        x0, _y0, x1, _y1 = block.bbox
+        width = x1 - x0
         best_band: int | None = None
         best_overlap = 0.0
         for band_index, (band_x0, band_x1) in enumerate(bands):
@@ -450,7 +447,7 @@ def display_boxes(
     ).astype(boxes.dtype, copy=False)
 
 
-def layout_blocks(
+def layout_blocks_with_evidence(
     observations: ObservationBatch,
     *,
     obstacles: tuple[tuple[float, float, float, float], ...] = (),
@@ -460,28 +457,30 @@ def layout_blocks(
     page_height: float = 0.0,
     source_labels: Mapping[int, str] | None = None,
     group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
-) -> tuple[ParsedBlock, ...]:
+) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
     built_lines = build_lines(observations, source_labels=source_labels, group_order=group_order)
     lines = built_lines.lines
     if not lines:
-        return ()
+        return (), reading_order_evidence(())
     boxes = display_boxes(
         built_lines.boxes,
         rotation,
         page_width,
         page_height,
     )
-    if obstacles:
-        obstacles = tuple(
-            bbox_tuple(box)
-            for box in display_boxes(
-                numpy.asarray(obstacles, dtype=numpy.float32),
-                rotation,
-                page_width,
-                page_height,
+    if use_xy_cut:
+        if obstacles:
+            obstacles = tuple(
+                bbox_tuple(box)
+                for box in display_boxes(
+                    numpy.asarray(obstacles, dtype=numpy.float32),
+                    rotation,
+                    page_width,
+                    page_height,
+                )
             )
-        )
-    if not use_xy_cut:
+        blocks = xy_cut_blocks(built_lines, boxes, obstacles)
+    else:
         indexes = row_order_indexes(
             numpy.arange(len(lines), dtype=numpy.int64),
             boxes,
@@ -490,12 +489,19 @@ def layout_blocks(
             ParsedBlock(lines=(lines[int(index)],), bbox=line_bbox(lines[int(index)]))
             for index in indexes
         ]
-        return tuple(
-            classify_blocks(
-                assign_columns(blocks),
-                body_font_size=semantic_body_font_size(lines),
-            )
-        )
+    classified = tuple(
+        classify_blocks(assign_columns(blocks), body_font_size=semantic_body_font_size(lines))
+    )
+    return classified, reading_order_evidence(classified)
+
+
+def xy_cut_blocks(
+    built_lines: BuiltLines,
+    boxes: numpy.ndarray,
+    obstacles: tuple[tuple[float, float, float, float], ...],
+) -> list[ParsedBlock]:
+    """The lines grouped into blocks by recursive XY-cut, in reading order."""
+    lines = built_lines.lines
     heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
     median_height = max(1.0, finite_median(heights))
     regions = xy_cut_regions(
@@ -519,34 +525,7 @@ def layout_blocks(
     blocks = interleave_columnar_blocks(blocks)
     blocks = transpose_numeric_table_blocks(blocks)
     blocks = column_major_prose(blocks)
-    blocks = topological_block_order(blocks)
-    return tuple(
-        classify_blocks(assign_columns(blocks), body_font_size=semantic_body_font_size(lines))
-    )
-
-
-def layout_blocks_with_evidence(
-    observations: ObservationBatch,
-    *,
-    obstacles: tuple[tuple[float, float, float, float], ...] = (),
-    use_xy_cut: bool = True,
-    rotation: int = 0,
-    page_width: float = 0.0,
-    page_height: float = 0.0,
-    source_labels: Mapping[int, str] | None = None,
-    group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
-) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
-    blocks = layout_blocks(
-        observations,
-        obstacles=obstacles,
-        use_xy_cut=use_xy_cut,
-        rotation=rotation,
-        page_width=page_width,
-        page_height=page_height,
-        source_labels=source_labels,
-        group_order=group_order,
-    )
-    return blocks, reading_order_evidence(blocks)
+    return topological_block_order(blocks)
 
 
 def layout_element_order(
@@ -793,13 +772,11 @@ def column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
             line_starts - cluster_values[left]
         )
         line_clusters = numpy.where(choose_right, right, left)
-        transitions = sum(
-            left != right for left, right in zip(line_clusters, line_clusters[1:], strict=False)
-        )
+        transitions = numpy.count_nonzero(line_clusters[1:] != line_clusters[:-1])
         if transitions / max(1, len(line_clusters) - 1) < 0.25:
             output.append(block)
             continue
-        columns: list[list[ParsedLine]] = [[] for cluster in clusters]
+        columns: list[list[ParsedLine]] = [[] for _ in clusters]
         for line, assigned in zip(block.lines, line_clusters, strict=True):
             columns[int(assigned)].append(line)
         ordered = tuple(
@@ -1053,24 +1030,32 @@ def gutter_tolerating_contained_boxes(
     if not runs:
         return None
 
-    def unspanned(low: float, high: float) -> bool:
-        spanning = (region_boxes[:, 0] < low) & (region_boxes[:, 2] > high)
-        return not bool(spanning.any())
+    # A gutter spans from one run's low edge to a later run's high edge; the
+    # box tests against each edge are made once per run rather than per pair.
+    starts = region_boxes[:, 0]
+    ends = region_boxes[:, 2]
+    starts_before = [starts < low for low, _high in runs]
+    starts_within = [starts >= low for low, _high in runs]
+    ends_after = [ends > high for _low, high in runs]
+    ends_within = [ends <= high for _low, high in runs]
 
-    def enclosed(low: float, high: float) -> int:
-        inside = (region_boxes[:, 0] >= low) & (region_boxes[:, 2] <= high)
-        return int(inside.sum())
+    def fits(first: int, last: int) -> bool:
+        """No box crosses the span, and at most `allowed` boxes sit inside it."""
+        if (starts_before[first] & ends_after[last]).any():
+            return False
+        return int((starts_within[first] & ends_within[last]).sum()) <= allowed
 
     best: tuple[float, float] | None = None
-    for index, (low, _high) in enumerate(runs):
-        span_high = runs[index][1]
-        for _next_low, next_high in runs[index + 1 :]:
-            if not unspanned(low, next_high) or enclosed(low, next_high) > allowed:
+    for first, (low, _high) in enumerate(runs):
+        last = first
+        for following in range(first + 1, len(runs)):
+            if not fits(first, following):
                 break
-            span_high = next_high
+            last = following
+        span_high = runs[last][1]
+        # A span that grew was already found to fit; only the run alone is untested.
         if (
-            unspanned(low, span_high)
-            and enclosed(low, span_high) <= allowed
+            (last > first or fits(first, first))
             and span_high - low >= minimum_gap
             and (best is None or span_high - low > best[1] - best[0])
         ):

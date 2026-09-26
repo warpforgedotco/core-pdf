@@ -385,16 +385,12 @@ def selected_pages(document: Document, pages: PageSelection | None) -> tuple[Pag
     return tuple(document.pages[index] for index in indexes)
 
 
-def page_lines(page: Page) -> tuple[TextLine, ...]:
-    return tuple(line for block in page.blocks for line in block.lines)
-
-
 def document_to_csv(document: Document, *, pages: PageSelection | None = None) -> str:
     output = StringIO()
     rows = writer(output, lineterminator="\n")
     rows.writerow(("page_number", "line_index", "text", "x0", "y0", "x1", "y1"))
     for page in selected_pages(document, pages):
-        for index, line in enumerate(page_lines(page)):
+        for index, line in enumerate(page.text_view.lines):
             bbox = line.bbox
             rows.writerow(
                 (
@@ -416,7 +412,7 @@ def document_to_tei(document: Document, *, pages: PageSelection | None = None) -
     body = SubElement(text, "body")
     for page in selected_pages(document, pages):
         SubElement(body, "pb", {"n": str(page.page_number)})
-        for line in page_lines(page):
+        for line in page.text_view.lines:
             paragraph = SubElement(body, "p")
             paragraph.text = line.text
     return tostring(root, encoding="unicode", short_empty_elements=True)

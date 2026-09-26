@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import suppress
-from copy import replace
 from typing import Any
 
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -42,7 +41,6 @@ def recover_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetric
     default_vertical_displacement_y = -1000.0
     default_vertical_origin_y = 880.0
     vertical_metrics: dict[int, tuple[float, float, float]] = {}
-    descriptor = font.get("FontDescriptor")
     if subtype == "Type0":
         descendant = get_descendant(font)
         if isinstance(descendant, dict):
@@ -56,75 +54,18 @@ def recover_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetric
                 default_vertical_displacement_y = parse_float(dw2[1], -1000.0)
             w2 = descendant.get("W2")
             if isinstance(w2, (list, tuple)):
-                index = 0
-                while index + 1 < len(w2):
-                    try:
-                        first = parse_int_strict(w2[index], "invalid CID vertical widths")
-                    except ValueError:
-                        index += 1
-                        continue
-                    values = w2[index + 1]
-                    if isinstance(values, (list, tuple)):
-                        for offset in range(len(values) // 3):
-                            cid = first + offset
-                            if MIN_CID <= cid <= MAX_CID:
-                                vertical_metrics[cid] = (
-                                    parse_float(
-                                        values[offset * 3], default_vertical_displacement_y
-                                    ),
-                                    parse_float(values[offset * 3 + 1], 0.0),
-                                    parse_float(values[offset * 3 + 2], 0.0),
-                                )
-                        index += 2
-                    else:
-                        if index + 4 < len(w2):
-                            try:
-                                last = parse_int_strict(values, "invalid CID vertical widths")
-                                width = parse_float(w2[index + 2], default_vertical_displacement_y)
-                                vx = parse_float(w2[index + 3], 0.0)
-                                vy = parse_float(w2[index + 4], 0.0)
-                                bounds = clipped_cid_bounds(first, last)
-                                if bounds is not None:
-                                    clipped_first, clipped_last = bounds
-                                    for cid in range(clipped_first, clipped_last + 1):
-                                        vertical_metrics[cid] = (width, vx, vy)
-                            except ValueError:
-                                pass
-                        index += 5
+                vertical_metrics = recover_vertical_metrics(w2, default_vertical_displacement_y)
             widths = parse_cid_widths(descendant.get("W"))
-            descriptor = descendant.get("FontDescriptor")
-
-    if isinstance(descriptor, dict) and subtype != "Type0":
-        desc_missing_width = descriptor.get("MissingWidth")
-        if desc_missing_width is not None:
-            default_width = parse_float(desc_missing_width, default_width)
-            default_width_explicit = True
-
-    if subtype != "Type0":
-        first_char_val = font.get("FirstChar")
-        if first_char_val is None:
-            first_char = 0
-        else:
-            try:
-                first_char = parse_int_strict(first_char_val, "invalid font FirstChar")
-            except ValueError:
-                first_char = 0
-        last_char_val = font.get("LastChar")
-        last_char = None
-        if last_char_val is not None:
-            try:
-                last_char = parse_int_strict(last_char_val, "invalid font LastChar")
-            except ValueError:
-                last_char = None
+    else:
+        descriptor = font.get("FontDescriptor")
+        if isinstance(descriptor, dict):
+            desc_missing_width = descriptor.get("MissingWidth")
+            if desc_missing_width is not None:
+                default_width = parse_float(desc_missing_width, default_width)
+                default_width_explicit = True
         font_widths = font.get("Widths")
         if isinstance(font_widths, (list, tuple)):
-            sparse_widths: dict[int, float] = {}
-            for index, width in enumerate(font_widths):
-                code = first_char + index
-                if last_char is not None and code > last_char:
-                    break
-                sparse_widths[code] = parse_float(width, default_width)
-            widths = sparse_widths
+            widths = recover_simple_widths(font, font_widths, default_width)
         elif font_widths is not None:
             raise ValueError("invalid font widths array")
     return FontMetrics(
@@ -137,18 +78,82 @@ def recover_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetric
     )
 
 
+def recover_simple_widths(
+    font: dict[Any, Any], font_widths: list[Any] | tuple[Any, ...], default_width: float
+) -> dict[int, float]:
+    first_char_val = font.get("FirstChar")
+    if first_char_val is None:
+        first_char = 0
+    else:
+        try:
+            first_char = parse_int_strict(first_char_val, "invalid font FirstChar")
+        except ValueError:
+            first_char = 0
+    last_char_val = font.get("LastChar")
+    last_char = None
+    if last_char_val is not None:
+        try:
+            last_char = parse_int_strict(last_char_val, "invalid font LastChar")
+        except ValueError:
+            last_char = None
+    sparse_widths: dict[int, float] = {}
+    for index, width in enumerate(font_widths):
+        code = first_char + index
+        if last_char is not None and code > last_char:
+            break
+        sparse_widths[code] = parse_float(width, default_width)
+    return sparse_widths
+
+
+def recover_vertical_metrics(
+    w2: list[Any] | tuple[Any, ...], default_displacement_y: float
+) -> dict[int, tuple[float, float, float]]:
+    """A W2 array's entries, skipping what does not parse (ISO 32000-2 9.7.4.3)."""
+    vertical_metrics: dict[int, tuple[float, float, float]] = {}
+    index = 0
+    while index + 1 < len(w2):
+        try:
+            first = parse_int_strict(w2[index], "invalid CID vertical widths")
+        except ValueError:
+            index += 1
+            continue
+        values = w2[index + 1]
+        if isinstance(values, (list, tuple)):
+            for offset in range(len(values) // 3):
+                cid = first + offset
+                if MIN_CID <= cid <= MAX_CID:
+                    vertical_metrics[cid] = (
+                        parse_float(values[offset * 3], default_displacement_y),
+                        parse_float(values[offset * 3 + 1], 0.0),
+                        parse_float(values[offset * 3 + 2], 0.0),
+                    )
+            index += 2
+            continue
+        if index + 4 < len(w2):
+            try:
+                last = parse_int_strict(values, "invalid CID vertical widths")
+                width = parse_float(w2[index + 2], default_displacement_y)
+                vx = parse_float(w2[index + 3], 0.0)
+                vy = parse_float(w2[index + 4], 0.0)
+            except ValueError:
+                pass
+            else:
+                bounds = clipped_cid_bounds(first, last)
+                if bounds is not None:
+                    clipped_first, clipped_last = bounds
+                    for cid in range(clipped_first, clipped_last + 1):
+                        vertical_metrics[cid] = (width, vx, vy)
+        index += 5
+    return vertical_metrics
+
+
 def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     if font.get("MissingWidth") is not None:
         return recover_font_widths(font, subtype)
     try:
-        metrics = pdf_font_widths(font, subtype)
+        return pdf_font_widths(font, subtype, default_width=1000.0)
     except ValueError, TypeError, IndexError:
         return recover_font_widths(font, subtype)
-    if subtype == "Type0":
-        return metrics
-    if not metrics.default_width_explicit:
-        return replace(metrics, default_width=1000.0)
-    return metrics
 
 
 def clipped_cid_bounds(first: int, last: int) -> tuple[int, int] | None:
@@ -164,16 +169,9 @@ def require_cid_int(value: Any, message: str) -> int:
         raise ValueError(message)
     if type(value) is float and value.is_integer():
         return int(value)
-    if isinstance(value, str):
-        try:
+    if isinstance(value, (str, bytes)):
+        with suppress(ValueError):
             return int(value)
-        except ValueError:
-            pass
-    if isinstance(value, bytes):
-        try:
-            return int(value)
-        except ValueError:
-            pass
     raise ValueError(message)
 
 

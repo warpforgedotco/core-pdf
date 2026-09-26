@@ -12,6 +12,9 @@ from core_records import Record, ReplaceFields, ReprFields, frozen_setattr
 
 JBIG2_PAGE_INFO = 48
 JBIG2_END_OF_FILE = 51
+JBIG2_INTERMEDIATE_TEXT_REGION = 4
+JBIG2_IMMEDIATE_TEXT_REGION = 6
+JBIG2_IMMEDIATE_LOSSLESS_TEXT_REGION = 7
 JBIG2_IMMEDIATE_GENERIC_REGION = 38
 JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION = 39
 
@@ -504,6 +507,11 @@ def parse_embedded_segments(data: bytes) -> list[JBIG2Segment]:
 
 
 class JBIG2PageDecoder:
+    # The segment types decode_segment reads; any other is skipped without
+    # being looked at. None, the default, reads every segment, so a type
+    # this decoder does not support raises.
+    supported_segment_types: ClassVar[frozenset[int] | None] = None
+
     def __init__(self) -> None:
         self.page_info: JBIG2PageInfo | None = None
         self.image: JBIG2Image | None = None
@@ -532,11 +540,18 @@ class JBIG2PageDecoder:
 
     def decode_segment(self, segment: JBIG2Segment) -> None:
         kind = segment.segment_type
+        supported = self.supported_segment_types
+        if supported is not None and kind not in supported:
+            return
         if kind == JBIG2_PAGE_INFO:
             self.page_info = parse_page_info(segment.data)
             self.image = JBIG2Image.create(self.page_info.width, self.page_info.height)
             self.image.fill(jbig2_page_default_pixel(self.page_info))
-        elif kind in (4, 6, 7):
+        elif kind in (
+            JBIG2_INTERMEDIATE_TEXT_REGION,
+            JBIG2_IMMEDIATE_TEXT_REGION,
+            JBIG2_IMMEDIATE_LOSSLESS_TEXT_REGION,
+        ):
             region = parse_region(segment.data, "text")
             self.include_region(region)
             self.decode_text_region(region)
@@ -635,6 +650,9 @@ __all__ = (
     "parse_embedded_segments",
     "JBIG2_PAGE_INFO",
     "JBIG2_END_OF_FILE",
+    "JBIG2_INTERMEDIATE_TEXT_REGION",
+    "JBIG2_IMMEDIATE_TEXT_REGION",
+    "JBIG2_IMMEDIATE_LOSSLESS_TEXT_REGION",
     "JBIG2_IMMEDIATE_GENERIC_REGION",
     "JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION",
     "Jbig2Error",

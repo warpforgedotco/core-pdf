@@ -12,6 +12,7 @@ from typing import Any, ClassVar, TypeAlias
 
 import numpy
 
+from core_adobe_fonts.cff.charstrings import cubic_point
 from core_adobe_fonts.cff.font import (
     CFF_EXPERT_ENCODING_CODES,
     CFF_STANDARD_STRING_COUNT,
@@ -22,11 +23,6 @@ from core_adobe_fonts.cff.font import (
 from core_adobe_fonts.cff.font import CFFFont as PdfCFFFont
 from core_adobe_fonts.cff.font import (
     cff_font_matrix as pdf_cff_font_matrix,
-)
-from core_adobe_fonts.type1.program import (
-    binary_entries,
-    decode_charstring,
-    decode_eexec_payload,
 )
 from core_adobe_fonts.type1.program import parse_type1_font_program_encoding as parse_encoding
 from core_pdf._vendor.fontTools.cffLib import (
@@ -672,6 +668,7 @@ class CFFUnicodeRepairIndex:
         "repairable_gids",
         "feature_cache",
         "candidate_arrays_cache",
+        "decisions",
     )
 
     def __init__(
@@ -697,6 +694,11 @@ class CFFUnicodeRepairIndex:
         # candidates' arrays once per index.
         self.feature_cache: dict[int, CFFGlyphFeature] = {}
         self.candidate_arrays_cache: FeatureArrays | None = None
+        # Each glyph's repair, or None, once decided. A glyph's decision reads
+        # only its own feature and the fixed candidates': the distance matrix
+        # sums integer-valued cells, so its row is exact whichever other
+        # glyphs share the request.
+        self.decisions: dict[int, str | None] = {}
         self.label_names = labels
         self.code_to_gid_map = code_to_gid
         self.repairable_gids = frozenset(
@@ -730,6 +732,19 @@ class CFFUnicodeRepairIndex:
         }
 
     def repairs_for_gids(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
+        decisions = self.decisions
+        pending = tuple(gid for gid in requested_gids if gid not in decisions)
+        if pending:
+            decided = self.decide_repairs(pending)
+            for gid in pending:
+                decisions[gid] = decided.get(gid)
+        return {
+            gid: replacement
+            for gid in requested_gids
+            if (replacement := decisions[gid]) is not None
+        }
+
+    def decide_repairs(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
         feature_cache = self.feature_cache
         glyph_feature = self.make_font.glyph_feature
         features: dict[int, CFFGlyphFeature] = {}
@@ -1350,12 +1365,6 @@ class TrueTypeFontProgram(BitmapFromOutlines):
     def normalized_glyph_contours(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         return self.outlines.normalized_glyph_contours(gid)
 
-    def glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
-        try:
-            return fonttools_contours(self.font, gid)
-        except Exception:
-            return ()
-
     def composite_body_bbox(
         self, gid: int
     ) -> tuple[tuple[float, float, float, float] | None, bool]:
@@ -1655,17 +1664,7 @@ def flatten_quadratic(p0: Point, p1: Point, p2: Point, segments: int = 6) -> lis
 
 
 def flatten_cubic(p0: Point, p1: Point, p2: Point, p3: Point, segments: int = 8) -> list[Point]:
-    out: list[Point] = []
-    for i in range(1, segments + 1):
-        t = i / segments
-        mt = 1.0 - t
-        out.append(
-            (
-                mt**3 * p0[0] + 3.0 * mt * mt * t * p1[0] + 3.0 * mt * t * t * p2[0] + t**3 * p3[0],
-                mt**3 * p0[1] + 3.0 * mt * mt * t * p1[1] + 3.0 * mt * t * t * p2[1] + t**3 * p3[1],
-            )
-        )
-    return out
+    return [cubic_point(p0, p1, p2, p3, i / segments) for i in range(1, segments + 1)]
 
 
 def parse_opentype_program(data: bytes) -> TTFont:
@@ -1714,98 +1713,18 @@ HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
 MAX_SUBROUTINES = 4096
 
 
-class Type1FontProgramBase:
-    __slots__ = (
-        "charstrings",
-        "font_matrix",
-        "glyph_names",
-        "glyph_name_to_id",
-        "subrs",
-    )
+def type1_binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> Iterator[tuple[bytes, bytes]]:
+    """Each `pattern` match's name and the binary payload after it; truncated ones are skipped."""
+    for match in pattern.finditer(data):
+        length = int(match.group(2))
+        start = match.end()
+        if length >= 0 and start + length <= len(data):
+            yield match.group(1), data[start : start + length]
 
-    def __init__(self, data: bytes, *, length1: int | None = None) -> None:
-        private = self.decode_private(data, length1)
-        len_iv_match = LEN_IV_RE.search(private)
-        len_iv = int(len_iv_match.group(1)) if len_iv_match is not None else 4
-        if len_iv < -1 or len_iv > 32:
-            raise ValueError("invalid Type 1 lenIV")
 
-        subr_data = {
-            int(index): payload for index, payload in self.binary_entries(private, SUBR_RE)
-        }
-        subr_count = max(subr_data, default=-1) + 1
-        if subr_count > MAX_SUBROUTINES:
-            raise ValueError("Type 1 subroutine index exceeds decoder limit")
-        empty = T1CharString(b"\x0b", subrs=[])
-        subrs = [empty for _ in range(subr_count)]
-        for index, encrypted in subr_data.items():
-            subrs[index] = self.prepare_charstring(encrypted, len_iv, subrs)
-        for subr in subrs:
-            subr.subrs = subrs
-        self.subrs = subrs
-
-        charstrings = {
-            name.decode("latin-1"): payload
-            for name, payload in self.binary_entries(private, CHARSTRING_RE)
-        }
-        self.charstrings = {
-            name: self.prepare_charstring(encrypted, len_iv, subrs)
-            for name, encrypted in charstrings.items()
-        }
-        if not self.charstrings:
-            raise ValueError("Type 1 CharStrings are missing")
-        self.glyph_names = tuple(self.charstrings)
-        self.glyph_name_to_id = {name: gid for gid, name in enumerate(self.glyph_names)}
-
-        matrix_match = FONT_MATRIX_RE.search(data)
-        self.font_matrix = (
-            tuple(float(value) for value in matrix_match.groups())
-            if matrix_match is not None
-            else (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-        )
-
-    def glyph_id_for_name(self, glyph_name: str) -> int | None:
-        glyph_id = self.glyph_name_to_id.get(glyph_name)
-        if glyph_id is not None:
-            return glyph_id
-        return self.glyph_name_to_id.get(".notdef")
-
-    def has_glyph_id(self, glyph_id: int) -> bool:
-        return 0 <= glyph_id < len(self.glyph_names)
-
-    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
-        if not self.has_glyph_id(glyph_id):
-            return None
-        glyph_name = self.glyph_names[glyph_id]
-        charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")
-        if charstring is None:
-            return None
-        bounds_pen = BoundsPen(self.charstrings)
-        a, b, c, d, e, f = self.font_matrix
-        normalized_pen = TransformPen(
-            bounds_pen,
-            (a * 1000.0, b * 1000.0, c * 1000.0, d * 1000.0, e * 1000.0, f * 1000.0),
-        )
-        charstring.draw(normalized_pen)
-        bounds = bounds_pen.bounds
-        if bounds is None:
-            return None
-        x_min, y_min, x_max, y_max = bounds
-        return (float(x_min), float(y_min), float(x_max), float(y_max))
-
-    @staticmethod
-    def binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> Iterator[tuple[bytes, bytes]]:
-        return binary_entries(data, pattern)
-
-    @staticmethod
-    def prepare_charstring(
-        encrypted: bytes, len_iv: int, subrs: list[T1CharString]
-    ) -> T1CharString:
-        return T1CharString(decode_charstring(encrypted, len_iv), subrs=subrs)
-
-    @staticmethod
-    def decode_private(data: bytes, length1: int | None) -> bytes:
-        return decode_eexec_payload(data, length1)
+def type1_charstring(encrypted: bytes, len_iv: int, subrs: list[T1CharString]) -> T1CharString:
+    decoded = decrypt_type1(encrypted, 4330)
+    return T1CharString(decoded[len_iv:] if len_iv >= 0 else decoded, subrs=subrs)
 
 
 def eexec_payload(data: bytes, length1: int | None) -> bytes:
@@ -1831,31 +1750,85 @@ def eexec_payload(data: bytes, length1: int | None) -> bytes:
     return decrypted[4:]
 
 
-class Type1FontProgram(Type1FontProgramBase, BitmapFromContours):
-    __slots__ = ()
+class Type1FontProgram(BitmapFromContours):
+    __slots__ = (
+        "charstrings",
+        "font_matrix",
+        "glyph_names",
+        "glyph_name_to_id",
+        "subrs",
+    )
 
-    @staticmethod
-    def binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> Iterator[tuple[bytes, bytes]]:
-        for match in pattern.finditer(data):
-            length = int(match.group(2))
-            start = match.end()
-            if length >= 0 and start + length <= len(data):
-                yield match.group(1), data[start : start + length]
+    def __init__(self, data: bytes, *, length1: int | None = None) -> None:
+        private = eexec_payload(data, length1)
+        len_iv_match = LEN_IV_RE.search(private)
+        len_iv = int(len_iv_match.group(1)) if len_iv_match is not None else 4
+        if len_iv < -1 or len_iv > 32:
+            raise ValueError("invalid Type 1 lenIV")
 
-    @staticmethod
-    def prepare_charstring(
-        encrypted: bytes, len_iv: int, subrs: list[T1CharString]
-    ) -> T1CharString:
-        decoded = decrypt_type1(encrypted, 4330)
-        return T1CharString(decoded[len_iv:] if len_iv >= 0 else decoded, subrs=subrs)
+        subr_data = {
+            int(index): payload for index, payload in type1_binary_entries(private, SUBR_RE)
+        }
+        subr_count = max(subr_data, default=-1) + 1
+        if subr_count > MAX_SUBROUTINES:
+            raise ValueError("Type 1 subroutine index exceeds decoder limit")
+        empty = T1CharString(b"\x0b", subrs=[])
+        subrs = [empty for _ in range(subr_count)]
+        for index, encrypted in subr_data.items():
+            subrs[index] = type1_charstring(encrypted, len_iv, subrs)
+        for subr in subrs:
+            subr.subrs = subrs
+        self.subrs = subrs
 
-    @staticmethod
-    def decode_private(data: bytes, length1: int | None) -> bytes:
-        return eexec_payload(data, length1)
+        charstrings = {
+            name.decode("latin-1"): payload
+            for name, payload in type1_binary_entries(private, CHARSTRING_RE)
+        }
+        self.charstrings = {
+            name: type1_charstring(encrypted, len_iv, subrs)
+            for name, encrypted in charstrings.items()
+        }
+        if not self.charstrings:
+            raise ValueError("Type 1 CharStrings are missing")
+        self.glyph_names = tuple(self.charstrings)
+        self.glyph_name_to_id = {name: gid for gid, name in enumerate(self.glyph_names)}
+
+        matrix_match = FONT_MATRIX_RE.search(data)
+        self.font_matrix = (
+            tuple(float(value) for value in matrix_match.groups())
+            if matrix_match is not None
+            else (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
+        )
+
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        glyph_id = self.glyph_name_to_id.get(glyph_name)
+        if glyph_id is not None:
+            return glyph_id
+        return self.glyph_name_to_id.get(".notdef")
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return 0 <= glyph_id < len(self.glyph_names)
 
     def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
         try:
-            return super().glyph_bbox_for_gid(glyph_id)
+            if not self.has_glyph_id(glyph_id):
+                return None
+            glyph_name = self.glyph_names[glyph_id]
+            charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")
+            if charstring is None:
+                return None
+            bounds_pen = BoundsPen(self.charstrings)
+            a, b, c, d, e, f = self.font_matrix
+            normalized_pen = TransformPen(
+                bounds_pen,
+                (a * 1000.0, b * 1000.0, c * 1000.0, d * 1000.0, e * 1000.0, f * 1000.0),
+            )
+            charstring.draw(normalized_pen)
+            bounds = bounds_pen.bounds
+            if bounds is None:
+                return None
+            x_min, y_min, x_max, y_max = bounds
+            return (float(x_min), float(y_min), float(x_max), float(y_max))
         except Exception:
             return None
 

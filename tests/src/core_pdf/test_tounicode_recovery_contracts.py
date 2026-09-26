@@ -141,8 +141,22 @@ def test_usecmap_cycles_terminate_and_keep_local_mappings():
         calls.append(name)
         return source
 
-    assert ToUnicodeCMap(source, usecmap_resolver=resolve).decode(b"\1") == "A"
-    assert len(calls) == 17
+    cmap = ToUnicodeCMap(source, usecmap_resolver=resolve)
+    assert cmap.decode(b"\1") == "A"
+    # The parent's own usecmap names an ancestor, so the chain stops there.
+    assert calls == ["Loop"]
+
+
+def test_usecmap_chains_stop_at_the_inheritance_depth_limit():
+    calls = []
+
+    def resolve(name):
+        calls.append(name)
+        return f"/{name}x usecmap\n".encode() + block(b"bfchar", b"<01> <0041>")
+
+    cmap = ToUnicodeCMap(b"/P usecmap\n", usecmap_resolver=resolve)
+    assert cmap.decode(b"\1") == "A"
+    assert len(calls) == ToUnicodeCMap.max_inheritance_depth + 1
 
 
 @pytest.mark.parametrize("base", ["", "A", "prefixA", "\ud800A", "\U0010ffff"])

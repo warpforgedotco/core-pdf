@@ -248,10 +248,10 @@ def merge_grid_cells(
             members[disjoint.find(row * column_count + column)].append((row, column))
     merged: list[list[TableCell]] = [[] for _ in range(row_count)]
     for cells in members.values():
-        min_row = min(row for row, make_column in cells)
-        max_row = max(row for row, make_column in cells)
-        min_column = min(column for row_value, column in cells)
-        max_column = max(column for row_value, column in cells)
+        min_row = min(row for row, _ in cells)
+        max_row = max(row for row, _ in cells)
+        min_column = min(column for _, column in cells)
+        max_column = max(column for _, column in cells)
         if len(cells) != (max_row - min_row + 1) * (max_column - min_column + 1):
             for row, column in cells:
                 merged[row].append(rows[row][column])

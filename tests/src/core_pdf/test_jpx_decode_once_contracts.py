@@ -1,5 +1,6 @@
 """A JPX image the native path declines is decoded once, to the filter chain's bytes."""
 
+import zlib
 from typing import Any
 
 import imagecodecs
@@ -7,6 +8,7 @@ import numpy
 import pytest
 
 from core_pdf.impl import graphics_codec_backends as codec_backends
+from core_pdf.impl import graphics_images
 from core_pdf.impl.graphics_images import decode_image_samples
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
 from core_pdf.impl.types import PdfName
@@ -47,3 +49,27 @@ def test_an_accepted_image_is_still_the_native_array() -> None:
     samples = decode_image_samples(data, dictionary)
     assert not isinstance(samples, (bytes, bytearray, memoryview))
     assert samples is not None
+
+
+def test_a_flate_image_the_native_path_rejects_is_inflated_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Three bytes a pixel where the native path expects one: it rejects the
+    # size, and the fallback takes the same bytes as RGB.
+    payload = bytes(range(5 * 6 * 3))
+    dictionary = {
+        PdfName.of(b"Width"): 5,
+        PdfName.of(b"Height"): 6,
+        PdfName.of(b"BitsPerComponent"): 8,
+        PdfName.of(b"Filter"): PdfName.of(b"FlateDecode"),
+    }
+    calls: list[int] = []
+    original = graphics_images.decode_stream_data
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(graphics_images, "decode_stream_data", counted)
+    assert decode_image_samples(zlib.compress(payload), dictionary) == payload
+    assert len(calls) == 1

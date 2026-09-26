@@ -28,6 +28,37 @@ def test_cmap_rejects_unresolved_and_cyclic_parent(
         reader(data, usecmap_resolver=lambda name: data)
 
 
+class ParentlessToUnicodeCMap(ToUnicodeCMap):
+    __slots__ = ()
+
+    max_inheritance_depth = 1
+
+    def reject_parent(self, reason: str) -> ToUnicodeCMap | None:  # noqa: ARG002
+        return None
+
+    def validate_mappings(self) -> None:
+        pass
+
+
+def test_tounicode_parent_hooks_keep_strict_defaults() -> None:
+    local = CODESPACE + b"1 beginbfchar <01> <0041> endbfchar"
+    data = b"/Loop usecmap 1 beginbfchar <01> <0041> endbfchar"
+    with pytest.raises(ValueError, match="unresolved"):
+        ToUnicodeCMap(data)
+    assert ParentlessToUnicodeCMap(data).lookup(b"\x01") == "A"
+    calls: list[str] = []
+
+    def resolve(name: str) -> bytes:
+        calls.append(name)
+        return data
+
+    assert ParentlessToUnicodeCMap(data, usecmap_resolver=resolve).lookup(b"\x01") == "A"
+    assert calls == ["Loop"]
+    assert ToUnicodeCMap(local, inheritance_depth=99).lookup(b"\x01") == "A"
+    with pytest.raises(ValueError, match="nesting too deep"):
+        ParentlessToUnicodeCMap(local, inheritance_depth=2)
+
+
 def test_tounicode_uses_utf16be_and_local_mapping_overrides_parent() -> None:
     parent = CODESPACE + b"1 beginbfchar <01> <0041> endbfchar"
     child = b"/Parent usecmap 1 beginbfchar <01> <D83DDE00> endbfchar"
@@ -59,8 +90,35 @@ def test_malformed_font_descriptor_is_not_silently_discarded() -> None:
         prepare_font_program_inputs({"Subtype": "Type1", "FontDescriptor": {"FontFile": 42}})
 
 
+def test_font_program_input_readers_replace_the_strict_coercions() -> None:
+    font = {
+        "Subtype": "/Type0",
+        "FontDescriptor": 42,
+        "DescendantFonts": [{"Subtype": "CIDFontType2", "FontDescriptor": {"FontFile2": 7}}],
+    }
+    with pytest.raises(ValueError, match="descriptor"):
+        prepare_font_program_inputs(font)
+    inputs = prepare_font_program_inputs(
+        font,
+        read_name=lambda value: value.lstrip("/") if isinstance(value, str) else None,
+        read_descriptor=lambda value: value if isinstance(value, dict) else None,
+        read_font_file=lambda descriptor, key: None,
+    )
+    assert (inputs.subtype, inputs.original_subtype) == ("CIDFontType2", "Type0")
+    assert inputs.descendant is font["DescendantFonts"][0]
+    assert (inputs.font_file, inputs.font_file2, inputs.font_file3) == (None, None, None)
+
+
 def test_missing_width_is_spec_defined_zero() -> None:
     assert parse_font_widths({}, "Type1").default_width == 0.0
+    relaxed = parse_font_widths({}, "Type1", default_width=1000.0)
+    assert (relaxed.default_width, relaxed.default_width_explicit) == (1000.0, False)
+    described = {"FontDescriptor": {"MissingWidth": 250}}
+    assert parse_font_widths(described, "Type1", default_width=1000.0).default_width == 250.0
+    assert (
+        parse_font_widths({"DescendantFonts": [{}]}, "Type0", default_width=5.0).default_width
+        == 1000.0
+    )
     assert parse_font_widths(
         {"FontDescriptor": {"MissingWidth": 0}}, "Type1"
     ).default_width_explicit

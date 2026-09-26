@@ -1,27 +1,15 @@
 from __future__ import annotations
 
 import re
-import typing
-from collections.abc import Callable
 
 from core_adobe_fonts.cmap.decoder import (
     CMapDecoder as PdfCMapDecoder,
 )
-from core_adobe_fonts.cmap.decoder import (
-    CMapResourceResolver,
-    CodeRangeT,
-)
-from core_adobe_fonts.cmap.ranges import (
-    CIDRange,
-    range_offset,
-    remove_codes_in_range,
-    validate_codespace_range,
-)
+from core_adobe_fonts.cmap.decoder import CMapResourceResolver
 from core_adobe_fonts.cmap.tokenizer import (
     CMapBlock,
     CMapToken,
     iter_cmap_tokens,
-    scope_cmap_tokens,
 )
 from core_adobe_fonts.cmap.tokenizer import CMapProgram as PdfCMapProgram
 from core_adobe_fonts.cmap.tokenizer import (
@@ -67,40 +55,30 @@ def decode_cmap_token(token: bytes) -> bytes:
 
 
 class CMapProgram(PdfCMapProgram):
-    @classmethod
-    def parse(cls, data: bytes | bytearray | memoryview) -> CMapProgram:
-        source = bytes(data)
-        return cls(source, scope_cmap_tokens(collect_cmap_tokens(source, group_arrays=True)))
+    """A CMap read as far as it goes: no program, count, or operand rules apply."""
 
-    def blocks_in_order(
-        self, delimiters: dict[bytes, bytes]
-    ) -> typing.Iterator[tuple[bytes, CMapBlock]]:
-        begin_keyword: bytes | None = None
-        end_keyword: bytes | None = None
-        block_start: int | None = None
-        block_tokens: list[CMapToken] = []
-        for token in self.tokens:
-            if block_start is None:
-                if (
-                    token.kind == "word"
-                    and (matched_end := delimiters.get(token.value)) is not None
-                ):
-                    begin_keyword = token.value
-                    end_keyword = matched_end
-                    block_start = token.end
-                continue
-            if token.kind == "word" and token.value == end_keyword:
-                assert begin_keyword is not None
-                yield (
-                    begin_keyword,
-                    CMapBlock(self.data[block_start : token.start], tuple(block_tokens)),
-                )
-                begin_keyword = None
-                end_keyword = None
-                block_start = None
-                block_tokens.clear()
-                continue
-            block_tokens.append(token)
+    __slots__ = ()
+
+    @classmethod
+    def read_tokens(cls, source: bytes) -> tuple[CMapToken, ...]:
+        return collect_cmap_tokens(source, group_arrays=True)
+
+    @classmethod
+    def validate_program(
+        cls, tokens: tuple[CMapToken, ...], scoped_tokens: tuple[CMapToken, ...]
+    ) -> None:
+        pass
+
+    def block_count(self, begin_index: int) -> int:  # noqa: ARG002
+        return 0
+
+    def validate_block(
+        self, begin_keyword: bytes, block_tokens: list[CMapToken], declared_count: int
+    ) -> None:
+        pass
+
+    def reject_unterminated_block(self) -> None:
+        pass
 
 
 def cmap_metadata(data: bytes | PdfCMapProgram) -> tuple[str | None, int | None]:
@@ -145,24 +123,7 @@ def cmap_tokens(
 class CMapDecoder(PdfCMapDecoder):
     __slots__ = ()
 
-    def __init__(
-        self,
-        data: bytes | bytearray | memoryview,
-        *,
-        usecmap_resolver: CMapResourceResolver | None = None,
-        inheritance_depth: int = 0,
-        empty: bool = False,
-        ancestor_names: tuple[str, ...] = (),
-    ) -> None:
-        if not empty and inheritance_depth > 5:
-            raise ValueError("CMap usecmap nesting too deep")
-        super().__init__(
-            data,
-            usecmap_resolver=usecmap_resolver,
-            inheritance_depth=inheritance_depth,
-            empty=empty,
-            ancestor_names=ancestor_names,
-        )
+    max_inheritance_depth = 5
 
     @staticmethod
     def parse_program(data: bytes) -> CMapProgram:
@@ -175,67 +136,8 @@ class CMapDecoder(PdfCMapDecoder):
     def validate_mappings(self) -> None:
         pass
 
-    def parse_char_block(
-        self,
-        block: CMapBlock,
-        mappings: dict[bytes, int],
-    ) -> None:
-        items = block.token_values(include_words=True)
-        if len(items) % 2 != 0:
-            items = items[:-1]
-        for i in range(0, len(items), 2):
-            code_token, cid_token = items[i], items[i + 1]
-            if not (code_token.startswith(b"<") and code_token.endswith(b">")):
-                continue
-            try:
-                code = decode_spec_cmap_hex_token(code_token)
-                cid = int(cid_token)
-            except ValueError, UnicodeDecodeError:
-                continue
-            if not code or not (0 <= cid <= 0xFFFF):
-                continue
-            mappings[code] = cid
-
-    def parse_range_block(
-        self,
-        block: CMapBlock,
-        mappings: dict[bytes, int],
-        ranges: list[CodeRangeT],
-        make_range: Callable[[bytes, bytes, int], CodeRangeT],
-    ) -> None:
-        items = block.token_values(include_words=True)
-        if len(items) % 3 != 0:
-            items = items[: len(items) - (len(items) % 3)]
-        for i in range(0, len(items), 3):
-            start_token, end_token, cid_token = items[i], items[i + 1], items[i + 2]
-            if not (
-                start_token.startswith(b"<")
-                and start_token.endswith(b">")
-                and end_token.startswith(b"<")
-                and end_token.endswith(b">")
-            ):
-                continue
-            try:
-                start_bytes = decode_spec_cmap_hex_token(start_token)
-                end_bytes = decode_spec_cmap_hex_token(end_token)
-                cid = int(cid_token)
-                validate_codespace_range(start_bytes, end_bytes)
-            except ValueError, UnicodeDecodeError:
-                continue
-            if not (0 <= cid <= 0xFFFF):
-                continue
-            if make_range is CIDRange:
-                last_cid = cid + range_offset(
-                    end_bytes,
-                    start_bytes,
-                    end_bytes,
-                    validate_range=False,
-                    validate_code=False,
-                )
-                if not (0 <= last_cid <= 0xFFFF):
-                    continue
-            remove_codes_in_range(mappings, start_bytes, end_bytes)
-            ranges.append(make_range(start_bytes, end_bytes, cid))
+    def reject_mapping(self, reason: str, cause: BaseException | None = None) -> None:
+        pass
 
     @staticmethod
     def decode_codespace_token(token: bytes) -> bytes:

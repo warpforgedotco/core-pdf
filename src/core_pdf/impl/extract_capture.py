@@ -83,6 +83,11 @@ def discard_duplicate_layer_runs(
     primary_geometry = numpy.asarray(
         [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs], dtype=numpy.float64
     )
+    # Primaries sorted by left edge: only a prefix of them can start left of a
+    # candidate's right edge, so each candidate is tested against that prefix.
+    by_left = numpy.argsort(primary_geometry[:, 0], kind="stable")
+    sorted_geometry = primary_geometry[by_left]
+    sorted_left = sorted_geometry[:, 0]
     primary_tokens = [normalized_tokens((run,)) for run in primary_runs]
     primary_text = [collapse_ws(run.text) for run in primary_runs]
     duplicate_indices: set[int] = set()
@@ -97,13 +102,15 @@ def discard_duplicate_layer_runs(
             if not tokens:
                 continue
             run = runs[index]
+            prefix = sorted_geometry[: numpy.searchsorted(sorted_left, run.x1, side="left")]
             intersects = (
-                (primary_geometry[:, 0] < run.x1)
-                & (primary_geometry[:, 2] > run.x0)
-                & (primary_geometry[:, 1] < run.y1)
-                & (primary_geometry[:, 3] > run.y0)
+                (prefix[:, 0] < run.x1)
+                & (prefix[:, 2] > run.x0)
+                & (prefix[:, 1] < run.y1)
+                & (prefix[:, 3] > run.y0)
             )
-            nearby = numpy.flatnonzero(intersects)
+            # Back in primary order, as the text below is joined in it.
+            nearby = numpy.sort(by_left[: len(prefix)][intersects])
             local_text = " ".join(primary_text[int(position)] for position in nearby)
             candidate_text = collapse_ws(run.text)
             if f" {candidate_text} " in f" {local_text} ":

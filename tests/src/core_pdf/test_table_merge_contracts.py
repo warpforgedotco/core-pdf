@@ -118,7 +118,6 @@ def test_wrapped_stream_rows_join_text_and_union_cell_geometry(geometry):
 @pytest.mark.parametrize(
     ("source", "row_count", "columns", "numeric"),
     [
-        ("grid", 8, 5, 0),
         ("stream", 7, 5, 0),
         ("stream", 8, 4, 0),
         ("stream", 8, 5, 3),

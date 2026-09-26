@@ -44,6 +44,13 @@ def load_ligature_font_tables(tt_data: bytes) -> TrueTypeFontProgram | None:
         return None
 
 
+def load_font_file_tables(font_file: PdfStream) -> TrueTypeFontProgram | None:
+    try:
+        return load_ligature_font_tables(font_file.data)
+    except PdfParseError:
+        return None
+
+
 def find_companion_font(
     document: FontResourceDocument,
     resources: object,
@@ -144,28 +151,15 @@ def detect_ligature_overrides(
             document, resources, base_name, set("ftscFTSC")
         )
     except ValueError:
-        try:
-            tt_data = font_file.data
-        except PdfParseError:
-            return {}
-        if load_ligature_font_tables(tt_data) is None:
+        # A malformed companion only matters when this font's own tables load.
+        if load_font_file_tables(font_file) is None:
             return {}
         raise
 
     if companion_data is None or not starter_widths:
         return {}
-
-    try:
-        tt_data = font_file.data
-    except PdfParseError:
-        return {}
-    parsed_primary = load_ligature_font_tables(tt_data)
-    if parsed_primary is None:
-        return {}
-
-    try:
-        cached_truetype_program(companion_data)
-    except ValueError:
+    parsed_primary = load_font_file_tables(font_file)
+    if parsed_primary is None or load_ligature_font_tables(companion_data) is None:
         return {}
 
     lig_widths_raw = font_obj.get("Widths")
@@ -185,8 +179,8 @@ def detect_ligature_overrides(
             continue
 
         glyph_id = pdf_code - first_char_int
-        body_bbox, is_composite = parsed_primary.composite_body_bbox(glyph_id)
-        if not (is_composite and body_bbox):
+        body_bbox, has_dot = parsed_primary.composite_body_bbox(glyph_id)
+        if not (has_dot and body_bbox):
             continue
 
         ft_width = starter_chars.get("f", 0.0) + starter_chars.get("t", 0.0)

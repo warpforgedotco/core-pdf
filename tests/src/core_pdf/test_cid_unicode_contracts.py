@@ -19,8 +19,8 @@ def test_compact_inversion_respects_later_ranges_explicit_overrides_and_codespac
     expected = {11: (b"A",), 20: (b"B",), 30: (b"C",)}
     if not codespace:
         expected.update({10: (b"@",), 14: (b"D",), 40: (b"E",)})
-    assert result.effective_codes_by_cid == expected
-    assert result.codes_for_cid(999) == ()
+    assert result == expected
+    assert 999 not in result
 
 
 @pytest.mark.parametrize("vertical", [False, True])
@@ -47,7 +47,7 @@ def test_unicode_votes_obey_orientation_weight_fallback_and_ties(
         result = []
         for index, (text, weight) in enumerate(entries):
             name = f"{prefix}{index}"
-            maps[name] = cid.CompactCMap({7: (text.encode("utf-8"),)} if text else {})
+            maps[name] = {7: (text.encode("utf-8"),)} if text else {}
             result.append((name, "utf-8", weight))
         return tuple(result)
 
@@ -75,7 +75,7 @@ def test_collection_override_precedes_source_votes(monkeypatch):
 def test_unicode_candidate_selection_is_order_independent_and_rejects_non_scalars(
     monkeypatch, codes
 ):
-    monkeypatch.setattr(cid, "compact_cmap", lambda name: cid.CompactCMap({7: codes}))
+    monkeypatch.setattr(cid, "compact_cmap", lambda name: {7: codes})
     assert cid.preferred_unicode_for_cid("test", "utf-8", 7) == "A"
     assert cid.preferred_unicode_for_cid("test", "utf-8", 8) is None
 

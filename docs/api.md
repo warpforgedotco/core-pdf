@@ -173,7 +173,7 @@ documented next to their strict implementations. Spec reports malformed input ra
 than repairing it, except where a referenced standard prescribes a fallback, and it is
 not a complete conformance validator.
 
-Core requires `core-pdf-spec>=0.11.0,<0.12.0` and `core-pdf-cythonized>=0.1.0,<0.2.0`;
+Core requires `core-pdf-spec>=0.12.0,<0.13.0` and `core-pdf-cythonized>=0.1.0,<0.2.0`;
 the latter carries compiled kernels with no pure-Python fallback, so core needs a
 wheel for the target platform or a C compiler at install time. Referenced-standard
 kernels (the PostScript calculator, JBIG2, ciphers and PDF MAC, and the Adobe font

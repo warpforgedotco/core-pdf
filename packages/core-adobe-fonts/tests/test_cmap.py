@@ -9,6 +9,7 @@ from core_adobe_fonts.cmap.resources import resolve_cmap_decoder, resolve_cmap_r
 from core_adobe_fonts.cmap.tokenizer import (
     CMapBlock,
     CMapProgram,
+    CMapToken,
     cmap_tokens,
     decode_cmap_hex_token,
     iter_cmap_tokens,
@@ -138,3 +139,60 @@ def test_cmap_resource_names_are_already_decoded() -> None:
     assert resolve_cmap_decoder("/Identity-H") is None
     assert resolve_cmap_resource("UniJIS-UTF16-H") is not None
     assert resolve_cmap_resource("/UniJIS-UTF16-H") is None
+
+
+class LenientProgram(CMapProgram):
+    __slots__ = ()
+
+    def block_count(self, begin_index: int) -> int:  # noqa: ARG002
+        return 0
+
+    def validate_block(
+        self, begin_keyword: bytes, block_tokens: list[CMapToken], declared_count: int
+    ) -> None:
+        pass
+
+    def reject_unterminated_block(self) -> None:
+        pass
+
+
+class LenientDecoder(CMapDecoder):
+    __slots__ = ()
+
+    max_inheritance_depth = 1
+
+    @staticmethod
+    def parse_program(data: bytes) -> CMapProgram:
+        return LenientProgram.parse(data)
+
+    def reject_mapping(self, reason: str, cause: BaseException | None = None) -> None:
+        pass
+
+
+def test_mapping_hooks_skip_what_the_strict_reader_rejects() -> None:
+    mapping = (
+        b"9 begincidchar <01> 7 <02> bad 03 4 <04> 65536 <05> 8 <06> endcidchar\n"
+        b"3 begincidrange <10> <12> 65535 <20> <22> 1 <30> endcidrange"
+    )
+    with pytest.raises(ValueError):
+        CMapDecoder(CODESPACE + mapping)
+    cmap = LenientDecoder(CODESPACE + mapping)
+    assert cmap.cid_mappings == {b"\x01": 7, b"\x05": 8}
+    assert [(item.start, item.end, item.first_cid) for item in cmap.cid_ranges] == [
+        (b"\x20", b"\x22", 1)
+    ]
+
+
+def test_program_hooks_relax_counts_and_terminators() -> None:
+    data = CODESPACE + b"begincidchar <01> 7 endcidchar 1 begincidchar <02> 8"
+    with pytest.raises(ValueError, match="block count"):
+        list(CMapProgram.parse(data).blocks(b"begincidchar", b"endcidchar"))
+    blocks = list(LenientProgram.parse(data).blocks(b"begincidchar", b"endcidchar"))
+    assert [block.token_values(include_words=True) for block in blocks] == [[b"<01>", b"7"]]
+
+
+def test_inheritance_depth_limit_is_a_subclass_policy() -> None:
+    assert CMapDecoder(CODESPACE, inheritance_depth=50).code_space_ranges
+    assert LenientDecoder(CODESPACE, inheritance_depth=1).code_space_ranges
+    with pytest.raises(ValueError, match="nesting too deep"):
+        LenientDecoder(CODESPACE, inheritance_depth=2)

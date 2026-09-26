@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from core_pdf.impl.capture_recording import TextState
+from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 
@@ -10,8 +11,9 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 class RecordingRecovery(TextState):
     errors: list[tuple[type[Exception], str]]
 
-    def handle_operand_error(self, error, context):
+    def reject(self, error, context, fallback):
         self.errors.append((type(error), context))
+        return fallback
 
 
 @pytest.fixture
@@ -66,30 +68,29 @@ def test_valid_integer_and_missing_float_operands(state):
 
 
 @pytest.mark.parametrize(
-    ("operands", "expected", "error"),
+    ("operands", "expected"),
     [
-        ((), ((2, 3), 4), False),
-        (([1],), ((2, 3), 4), False),
-        (([1, 2], 3), ((1, 2), 3), False),
-        (("bad", 3), ((), 3), False),
-        (([True], 3), ((2, 3), 4), True),
-        (([1], "bad"), ((2, 3), 4), True),
+        ((), ((2, 3), 4)),
+        (([1],), ((2, 3), 4)),
+        (([1, 2], 3), ((1, 2), 3)),
+        (("bad", 3), ((), 3)),
+        (([True], 3), ((2, 3), 4)),
+        (([1], "bad"), ((2, 3), 4)),
     ],
 )
-def test_dash_recovery_retains_previous_pattern_on_invalid_numbers(
-    state, operands, expected, error
-):
+def test_dash_recovery_retains_previous_pattern_on_invalid_numbers(state, operands, expected):
     state.graphics.dash_pattern = ((2, 3), 4)
     state.op_d(operands, 0)
     assert state.graphics.dash_pattern == expected
-    assert bool(state.errors) is error
+    # A well-formed operation is the only one recovery does not report.
+    assert bool(state.errors) is (operands != ([1, 2], 3))
 
 
 @pytest.mark.parametrize("operator", ["l", "v", "y"])
 def test_unstarted_path_segments_are_ignored(state, operator):
     state.execute_operation(operator, (1, 2, 3, 4), 0)
     assert state.current_point is None
-    assert state.errors == []
+    assert state.errors == [(PdfParseError, "path")]
 
 
 @pytest.mark.parametrize("operator", ["l", "v", "y"])

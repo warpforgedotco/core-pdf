@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Self, TypeAlias
 
-from core_pdf.impl.geometry import extend_baseline
+from core_pdf.impl.geometry import extend_baseline, union_bbox
 from core_pdf.impl.glyphs import GlyphClusterLike, min_optional_confidence
 from core_pdf.impl.types import Record, ReprFields, frozen_setattr
 
@@ -342,21 +342,12 @@ class TextRun(ReprFields):
         self.y0 = min(self.y0, other.y0)
         self.x1 = max(self.x1, other.x1)
         self.y1 = max(self.y1, other.y1)
-        x0, y0, x1, y1 = self.advance_bbox
-        bx0, by0, bx1, by1 = other.advance_bbox
-        self.advance_bbox = (min(x0, bx0), min(y0, by0), max(x1, bx1), max(y1, by1))
+        self.advance_bbox = union_bbox(self.advance_bbox, other.advance_bbox)
         self.baseline = extend_baseline(self.baseline, other.baseline)
         self.confidence = min_optional_confidence(self.confidence, other.confidence)
 
     def union_ink_bbox(self, bbox: tuple[float, float, float, float]) -> None:
-        x0, y0, x1, y1 = self.ink_bbox
-        bx0, by0, bx1, by1 = bbox
-        self.ink_bbox = (
-            min(x0, bx0),
-            min(y0, by0),
-            max(x1, bx1),
-            max(y1, by1),
-        )
+        self.ink_bbox = union_bbox(self.ink_bbox, bbox)
 
     def is_bold(self) -> bool:
         if not self.font_name:

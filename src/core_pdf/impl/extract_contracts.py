@@ -731,6 +731,71 @@ class PageEvidence(Record):
         return self.native_characters >= 100 and painted < self.native_characters * 0.20
 
 
+# A page tiled with this many images covering this share of it -- a photo grid,
+# a scanned mosaic -- is read in row order: the XY-cut would take the gaps
+# between the tiles for columns.
+TILED_PAGE_MIN_IMAGES = 8
+TILED_PAGE_MIN_IMAGE_AREA = 0.05
+# An image covering this share of the page is a block text flows around;
+# a larger one is a background the text sits on.
+IMAGE_OBSTACLE_MIN_AREA = 0.01
+IMAGE_MAX_AREA = 0.65
+
+
+class ReadingOrderPolicy(Record):
+    """How a page's content is put in reading order, decided once from its evidence."""
+
+    __slots__ = ("use_xy_cut", "full_page_image", "image_obstacles")
+
+    use_xy_cut: bool
+    full_page_image: bool
+    image_obstacles: tuple[tuple[float, float, float, float], ...]
+
+    __fields__: ClassVar[tuple[str, ...]] = ("use_xy_cut", "full_page_image", "image_obstacles")
+    __match_args__ = ("use_xy_cut", "full_page_image", "image_obstacles")
+
+    def __init__(
+        self,
+        use_xy_cut: bool = True,
+        full_page_image: bool = False,
+        image_obstacles: tuple[tuple[float, float, float, float], ...] = (),
+    ) -> None:
+        frozen_setattr(self, "use_xy_cut", use_xy_cut)
+        frozen_setattr(self, "full_page_image", full_page_image)
+        frozen_setattr(self, "image_obstacles", image_obstacles)
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.use_xy_cut == other.use_xy_cut
+            and self.full_page_image == other.full_page_image
+            and self.image_obstacles == other.image_obstacles
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.use_xy_cut, self.full_page_image, self.image_obstacles))
+
+    @classmethod
+    def from_evidence(cls, evidence: PageEvidence) -> ReadingOrderPolicy:
+        return cls(
+            use_xy_cut=not (
+                evidence.image_count >= TILED_PAGE_MIN_IMAGES
+                and TILED_PAGE_MIN_IMAGE_AREA <= evidence.image_area_ratio < IMAGE_MAX_AREA
+            ),
+            full_page_image=evidence.full_page_image,
+            image_obstacles=tuple(
+                box
+                for box in evidence.image_boxes
+                if IMAGE_OBSTACLE_MIN_AREA
+                <= ((box[2] - box[0]) * (box[3] - box[1])) / evidence.page_area
+                < IMAGE_MAX_AREA
+            ),
+        )
+
+
 class PageAnalysis(Record):
     __slots__ = (
         "page",

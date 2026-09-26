@@ -104,6 +104,10 @@ type TintFunction = Callable[..., tuple[float, ...]]
 # then holds the function object so the id cannot be reused while cached.
 TINT_FUNCTION_CACHE: dict[object, tuple[object, TintFunction]] = {}
 TINT_FUNCTION_CACHE_LIMIT = 64
+# The same answers by function object, looked up before the key is built;
+# each entry holds its object so the id cannot be reused while cached.
+TINT_FUNCTION_OBJECTS: dict[int, tuple[object, TintFunction]] = {}
+TINT_FUNCTION_OBJECTS_LIMIT = 256
 TINT_OUTPUT_CACHE_LIMIT = 4096
 
 
@@ -151,7 +155,22 @@ def tint_function(tint_fn: object) -> TintFunction:
     A PDF function is a pure function of its inputs, so the compiled function
     and the outputs it has produced are kept, and an input seen before costs a
     lookup. Exceptions are not remembered; the next call raises again.
+
+    A function object seen before is found by identity first: images drawn
+    again share their colour space's objects, and building the key reprs the
+    dictionary and copies the decoded data.
     """
+    seen = TINT_FUNCTION_OBJECTS.get(id(tint_fn))
+    if seen is not None and seen[0] is tint_fn:
+        return seen[1]
+    function = compiled_tint_function(tint_fn)
+    if len(TINT_FUNCTION_OBJECTS) >= TINT_FUNCTION_OBJECTS_LIMIT:
+        TINT_FUNCTION_OBJECTS.clear()
+    TINT_FUNCTION_OBJECTS[id(tint_fn)] = (tint_fn, function)
+    return function
+
+
+def compiled_tint_function(tint_fn: object) -> TintFunction:
     key = tint_function_key(tint_fn)
     if key is None:
         key = id(tint_fn)
@@ -360,8 +379,11 @@ def convert_integer_samples(
     matte: tuple[float, ...] | None = None,
     alpha: numpy.ndarray[Any, Any] | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    space: ColorSpace | None = None,
 ) -> numpy.ndarray:
-    space = parse_color_space(dictionary.get("ColorSpace"))
+    """`samples` in the dictionary's colour space, which `space` gives if already parsed."""
+    if space is None:
+        space = parse_color_space(dictionary.get("ColorSpace"))
     count = len(space.component_ranges)
     if count <= 0:
         raise ValueError("invalid image color space")
@@ -397,8 +419,10 @@ def convert_integer_image(
     matte: tuple[float, ...] | None = None,
     alpha: numpy.ndarray[Any, Any] | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    space: ColorSpace | None = None,
 ) -> numpy.ndarray:
-    space = parse_color_space(dictionary.get("ColorSpace"))
+    if space is None:
+        space = parse_color_space(dictionary.get("ColorSpace"))
     samples = unpack_image_samples(
         data,
         bits_per_component,
@@ -413,6 +437,7 @@ def convert_integer_image(
         matte=matte,
         alpha=alpha,
         rendering=rendering,
+        space=space,
     )
 
 

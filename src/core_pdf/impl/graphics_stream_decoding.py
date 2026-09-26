@@ -14,11 +14,14 @@ import core_pdf_spec.s_07_filters.codecs as strict
 from core_jbig2.bitmap import compose_packed_bitmap_data
 from core_jbig2.codec import (
     GENERIC_TEMPLATE_0_DEFAULT_AT,
+    JBIG2_IMMEDIATE_GENERIC_REGION,
+    JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION,
+    JBIG2_IMMEDIATE_TEXT_REGION,
+    JBIG2_PAGE_INFO,
     JBIG2GenericRegionHeader,
     JBIG2PageDecoder,
     Jbig2ParseError,
     JBIG2Region,
-    JBIG2Segment,
     Jbig2UnsupportedError,
     compose_packed_bitmap_region,
 )
@@ -27,7 +30,11 @@ from core_pdf.impl.graphics_codec_backends import (
     png_predict_codec,
     tiff_predict_codec,
 )
-from core_pdf.impl.graphics_decode_compat import FilterParams, normalize_stream_decode_spec
+from core_pdf.impl.graphics_decode_compat import (
+    FilterParams,
+    filter_params,
+    normalize_stream_decode_spec,
+)
 from core_pdf.impl.graphics_filter_registry import (
     FILTER_DESCRIPTOR_BY_NAME,
     FILTER_DESCRIPTORS,
@@ -98,15 +105,17 @@ def decode_one_filter(
             if descriptor is not None and descriptor.wants_image_dictionary
             else parms
         )
-        result = coerce_decoder_bytes(fn(data, decoder_context))
-        if filter_name in PREDICTOR_FILTERS:
-            if (
-                allow_content_stream_passthrough
-                and filter_name in {"FlateDecode", "Fl"}
-                and result == data
-                and looks_like_pdf_content_stream(result)
-            ):
-                return result
+        passed_through = False
+        if fn is apply_flate:
+            inflated, passed_through = inflate(data)
+            result = coerce_decoder_bytes(inflated)
+        else:
+            result = coerce_decoder_bytes(fn(data, decoder_context))
+        # An unfiltered content stream mislabelled as the only filter's
+        # FlateDecode is taken as it is, with no predictor after it.
+        if filter_name in PREDICTOR_FILTERS and not (
+            passed_through and allow_content_stream_passthrough
+        ):
             result = coerce_decoder_bytes(apply_predictor(result, parms))
         return result
     except ValueError as exc:
@@ -143,9 +152,16 @@ def decode_stream_data(
 
 
 class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
-    def decode_segment(self, segment: JBIG2Segment) -> None:
-        if segment.segment_type in (48, 6, 38, 39):
-            super().decode_segment(segment)
+    # The page and its immediate regions; anything else is skipped rather
+    # than failing the image.
+    supported_segment_types = frozenset(
+        {
+            JBIG2_PAGE_INFO,
+            JBIG2_IMMEDIATE_TEXT_REGION,
+            JBIG2_IMMEDIATE_GENERIC_REGION,
+            JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION,
+        }
+    )
 
     def decode_text_region(self, region: JBIG2Region) -> None:
         image = self.image
@@ -237,7 +253,7 @@ def decode_ccitt_fax_image(
 
 
 def decode_ccitt_fax(data: bytes, parms: object) -> bytes:
-    params = parms if type(parms) is FilterParams else FilterParams.from_parms(parms)
+    params = filter_params(parms)
     return numpy.packbits(
         decode_ccitt_fax_image(data, params) != 0, axis=1, bitorder="big"
     ).tobytes()
@@ -252,7 +268,7 @@ def decode_crypt(data: bytes, parms: object) -> bytes:
 
 
 def decode_jbig2(data: bytes, parms: object) -> bytes:
-    params = parms if isinstance(parms, FilterParams) else FilterParams.from_parms(parms)
+    params = filter_params(parms)
     return decode_strict_jbig2(data, params, decoder_type=RecoveryJBIG2PageDecoder)
 
 
@@ -308,7 +324,7 @@ def tiff_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -
 def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
     # Row framing, the truncation rules and the error mapping live in spec;
     # core supplies only the kernels that recover damaged rows.
-    params = parms if type(parms) is FilterParams else FilterParams.from_parms(parms)
+    params = filter_params(parms)
     return strict_apply_predictor(
         data, params, png=png_predictor_tolerant, tiff=tiff_predictor_tolerant
     )
@@ -348,7 +364,7 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
 
 
 def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
-    params = parms if isinstance(parms, FilterParams) else FilterParams.from_parms(parms)
+    params = filter_params(parms)
     if params.early_change == 1 and imagecodecs.LZW.available:
         try:
             return bytes(imagecodecs.lzw_decode(data))
@@ -361,8 +377,17 @@ def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
 
 
 def apply_flate(data: bytes, parms: object) -> bytes:
+    return inflate(data)[0]
+
+
+def inflate(data: bytes) -> tuple[bytes, bool]:
+    """FlateDecode's output, and whether it is the input passed through.
+
+    Data that no zlib, gzip or raw deflate reading recovers, and that reads
+    as a content stream, is taken to be an unfiltered one and passed through.
+    """
     if not data:
-        return b""
+        return b"", False
     candidates: tuple[int, ...]
     if len(data) >= 2:
         cmf = data[0]
@@ -379,26 +404,26 @@ def apply_flate(data: bytes, parms: object) -> bytes:
     tried_default = candidates[0] == zlib.MAX_WBITS
     if tried_default:
         try:
-            return zlib.decompress(data, zlib.MAX_WBITS)
+            return zlib.decompress(data, zlib.MAX_WBITS), False
         except zlib.error:
             pass
         try:
-            return bytes(imagecodecs.zlib_decode(data))
+            return bytes(imagecodecs.zlib_decode(data)), False
         except Exception:
             pass
 
     for wbits in candidates:
         if not (tried_default and wbits == zlib.MAX_WBITS):
             try:
-                return zlib.decompress(data, wbits)
+                return zlib.decompress(data, wbits), False
             except zlib.error:
                 pass
         recovered = recover_flate(data, wbits)
         if recovered is not None:
-            return recovered
+            return recovered, False
 
     if looks_like_pdf_content_stream(data):
-        return bytes(data)
+        return bytes(data), True
     raise FilterParseError("invalid FlateDecode stream")
 
 

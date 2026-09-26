@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from itertools import chain
-from typing import Self, TypeVar
+from typing import ClassVar, Self, TypeVar
 
 from core_adobe_fonts.cmap.ranges import (
     CIDRange,
@@ -46,6 +46,8 @@ class CMapDecoder:
     code_space_ranges_by_length: dict[int, tuple[tuple[bytes, bytes], ...]]
     default_to_identity: bool
     wmode: int
+    # The deepest usecmap chain a subclass accepts; None leaves it unbounded.
+    max_inheritance_depth: ClassVar[int | None] = None
 
     __slots__ = (
         "code_space_ranges",
@@ -87,6 +89,9 @@ class CMapDecoder:
         if empty:
             self.decode_lengths = ()
             return
+        limit = self.max_inheritance_depth
+        if limit is not None and inheritance_depth > limit:
+            raise ValueError("CMap usecmap nesting too deep")
         data = bytes(data)
         program = self.parse_program(data)
         usecmap_name, local_wmode = self.program_metadata(program)
@@ -242,6 +247,10 @@ class CMapDecoder:
                         NotdefRange,
                     )
 
+    def reject_mapping(self, reason: str, cause: BaseException | None = None) -> None:
+        """Refuse one malformed mapping; returning instead skips it (or its odd operands)."""
+        raise ValueError(reason) from cause
+
     def parse_char_block(
         self,
         block: CMapBlock,
@@ -249,18 +258,22 @@ class CMapDecoder:
     ) -> None:
         items = block.token_values(include_words=True)
         if len(items) % 2 != 0:
-            raise ValueError("invalid CMap character mapping operands")
+            self.reject_mapping("invalid CMap character mapping operands")
+            items = items[:-1]
         for i in range(0, len(items), 2):
             code_token, cid_token = items[i], items[i + 1]
             if not (code_token.startswith(b"<") and code_token.endswith(b">")):
-                raise ValueError("invalid CMap mapping")
+                self.reject_mapping("invalid CMap mapping")
+                continue
             try:
                 code = decode_cmap_hex_token(code_token)
                 cid = int(cid_token)
             except (ValueError, UnicodeDecodeError) as exc:
-                raise ValueError("invalid CMap mapping") from exc
+                self.reject_mapping("invalid CMap mapping", exc)
+                continue
             if not code or not valid_cid(cid):
-                raise ValueError("invalid CMap mapping")
+                self.reject_mapping("invalid CMap mapping")
+                continue
             mappings[code] = cid
 
     def parse_range_block(
@@ -272,7 +285,8 @@ class CMapDecoder:
     ) -> None:
         items = block.token_values(include_words=True)
         if len(items) % 3 != 0:
-            raise ValueError("invalid CMap range mapping operands")
+            self.reject_mapping("invalid CMap range mapping operands")
+            items = items[: len(items) - len(items) % 3]
         for i in range(0, len(items), 3):
             start_token, end_token, cid_token = items[i], items[i + 1], items[i + 2]
             if not (
@@ -281,16 +295,19 @@ class CMapDecoder:
                 and end_token.startswith(b"<")
                 and end_token.endswith(b">")
             ):
-                raise ValueError("invalid CMap mapping")
+                self.reject_mapping("invalid CMap mapping")
+                continue
             try:
                 start_bytes = decode_cmap_hex_token(start_token)
                 end_bytes = decode_cmap_hex_token(end_token)
                 cid = int(cid_token)
                 validate_codespace_range(start_bytes, end_bytes)
             except (ValueError, UnicodeDecodeError) as exc:
-                raise ValueError("invalid CMap mapping") from exc
+                self.reject_mapping("invalid CMap mapping", exc)
+                continue
             if not valid_cid(cid):
-                raise ValueError("invalid CMap mapping")
+                self.reject_mapping("invalid CMap mapping")
+                continue
             if make_range is CIDRange:
                 last_cid = cid + range_offset(
                     end_bytes,
@@ -300,7 +317,8 @@ class CMapDecoder:
                     validate_code=False,
                 )
                 if not valid_cid(last_cid):
-                    raise ValueError("invalid CMap mapping")
+                    self.reject_mapping("invalid CMap mapping")
+                    continue
             remove_codes_in_range(mappings, start_bytes, end_bytes)
             ranges.append(make_range(start_bytes, end_bytes, cid))
 

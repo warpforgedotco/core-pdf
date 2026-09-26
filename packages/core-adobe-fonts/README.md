@@ -2,6 +2,11 @@
 
 Adobe font format parsers and tables: CFF (TN 5176), Type 2 charstrings (TN 5177), Type 1 font programs, CMaps (TN 5014) with the Adobe cmap-resources data, the Adobe Glyph List, and Core 14 AFM metrics. Independent of PDF.
 
+0.2.1 adds CMap reading hooks for tolerant readers: `CMapDecoder.reject_mapping` and
+`max_inheritance_depth`, and on `CMapProgram` the `read_tokens`, `validate_program`,
+`block_count`, `validate_block`, and `reject_unterminated_block` methods, whose defaults
+raise as before.
+
 0.2.0 removes `cmap.tokenizer.iter_blocks`; iterate
 `CMapProgram.parse(data).blocks(begin, end)` and read each block's `data` instead.
 `type1.program.parse_type1_font_program_encoding` gains `skip_out_of_range`, and
