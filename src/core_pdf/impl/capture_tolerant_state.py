@@ -255,15 +255,11 @@ class RecoveringTextState(ContentInterpreter):
         # interpreter would refuse the content.
         return fallback
 
-    def matrix_operand(self, value: object, context: str) -> Matrix:
-        value = self.resolver.deep_resolve(value)
-        if value is None:
+    def matrix_fallback(self, value: object, context: str) -> Matrix | None:
+        # A form matrix with extra entries reads its first six; a malformed
+        # pattern matrix is the identity. Anything else is still an error.
+        if context == "form" and isinstance(value, (list, tuple)) and len(value) > 6:
+            return Matrix.from_operand(value[:6])
+        if context == "pattern":
             return IDENTITY_MATRIX
-        try:
-            return Matrix.from_operand(value)
-        except ValueError:
-            if context == "form" and isinstance(value, (list, tuple)) and len(value) > 6:
-                return Matrix.from_operand(value[:6])
-            if context == "pattern":
-                return IDENTITY_MATRIX
-            raise
+        return None

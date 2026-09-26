@@ -265,10 +265,25 @@ class ContentInterpreter:
             return self.reject(error, "resources", None)
 
     def matrix_operand(self, value: object, context: str) -> Matrix:
+        """The matrix `value` holds for a `context` ("form" or "pattern") entry.
+
+        A malformed matrix raises its ValueError unless matrix_fallback offers
+        a replacement, which then goes through the reject hook.
+        """
         value = self.resolver.deep_resolve(value)
         if value is None:
             return IDENTITY_MATRIX
-        return Matrix.from_operand(value)
+        try:
+            return Matrix.from_operand(value)
+        except ValueError as error:
+            fallback = self.matrix_fallback(value, context)
+            if fallback is None:
+                raise
+            return self.reject(error, context, fallback)
+
+    def matrix_fallback(self, value: object, context: str) -> Matrix | None:
+        """The matrix a recovering reader uses for malformed `value`; None, here, for none."""
+        return None
 
     def get_decoder(self) -> FontService:
         """The decoder for the selected font, built once per selection.

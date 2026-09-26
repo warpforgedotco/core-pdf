@@ -12,6 +12,7 @@ from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, DEVICE_RGB, ColorSpace
+from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.types import PdfName
 
 
@@ -283,6 +284,32 @@ def test_a_recovering_hook_decodes_a_font_stream_by_its_dictionary() -> None:
     assert state.decoded[-1] == (7, 7)
     assert state.provided[-1] == {}
     assert [context for context, _ in state.rejected] == ["font-resource", "font-resource"]
+
+
+class MatrixRecovery(RecoveringInterpreter):
+    def matrix_fallback(self, value: object, context: str) -> Matrix | None:
+        return IDENTITY_MATRIX if context == "pattern" else None
+
+
+def test_a_malformed_matrix_raises_without_a_fallback() -> None:
+    with pytest.raises(ValueError):
+        make_interpreter().matrix_operand([1, 0, 0, 1, 0], "pattern")
+    state = recovering()
+    with pytest.raises(ValueError):
+        state.matrix_operand([1, 0, 0, 1, 0], "pattern")
+    assert state.rejected == []
+
+
+def test_a_recovering_hook_proceeds_with_the_matrix_fallback() -> None:
+    state = make_interpreter(interpreter_class=MatrixRecovery)
+    assert isinstance(state, MatrixRecovery)
+    state.rejected = []
+    assert state.matrix_operand([1, 0, 0, 1, 0], "pattern") is IDENTITY_MATRIX
+    assert state.matrix_operand([2, 0, 0, 2, 0, 0], "form") == Matrix(2, 0, 0, 2, 0, 0)
+    assert state.matrix_operand(None, "form") is IDENTITY_MATRIX
+    with pytest.raises(ValueError):
+        state.matrix_operand([1, 0, 0, 1, 0], "form")
+    assert [context for context, _ in state.rejected] == ["pattern"]
 
 
 @pytest.mark.parametrize("fonts", [{"F": PdfStream({})}, {"F": 7}, {}])
