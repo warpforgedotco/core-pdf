@@ -5,7 +5,7 @@ from __future__ import annotations
 import heapq
 import math
 from bisect import bisect_left
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from copy import replace
 from typing import Any
@@ -87,6 +87,7 @@ from core_pdf_cythonized import (
     sample_opaque_pixels,
     shading_blend,
     shading_values,
+    stroke_polylines,
     stroke_segment_samples,
     supersampled_coverage_plane,
 )
@@ -111,6 +112,14 @@ def shading_rgba(
     rgba = shading_color_rgba(color_model, components, fill_opacity, rendering)
     return rgba if shading_alpha is None else scale_rgba_alpha(rgba, shading_alpha)
 
+
+# What math.floor and math.ceil raise where stroke_polylines stopped, by its
+# error code.
+STROKE_ERRORS: dict[int, Callable[[], Exception]] = {
+    1: lambda: ValueError("cannot convert float NaN to integer"),
+    2: lambda: OverflowError("cannot convert float infinity to integer"),
+    3: MemoryError,
+}
 
 # blend_px's modes, as shading_blend numbers them; any other composites as normal.
 BLEND_COLOR_DODGE = 3
@@ -3005,6 +3014,10 @@ class RasterTarget:
                 )
                 if intersect_box(stroke_box, clip_box) is None:
                     return
+        if self.stroke_natively(
+            path, line_width, rgba, dash_pattern, blend_mode, line_cap, line_join
+        ):
+            return
         for subpath in path.subpaths:
             if dash_pattern and dash_pattern[0]:
                 self.stroke_path(
@@ -3089,6 +3102,79 @@ class RasterTarget:
                     line_cap,
                     blend_mode,
                 )
+
+    def stroke_natively(
+        self,
+        path: CapturedPath,
+        line_width: float,
+        rgba: tuple[int, int, int, int],
+        dash_pattern: tuple[list[float], float] | None,
+        blend_mode: str | None,
+        line_cap: int,
+        line_join: int,
+    ) -> bool:
+        """Stroke `path` with stroke_polylines, if it is a stroke the kernel takes.
+
+        That is a deferred path, undashed, blended normally with no group
+        planes, under no clip or a rectangular one: every stroke into
+        paint_stroke_once's scratch, and most on a page. The kernel paints
+        each subpath's segments, joins and caps as the loop below would;
+        what it leaves to Python is the coincident two-point subpath under a
+        round cap, which the loop fills as a circle path. False, with
+        nothing painted, for any other stroke.
+        """
+        deferred = path.deferred_columns()
+        if (
+            deferred is None
+            or (dash_pattern and dash_pattern[0])
+            or blend_mode is not None
+            or self.group_source_alpha is not None
+            or self.group_source_shape is not None
+            or type(line_cap) is not int
+            or type(line_join) is not int
+            or type(line_width) not in {int, float}
+            or not all(type(channel) is int for channel in rgba)
+        ):
+            return False
+        region = self.clip.current_region()
+        if region is not None and (not region.rectangular or region.empty or region.box is None):
+            return False
+        xs, ys, spans, outline = deferred
+        scale = self.scale
+        width = float(line_width)
+        first = 0
+        while True:
+            window, stopped, error = stroke_polylines(
+                self.pixel_array,
+                xs,
+                ys,
+                spans,
+                outline,
+                self.crop_x0,
+                self.crop_y1,
+                scale,
+                None if region is None else region.box,
+                width,
+                *rgba,
+                line_cap,
+                line_join,
+                first,
+                0.5,
+            )
+            if window is not None:
+                self.extend_paint_box(*window)
+            if error:
+                raise STROKE_ERRORS[error]()
+            if stopped >= len(spans):
+                return True
+            # A coincident two-point subpath under a round cap: a dot, which
+            # the loop fills as a circle path.
+            start = spans[stopped][0]
+            radius = line_width * 0.5 if line_width > 0.0 else 0.5 / scale
+            self.fill_path(
+                circle_path(float(xs[start]), float(ys[start]), radius), rgba, blend_mode
+            )
+            first = stopped + 1
 
     def shading_box(
         self,

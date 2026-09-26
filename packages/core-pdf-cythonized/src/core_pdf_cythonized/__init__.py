@@ -70,6 +70,7 @@ from core_pdf_cythonized._sample_blit import (
 )
 from core_pdf_cythonized._shading import shading_blend, shading_t, shading_values
 from core_pdf_cythonized._source_plane import accumulate_source_plane
+from core_pdf_cythonized._stroke import stroke_polylines
 from core_pdf_cythonized._stroke_segment import stroke_segment_samples
 from core_pdf_cythonized._supersample import supersampled_coverage_plane
 from core_pdf_cythonized._type1 import decrypt_type1
@@ -113,6 +114,7 @@ __all__ = (
     "shading_t",
     "shading_values",
     "signed_area_coverage",
+    "stroke_polylines",
     "stroke_segment_samples",
     "supersampled_coverage_plane",
     "translated_outline_edges",
