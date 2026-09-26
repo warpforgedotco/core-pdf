@@ -124,21 +124,6 @@ def cff_font_matrix(
 class CFFFont(PdfCFFFont):
     __slots__ = ()
 
-    def __init__(self, data: bytes | memoryview | None) -> None:
-        if data is not None:
-            super().__init__(data)
-            return
-        self.data = b""
-        self.top_dict = {}
-        self.charstrings = []
-        self.cid_to_gid = {}
-        self.custom_string_sids = {}
-        self.is_cid_keyed = False
-        self.global_subrs = ()
-        self.local_subrs = ()
-        self.fd_select = ()
-        self.font_dicts = ()
-
     def read_header(self) -> int:
         if len(self.data) < 4 or self.data[0] != 1:
             raise ValueError("invalid CFF font program")

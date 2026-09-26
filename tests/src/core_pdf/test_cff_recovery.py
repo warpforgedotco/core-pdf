@@ -14,8 +14,24 @@ from core_pdf.impl.fonts.font_program import (
 from core_pdf_cythonized import cubic_sample_times
 
 
+def blank_cff_font[F: CFFFont](font_type: type[F]) -> F:
+    """A CFF font with no program data, glyphs or dictionaries, for kernel tests."""
+    font = font_type.__new__(font_type)
+    font.data = b""
+    font.top_dict = {}
+    font.charstrings = []
+    font.cid_to_gid = {}
+    font.custom_string_sids = {}
+    font.is_cid_keyed = False
+    font.global_subrs = ()
+    font.local_subrs = ()
+    font.fd_select = ()
+    font.font_dicts = ()
+    return font
+
+
 def make_font(payload: bytes, glyph_count: int = 4) -> CFFFont:
-    font = CFFFont(None)
+    font = blank_cff_font(CFFFont)
     font.data = b"\0\0\0" + payload
     font.charstrings = [b"\x0e"] * glyph_count
     return font
@@ -193,7 +209,7 @@ class FeatureFont(CFFFont):
 
 @pytest.mark.parametrize("count", [2, 33])
 def test_unicode_index_scalar_and_matrix_matching_preserve_code_identity(count: int) -> None:
-    font = FeatureFont(None)
+    font = blank_cff_font(FeatureFont)
     font.charstrings = [b"\x0e"] * (count + 1)
     font.cid_to_gid = {gid: gid for gid in range(count + 1)}
     items = tuple((bytes([gid]), gid, "S" if gid == 1 else "5") for gid in range(1, count + 1))
@@ -210,9 +226,7 @@ def test_unicode_index_scalar_and_matrix_matching_preserve_code_identity(count: 
 
 
 class CountingFeatureFont(FeatureFont):
-    def __init__(self, data: bytes | None) -> None:
-        super().__init__(data)
-        self.feature_requests: list[int] = []
+    feature_requests: list[int]
 
     def glyph_feature(self, glyph_id: int) -> CFFGlyphFeature:
         self.feature_requests.append(glyph_id)
@@ -223,7 +237,8 @@ class CountingFeatureFont(FeatureFont):
 def test_unicode_index_computes_each_glyph_feature_once(count: int) -> None:
     # A decoder asks once per string it decodes, so the same index answers
     # many overlapping requests; each must match what a fresh index returns.
-    font = CountingFeatureFont(None)
+    font = blank_cff_font(CountingFeatureFont)
+    font.feature_requests = []
     font.charstrings = [b"\x0e"] * (count + 1)
     font.cid_to_gid = {gid: gid for gid in range(count + 1)}
     items = tuple((bytes([gid]), gid, "S" if gid == 1 else "5") for gid in range(1, count + 1))
@@ -231,7 +246,7 @@ def test_unicode_index_computes_each_glyph_feature_once(count: int) -> None:
     codes = [code for code, _, _ in items]
     requests = [codes[:1], codes[1:2], codes[::-1], codes[1:2], codes]
     for request in requests:
-        reference_font = FeatureFont(None)
+        reference_font = blank_cff_font(FeatureFont)
         reference_font.charstrings = font.charstrings
         reference_font.cid_to_gid = font.cid_to_gid
         fresh = CFFUnicodeRepairIndex(reference_font, items)
@@ -241,7 +256,7 @@ def test_unicode_index_computes_each_glyph_feature_once(count: int) -> None:
 
 
 def test_unicode_index_with_no_glyphs_has_no_repairs() -> None:
-    index = CFFUnicodeRepairIndex(CFFFont(None), ((b"a", 0, "£"),))
+    index = CFFUnicodeRepairIndex(blank_cff_font(CFFFont), ((b"a", 0, "£"),))
     assert index.repairs_for_codes([b"a"]) == {}
 
 
@@ -249,7 +264,7 @@ def test_unicode_index_with_no_glyphs_has_no_repairs() -> None:
 def test_glyph_outline_and_bounds_agree_for_terminated_and_unterminated_paths(
     ending: bytes,
 ) -> None:
-    font = CFFFont(None)
+    font = blank_cff_font(CFFFont)
     font.charstrings = [bytes([139, 139, 21, 149, 139, 139, 159, 129, 139, 5]) + ending]
     assert font.glyph_bbox_for_gid(0) == (0, 0, 10, 20)
     assert contours_bbox(font.normalized_glyph_contours(0)) == (0, 0, 10, 20)
@@ -261,7 +276,7 @@ def test_glyph_outline_and_bounds_agree_for_terminated_and_unterminated_paths(
 
 
 def test_malformed_charstring_retains_only_completed_contours() -> None:
-    font = CFFFont(None)
+    font = blank_cff_font(CFFFont)
     font.charstrings = [bytes([139, 139, 21, 149, 159, 5, 149, 149, 21, 0])]
     assert font.glyph_bbox_for_gid(0) == (0, 0, 10, 20)
     assert font.normalized_glyph_contours(0) == (((0, 0), (10, 20)),)
@@ -269,7 +284,7 @@ def test_malformed_charstring_retains_only_completed_contours() -> None:
 
 @pytest.mark.parametrize("matrix", [[0.002, 0, 0, 0.003, 0, 0], [0, 0.001, -0.001, 0, 0, 0]])
 def test_transformed_curve_bounds_match_flattened_outline(matrix: list[float]) -> None:
-    font = CFFFont(None)
+    font = blank_cff_font(CFFFont)
     font.charstrings = [bytes([139, 139, 21, 139, 239, 239, 139, 139, 39, 8, 14])]
     font.top_dict = {(12, 7): matrix}
     assert font.glyph_bbox_for_gid(0) == contours_bbox(font.normalized_glyph_contours(0))
