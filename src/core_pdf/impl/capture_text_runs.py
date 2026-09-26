@@ -46,7 +46,9 @@ class PendingRun:
     def __init__(self, run: TextRun) -> None:
         self.run = run
         self.parts: deque[str] = deque((run.text,))
-        self.clusters: list[tuple[GlyphClusterLike, ...]] = [run.glyph_clusters]
+        # Kept in text order: a reverse merge prepends its clusters as it
+        # prepends its text.
+        self.clusters: deque[tuple[GlyphClusterLike, ...]] = deque((run.glyph_clusters,))
         self.head = run.text[:1]
         self.tail = run.text[-1:]
 
@@ -71,6 +73,7 @@ class PendingRun:
             separator = gap_separator(new_run.text, self.head, gap, self.run)
             added = new_run.text + separator
             self.parts.appendleft(added)
+            self.clusters.appendleft(new_run.glyph_clusters)
             if added:
                 self.head = added[:1]
             if not self.tail:
@@ -79,11 +82,11 @@ class PendingRun:
             separator = gap_separator(self.tail, new_run.text, gap, self.run)
             added = separator + new_run.text
             self.parts.append(added)
+            self.clusters.append(new_run.glyph_clusters)
             if not self.head:
                 self.head = added[:1]
             if added:
                 self.tail = added[-1:]
-        self.clusters.append(new_run.glyph_clusters)
         run = self.run
         run.union_ink_bbox(new_run.ink_bbox)
         # Stretch the pending run over the one just absorbed, along whichever
