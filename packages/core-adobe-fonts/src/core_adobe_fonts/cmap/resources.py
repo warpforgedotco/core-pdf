@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from functools import cache
+from functools import cache, lru_cache
 from importlib import resources
 from importlib.resources.abc import Traversable
 
@@ -11,7 +11,13 @@ from core_adobe_fonts.cmap.decoder import CMapDecoder
 RESOURCE_PACKAGE = "core_adobe_fonts.cmap.data"
 
 
+@lru_cache(maxsize=64)
 def resolve_cmap_resource(name: str) -> bytes | None:
+    """The packaged CMap called name, or None.
+
+    Cached: a CID font's CMap and every CMap it names with usecmap are read
+    again for each font that uses them, and the packaged bytes never change.
+    """
     if not name or name in {".", ".."} or "/" in name or "\\" in name:
         return None
     deprecated: Traversable | None = None
@@ -38,13 +44,13 @@ def cmap_directories() -> tuple[Traversable, ...]:
     if not root.is_dir():
         return ()
     found: list[Traversable] = []
-    candidates: list[tuple[Traversable, str | None]] = [(root, None)]
+    candidates = [root]
     while candidates:
-        current, parent_name = candidates.pop()
-        if parent_name == "CMap":
+        current = candidates.pop()
+        if current.name == "CMap":
             found.append(current)
             continue
-        candidates.extend((child, child.name) for child in current.iterdir() if child.is_dir())
+        candidates.extend(child for child in current.iterdir() if child.is_dir())
     return tuple(found)
 
 
