@@ -219,7 +219,7 @@ def capture_glyphs(
     advances: list[float] = []
     glyph_boxes: list[float] = []
     want_bitmap: list[int] = []
-    suspicious_flags: list[bool] = []
+    split_flags: list[bool] = []
     positions: list[tuple[float, float]] = []
     offset = 0.0
     cursor = 0
@@ -260,16 +260,18 @@ def capture_glyphs(
             glyph_boxes.extend((NO_BOX, NO_BOX, NO_BOX, NO_BOX))
         else:
             glyph_boxes.extend(box)
-        # Computed whichever mode this is: suspicious feeds split_flags below,
+        # Computed whichever mode this is: suspicious decides the split flag,
         # so gating it on render details would split a multi-character glyph
         # like "A/B" into three observations for a text-only capture and leave
         # it as one otherwise. Only the bitmap request is a render concern.
         suspicious = (
             False if chunk_length == 1 else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
         )
-        suspicious_flags.append(suspicious)
-        if glyph.split_unicode and chunk_length != 1 and not suspicious:
-            any_split = True
+        # Whether pass three re-cuts this glyph into one observation per
+        # character.
+        split = glyph.split_unicode and chunk_length != 1 and not suspicious
+        split_flags.append(split)
+        any_split = any_split or split
         want_bitmap.append(
             1 if want_render and (should_capture_glyph_bitmap(chunk_text) or suspicious) else 0
         )
@@ -358,7 +360,7 @@ def capture_glyphs(
             glyph.alternates,
         )
 
-        if not (glyph.split_unicode and chunk_length != 1 and not suspicious_flags[index]):
+        if not split_flags[index]:
             # The usual glyph: one observation, which is also its own cluster
             # (glyph_cluster_from_observations returns a lone observation as
             # is), so the fragment and cluster lists below are skipped.
@@ -390,7 +392,9 @@ def capture_glyphs(
             if want_runs:
                 if not fused:
                     add_run_geometry(advance_bbox, rect, observation_confidence)
-                elif index == 0 or run_confidence is None:
+                elif run_confidence is None:
+                    # Fused, no glyph is split, so every glyph before this
+                    # one came through here: at index 0 this is still None.
                     run_confidence = observation_confidence
                 elif observation_confidence is not None:
                     run_confidence = min(run_confidence, observation_confidence)
