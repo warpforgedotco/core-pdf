@@ -85,3 +85,10 @@ def test_box_grid_falls_back_for_a_box_too_wide_to_count() -> None:
     assert xray._BoxGrid.span(huge) is None
     assert grid.candidates(huge) == [0, 1]
     assert grid.candidates((0.0, 0.0, 1.0, 1.0)) == [0, 1]
+
+
+def test_box_grid_answers_an_inverted_box_without_walking_its_columns() -> None:
+    inverted = (0.0, 128.0, 1e300, 0.0)
+    assert xray._BoxGrid.span(inverted) == []
+    grid = xray._BoxGrid([(0.0, 0.0, 1.0, 1.0)])
+    assert grid.candidates(inverted) == []

@@ -383,7 +383,13 @@ class _BoxGrid:
         row_start, row_stop = floor(y0 / cls.CELL), floor(y1 / cls.CELL) + 1
         # Counted from the bounds, not len(range): a range longer than
         # sys.maxsize raises OverflowError from len().
-        if max(0, column_stop - column_start) * max(0, row_stop - row_start) > cls.MAX_CELLS:
+        columns = max(0, column_stop - column_start)
+        rows = max(0, row_stop - row_start)
+        if not columns or not rows:
+            # An inverted box covers no cell; returning before the
+            # comprehension spares walking every column of a huge empty span.
+            return []
+        if columns * rows > cls.MAX_CELLS:
             return None
         return [
             (column, row)
