@@ -181,29 +181,10 @@ def image_smask_in_data(dictionary: dict[object, object]) -> int:
     return selector
 
 
-def image_bits_per_component(dictionary: dict[object, object]) -> int | None:
-    if has_jpx_filter(dictionary):
-        return None
-    value = dictionary.get("BitsPerComponent")
-    if dictionary.get("ImageMask") is True:
-        if value is None:
-            return 1
-        if require_pdf_integer(value, "invalid image bits-per-component") != 1:
-            raise ValueError("invalid image mask bits-per-component")
-        return 1
-    if value is None:
-        raise ValueError("missing image bits-per-component")
-    bits = require_pdf_integer(value, "invalid image bits-per-component")
-    if bits not in {1, 2, 4, 8, 16}:
-        raise ValueError("invalid image bits-per-component")
-    return bits
-
-
 __all__ = (
     "image_color_rendering",
     "image_smask_in_data",
     "image_decode_array_applies",
-    "image_bits_per_component",
     "SoftMask",
     "ImageSource",
     "image_source_from_stream",

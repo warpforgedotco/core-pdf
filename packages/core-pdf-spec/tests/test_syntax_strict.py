@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_document.metadata import metadata_stream
+from core_pdf_spec.s_07_document.metadata import catalog_metadata_stream
 from core_pdf_spec.s_07_document.page import iter_page_nodes, page_rotation
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -232,13 +232,11 @@ def test_metadata_rejects_malformed_catalog_but_preserves_null_and_absence() -> 
     resolver = ObjectResolver(b"", {})
     try:
         with pytest.raises(ValueError, match="Root"):
-            metadata_stream(resolver, {"Root": 17})
-        assert metadata_stream(resolver, {}) is None
-        assert metadata_stream(resolver, {"Root": PdfReference(999)}) is None
-        assert metadata_stream(resolver, {"Root": {}}) is None
+            catalog_metadata_stream(resolver, 17)
+        assert catalog_metadata_stream(resolver, {}) is None
         stream = PdfStream({}, b"<x/>")
-        assert metadata_stream(resolver, {"Root": {"Metadata": stream}}) is stream
+        assert catalog_metadata_stream(resolver, {"Metadata": stream}) is stream
         with pytest.raises(ValueError, match="Metadata"):
-            metadata_stream(resolver, {"Root": {"Metadata": 17}})
+            catalog_metadata_stream(resolver, {"Metadata": 17})
     finally:
         resolver.close()

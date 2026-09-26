@@ -9,16 +9,6 @@ import numpy
 ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 
 
-def lab_to_xyz(
-    values: ColorSamples,
-    white_point: tuple[float, float, float],
-) -> ColorSamples:
-    components = numpy.column_stack(
-        (values[:, 0] * 100.0, values[:, 1] * 255.0 - 128.0, values[:, 2] * 255.0 - 128.0)
-    )
-    return lab_components_to_xyz(components, white_point)
-
-
 def lab_components_to_xyz(
     values: ColorSamples,
     white_point: tuple[float, float, float],
@@ -91,5 +81,4 @@ __all__ = (
     "xyz_to_lab_components",
     "ColorSamples",
     "lab_components_to_xyz",
-    "lab_to_xyz",
 )

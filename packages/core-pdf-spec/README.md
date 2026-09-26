@@ -39,12 +39,11 @@ bundled font data retains its original notices inside `core-adobe-fonts`.
 
 For Lab color conversion, `s_08_graphics.color_math.lab_components_to_xyz` accepts
 NumPy float32 rows of actual `(L*, a*, b*)` components and a reference white point.
-Image sample decoding and range enforcement belong to the caller. The existing
-`lab_to_xyz` function retains its normalized input convention as a compatibility wrapper.
+Image sample decoding and range enforcement belong to the caller.
 
-The current spec version is `0.7.0`, released independently of core. During `0.x`, breaking
+The current spec version is `0.10.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.9.1,<0.10.0`; changes to that range require core integration and differential validation.
+`>=0.10.0,<0.11.0`; changes to that range require core integration and differential validation.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are
@@ -67,8 +66,7 @@ validation backend's capabilities.
 `effective_pdf_version(header, catalog, previous=...)`. The latter preserves the highest
 declared version across revisions; callers supply the preceding effective version. Parsing
 helpers do not search for displaced headers, resolve indirect extension entries, or recover
-invalid values. `parse_extensions(..., context=...)` additionally applies document-version
-constraints. Reader orchestration and recovery belong to the caller.
+invalid values. Reader orchestration and recovery belong to the caller.
 
 ```python
 from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
@@ -197,6 +195,23 @@ defined in Adobe PDF 1.3, Table 4.20; parsing does not impose a PDF 1.6 availabi
 DeviceN spaces that discard output, including through Indexed and uncolored Pattern
 bases. Mixed DeviceN spaces retain every input component for their alternate tint transform.
 
+When migrating to `0.10.0`, stop using these exports, which nothing in the workspace called:
+
+- `s_08_graphics.color.indexed_color_components`, `tint_color_components`, and
+  `calgray_to_xyz`.
+- `s_08_graphics.color_math.lab_to_xyz`, the normalized-input wrapper; call
+  `lab_components_to_xyz` with actual `(L*, a*, b*)` components.
+- `s_08_graphics.image_spec.image_bits_per_component`.
+- `s_07_document.metadata.metadata_stream`; resolve the trailer's `Root` and pass it to
+  `catalog_metadata_stream`.
+- `s_07_document.standards.parse_extensions`; parse each declaration with
+  `parse_extension`.
+- `s_07_syntax.trees.tree_node`.
+
+`s_07_security.ciphers` no longer defines `aes_cbc_encrypt` or `rc4_crypt`, which only
+forwarded to `core_pdf_crypto.ciphers`; import them from there. Spec now requires
+`core-jbig2` 0.3 and `core-adobe-fonts` 0.2, which drop exports of their own.
+
 When migrating to `0.7.0`: `s_07_filters.jbig2.decode_jbig2` raises `FilterUnsupportedError`
 for arithmetic-coded generic regions, which it used to decode, just as it already did for
 MMR-coded ones. It requires `core-jbig2` 0.2, whose MQ decoder moved to the compiled
@@ -225,9 +240,7 @@ the spec modules keep only the PDF wrappers:
   `JBIG2PageDecoder.finish()` returns T.88 polarity (1 = black); `decode_jbig2` applies the
   ISO 32000-1 7.4.7 inversion through `core_jbig2.bitmap.invert_packed_bitmap`.
 - `s_07_security.ciphers` and `s_07_security.pdf_mac` keep the PDF wrappers over
-  `core_pdf_crypto.ciphers` (the `aes_*_decrypt` functions, which raise
-  `PdfDecryptionError`; `aes_cbc_encrypt` and `rc4_crypt` are used from
-  `core_pdf_crypto.ciphers` directly) and `core_pdf_crypto.pdf_mac`
+  `core_pdf_crypto.ciphers` (public `aes_*`, `rc4_crypt`) and `core_pdf_crypto.pdf_mac`
   (`validate_pdf_mac_token`, `validate_authenticated_data`, `digest*`, `parse_der`).
   Unsupported digest algorithms raise `core_pdf_crypto.errors.UnsupportedAlgorithmError`,
   which the wrapper maps to `PdfUnsupportedError`.

@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf_spec.s_07_document.metadata import metadata_stream
+from core_pdf_spec.s_07_document.metadata import catalog_metadata_stream
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
@@ -39,8 +39,8 @@ def test_metadata_resolves_only_selected_objects_and_preserves_stream(
     }
     resolver.objects.update({key_for(1): catalog, key_for(2): stream})
     try:
-        selected = metadata_stream(
-            resolver, {"Root": PdfReference(1) if indirect_root else catalog}
+        selected = catalog_metadata_stream(
+            resolver, resolver.resolve(PdfReference(1) if indirect_root else catalog)
         )
         assert selected is stream
         assert selected.decoder is decode
