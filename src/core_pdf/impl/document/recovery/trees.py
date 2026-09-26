@@ -19,8 +19,6 @@ def iter_number_tree_items(
     resolve_values: bool = True,
     tree_name: str = "number",
     max_depth: int = 100,
-    depth: int = 0,
-    seen: set[int] | None = None,
 ) -> Iterator[tuple[int, object]]:
     decode = decode_number
     if decode is None:
@@ -40,8 +38,6 @@ def iter_number_tree_items(
         recover_entries=recover or recover_entries,
         resolve_values=resolve_values,
         max_depth=max_depth,
-        depth=depth,
-        seen=seen,
     )
 
 
@@ -51,11 +47,6 @@ def iter_name_tree_items(
     decode_name: NameDecodeFn,
     *,
     recover: bool = False,
-    recover_entries: bool = False,
-    resolve_values: bool = True,
-    max_depth: int = 100,
-    depth: int = 0,
-    seen: set[int] | None = None,
 ) -> Iterator[tuple[str, object]]:
     yield from iter_tree_items(
         node,
@@ -65,11 +56,8 @@ def iter_name_tree_items(
         tree_name="name",
         key_error="invalid name tree key",
         recover=recover,
-        recover_entries=recover or recover_entries,
-        resolve_values=resolve_values,
-        max_depth=max_depth,
-        depth=depth,
-        seen=seen,
+        recover_entries=recover,
+        max_depth=100,
     )
 
 
@@ -87,19 +75,15 @@ def iter_tree_items[TreeKeyT](
     recover: bool = False,
     recover_entries: bool = False,
     resolve_values: bool = True,
-    max_depth: int | None = None,
-    depth: int = 0,
-    seen: set[int] | None = None,
+    max_depth: int,
 ) -> Iterator[tuple[TreeKeyT, object]]:
-
-    if seen is None:
-        seen = set()
-    visited_objects: dict[int, dict] = {}
+    # Keyed by id(); holding each node keeps its id from being reused.
+    visited: dict[int, dict] = {}
     references: set[tuple[int, int]] = set()
-    stack: list[tuple[object, int]] = [(node, depth)]
+    stack: list[tuple[object, int]] = [(node, 0)]
     while stack:
         current, current_depth = stack.pop()
-        if max_depth is not None and current_depth > max_depth:
+        if current_depth > max_depth:
             if recover:
                 continue
             raise ValueError(f"invalid {tree_name} tree depth")
@@ -118,12 +102,11 @@ def iter_tree_items[TreeKeyT](
                 continue
             raise ValueError(f"invalid {tree_name} tree node")
         marker = id(current)
-        if marker in seen:
+        if marker in visited:
             if recover:
                 continue
             raise ValueError(f"{tree_name} tree cycle detected")
-        seen.add(marker)
-        visited_objects[marker] = current
+        visited[marker] = current
 
         entries = resolve(current.get(key_field))
         if entries is not None:
