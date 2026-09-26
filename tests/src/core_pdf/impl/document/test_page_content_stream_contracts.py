@@ -1,7 +1,7 @@
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.capture.recording import TextState
+from core_pdf.impl.capture_recording import TextState
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 

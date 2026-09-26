@@ -12,15 +12,15 @@ import importlib
 import pytest
 
 DELETED = [
-    ("core_pdf.impl.render.paths", "signed_area_coverage"),
+    ("core_pdf.impl.render_paths", "signed_area_coverage"),
     # The device-space entry point is the one the golden vectors pin; core
     # reaches the shared core through the fused glyph front end instead.
-    ("core_pdf.impl.render.target", "signed_area_coverage"),
-    ("core_pdf.impl.render.paths", "group_offsets"),
-    ("core_pdf.impl.fonts.font_program", "pure_cubic_sample_times"),
-    ("core_pdf.impl.fonts.font_program", "execute_type2_charstring"),
-    ("core_pdf.impl.render.blend", "blend_normal_alpha_array_numpy"),
-    ("core_pdf.impl.capture.recovery", "match_token"),
+    ("core_pdf.impl.render_target", "signed_area_coverage"),
+    ("core_pdf.impl.render_paths", "group_offsets"),
+    ("core_pdf.impl.fonts_font_program", "pure_cubic_sample_times"),
+    ("core_pdf.impl.fonts_font_program", "execute_type2_charstring"),
+    ("core_pdf.impl.render_blend", "blend_normal_alpha_array_numpy"),
+    ("core_pdf.impl.capture_recovery", "match_token"),
     ("core_pdf_spec.s_11_transparency.groups", "composite_knockout_element"),
 ]
 

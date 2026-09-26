@@ -14,7 +14,7 @@ requires-python = ">=3.14"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
     "core-pdf==0.0.7",
-    "core-pdf-spec>=0.10.0,<0.11.0",
+    "core-pdf-spec>=0.11.0,<0.12.0",
     "core-adobe-fonts>=0.2.0,<0.3.0",
     "numpy>=2.5.1",
 ]
@@ -47,5 +47,5 @@ core_pdf_compat = ["py.typed"]
 [tool.uv.sources]
 core-pdf = { workspace = true }
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
-core-pdf-spec = { workspace = true }
 core-adobe-fonts = { workspace = true }
+core-pdf-spec = { workspace = true }

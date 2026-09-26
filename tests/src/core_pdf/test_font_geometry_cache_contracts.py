@@ -1,7 +1,7 @@
 import numpy
 import pytest
 
-from core_pdf.impl.fonts.decoder import FontDecoder, outline_arrays
+from core_pdf.impl.fonts_decoder import FontDecoder, outline_arrays
 
 
 @pytest.mark.parametrize("code", [-1, -99])

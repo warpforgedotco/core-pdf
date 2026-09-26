@@ -5,9 +5,9 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.capture.program import CapturedProgram, PageProgram
+from core_pdf.impl.capture_program import CapturedProgram, PageProgram
 from core_pdf.impl.execution import ExtractionCancelled, ExtractionScope
-from core_pdf.impl.extract.contracts import GlyphEvidence, ObservationBatch
+from core_pdf.impl.extract_contracts import GlyphEvidence, ObservationBatch
 from core_pdf.impl.glyphs import GlyphObservation
 from core_pdf_ocr.impl.extract import selection
 from core_pdf_ocr.impl.extract.contracts import (

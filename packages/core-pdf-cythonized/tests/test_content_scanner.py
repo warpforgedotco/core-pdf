@@ -24,7 +24,7 @@ GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
 
 core_pdf = pytest.importorskip("core_pdf")
 
-from core_pdf.impl.capture.recovery import iter_content_operations  # noqa: E402
+from core_pdf.impl.capture_recovery import iter_content_operations  # noqa: E402
 from core_pdf.impl.types import PdfName  # noqa: E402
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer  # noqa: E402
 
@@ -155,7 +155,7 @@ def test_comments_between_operations_are_skipped():
 
 
 def test_the_tokenizer_uses_the_kernel():
-    from core_pdf.impl.capture import recovery
+    from core_pdf.impl import capture_recovery as recovery
     from core_pdf_cythonized import ContentScanner
 
     assert recovery.ContentScanner is ContentScanner

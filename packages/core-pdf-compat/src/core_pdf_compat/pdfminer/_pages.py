@@ -6,9 +6,9 @@ from functools import partial
 from typing import Any, cast
 
 from core_pdf import PdfDocument, PdfPage
-from core_pdf.impl.document.recovery.xref import XRefScanner
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, key_for, merge_xref_sections
 
@@ -222,9 +222,8 @@ def pdfminer_resolvable_pages(  # noqa: C901
             return
     try:
         read_section = partial(
-            XRefScanner.recover_section_at,
+            StrictXRefScanner.recover_section_at,
             document.raw_data,
-            recover_malformed_objects=False,
         )
         revisions = list(iter_xref_revisions(section_start, read_section))
         strict_xref = merge_xref_sections(revision.entries for revision in revisions)

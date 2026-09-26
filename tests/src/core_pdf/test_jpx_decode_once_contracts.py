@@ -6,9 +6,9 @@ import imagecodecs
 import numpy
 import pytest
 
-from core_pdf.impl.graphics import codec_backends
-from core_pdf.impl.graphics.images import decode_image_samples
-from core_pdf.impl.graphics.stream_decoding import decode_stream_data
+from core_pdf.impl import graphics_codec_backends as codec_backends
+from core_pdf.impl.graphics_images import decode_image_samples
+from core_pdf.impl.graphics_stream_decoding import decode_stream_data
 from core_pdf.impl.types import PdfName
 
 

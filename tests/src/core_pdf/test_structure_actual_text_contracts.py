@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.extract.capture import (
+from core_pdf.impl.extract_capture import (
     apply_structure_actual_text,
     run_mcid,
     run_uses_actual_text,

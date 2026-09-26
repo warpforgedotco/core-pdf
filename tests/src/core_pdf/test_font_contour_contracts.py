@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.fonts import font_program as tt
+from core_pdf.impl import fonts_font_program as tt
 
 
 def casteljau(points, t):

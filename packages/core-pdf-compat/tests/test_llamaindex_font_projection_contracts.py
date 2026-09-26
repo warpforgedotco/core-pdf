@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.fonts.decoder import FontDecoder
+from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf_compat.llamaindex._operator_text import (
     Font,
     OperatorTextProjection,

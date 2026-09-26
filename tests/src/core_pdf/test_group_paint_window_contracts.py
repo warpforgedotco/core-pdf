@@ -13,7 +13,7 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf.impl.render.target import RasterTarget
+from core_pdf.impl.render_target import RasterTarget
 from tests.src.core_pdf.raster_support import make_target
 
 
@@ -95,8 +95,8 @@ def test_leaving_the_last_group_stops_the_tracking() -> None:
 def test_a_stroke_records_its_own_region_rather_than_the_scratch_it_uses() -> None:
     """paint_stroke_once paints into a throwaway full-page coverage buffer, so
     the window must not follow it there."""
-    from core_pdf.impl.capture.records import CapturedPath
-    from core_pdf.impl.render.target import paint_stroke_once
+    from core_pdf.impl.capture_records import CapturedPath
+    from core_pdf.impl.render_target import paint_stroke_once
 
     target = grouped_target()
     path = CapturedPath()
@@ -148,8 +148,8 @@ def test_a_stroke_leaves_its_reused_scratch_zeroed() -> None:
     """paint_stroke_once keeps its coverage buffer between strokes and clears
     only the window it painted, so a later stroke starts from zeros and paints
     what it would into a fresh buffer."""
-    from core_pdf.impl.capture.records import CapturedPath
-    from core_pdf.impl.render.target import paint_stroke_once
+    from core_pdf.impl.capture_records import CapturedPath
+    from core_pdf.impl.render_target import paint_stroke_once
 
     def stroke(target: RasterTarget, x0: float, y0: float, x1: float, y1: float) -> None:
         path = CapturedPath()

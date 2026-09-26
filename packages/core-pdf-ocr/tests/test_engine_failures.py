@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 
 from core_pdf.impl.execution import ExtractionCancelled, ExtractionScope
-from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.render_model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import (
     OcrPass,
     OcrPassScope,

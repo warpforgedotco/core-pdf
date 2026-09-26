@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from core_pdf.impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 from core_pdf_spec.types import PdfName, PdfReference, PdfString

@@ -22,8 +22,8 @@ import pytest
 from pytest_codspeed import BenchmarkFixture
 
 from core_pdf import PdfDocument
-from core_pdf.impl.render.model import RenderOptions
-from core_pdf.impl.render.page import compose_page
+from core_pdf.impl.render_model import RenderOptions
+from core_pdf.impl.render_page import compose_page
 from tests.benchmarks.corpus import RENDER_SAMPLES, Sample
 
 REQUIRE_FIXTURES = os.environ.get("CORE_PDF_BENCHMARK_REQUIRE_FIXTURES") == "1"

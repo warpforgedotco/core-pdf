@@ -7,8 +7,8 @@ import math
 import numpy
 
 from core_pdf.impl.array_views import uint8_view
-from core_pdf.impl.capture.records import CapturedPath
-from core_pdf.impl.render.model import DisplayItem, PathPaintItem, PathPaintKind, RasterImage
+from core_pdf.impl.capture_records import CapturedPath
+from core_pdf.impl.render_model import DisplayItem, PathPaintItem, PathPaintKind, RasterImage
 
 
 def rasterize_packed_stroked_paths(

@@ -57,7 +57,7 @@ def test_core_reaches_the_sampler_through_the_type2_kernel():
     # otherwise stand alone, so cibuildwheel can run the golden vectors
     # against a freshly built wheel with nothing else present.
     pytest.importorskip("core_pdf")
-    from core_pdf.impl.fonts import font_program
+    from core_pdf.impl import fonts_font_program as font_program
     from core_pdf_cythonized import type2_glyph_geometry
 
     assert font_program.type2_glyph_geometry is type2_glyph_geometry

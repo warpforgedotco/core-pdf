@@ -7,15 +7,15 @@ from copy import replace
 from typing import TYPE_CHECKING
 
 from core_pdf.impl.execution import ExtractionScope
-from core_pdf.impl.extract.capture import STRUCTURE_UNSET
-from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.extract.pipeline import (
+from core_pdf.impl.extract_capture import STRUCTURE_UNSET
+from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_pipeline import (
     PageExtraction as NativePageExtraction,
 )
-from core_pdf.impl.extract.pipeline import (
+from core_pdf.impl.extract_pipeline import (
     PageProducts,
 )
-from core_pdf.impl.output.model import Page
+from core_pdf.impl.output_model import Page
 from core_pdf_ocr.impl.extract.block_layout import layout_blocks_with_evidence
 from core_pdf_ocr.impl.extract.capture import capture_page
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult, WorkPlan
@@ -24,10 +24,10 @@ from core_pdf_ocr.impl.extract.table_detection import extract_tables
 from core_pdf_ocr.impl.extract.table_reconcile import remove_duplicate_tables
 
 if TYPE_CHECKING:
-    from core_pdf.impl.document.page import PdfPage
-    from core_pdf.impl.document.records import RawFormField
-    from core_pdf.impl.document.structure import PageStructure
-    from core_pdf.impl.extract.capture import StructureUnset
+    from core_pdf.impl.document_page import PdfPage
+    from core_pdf.impl.document_records import RawFormField
+    from core_pdf.impl.document_structure import PageStructure
+    from core_pdf.impl.extract_capture import StructureUnset
     from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextProfile
 
 

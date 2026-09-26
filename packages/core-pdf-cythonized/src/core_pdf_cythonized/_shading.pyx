@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Axial and radial shading fills (core_pdf.impl.render.target.paint_shading).
+"""Axial and radial shading fills (core_pdf.impl.render_target.paint_shading).
 
 paint_shading walked the shading's pixel box in Python: for each pixel the
 clip allowed, axial_shading_t or radial_shading_t for its centre, the extend

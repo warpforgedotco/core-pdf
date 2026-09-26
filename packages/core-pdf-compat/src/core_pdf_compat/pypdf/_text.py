@@ -6,15 +6,15 @@ from contextlib import suppress
 from typing import Any, ClassVar
 
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
-from core_pdf.impl.capture.recovery import iter_content_operations
-from core_pdf.impl.document.recovery.lexer import PdfLexer
-from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl.fonts.decoder import FontDecoder
-from core_pdf.impl.fonts.glyphs import TEX_GLYPH_ALIASES
-from core_pdf.impl.fonts.helpers import strip_subset_tag
-from core_pdf.impl.fonts.metrics import LIGATURE_TEXT_TO_CHAR
-from core_pdf.impl.fonts.widths import parse_font_widths
+from core_pdf.impl.capture_recovery import iter_content_operations
+from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts_decoder import FontDecoder
+from core_pdf.impl.fonts_glyphs import TEX_GLYPH_ALIASES
+from core_pdf.impl.fonts_helpers import strip_subset_tag
+from core_pdf.impl.fonts_metrics import LIGATURE_TEXT_TO_CHAR
+from core_pdf.impl.fonts_widths import parse_font_widths
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.types import PdfName, PdfString, ReplaceFields, ReprFields
 from core_pdf_compat._text_state import (
     IDENTITY_MATRIX,

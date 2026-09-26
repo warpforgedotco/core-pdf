@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.render.clipping import ClipState
-from core_pdf.impl.render.target import RasterTarget
+from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_target import RasterTarget
 
 
 def make_target():

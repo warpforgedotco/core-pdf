@@ -9,39 +9,39 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
-from core_pdf.impl.capture.records import CapturedDrawing, CapturedLines
-from core_pdf.impl.extract.capture import (
+from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
+from core_pdf.impl.capture_records import CapturedDrawing, CapturedLines
+from core_pdf.impl.extract_capture import (
     STRUCTURE_UNSET,
     capture_runs,
     observations_from_runs,
     promoted_hidden_runs,
     run_uses_actual_text,
 )
-from core_pdf.impl.extract.capture import (
+from core_pdf.impl.extract_capture import (
     capture_from_program as native_capture_from_program,
 )
-from core_pdf.impl.extract.capture import (
+from core_pdf.impl.extract_capture import (
     capture_page as native_capture_page,
 )
-from core_pdf.impl.extract.capture import (
+from core_pdf.impl.extract_capture import (
     glyph_evidence_fields as native_glyph_evidence_fields,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl.extract_contracts import (
     GlyphEvidence,
     ObservationBatch,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl.extract_contracts import (
     PageAnalysis as NativePageAnalysis,
 )
-from core_pdf.impl.extract.quality import analyze_text
+from core_pdf.impl.extract_quality import analyze_text
 from core_pdf.impl.geometry import bbox_union, rect_tuple
 from core_pdf.impl.glyphs import (
     GlyphObservation,
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
-from core_pdf.impl.graphics.filter_registry import declared_filter_names
+from core_pdf.impl.graphics_filter_registry import declared_filter_names
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.text import normalize_extracted_text
 from core_pdf_ocr.impl.extract.contracts import (

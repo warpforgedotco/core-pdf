@@ -7,7 +7,7 @@ from typing import Any
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.output.model import (
+from core_pdf.impl.output_model import (
     Document,
     Page,
 )

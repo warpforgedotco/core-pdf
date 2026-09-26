@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.render import blend
+from core_pdf.impl import render_blend as blend
 from core_pdf_cythonized import blend_normal_alpha_array_numpy, composite_normal_group
 
 

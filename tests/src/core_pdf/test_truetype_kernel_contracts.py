@@ -18,8 +18,8 @@ import numpy
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.fonts import font_program
-from core_pdf.impl.fonts.raster_kernel import scale_contours
+from core_pdf.impl import fonts_font_program as font_program
+from core_pdf.impl.fonts_raster_kernel import scale_contours
 from core_pdf_cythonized import truetype_contours
 
 FIXTURES = [

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.capture.recording import TextState
+from core_pdf.impl.capture_recording import TextState
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import ShadingPattern, TilingPattern
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver

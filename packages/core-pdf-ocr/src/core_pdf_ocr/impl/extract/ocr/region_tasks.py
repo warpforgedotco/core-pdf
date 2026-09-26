@@ -9,7 +9,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.array_views import finite_median
-from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.geometry import overlap_ratio_min_exact, overlap_ratio_of
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY,

@@ -7,7 +7,7 @@ from typing import Any, ClassVar
 
 import numpy
 
-from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath
+from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr._vendor.newstroke_data import NEWSTROKE_ASCII, NEWSTROKE_ASCII_ALTERNATES

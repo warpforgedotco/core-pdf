@@ -16,8 +16,8 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf.impl.render.paths import fill_path_crossing_spans
-from core_pdf.impl.render.target import RasterTarget
+from core_pdf.impl.render_paths import fill_path_crossing_spans
+from core_pdf.impl.render_target import RasterTarget
 from core_pdf_cythonized import stroke_segment_samples, supersampled_coverage_plane
 from tests.src.core_pdf.pdf_bytes import serialize_pdf
 from tests.src.core_pdf.raster_support import make_backdrop_target, rendered

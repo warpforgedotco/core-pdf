@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Content stream token scanning (core_pdf.impl.capture.recovery).
+"""Content stream token scanning (core_pdf.impl.capture_recovery).
 
 The tokenizer's fast path was a single regular expression matched once per
 token. The expression is C, but every match allocates a match object and every

@@ -86,6 +86,6 @@ def test_render_commands_use_the_kernel():
     # Through translated_outline_edges, which runs outline_edges on the
     # translated columns.
     pytest.importorskip("core_pdf")
-    from core_pdf.impl.render import commands
+    from core_pdf.impl import render_commands as commands
 
     assert commands.translated_outline_edges is translated_outline_edges

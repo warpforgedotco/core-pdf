@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.render import target as raster
-from core_pdf.impl.render.clipping import ClipState
+from core_pdf.impl import render_target as raster
+from core_pdf.impl.render_clipping import ClipState
 
 
 def rounded_ratio(numerator: int, denominator: int) -> int:

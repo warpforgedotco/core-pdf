@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""4x4 supersampled path coverage (core_pdf.impl.render.target.fill_path).
+"""4x4 supersampled path coverage (core_pdf.impl.render_target.fill_path).
 
 A path fill that glyph_coverage_plane cannot take -- in practice an even-odd
 fill, whose winding the signed-area accumulation does not model -- was

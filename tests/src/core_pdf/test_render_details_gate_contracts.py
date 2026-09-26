@@ -10,14 +10,14 @@ instead of drawing nothing."""
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.capture.program import (
+from core_pdf.impl.capture_program import (
     EXTRACTION_CAPTURE,
     CapturedProgram,
     CaptureOptions,
     PageProgram,
 )
-from core_pdf.impl.render.model import RenderOptions
-from core_pdf.impl.render.page import compose_page
+from core_pdf.impl.render_model import RenderOptions
+from core_pdf.impl.render_page import compose_page
 
 
 def test_a_program_defaults_to_carrying_render_detail() -> None:
@@ -89,7 +89,7 @@ def test_a_vertical_run_honours_the_render_details_gate(want_transform: bool) ->
     """The vertical path used to build a transform tuple per glyph whatever the
     flag said, so a text-only capture of a vertical page still carried the
     render payload the flag exists to leave out."""
-    from core_pdf.impl.capture.glyph_geometry import vertical_glyph_geometry
+    from core_pdf.impl.capture_glyph_geometry import vertical_glyph_geometry
 
     _advance, _baseline, transforms, _ink, _visible, _bitmap = vertical_glyph_geometry(
         [0.0, 12.0],

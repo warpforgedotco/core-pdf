@@ -2,8 +2,8 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl.capture.program import CapturedProgram, PageProgram
-from core_pdf.impl.capture.records import (
+from core_pdf.impl.capture_program import CapturedProgram, PageProgram
+from core_pdf.impl.capture_records import (
     CapturedDrawing,
     CapturedLine,
     CapturedLines,
@@ -12,7 +12,7 @@ from core_pdf.impl.capture.records import (
     DrawingKind,
     ShadingPattern,
 )
-from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf_ocr.impl.extract import capture
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, StrokedVectorTextEvidence
 
@@ -221,7 +221,7 @@ def test_numeric_hidden_layer_verification_requires_clean_mapped_scan_evidence(
     field: str,
     value: object,
 ) -> None:
-    from core_pdf.impl.extract.contracts import GlyphEvidence, TextQualityStats
+    from core_pdf.impl.extract_contracts import GlyphEvidence, TextQualityStats
 
     evidence = replace(
         ocr_capture.evidence,

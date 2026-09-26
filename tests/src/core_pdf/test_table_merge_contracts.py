@@ -2,8 +2,8 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl.extract.table_cleanup import merge_adjacent_tables
-from core_pdf.impl.output.model import Table, TableAssociatedText, TableCell
+from core_pdf.impl.extract_table_cleanup import merge_adjacent_tables
+from core_pdf.impl.output_model import Table, TableAssociatedText, TableCell
 
 
 def make_table(
@@ -85,7 +85,7 @@ def test_tables_without_geometry_remain_separate(missing):
 
 @pytest.mark.parametrize("geometry", [False, True])
 def test_wrapped_stream_rows_join_text_and_union_cell_geometry(geometry):
-    from core_pdf.impl.extract.table_cleanup import merge_wrapped_stream_rows
+    from core_pdf.impl.extract_table_cleanup import merge_wrapped_stream_rows
 
     rows = tuple(
         tuple(
@@ -128,7 +128,7 @@ def test_wrapped_stream_rows_join_text_and_union_cell_geometry(geometry):
 def test_stream_row_merge_preserves_ineligible_or_unwrapped_tables(
     source, row_count, columns, numeric
 ):
-    from core_pdf.impl.extract.table_cleanup import merge_wrapped_stream_rows
+    from core_pdf.impl.extract_table_cleanup import merge_wrapped_stream_rows
 
     original = Table(
         0,

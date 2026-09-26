@@ -1,7 +1,7 @@
 import pytest
 
 from core_pdf.impl.glyphs import GlyphCluster
-from core_pdf.impl.layout.reconstruction import (
+from core_pdf.impl.layout_reconstruction import (
     GlyphLineBuilder,
     LayoutLineTextAtom,
     is_superscript_metrics,

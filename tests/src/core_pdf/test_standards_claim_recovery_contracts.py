@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.document.standards import (
+from core_pdf.impl.document_standards import (
     discover_extensions,
     profile_claim,
     xmp_claims,

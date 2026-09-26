@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.layout.reconstruction import (
+from core_pdf.impl.layout_reconstruction import (
     GlyphLineBuilder,
     reconstruct_layout_line_text,
     reconstruct_rotated_table_line,

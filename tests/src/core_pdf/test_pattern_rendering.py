@@ -1,10 +1,10 @@
 import numpy
 import pytest
 
-from core_pdf.impl.capture.program import CapturedProgram
-from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, TilingPattern
-from core_pdf.impl.render import patterns
-from core_pdf.impl.render.model import DisplayListItem, PathPaintItem, PathPaintKind
+from core_pdf.impl import render_patterns as patterns
+from core_pdf.impl.capture_program import CapturedProgram
+from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, TilingPattern
+from core_pdf.impl.render_model import DisplayListItem, PathPaintItem, PathPaintKind
 from core_pdf_cythonized import shading_t
 from tests.src.core_pdf.raster_support import make_target
 

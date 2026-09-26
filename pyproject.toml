@@ -16,7 +16,7 @@ dependencies = [
     "numpy>=2.5.1",
     "imagecodecs>=2026.6.26",
     "defusedxml>=0.7.1",
-    "core-pdf-spec>=0.10.0,<0.11.0",
+    "core-pdf-spec>=0.11.0,<0.12.0",
     "core-jbig2>=0.3.0,<0.4.0",
     "core-adobe-fonts>=0.2.0,<0.3.0",
     "core-pdf-cythonized>=0.1.0,<0.2.0",
@@ -46,9 +46,9 @@ members = [
 [tool.uv.sources]
 core-pdf-cythonized = { workspace = true }
 core-records = { workspace = true }
-core-pdf-spec = { workspace = true }
 core-jbig2 = { workspace = true }
 core-adobe-fonts = { workspace = true }
+core-pdf-spec = { workspace = true }
 
 [project.urls]
 Repository = "https://github.com/core-experiments/core-pdf"
@@ -158,27 +158,27 @@ line-length = 100
 "packages/core-pdf-compat/src/core_pdf_compat/pdfminer/_capture.py" = ["ARG002"]
 # Stream filters share the FilterFn signature: (data, parms).
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_filters/codecs.py" = ["ARG001"]
-"src/core_pdf/impl/graphics/stream_decoding.py" = ["ARG001"]
+"src/core_pdf/impl/graphics_stream_decoding.py" = ["ARG001"]
 # FURB136 rewrites `a if a < b else b` back into min()/max(). Both spellings
 # are fine, but min(a, b) is a call with tuple packing where the conditional
 # is a compare and a jump -- measured 3.2x cheaper. These run per glyph, over
 # coordinates as_floats has already proved finite, so the NaN difference the
 # two spellings have cannot arise here.
-"src/core_pdf/impl/capture/glyphs.py" = ["FURB136"]
+"src/core_pdf/impl/capture_glyphs.py" = ["FURB136"]
 # Scanner callbacks share the (data, pos, ..., semantic_context) signature.
-"src/core_pdf/impl/document/recovery/xref.py" = ["ARG001", "ARG004"]
+"src/core_pdf/impl/recovery_xref.py" = ["ARG001", "ARG004"]
 # Content operator handlers and semantic-sink callbacks share fixed signatures.
-"src/core_pdf/impl/capture/tolerant_state.py" = ["ARG002"]
-"src/core_pdf/impl/capture/recording.py" = ["ARG002"]
+"src/core_pdf/impl/capture_tolerant_state.py" = ["ARG002"]
+"src/core_pdf/impl/capture_recording.py" = ["ARG002"]
 # Documented parsing extension hooks keep their signatures, in the strict base
 # and in the recovery overrides.
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/lexer.py" = ["ARG002"]
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/objects.py" = ["ARG002"]
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/resolver.py" = ["ARG002"]
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_content/streams.py" = ["ARG002"]
-"src/core_pdf/impl/document/recovery/lexer.py" = ["ARG002"]
-"src/core_pdf/impl/document/recovery/resolver.py" = ["ARG002"]
-"src/core_pdf/impl/fonts/cmap_tounicode.py" = ["ARG002"]
+"src/core_pdf/impl/recovery_lexer.py" = ["ARG002"]
+"src/core_pdf/impl/recovery_resolver.py" = ["ARG002"]
+"src/core_pdf/impl/fonts_cmap_tounicode.py" = ["ARG002"]
 [tool.ruff.lint.mccabe]
 max-complexity = 60
 
@@ -264,13 +264,13 @@ core_pdf = ["py.typed"]
 "core_pdf._vendor.fontTools" = ["LICENSE.txt", "LICENSE.external.txt"]
 "core_pdf._vendor.icc" = ["*.icc", "README.md"]
 "core_pdf._vendor.fontTools.ttLib.tables" = ["table_API_readme.txt"]
-"core_pdf.impl.layout.data.wordlists" = [
+"core_pdf.impl.data.wordlists" = [
     "*.txt.gz",
     "*.bin",
     "*.md",
     "LICENSE*",
 ]
-"core_pdf.impl.fonts" = ["data/raster_fonts/**"]
+"core_pdf.impl.data" = ["raster_fonts/**"]
 
 [tool.importlinter]
 root_packages = [
@@ -349,9 +349,63 @@ source_modules = ["core_pdf_ocr.impl"]
 forbidden_modules = ["core_pdf_ocr.api"]
 
 [[tool.importlinter.contracts]]
-name = "Derived-processing spine"
-type = "layers"
-containers = ["core_pdf.impl"]
+name = "Derived-processing spine: rendering stays below extraction"
+type = "forbidden"
+source_modules = [
+    "core_pdf.impl.render_blend",
+    "core_pdf.impl.render_clipping",
+    "core_pdf.impl.render_commands",
+    "core_pdf.impl.render_display",
+    "core_pdf.impl.render_model",
+    "core_pdf.impl.render_page",
+    "core_pdf.impl.render_paths",
+    "core_pdf.impl.render_patterns",
+    "core_pdf.impl.render_target",
+]
+forbidden_modules = [
+    "core_pdf.impl.extract_block_layout",
+    "core_pdf.impl.extract_capture",
+    "core_pdf.impl.extract_contracts",
+    "core_pdf.impl.extract_emit",
+    "core_pdf.impl.extract_grids",
+    "core_pdf.impl.extract_pipeline",
+    "core_pdf.impl.extract_quality",
+    "core_pdf.impl.extract_selection",
+    "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_detection",
+]
+
+[[tool.importlinter.contracts]]
+name = "Derived-processing spine: layout and output stay below rendering and extraction"
+type = "forbidden"
+source_modules = [
+    "core_pdf.impl.layout_lines",
+    "core_pdf.impl.layout_reconstruction",
+    "core_pdf.impl.layout_text_rules",
+    "core_pdf.impl.output_model",
+    "core_pdf.impl.output_serialize",
+]
+forbidden_modules = [
+    "core_pdf.impl.extract_block_layout",
+    "core_pdf.impl.extract_capture",
+    "core_pdf.impl.extract_contracts",
+    "core_pdf.impl.extract_emit",
+    "core_pdf.impl.extract_grids",
+    "core_pdf.impl.extract_pipeline",
+    "core_pdf.impl.extract_quality",
+    "core_pdf.impl.extract_selection",
+    "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_detection",
+    "core_pdf.impl.render_blend",
+    "core_pdf.impl.render_clipping",
+    "core_pdf.impl.render_commands",
+    "core_pdf.impl.render_display",
+    "core_pdf.impl.render_model",
+    "core_pdf.impl.render_page",
+    "core_pdf.impl.render_paths",
+    "core_pdf.impl.render_patterns",
+    "core_pdf.impl.render_target",
+]
 layers = [
     "extract",
     "render",
@@ -361,16 +415,82 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "Serialization stays below processing and the specification"
 type = "forbidden"
-source_modules = ["core_pdf.impl.output.serialize"]
+source_modules = ["core_pdf.impl.output_serialize"]
 ignore_imports = ["core_pdf.impl.geometry -> core_pdf_spec.s_08_graphics.geometry"]
 forbidden_modules = [
-    "core_pdf.impl.document",
-    "core_pdf.impl.capture",
-    "core_pdf.impl.fonts",
-    "core_pdf.impl.graphics",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.render",
+    "core_pdf.impl.document_document",
+    "core_pdf.impl.document_fields",
+    "core_pdf.impl.document_metadata",
+    "core_pdf.impl.document_page",
+    "core_pdf.impl.document_page_links",
+    "core_pdf.impl.document_page_tree",
+    "core_pdf.impl.document_records",
+    "core_pdf.impl.document_standards",
+    "core_pdf.impl.document_structure",
+    "core_pdf.impl.recovery_lexer",
+    "core_pdf.impl.recovery_objects",
+    "core_pdf.impl.recovery_policy",
+    "core_pdf.impl.recovery_resolver",
+    "core_pdf.impl.recovery_text_strings",
+    "core_pdf.impl.recovery_trees",
+    "core_pdf.impl.recovery_xref",
+    "core_pdf.impl.capture_glyph_boxes",
+    "core_pdf.impl.capture_glyph_geometry",
+    "core_pdf.impl.capture_glyphs",
+    "core_pdf.impl.capture_page",
+    "core_pdf.impl.capture_program",
+    "core_pdf.impl.capture_recording",
+    "core_pdf.impl.capture_records",
+    "core_pdf.impl.capture_recovery",
+    "core_pdf.impl.capture_text_runs",
+    "core_pdf.impl.capture_tolerant_state",
+    "core_pdf.impl.fonts_cmap_resources",
+    "core_pdf.impl.fonts_cmap_tokenizer",
+    "core_pdf.impl.fonts_cmap_tounicode",
+    "core_pdf.impl.fonts_decoder",
+    "core_pdf.impl.fonts_fallback",
+    "core_pdf.impl.fonts_font_program",
+    "core_pdf.impl.fonts_glyphs",
+    "core_pdf.impl.fonts_helpers",
+    "core_pdf.impl.fonts_ligatures",
+    "core_pdf.impl.fonts_metrics",
+    "core_pdf.impl.fonts_raster_kernel",
+    "core_pdf.impl.fonts_widths",
+    "core_pdf.impl.graphics_codec_backends",
+    "core_pdf.impl.graphics_color",
+    "core_pdf.impl.graphics_color_spec",
+    "core_pdf.impl.graphics_decode_compat",
+    "core_pdf.impl.graphics_device_profiles",
+    "core_pdf.impl.graphics_filter_registry",
+    "core_pdf.impl.graphics_functions",
+    "core_pdf.impl.graphics_icc_profiles",
+    "core_pdf.impl.graphics_image_samples",
+    "core_pdf.impl.graphics_images",
+    "core_pdf.impl.graphics_shading",
+    "core_pdf.impl.graphics_soft_masks",
+    "core_pdf.impl.graphics_stream_decoding",
+    "core_pdf.impl.extract_block_layout",
+    "core_pdf.impl.extract_capture",
+    "core_pdf.impl.extract_contracts",
+    "core_pdf.impl.extract_emit",
+    "core_pdf.impl.extract_grids",
+    "core_pdf.impl.extract_pipeline",
+    "core_pdf.impl.extract_quality",
+    "core_pdf.impl.extract_selection",
+    "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_detection",
+    "core_pdf.impl.layout_lines",
+    "core_pdf.impl.layout_reconstruction",
+    "core_pdf.impl.layout_text_rules",
+    "core_pdf.impl.render_blend",
+    "core_pdf.impl.render_clipping",
+    "core_pdf.impl.render_commands",
+    "core_pdf.impl.render_display",
+    "core_pdf.impl.render_model",
+    "core_pdf.impl.render_page",
+    "core_pdf.impl.render_paths",
+    "core_pdf.impl.render_patterns",
+    "core_pdf.impl.render_target",
     "core_pdf.impl.array_views",
     "core_pdf.impl.execution",
     "core_pdf.impl.scalars",
@@ -430,11 +550,12 @@ forbidden_modules = [
     "core_adobe_fonts",
 ]
 
-# Shared code lives in modules at the impl root, one feature per subpackage
-# beneath it. tests/src/core_pdf/test_impl_root_contracts.py keeps this list
-# complete, so a new root module cannot escape these contracts.
+# impl is flat: a feature's modules share its prefix (capture_, document_ and
+# recovery_, extract_, fonts_, graphics_, layout_, output_, render_), and shared
+# code lives in the unprefixed modules. tests/src/core_pdf/test_impl_root_contracts.py
+# keeps these lists complete, so a new module cannot escape the contracts.
 [[tool.importlinter.contracts]]
-name = "impl root modules never import an impl subpackage"
+name = "Shared impl modules never import a feature module"
 type = "forbidden"
 source_modules = [
     "core_pdf.impl.array_views",
@@ -451,14 +572,81 @@ source_modules = [
     "core_pdf.impl.types",
 ]
 forbidden_modules = [
-    "core_pdf.impl.document",
-    "core_pdf.impl.capture",
-    "core_pdf.impl.fonts",
-    "core_pdf.impl.graphics",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
+    "core_pdf.impl.document_document",
+    "core_pdf.impl.document_fields",
+    "core_pdf.impl.document_metadata",
+    "core_pdf.impl.document_page",
+    "core_pdf.impl.document_page_links",
+    "core_pdf.impl.document_page_tree",
+    "core_pdf.impl.document_records",
+    "core_pdf.impl.document_standards",
+    "core_pdf.impl.document_structure",
+    "core_pdf.impl.recovery_lexer",
+    "core_pdf.impl.recovery_objects",
+    "core_pdf.impl.recovery_policy",
+    "core_pdf.impl.recovery_resolver",
+    "core_pdf.impl.recovery_text_strings",
+    "core_pdf.impl.recovery_trees",
+    "core_pdf.impl.recovery_xref",
+    "core_pdf.impl.capture_glyph_boxes",
+    "core_pdf.impl.capture_glyph_geometry",
+    "core_pdf.impl.capture_glyphs",
+    "core_pdf.impl.capture_page",
+    "core_pdf.impl.capture_program",
+    "core_pdf.impl.capture_recording",
+    "core_pdf.impl.capture_records",
+    "core_pdf.impl.capture_recovery",
+    "core_pdf.impl.capture_text_runs",
+    "core_pdf.impl.capture_tolerant_state",
+    "core_pdf.impl.fonts_cmap_resources",
+    "core_pdf.impl.fonts_cmap_tokenizer",
+    "core_pdf.impl.fonts_cmap_tounicode",
+    "core_pdf.impl.fonts_decoder",
+    "core_pdf.impl.fonts_fallback",
+    "core_pdf.impl.fonts_font_program",
+    "core_pdf.impl.fonts_glyphs",
+    "core_pdf.impl.fonts_helpers",
+    "core_pdf.impl.fonts_ligatures",
+    "core_pdf.impl.fonts_metrics",
+    "core_pdf.impl.fonts_raster_kernel",
+    "core_pdf.impl.fonts_widths",
+    "core_pdf.impl.graphics_codec_backends",
+    "core_pdf.impl.graphics_color",
+    "core_pdf.impl.graphics_color_spec",
+    "core_pdf.impl.graphics_decode_compat",
+    "core_pdf.impl.graphics_device_profiles",
+    "core_pdf.impl.graphics_filter_registry",
+    "core_pdf.impl.graphics_functions",
+    "core_pdf.impl.graphics_icc_profiles",
+    "core_pdf.impl.graphics_image_samples",
+    "core_pdf.impl.graphics_images",
+    "core_pdf.impl.graphics_shading",
+    "core_pdf.impl.graphics_soft_masks",
+    "core_pdf.impl.graphics_stream_decoding",
+    "core_pdf.impl.extract_block_layout",
+    "core_pdf.impl.extract_capture",
+    "core_pdf.impl.extract_contracts",
+    "core_pdf.impl.extract_emit",
+    "core_pdf.impl.extract_grids",
+    "core_pdf.impl.extract_pipeline",
+    "core_pdf.impl.extract_quality",
+    "core_pdf.impl.extract_selection",
+    "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_detection",
+    "core_pdf.impl.layout_lines",
+    "core_pdf.impl.layout_reconstruction",
+    "core_pdf.impl.layout_text_rules",
+    "core_pdf.impl.output_model",
+    "core_pdf.impl.output_serialize",
+    "core_pdf.impl.render_blend",
+    "core_pdf.impl.render_clipping",
+    "core_pdf.impl.render_commands",
+    "core_pdf.impl.render_display",
+    "core_pdf.impl.render_model",
+    "core_pdf.impl.render_page",
+    "core_pdf.impl.render_paths",
+    "core_pdf.impl.render_patterns",
+    "core_pdf.impl.render_target",
 ]
 
 [[tool.importlinter.contracts]]
@@ -518,10 +706,6 @@ name = "The COS layer depends only on filters, syntax primitives, and base modul
 type = "forbidden"
 source_modules = ["core_pdf_spec.s_07_syntax"]
 forbidden_modules = [
-    "core_pdf.impl.document",
-    "core_pdf.impl.capture",
-    "core_pdf.impl.fonts",
-    "core_pdf.impl.graphics",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
     "core_pdf_spec.s_07_security",
@@ -529,10 +713,6 @@ forbidden_modules = [
     "core_pdf_spec.s_09_fonts",
     "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
     # Predictors and JBIG2 are reached through s_07_filters by design.
     "core_postscript",
     "core_pdf_crypto",
@@ -544,10 +724,6 @@ name = "Syntax primitives are the spec floor"
 type = "forbidden"
 source_modules = ["core_pdf_spec.s_07_syntax_primitives"]
 forbidden_modules = [
-    "core_pdf.impl.document",
-    "core_pdf.impl.capture",
-    "core_pdf.impl.fonts",
-    "core_pdf.impl.graphics",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
     "core_pdf_spec.s_07_filters",
@@ -557,10 +733,6 @@ forbidden_modules = [
     "core_pdf_spec.s_09_fonts",
     "core_pdf_spec.s_11_transparency",
     "core_pdf_spec.s_14_structure",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.layout",
-    "core_pdf.impl.output",
-    "core_pdf.impl.render",
     "core_postscript",
     "core_jbig2",
     "core_pdf_crypto",
@@ -604,45 +776,194 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Font and graphics adapters stay below capture and document composition"
 type = "forbidden"
-source_modules = ["core_pdf.impl.fonts", "core_pdf.impl.graphics"]
+source_modules = [
+    "core_pdf.impl.fonts_cmap_resources",
+    "core_pdf.impl.fonts_cmap_tokenizer",
+    "core_pdf.impl.fonts_cmap_tounicode",
+    "core_pdf.impl.fonts_decoder",
+    "core_pdf.impl.fonts_fallback",
+    "core_pdf.impl.fonts_font_program",
+    "core_pdf.impl.fonts_glyphs",
+    "core_pdf.impl.fonts_helpers",
+    "core_pdf.impl.fonts_ligatures",
+    "core_pdf.impl.fonts_metrics",
+    "core_pdf.impl.fonts_raster_kernel",
+    "core_pdf.impl.fonts_widths",
+    "core_pdf.impl.graphics_codec_backends",
+    "core_pdf.impl.graphics_color",
+    "core_pdf.impl.graphics_color_spec",
+    "core_pdf.impl.graphics_decode_compat",
+    "core_pdf.impl.graphics_device_profiles",
+    "core_pdf.impl.graphics_filter_registry",
+    "core_pdf.impl.graphics_functions",
+    "core_pdf.impl.graphics_icc_profiles",
+    "core_pdf.impl.graphics_image_samples",
+    "core_pdf.impl.graphics_images",
+    "core_pdf.impl.graphics_shading",
+    "core_pdf.impl.graphics_soft_masks",
+    "core_pdf.impl.graphics_stream_decoding",
+]
 forbidden_modules = [
-    "core_pdf.impl.document",
-    "core_pdf.impl.capture",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.render",
-    "core_pdf.impl.output",
-    "core_pdf.impl.layout",
+    "core_pdf.impl.document_document",
+    "core_pdf.impl.document_fields",
+    "core_pdf.impl.document_metadata",
+    "core_pdf.impl.document_page",
+    "core_pdf.impl.document_page_links",
+    "core_pdf.impl.document_page_tree",
+    "core_pdf.impl.document_records",
+    "core_pdf.impl.document_standards",
+    "core_pdf.impl.document_structure",
+    "core_pdf.impl.recovery_lexer",
+    "core_pdf.impl.recovery_objects",
+    "core_pdf.impl.recovery_policy",
+    "core_pdf.impl.recovery_resolver",
+    "core_pdf.impl.recovery_text_strings",
+    "core_pdf.impl.recovery_trees",
+    "core_pdf.impl.recovery_xref",
+    "core_pdf.impl.capture_glyph_boxes",
+    "core_pdf.impl.capture_glyph_geometry",
+    "core_pdf.impl.capture_glyphs",
+    "core_pdf.impl.capture_page",
+    "core_pdf.impl.capture_program",
+    "core_pdf.impl.capture_recording",
+    "core_pdf.impl.capture_records",
+    "core_pdf.impl.capture_recovery",
+    "core_pdf.impl.capture_text_runs",
+    "core_pdf.impl.capture_tolerant_state",
+    "core_pdf.impl.extract_block_layout",
+    "core_pdf.impl.extract_capture",
+    "core_pdf.impl.extract_contracts",
+    "core_pdf.impl.extract_emit",
+    "core_pdf.impl.extract_grids",
+    "core_pdf.impl.extract_pipeline",
+    "core_pdf.impl.extract_quality",
+    "core_pdf.impl.extract_selection",
+    "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_detection",
+    "core_pdf.impl.render_blend",
+    "core_pdf.impl.render_clipping",
+    "core_pdf.impl.render_commands",
+    "core_pdf.impl.render_display",
+    "core_pdf.impl.render_model",
+    "core_pdf.impl.render_page",
+    "core_pdf.impl.render_paths",
+    "core_pdf.impl.render_patterns",
+    "core_pdf.impl.render_target",
+    "core_pdf.impl.output_model",
+    "core_pdf.impl.output_serialize",
+    "core_pdf.impl.layout_lines",
+    "core_pdf.impl.layout_reconstruction",
+    "core_pdf.impl.layout_text_rules",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Capture stays below document composition and output processing"
 type = "forbidden"
-source_modules = ["core_pdf.impl.capture"]
+source_modules = [
+    "core_pdf.impl.capture_glyph_boxes",
+    "core_pdf.impl.capture_glyph_geometry",
+    "core_pdf.impl.capture_glyphs",
+    "core_pdf.impl.capture_page",
+    "core_pdf.impl.capture_program",
+    "core_pdf.impl.capture_recording",
+    "core_pdf.impl.capture_records",
+    "core_pdf.impl.capture_recovery",
+    "core_pdf.impl.capture_text_runs",
+    "core_pdf.impl.capture_tolerant_state",
+]
 forbidden_modules = [
-    "core_pdf.impl.document.document",
-    "core_pdf.impl.document.page",
-    "core_pdf.impl.document.fields",
-    "core_pdf.impl.document.metadata",
-    "core_pdf.impl.document.structure",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.render",
-    "core_pdf.impl.output",
-    "core_pdf.impl.layout",
+    "core_pdf.impl.document_document",
+    "core_pdf.impl.document_page",
+    "core_pdf.impl.document_fields",
+    "core_pdf.impl.document_metadata",
+    "core_pdf.impl.document_structure",
+    "core_pdf.impl.extract_block_layout",
+    "core_pdf.impl.extract_capture",
+    "core_pdf.impl.extract_contracts",
+    "core_pdf.impl.extract_emit",
+    "core_pdf.impl.extract_grids",
+    "core_pdf.impl.extract_pipeline",
+    "core_pdf.impl.extract_quality",
+    "core_pdf.impl.extract_selection",
+    "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_detection",
+    "core_pdf.impl.render_blend",
+    "core_pdf.impl.render_clipping",
+    "core_pdf.impl.render_commands",
+    "core_pdf.impl.render_display",
+    "core_pdf.impl.render_model",
+    "core_pdf.impl.render_page",
+    "core_pdf.impl.render_paths",
+    "core_pdf.impl.render_patterns",
+    "core_pdf.impl.render_target",
+    "core_pdf.impl.output_model",
+    "core_pdf.impl.output_serialize",
+    "core_pdf.impl.layout_lines",
+    "core_pdf.impl.layout_reconstruction",
+    "core_pdf.impl.layout_text_rules",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Object recovery stays below content capture and document composition"
 type = "forbidden"
-source_modules = ["core_pdf.impl.document.recovery"]
+source_modules = [
+    "core_pdf.impl.recovery_lexer",
+    "core_pdf.impl.recovery_objects",
+    "core_pdf.impl.recovery_policy",
+    "core_pdf.impl.recovery_resolver",
+    "core_pdf.impl.recovery_text_strings",
+    "core_pdf.impl.recovery_trees",
+    "core_pdf.impl.recovery_xref",
+]
 forbidden_modules = [
-    "core_pdf.impl.document.document",
-    "core_pdf.impl.document.page",
-    "core_pdf.impl.capture",
-    "core_pdf.impl.fonts",
-    "core_pdf.impl.extract",
-    "core_pdf.impl.render",
-    "core_pdf.impl.output",
-    "core_pdf.impl.layout",
+    "core_pdf.impl.document_document",
+    "core_pdf.impl.document_page",
+    "core_pdf.impl.capture_glyph_boxes",
+    "core_pdf.impl.capture_glyph_geometry",
+    "core_pdf.impl.capture_glyphs",
+    "core_pdf.impl.capture_page",
+    "core_pdf.impl.capture_program",
+    "core_pdf.impl.capture_recording",
+    "core_pdf.impl.capture_records",
+    "core_pdf.impl.capture_recovery",
+    "core_pdf.impl.capture_text_runs",
+    "core_pdf.impl.capture_tolerant_state",
+    "core_pdf.impl.fonts_cmap_resources",
+    "core_pdf.impl.fonts_cmap_tokenizer",
+    "core_pdf.impl.fonts_cmap_tounicode",
+    "core_pdf.impl.fonts_decoder",
+    "core_pdf.impl.fonts_fallback",
+    "core_pdf.impl.fonts_font_program",
+    "core_pdf.impl.fonts_glyphs",
+    "core_pdf.impl.fonts_helpers",
+    "core_pdf.impl.fonts_ligatures",
+    "core_pdf.impl.fonts_metrics",
+    "core_pdf.impl.fonts_raster_kernel",
+    "core_pdf.impl.fonts_widths",
+    "core_pdf.impl.extract_block_layout",
+    "core_pdf.impl.extract_capture",
+    "core_pdf.impl.extract_contracts",
+    "core_pdf.impl.extract_emit",
+    "core_pdf.impl.extract_grids",
+    "core_pdf.impl.extract_pipeline",
+    "core_pdf.impl.extract_quality",
+    "core_pdf.impl.extract_selection",
+    "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_detection",
+    "core_pdf.impl.render_blend",
+    "core_pdf.impl.render_clipping",
+    "core_pdf.impl.render_commands",
+    "core_pdf.impl.render_display",
+    "core_pdf.impl.render_model",
+    "core_pdf.impl.render_page",
+    "core_pdf.impl.render_paths",
+    "core_pdf.impl.render_patterns",
+    "core_pdf.impl.render_target",
+    "core_pdf.impl.output_model",
+    "core_pdf.impl.output_serialize",
+    "core_pdf.impl.layout_lines",
+    "core_pdf.impl.layout_reconstruction",
+    "core_pdf.impl.layout_text_rules",
 ]
 
 

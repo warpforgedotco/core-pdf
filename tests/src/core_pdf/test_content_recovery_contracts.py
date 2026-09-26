@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.capture.recovery import (
+from core_pdf.impl.capture_recovery import (
     CaptureRecovery,
     iter_content_operations,
     recover_inline_image_data,

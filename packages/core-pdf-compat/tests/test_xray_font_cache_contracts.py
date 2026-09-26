@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.capture.program import CapturedProgram, PageProgram
-from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
-from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.capture_program import CapturedProgram, PageProgram
+from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
+from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.glyphs import GlyphObservation
 from core_pdf_compat import xray
 

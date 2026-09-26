@@ -63,6 +63,6 @@ def test_an_index_outside_the_mask_is_refused():
 
 def test_the_image_path_uses_the_kernel():
     pytest.importorskip("core_pdf")
-    from core_pdf.impl.graphics import images
+    from core_pdf.impl import graphics_images as images
 
     assert images.interleave_soft_mask is interleave_soft_mask

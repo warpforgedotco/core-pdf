@@ -2,8 +2,8 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl.capture.program import CaptureOptions
-from core_pdf.impl.extract.contracts import PageAnalysis as NativePageAnalysis
+from core_pdf.impl.capture_program import CaptureOptions
+from core_pdf.impl.extract_contracts import PageAnalysis as NativePageAnalysis
 from core_pdf.impl.glyphs import GlyphCluster, GlyphObservation
 from core_pdf.impl.runs import TextRun
 from core_pdf_ocr.impl.extract import capture
@@ -182,8 +182,8 @@ def test_repaired_glyph_evidence_reclassifies_only_applied_substitutions(
 def test_program_capture_applies_unicode_before_observations_and_evidence(learned: bool) -> None:
     from types import SimpleNamespace
 
-    from core_pdf.impl.capture.program import CapturedProgram, PageProgram
-    from core_pdf.impl.capture.records import CapturedDrawing
+    from core_pdf.impl.capture_program import CapturedProgram, PageProgram
+    from core_pdf.impl.capture_records import CapturedDrawing
     from core_pdf_spec.types import PdfName
 
     font = object()
@@ -225,8 +225,8 @@ def test_capture_enrichment_promotes_only_trusted_template_results(
 ) -> None:
     from types import SimpleNamespace
 
-    from core_pdf.impl.capture.program import CapturedProgram, PageProgram
-    from core_pdf.impl.capture.records import CapturedDrawing, CapturedLine, CapturedLines
+    from core_pdf.impl.capture_program import CapturedProgram, PageProgram
+    from core_pdf.impl.capture_records import CapturedDrawing, CapturedLine, CapturedLines
     from core_pdf_ocr.impl.extract.ocr.newstroke import NewstrokeDecode
 
     drawing = CapturedDrawing(0, None, None, kind="stroke", bbox=(0, 0, 2, 2))
@@ -262,7 +262,7 @@ def test_public_capture_entry_point_passes_selection_options(
 ) -> None:
     from types import SimpleNamespace
 
-    from core_pdf.impl.capture.program import PageProgram
+    from core_pdf.impl.capture_program import PageProgram
 
     page = SimpleNamespace(width=100, height=200, rotation=0)
     native = capture.native_capture_from_program(page, PageProgram(), structure=None)

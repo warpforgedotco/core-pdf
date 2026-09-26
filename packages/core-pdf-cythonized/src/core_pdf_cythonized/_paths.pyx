@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Path flattening for capture (core_pdf.impl.capture.recording.paint_path).
+"""Path flattening for capture (core_pdf.impl.capture_recording.paint_path).
 
 Every painted path was flattened into CapturedSubpath point lists, moved
 through the CTM into another set of lists, walked again for its stroke lines

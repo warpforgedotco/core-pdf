@@ -3,13 +3,13 @@ from copy import replace
 import numpy as np
 import pytest
 
-from core_pdf.impl.capture.program import CapturedProgram
-from core_pdf.impl.capture.records import CapturedPath, CapturedSoftMask, CapturedSubpath
-from core_pdf.impl.render.clipping import ClipState
-from core_pdf.impl.render.commands import translated_command
-from core_pdf.impl.render.display import DisplayList
-from core_pdf.impl.render.model import DisplayListItem, PathPaintItem
-from core_pdf.impl.render.target import RasterTarget
+from core_pdf.impl.capture_program import CapturedProgram
+from core_pdf.impl.capture_records import CapturedPath, CapturedSoftMask, CapturedSubpath
+from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_commands import translated_command
+from core_pdf.impl.render_display import DisplayList
+from core_pdf.impl.render_model import DisplayListItem, PathPaintItem
+from core_pdf.impl.render_target import RasterTarget
 
 
 def triangle_item():
@@ -119,8 +119,8 @@ def test_captured_program_commands_are_built_once_on_demand() -> None:
     """`commands` is lazy: the renderer is its only reader, and an extract
     never asks. Nothing else in the suite reads it, so the laziness itself is
     asserted here."""
-    from core_pdf.impl.capture.program import AppearanceProgram, CapturedProgram, PageProgram
-    from core_pdf.impl.capture.records import CapturedDrawing, CapturedTextBoundary
+    from core_pdf.impl.capture_program import AppearanceProgram, CapturedProgram, PageProgram
+    from core_pdf.impl.capture_records import CapturedDrawing, CapturedTextBoundary
 
     drawing = CapturedDrawing(seqno=3, fill=None, fill_opacity=None)
     boundary = CapturedTextBoundary(1, "begin")

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Distinct colour rows, and the scatter back (core_pdf.impl.graphics.icc_profiles).
+"""Distinct colour rows, and the scatter back (core_pdf.impl.graphics_icc_profiles).
 
 An ICC image conversion hands lcms every pixel, but a photograph uses few
 of the colours it could: 908,510 distinct among 36.6 million pixels on
@@ -16,7 +16,7 @@ gather_uint8_rows is the scatter, taking the uint32 indices directly rather
 than having numpy widen them to intp first.
 
 code_presence and gather_uint8_rows over uint16 codes are the same two steps for a
-one-component image (core_pdf.impl.graphics.image_samples.
+one-component image (core_pdf.impl.graphics_image_samples.
 convert_distinct_codes), whose samples are already codes into a table of at
 most 65,536 entries: which codes occur, and the converted row of each pixel's
 code. numpy marked the codes with a fancy-indexed scatter and gathered with

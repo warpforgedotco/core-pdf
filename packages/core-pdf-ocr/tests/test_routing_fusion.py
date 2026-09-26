@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.extract.contracts import ObservationBatch, TextQualityStats
+from core_pdf.impl.extract_contracts import ObservationBatch, TextQualityStats
 from core_pdf_ocr.impl.extract.contracts import (
     FusionPolicy,
     OcrPass,
@@ -216,7 +216,7 @@ def test_uncovered_artwork_preserves_usable_native_text_when_page_evidence_is_st
 def test_well_mapped_vector_text_avoids_ocr_for_authoritative_or_heuristic_language(
     ocr_capture, authoritative
 ) -> None:
-    from core_pdf.impl.extract.contracts import GlyphEvidence
+    from core_pdf.impl.extract_contracts import GlyphEvidence
 
     glyphs = GlyphEvidence(
         glyph_count=200,
@@ -327,7 +327,7 @@ def test_noisy_native_policy_requires_structure_tokens_and_language_evidence(
 
 
 def test_actual_text_override_can_make_an_unmapped_native_layer_usable(ocr_capture) -> None:
-    from core_pdf.impl.extract.contracts import GlyphEvidence
+    from core_pdf.impl.extract_contracts import GlyphEvidence
     from core_pdf_ocr.impl.extract.observations import native_mapping_is_usable
 
     evidence = replace(
@@ -370,8 +370,8 @@ def test_candidate_coverage_empty_inputs_and_chunk_boundaries() -> None:
 
 
 def test_simple_rectangular_artwork_keeps_native_text_route(ocr_capture) -> None:
-    from core_pdf.impl.capture.program import CapturedProgram, PageProgram
-    from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSubpath
+    from core_pdf.impl.capture_program import CapturedProgram, PageProgram
+    from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, CapturedSubpath
 
     drawings = tuple(
         CapturedDrawing(

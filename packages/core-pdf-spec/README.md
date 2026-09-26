@@ -41,9 +41,9 @@ For Lab color conversion, `s_08_graphics.color_math.lab_components_to_xyz` accep
 NumPy float32 rows of actual `(L*, a*, b*)` components and a reference white point.
 Image sample decoding and range enforcement belong to the caller.
 
-The current spec version is `0.10.0`, released independently of core. During `0.x`, breaking
+The current spec version is `0.11.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.10.0,<0.11.0`; changes to that range require core integration and differential validation.
+`>=0.11.0,<0.12.0`; changes to that range require core integration and differential validation.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are
@@ -194,6 +194,15 @@ defined in Adobe PDF 1.3, Table 4.20; parsing does not impose a PDF 1.6 availabi
 `s_08_graphics.color.color_space_paints` identifies Separation `/None` and all-`/None`
 DeviceN spaces that discard output, including through Indexed and uncolored Pattern
 bases. Mixed DeviceN spaces retain every input component for their alternate tint transform.
+
+`0.11.0` adds parsing extension methods whose strict defaults keep the earlier behavior, so
+a reader tolerates malformed input by overriding them rather than copying the parser:
+`PdfLexer.handle_empty_indirect_object` and `handle_missing_endobj` (7.3.10) and
+`stream_data_start` (7.3.8.1); `XRefScanner.trailer_without_keyword`,
+`subsection_line_parts`, `parse_subsection_integer`, `check_subsection_overlap`, and
+`create_trailer_lexer` (7.5.4, 7.5.5); and, on `s_07_syntax.trees.iter_tree_items` and its
+number and name tree wrappers, `max_depth`, `on_malformed`, `on_malformed_entry`, and
+`skip_null_nodes`, whose default `raise_malformed` raises as before.
 
 When migrating to `0.10.0`, stop using these exports, which nothing in the workspace called:
 

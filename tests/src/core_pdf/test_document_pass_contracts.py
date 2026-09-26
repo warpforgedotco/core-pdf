@@ -6,10 +6,10 @@ from typing import Any
 
 import pytest
 
-import core_pdf.impl.capture.page as capture_page_module
+import core_pdf.impl.capture_page as capture_page_module
 from core_pdf import PdfDocument
-from core_pdf.impl.extract import selection
-from core_pdf.impl.extract.pipeline import PageExtraction
+from core_pdf.impl import extract_selection as selection
+from core_pdf.impl.extract_pipeline import PageExtraction
 from tests.src.core_pdf.pdf_bytes import MULTI_PAGE_COUNT, multi_page_pdf
 
 PAGE_COUNT = MULTI_PAGE_COUNT
@@ -97,7 +97,7 @@ def test_document_extraction_assembles_each_page_before_capturing_the_next(
 def test_a_tagged_document_builds_its_structure_tree_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import core_pdf.impl.document.document as document_module
+    import core_pdf.impl.document_document as document_module
 
     built: list[int] = []
     original = document_module.StructureTree

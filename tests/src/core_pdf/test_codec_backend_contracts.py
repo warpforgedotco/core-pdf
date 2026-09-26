@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.graphics import codec_backends as codecs
+from core_pdf.impl import graphics_codec_backends as codecs
 from core_pdf_spec.s_07_filters import predictors as strict
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 

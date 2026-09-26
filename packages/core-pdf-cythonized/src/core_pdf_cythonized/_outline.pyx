@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Glyph outline edge construction (core_pdf.impl.render.commands).
+"""Glyph outline edge construction (core_pdf.impl.render_commands).
 
 transformed_outline is the largest single item left in rendering, about 20% of
 it across the corpus. Only part of that is worth compiling, and measuring said

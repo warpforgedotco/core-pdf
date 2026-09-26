@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""A stroked path, painted whole (core_pdf.impl.render.target.stroke_path).
+"""A stroked path, painted whole (core_pdf.impl.render_target.stroke_path).
 
 stroke_path walked each subpath in Python and painted it as primitives: a
 fill_line per segment, a fill_join per interior point, caps at the ends. A

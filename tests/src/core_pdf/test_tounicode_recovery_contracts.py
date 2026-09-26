@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap, decode_utf16be_text, expand_range
+from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap, decode_utf16be_text, expand_range
 
 
 def block(kind, records):

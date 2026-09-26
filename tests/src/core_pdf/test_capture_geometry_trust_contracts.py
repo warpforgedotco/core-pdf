@@ -2,12 +2,12 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl.extract.capture import (
+from core_pdf.impl.extract_capture import (
     hidden_text_is_trusted,
     layout_bbox_for_run,
     promote_hidden_run,
 )
-from core_pdf.impl.extract.contracts import GlyphEvidence, TextQualityStats
+from core_pdf.impl.extract_contracts import GlyphEvidence, TextQualityStats
 from core_pdf.impl.glyphs import GlyphCluster
 from core_pdf.impl.runs import TextRun
 

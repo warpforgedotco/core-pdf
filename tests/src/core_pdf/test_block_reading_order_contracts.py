@@ -1,12 +1,12 @@
 import pytest
 
-from core_pdf.impl.extract.block_layout import (
+from core_pdf.impl.extract_block_layout import (
     column_major_prose,
     interleave_columnar_blocks,
     transpose_numeric_table_blocks,
 )
-from core_pdf.impl.extract.contracts import ParsedBlock, ParsedLine
-from core_pdf.impl.output.model import TextLine
+from core_pdf.impl.extract_contracts import ParsedBlock, ParsedLine
+from core_pdf.impl.output_model import TextLine
 
 
 def make_grid(columns, rows, *, numeric=False, column_major=False, jitter=0):

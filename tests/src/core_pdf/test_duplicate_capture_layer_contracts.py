@@ -2,7 +2,7 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl.extract.capture import (
+from core_pdf.impl.extract_capture import (
     clip_bbox,
     discard_duplicate_clipped_layers,
     discard_duplicate_nested_layers,

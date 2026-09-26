@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Checking xref offsets against object headers (core_pdf.impl.document.document).
+"""Checking xref offsets against object headers (core_pdf.impl.document_document).
 
 Opening a document checks that every in-use xref entry's offset points at
 its own "N G obj" header, and repairs the ones that do not. That was one

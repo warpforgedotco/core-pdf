@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Source alpha and shape accumulation (core_pdf.impl.render.target.record_plane).
+"""Source alpha and shape accumulation (core_pdf.impl.render_target.record_plane).
 
 A transparency group tracks, per pixel, how much of it its sources covered:
 plane = plane + (1 - plane) * coverage / 255 * scale. RasterTarget calls this

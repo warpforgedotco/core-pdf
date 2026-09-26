@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""A short stroked segment, sampled and blended (core_pdf.impl.render.target.fill_line).
+"""A short stroked segment, sampled and blended (core_pdf.impl.render_target.fill_line).
 
 A stroke flattened from a curve reaches fill_line as many tiny segments --
 35,143 averaging 0.2 pixels on PyMuPDF chinese-tables -- each covering a few

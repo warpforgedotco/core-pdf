@@ -22,11 +22,11 @@ import numpy
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
-from core_pdf.impl.render import target as raster
-from core_pdf.impl.render.model import LineCap
-from core_pdf.impl.render.paths import circle_path, dash_subpath, intersect_box
-from core_pdf.impl.render.target import RasterTarget
+from core_pdf.impl import render_target as raster
+from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
+from core_pdf.impl.render_model import LineCap
+from core_pdf.impl.render_paths import circle_path, dash_subpath, intersect_box
+from core_pdf.impl.render_target import RasterTarget
 from core_pdf_cythonized import path_bounds
 from tests.src.core_pdf.pdf_bytes import serialize_pdf
 

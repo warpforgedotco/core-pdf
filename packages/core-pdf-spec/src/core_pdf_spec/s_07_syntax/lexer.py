@@ -365,8 +365,22 @@ class PdfLexer:
         self.pos = self.skip_ignored_at(self.pos)
         keyword = self.scan_word(skip_ignored=False)
         if keyword is None or keyword[0] != b"endobj":
+            if self.handle_missing_endobj(keyword):
+                return
             raise PdfParseError("expected keyword 'endobj'")
         self.pos = keyword[1]
+
+    def handle_empty_indirect_object(self) -> object:
+        """An indirect object whose endobj follows its header directly, the
+        lexer at that endobj. ISO 32000-2 7.3.10 requires a value, so strict
+        parsing rejects it; a reader may return what stands for the object."""
+        raise PdfParseError("missing indirect object value")
+
+    def handle_missing_endobj(self, keyword: tuple[bytes, int] | None) -> bool:
+        """Whether to accept an object whose next word, keyword, is not
+        endobj (7.3.10). Strict parsing does not; a reader that does returns
+        the object with the lexer left before that word."""
+        return False
 
     def parse_indirect_object(self, *, expected_reference: PdfReference | None = None) -> Any:
         obj_num, gen_num = self.read_indirect_header()
@@ -380,7 +394,7 @@ class PdfLexer:
         try:
             self.pos = self.skip_ignored_at(self.pos)
             if self.raw_data[self.pos : self.pos + 6] == b"endobj":
-                raise PdfParseError("missing indirect object value")
+                return self.handle_empty_indirect_object()
             obj = self.parse_object()
         finally:
             self.current_obj_num, self.current_gen_num = previous_obj, previous_gen
@@ -642,11 +656,20 @@ class PdfLexer:
     def parse_dictionary_or_stream(self) -> Any:
         dictionary = self.parse_dictionary()
         self.pos = self.skip_ignored_at(self.pos)
+        start = self.stream_data_start()
+        if start is None:
+            return dictionary
+        self.pos = start
+        return self.parse_stream(dictionary)
+
+    def stream_data_start(self) -> int | None:
+        """Where the stream keyword at the lexer ends (7.3.8.1), or None when
+        the dictionary is not followed by one. parse_stream reads the end of
+        line after it."""
         keyword = self.scan_word(skip_ignored=False)
         if keyword is not None and keyword[0] == b"stream":
-            self.pos = keyword[1]
-            return self.parse_stream(dictionary)
-        return dictionary
+            return keyword[1]
+        return None
 
     def skip_eol(self) -> None:
         data = self.raw_data

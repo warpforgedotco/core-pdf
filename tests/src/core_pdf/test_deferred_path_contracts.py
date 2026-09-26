@@ -6,7 +6,7 @@ import random
 import numpy
 import pytest
 
-from core_pdf.impl.capture.records import CapturedPath
+from core_pdf.impl.capture_records import CapturedPath
 
 RECT = [(0.0, 0.0), (4.0, 0.0), (4.0, 2.0), (0.0, 2.0)]
 SHAPES = [

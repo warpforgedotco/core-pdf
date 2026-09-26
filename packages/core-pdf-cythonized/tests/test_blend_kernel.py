@@ -71,7 +71,7 @@ def test_render_target_uses_the_kernel():
     # otherwise stand alone, so cibuildwheel can run the golden vectors
     # against a freshly built wheel with nothing else present.
     pytest.importorskip("core_pdf")
-    from core_pdf.impl.render import target
+    from core_pdf.impl import render_target as target
 
     assert target.blend_normal_alpha_array_numpy is blend_normal_alpha_array_numpy
 

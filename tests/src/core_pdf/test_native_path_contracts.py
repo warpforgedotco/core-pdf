@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.capture import recording
+from core_pdf.impl import capture_recording as recording
 from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 ADDRESS = re.compile(r"0x[0-9a-f]+")

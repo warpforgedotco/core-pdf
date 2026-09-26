@@ -3,11 +3,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.capture.program import CapturedProgram, PageProgram
-from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSubpath
-from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.render.display import DisplayList
-from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.capture_program import CapturedProgram, PageProgram
+from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, CapturedSubpath
+from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.render_display import DisplayList
+from core_pdf.impl.render_model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import (
     ObservationSource,
     PageAnalysis,
@@ -385,7 +385,7 @@ def test_nonpositive_pixel_budgets_fail_before_allocating(
     vector_capture: tuple[PageAnalysis, StrokedTextProfile],
     budget: int,
 ) -> None:
-    from core_pdf.impl.render.page import RenderedPage
+    from core_pdf.impl.render_page import RenderedPage
     from core_pdf_ocr.impl.extract.ocr.raster import fit_raster_scale
 
     rendered = RenderedPage(
@@ -397,7 +397,7 @@ def test_nonpositive_pixel_budgets_fail_before_allocating(
 
 @pytest.mark.parametrize("budget", [1, 17, 101])
 def test_pixel_fitting_handles_single_pixel_axes(budget: int) -> None:
-    from core_pdf.impl.render.page import RenderedPage
+    from core_pdf.impl.render_page import RenderedPage
     from core_pdf_ocr.impl.extract.ocr.raster import fit_raster_scale
 
     rendered = RenderedPage(

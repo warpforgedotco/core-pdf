@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.layout.reconstruction import reconstruct_layout_line_text
+from core_pdf.impl.layout_reconstruction import reconstruct_layout_line_text
 from core_pdf.impl.runs import TextRun
 
 

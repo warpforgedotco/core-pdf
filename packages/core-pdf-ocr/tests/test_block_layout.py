@@ -1,8 +1,8 @@
 import numpy
 import pytest
 
-from core_pdf.impl.extract import block_layout as native_layout
-from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl import extract_block_layout as native_layout
+from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf_ocr.impl.extract import block_layout
 
 

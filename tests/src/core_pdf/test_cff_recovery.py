@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.fonts.font_program import (
+from core_pdf.impl.fonts_font_program import (
     EMPTY_FEATURE,
     CFFFont,
     CFFGlyphFeature,
@@ -334,7 +334,7 @@ def test_predefined_charset_recovery_does_not_invent_extra_names(offset: int, co
 
 
 def test_builtin_encoding_distinguishes_implicit_standard_and_explicit_expert() -> None:
-    from core_pdf.impl.fonts.font_program import STANDARD_GLYPH_SIDS
+    from core_pdf.impl.fonts_font_program import STANDARD_GLYPH_SIDS
 
     font = make_font(b"")
     assert font.builtin_encoding() == {}
@@ -376,7 +376,7 @@ def test_invalid_top_matrix_recovers_using_child_matrix() -> None:
 
 
 def test_accent_components_are_translated_before_bounds_and_rasterization() -> None:
-    from core_pdf.impl.fonts.font_program import STANDARD_GLYPH_SIDS
+    from core_pdf.impl.fonts_font_program import STANDARD_GLYPH_SIDS
 
     font = make_font(b"")
     base = bytes([139, 139, 21, 149, 159, 5, 14])

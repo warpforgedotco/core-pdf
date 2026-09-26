@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.graphics.color import color_operands_to_srgb, convert_image_data
-from core_pdf.impl.graphics.color_spec import parse_color_space
-from core_pdf.impl.graphics.image_samples import (
+from core_pdf.impl.graphics_color import color_operands_to_srgb, convert_image_data
+from core_pdf.impl.graphics_color_spec import parse_color_space
+from core_pdf.impl.graphics_image_samples import (
     convert_integer_samples,
     distinct_component_rows,
 )
@@ -123,7 +123,7 @@ def test_soft_mask_precedes_colour_key_mask():
 @pytest.mark.parametrize("fallback", [False, True])
 @pytest.mark.parametrize("inks", [(0, 0, 0, 0), (19, 64, 201, 128), (255, 255, 255, 255)])
 def test_device_cmyk_vector_and_image_share_profile_and_fallback(monkeypatch, fallback, inks):
-    from core_pdf.impl.graphics import device_profiles
+    from core_pdf.impl import graphics_device_profiles as device_profiles
 
     device_profiles.cmyk_byte_tuple_to_srgb.cache_clear()
     try:
@@ -203,7 +203,7 @@ def test_distinct_component_rows_collapses_nan_rows():
 def test_one_component_images_convert_by_code_exactly_as_by_pixel(space, bits, reverse_decode):
     # Past a table's worth of pixels, one-component samples convert once per
     # code they use and are scattered back; it must be the per-pixel result.
-    from core_pdf.impl.graphics.image_samples import convert_components
+    from core_pdf.impl.graphics_image_samples import convert_components
     from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values
 
     spec = parse_color_space(space)
@@ -224,7 +224,7 @@ def test_one_component_images_convert_by_code_exactly_as_by_pixel(space, bits, r
 
 
 def test_a_sample_above_its_bit_depth_still_decodes_by_code() -> None:
-    from core_pdf.impl.graphics.image_samples import convert_components
+    from core_pdf.impl.graphics_image_samples import convert_components
     from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values
 
     samples = np.full(300, 3, dtype=np.uint16)
@@ -255,7 +255,7 @@ def test_multi_component_images_convert_by_row_exactly_as_by_pixel(space, palett
     # distinct row and are scattered back -- or, past a quarter distinct
     # (palette None), pixel by pixel as before. Either way it must be the
     # per-pixel result.
-    from core_pdf.impl.graphics.image_samples import convert_components
+    from core_pdf.impl.graphics_image_samples import convert_components
     from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values
 
     spec = parse_color_space(space)

@@ -3,8 +3,8 @@ from copy import replace
 import numpy
 import pytest
 
-from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
-from core_pdf.impl.render.model import DisplayListItem, PathPaintItem, PathPaintKind
+from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
+from core_pdf.impl.render_model import DisplayListItem, PathPaintItem, PathPaintKind
 from core_pdf_ocr.impl.extract.ocr.atlas import rasterize_packed_stroked_paths
 
 

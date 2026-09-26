@@ -73,6 +73,6 @@ def test_a_two_channel_source_is_refused():
 
 def test_render_target_uses_the_kernel():
     pytest.importorskip("core_pdf")
-    from core_pdf.impl.render import target
+    from core_pdf.impl import render_target as target
 
     assert target.sample_opaque_pixels is sample_opaque_pixels

@@ -10,7 +10,7 @@ from PIL import Image
 
 from core_pdf import PdfDocument as NativePdfDocument
 from core_pdf.impl.execution import ExtractionCancelled, ExtractionScope
-from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.render_model import RasterImage
 from core_pdf_ocr import PdfDocument
 from core_pdf_ocr.impl.extract.ocr import tesseract
 from core_pdf_ocr.impl.extract.ocr.types import OcrTask

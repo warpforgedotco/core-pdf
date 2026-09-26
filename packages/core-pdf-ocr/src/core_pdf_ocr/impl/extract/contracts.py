@@ -5,15 +5,15 @@ from __future__ import annotations
 from enum import IntEnum, StrEnum
 from typing import Any, ClassVar
 
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl.extract_contracts import (
     GlyphEvidence,
     ObservationBatch,
     TextQualityStats,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl.extract_contracts import (
     PageAnalysis as NativePageAnalysis,
 )
-from core_pdf.impl.extract.contracts import (
+from core_pdf.impl.extract_contracts import (
     PageEvidence as NativePageEvidence,
 )
 from core_pdf.impl.types import Record, frozen_setattr

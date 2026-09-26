@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""4x4 coverage counts blended pixel by pixel (core_pdf.impl.render.target.fill_path).
+"""4x4 coverage counts blended pixel by pixel (core_pdf.impl.render_target.fill_path).
 
 A fill under a clip that is not a set of rectangles cannot take fill_path's
 plane kernels, which blend in float32 over a whole window. It falls back to

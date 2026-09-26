@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.graphics import images
-from core_pdf.impl.graphics.images import DecodedImage
+from core_pdf.impl import graphics_images as images
+from core_pdf.impl.graphics_images import DecodedImage
 
 
 @pytest.mark.parametrize("dtype", [np.uint8, np.uint16])
