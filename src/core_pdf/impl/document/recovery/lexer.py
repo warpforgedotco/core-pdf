@@ -114,6 +114,7 @@ class PdfLexer(SyntaxLexer):
         "recover_dictionary_structure",
         "scanner",
         "scanner_rules",
+        "copied_data",
     )
 
     def __init__(
@@ -129,6 +130,7 @@ class PdfLexer(SyntaxLexer):
     ) -> None:
         self.scanner: ObjectScanner | None = None
         self.scanner_rules: LexicalRules | None = None
+        self.copied_data: bytes | None = None
         super().__init__(
             data,
             reference_resolver=reference_resolver,
@@ -145,7 +147,19 @@ class PdfLexer(SyntaxLexer):
         if self.scanner is not None:
             self.scanner.release()
             self.scanner = None
+        self.copied_data = None
         super().close()
+
+    def search_buffer(self) -> bytes | FindableSizedBuffer:
+        """The data as a buffer with find and rfind: the source buffer, or a
+        copy of the data made once for a lexer that has none."""
+        source_buffer = self.source_buffer
+        if source_buffer is not None:
+            return source_buffer
+        copied = self.copied_data
+        if copied is None:
+            copied = self.copied_data = self.raw_data.tobytes()
+        return copied
 
     def object_scanner(self) -> ObjectScanner:
         """The compiled scanner for this lexer's data and rules."""
@@ -409,8 +423,7 @@ class PdfLexer(SyntaxLexer):
         buffer: bytes | FindableSizedBuffer | None = None,
     ) -> tuple[int, int]:
         if buffer is None:
-            source_buffer = self.source_buffer
-            buffer = self.raw_data.tobytes() if source_buffer is None else source_buffer
+            buffer = self.search_buffer()
 
         find = buffer.rfind if reverse else buffer.find
         raw_candidate = find(keyword, start, end)
@@ -436,8 +449,7 @@ class PdfLexer(SyntaxLexer):
         return -1, raw_candidate
 
     def find_stream_end(self, data_start: int, preferred: int | None = None) -> int:
-        source_buffer = self.source_buffer
-        search_buffer = self.raw_data.tobytes() if source_buffer is None else source_buffer
+        search_buffer = self.search_buffer()
         search_start = data_start if preferred is None else preferred
         candidate, raw_candidate = self.find_keyword_candidate(
             b"endstream",

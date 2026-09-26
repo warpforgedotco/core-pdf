@@ -79,9 +79,7 @@ class PdfObjectStream(SyntaxObjectStream):
         body = self.raw_body
         if not 0 <= offset < end <= len(body) or body[offset : offset + 2] != b"<<":
             return None
-        lexer = self.body_lexer
-        if lexer is None:
-            lexer = self.body_lexer = self.create_lexer(body)
+        lexer = self.lexer_over_body()
         parsed = lexer.object_scanner().parse_dictionary(offset)
         if parsed is None:
             return None
@@ -122,6 +120,14 @@ class PdfObjectStream(SyntaxObjectStream):
     def create_lexer(self, body: bytes | memoryview) -> PdfLexer:
         return PdfLexer(body, semantic_context=self.semantic_context)
 
+    def lexer_over_body(self) -> PdfLexer:
+        """One lexer over the whole body, kept until close: every parse
+        through it starts from an explicit position."""
+        lexer = self.body_lexer
+        if lexer is None:
+            lexer = self.body_lexer = self.create_lexer(self.raw_body)
+        return lexer
+
     def handle_object_error(self, rel_offset: int) -> Any:
         body = self.raw_body
         n = len(body)
@@ -136,16 +142,13 @@ class PdfObjectStream(SyntaxObjectStream):
                 continue
             starts.append(pos)
         starts.sort(key=lambda pos: (abs(pos - rel_offset), pos))
-        lexer = self.create_lexer(body)
-        try:
-            for pos in [rel_offset, *starts]:
-                try:
-                    return lexer.parse_object_at(pos)
-                except PdfParseError:
-                    continue
-            raise PdfParseError("invalid object stream object")
-        finally:
-            lexer.close()
+        lexer = self.lexer_over_body()
+        for pos in [rel_offset, *starts]:
+            try:
+                return lexer.parse_object_at(pos)
+            except PdfParseError:
+                continue
+        raise PdfParseError("invalid object stream object")
 
 
 def recover_object_stream_first(data: bytes | memoryview, n: int) -> int | None:

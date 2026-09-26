@@ -383,17 +383,59 @@ class XRefScanner(SyntaxXRefScanner):
         recover_malformed_objects: bool = True,
         semantic_context: SemanticContext | None = None,
     ) -> PdfStream | None:
-        lexer = PdfLexer(
-            data,
-            recover_malformed_objects=recover_malformed_objects,
-            semantic_context=semantic_context,
-        )
         header_marker = data.find(b"obj", pos, min(len(data), pos + 64))
         if header_marker < 0:
             return None
         parsed_header = parse_object_marker_prefix(data, header_marker)
         if parsed_header is None or parsed_header[0] != pos:
             return None
+        lexer = PdfLexer(
+            data,
+            recover_malformed_objects=recover_malformed_objects,
+            semantic_context=semantic_context,
+        )
+        try:
+            salvaged = XRefScanner.salvage_xref_stream_span(data, lexer, header_marker)
+        finally:
+            lexer.close()
+        if salvaged is None:
+            return None
+        dict_obj, raw_data = salvaged
+        decoded_data = None
+        filter_name = recover_pdf_name(dict_obj.get("Filter"))
+        if filter_name == "FlateDecode":
+            try:
+                decoded_data = zlib.decompress(raw_data)
+            except zlib.error:
+                try:
+                    decoder = zlib.decompressobj()
+                    decoded_data = decoder.decompress(raw_data) + decoder.flush()
+                except zlib.error as exc:
+                    raise PdfParseError("invalid xref stream") from exc
+            w = dict_obj.get("W")
+            index = dict_obj.get("Index")
+            if isinstance(w, list) and isinstance(index, list):
+                row_size = sum(item for item in w if type(item) is int)
+                row_count = 0
+                for i in range(0, len(index) - 1, 2):
+                    count = index[i + 1]
+                    if type(count) is int:
+                        row_count += count
+                if len(decoded_data) != row_size * row_count:
+                    decoded_data = None
+        return PdfStream(
+            dict_obj,
+            raw_data if decoded_data is None else decoded_data,
+            None,
+            decoder=decode_stream_data,
+        )
+
+    @staticmethod
+    def salvage_xref_stream_span(
+        data: PdfByteBuffer, lexer: PdfLexer, header_marker: int
+    ) -> tuple[PdfDict, bytes] | None:
+        """The dictionary and raw data of the XRef stream whose obj keyword
+        is at header_marker, read without its object's endobj."""
         lexer.pos = header_marker + 3
         lexer.skip_ignored()
         dict_start = lexer.pos
@@ -432,34 +474,7 @@ class XRefScanner(SyntaxXRefScanner):
             if endstream < data_start or lexer.find_object_end(endstream + 9) < 0:
                 return None
             raw_data = data[data_start:endstream]
-        decoded_data = None
-        filter_name = recover_pdf_name(dict_obj.get("Filter"))
-        if filter_name == "FlateDecode":
-            try:
-                decoded_data = zlib.decompress(raw_data)
-            except zlib.error:
-                try:
-                    decoder = zlib.decompressobj()
-                    decoded_data = decoder.decompress(raw_data) + decoder.flush()
-                except zlib.error as exc:
-                    raise PdfParseError("invalid xref stream") from exc
-            w = dict_obj.get("W")
-            index = dict_obj.get("Index")
-            if isinstance(w, list) and isinstance(index, list):
-                row_size = sum(item for item in w if type(item) is int)
-                row_count = 0
-                for i in range(0, len(index) - 1, 2):
-                    count = index[i + 1]
-                    if type(count) is int:
-                        row_count += count
-                if len(decoded_data) != row_size * row_count:
-                    decoded_data = None
-        return PdfStream(
-            dict_obj,
-            raw_data if decoded_data is None else decoded_data,
-            None,
-            decoder=decode_stream_data,
-        )
+        return dict_obj, raw_data
 
     @staticmethod
     def find_nearby_sections(
