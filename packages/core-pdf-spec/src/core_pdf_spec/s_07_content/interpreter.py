@@ -271,19 +271,53 @@ class ContentInterpreter:
         return Matrix.from_operand(value)
 
     def get_decoder(self) -> FontService:
+        """The decoder for the selected font, built once per selection.
+
+        With no font selected, or none by that name, the rejection falls back
+        to a decoder for an empty font dictionary, built afresh each time. A
+        font that does not resolve, or is not a dictionary, is rejected too,
+        and recovery decodes it through decoder_for as an empty font; a font
+        stream stands for its dictionary.
+        """
         if self.graphics.current_decoder is not None:
             return self.graphics.current_decoder
-        if self.graphics.current_font is None:
-            raise PdfParseError("text operation has no selected font")
-        font_reference = self.lookup_page_resource("Font", self.graphics.current_font)
-        font = self.resolver.resolve(font_reference)
-        if not isinstance(font, dict):
-            raise PdfParseError("font resource must be a dictionary")
-        resolved_font = self.resolver.resolve_font_dict(font)
-        decoder = self.font_provider(resolved_font, self.resources)
+        font_name = self.graphics.current_font
+        if not font_name:
+            self.reject(PdfParseError("text operation has no selected font"), "font", None)
+            return self.font_provider({}, self.resources)
+        try:
+            font_reference = self.lookup_page_resource("Font", font_name)
+        except PdfParseError as error:
+            self.reject(error, "font-resource", None)
+            return self.font_provider({}, self.resources)
+        if font_reference is None:
+            self.reject(PdfParseError("font resource must be a dictionary"), "font-resource", None)
+            return self.font_provider({}, self.resources)
+        try:
+            font = self.resolver.resolve(font_reference)
+        except PdfParseError as error:
+            font = self.reject(error, "font-resolution", None)
+        else:
+            if isinstance(font, PdfStream) or not isinstance(font, dict):
+                fallback = font.dictionary if isinstance(font, PdfStream) else font
+                font = self.reject(
+                    PdfParseError("font resource must be a dictionary"), "font-resource", fallback
+                )
+        resources = self.resources
+        decoder = self.decoder_for(font_reference, font, resources)
         self.graphics.current_decoder = decoder
-        self.graphics.decoder_resources = self.resources
+        self.graphics.decoder_resources = resources
         return decoder
+
+    def decoder_for(self, font_reference: object, font: object, resources: PdfDict) -> FontService:
+        """The decoder for `font`, reached through `font_reference` in `resources`.
+
+        `font` is a dictionary unless a recovering reject let something else
+        through, which decodes as an empty font. A subclass may override this
+        to share decoders between selections.
+        """
+        resolved_font = self.resolver.resolve_font_dict(font) if isinstance(font, dict) else {}
+        return self.font_provider(resolved_font, resources)
 
     def op_Do(self, operands: ContentOperands, depth: int) -> ContentStreamFrame | None:
         if not operands:

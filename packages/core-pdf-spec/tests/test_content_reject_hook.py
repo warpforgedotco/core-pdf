@@ -8,7 +8,9 @@ from _content_support import make_interpreter
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
+from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, DEVICE_RGB, ColorSpace
 from core_pdf_spec.types import PdfName
 
@@ -224,3 +226,69 @@ def test_a_recovering_hook_proceeds_with_color_and_resource_fallbacks() -> None:
 def test_the_base_recovery_has_no_color_guess() -> None:
     state = recovering()
     assert state.normalize_color_components(DEVICE_RGB, (0.5, "x", 0.5)) is None
+
+
+class FontRecovery(RecoveringInterpreter):
+    """Records the fonts it is handed and what decoder_for sees."""
+
+    provided: list[object]
+    decoded: list[tuple[object, object]]
+
+    def decoder_for(self, font_reference: object, font: object, resources: PdfDict) -> Any:
+        self.decoded.append((font_reference, font))
+        return super().decoder_for(font_reference, font, resources)
+
+
+def font_recovery(fonts: PdfDict) -> FontRecovery:
+    provided: list[object] = []
+
+    def provide(font: object, resources: object) -> object:
+        provided.append(font)
+        return ("decoder", len(provided))
+
+    state = FontRecovery(ObjectResolver(b"", {}), None, provide)  # ty: ignore[invalid-argument-type]
+    state.rejected = []
+    state.provided = provided
+    state.decoded = []
+    state.resources = {"Font": fonts}
+    return state
+
+
+@pytest.mark.parametrize("font_name", [None, "", "Missing"])
+def test_a_recovering_hook_decodes_an_unselected_font_as_empty_each_time(
+    font_name: str | None,
+) -> None:
+    state = font_recovery({"F": {"BaseFont": PdfName.of("F")}})
+    state.graphics.current_font = font_name
+    first = state.get_decoder()
+    assert state.get_decoder() != first
+    assert state.graphics.current_decoder is None
+    assert state.provided == [{}, {}]
+    assert state.decoded == []
+    context = "font-resource" if font_name else "font"
+    assert [context for context, _ in state.rejected] == [context, context]
+
+
+def test_a_recovering_hook_decodes_a_font_stream_by_its_dictionary() -> None:
+    font = {"BaseFont": PdfName.of("F")}
+    stream = PdfStream(font)
+    state = font_recovery({"F": stream, "N": 7})
+    state.graphics.current_font = "F"
+    decoder = state.get_decoder()
+    assert state.graphics.current_decoder is decoder
+    assert state.decoded == [(stream, font)]
+    state.graphics.current_decoder = None
+    state.graphics.current_font = "N"
+    state.get_decoder()
+    assert state.decoded[-1] == (7, 7)
+    assert state.provided[-1] == {}
+    assert [context for context, _ in state.rejected] == ["font-resource", "font-resource"]
+
+
+@pytest.mark.parametrize("fonts", [{"F": PdfStream({})}, {"F": 7}, {}])
+def test_the_default_hook_refuses_a_font_that_is_not_a_dictionary(fonts: PdfDict) -> None:
+    state = make_interpreter()
+    state.resources = {"Font": fonts}
+    state.graphics.current_font = "F"
+    with pytest.raises(PdfParseError, match="font resource must be a dictionary"):
+        state.get_decoder()

@@ -11,14 +11,12 @@ from core_pdf.impl.graphics_color_spec import parse_color_space
 from core_pdf.impl.graphics_functions import compile_pdf_function
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.scalars import clamp01
-from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
     OperationHandler,
 )
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
-from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
@@ -150,47 +148,27 @@ class RecoveringTextState(ContentInterpreter):
     capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]
     capture_font_companions: FontCompanionsCache
 
-    def get_decoder(self) -> FontDecoder:
-        if self.graphics.current_decoder is not None:
-            return self.graphics.current_decoder
-
-        try:
-            font_obj_ref = (
-                self.lookup_page_resource("Font", self.graphics.current_font)
-                if self.graphics.current_font
-                else None
-            )
-        except PdfParseError as error:
-            font_obj_ref = self.reject(error, "font-resource", None)
-        if font_obj_ref is None:
-            return self.font_provider({}, self.resources)
-
-        try:
-            font_obj = self.resolver.resolve(font_obj_ref)
-        except PdfParseError as error:
-            font_obj = self.reject(error, "font-resolution", None)
-        if isinstance(font_obj, PdfStream):
-            font_obj = font_obj.dictionary
-        resources = self.resources
-        if isinstance(font_obj_ref, PdfReference):
-            font_key: object = (font_obj_ref.object_number, font_obj_ref.generation_number)
+    def decoder_for(self, font_reference: object, font: object, resources: PdfDict) -> FontDecoder:
+        # A decoder is shared between selections of one font object under one
+        # resource dictionary, and across the document between fonts with the
+        # same signature.
+        if isinstance(font_reference, PdfReference):
+            font_key: object = (font_reference.object_number, font_reference.generation_number)
         else:
-            font_key = id(font_obj)
+            font_key = id(font)
         owned = self.capture_font_decoders.setdefault(font_key, [])
         for owner_resources, owner_font, decoder in owned:
-            if owner_resources is resources and owner_font is font_obj:
-                self.graphics.current_decoder = decoder
-                self.graphics.decoder_resources = resources
+            if owner_resources is resources and owner_font is font:
                 return decoder
 
         document_decoders: dict[object, FontDecoder] | None = getattr(
             getattr(self, "document", None), "font_decoders", None
         )
         signature = None
-        if document_decoders is not None and isinstance(font_obj_ref, PdfReference):
+        if document_decoders is not None and isinstance(font_reference, PdfReference):
             signature = font_signature(
-                font_obj_ref,
-                font_obj,
+                font_reference,
+                font,
                 resources,
                 self.resolver.resolve,
                 self.capture_font_companions,
@@ -198,22 +176,13 @@ class RecoveringTextState(ContentInterpreter):
         if signature is not None and document_decoders is not None:
             shared = document_decoders.get(signature)
             if shared is not None:
-                owned.append((resources, font_obj, shared))
-                self.graphics.current_decoder = shared
-                self.graphics.decoder_resources = resources
+                owned.append((resources, font, shared))
                 return shared
 
-        if not isinstance(font_obj, dict):
-            decoder = self.font_provider({}, resources)
-        else:
-            font_dict = font_obj
-            resolved_font = self.resolver.resolve_font_dict(font_dict)
-            decoder = self.font_provider(resolved_font, resources)
-        owned.append((resources, font_obj, decoder))
+        decoder = super().decoder_for(font_reference, font, resources)
+        owned.append((resources, font, decoder))
         if signature is not None and document_decoders is not None:
             document_decoders[signature] = decoder
-        self.graphics.current_decoder = decoder
-        self.graphics.decoder_resources = resources
         return decoder
 
     def resolve_form_resources(self, value: object) -> PdfDict:
