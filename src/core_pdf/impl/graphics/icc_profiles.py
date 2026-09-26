@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
 from functools import cache, lru_cache
 from typing import Any, ClassVar
 
 import imagecodecs
 import numpy
 
+from core_pdf.impl.graphics.codec_backends import env_int
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
 from core_pdf_spec.s_08_graphics.color_rendering import (
@@ -177,7 +180,40 @@ def memoized_cms_transform(
     return result.reshape(rows, 3)
 
 
+# lcms converts each sample row on its own and releases the GIL while it
+# does, so a large conversion is split into row blocks converted on threads
+# and joined: the same array. A 3.2-megapixel CMYK image through the 2.7 MB
+# default profile took 593 ms in one call on PyMuPDF test_4466.
+PARALLEL_ROWS = 1 << 18
+
+
+def cms_thread_count() -> int:
+    return min(4, env_int("CORE_PDF_CMS_THREADS", max(1, min(4, os.cpu_count() or 1))))
+
+
 def cms_transform(
+    profile: bytes,
+    color_space: str,
+    intent: int,
+    flags: int,
+    samples: numpy.ndarray[Any, Any],
+) -> ByteSamples:
+    rows = samples.shape[0]
+    workers = cms_thread_count() if rows >= PARALLEL_ROWS else 1
+    if workers > 1:
+        blocks = numpy.array_split(samples, workers)
+        with ThreadPoolExecutor(workers) as executor:
+            converted = list(
+                executor.map(
+                    lambda block: cms_transform_block(profile, color_space, intent, flags, block),
+                    blocks,
+                )
+            )
+        return numpy.concatenate(converted)
+    return cms_transform_block(profile, color_space, intent, flags, samples)
+
+
+def cms_transform_block(
     profile: bytes,
     color_space: str,
     intent: int,
@@ -187,7 +223,7 @@ def cms_transform(
     rows, channels = samples.shape
     try:
         converted = imagecodecs.cms_transform(
-            samples.reshape(rows, 1, channels),
+            numpy.ascontiguousarray(samples).reshape(rows, 1, channels),
             profile,
             srgb_profile(),
             colorspace=color_space.lower(),

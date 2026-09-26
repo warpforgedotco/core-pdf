@@ -133,3 +133,21 @@ def test_failures_are_raised_every_time(monkeypatch: pytest.MonkeyPatch, rgb: Ic
         with pytest.raises(IccProfileError):
             rgb.apply_uint16(samples)
     assert calls == 2
+
+
+def test_a_large_conversion_split_across_threads_is_the_same_array(
+    rgb: IccTransform, monkeypatch: pytest.MonkeyPatch, lcms_rows: list[int]
+) -> None:
+    rng = np.random.default_rng(11)
+    samples = rng.integers(0, 65536, size=(1001, 3), dtype=np.uint16)
+    intent, flags = cms_options(DEFAULT_COLOR_RENDERING)
+    monkeypatch.setenv("CORE_PDF_CMS_THREADS", "1")
+    serial = cms_transform(rgb.profile, rgb.color_space, intent, flags, samples)
+    monkeypatch.setattr(icc_profiles, "PARALLEL_ROWS", 8)
+    monkeypatch.setenv("CORE_PDF_CMS_THREADS", "3")
+    lcms_rows.clear()
+    split = cms_transform(rgb.profile, rgb.color_space, intent, flags, samples)
+    assert sorted(lcms_rows) == [333, 334, 334]
+    np.testing.assert_array_equal(split, serial)
+    assert split.dtype == np.uint8
+    assert split.shape == (1001, 3)
