@@ -467,14 +467,11 @@ class RecoveringTextState(ContentInterpreter):
     def append_cubic_curve(
         self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float
     ) -> None:
+        # Spec rejects a curve with no current point; recovery moves there.
         if self.current_point is None:
             self.current_point = (x3, y3)
             return
-        x0, y0 = self.current_point
-        self.current_path.cubic_to(
-            (x0, y0, x1, y1, x2, y2, x3, y3), self.graphics.ctm, float(self.graphics.flatness)
-        )
-        self.current_point = (x3, y3)
+        super().append_cubic_curve(x1, y1, x2, y2, x3, y3)
 
     def op_d(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) < 2:
