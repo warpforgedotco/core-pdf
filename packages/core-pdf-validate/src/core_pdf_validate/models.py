@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, ClassVar, Literal, NoReturn, Protocol, Self
+from typing import ClassVar, Literal, Protocol
 
-frozen_setattr = object.__setattr__
-
+from core_records import Record, frozen_setattr
 
 __all__ = [
     "Conformance",
@@ -31,7 +30,7 @@ type ExecutionStatus = Literal[
 ]
 
 
-class ProfileSupport:
+class ProfileSupport(Record):
     __slots__ = ("identifier", "edition")
 
     identifier: str
@@ -44,14 +43,6 @@ class ProfileSupport:
         frozen_setattr(self, "identifier", identifier)
         frozen_setattr(self, "edition", edition)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"identifier={self.identifier!r}, "
-            f"edition={self.edition!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -62,28 +53,8 @@ class ProfileSupport:
     def __hash__(self) -> int:
         return hash((self.identifier, self.edition))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        identifier = changes.pop("identifier", self.identifier)
-        edition = changes.pop("edition", self.edition)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(identifier, edition)
-
-
-class RuleResult:
+class RuleResult(Record):
     __slots__ = ("specification", "clause", "test_number", "status", "description", "locations")
 
     specification: str
@@ -126,18 +97,6 @@ class RuleResult:
         frozen_setattr(self, "description", description)
         frozen_setattr(self, "locations", locations)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"specification={self.specification!r}, "
-            f"clause={self.clause!r}, "
-            f"test_number={self.test_number!r}, "
-            f"status={self.status!r}, "
-            f"description={self.description!r}, "
-            f"locations={self.locations!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -164,32 +123,8 @@ class RuleResult:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        specification = changes.pop("specification", self.specification)
-        clause = changes.pop("clause", self.clause)
-        test_number = changes.pop("test_number", self.test_number)
-        status = changes.pop("status", self.status)
-        description = changes.pop("description", self.description)
-        locations = changes.pop("locations", self.locations)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(specification, clause, test_number, status, description, locations)
-
-
-class ProfileResult:
+class ProfileResult(Record):
     __slots__ = (
         "profile",
         "execution_status",
@@ -269,23 +204,6 @@ class ProfileResult:
         frozen_setattr(self, "limitations", limitations)
         frozen_setattr(self, "profile_edition", profile_edition)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"profile={self.profile!r}, "
-            f"execution_status={self.execution_status!r}, "
-            f"conformance={self.conformance!r}, "
-            f"engine={self.engine!r}, "
-            f"engine_version={self.engine_version!r}, "
-            f"rules={self.rules!r}, "
-            f"diagnostics={self.diagnostics!r}, "
-            f"raw_report={self.raw_report!r}, "
-            f"stderr={self.stderr!r}, "
-            f"limitations={self.limitations!r}, "
-            f"profile_edition={self.profile_edition!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -322,49 +240,8 @@ class ProfileResult:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        profile = changes.pop("profile", self.profile)
-        execution_status = changes.pop("execution_status", self.execution_status)
-        conformance = changes.pop("conformance", self.conformance)
-        engine = changes.pop("engine", self.engine)
-        engine_version = changes.pop("engine_version", self.engine_version)
-        rules = changes.pop("rules", self.rules)
-        diagnostics = changes.pop("diagnostics", self.diagnostics)
-        raw_report = changes.pop("raw_report", self.raw_report)
-        stderr = changes.pop("stderr", self.stderr)
-        limitations = changes.pop("limitations", self.limitations)
-        profile_edition = changes.pop("profile_edition", self.profile_edition)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            profile,
-            execution_status,
-            conformance,
-            engine,
-            engine_version,
-            rules,
-            diagnostics,
-            raw_report,
-            stderr,
-            limitations,
-            profile_edition,
-        )
-
-
-class ValidationReport:
+class ValidationReport(Record):
     __slots__ = ("source_sha256", "targets", "results", "diagnostics")
 
     source_sha256: str
@@ -387,16 +264,6 @@ class ValidationReport:
         frozen_setattr(self, "results", results)
         frozen_setattr(self, "diagnostics", diagnostics)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"source_sha256={self.source_sha256!r}, "
-            f"targets={self.targets!r}, "
-            f"results={self.results!r}, "
-            f"diagnostics={self.diagnostics!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -411,28 +278,6 @@ class ValidationReport:
 
     def __hash__(self) -> int:
         return hash((self.source_sha256, self.targets, self.results, self.diagnostics))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        source_sha256 = changes.pop("source_sha256", self.source_sha256)
-        targets = changes.pop("targets", self.targets)
-        results = changes.pop("results", self.results)
-        diagnostics = changes.pop("diagnostics", self.diagnostics)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(source_sha256, targets, results, diagnostics)
 
 
 class ValidationBackend(Protocol):

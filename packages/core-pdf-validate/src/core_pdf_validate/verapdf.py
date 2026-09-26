@@ -9,7 +9,7 @@ import subprocess
 from contextlib import suppress
 from copy import replace
 from pathlib import Path
-from typing import Any, ClassVar, Literal, NoReturn, Self
+from typing import ClassVar, Literal
 from xml.etree import ElementTree
 
 from defusedxml import ElementTree as SafeElementTree
@@ -21,9 +21,7 @@ from core_pdf_validate.models import (
     ProfileSupport,
     RuleResult,
 )
-
-frozen_setattr = object.__setattr__
-
+from core_records import Record, frozen_setattr
 
 __all__ = ["VeraPdfBackend"]
 
@@ -49,6 +47,7 @@ PROFILES: dict[str, tuple[str, str, str]] = {
     ),
 }
 VERSION = "1.30.2"
+RULE_STATUSES: dict[str, Literal["passed", "failed"]] = {"passed": "passed", "failed": "failed"}
 MACHINE_LIMIT = "Only the pinned engine's machine-checkable profile rules were evaluated."
 
 
@@ -70,10 +69,9 @@ def parse_rules(details: ElementTree.Element) -> tuple[tuple[RuleResult, ...], b
     rules: list[RuleResult] = []
     truncated = False
     for element in details.findall("rule"):
-        status = element.get("status")
-        if status not in ("passed", "failed"):
+        status = RULE_STATUSES.get(element.get("status") or "")
+        if status is None:
             raise ValueError("Unknown rule status")
-        rule_status: Literal["passed", "failed"] = "passed" if status == "passed" else "failed"
         specification = element.get("specification")
         clause = element.get("clause")
         test = element.get("testNumber")
@@ -97,7 +95,7 @@ def parse_rules(details: ElementTree.Element) -> tuple[tuple[RuleResult, ...], b
                 specification,
                 clause,
                 test,
-                rule_status,
+                status,
                 element.findtext("description", default=""),
                 locations,
             )
@@ -138,7 +136,9 @@ def parse_report(
         if len(core_versions) == 1:
             version = core_versions[0]
         if core_versions != [VERSION] or model_versions != [VERSION]:
-            return failed("unsupported_engine", "Expected veraPDF core and model version 1.30.2")
+            return failed(
+                "unsupported_engine", f"Expected veraPDF core and model version {VERSION}"
+            )
         if returncode not in (0, 1):
             return failed("engine_error", f"veraPDF exited with status {returncode}")
         job = one(root, "jobs/job")
@@ -209,7 +209,7 @@ def parse_report(
         return failed("invalid_report", str(error))
 
 
-class VeraPdfBackend:
+class VeraPdfBackend(Record):
     __slots__ = ("executable", "timeout")
 
     executable: str | os.PathLike[str]
@@ -227,14 +227,6 @@ class VeraPdfBackend:
         frozen_setattr(self, "timeout", timeout)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"executable={self.executable!r}, "
-            f"timeout={self.timeout!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -244,26 +236,6 @@ class VeraPdfBackend:
 
     def __hash__(self) -> int:
         return hash((self.executable, self.timeout))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        executable = changes.pop("executable", self.executable)
-        timeout = changes.pop("timeout", self.timeout)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(executable, timeout)
 
     name: ClassVar[str] = "veraPDF"
     supported_engine_versions: ClassVar[tuple[str, ...]] = (VERSION,)
