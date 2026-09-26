@@ -6,6 +6,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
+from core_pdf.impl.document_metadata import plain_pdf_value
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_pipeline import PageExtraction
 from core_pdf.impl.output_model import SCHEMA_VERSION, Document, Page
@@ -83,7 +84,7 @@ def assemble_document(
         pages.append(extraction.assembled_page(context))
     assembled_pages = tuple(pages)
     diagnostics = tuple(diagnostic for page in assembled_pages for diagnostic in page.diagnostics)
-    metadata = document.get_metadata()
+    metadata = {key: plain_pdf_value(value) for key, value in document.get_metadata().items()}
     return Document(
         pages=assembled_pages,
         metadata=metadata,

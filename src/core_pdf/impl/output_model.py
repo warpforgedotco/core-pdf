@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 from copy import replace
 from enum import StrEnum
-from types import MappingProxyType
-from typing import Any, ClassVar, Self, TypeAlias
+from typing import Any, ClassVar, NoReturn, Self, TypeAlias
 
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.page_selection import PageSelection
@@ -18,9 +17,33 @@ SCHEMA_VERSION = "5.0"
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 
 
+class FrozenDict(dict[Any, Any]):
+    """A dict that refuses mutation, hashes by content, and pickles.
+
+    The mapping fields of frozen output records hold these, so a Document, a
+    Page or a Figure hashes and pickles like the rest of its fields; a
+    mappingproxy did neither. It is still a dict, so equality with a plain
+    dict and JSON encoding are unchanged.
+    """
+
+    __slots__ = ()
+
+    def __hash__(self) -> int:  # type: ignore[override]
+        return hash(frozenset(self.items()))
+
+    def __reduce__(self) -> tuple[type[FrozenDict], tuple[dict[Any, Any]]]:
+        return (FrozenDict, (dict(self),))
+
+    def _refuse(self, *_args: object, **_kwargs: object) -> NoReturn:
+        raise TypeError("FrozenDict is immutable")
+
+    __setitem__ = __delitem__ = __ior__ = _refuse
+    clear = pop = popitem = setdefault = update = _refuse
+
+
 def freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return MappingProxyType({key: freeze(item) for key, item in value.items()})
+        return FrozenDict({key: freeze(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
         return tuple(freeze(item) for item in value)
     if isinstance(value, set):

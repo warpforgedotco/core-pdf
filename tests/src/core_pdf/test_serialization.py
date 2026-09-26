@@ -1,5 +1,6 @@
 import csv
 import json
+import pickle
 from copy import replace
 from io import StringIO
 from typing import Any
@@ -7,6 +8,7 @@ from xml.etree import ElementTree
 
 import pytest
 
+from core_pdf.impl.document_metadata import plain_pdf_value
 from core_pdf.impl.output_model import (
     Annotation,
     Block,
@@ -25,6 +27,8 @@ from core_pdf.impl.output_model import (
     TextLine,
     TextSpan,
 )
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 
 def block(text: str, order: int = 0, **kwargs: Any) -> Block:
@@ -252,3 +256,41 @@ def test_element_dispatch_rejects_unknown_runtime_types() -> None:
             table=lambda item: item.order,
             figure=lambda item: item.order,
         )
+
+
+def test_documents_hash_pickle_and_refuse_metadata_mutation() -> None:
+    document = Document(
+        (
+            Page(
+                1,
+                blocks=(block("text"),),
+                figures=(Figure(0, (0, 0, 1, 1), "image", metadata={"source": "capture"}),),
+            ),
+        ),
+        metadata={"info": {"Title": "T", "Keywords": ["a", "b"]}, "xmp": None},
+    )
+    restored = pickle.loads(pickle.dumps(document))
+    assert restored == document
+    assert hash(restored) == hash(document)
+    assert document.metadata == {"info": {"Title": "T", "Keywords": ("a", "b")}, "xmp": None}
+    with pytest.raises(TypeError, match="immutable"):
+        document.metadata["info"]["Title"] = "changed"  # type: ignore[index]
+
+
+def test_extract_turns_pdf_objects_into_plain_values() -> None:
+    stream = PdfStream({"Type": PdfName.of("Metadata")}, b"<x/>")
+    assert plain_pdf_value(
+        {
+            "Trapped": PdfName.of("False"),
+            "Title": PdfString(b"\xfe\xff\x00T"),
+            "Raw": b"caf\xe9",
+            "Page": [PdfReference(12, 0), PdfName.of("XYZ"), 0, 792, None],
+            "Stream": stream,
+        }
+    ) == {
+        "Trapped": "False",
+        "Title": "T",
+        "Raw": "café",
+        "Page": ["12 0 R", "XYZ", 0, 792, None],
+        "Stream": {"Type": "Metadata"},
+    }

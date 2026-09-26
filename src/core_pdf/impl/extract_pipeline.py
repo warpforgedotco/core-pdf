@@ -8,6 +8,7 @@ from copy import replace
 from functools import cached_property
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
+from core_pdf.impl.document_metadata import plain_pdf_value
 from core_pdf.impl.document_page_links import resolve_destination_value
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_block_layout import layout_blocks_with_evidence
@@ -216,7 +217,9 @@ class PageExtraction:
                 subtype=record.subtype,
                 bbox=record.rect,
                 contents=record.contents,
-                destination=resolve_destination_value(resolver, record.dest or record.action),
+                destination=plain_pdf_value(
+                    resolve_destination_value(resolver, record.dest or record.action)
+                ),
             ),
         )
         links = collected_records(
