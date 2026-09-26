@@ -8,6 +8,7 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl.capture import recording
+from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 ADDRESS = re.compile(r"0x[0-9a-f]+")
 
@@ -27,27 +28,6 @@ CONTENTS = [
 ]
 
 
-def one_page_pdf(content: bytes) -> bytes:
-    objects = {
-        1: b"<< /Type /Catalog /Pages 2 0 R >>",
-        2: b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        3: b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
-        b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-        4: b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream",
-        5: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    }
-    data = bytearray(b"%PDF-1.4\n")
-    offsets = {}
-    for number, body in objects.items():
-        offsets[number] = len(data)
-        data += b"%d 0 obj\n" % number + body + b"\nendobj\n"
-    xref = len(data)
-    data += b"xref\n0 6\n0000000000 65535 f \n"
-    data += b"".join(b"%010d 00000 n \n" % offsets[number] for number in range(1, 6))
-    data += b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % xref
-    return bytes(data)
-
-
 def captured(data: bytes) -> list[object]:
     with PdfDocument(data) as document:
         body = document.pages[0].get_page_program().body
@@ -65,7 +45,7 @@ def captured(data: bytes) -> list[object]:
 def test_native_paths_capture_as_the_handlers_do(
     content: bytes, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    data = one_page_pdf(content)
+    data = one_page_pdf(content, width=100, height=100)
     applied: list[bool] = []
     original = recording.applies_paths_natively
 

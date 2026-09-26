@@ -10,47 +10,9 @@ import core_pdf.impl.capture.page as capture_page_module
 from core_pdf import PdfDocument
 from core_pdf.impl.extract import selection
 from core_pdf.impl.extract.pipeline import PageExtraction
+from tests.src.core_pdf.pdf_bytes import MULTI_PAGE_COUNT, multi_page_pdf
 
-PAGE_COUNT = 3
-
-
-def multi_page_pdf(count: int = PAGE_COUNT, *, tagged: bool = False) -> bytes:
-    page_numbers = [3 + 2 * index for index in range(count)]
-    tree_number = 4 + 2 * count
-    catalog = b"<< /Type /Catalog /Pages 2 0 R"
-    catalog += f" /StructTreeRoot {tree_number} 0 R >>".encode() if tagged else b" >>"
-    objects: dict[int, bytes] = {
-        1: catalog,
-        2: b"<< /Type /Pages /Kids ["
-        + b" ".join(f"{number} 0 R".encode() for number in page_numbers)
-        + f"] /Count {count} >>".encode(),
-    }
-    font_number = 3 + 2 * count
-    objects[font_number] = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
-    for index, number in enumerate(page_numbers):
-        content = f"BT /F1 12 Tf 20 100 Td (Page {index + 1}) Tj ET".encode()
-        objects[number] = (
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
-            + f"/Resources << /Font << /F1 {font_number} 0 R >> >> ".encode()
-            + f"/Contents {number + 1} 0 R >>".encode()
-        )
-        objects[number + 1] = (
-            f"<< /Length {len(content)} >>\nstream\n".encode() + content + b"\nendstream"
-        )
-    if tagged:
-        objects[tree_number] = b"<< /Type /StructTreeRoot /K [] >>"
-    data = bytearray(b"%PDF-1.4\n")
-    offsets: dict[int, int] = {}
-    for number in sorted(objects):
-        offsets[number] = len(data)
-        data.extend(f"{number} 0 obj\n".encode() + objects[number] + b"\nendobj\n")
-    xref = len(data)
-    size = max(objects) + 1
-    data.extend(f"xref\n0 {size}\n0000000000 65535 f \n".encode())
-    for number in range(1, size):
-        data.extend(f"{offsets[number]:010d} 00000 n \n".encode())
-    data.extend(f"trailer\n<< /Size {size} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode())
-    return bytes(data)
+PAGE_COUNT = MULTI_PAGE_COUNT
 
 
 def test_pages_are_built_once_per_document() -> None:

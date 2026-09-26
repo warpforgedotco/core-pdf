@@ -5,7 +5,7 @@ from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render import target as target_module
 from core_pdf.impl.render.model import DisplayListItem
 from core_pdf.impl.render.target import RasterTarget
-from tests.src.core_pdf.test_pattern_rendering import make_target
+from tests.src.core_pdf.raster_support import make_target
 
 
 @pytest.mark.parametrize(

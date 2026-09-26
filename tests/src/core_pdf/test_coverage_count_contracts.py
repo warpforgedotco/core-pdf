@@ -16,11 +16,11 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf import PdfDocument
-from core_pdf.impl.render import target as raster
 from core_pdf.impl.render.paths import fill_path_crossing_spans
 from core_pdf.impl.render.target import RasterTarget
 from core_pdf_cythonized import stroke_segment_samples, supersampled_coverage_plane
+from tests.src.core_pdf.pdf_bytes import serialize_pdf
+from tests.src.core_pdf.raster_support import make_backdrop_target, rendered
 
 OFFSETS = (0.125, 0.375, 0.625, 0.875)
 
@@ -169,29 +169,6 @@ def reference_blend_counts(
             self.blend_px(offset, (rgba[0], rgba[1], rgba[2], alpha), mode, shape=shape)
 
 
-def make_target(width: int, height: int, *, planes: bool) -> RasterTarget:
-    pixels = bytearray(bytes([10, 200, 90, 180]) * (width * height))
-    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(height, width, 4)
-    clip = raster.ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
-    target = RasterTarget(
-        pixels,
-        None,
-        clip=clip,
-        width=width,
-        height=height,
-        scale=1,
-        crop_x0=0,
-        crop_y0=0,
-        crop_y1=height,
-        page_view=view,
-    )
-    if planes:
-        target.group_source_alpha = numpy.full((height, width), 0.25, dtype=numpy.float32)
-        target.group_source_shape = numpy.full((height, width), 0.5, dtype=numpy.float32)
-        target.paint_window = []
-    return target
-
-
 def state(target: RasterTarget) -> tuple[Any, ...]:
     return (
         bytes(target.pixels),
@@ -219,7 +196,7 @@ def test_blended_counts_are_blend_coverage_pixels(
     allowed = bytearray((rng.random(35) < 0.7).astype(numpy.uint8).tobytes()) if masked else None
     outcomes = []
     for blend in (RasterTarget.blend_counts, reference_blend_counts):
-        target = make_target(10, 8, planes=planes)
+        target = make_backdrop_target(10, 8, planes=planes)
         target.semantic_context = SemanticContext(None if version is None else PdfVersion(*version))
         try:
             blend(target, counts, 2, 1, allowed, (250, 30, 120, 170), mode)
@@ -249,16 +226,7 @@ def one_page_pdf(content: bytes, form: bytes) -> bytes:
         7: b"<< /Type /ExtGState /ca 0.7 /CA 0.9 /BM /ColorDodge >>",
         8: b"<< /Type /ExtGState /BM /Screen >>",
     }
-    data = bytearray(b"%PDF-1.7\n")
-    offsets = {}
-    for number, body in objects.items():
-        offsets[number] = len(data)
-        data += b"%d 0 obj\n" % number + body + b"\nendobj\n"
-    xref = len(data)
-    data += b"xref\n0 9\n0000000000 65535 f \n"
-    data += b"".join(b"%010d 00000 n \n" % offsets[number] for number in range(1, 9))
-    data += b"trailer\n<< /Size 9 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % xref
-    return bytes(data)
+    return serialize_pdf(objects, b"1.7")
 
 
 BACKDROP = b"0.2 0.4 0.6 rg 0 0 120 90 re f 0.9 0.8 0.1 rg 30 20 50 40 re f "
@@ -281,11 +249,6 @@ CONTENTS = [
     ),
     pytest.param(BACKDROP + b"/X Do", SHAPES + b"/M gs " + SHAPES, id="knockout-group"),
 ]
-
-
-def rendered(data: bytes) -> bytes:
-    with PdfDocument(data) as document:
-        return document.pages[0].render().rasterize(scale=1.5).array().tobytes()
 
 
 @pytest.mark.parametrize(("content", "form"), CONTENTS)

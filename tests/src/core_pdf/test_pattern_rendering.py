@@ -4,28 +4,9 @@ import pytest
 from core_pdf.impl.capture.program import CapturedProgram
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, TilingPattern
 from core_pdf.impl.render import patterns
-from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.model import DisplayListItem, PathPaintItem, PathPaintKind
-from core_pdf.impl.render.target import RasterTarget
 from core_pdf_cythonized import shading_t
-
-
-def make_target(width=4, height=1):
-    pixels = bytearray(width * height * 4)
-    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(height, width, 4)
-    clip = ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
-    return RasterTarget(
-        pixels,
-        None,
-        clip=clip,
-        width=width,
-        height=height,
-        scale=1,
-        crop_x0=0,
-        crop_y0=0,
-        crop_y1=height,
-        page_view=view,
-    )
+from tests.src.core_pdf.raster_support import make_target
 
 
 @pytest.mark.parametrize(

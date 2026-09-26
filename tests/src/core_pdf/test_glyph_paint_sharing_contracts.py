@@ -8,6 +8,7 @@ import pytest
 from core_pdf import PdfDocument
 from core_pdf.impl.capture.glyphs import GlyphPaint
 from core_pdf.impl.capture.recording import TextState
+from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 CONTENT = (
     b"BT /F1 12 Tf 1 0 0 rg 0 0 1 RG 2 w 20 100 Td "
@@ -15,27 +16,6 @@ CONTENT = (
     b"0 1 0 rg [(gh) -50 (ij)] TJ ET "
     b"q 0.5 w BT /F1 10 Tf 20 60 Td (op) Tj ET Q BT /F1 10 Tf 20 40 Td (qr) Tj ET"
 )
-
-
-def one_page_pdf(content: bytes) -> bytes:
-    objects = {
-        1: b"<< /Type /Catalog /Pages 2 0 R >>",
-        2: b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        3: b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
-        b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-        4: b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream",
-        5: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    }
-    data = bytearray(b"%PDF-1.4\n")
-    offsets = {}
-    for number, body in objects.items():
-        offsets[number] = len(data)
-        data += b"%d 0 obj\n" % number + body + b"\nendobj\n"
-    xref = len(data)
-    data += b"xref\n0 6\n0000000000 65535 f \n"
-    data += b"".join(b"%010d 00000 n \n" % offsets[number] for number in range(1, 6))
-    data += b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % xref
-    return bytes(data)
 
 
 def captured_glyphs() -> list[str]:

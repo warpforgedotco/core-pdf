@@ -10,7 +10,7 @@ import pytest
 from core_pdf.impl.capture.program import CapturedProgram
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl.render.target import resolve_soft_mask
-from tests.src.core_pdf.test_pattern_rendering import make_target
+from tests.src.core_pdf.raster_support import make_target
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.recording import TextState

@@ -5,6 +5,8 @@ import tomllib
 
 import pytest
 
+from tests.src.core_pdf.pdf_bytes import serialize_pdf, stream_object
+
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent
 
 
@@ -27,21 +29,9 @@ def text_pdf_bytes() -> bytes:
         b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
         b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
+        stream_object(content),
     )
-    data = bytearray(b"%PDF-1.4\n")
-    offsets = [0]
-    for index, value in enumerate(objects, 1):
-        offsets.append(len(data))
-        data.extend(f"{index} 0 obj\n".encode() + value + b"\nendobj\n")
-    xref = len(data)
-    data.extend(f"xref\n0 {len(offsets)}\n0000000000 65535 f \n".encode())
-    for offset in offsets[1:]:
-        data.extend(f"{offset:010d} 00000 n \n".encode())
-    data.extend(
-        f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
-    )
-    return bytes(data)
+    return serialize_pdf(objects)
 
 
 def shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
