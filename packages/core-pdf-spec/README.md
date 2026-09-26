@@ -41,9 +41,9 @@ For Lab color conversion, `s_08_graphics.color_math.lab_components_to_xyz` accep
 NumPy float32 rows of actual `(L*, a*, b*)` components and a reference white point.
 Image sample decoding and range enforcement belong to the caller.
 
-The current spec version is `0.11.0`, released independently of core. During `0.x`, breaking
+The current spec version is `0.12.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.11.0,<0.12.0`; changes to that range require core integration and differential validation.
+`>=0.12.0,<0.13.0`; changes to that range require core integration and differential validation.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are
@@ -203,6 +203,15 @@ a reader tolerates malformed input by overriding them rather than copying the pa
 `create_trailer_lexer` (7.5.4, 7.5.5); and, on `s_07_syntax.trees.iter_tree_items` and its
 number and name tree wrappers, `max_depth`, `on_malformed`, `on_malformed_entry`, and
 `skip_null_nodes`, whose default `raise_malformed` raises as before.
+
+`0.12.0` adds more of them: `ContentInterpreter.reject(error, context, fallback)`, which
+every operator's malformed-operand path now calls and which raises `error` by default, and
+`parse_named_color_space`; `ToUnicodeCMap.reject_parent` and `max_inheritance_depth`
+(9.10.3); a `default_width` keyword on `parse_font_widths`; and `read_name`,
+`read_descendant`, `read_descriptor`, and `read_font_file` keywords on
+`prepare_font_program_inputs`. One strict default tightens: an object stream named as an
+XObject resource is now rejected ("XObject resource is an object stream") rather than drawn
+when it claims a Form or Image subtype.
 
 When migrating to `0.10.0`, stop using these exports, which nothing in the workspace called:
 
