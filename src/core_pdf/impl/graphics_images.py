@@ -12,6 +12,7 @@ from core_pdf.impl.array_views import readonly
 from core_pdf.impl.graphics_color import (
     convert_cmyk,
     convert_image_data,
+    image_dimension,
 )
 from core_pdf.impl.graphics_color_spec import parse_color_space, raw_color_space_paints
 from core_pdf.impl.graphics_decode_compat import (
@@ -207,8 +208,8 @@ class PreparedImage(Record):
 
 
 def decode_mask(source: ImageSource) -> DecodedRaster | None:
-    width = parse_int(source.dictionary.get("Width"), 0, python_syntax=True)
-    height = parse_int(source.dictionary.get("Height"), 0, python_syntax=True)
+    width = image_dimension(source.dictionary, "Width")
+    height = image_dimension(source.dictionary, "Height")
     if width <= 0 or height <= 0:
         return None
     try:
@@ -251,11 +252,11 @@ def decode_matte(
     source: ImageSource, soft_mask: SoftMask
 ) -> tuple[tuple[float, ...], numpy.ndarray[Any, Any]]:
     dictionary = soft_mask.dictionary
-    width = parse_int(dictionary.get("Width"), 0, python_syntax=True)
-    height = parse_int(dictionary.get("Height"), 0, python_syntax=True)
+    width = image_dimension(dictionary, "Width")
+    height = image_dimension(dictionary, "Height")
     if (width, height) != (
-        parse_int(source.dictionary.get("Width"), 0, python_syntax=True),
-        parse_int(source.dictionary.get("Height"), 0, python_syntax=True),
+        image_dimension(source.dictionary, "Width"),
+        image_dimension(source.dictionary, "Height"),
     ):
         raise ValueError("image matte requires matching soft mask dimensions")
     decoded = decode_image_samples(soft_mask.raw, dictionary, size=(width, height))
@@ -438,8 +439,8 @@ def decode_image_samples(
 ) -> bytes | memoryview | DecodedImage | None:
     """The image's samples; `size` is its (Width, Height) if the caller has read them."""
     if size is None:
-        width = parse_int(dictionary.get("Width"), 0, python_syntax=True)
-        height = parse_int(dictionary.get("Height"), 0, python_syntax=True)
+        width = image_dimension(dictionary, "Width")
+        height = image_dimension(dictionary, "Height")
     else:
         width, height = size
     if width <= 0 or height <= 0:
@@ -492,8 +493,8 @@ def decode_pdf_image(
         return None
     with suppress(ValueError):
         rendering = image_color_rendering(dictionary, rendering)
-    width = parse_int(dictionary.get("Width"), 0, python_syntax=True)
-    height = parse_int(dictionary.get("Height"), 0, python_syntax=True)
+    width = image_dimension(dictionary, "Width")
+    height = image_dimension(dictionary, "Height")
     if width <= 0 or height <= 0:
         return None
     samples = decode_image_samples(raw, dictionary, size=(width, height))
