@@ -1,10 +1,7 @@
-"""Core's Type 1 reader honours lenIV, including -1 for unencrypted charstrings."""
-
 import pytest
 
 from core_pdf.impl.fonts_font_program import Type1FontProgram
 
-# 0 500 hsbw  100 0 rmoveto  300 0 rlineto  0 400 rlineto  closepath  endchar
 SQUARE = bytes((139, 248, 136, 13, 239, 139, 21, 247, 192, 139, 5, 139, 248, 36, 5, 9, 14))
 LEN_IV = 4
 

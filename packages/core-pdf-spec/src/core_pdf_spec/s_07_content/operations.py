@@ -34,7 +34,6 @@ class ContentToken(NamedTuple):
 def parse_content_token(lexer: PdfLexer) -> ContentToken | None:
     match = lexer.lexical_rules.content_token_re.match(lexer.raw_data, lexer.pos)
     if match is not None:
-        # The pattern is all named groups, so a match always has one.
         kind: str = match.lastgroup  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         start = match.start(kind)
         word = match.group(kind)
@@ -115,8 +114,6 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
         if not valid:
             raise PdfParseError(f"invalid {operator} operand")
     if operator in {"TJ", "d"}:
-        # The per-operator check above has already rejected anything but an
-        # array here, and the annotation records that rather than asserting it.
         array: Sequence[ContentOperand] = operands[0]  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         for value in array:
             if operator == "TJ" and isinstance(value, PdfString):
@@ -130,7 +127,6 @@ def validate_content_operands(operator: str, operands: ContentOperands) -> None:
         if operator == "d" and array and not any(array):
             raise PdfParseError("dash array cannot contain only zero lengths")
     if operator in {"J", "j", "Tr", "w", "M"}:
-        # All five take one number, already checked for by the loop above.
         single: float = operands[0]  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         if operator in {"J", "j", "Tr"}:
             upper = 7 if operator == "Tr" else 2
@@ -153,7 +149,6 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
             operands.append(token.value)
             continue
         else:
-            # is_operator is only set for a token whose value is the operator.
             op_name = token.value  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         operation = (op_name, tuple(operands))
         operands.clear()

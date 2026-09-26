@@ -1,5 +1,3 @@
-"""q saves a copy of every graphics state parameter (ISO 32000-2 8.4.2)."""
-
 from copy import copy
 
 from core_pdf_spec.s_07_content.model import GraphicsState

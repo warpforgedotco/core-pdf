@@ -723,20 +723,13 @@ class PageEvidence(Record):
         return self.native_characters >= 100 and painted < self.native_characters * 0.20
 
 
-# A page tiled with this many images covering this share of it -- a photo grid,
-# a scanned mosaic -- is read in row order: the XY-cut would take the gaps
-# between the tiles for columns.
 TILED_PAGE_MIN_IMAGES = 8
 TILED_PAGE_MIN_IMAGE_AREA = 0.05
-# An image covering this share of the page is a block text flows around;
-# a larger one is a background the text sits on.
 IMAGE_OBSTACLE_MIN_AREA = 0.01
 IMAGE_MAX_AREA = 0.65
 
 
 class ReadingOrderPolicy(Record):
-    """How a page's content is put in reading order, decided once from its evidence."""
-
     __slots__ = ("use_xy_cut", "image_obstacles")
 
     use_xy_cut: bool

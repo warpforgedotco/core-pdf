@@ -1,5 +1,3 @@
-"""A canonical xref subsection read as columns reads as the per-row parse reads it."""
-
 import random
 
 import pytest
@@ -64,7 +62,7 @@ def merged_row_by_row(sections: list[xref.XRefTable]) -> xref.XRefTable:
     for section in sections:
         for key, entry in section.items():
             if key >> 16 not in claimed:
-                merged[key] = entry  # noqa: PERF403 -- the reference is the loop itself
+                merged[key] = entry  # noqa: PERF403
         claimed.update(key >> 16 for key in section)
     return merged
 

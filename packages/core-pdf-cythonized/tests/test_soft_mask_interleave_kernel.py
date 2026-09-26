@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Soft mask interleaving: the array core_pdf's apply_soft_mask built with numpy.
-
-soft_mask_interleave_golden.pkl.gz was produced by apply_soft_mask before the
-kernel replaced its gather and copies: grey and RGB rasters with and without
-an alpha channel of their own (which the mask replaces), masks smaller and
-larger than the image, and rasters that were strided views of wider arrays.
-"""
 
 import gzip
 import pickle

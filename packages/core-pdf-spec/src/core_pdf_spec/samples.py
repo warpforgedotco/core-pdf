@@ -14,11 +14,6 @@ def unpack_subbyte_rows(
     samples_per_row: int,
     bits_per_component: int,
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-    """Expand rows of packed 1/2/4-bit samples to one uint8 per sample.
-
-    Shared by the TIFF predictor (7.4.4.4) and image sample decoding (8.9.5.1),
-    which sit in different chapters, so it lives beneath both.
-    """
     binary = numpy.unpackbits(packed_rows, axis=1, bitorder="big")[
         :, : samples_per_row * bits_per_component
     ]

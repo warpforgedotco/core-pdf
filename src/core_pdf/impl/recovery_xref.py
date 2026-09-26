@@ -141,13 +141,6 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
 def canonical_xref_entries(
     data: PdfByteBuffer, pos: int, start_obj: int, count: int
 ) -> XRefTable | None:
-    """The entries of the first `count` rows at `pos`, if they and the row after start canonically.
-
-    Each such row reads the same in parse_xref_entry_at: it starts where
-    skip_ws leaves it, is not a trailer, and ends 20 bytes on, since the
-    next row starts with a digit and so no line end runs into it. A
-    generation over 65535, which the per-row parse rejects, leaves this to it.
-    """
     end = pos + XREF_ROW_SIZE * count
     if (
         count <= 0
@@ -160,9 +153,6 @@ def canonical_xref_entries(
 
 
 class XRefScanner(SyntaxXRefScanner):
-    """The recovering scanner: its lexers recover malformed objects, and a
-    table section tolerates what StrictXRefScanner's lexers do not."""
-
     recover_malformed_objects: ClassVar[bool] = True
 
     @staticmethod
@@ -274,13 +264,10 @@ class XRefScanner(SyntaxXRefScanner):
     def find_startxref(
         data: PdfByteBuffer, *, semantic_context: SemanticContext | None = None
     ) -> int | None:
-        # With no %%EOF, the number must run to the end of the data instead.
         eof_pos = find_eof_marker(data)
         search_end = eof_pos + 1 if eof_pos >= 0 else len(data)
         if eof_pos < 0:
             eof_pos = len(data)
-        # rfind keeps each marker's nine bytes before search_end, and so
-        # within the data and before eof_pos.
         while (marker := data.rfind(b"startxref", 0, search_end)) >= 0:
             search_end = marker
             if marker > 0 and not WS_TABLE[data[marker - 1]]:
@@ -430,8 +417,6 @@ class XRefScanner(SyntaxXRefScanner):
     def salvage_xref_stream_span(
         data: PdfByteBuffer, lexer: PdfLexer, header_marker: int
     ) -> tuple[PdfDict, bytes] | None:
-        """The dictionary and raw data of the XRef stream whose obj keyword
-        is at header_marker, read without its object's endobj."""
         lexer.pos = header_marker + 3
         lexer.skip_ignored()
         if data[lexer.pos : lexer.pos + 2] != b"<<":
@@ -513,12 +498,6 @@ class XRefScanner(SyntaxXRefScanner):
         semantic_context: SemanticContext | None = None,
         parsed_objects: dict[int, object] | None = None,
     ) -> XRefTable:
-        """The in-use objects found by reading every object header in data.
-
-        parsed_objects, if given, receives each object other than a stream
-        that parsed, by offset, as a PdfLexer over data in semantic_context
-        with no decipher parses it.
-        """
         entries: XRefTable = {}
         parsed_streams: dict[int, tuple[int, PdfStream]] = {}
         lexer = PdfLexer(data, semantic_context=semantic_context)
@@ -589,8 +568,6 @@ class XRefScanner(SyntaxXRefScanner):
         entries: XRefTable = {}
         max_object_number = start_obj + num_objs - 1
         actual_count = 0
-        # All but the last row, whose line end may run into what follows it,
-        # read at once when they are canonical, as they are in most tables.
         table = canonical_xref_entries(data, pos, start_obj, num_objs - 1)
         if table is not None:
             entries = table
@@ -677,7 +654,6 @@ class XRefScanner(SyntaxXRefScanner):
             raise PdfParseError("invalid xref stream W")
         if not all(type(x) is int for x in w_raw):
             raise PdfParseError("invalid xref stream W")
-        # Every entry is an int, checked above.
         w = cast("list[int]", list(w_raw[:3]))
         if any(width < 0 for width in w):
             raise PdfParseError("invalid xref stream W")
@@ -737,14 +713,12 @@ class XRefScanner(SyntaxXRefScanner):
         return entries, dict_obj
 
 
-# Object numbers below this make keys that fit an int64 column.
 XREF_STREAM_KEY_LIMIT = 1 << 46
 
 
 def xref_stream_array(
     rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], start: int, width: int
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint64]]:
-    """A W field of every row, read big-endian into a uint64 column."""
     values = numpy.zeros(len(rows), dtype=numpy.uint64)
     for column in range(start, start + width):
         values = (values << numpy.uint64(8)) | rows[:, column]
@@ -757,14 +731,6 @@ def xref_stream_entries(
     available_index: list[int],
     effective_size: int,
 ) -> XRefTable:
-    """decode_xref_stream_rows's table, built from columns.
-
-    Every row's entry and key are worked out in numpy -- a type-0 or type-1
-    row keeps its offset and generation, a type-2 row its object stream and
-    index, any other kind is free -- the rows the row loop skips are masked
-    out, and the entries are made from the surviving columns in row order,
-    so a later row for the same key replaces an earlier one as it did.
-    """
     row_count = len(rows)
     kinds = xref_stream_array(rows, 0, w[0]) if w[0] else numpy.ones(row_count, numpy.uint64)
     values = xref_stream_array(rows, w[0], w[1])
@@ -780,8 +746,6 @@ def xref_stream_entries(
     )
     direct = kinds < 2
     compressed = kinds == 2
-    # Every object number here is below the key limit, so a larger Size
-    # compares as the limit does, and numpy never sees an int past int64.
     size = min(effective_size, XREF_STREAM_KEY_LIMIT)
     keep = (object_numbers < size) & ~(direct & (generations > 65535))
     direct = direct[keep]
@@ -809,15 +773,6 @@ def xref_stream_entries(
 def decode_xref_stream_rows(
     data: bytes, w: list[int], available_index: list[int], effective_size: int
 ) -> XRefTable:
-    """parse_stream's rows, for a W of fields up to eight bytes and a nonzero middle.
-
-    decode_xref_row read each row's three fields with int.from_bytes, one
-    row at a time: 532,000 rows across a 300-document corpus sample. Fields
-    of up to eight bytes fit a uint64, so each is read for every row at once
-    and the rows then built as decode_xref_row builds them -- a type-0 or
-    type-1 row with a generation over 65535 is skipped, as the error it
-    raised was.
-    """
     row_size = sum(w)
     row_count = sum(available_index[1::2])
     rows = numpy.frombuffer(data, dtype=numpy.uint8, count=row_count * row_size).reshape(
@@ -859,8 +814,6 @@ def decode_xref_stream_rows(
 
 
 def bare_stream_marker(data: PdfByteBuffer, offset: int, marker: int, scan_end: int) -> int:
-    """Where a stream keyword follows the obj keyword at marker, before any
-    later obj, with only whitespace and comments between them; -1 if none."""
     stream_marker = data.find(b"stream", offset, scan_end)
     next_object_marker = data.find(b"obj", marker + 3, scan_end)
     if stream_marker < 0 or 0 <= next_object_marker <= stream_marker:
@@ -946,6 +899,4 @@ def iter_indirect_object_headers(
 
 
 class StrictXRefScanner(XRefScanner):
-    """XRefScanner whose lexers leave malformed objects unrecovered."""
-
     recover_malformed_objects: ClassVar[bool] = False

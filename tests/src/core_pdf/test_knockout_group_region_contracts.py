@@ -1,5 +1,3 @@
-"""A knockout group of plain fills is set up over the pixels its members can paint."""
-
 import math
 from typing import Any
 

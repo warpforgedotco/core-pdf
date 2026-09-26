@@ -38,7 +38,6 @@ def font_companions(
         return entry[1]
     grouped: dict[str, list[tuple[int, int]]] = {}
     for reference in fonts.values():
-        # font_signature only calls this once every value is a reference.
         if type(reference) is not PdfReference:
             continue
         sibling = resolve(reference)
@@ -75,24 +74,8 @@ def font_signature(
     return (font_ref.object_number, font_ref.generation_number, companions)
 
 
-# Content streams re-state the same colour relentlessly: one corpus page
-# issues RG 18,612 times with a single distinct operand tuple. The cache is
-# cleared wholesale rather than evicted, since a page that exceeds this many
-# distinct colours is not the case the cache exists for.
 COLOR_CACHE_LIMIT = 4096
 
-# Soft masks get the same treatment for a harsher reason. Every gs operator
-# re-parses the ExtGState soft mask into a fresh SoftMask carrying a freshly
-# compiled transfer closure, and each cache downstream is keyed by one of those
-# identities, so none of them could ever hit: PyMuPDF/tests/resources/
-# test_3450.pdf parsed 11,136 masks and rasterized the same 802 again and
-# again, taking 137s and 7.9GB for half a megapixel.
-#
-# The bound matches the colour cache rather than undercutting it. An entry is
-# three pointers to objects the capture already holds elsewhere, so a larger
-# table costs almost nothing, while a bound below the working set would clear
-# and refill on exactly the pages this exists for: that page peaks at 2,397
-# entries, and reaches it without a single clear at this limit.
 SOFT_MASK_CACHE_LIMIT = COLOR_CACHE_LIMIT
 
 
@@ -102,10 +85,6 @@ class RecoveringTextState(ContentInterpreter):
     parsed_soft_masks: dict[tuple[int, Matrix, int], tuple[object, object, SoftMask | None]]
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
-        # The ctm is baked into the parsed mask, and the resource scope decides
-        # what the mask's own content stream can name, so both belong in the
-        # key: a mask reached through different resources stays a separate
-        # object, exactly as it was before this cache existed.
         cache = self.parsed_soft_masks
         resources = self.resources
         ctm = self.graphics.ctm
@@ -121,19 +100,10 @@ class RecoveringTextState(ContentInterpreter):
         )
         if len(cache) >= SOFT_MASK_CACHE_LIMIT:
             cache.clear()
-        # The source and the resources lead the entry so their ids cannot be
-        # handed to another object while it is live, and so the identity check
-        # above reads them without unpacking the result.
         cache[key] = (value, resources, mask)
         return mask
 
     def operation_table(self) -> Mapping[str, OperationHandler]:
-        """Every operator this state handles, an override winning over its default.
-
-        Both dispatch routes read this: the capture executor once per content
-        stream, execute_operation once per call. Overrides are empty outside
-        tests, so the common answer is the default table itself.
-        """
         overrides = self.operator_overrides
         if not overrides:
             return self.default_handlers
@@ -149,9 +119,6 @@ class RecoveringTextState(ContentInterpreter):
     capture_font_companions: FontCompanionsCache
 
     def decoder_for(self, font_reference: object, font: object, resources: PdfDict) -> FontDecoder:
-        # A decoder is shared between selections of one font object under one
-        # resource dictionary, and across the document between fonts with the
-        # same signature.
         if isinstance(font_reference, PdfReference):
             font_key: object = (font_reference.object_number, font_reference.generation_number)
         else:
@@ -237,13 +204,12 @@ class RecoveringTextState(ContentInterpreter):
         try:
             cached = self.normalized_colors.get(cache_key)
             cacheable = True
-        except TypeError:  # an unhashable operand, e.g. a malformed array
+        except TypeError:
             cached = None
             cacheable = False
         if cached is not None:
             return cached
         normalized = super().normalize_color_components(spec, components)
-        # A recovered colour is cached too: it is a function of the same key.
         if cacheable and normalized is not None:
             if len(self.normalized_colors) >= COLOR_CACHE_LIMIT:
                 self.normalized_colors.clear()
@@ -251,13 +217,9 @@ class RecoveringTextState(ContentInterpreter):
         return normalized
 
     def reject[T](self, error: Exception, context: str, fallback: T) -> T:
-        # Recovery proceeds with the reader's fallback wherever the spec
-        # interpreter would refuse the content.
         return fallback
 
     def matrix_fallback(self, value: object, context: str) -> Matrix | None:
-        # A form matrix with extra entries reads its first six; a malformed
-        # pattern matrix is the identity. Anything else is still an error.
         if context == "form" and isinstance(value, (list, tuple)) and len(value) > 6:
             return Matrix.from_operand(value[:6])
         if context == "pattern":

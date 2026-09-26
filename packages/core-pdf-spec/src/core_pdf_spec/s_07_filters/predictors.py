@@ -16,9 +16,6 @@ from core_pdf_spec.s_07_filters.errors import (
 )
 from core_pdf_spec.samples import unpack_subbyte_rows
 
-# The sample depths the PNG and TIFF predictors accept (ISO 32000-2 7.4.4.4).
-# Callers gate on these before framing rows; the kernels raise PredictorError
-# for anything else.
 SUPPORTED_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})
 SUBBYTE_PREDICTOR_BITS = frozenset({1, 2, 4})
 
@@ -40,9 +37,6 @@ def png_predict(
     if n:
         rows = uint8_view(data, count=n).reshape(-1, row_length + 1)
         if (rows[:, 0] == 2).all():
-            # Every row Up, as a cross-reference stream's usually are: each
-            # row is the sum mod 256 of the rows up to it, which a uint8
-            # cumulative sum down the columns computes for all of them at once.
             return numpy.cumsum(rows[:, 1:], axis=0, dtype=numpy.uint8).tobytes()
     out = bytearray((n // (row_length + 1)) * row_length)
     out_view = numpy.frombuffer(out, dtype=numpy.uint8)
@@ -169,11 +163,6 @@ def tiff_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
     )
 
 
-# The apply_* wrappers own the row framing checks and the PredictorError ->
-# FilterParseError mapping. `predict` is the extension point: core passes
-# recovery kernels that salvage damaged rows, and everything else -- which
-# rows count as truncated, which error each failure becomes -- stays here so
-# the strict and tolerant readers cannot disagree about it.
 PredictFn = Callable[[bytes | memoryview, FilterParams], bytes]
 
 
@@ -200,8 +189,6 @@ def apply_png_predictor(
             return b""
         row_length = (params.columns * params.colors * params.bits_per_component + 7) // 8
         stride = row_length + 1
-        # A producer that declared damaged rows is telling us the tail is
-        # short on purpose, so the reader salvages instead of rejecting.
         if len(data) % stride and not params.damaged_rows_before_error:
             raise FilterParseError("truncated PNG predictor row")
     try:

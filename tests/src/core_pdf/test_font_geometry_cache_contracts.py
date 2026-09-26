@@ -51,7 +51,6 @@ def test_outline_cache_keys_include_explicit_gid_and_text_and_cache_empty_result
             numpy.testing.assert_array_equal(arrays.xs, [0, 2, 4])
             numpy.testing.assert_array_equal(arrays.ys, [0, 3, 0])
     assert calls == keys
-    # The arrays do not fill the contour cache; glyph_outline fills its own.
     for key in keys:
         assert decoder.glyph_outline(*key) == contours
         assert decoder.glyph_outline(*key) == contours

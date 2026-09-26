@@ -69,7 +69,6 @@ class FontEnrichment(Record):
             else recognition_by_index,
         )
 
-    # Holds mappings, which do not hash: equality is identity.
     __hash__ = None  # type: ignore[assignment]
 
 

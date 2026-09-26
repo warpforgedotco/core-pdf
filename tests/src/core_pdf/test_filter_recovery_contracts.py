@@ -227,5 +227,4 @@ def test_decode_parms_are_read_once_for_the_filters_that_read_them():
     assert type(flate) is FilterParams
     assert dct == {"ColorTransform": 0}
     assert crypt == {"Name": "Identity"}
-    # Parameters that do not read stay as given, for the step to reject.
     assert lzw == {"Columns": "x"}

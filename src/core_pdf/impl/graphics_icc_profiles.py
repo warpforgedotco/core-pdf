@@ -93,18 +93,7 @@ class IccTransform(Record):
         return transform(self, samples, rendering)
 
 
-# lcms builds a transform from the two profiles on every call: 0.4 to 2.9 ms
-# even for a single colour, while the conversion itself is nothing. A page
-# sets the same few colours over and over -- one corpus page 768 times across
-# 6 colours, another 286 across 31 -- and its small images repeat colours
-# too: 104 of the 176 conversions PyMuPDF test_3806 makes, of spot-colour
-# images through one CMYK profile, hold no colour an earlier one did not. lcms
-# converts each sample row on its own, so every row converted is kept, per
-# profile, colour space, intent and flags, and a call of up to MEMO_ROWS rows
-# converts only the rows not yet kept, in one call. Larger images go to lcms
-# whole, by their distinct colours.
 MEMO_ROWS = 4096
-# Rows kept per transform, and transforms kept, before starting over.
 MEMO_LIMIT = 1 << 16
 MEMO_TRANSFORMS = 32
 
@@ -127,11 +116,6 @@ def transform(
             transform.profile, transform.color_space, intent, flags, contiguous
         )
     if rows > DISTINCT_ROWS_MINIMUM and channels <= 4:
-        # lcms converts each pixel on its own, so an image converted by its
-        # distinct colours and scattered back is the same image. A photograph
-        # uses few of the colours it could -- 2.5% of the pixels on one corpus
-        # page -- so this skips most of lcms's work; past a quarter distinct,
-        # the scatter would cost more than it saves.
         found = distinct_uint16_rows(contiguous, rows // 4)
         if found is not None:
             distinct, inverse = found
@@ -142,7 +126,6 @@ def transform(
     return cms_transform(transform.profile, transform.color_space, intent, flags, contiguous)
 
 
-# Below this many pixels an image goes straight to lcms.
 DISTINCT_ROWS_MINIMUM = 1 << 16
 
 
@@ -153,11 +136,6 @@ def memoized_cms_transform(
     flags: int,
     samples: numpy.ndarray[Any, Any],
 ) -> ByteSamples:
-    """cms_transform of uint16 `samples`, converting only the rows not converted before.
-
-    Returns a new array the caller may write into. A conversion that fails
-    keeps nothing, so it fails again the next time.
-    """
     key = (profile, color_space, intent, flags)
     memo = row_memos.get(key)
     if memo is None:
@@ -179,10 +157,6 @@ def memoized_cms_transform(
     return result.reshape(rows, 3)
 
 
-# lcms converts each sample row on its own and releases the GIL while it
-# does, so a large conversion is split into row blocks converted on threads
-# and joined: the same array. A 3.2-megapixel CMYK image through the 2.7 MB
-# default profile took 593 ms in one call on PyMuPDF test_4466.
 PARALLEL_ROWS = 1 << 18
 
 

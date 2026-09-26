@@ -1,9 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""The Unicode text of each code in the three base encodings (ISO 32000-2, Annex D).
-
-Each table maps a code's glyph name through the Adobe Glyph List; an unused
-code (.notdef) is the empty string.
-"""
 
 from __future__ import annotations
 
@@ -28,8 +23,6 @@ def encoding_text(
 
 STANDARD_ENCODING: tuple[str, ...] = encoding_text(STANDARD_ENCODING_GLYPH_NAMES)
 WIN_ANSI_ENCODING: tuple[str, ...] = encoding_text(WIN_ANSI_ENCODING_GLYPH_NAMES)
-# The Glyph List maps Omega to U+2126 OHM SIGN; MacRoman's 0xBD is
-# U+03A9 GREEK CAPITAL LETTER OMEGA, as this table has always given it.
 MAC_ROMAN_ENCODING: tuple[str, ...] = encoding_text(
     MAC_ROMAN_ENCODING_GLYPH_NAMES, {0xBD: "\u03a9"}
 )

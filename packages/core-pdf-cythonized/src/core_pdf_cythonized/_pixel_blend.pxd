@@ -1,12 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# RasterTarget.blend_px's per-pixel arithmetic, for kernels that replace one
-# of its Python loops. Shared so there is one copy of it, as _bezier.pxd is
-# for curve sampling.
 
 from core_pdf_cythonized._byte_clamp cimport round_to_byte
 
 
-# The blend modes blend_px treats apart; any other composites as normal.
 cdef enum:
     MODE_NORMAL = 0
     MODE_MULTIPLY = 1
@@ -16,14 +12,12 @@ cdef enum:
 
 
 cdef inline int coverage_alpha(int alpha, int covered) noexcept nogil:
-    # blend_coverage_pixel: max(0, min(255, round(alpha * covered / 16))).
     return round_to_byte(<double> (alpha * covered) / 16.0)
 
 
 cdef inline void blend_normal_pixel(
     unsigned char *pixel, int red, int green, int blue, int sa
 ) noexcept nogil:
-    # blend_px in normal mode, for sa > 0, in double as Python computes it.
     cdef int dr, dg, db, da
     cdef double src_a, dst_a, out_a
     if sa >= 255:
@@ -46,9 +40,6 @@ cdef inline void blend_normal_pixel(
 
 
 cdef inline float plane_accumulate(float previous, double source) noexcept nogil:
-    # record_plane for one pixel: numpy float32 scalars against a Python
-    # float, which narrows to float32 first -- every step is float32 here,
-    # unlike the array path, where the source stays float64.
     cdef float narrowed = <float> source
     cdef float ONE = 1.0
     cdef float remaining = ONE - previous
@@ -57,7 +48,6 @@ cdef inline float plane_accumulate(float previous, double source) noexcept nogil
 
 
 cdef inline double color_dodge(double backdrop, double source, bint revised) noexcept nogil:
-    # blend_component's ColorDodge.
     if revised and backdrop == 0.0:
         return 0.0
     if backdrop >= 1.0 - source:
@@ -66,7 +56,6 @@ cdef inline double color_dodge(double backdrop, double source, bint revised) noe
 
 
 cdef inline double color_burn(double backdrop, double source, bint revised) noexcept nogil:
-    # blend_component's ColorBurn.
     if revised and backdrop == 1.0:
         return 1.0
     if 1.0 - backdrop >= source:
@@ -77,9 +66,6 @@ cdef inline double color_burn(double backdrop, double source, bint revised) noex
 cdef inline void blend_mode_pixel(
     unsigned char* pixel, int red, int green, int blue, int sa, int mode, bint revised
 ) noexcept nogil:
-    # blend_px for multiply, screen, color dodge and color burn, in double as
-    # Python computes it: the source adjusted against the backdrop, then the
-    # general compositing, with no opaque shortcut.
     cdef double src_a = sa / 255.0
     cdef double dst_a = pixel[3] / 255.0
     cdef double source[3]

@@ -196,7 +196,6 @@ class ToUnicodeCMap:
     mappings: dict[bytes, str]
     decode_lengths: tuple[int, ...]
     __slots__ = ("code_space_ranges", "mappings", "decode_lengths")
-    # The deepest usecmap chain a subclass accepts; None leaves it unbounded.
     max_inheritance_depth: ClassVar[int | None] = None
 
     def __init__(
@@ -261,8 +260,6 @@ class ToUnicodeCMap:
         return self.load_parent(data, resolver, depth, (*ancestor_names, name))
 
     def reject_parent(self, reason: str) -> ToUnicodeCMap | None:
-        """Refuse a usecmap that is cyclic, unresolved, nested too deep, or that
-        fails to load; returning None inherits nothing."""
         raise ValueError(reason)
 
     def load_parent(

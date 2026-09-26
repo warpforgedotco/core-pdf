@@ -203,10 +203,6 @@ def build_lines(
     source_minimum = numpy.minimum.reduceat(selected_sources, starts)
     source_maximum = numpy.maximum.reduceat(selected_sources, starts)
     group_sequences = numpy.minimum.reduceat(observations.sequence[selected], starts)
-    # A run's bold and italic follow from its font name alone, and its mark
-    # from its fill colour alone; a page has a handful of each and a
-    # style-per-glyph page asks once per glyph. Other references (OCR words)
-    # keep the general path.
     run_styles: dict[str | None, tuple[bool, bool]] = {}
     color_marks: dict[object, bool] = {}
 
@@ -457,7 +453,6 @@ def layout_blocks_with_evidence(
     source_labels: Mapping[int, str] | None = None,
     group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
 ) -> tuple[tuple[ParsedBlock, ...], bool]:
-    """The page's blocks in reading order, and whether that order is ambiguous."""
     built_lines = build_lines(observations, source_labels=source_labels, group_order=group_order)
     lines = built_lines.lines
     if not lines:
@@ -500,7 +495,6 @@ def xy_cut_blocks(
     boxes: numpy.ndarray,
     obstacles: tuple[tuple[float, float, float, float], ...],
 ) -> list[ParsedBlock]:
-    """The lines grouped into blocks by recursive XY-cut, in reading order."""
     lines = built_lines.lines
     heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
     median_height = max(1.0, finite_median(heights))
@@ -568,7 +562,6 @@ def block_bbox(lines: tuple[ParsedLine, ...]) -> tuple[float, float, float, floa
 
 
 def has_mixed_rotation_block(blocks: tuple[ParsedBlock, ...]) -> bool:
-    """Whether a block mixes line rotations, which leaves its reading order ambiguous."""
     return any(len({line.rotation % 360 for line in block.lines}) > 1 for block in blocks)
 
 
@@ -710,8 +703,6 @@ def column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         for start in starts:
             if not clusters or start - clusters[-1] > 40.0:
                 clusters.append(float(start))
-        # The cluster test is the cheap one, so the characters are counted
-        # only for a block that passes it.
         if len(clusters) < 3:
             output.append(block)
             continue
@@ -994,8 +985,6 @@ def gutter_tolerating_contained_boxes(
     if not runs:
         return None
 
-    # A gutter spans from one run's low edge to a later run's high edge; the
-    # box tests against each edge are made once per run rather than per pair.
     starts = region_boxes[:, 0]
     ends = region_boxes[:, 2]
     starts_before = [starts < low for low, _high in runs]
@@ -1004,7 +993,6 @@ def gutter_tolerating_contained_boxes(
     ends_within = [ends <= high for _low, high in runs]
 
     def fits(first: int, last: int) -> bool:
-        """No box crosses the span, and at most `allowed` boxes sit inside it."""
         if (starts_before[first] & ends_after[last]).any():
             return False
         return int((starts_within[first] & ends_within[last]).sum()) <= allowed
@@ -1017,7 +1005,6 @@ def gutter_tolerating_contained_boxes(
                 break
             last = following
         span_high = runs[last][1]
-        # A span that grew was already found to fit; only the run alone is untested.
         if (
             (last > first or fits(first, first))
             and span_high - low >= minimum_gap

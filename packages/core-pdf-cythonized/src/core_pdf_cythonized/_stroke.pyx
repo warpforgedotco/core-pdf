@@ -1,57 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""A stroked path, painted whole (core_pdf.impl.render_target.stroke_path).
-
-stroke_path walked each subpath in Python and painted it as primitives: a
-fill_line per segment, a fill_join per interior point, caps at the ends. A
-circuit schematic strokes 49,000 paths that way, 100,000 of them joins, and
-paint_stroke_once strokes every path of a group the same way into scratch.
-
-The walk is here now, and only here: which primitives a subpath takes, in
-what order, is decided by stroke_polylines for every stroke. Under normal
-blending with no group planes -- nearly every stroke, and every one
-paint_stroke_once makes -- the primitives are painted here too. Each keeps
-the branch its Python takes, in the Python's arithmetic and order:
-
-- fill_line: an axis-aligned or degenerate segment is a fill_rect; under no
-  clip or a rectangular one, a box of more than 64 pixels is
-  rasterize_unclipped_line_normal, its 4x4 sample tests on the outer-sum
-  bases and its float32 partial blend; otherwise stroke_segment_samples
-  (``segment_samples``), masked by the clip's rows as clip_pixel_mask made
-  the mask, a bisect into each row's spans.
-- fill_rect: under no clip or a rectangular one, a box whose edges are not
-  pixel-aligned is fill_rect_coverage (``fill_rect_pixels``), an aligned
-  opaque one is written, an aligned translucent one is
-  blend_normal_solid_array_numpy, whose three regimes -- empty backdrop,
-  opaque backdrop, general -- are chosen by scanning the box as numpy's any()
-  and all() did. Under a clip path, the box's whole pixels in each row's
-  spans: a span of 32 or more through blend_normal_solid_array_numpy, a
-  shorter one pixel by pixel through blend_px.
-- fill_circle: opaque under no clip or a rectangular one, above 16 pixels
-  its numpy inside test and below its loop; otherwise its blend_px loop
-  over the rows' spans.
-
-A rectangular clip region's row spans are its pixel box, which holds every
-box clipped to the region, so there the masks and spans are the box itself.
-Under any other blend mode or with group planes, each primitive is the
-Python one, called back with the same arguments.
-
-The paint window is a union of boxes, so the kernel gathers the boxes each
-primitive would have extended it by and hands the union to ``extend``
-before anything that could raise, and at the end. Python's math.floor and
-ceil raise on a NaN or infinite box edge; the kernel raises the same error
-at the same point. A coincident two-point subpath under a round cap is a
-fill_path of a circle, called back as ``dot``.
-
-A built path's subpaths come as columns, with whether each one's ends
-differ and, for two points, whether they coincide, worked out as Python's
-tuple comparison worked them out -- which, for a float object that appears
-twice, is identity first. A deferred path's points are fresh floats, so
-there the kernel compares values.
-
-setup.py builds with -ffp-contract=off. The square root of a segment's
-length is ``**0.5`` in Python, libm's pow, so it is pow here with the
-exponent passed in rather than written, which clang would turn into sqrt.
-"""
 
 from libc.math cimport ceil, fabs, floor, isinf, isnan, pow, rintf
 from libc.stdlib cimport free, malloc
@@ -120,7 +67,6 @@ cdef inline void extend(Paint* p, Py_ssize_t y0, Py_ssize_t y1, Py_ssize_t x0, P
 
 
 cdef inline bint checked(Paint* p, double value) noexcept nogil:
-    # What math.floor and math.ceil refuse.
     if isnan(value):
         p.error = FAILED_NAN
         return False
@@ -131,7 +77,6 @@ cdef inline bint checked(Paint* p, double value) noexcept nogil:
 
 
 cdef inline Py_ssize_t clamped(double value, Py_ssize_t size) noexcept nogil:
-    # size if v > size else max(v, 0), on an integral double.
     if value > <double> size:
         return size
     if value < 0.0:
@@ -142,7 +87,6 @@ cdef inline Py_ssize_t clamped(double value, Py_ssize_t size) noexcept nogil:
 cdef int page_box_to_pixels(
     Paint* p, double x0, double y0, double x1, double y1, Py_ssize_t* out
 ) noexcept nogil:
-    # ClipState.page_box_to_pixels: 1 with the box, 0 for None, -1 on error.
     cdef double value = (x0 - p.crop_x0) * p.scale
     if not checked(p, value):
         return -1
@@ -165,7 +109,6 @@ cdef int page_box_to_pixels(
 
 
 cdef int clip_box(Paint* p, double* box) noexcept nogil:
-    # intersect_box(box, region.box) in place: 0 when it is empty, else 1.
     if p.clip_mode == CLIP_NONE:
         return 1
     box[0] = py_max(box[0], p.clip[0])
@@ -178,7 +121,6 @@ cdef int clip_box(Paint* p, double* box) noexcept nogil:
 
 
 cdef int clipped_pixel_box(Paint* p, double* box, Py_ssize_t* pixel_box) noexcept nogil:
-    # ClipState.clipped_pixel_box: 1 with both boxes, 0 for None, -1 on error.
     if p.clip_mode != CLIP_NONE and p.clip_empty:
         return 0
     if not clip_box(p, box):
@@ -187,7 +129,6 @@ cdef int clipped_pixel_box(Paint* p, double* box, Py_ssize_t* pixel_box) noexcep
 
 
 cdef inline Py_ssize_t row_spans(Paint* p, Py_ssize_t py, const long long** spans) noexcept nogil:
-    # clip_row_visible_spans for a clip path: the row's (start, end) pairs.
     if py < 0 or py >= p.height:
         return 0
     cdef Py_ssize_t row = py - p.rows_origin
@@ -198,7 +139,6 @@ cdef inline Py_ssize_t row_spans(Paint* p, Py_ssize_t py, const long long** span
 
 
 cdef inline bint pixel_in_row(const long long* spans, Py_ssize_t count, Py_ssize_t px) noexcept nogil:
-    # clip_pixel_mask's test: bisect_left(spans, (px + 1, -1)), then the span before.
     cdef Py_ssize_t low = 0, high = count, middle
     while low < high:
         middle = (low + high) // 2
@@ -210,7 +150,6 @@ cdef inline bint pixel_in_row(const long long* spans, Py_ssize_t count, Py_ssize
 
 
 cdef inline void blend_pixel(Paint* p, Py_ssize_t py, Py_ssize_t px) noexcept nogil:
-    # blend_px in normal mode with no planes: the window, then the paint.
     extend(p, py, py + 1, px, px + 1)
     if p.alpha <= 0:
         return
@@ -218,7 +157,6 @@ cdef inline void blend_pixel(Paint* p, Py_ssize_t py, Py_ssize_t px) noexcept no
 
 
 cdef void solid_blend(Paint* p, Py_ssize_t ix0, Py_ssize_t iy0, Py_ssize_t ix1, Py_ssize_t iy1) noexcept nogil:
-    # blend_normal_solid_array_numpy over the box.
     cdef int sa = p.alpha
     if sa <= 0 or ix1 <= ix0 or iy1 <= iy0:
         return
@@ -257,7 +195,6 @@ cdef void solid_blend(Paint* p, Py_ssize_t ix0, Py_ssize_t iy0, Py_ssize_t ix1, 
         return
     cdef double source_alpha = sa / 255.0
     cdef double inverse_source_alpha = 1.0 - source_alpha
-    # The Python floats meet float32 arrays, so each is narrowed first.
     cdef float scaled[3]
     for c in range(3):
         scaled[c] = <float> (source[c] * source_alpha)
@@ -285,7 +222,6 @@ cdef void solid_blend(Paint* p, Py_ssize_t ix0, Py_ssize_t iy0, Py_ssize_t ix1, 
 
 
 cdef int fill_rect(Paint* p, double x0, double y0, double x1, double y1) noexcept nogil:
-    # RasterTarget.fill_rect, normal blend and no planes. -1 on error.
     cdef double box[4]
     box[0] = x0
     box[1] = y0
@@ -299,7 +235,6 @@ cdef int fill_rect(Paint* p, double x0, double y0, double x1, double y1) noexcep
     cdef Py_ssize_t y, x, k, count, start, end
     cdef const long long* spans = NULL
     if p.clip_mode == CLIP_ROWS:
-        # Not rectangular: whole pixels, row by row, span by span.
         for y in range(iy0, iy1):
             count = row_spans(p, y, &spans)
             for k in range(count):
@@ -341,7 +276,6 @@ cdef int fill_rect(Paint* p, double x0, double y0, double x1, double y1) noexcep
 
 
 cdef int fill_circle(Paint* p, double cx, double cy, double radius) noexcept nogil:
-    # RasterTarget.fill_circle, normal blend and no planes. -1 on error.
     cdef double box[4]
     box[0] = cx - radius
     box[1] = cy - radius
@@ -383,7 +317,6 @@ cdef int fill_circle(Paint* p, double cx, double cy, double radius) noexcept nog
                     blend_pixel(p, py, px)
         return 0
     if p.alpha >= 255 and (ix1 - ix0) * (iy1 - iy0) > 16:
-        # The numpy inside test: (xs - cx) ** 2 + (ys - cy) ** 2 <= r2.
         for py in range(iy0, iy1):
             page_y = p.crop_y1 - (<double> py + 0.5) / p.scale
             dy = page_y - cy
@@ -418,7 +351,6 @@ cdef int line_raster(
     Py_ssize_t ix1,
     Py_ssize_t iy1,
 ) noexcept nogil:
-    # rasterize_unclipped_line_normal with a butt cap and no planes.
     cdef double x_delta = x1 - x0
     cdef double y_delta = y1 - y0
     cdef double segment_length_squared = x_delta * x_delta + y_delta * y_delta
@@ -502,7 +434,6 @@ cdef int line_raster(
                     pixel[2] = <unsigned char> p.blue
                     pixel[3] = 255
                     continue
-                # The float32 partial blend, as numpy evaluated it.
                 source_fraction = <float> alpha / SCALE
                 destination_alpha = <float> pixel[3] / SCALE
                 remaining = ONE - source_fraction
@@ -522,7 +453,6 @@ cdef int line_raster(
 
 
 cdef int fill_line(Paint* p, double x0, double y0, double x1, double y1, double line_width) noexcept nogil:
-    # RasterTarget.fill_line with a butt cap, normal blend and no planes.
     cdef double dx = x1 - x0
     cdef double dy = y1 - y0
     cdef double half
@@ -611,7 +541,6 @@ cdef class Callbacks:
 
 
 cdef int flush(Paint* p, Callbacks calls) except -1:
-    # Hand the gathered paint-window boxes to the target.
     if p.painted:
         p.painted = False
         calls.extend(p.window[0], p.window[1], p.window[2], p.window[3])
@@ -661,7 +590,6 @@ cdef int cap(Paint* p, Walk* w, Callbacks calls, double x, double y) except -1 n
 
 
 cdef int walk(Paint* p, Walk* w, Callbacks calls) except -1 nogil:
-    # stroke_path's loop over the subpaths.
     cdef Py_ssize_t k, start, n, index
     cdef bint closed, same
     cdef double x0, y0, x1, y1
@@ -743,19 +671,6 @@ def stroke_polylines(
     on_dot,
     on_extend,
 ):
-    """Stroke the subpaths `spans` cut from the columns, as stroke_path does.
-
-    ``ends_differ`` and ``coincident``, one byte per span or None, answer a
-    built path's point comparisons; None compares the columns. ``clip_mode``
-    is 0 for no clip, 1 for a rectangular region and 2 for a clip path, with
-    the region's page box, whether it is empty, and for a clip path its rows
-    from ``rows_origin``: row r's spans are the pairs row_spans[2 *
-    row_offsets[r]:2 * row_offsets[r + 1]]. With ``native``, normal blending
-    and no group planes, the primitives are painted here; otherwise each is
-    ``on_line(x0, y0, x1, y1)``, ``on_join(x, y)`` or ``on_cap(x, y)``.
-    ``on_dot(x, y)`` paints a coincident two-point subpath under a round cap,
-    and ``on_extend(y0, y1, x0, x1)`` takes the paint window's boxes.
-    """
     if pixels.shape[2] != 4:
         raise ValueError("pixels must be RGBA")
     if xs.shape[0] != ys.shape[0]:

@@ -1,19 +1,3 @@
-"""Strokes walked by stroke_polylines paint what stroke_path's Python walk did.
-
-The reference below is that walk as it was: each subpath as fill_line,
-fill_join and fill_cap calls, a coincident two-point subpath under a round
-cap as a circle path, a dashed path as its dash pieces. The kernel now walks
-every stroke, painting the primitives itself under normal blending with no
-group planes and calling the Python ones back otherwise. Random paths cover
-every branch it mirrors: axis-aligned and degenerate segments, lines above
-and below 64 pixels, miter and round joins, butt, round and square caps,
-closed subpaths with and without a repeated closing point, coincident
-two-point subpaths, built paths with shared and NaN coordinates, dashes,
-translucent and transparent colours over empty, opaque and mixed backdrops,
-no clip, rectangular and path clips, blend modes, group planes, scales,
-paint windows, and coordinates that make floor or ceil raise.
-"""
-
 import math
 import random
 from typing import Any
@@ -32,7 +16,6 @@ from tests.src.core_pdf.pdf_bytes import serialize_pdf
 
 
 def deferred(xs: Any, ys: Any, spans: list[tuple[int, int, bool]]) -> CapturedPath:
-    """A flattened path as capture makes one, its box and segment flag with it."""
     columns = numpy.asarray(xs, dtype=numpy.float64), numpy.asarray(ys, dtype=numpy.float64)
     return CapturedPath.deferred_flattened(*columns, spans, *path_bounds(*columns, spans))
 
@@ -170,8 +153,6 @@ def random_columns(
 def random_path(rng: random.Random, size: float, *, built: bool = False) -> CapturedPath:
     xs, ys, spans = random_columns(rng, size)
     if built:
-        # Built subpaths share their tuples, as dash pieces and repeated
-        # closing points do, so tuple comparison meets identity.
         points = list(zip(xs, ys, strict=True))
         return CapturedPath(
             [
@@ -192,7 +173,6 @@ def push_clip(target: RasterTarget, size: float, shape: str) -> None:
         xs = [2.3, size - 3.1, size - 3.1, 2.3]
         ys = [1.7, 1.7, size - 2.2, size - 2.2]
     elif shape == "wide":
-        # Not a rectangle, but rows of nearly the full width: long spans.
         xs = [0.5, size - 0.5, size - 0.5, size / 2, 0.5]
         ys = [0.5, 0.5, size - 0.5, size - 6.0, size - 0.5]
     else:
@@ -209,7 +189,7 @@ def outcome(target: RasterTarget, stroke: Any) -> tuple[Any, ...]:
     try:
         stroke()
         raised = None
-    except Exception as error:  # noqa: BLE001 -- the comparison covers failures too
+    except Exception as error:  # noqa: BLE001
         raised = (type(error), str(error))
     window = None if target.paint_window is None else list(target.paint_window)
     planes = tuple(
@@ -339,10 +319,6 @@ def test_a_nan_shared_between_points_compares_as_the_same_object(
 def test_pixel_aligned_strokes_blend_as_the_python_walk_did(
     seed: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Axis-aligned segments on half-pixel centres at width 1, or on whole
-    # pixels at width 2, give boxes whose edges fall on pixels: the solid
-    # fills, opaque and in each of the translucent regimes, and under a clip
-    # path the solid spans of 32 pixels or more.
     rng = random.Random(seed)
     half_width = rng.choice([0.5, 1.0])
     offset = 0.5 if half_width == 0.5 else 0.0

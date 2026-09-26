@@ -1,22 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""4x4 coverage counts blended pixel by pixel (core_pdf.impl.render_target.fill_path).
-
-A fill under a clip that is not a set of rectangles cannot take fill_path's
-plane kernels, which blend in float32 over a whole window. It falls back to
-a Python loop that samples each pixel 4x4, tests it against the clip and
-blends it through blend_coverage_pixel and blend_px -- in double, recording
-into the group's float32 source planes one pixel at a time. On SCORE-Bench
-wipo-2022-financial-report that loop was about half the page's rasterize.
-
-supersampled_coverage_plane already produces the same 4x4 counts (checked
-against the loop on every such fill of six corpus pages), so this is the
-rest of the loop: the clip test, as a mask the caller builds from the same
-row spans, and blend_px's arithmetic in every mode it treats apart and
-per-pixel plane updates, from _pixel_blend.pxd. It returns the box of pixels
-whose paint window blend_px would have extended. fill_path and fill_line
-send every small fill and stroke segment their other kernels do not take
-through it, so neither keeps a per-pixel loop.
-"""
 
 from core_pdf_cythonized._byte_clamp cimport round_to_byte
 from core_pdf_cythonized._pixel_blend cimport (
@@ -48,21 +30,6 @@ def blend_coverage_counts(
     bint revised=True,
     bint stop_at_visible=False,
 ):
-    """Blend `counts` (out of 16) into `pixels` at (left, top).
-
-    `allowed`, if not None, holds a byte per count, zero where the clip
-    rejects the pixel. `source_alpha` and `source_shape`, if not None, are
-    the group planes, the same shape as `pixels`. `mode` numbers the blend
-    as shading_blend does, and `revised` is blend_component's
-    revised-blending flag. With `stop_at_visible`, the first pixel of
-    non-zero alpha is recorded and not blended, and the scan stops there:
-    blend_px raises at that point when it cannot tell which blending rules
-    apply.
-
-    Returns (window, stopped): (x0, y0, x1, y1), half-open, of the pixels
-    whose paint window blend_px would have extended, or None; and whether
-    the scan stopped at a visible pixel.
-    """
     cdef Py_ssize_t rows = counts.shape[0]
     cdef Py_ssize_t cols = counts.shape[1]
     if left < 0 or top < 0 or top + rows > pixels.shape[0] or left + cols > pixels.shape[1]:
@@ -98,8 +65,6 @@ def blend_coverage_counts(
                     source_shape[y, x] = plane_accumulate(
                         source_shape[y, x], (shape / 255.0) * shape_alpha
                     )
-                # blend_px extends the paint window here unless only the alpha
-                # plane is recording, which extends it itself when sa > 0.
                 if has_shape or not has_alpha or sa > 0:
                     if x < low_x:
                         low_x = x

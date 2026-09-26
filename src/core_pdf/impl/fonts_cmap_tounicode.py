@@ -81,12 +81,6 @@ def parse_mapping_blocks(program: CMapProgram, mappings: dict[bytes, str]) -> No
 
 
 def parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> None:
-    # A bfchar block's operands are source, destination pairs, and records()
-    # made a frozen record of each: they are paired here directly. A hex
-    # string whose inside is an even run of letters and digits decodes as
-    # unhexlify of that inside, which is what decode_cmap_token comes to
-    # through three frames -- and raises the same ValueError when it is not
-    # hex; anything else still takes decode_cmap_token.
     operands = block.operands
     for src_tok, dst_tok in zip(operands[0::2], operands[1::2], strict=False):
         try:

@@ -88,13 +88,6 @@ PlainValue: TypeAlias = (
 
 
 def plain_pdf_value(value: object) -> PlainValue:
-    """value with its PDF objects turned into plain Python values, for the output model.
-
-    A name becomes its text, a string or byte string its decoded text, a
-    reference its "N G R" form, and a stream its dictionary. The raw metadata
-    PdfDocument returns keeps its PDF objects; this is for what extract()
-    returns, which serializes to JSON and hashes.
-    """
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, PdfName):

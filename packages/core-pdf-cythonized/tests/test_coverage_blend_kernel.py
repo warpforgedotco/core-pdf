@@ -1,17 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Coverage counts blended pixel by pixel: agreement with fill_path's Python fallback.
-
-coverage_blend_golden.pkl.gz holds 584 fills sampled from the 1,150 that
-seven corpus pages sent through fill_path's per-pixel loop under clips that
-are not rectangles: the 4x4 counts, the clip mask pixel_in_clip gave, and
-the pixel and group-plane windows and paint window before and after the real
-loop ran. The corpus paints them in opaque colour, so it also holds 600
-synthetic cases over translucent and zero alpha, every combination of the
-two group planes, track_shape on and off, shape_alpha other than 1 and
-empty, missing and existing paint windows -- from a verbatim copy of the
-loop that first had to reproduce all 584 captures, planes and window too.
-"""
 
 import gzip
 import pickle

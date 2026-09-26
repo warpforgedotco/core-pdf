@@ -1,42 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Type 2 charstring interpretation and glyph geometry, fused.
-
-Interpreting a glyph's charstring was 12% of a profiled page extract, spread
-evenly across two halves that could not be compiled apart: the interpreter
-(core_adobe_fonts.cff.charstrings) drove a pen of Python closures
-(core_pdf.impl.fonts_font_program) through one call per operand, one per
-outline point and one per curve. Measured over 459 corpus charstrings the
-cost split roughly execute 22%, record_point 18%, curve 15%, push 11%,
-cubic_point 9%, parse_number 8%, min/max/len 18% -- no single piece worth
-compiling, and the callbacks are most of what the halves cost each other.
-
-Fusing them is the same move the knockout kernel made, and for the same
-reason: the callbacks cannot be removed while the callee stays in Python.
-
-Unlike that one the algorithm has NOT been moved out of the standards
-package. core_adobe_fonts.cff.charstrings keeps execute_type2_charstring as
-its published Type 2 API, and its conformance suite keeps driving it. That
-suite asserts pen event sequences -- that hvcurveto alternates its operands,
-that an invalid escaped operator is rejected -- and those are properties a
-flattened contour does not pin, so rewriting it against this kernel would
-have cost real coverage in a standards package to satisfy the letter of the
-"delete the Python it replaced" rule.
-
-What that rule exists to prevent is a compiled path and an interpreted path
-both live and drifting apart. That is not the case here: core reaches Type 2
-geometry only through this kernel, and the interpreter in core_adobe_fonts is
-not a fallback for it. The kernel is pinned to that interpreter's behaviour
-by golden vectors generated from it, exactly as the other kernels are.
-
-Composite (seac) glyphs are the one thing this does not finish: resolving an
-accent needs the font's charset, which is the caller's. endchar with
-arguments returns the request instead, and the caller runs the components
-back through this same function -- one interpreter, not two.
-
-Float semantics must match CPython exactly. cubic_point uses pow() rather
-than repeated multiplication because Python's ** on floats calls libm pow,
-and the two disagree in the last place; the golden vectors are what says so.
-"""
 
 from libc.math cimport fabs, isfinite, pow, sqrt
 from libc.stdlib cimport free, malloc, realloc
@@ -163,9 +125,6 @@ cdef int add_span(Ctx *c, Py_ssize_t start, Py_ssize_t end) noexcept nogil:
 
 
 cdef int flush_contour(Ctx *c) noexcept nogil:
-    # Two independent tests, exactly as the Python pen had them: the contour is
-    # only recorded when points were retained, but the bounding box is merged
-    # whenever any point was seen -- which is the bounds_only path.
     if c.retain and c.npts > c.cur_start:
         if add_span(c, c.cur_start, c.npts) != 0:
             return -1
@@ -462,7 +421,6 @@ cdef int escaped(Ctx *c, int operator) noexcept nogil:
 
 cdef int execute(Ctx *c, const unsigned char *program, Py_ssize_t length,
                  int depth) noexcept nogil:
-    """1 = ran to the end, 0 = endchar, -1 = invalid charstring."""
     cdef Py_ssize_t pos = 0, next_pos
     cdef int byte, escaped_operator, operand_count, mask_bytes, i, n, subr_index
     cdef int base_code, accent_code
@@ -709,20 +667,6 @@ cdef int execute(Ctx *c, const unsigned char *program, Py_ssize_t length,
 
 def type2_glyph_geometry(bytes charstring, tuple local_subrs, tuple global_subrs,
                          bint flatten=True, bint retain_contours=True):
-    """Interpret one Type 2 charstring into contours and a bounding box.
-
-    Returns ``(contours, bbox, seac, valid)``. ``seac`` is ``None`` unless the
-    glyph ended with a composite request, in which case it is
-    ``(base_code, accent_code, dx, dy)`` for the caller to resolve.
-
-    An invalid charstring does not raise: interpretation stops and whatever
-    was completed before that point is returned, which is what the Python
-    original did by swallowing the exception around its pen. ``valid`` reports
-    whether it stopped that way, so a conformance test can still assert that a
-    malformed program is rejected rather than quietly producing geometry --
-    that property is why the interpreter had a raising contract at all, and it
-    would otherwise have been lost in the move.
-    """
     cdef Ctx c
     cdef Py_ssize_t i, start, end, j
     cdef bytes item
@@ -769,8 +713,6 @@ def type2_glyph_geometry(bytes charstring, tuple local_subrs, tuple global_subrs
         free(c.lsub); free(c.llen); free(c.gsub); free(c.glen)
         raise MemoryError
     try:
-        # The tuples are held by the caller for the whole call, so borrowing
-        # their buffers is safe and keeps the interpreter off Python objects.
         for i in range(c.nl):
             item = local_subrs[i]
             c.lsub[i] = <const unsigned char *> item

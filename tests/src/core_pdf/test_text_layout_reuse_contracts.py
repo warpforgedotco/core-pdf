@@ -1,5 +1,3 @@
-"""A text layout reused across strings and operators captures what a fresh one does."""
-
 import re
 from typing import Any
 
@@ -34,7 +32,6 @@ CONTENTS = [
 
 
 def captured(content: bytes) -> tuple[str, ...]:
-    # Each document has its own font decoders, so their addresses are masked.
     with PdfDocument(one_page_pdf(content, width=600, height=800)) as document:
         program = document.pages[0].get_page_program()
         return tuple(

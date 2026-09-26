@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Type 1 decryption: the same bytes as the CMap and font package's own.
-
-decrypt_type1 mirrors core_adobe_fonts.type1.program.decrypt_type1, which
-that package keeps, so the reference is that function itself: random
-payloads of every length up to a few kilobytes under both of the format's
-keys and arbitrary 16-bit ones, and the buffer types core hands it.
-"""
 
 import random
 

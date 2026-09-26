@@ -85,8 +85,6 @@ def discard_duplicate_layer_runs(
     primary_geometry = numpy.asarray(
         [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs], dtype=numpy.float64
     )
-    # Primaries sorted by left edge: only a prefix of them can start left of a
-    # candidate's right edge, so each candidate is tested against that prefix.
     by_left = numpy.argsort(primary_geometry[:, 0], kind="stable")
     sorted_geometry = primary_geometry[by_left]
     sorted_left = sorted_geometry[:, 0]
@@ -111,7 +109,6 @@ def discard_duplicate_layer_runs(
                 & (prefix[:, 1] < run.y1)
                 & (prefix[:, 3] > run.y0)
             )
-            # Back in primary order, as the text below is joined in it.
             nearby = numpy.sort(by_left[: len(prefix)][intersects])
             local_text = " ".join(primary_text[int(position)] for position in nearby)
             candidate_text = collapse_ws(run.text)
@@ -220,12 +217,8 @@ def apply_structure_actual_text(
     if structure is None:
         return runs
     replacements: dict[int, TextRun] = {}
-    # Each replacement's clusters, gathered as its runs arrive and joined
-    # once at the end, rather than a tuple regrown per run.
     replacement_clusters: dict[int, list[tuple[GlyphClusterLike, ...]]] = {}
     output: list[TextRun] = []
-    # The owner is a walk up from the MCID's element, and a page's runs share
-    # few MCIDs, so each is walked once.
     owners: dict[int, tuple[int, str] | None] = {}
     for run in runs:
         mcid = run_mcid(run)
@@ -615,8 +608,6 @@ def capture_page(
     annotations: tuple[Any, ...] | None = None,
     options: CaptureOptions = EXTRACTION_CAPTURE,
 ) -> PageAnalysis:
-    # Extraction never rasterizes, so it defaults to EXTRACTION_CAPTURE. OCR
-    # asks for the render payload back, because it renders the page it extracted.
     capture_options: dict[str, object] = {"options": options}
     if hidden_layers is not None:
         capture_options["hidden_layers"] = hidden_layers

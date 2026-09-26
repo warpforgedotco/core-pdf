@@ -1,5 +1,3 @@
-"""A glyph observation shares its operation's style with the operation's other glyphs."""
-
 from copy import replace
 
 import pytest

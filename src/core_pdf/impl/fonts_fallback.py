@@ -154,7 +154,6 @@ def provider_face(
 ) -> PdfRasterFontFace | None:
     if provider is None:
         return None
-    # A provider object or a bare callable; the protocol cannot express "either".
     resolve: Any = getattr(provider, "resolve_raster_font", None) or provider
     face: PdfRasterFontFace | None = resolve(request)
     return face

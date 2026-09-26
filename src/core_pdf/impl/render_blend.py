@@ -84,8 +84,6 @@ def blend_channels_f64(
     *,
     semantic_context: SemanticContext | None = None,
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-    # RasterTarget.blend_px repeats these formulas for one pixel at a time;
-    # test_scalar_blend_agreement_contracts keeps the two in step.
     one_minus_src_a = 1.0 - src_a
     dst_a = da / 255.0
     if mode == "multiply":
@@ -202,7 +200,6 @@ def composite_blended_group_numpy(
 
 
 def color_component(value: Any, default: int = 0) -> int:
-    """The tolerant form of `component_byte`, for values off a content stream."""
     if type(value) is bool:
         return default
     try:
@@ -244,10 +241,6 @@ def blend_visible_pixels(
     destination[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(numpy.uint8)
 
 
-# color_rgba results for colours of plain floats. A page paints with a handful
-# of colours thousands of times, and a CMYK one goes through a colour transform
-# each time. The opacity's type is part of the key: False and 0 compare equal
-# but convert differently.
 COLOR_RGBA_CACHE: dict[tuple[tuple[float, ...], object, type], tuple[int, int, int, int]] = {}
 COLOR_RGBA_CACHE_LIMIT = 4096
 
@@ -269,14 +262,6 @@ def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
 
 
 def convert_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
-    """A captured colour as RGBA, by its component count alone.
-
-    Not render_patterns.shading_color_rgba: here exactly four components are
-    CMYK, converted under the default rendering, a component that is not a
-    number makes CMYK black, and anything that is not a non-empty sequence
-    is black. The two have drifted and are kept apart so neither changes
-    what it paints.
-    """
     alpha = 255
     if type(opacity) in {int, float}:
         alpha = color_component(opacity, 255)

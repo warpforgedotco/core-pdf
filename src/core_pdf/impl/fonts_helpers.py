@@ -24,11 +24,6 @@ from core_pdf_spec.standards import SemanticContext, recognized_version
 
 
 def recover_strip_subset_tag(font_name: str) -> str:
-    """The name after its first "+", whatever precedes it.
-
-    The recovering form of core_pdf_spec's strip_subset_tag, which strips only
-    a well-formed six-capital subset tag.
-    """
     return font_name.split("+", 1)[-1]
 
 
@@ -97,12 +92,6 @@ def build_decode_table(
 def recover_differences(
     value: Any, resolve_name: Callable[[Any], str | None] | None = None
 ) -> dict[int, str]:
-    """A Differences array's code-to-name entries, skipping what is malformed.
-
-    The recovering form of core_pdf_spec's parse_differences, which raises on
-    an out-of-range code or a name before any code: those are skipped here,
-    and a name with no code yet goes at code 0.
-    """
     differences: dict[int, str] = {}
     if value is None:
         return differences

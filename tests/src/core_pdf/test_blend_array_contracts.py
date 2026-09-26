@@ -104,8 +104,6 @@ def test_normal_group_routes_match_general_compositing(
 
 
 def test_normal_group_onto_an_empty_backdrop_writes_only_visible_pixels_through_a_view():
-    # The destination is a strided view into a larger buffer, as a group's
-    # window into the page is; unpainted pixels keep their colour bytes.
     backing = np.full((2, 6, 4), 17, dtype=np.uint8)
     destination = backing[:, ::2]
     destination[:] = (51, 102, 153, 0)
@@ -156,7 +154,6 @@ def test_cached_colors_convert_as_uncached_ones(color, opacity):
 
 
 def test_color_cache_keeps_opacity_types_apart():
-    # False and 0 are equal keys, but False is no opacity at all.
     blend.COLOR_RGBA_CACHE.clear()
     assert blend.color_rgba((0.5, 0.5, 0.5), False)[3] == 255
     assert blend.color_rgba((0.5, 0.5, 0.5), 0)[3] == 0

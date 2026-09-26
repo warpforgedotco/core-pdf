@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Vertical writing keeps a scalar geometry pass; the compiled kernel models
-only horizontal runs. These drive it directly, because a vertical run that is
-also clipped is rare enough in the corpus that the clip branch would otherwise
-go unexercised."""
 
 from core_pdf.impl.capture_glyph_geometry import GlyphGeometry, vertical_glyph_geometry
 from core_pdf.impl.types import Rectangle
@@ -18,8 +14,6 @@ def run(
     visible: bool = True,
     want_bitmap: tuple[int, int] = (1, 1),
 ) -> GlyphGeometry:
-    # Spelled out rather than splatted from a dict: a **kwargs dict widens
-    # every value to a union and the checkers cannot match them to parameters.
     return vertical_glyph_geometry(
         [0.0, 12.0],
         [12.0, 12.0],
@@ -42,9 +36,7 @@ def test_unclipped_vertical_glyphs_are_visible_with_default_bitmaps() -> None:
     assert vis == [1, 1]
     assert ink == advance, "a vertical glyph has no font bbox, so ink is the advance box"
     assert len(baseline) == 2
-    # Vertical always builds a transform: only the horizontal kernel skips it.
     assert all(t is not None and len(t) == 6 for t in transform)
-    # The kernel falls back to the default bitmap for a missing bbox.
     assert bitmap == [24, 32, 24, 32]
 
 

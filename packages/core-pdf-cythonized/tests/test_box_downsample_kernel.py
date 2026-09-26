@@ -1,14 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Box downsampling: byte-for-byte agreement with the numpy reduceat original.
-
-box_downsample_golden.pkl.gz holds 344 cases computed by the numpy
-implementation before it stopped being used for uint8 images: 36 crops of
-the images four corpus pages downsample (a 33-megapixel scan among them),
-300 random grids of one, three and four channels with target sizes above,
-at and below the source, and edge shapes -- single pixels, one-row and
-one-column strips, a zero target either way.
-"""
 
 import gzip
 import pickle
@@ -24,7 +15,6 @@ GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
 
 
 def downsample(grid, target_width, target_height):
-    """The caller's edge computation and early returns, as target.box_downsample has them."""
     source_height, source_width, channels = grid.shape
     if target_width <= 0 or target_height <= 0:
         return grid.reshape(-1), source_width, source_height

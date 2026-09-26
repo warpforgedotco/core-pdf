@@ -21,11 +21,6 @@ from core_pdf_spec.s_09_fonts.widths import parse_font_widths as pdf_font_widths
 
 
 def recover_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
-    """The first DescendantFonts entry if it is a dictionary, else None.
-
-    The recovering form of core_pdf_spec's get_descendant, which raises unless
-    the array holds exactly one dictionary.
-    """
     descendant_fonts = font.get("DescendantFonts")
     if isinstance(descendant_fonts, (list, tuple)) and descendant_fonts:
         candidate = descendant_fonts[0]
@@ -113,7 +108,6 @@ def recover_simple_widths(
 def recover_vertical_metrics(
     w2: list[Any] | tuple[Any, ...], default_displacement_y: float
 ) -> dict[int, tuple[float, float, float]]:
-    """A W2 array's entries, skipping what does not parse (ISO 32000-2 9.7.4.3)."""
     vertical_metrics: dict[int, tuple[float, float, float]] = {}
     index = 0
     while index + 1 < len(w2):

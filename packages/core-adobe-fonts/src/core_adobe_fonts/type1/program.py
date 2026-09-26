@@ -18,14 +18,6 @@ def decrypt_type1(data: bytes, key: int) -> bytes:
 
 
 def eexec_ciphertext(data: bytes, length1: int | None, *, tolerant: bool = False) -> bytes:
-    """The eexec-encrypted section of a Type 1 program, hexadecimal decoded.
-
-    `length1` locates it; without one it follows ``currentfile eexec``. With
-    `tolerant`, a `length1` outside the data falls back to that marker, the
-    section is read as hexadecimal only when its first 512 bytes (not 4) are
-    all hex digits or white space, and an odd trailing hex digit is dropped
-    rather than rejected.
-    """
     if length1 is not None and (not tolerant or 0 < length1 < len(data)):
         if not 0 < length1 < len(data):
             raise ValueError("invalid Type 1 Length1")
@@ -59,10 +51,6 @@ def decode_eexec_payload(data: bytes, length1: int | None) -> bytes:
 def binary_entries(
     data: bytes, pattern: re.Pattern[bytes], *, skip_truncated: bool = False
 ) -> Iterator[tuple[bytes, bytes]]:
-    """Each `pattern` match's name and the binary payload after it.
-
-    A payload running past the data raises, or with `skip_truncated` is left out.
-    """
     for match in pattern.finditer(data):
         length = int(match.group(2))
         start = match.end()
@@ -90,10 +78,6 @@ TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+
 def parse_type1_font_program_encoding(
     font_program: bytes | memoryview, *, skip_out_of_range: bool = False
 ) -> dict[int, str]:
-    """The `dup code /name put` entries before eexec.
-
-    A code above 255 raises, or with `skip_out_of_range` is left out.
-    """
     data = bytes(font_program)
     eexec_pos = data.find(b"currentfile eexec")
     if eexec_pos >= 0:

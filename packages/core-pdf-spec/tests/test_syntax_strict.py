@@ -30,7 +30,6 @@ from core_pdf_spec.types import PdfName, PdfReference, PdfString
         b"/A#XX",
         b"<<bad /Type /Page>>",
         b"<< /Bad ] /Type /Page >>",
-        # Numeric arrays reject number spellings PDF does not have.
         b"[1_000 2]",
         b"[1.2e3 4]",
         b"[1_000 % ignored\n2]",
@@ -195,8 +194,6 @@ def test_number_tree_rejects_malformed_nodes_and_entries(tree: dict) -> None:
 
 
 def test_number_tree_reports_a_null_kid_with_its_node() -> None:
-    # A null root is an empty tree (ISO 32000-2, 7.9.7); a null kid is not a
-    # dictionary, so strict traversal rejects it and names the node it saw.
     tree = {"Kids": [None, {"Nums": [1, "one"]}]}
     assert list(iter_number_tree_items(None, lambda value: value)) == []
     with pytest.raises(ValueError, match="invalid number tree node"):

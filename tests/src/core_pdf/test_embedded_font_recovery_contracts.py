@@ -144,6 +144,4 @@ def test_ligature_detection_needs_loadable_tables_before_blaming_a_companion(com
     if companion_widths is not None:
         companion["Widths"] = companion_widths
     resources = {"Font": {"F1": font, "F2": companion}}
-    # Neither the font's own program nor, so, a malformed companion Widths
-    # array (42) can yield overrides: both end with none.
     assert detect_ligature_overrides(IdentityResolver(), resources, font) == {}

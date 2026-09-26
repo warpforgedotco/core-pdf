@@ -122,9 +122,6 @@ class PreparedShading(Record):
         )
 
 
-# What a shading's colours depend on -- its Function and ColorSpace objects,
-# held so their ids stay theirs, and the rendering -- mapped to the compiled
-# function, the colour evaluator built over it, and its colour model.
 type ShadingEvaluatorKey = tuple[int, int, ColorRendering]
 type ShadingEvaluatorCache = dict[
     ShadingEvaluatorKey,
@@ -138,13 +135,6 @@ def prepare_shading(
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
     evaluators: ShadingEvaluatorCache | None = None,
 ) -> PreparedShading | None:
-    """The shading's geometry and colour evaluator, or None if it cannot paint.
-
-    With `evaluators`, shadings that share a Function and ColorSpace object
-    -- the copies a tiled sh makes, one per tile with its own Coords and
-    BBox -- share one compiled function and one colour evaluator, with its
-    colour cache, instead of compiling them again.
-    """
     if not isinstance(dictionary, dict):
         return None
     if not raw_color_space_paints(dictionary.get("ColorSpace")):
@@ -185,8 +175,6 @@ def prepare_shading(
     if cached is not None and cached[0] is function and cached[1] is color_space:
         compiled = cached[2]
         try:
-            # Coords, Domain, Extend and BBox are still checked; only the
-            # compile is skipped.
             spec = parse_shading(normalized, compile_function=lambda _function: compiled)
         except ValueError:
             return None
@@ -216,7 +204,6 @@ def prepare_shading(
 def shading_color_evaluator(
     function: PdfFunctionEvaluator, space: ColorSpace, rendering: ColorRendering
 ) -> tuple[Callable[[float], tuple[float, ...]], str]:
-    """The shading's colour at a parameter value, and the colour model it is in."""
     if space.kind in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
         return function, space.kind
 

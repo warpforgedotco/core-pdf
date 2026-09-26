@@ -40,10 +40,6 @@ TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|
 
 
 def pdf_too_complex(filename: object, password: str) -> bool:
-    # Unstructured's pre-flight opens the file with every revision scanned,
-    # which its layout pass then does not, so the two opens stay separate.
-    # A Type0 font with no descendants is judged here, as the layout pass
-    # under UNSTRUCTURED_POLICY does not check resources.
     with PdfDocument.open(filename, password=password) as document:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         strict_xref_error = document.strict_xref_validation_error()
         if strict_xref_error == "invalid hex string" or (

@@ -10,8 +10,6 @@ from core_pdf.impl.glyphs import GlyphClusterLike
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.text import word_gap_threshold
 
-# The three run edges a merge can advance. try_append picks one per
-# direction; nothing else is reachable.
 WidenEdge: TypeAlias = Literal["x0", "x1", "y1"]
 
 NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
@@ -46,8 +44,6 @@ class PendingRun:
     def __init__(self, run: TextRun) -> None:
         self.run = run
         self.parts: deque[str] = deque((run.text,))
-        # Kept in text order: a reverse merge prepends its clusters as it
-        # prepends its text.
         self.clusters: deque[tuple[GlyphClusterLike, ...]] = deque((run.glyph_clusters,))
         self.head = run.text[:1]
         self.tail = run.text[-1:]
@@ -89,10 +85,6 @@ class PendingRun:
                 self.tail = added[-1:]
         run = self.run
         run.union_ink_bbox(new_run.ink_bbox)
-        # Stretch the pending run over the one just absorbed, along whichever
-        # edge the merge direction advanced. A low edge keeps the smaller
-        # value and a high edge the larger, which is what the old
-        # widen.endswith("0") test decided by spelling.
         if widen == "x1":
             run.x1 = max(new_run.x1, run.x1)
         elif widen == "x0":

@@ -1,5 +1,3 @@
-"""A JPX image the native path declines is decoded once, to the filter chain's bytes."""
-
 import zlib
 from typing import Any
 
@@ -54,8 +52,6 @@ def test_an_accepted_image_is_still_the_native_array() -> None:
 def test_a_flate_image_the_native_path_rejects_is_inflated_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Three bytes a pixel where the native path expects one: it rejects the
-    # size, and the fallback takes the same bytes as RGB.
     payload = bytes(range(5 * 6 * 3))
     dictionary = {
         PdfName.of(b"Width"): 5,

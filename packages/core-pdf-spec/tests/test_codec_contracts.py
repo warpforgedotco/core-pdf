@@ -154,7 +154,6 @@ INTEGER_PARAMETERS = (
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        # Integers do not coerce other object types.
         *((name, value) for name in INTEGER_PARAMETERS for value in (True, 1.5, "1", b"1")),
         ("EarlyChange", -1),
         ("EarlyChange", 2),

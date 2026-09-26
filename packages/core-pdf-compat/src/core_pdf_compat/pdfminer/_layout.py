@@ -232,8 +232,6 @@ class LTChar(LTComponent, LTText):
 
 
 class _LTTextGroup[ItemT: LTText](LTComponent, LTText):
-    """A box holding text items in order, whose text is theirs joined."""
-
     __slots__ = ("_objs",)
 
     _objs: list[ItemT]
@@ -718,8 +716,6 @@ def _reading_order(
         second_area = (second.bbox[2] - second.bbox[0]) * (second.bbox[3] - second.bbox[1])
         return (x1 - x0) * (y1 - y0) - first_area - second_area
 
-    # Entries order totally (the id pair breaks every tie), so building the
-    # heap at once pops them in the order pushing them one by one would.
     queue: list[tuple[bool, float, int, int]] = [
         (False, area_gap(first, second), id(first), id(second))
         for first_index, first in enumerate(boxes)

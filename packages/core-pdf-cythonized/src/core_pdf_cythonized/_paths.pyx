@@ -1,28 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Path flattening for capture (core_pdf.impl.capture_recording.paint_path).
-
-Every painted path was flattened into CapturedSubpath point lists, moved
-through the CTM into another set of lists, walked again for its stroke lines
--- one CapturedLine object per segment -- and walked a fourth time, much later,
-when table detection turned those objects back into arrays. On PyMuPDF
-test_3806 that is 733,122 line objects for one page, and the four walks were
-about 40% of its extraction.
-
-This does all of it in one pass over the path's commands and returns arrays:
-the transformed points, a (start, end, closed) span per subpath, the bounding
-box, whether the path has a segment at all, and the stroke-line endpoints.
-Extraction needs nothing else, so a captured path defers its point lists until
-something -- the renderer, OCR -- asks for them.
-
-Each step is the original's, in the original's order. The subpath rules are
-CapturedPath's: a line_to after a close is dropped, a close needs two points,
-and a curve on an empty path starts one at its first control point. Curves use
-the original's Bernstein expansion, and the segment count goes through the
-same math.hypot -- passed in, and called, rather than reimplemented, because
-CPython's hypot is its own algorithm and C's may land one ULP away and change
-a count. The box follows points_bbox and union_bbox exactly, including which
-of two equal values survives, which matters only for signed zeros.
-"""
 
 from cpython cimport array
 from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
@@ -62,9 +38,6 @@ cdef int grow(Points *points, Py_ssize_t needed) except -1:
 
 
 cdef class PathBuilder:
-    # CapturedPath's move_to / line_to / close / rect, over flat storage. Only
-    # the last subpath ever receives points, so each subpath is a contiguous
-    # run and a (start, closed) pair per subpath is the whole structure.
     cdef Points points
     cdef list starts
     cdef list closed
@@ -132,8 +105,6 @@ cdef class PathBuilder:
 cdef bint add_subpath_box(
     const double* px, const double* py, Py_ssize_t start, Py_ssize_t end, bint have_box, double* box
 ) noexcept:
-    # points_bbox for one subpath -- NaNs never pass its comparisons -- then
-    # union_bbox into box. Returns whether box now holds one.
     cdef double sx0 = INF, sy0 = INF, sx1 = -INF, sy1 = -INF
     cdef double x, y
     cdef Py_ssize_t i
@@ -164,8 +135,6 @@ cdef bint add_subpath_box(
 
 
 cdef int add_curve(PathBuilder path, const double *values, hypot) except -1:
-    # values: the start point, two controls and the end point, then the
-    # linear part of the curve's CTM (a, b, c, d) and its flatness.
     cdef double x0 = values[0], y0 = values[1], x1 = values[2], y1 = values[3]
     cdef double x2 = values[4], y2 = values[5], x3 = values[6], y3 = values[7]
     cdef double scale = py_max(
@@ -177,12 +146,10 @@ cdef int add_curve(PathBuilder path, const double *values, hypot) except -1:
         + <double> hypot(x2 - x1, y2 - y1)
         + <double> hypot(x3 - x2, y3 - y2)
     )
-    # flatness or 0.25: either zero is falsy, a NaN is not.
     cdef double flatness_value = values[12] if values[12] != 0.0 else 0.25
     cdef double flatness = py_max(0.1, flatness_value)
     cdef double steps = ceil(control_len * scale / (flatness * 8.0))
     check_integral(steps)
-    # max(4, min(128, steps)), each keeping its first argument on a tie.
     steps = steps if steps < 128 else 128
     cdef Py_ssize_t segments = <Py_ssize_t> steps if steps > 4 else 4
     cdef double previous_x = x0, previous_y = y0
@@ -216,46 +183,29 @@ def flatten_path_commands(
     array.array line_rows,
     double line_width,
 ):
-    """Flatten, transform and summarize a path, as capture needs it.
-
-    ``ops`` and ``coords`` are a PdfPath's operator bytes and numbers, laid
-    out as core_pdf_spec's PATH_OPERAND_COUNTS says; ``matrix`` is the
-    six-number CTM to apply to every point, or None to leave them as
-    flattened; ``hypot`` is math.hypot.
-
-    Returns ``(xs, ys, spans, bbox, has_segments)``: float64 point columns,
-    a ``(start, end, closed)`` span per subpath, the bounding box or None, and
-    whether any subpath has two points.
-
-    The stroke lines -- every consecutive pair of points within a subpath
-    that moves by more than 0.01 on either axis -- are appended to
-    ``line_rows``, an ``array('d')``, as ``x0, y0, x1, y1, line_width`` rows;
-    it is the page's one line table, so a path adds no array of its own. With
-    ``line_rows`` None they are not collected.
-    """
     cdef PathBuilder path = PathBuilder()
     cdef Py_ssize_t op_index, at = 0, available = coords.shape[0]
     cdef unsigned char op
     for op_index in range(ops.shape[0]):
         op = ops[op_index]
-        if op == 109:  # m
+        if op == 109:
             if at + 2 > available:
                 raise ValueError("path coordinates run short")
             path.move_to(coords[at], coords[at + 1])
             at += 2
-        elif op == 108:  # l
+        elif op == 108:
             if at + 2 > available:
                 raise ValueError("path coordinates run short")
             path.line_to(coords[at], coords[at + 1])
             at += 2
-        elif op == 104:  # h
+        elif op == 104:
             path.close()
-        elif op == 114:  # re
+        elif op == 114:
             if at + 4 > available:
                 raise ValueError("path coordinates run short")
             path.rect(coords[at], coords[at + 1], coords[at + 2], coords[at + 3])
             at += 4
-        elif op == 99:  # c
+        elif op == 99:
             if at + 13 > available:
                 raise ValueError("path coordinates run short")
             add_curve(path, &coords[at], hypot)
@@ -327,12 +277,6 @@ def flatten_path_commands(
 
 
 def path_bounds(const double[::1] xs, const double[::1] ys, list spans):
-    """CapturedPath.bbox() and has_segments() of the subpaths `spans` cut from the columns.
-
-    A deferred path answers both without building its subpaths: bbox_union
-    over each subpath's points_bbox, as add_subpath_box computes it for
-    flatten_path_commands, and whether any subpath has two points.
-    """
     if xs.shape[0] != ys.shape[0]:
         raise ValueError("xs and ys differ in length")
     cdef Py_ssize_t start, end

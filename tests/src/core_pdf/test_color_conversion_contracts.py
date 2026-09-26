@@ -153,7 +153,6 @@ def test_distinct_component_rows_matches_the_row_sort(rows, distinct_values, com
     assert np.array_equal(distinct, expected_distinct)
     assert inverse.shape == expected_inverse.shape
     assert np.array_equal(inverse, expected_inverse)
-    # The scatter is what the tint path actually depends on.
     assert np.array_equal(distinct[inverse], values)
 
 
@@ -173,18 +172,11 @@ def test_distinct_component_rows_handles_signed_zero_and_extremes():
 
 
 def test_distinct_component_rows_collapses_nan_rows():
-    # The row sort compares raw bytes and keeps each NaN row separate; the
-    # one-dimensional sort collapses them. Both scatter the same tint output
-    # over the same pixels, because the tint function is deterministic, so the
-    # difference is a saved evaluation rather than a different image. This test
-    # pins the collapse so the divergence is a decision, not a surprise.
     values = np.array([[np.nan], [1.0], [np.nan], [2.0]])
     distinct, inverse = distinct_component_rows(values)
     assert distinct.shape == (3, 1)
     assert np.array_equal(inverse, np.array([2, 0, 2, 1]))
     assert np.isnan(distinct[2, 0])
-    # Every NaN pixel still selects a NaN entry, so a deterministic tint gives
-    # each of them the same colour either way.
     assert np.isnan(distinct[inverse][0, 0])
     assert np.isnan(distinct[inverse][2, 0])
 
@@ -201,8 +193,6 @@ def test_distinct_component_rows_collapses_nan_rows():
 )
 @pytest.mark.parametrize(("bits", "reverse_decode"), [(8, False), (8, True), (16, False)])
 def test_one_component_images_convert_by_code_exactly_as_by_pixel(space, bits, reverse_decode):
-    # Past a table's worth of pixels, one-component samples convert once per
-    # code they use and are scattered back; it must be the per-pixel result.
     from core_pdf.impl.graphics_image_samples import convert_components
     from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values
 
@@ -228,7 +218,7 @@ def test_a_sample_above_its_bit_depth_still_decodes_by_code() -> None:
     from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values
 
     samples = np.full(300, 3, dtype=np.uint16)
-    samples[::7] = 900  # malformed: over the 8-bit maximum
+    samples[::7] = 900
     dictionary = {"ColorSpace": "DeviceGray", "BitsPerComponent": 8}
     expected = convert_components(
         decode_sample_values(samples.reshape(-1, 1), ((0.0, 1.0),), 255),
@@ -251,10 +241,6 @@ def test_a_sample_above_its_bit_depth_still_decodes_by_code() -> None:
 @pytest.mark.parametrize("palette", [5, 3000, None])
 @pytest.mark.parametrize("reverse_decode", [False, True])
 def test_multi_component_images_convert_by_row_exactly_as_by_pixel(space, palette, reverse_decode):
-    # Past 65,536 pixels, two- to four-component samples convert once per
-    # distinct row and are scattered back -- or, past a quarter distinct
-    # (palette None), pixel by pixel as before. Either way it must be the
-    # per-pixel result.
     from core_pdf.impl.graphics_image_samples import convert_components
     from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values
 

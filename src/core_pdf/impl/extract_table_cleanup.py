@@ -92,7 +92,6 @@ def table_column_alignment(left: Table, right: Table) -> float:
 
 
 def row_texts(row: Iterable[TableCell]) -> tuple[str, ...]:
-    """The row's non-blank cell texts, stripped and casefolded, in order."""
     return tuple(cell.text.strip().casefold() for cell in row if cell.text.strip())
 
 
@@ -300,11 +299,6 @@ def stream_table_reads_like_prose(table: Table) -> bool:
 
 
 def clean_stream_table(table: Table) -> Table | None:
-    """A stream-detected table with its text columns and wrapped rows merged.
-
-    None when the merged table reads as prose. The merges assume cells cut from
-    text rows and columns, so they apply to stream detection's tables alone.
-    """
     merged = merge_wrapped_stream_rows(merge_stream_text_columns(table))
     if stream_table_reads_like_prose(merged):
         return None

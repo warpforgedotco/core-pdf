@@ -17,8 +17,6 @@ from core_pdf_spec.types import PdfName
 
 
 class RecoveringInterpreter(ContentInterpreter):
-    """A reader that proceeds with each fallback, recording what it refused."""
-
     rejected: list[tuple[str, str]]
 
     def reject[T](self, error: Exception, context: str, fallback: T) -> T:
@@ -33,7 +31,6 @@ def recovering() -> RecoveringInterpreter:
     return state
 
 
-# 7.5.7: an object stream is never an XObject, whatever Subtype it claims.
 OBJECT_STREAM = PdfStream({"Type": PdfName.of("ObjStm"), "Subtype": PdfName.of("Form")})
 
 
@@ -78,7 +75,6 @@ def test_rejected_coercions_keep_their_cause() -> None:
 def test_the_default_hook_refuses_out_of_range_line_parameters(
     operator: str, value: float, message: str
 ) -> None:
-    # Called as a handler, past the operand check execute_operation makes first.
     handler = getattr(make_interpreter(), f"op_{operator}")
     with pytest.raises(PdfParseError, match=message):
         handler((value,), 0)
@@ -103,7 +99,6 @@ def test_a_recovering_hook_clamps_line_parameters(
     getattr(state, f"op_{operator}")((value,), 0)
     result = getattr(state.graphics, attribute)
     assert result == expected
-    # The clamp keeps the sign of a zero exact: recovery never stores -0.0.
     assert str(result) == str(expected)
     assert [context for context, _message in state.rejected] == rejected
 
@@ -230,8 +225,6 @@ def test_the_base_recovery_has_no_color_guess() -> None:
 
 
 class FontRecovery(RecoveringInterpreter):
-    """Records the fonts it is handed and what decoder_for sees."""
-
     provided: list[object]
     decoded: list[tuple[object, object]]
 

@@ -125,11 +125,6 @@ def prepare_font_program_inputs(
         descriptor_font_file
     ),
 ) -> FontProgramInputs:
-    """The dictionaries and streams that select a font's embedded program.
-
-    Each reader coerces one entry and, by default, raises ValueError on a
-    malformed value; a caller that recovers passes readers that return None.
-    """
     descendant = read_descendant(font)
     font_dict = descendant if descendant is not None else font
     original_descriptor = read_descriptor(font.get("FontDescriptor"))

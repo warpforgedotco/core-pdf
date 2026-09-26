@@ -137,7 +137,6 @@ class DocumentOperation(AbstractContextManager["DocumentOperation"]):
 
 
 def first_indexes(values: Iterable[object]) -> dict[object, int]:
-    """Each hashable value's first index in values."""
     indexes: dict[object, int] = {}
     for index, value in enumerate(values):
         with contextlib.suppress(TypeError):
@@ -166,7 +165,6 @@ class PageLookup[LookupPageT: PdfPage]:
     @property
     def nodes(self) -> tuple[PageNode, ...]:
         if self.iter_nodes is None:
-            # The document's pages are its page nodes, already walked.
             self.iter_nodes = tuple(
                 PageNode(page.page_dict, page.inherited_values) for page in self.document.pages
             )
@@ -216,8 +214,6 @@ class PageLookup[LookupPageT: PdfPage]:
     def first_index(
         indexes: dict[object, int], value: object, values: Iterable[object]
     ) -> int | None:
-        """The first index whose value equals value: from indexes, or by
-        scanning values when value cannot be hashed."""
         try:
             return indexes.get(value)
         except TypeError:
@@ -273,8 +269,7 @@ def check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
             security_resolver.close()
 
 
-class NotBuilt:
-    """Marks a document cache whose value may legitimately be None."""
+class NotBuilt: ...
 
 
 NOT_BUILT = NotBuilt()
@@ -375,17 +370,10 @@ class PdfDocument(Generic[PageT]):
         self.brute_force_objects = None
         self.literal_trailers_cache = None
         self.strict_xref_error_cache = None
-        # The document is read-only once open, so its page tree and form fields
-        # are built once. Every page.extract() asks for the fields, and building
-        # them walks every page, so without this a whole-document pass is
-        # quadratic in its page count.
         self.reset_caches()
         try:
             self.raw_data = self.load_data(source)
             if not len(self.raw_data):
-                # A path or a file with a descriptor fails as empty inside
-                # load_data, where mmap refuses it; bytes and readers arrive
-                # here, and fail the same way rather than open with no pages.
                 raise PdfEmptySourceError("PDF source is empty")
             self._standards = discover_header_standards(self.raw_data)
             header = self._standards
@@ -580,9 +568,6 @@ class PdfDocument(Generic[PageT]):
 
     @property
     def structure(self) -> StructureTree | None:
-        # Built once: page.structure asks on every page.extract(), and a tree
-        # walks the whole ParentTree to answer -- 6 ms a page on PDF Reference
-        # 1.7, whose ParentTree has 33,162 entries.
         cached = self.structure_cache
         if not isinstance(cached, NotBuilt):
             return cached
@@ -596,14 +581,10 @@ class PdfDocument(Generic[PageT]):
         return self.xref_was_recovered or self.page_tree_was_recovered
 
     def malformed(self, message: str) -> None:
-        """Raise ValueError(message), unless recovering, when the caller
-        skips what is malformed."""
         if not self.recovery_enabled:
             raise ValueError(message)
 
     def recovery_policy(self) -> MalformedFn:
-        """malformed as it stands now, for a walk that keeps one policy
-        throughout even if building the pages midway starts recovery."""
         return malformed_policy(self.recovery_enabled)
 
     def load_data(self, source: PdfSource) -> PdfByteBuffer:
@@ -955,7 +936,6 @@ class PdfDocument(Generic[PageT]):
         return pages
 
     def build_pages(self, nodes: Iterable[PageNode]) -> tuple[PageT, ...]:
-        # A subclass pairs its page_class with the PageT it declares.
         factory = cast("type[PageT]", self.page_class)
         return tuple(
             factory(
@@ -973,8 +953,6 @@ class PdfDocument(Generic[PageT]):
         return None if labels is None else list(labels)
 
     def cached_page_labels(self) -> tuple[str, ...] | None:
-        # Built once: every page's label indexes these, and building them
-        # walks the whole PageLabels tree and page list.
         cached = self.page_labels_cache
         if isinstance(cached, NotBuilt):
             labels = self.build_page_labels()
@@ -1029,8 +1007,6 @@ class PdfDocument(Generic[PageT]):
 
     @property
     def page_lookup(self) -> PageLookup[PageT]:
-        # One for the document, reset with its pages: each builds its page
-        # indexes and named destinations once.
         lookup = self.page_lookup_cache
         if lookup is None:
             lookup = self.page_lookup_cache = PageLookup(self)
@@ -1298,7 +1274,6 @@ class PdfDocument(Generic[PageT]):
         }
 
     def cached_fields_by_page(self) -> dict[int, list[RawFormField]]:
-        """The whole document's fields by page, shared: callers must not mutate it."""
         grouped = self.fields_by_page_cache
         if grouped is None:
             grouped = self.fields_by_page_cache = self.group_fields_by_page(self.pages)
@@ -1436,7 +1411,6 @@ class PdfDocument(Generic[PageT]):
         return None
 
     def oc_hidden_layers(self) -> frozenset[str]:
-        # Built once: every page's capture asks for it.
         hidden = self.hidden_layers_cache
         if hidden is None:
             hidden = self.hidden_layers_cache = self.build_oc_hidden_layers()
@@ -1517,11 +1491,6 @@ class PdfDocument(Generic[PageT]):
         return self.resolver.semantic_context
 
     def strict_xref_validation_error(self) -> str | None:
-        """Why a strict walk of the xref revisions from startxref fails, or None.
-
-        It depends only on the data and the context, so it is read once per
-        context.
-        """
         context = self.xref_context
         cached = self.strict_xref_error_cache
         if cached is None or cached[0] != context:
@@ -1545,8 +1514,6 @@ class PdfDocument(Generic[PageT]):
         return None
 
     def brute_force_xref(self) -> dict[int, PdfXRefEntry]:
-        # The objects it parses, other than streams, are kept for catalog
-        # inference and the resolver, which would parse the same ones again.
         parsed: dict[int, object] = {}
         context = self.xref_context
         xref = XRefScanner.brute_force_scan(
@@ -1559,8 +1526,6 @@ class PdfDocument(Generic[PageT]):
         return xref
 
     def brute_forced_objects(self) -> dict[int, object]:
-        """What the last brute-force scan parsed, if it read in the current
-        context: see ObjectResolver.adopt_parsed_objects."""
         scanned = self.brute_force_objects
         if scanned is None or scanned[0] != self.xref_context:
             return {}
@@ -1586,8 +1551,6 @@ class PdfDocument(Generic[PageT]):
         if start is not None and start < 0:
             raise PdfParseError("invalid xref section")
 
-        # The scan reads only the data and the context, neither of which
-        # changes here, so it is made at most once.
         brute_forced: dict[int, PdfXRefEntry] | None = None
 
         def brute_force() -> dict[int, PdfXRefEntry]:
@@ -1640,8 +1603,6 @@ class PdfDocument(Generic[PageT]):
         header_offset = self.pdf_header_offset()
         recovered_xref: dict[int, PdfXRefEntry] | None = None
         repaired = False
-        # In use, uncompressed, at a non-negative offset: selected with
-        # map() and compress() over the entry tuples, not a loop per entry.
         keys = list(self.xref)
         entries = list(self.xref.values())
         offsets = list(map(ENTRY_OFFSET, entries))
@@ -1660,8 +1621,6 @@ class PdfDocument(Generic[PageT]):
         )
         keys = list(compress(keys, selected))
         entries = list(compress(entries, selected))
-        # Every entry's check reads only the data and that entry, and an entry
-        # is only changed after its own check, so they are all made up front.
         matched = object_headers_present(self.raw_data, keys, list(compress(offsets, selected)))
         for index in compress(range(len(keys)), map(not_, matched)):
             key = keys[index]
@@ -1726,8 +1685,6 @@ class PdfDocument(Generic[PageT]):
         ] or self.xref_entry_header_nearby(key, entry)
 
     def xref_entry_header_nearby(self, key: int, entry: PdfXRefEntry) -> bool:
-        """xref_entry_matches_header past its exact check: the first header the
-        recovering scan finds within 64 bytes, if it is this entry's, at its offset."""
         data = self.raw_data
         offset = entry.offset
         data_len = len(data)
@@ -1785,8 +1742,6 @@ class PdfDocument(Generic[PageT]):
         entries_by_ref = {
             (k >> 16, k & 0xFFFF): entry for k, entry in self.xref.items() if entry.in_use
         }
-        # Each offset's object as the brute-force scan parsed it, handed out
-        # once: parsing an offset again for another key makes a new object.
         unclaimed = dict(self.brute_forced_objects())
 
         def parse_at(offset: int) -> Any:
@@ -1969,8 +1924,6 @@ class PdfDocument(Generic[PageT]):
         return metadata
 
     def literal_trailer_dictionaries(self) -> tuple[PdfDict, ...]:
-        # Read once per context: a scan can merge trailer metadata twice,
-        # and these depend only on the data and the context.
         context = self.xref_context
         cached = self.literal_trailers_cache
         if cached is None or cached[0] != context:
@@ -2005,8 +1958,6 @@ class PdfDocument(Generic[PageT]):
     def iter_recoverable_xref_stream_dictionaries(self) -> Iterator[PdfDict]:
         data = self.raw_data
         data_len = len(data)
-        # Object starts in file order, so each candidate's span can be bounded
-        # by the next one rather than by a guess at how long a dictionary runs.
         starts = sorted(
             {
                 entry.offset
@@ -2014,11 +1965,6 @@ class PdfDocument(Generic[PageT]):
                 if entry.in_use and entry.object_stream is None and 0 <= entry.offset < data_len
             }
         )
-        # Walking the offsets rather than the entries: a damaged xref can point
-        # many object numbers at one offset, and the object living there is the
-        # same object however many keys reach it. The keys are not otherwise
-        # needed here, so distinct offsets in file order are both the shorter
-        # loop and the one whose neighbour is already the span boundary.
         last = len(starts) - 1
         lexer = PdfLexer(data, semantic_context=self.xref_context)
         try:
@@ -2042,24 +1988,6 @@ class PdfDocument(Generic[PageT]):
             lexer.close()
 
     def may_be_xref_stream(self, data: bytes | mmap.mmap, offset: int, end: int) -> bool:
-        """Rule out an object as an xref stream by reading bytes, not parsing it.
-
-        The caller only wants dictionaries that declare Type /XRef, or that
-        carry both W and Size, so a span holding none of those literals cannot
-        be one. Parsing every object in the file to discover that is what made
-        opening a large document expensive.
-
-        The span runs to the next object rather than over a fixed window,
-        because nothing bounds how much dictionary may precede the markers: a
-        long Index array or a run of comments can push them arbitrarily far
-        into the object. Searching a fixed prefix would skip such a stream and
-        lose the trailer metadata it carries.
-
-        A span containing "#" falls through to the parse, since a hex-escaped
-        name would not match these literals. Searching a whole object span can
-        also match bytes inside stream data, but a false positive only costs
-        the parse that used to happen anyway.
-        """
         if data.find(b"#", offset, end) >= 0 or data.find(b"XRef", offset, end) >= 0:
             return True
         return data.find(b"/W", offset, end) >= 0 and data.find(b"/Size", offset, end) >= 0
@@ -2142,8 +2070,6 @@ def create_recovered_security_handler(
     return create_standard_security_handler(document_id, normalized, password)
 
 
-# Past this an object number does not fit the kernel's 63 bits, and one
-# that fits never compares equal to a header run that does not.
 HUGE_OBJECT_NUMBER = 1 << 63
 
 
@@ -2153,14 +2079,6 @@ ENTRY_OBJECT_STREAM = itemgetter(3)
 
 
 def object_headers_present(data: Any, keys: list[int], offsets: list[int]) -> list[bool]:
-    """For each key and offset, whether the object header for key starts at offset.
-
-    The header is "N G obj" with the maximal digit and whitespace runs and a
-    delimiter or the end of the data after it, and N and G read as integers;
-    object_headers_match checks them all in one pass. Its columns are made
-    in numpy when every key and offset fits an int64, which is every real
-    table; otherwise an entry at a time.
-    """
     data_len = len(data)
     try:
         key_column = numpy.array(keys, dtype=numpy.int64)
@@ -2175,7 +2093,6 @@ def object_headers_present(data: Any, keys: list[int], offsets: list[int]) -> li
 
 
 def object_headers_present_by_entry(data: Any, keys: list[int], offsets: list[int]) -> list[bool]:
-    """object_headers_present for keys or offsets past int64."""
     data_len = len(data)
     numbers = array("q")
     generations = array("q")
@@ -2189,8 +2106,6 @@ def object_headers_present_by_entry(data: Any, keys: list[int], offsets: list[in
     present = [state == 1 for state in states.tolist()]
     for index, state in enumerate(states.tolist()):
         if state == 2:
-            # The header is there with a run too long for 63 bits, and so is
-            # the number it must equal: compare them as integers.
             offset = clamped[index]
             end = offset
             while end < data_len and 0x30 <= data[end] <= 0x39:

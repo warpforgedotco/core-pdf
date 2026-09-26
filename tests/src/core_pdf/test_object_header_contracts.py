@@ -1,5 +1,3 @@
-"""Xref offsets are checked against object headers as the old expression checked them."""
-
 import gzip
 import pickle
 from pathlib import Path

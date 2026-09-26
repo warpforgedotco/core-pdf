@@ -44,10 +44,6 @@ def iter_document_pages[Extraction: PageExtraction](
     pages: Sequence[PdfPage],
     build: ExtractionBuilder[Extraction],
 ) -> Iterator[Extraction]:
-    """Build each page's extraction -- which captures it -- as it is asked for.
-
-    The document-level inputs every page needs are gathered once, up front.
-    """
     hidden_layers = document.oc_hidden_layers() if pages else frozenset()
     structure_tree = None
     with suppress(IndexError, TypeError, ValueError):
@@ -96,10 +92,5 @@ def assemble_document(
 def extract_document(
     document: PdfDocument[Any], context: ExtractionScope, pages: Sequence[PdfPage]
 ) -> Document:
-    # Nothing here looks across pages, so each page is captured and assembled
-    # before the next is captured, and its capture is freed as it goes: holding
-    # every capture until the last page was assembled took lyft_2021 to 1.2 GB
-    # where a page at a time needs about 140 MB. The OCR companion's document
-    # pass does compare captures across pages and keeps them all.
     extractions = iter_document_pages(document, tuple(pages), PageExtraction)
     return assemble_document(document, extractions, context)

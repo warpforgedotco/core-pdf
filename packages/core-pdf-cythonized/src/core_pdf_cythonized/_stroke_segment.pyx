@@ -1,30 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""A short stroked segment, sampled and blended (core_pdf.impl.render_target.fill_line).
-
-A stroke flattened from a curve reaches fill_line as many tiny segments --
-35,143 averaging 0.2 pixels on PyMuPDF chinese-tables -- each covering a few
-pixels. Below 64 pixels of box, fill_line samples each pixel 4x4 in Python
-and blends it through blend_px: 11 us a segment, 388 ms of that page's
-570 ms rasterize.
-
-This is that loop's sampling, blended here for normal blending with no
-group source planes to record into, and otherwise written out as counts for
-blend_coverage_counts. A clip is passed as `allowed`, one byte per pixel of the box,
-built by the caller from the same row spans the loop tested each pixel
-against. It reproduces the Python arithmetic step by step in double -- the
-sample positions, the projection and cross-product tests (squared, not the
-linearised form the numpy path for larger boxes uses), the coverage-to-alpha
-rounding and blend_px's normal-mode compositing, the last two from
-_pixel_blend.pxd, with rint standing in for Python's round, both rounding
-half to even. setup.py builds with -ffp-contract=off.
-
-The caller computes the segment's scalars (length squared, half width
-squared, cap extension) exactly as before and passes them in, so no square
-root is recomputed here. Every segment that reaches here is butt- or
-square-capped: stroke caps are painted by fill_cap, so the round-cap
-sampling fill_line once had is gone. It returns the box of pixels it covered, which is
-what blend_px's per-pixel paint-window extension amounts to.
-"""
 
 from core_pdf_cythonized._pixel_blend cimport blend_normal_pixel, coverage_alpha
 
@@ -58,13 +32,6 @@ cdef bint segment_samples(
     unsigned char* counts,
     Py_ssize_t* covered_box,
 ) noexcept nogil:
-    """The sampling and blending loop, over raw pointers.
-
-    ``pixels`` is pixel (iy0, ix0), rows ``row_stride`` bytes apart, pixels
-    packed. ``allowed`` and ``counts``, when not NULL, hold one byte per pixel
-    of the box, row by row. Writes the covered box to ``covered_box`` (x0,
-    y0, x1, y1) and returns whether any pixel was covered.
-    """
     cdef double cross_limit = half2 * seg_len2
     cdef Py_ssize_t px, py, sx, sy
     cdef double page_x[4]
@@ -143,17 +110,6 @@ def stroke_segment_samples(
     const unsigned char[::1] allowed=None,
     unsigned char[:, ::1] counts=None,
 ):
-    """Blend the segment into `pixels`, whose [0, 0] is pixel (origin_x, origin_y).
-
-    `allowed`, if given, holds one byte per pixel of the box, row by row; a
-    zero skips that pixel, as the clip test in fill_line's loop did.
-
-    With `counts`, a (rows, columns) array of the box, each pixel's 4x4
-    coverage is written there instead, and nothing is blended, for
-    blend_coverage_counts to blend in any mode.
-
-    Returns (x0, y0, x1, y1), half-open, of the pixels with any coverage, or None.
-    """
     if ix0 < origin_x or iy0 < origin_y or ix1 > origin_x + pixels.shape[1] or iy1 > origin_y + pixels.shape[0]:
         raise ValueError("segment box runs past the pixels given")
     cdef Py_ssize_t box_width = ix1 - ix0

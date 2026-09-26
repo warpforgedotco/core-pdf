@@ -371,15 +371,9 @@ class PdfLexer:
         self.pos = keyword[1]
 
     def handle_empty_indirect_object(self) -> object:
-        """An indirect object whose endobj follows its header directly, the
-        lexer at that endobj. ISO 32000-2 7.3.10 requires a value, so strict
-        parsing rejects it; a reader may return what stands for the object."""
         raise PdfParseError("missing indirect object value")
 
     def handle_missing_endobj(self, keyword: tuple[bytes, int] | None) -> bool:
-        """Whether to accept an object whose next word, keyword, is not
-        endobj (7.3.10). Strict parsing does not; a reader that does returns
-        the object with the lexer left before that word."""
         return False
 
     def parse_indirect_object(self, *, expected_reference: PdfReference | None = None) -> Any:
@@ -663,9 +657,6 @@ class PdfLexer:
         return self.parse_stream(dictionary)
 
     def stream_data_start(self) -> int | None:
-        """Where the stream keyword at the lexer ends (7.3.8.1), or None when
-        the dictionary is not followed by one. parse_stream reads the end of
-        line after it."""
         keyword = self.scan_word(skip_ignored=False)
         if keyword is not None and keyword[0] == b"stream":
             return keyword[1]

@@ -113,12 +113,6 @@ def rasterize_unclipped_line_normal(
     return_source_alpha: bool = False,
     source_shape: UInt8Array | None = None,
 ) -> UInt8Array | None:
-    """A butt-capped segment's 4x4 coverage over its pixel box, blended normally.
-
-    fill_line's route for boxes of more than 64 pixels under no clip or a
-    rectangular one. The cap extension is zero, and still multiplied
-    through as it was, so a NaN or infinite segment samples as before.
-    """
     x_delta = x1 - x0
     y_delta = y1 - y0
     segment_length_squared = x_delta * x_delta + y_delta * y_delta
@@ -220,7 +214,6 @@ def intersect_box(
     a: tuple[float, float, float, float],
     b: tuple[float, float, float, float],
 ) -> tuple[float, float, float, float] | None:
-    """`intersect_bbox` for two known rectangles, with empty results as None."""
     box = intersect_bbox(a, b)
     if box is None or box[2] <= box[0] or box[3] <= box[1]:
         return None

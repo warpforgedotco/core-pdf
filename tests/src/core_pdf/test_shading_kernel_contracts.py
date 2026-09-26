@@ -1,13 +1,3 @@
-"""Shadings painted by the kernels paint what paint_shading's per-pixel loop did.
-
-The reference below is that loop as it was, with the parameter taken from
-shading_t -- pinned to the deleted Python functions by golden vectors -- and
-blending by blend_px, which the rest of the rasterizer still uses. Pages
-cover axial and radial shadings, extends, clips, opacity, every blend mode
-blend_px treats apart, and knockout and non-isolated groups that record
-source alpha and shape; failures part way are checked on a target directly.
-"""
-
 import math
 import random
 from typing import Any
@@ -285,7 +275,7 @@ def test_blending_rules_follow_the_documents_version(
         try:
             paint(target, {"dictionary": shading, "fill_opacity": 0.8}, mode)
             raised = None
-        except Exception as error:  # noqa: BLE001 -- the comparison covers failures too
+        except Exception as error:  # noqa: BLE001
             raised = (type(error), str(error))
         outcomes.append(
             (
@@ -340,9 +330,6 @@ def test_a_shading_painted_again_is_captured_once() -> None:
 def test_tiled_copies_of_a_shading_share_one_compiled_evaluator(
     monkeypatch: pytest.MonkeyPatch, color_space: object
 ) -> None:
-    """A tiled sh paints a copy of the dictionary per tile, each with its own
-    Coords; the copies share the Function and ColorSpace, so they share one
-    compiled function and colour evaluator, and paint what fresh ones paint."""
     from core_pdf.impl import graphics_shading
 
     shading = {**SHADING, "ColorSpace": color_space}

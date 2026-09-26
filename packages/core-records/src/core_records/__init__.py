@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Value-class mixins shared by every workspace package.
-
-A value class declares ``__fields__`` and writes its own ``__init__``, ``__eq__``
-and ``__hash__``; these supply the rest from ``__fields__``. Each is written to
-behave exactly as the hand-written method it replaces did, and a subclass
-that adds fields gets them in its repr, pickle state and replace because the
-mixins read the instance's ``__fields__``.
-"""
 
 from __future__ import annotations
 
@@ -26,12 +18,6 @@ frozen_setattr = object.__setattr__
 
 
 class FrozenFields:
-    """Rejects assignment and deletion, as ``@dataclass(frozen=True)`` does.
-
-    Raises ``AttributeError`` rather than ``FrozenInstanceError`` so the guard
-    needs no import; ``FrozenInstanceError`` derives from it.
-    """
-
     __slots__ = ()
 
     def __setattr__(self, name: str, value: object) -> NoReturn:
@@ -42,8 +28,6 @@ class FrozenFields:
 
 
 class PickleFields:
-    """Pickle support for slotted classes whose ``__setattr__`` refuses writes."""
-
     __slots__ = ()
 
     __fields__: ClassVar[tuple[str, ...]]
@@ -57,13 +41,6 @@ class PickleFields:
 
 
 class ReprFields:
-    """``Qualname(field=value, ...)`` over the declared fields, in order.
-
-    A class that should not print all of them -- a cached closure, a private
-    backing field -- narrows the list with ``__repr_fields__`` rather than
-    hand-writing the whole method.
-    """
-
     __slots__ = ()
 
     __fields__: ClassVar[tuple[str, ...]]
@@ -76,9 +53,6 @@ class ReprFields:
 
 
 class ReplaceFields:
-    """``copy.replace`` for classes whose ``__init__`` takes the fields
-    positionally, in ``__fields__`` order."""
-
     __slots__ = ()
 
     __fields__: ClassVar[tuple[str, ...]]
@@ -91,6 +65,4 @@ class ReplaceFields:
 
 
 class Record(FrozenFields, PickleFields, ReprFields, ReplaceFields):
-    """The whole set: frozen, picklable, field-printing, field-replacing."""
-
     __slots__ = ()

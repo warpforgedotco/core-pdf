@@ -1,38 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""TrueType glyph outlines from the glyf table (core_pdf.impl.fonts_font_program).
-
-A TrueType glyph's contours were fontTools': the whole glyf table split into
-a Glyph per glyph on first use, the glyph expanded, drawn through a
-DecomposingRecordingPen -- components decomposed through TransformPens --
-and the recording flattened by recording_to_contours. About 245 us a glyph,
-and 6.5 s of a 400-document render sweep.
-
-This reads the glyph's bytes through loca and does what that pipeline did,
-step for step:
-
-- Glyph.decompileCoordinates: the flags with their repeats, the byte and
-  short deltas with their signs, the running sums;
-- GlyphCoordinates' slices, which hand back integral values as ints;
-- Glyph.draw: the top-level ``lsb - xMin`` offset, each contour rotated to
-  end on an on-curve point, lines, quadratic runs, and all-off-curve
-  contours, which the recording drops;
-- composites: each component's glyph index, offsets and 2.14 scales,
-  DecomposingPen.addComponent's identity test, and TransformPen's point
-  transform and composition;
-- recording_to_contours: quadratic runs split at implied on-curve midpoints
-  and flattened in six steps, contours closed and those under three points
-  dropped; then scale_contours.
-
-Python arithmetic is kept, not just its results: a value that fontTools
-holds as an int stays exact and never becomes -0.0, and one that meets a
-float becomes a double, as Python's int and float rules make it.
-
-Anything fontTools would treat differently -- data that runs short, a glyph
-index past the glyph order, a component placed by point matching, cubic
-flags, a component nested past 32 levels -- returns None, and the caller
-draws that glyph with fontTools. The caller checks, once per font, the
-table-wide conditions fontTools' decompile imposes.
-"""
 
 from libc.stdlib cimport free, malloc, realloc
 
@@ -65,14 +31,13 @@ cdef int MAX_DEPTH = 32
 
 
 cdef struct Num:
-    # A Python number: the value, and whether Python holds it as an int.
     double v
     bint integer
 
 
 cdef inline Num as_int(double value) noexcept nogil:
     cdef Num n
-    n.v = value + 0.0  # an int has no negative zero
+    n.v = value + 0.0
     n.integer = True
     return n
 
@@ -97,11 +62,10 @@ cdef inline Num add(Num a, Num b) noexcept nogil:
 
 
 cdef struct Transform:
-    Num t[6]  # xx, xy, yx, yy, dx, dy
+    Num t[6]
 
 
 cdef inline bint is_identity(Transform* m) noexcept nogil:
-    # transformation != Identity, compared by value.
     return (
         m.t[0].v == 1.0 and m.t[1].v == 0.0 and m.t[2].v == 0.0
         and m.t[3].v == 1.0 and m.t[4].v == 0.0 and m.t[5].v == 0.0
@@ -109,13 +73,11 @@ cdef inline bint is_identity(Transform* m) noexcept nogil:
 
 
 cdef inline void apply(Transform* m, Num x, Num y, Num* out_x, Num* out_y) noexcept nogil:
-    # Transform.transformPoint: (xx * x + yx * y + dx, xy * x + yy * y + dy).
     out_x[0] = add(add(mul(m.t[0], x), mul(m.t[2], y)), m.t[4])
     out_y[0] = add(add(mul(m.t[1], x), mul(m.t[3], y)), m.t[5])
 
 
 cdef inline Transform compose(Transform* outer, Transform* other) noexcept nogil:
-    # Transform.transform(other) with self the outer TransformPen's.
     cdef Transform r
     cdef Num xx1 = other.t[0], xy1 = other.t[1], yx1 = other.t[2], yy1 = other.t[3]
     cdef Num dx1 = other.t[4], dy1 = other.t[5]
@@ -131,14 +93,13 @@ cdef inline Transform compose(Transform* outer, Transform* other) noexcept nogil
 
 
 cdef struct Recording:
-    # recording_to_contours' state, and the contours it has made.
-    double* points  # x, y pairs
+    double* points
     Py_ssize_t count
     Py_ssize_t capacity
-    Py_ssize_t* ends  # each finished contour's end in points
+    Py_ssize_t* ends
     Py_ssize_t contours
     Py_ssize_t contour_capacity
-    Py_ssize_t contour_start  # where the open contour starts
+    Py_ssize_t contour_start
     bint open_contour
     bint have_current
     double current_x
@@ -163,7 +124,6 @@ cdef inline void push(Recording* r, double x, double y) noexcept nogil:
 
 
 cdef inline void finish(Recording* r) noexcept nogil:
-    # close_contour, then the contour is done.
     cdef Py_ssize_t* grown
     cdef Py_ssize_t first = r.contour_start
     if r.count > first and (
@@ -221,7 +181,6 @@ cdef inline void flatten_quadratic(
 
 
 cdef inline void q_curve_to(Recording* r, double* xs, double* ys, Py_ssize_t n) noexcept nogil:
-    # append_quadratic for n points, the last on-curve.
     if not r.have_current or n == 0:
         return
     cdef double end_x = xs[n - 1], end_y = ys[n - 1]
@@ -256,7 +215,7 @@ cdef struct Font:
     const unsigned char* glyf
     Py_ssize_t glyf_length
     const long long* loca
-    Py_ssize_t loca_count  # entries in loca
+    Py_ssize_t loca_count
     const long long* lsb
     Py_ssize_t glyph_count
 
@@ -273,8 +232,6 @@ cdef inline int read_i16(const unsigned char* data, Py_ssize_t pos) noexcept nog
 
 
 cdef int glyph_bytes(Font* font, Py_ssize_t gid, const unsigned char** data, Py_ssize_t* length) noexcept nogil:
-    # The glyph's slice of glyf, or DECLINED where fontTools' glyfTable[name]
-    # would not find it.
     if gid < 0 or gid >= font.glyph_count or gid + 1 >= font.loca_count:
         return DECLINED
     cdef long long start = font.loca[gid], end = font.loca[gid + 1]
@@ -296,7 +253,6 @@ cdef int draw_simple(
     bint transformed,
     Transform* m,
 ) noexcept nogil:
-    # Glyph.decompileCoordinates and Glyph.draw for a simple glyph.
     cdef Py_ssize_t pos = 10, i, previous = -1
     cdef int value
     if pos + 2 * contour_count + 2 > length:
@@ -351,7 +307,6 @@ cdef int simple_body(
     cdef Py_ssize_t x_pos, y_pos, start, count, first_on, index, run, end_point
     cdef double x, y
     cdef Num tx, ty
-    # The flags and their repeats.
     while True:
         if pos >= length:
             return DECLINED
@@ -380,7 +335,6 @@ cdef int simple_body(
             break
     if pos + x_length + y_length > length:
         return DECLINED
-    # The deltas, their signs, and the running sums.
     x_pos = pos
     y_pos = pos + x_length
     x = 0.0
@@ -409,12 +363,10 @@ cdef int simple_body(
             y_pos += 2
         xs[i] = x + offset
         ys[i] = y
-    # Glyph.draw, a contour at a time.
     start = 0
     for k in range(contour_count):
         end_point = ends[k] + 1
         count = end_point - start
-        # The slice's points, each an int when integral, then transformed.
         first_on = -1
         for i in range(count):
             index = start + i
@@ -427,16 +379,13 @@ cdef int simple_body(
             if first_on < 0 and flags[index] & ON_CURVE:
                 first_on = i
         if first_on < 0:
-            # All off-curve: a qCurveTo with no current point, then closePath.
             close_path(r)
             start = end_point
             continue
-        # Rotated to end on the first on-curve point, which is the moveTo.
         move_to(r, px[first_on], py[first_on])
         i = first_on + 1
         run = 0
         while run < count:
-            # The distance to the next on-curve point, from i (mod count).
             j = 0
             while not (flags[start + (i + j) % count] & ON_CURVE):
                 j += 1
@@ -493,8 +442,6 @@ cdef int draw_composite(
     Transform* m,
     int depth,
 ) noexcept nogil:
-    # Every component is read before any is drawn, as decompileComponents
-    # reads them when the glyph is expanded; then Glyph.draw adds each.
     cdef Py_ssize_t capacity = 8
     cdef Transform* components = <Transform*> malloc(capacity * sizeof(Transform))
     cdef Py_ssize_t* indexes = <Py_ssize_t*> malloc(capacity * sizeof(Py_ssize_t))
@@ -558,8 +505,6 @@ cdef int composite_body(
             c.t[4] = as_int(<signed char> data[pos])
             c.t[5] = as_int(<signed char> data[pos + 1])
             pos += 2
-        # getComponentInfo: (1, 0, 0, 1, x, y), or the 2.14 matrix with its
-        # int zeros off the diagonal.
         c.t[0] = as_int(1.0)
         c.t[1] = as_int(0.0)
         c.t[2] = as_int(0.0)
@@ -592,8 +537,6 @@ cdef int composite_body(
     for index in range(component_count):
         c = &components_out[0][index]
         if transformed:
-            # TransformPen.addComponent composes, then the recording pen
-            # decomposes with the result.
             combined = compose(m, c)
         else:
             combined = c[0]
@@ -613,13 +556,6 @@ def truetype_contours(
     Py_ssize_t gid,
     double scale,
 ):
-    """fonttools_contours(font, gid), scaled as normalized_glyph_contours scales it.
-
-    ``loca`` holds the glyph offsets, ``lsb`` each glyph's left side bearing
-    from hmtx, ``glyph_count`` the length of the glyph order. Returns the
-    contours as tuples of (x, y) points, or None where fontTools has to
-    draw the glyph.
-    """
     if lsb.shape[0] < glyph_count:
         raise ValueError("lsb must hold one bearing per glyph")
     cdef Font font

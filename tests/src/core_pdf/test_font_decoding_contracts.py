@@ -128,9 +128,6 @@ def test_text_advance_equals_ordered_sum_of_glyph_advances(
         )
         for glyph in glyphs
     ]
-    # text_advance_vector inlines spec's glyph_advance_vector for speed; the
-    # running total must match the helper's bit for bit. (Not sum(), whose
-    # compensated float summation rounds differently.)
     expected = (0.0, 0.0)
     for advance in advances:
         expected = (expected[0] + advance[0], expected[1] + advance[1])
@@ -141,8 +138,6 @@ def test_text_advance_equals_ordered_sum_of_glyph_advances(
 
 @pytest.mark.parametrize("operators", [b"", b"2 Tc 3 Tw 80 Tz", b"-1.25 Tc 7.5 Tw 133 Tz"])
 def test_captured_advances_match_spec_glyph_advances_exactly(operators):
-    # capture_glyphs inlines spec's glyph_advance_vector on its hot path; each
-    # glyph's advance box must still start and end where the helper puts it.
     content = b"BT /F1 12 Tf " + operators + b" 0 0 Td (A B  C) Tj ET"
     with PdfDocument(one_page_pdf(content)) as document:
         glyphs = document.pages[0].get_page_program().glyphs
@@ -276,8 +271,6 @@ def test_a_cff_repair_that_changes_a_mapping_clears_cached_strings() -> None:
     font.cff_unicode_repair_index = repairs  # ty: ignore[invalid-assignment]
     assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x41")] == ["�"]
     assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x41\x00\x42")] == ["�", "B"]
-    # A later string repairs code 0041; the string cached before must not
-    # keep answering with the old mapping.
     repairs.answer = {b"\x00\x41": "A"}
     assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x42\x00\x41")] == ["B", "A"]
     assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x41")] == ["A"]

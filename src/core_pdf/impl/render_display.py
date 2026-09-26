@@ -108,15 +108,6 @@ def image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
 def plain_fill_members_box(
     items: list[DisplayItem], start: int
 ) -> tuple[bool, tuple[float, float, float, float] | None]:
-    """Whether items[start:] are all plain fills, and the union of their bboxes.
-
-    A plain fill -- an edge-array fill with no pattern and a Normal blend,
-    what RasterTarget.knockout_paint_box accepts -- paints inside its bbox as
-    clipped, so a group of nothing else paints inside the union of theirs. A
-    text item, which the rasterizer does not paint, may sit among them, and
-    a group of nothing but those paints nothing: (True, None). Anything else
-    in the group gives (False, None).
-    """
     box: tuple[float, float, float, float] | None = None
     for index in range(start, len(items)):
         item = items[index]
@@ -179,12 +170,7 @@ class DisplayList:
         self.shape_tracking_groups = []
         self.group_scope_floors = []
         self.open_group_indexes: list[int] = []
-        # For a group whose members are all plain fills, keyed by the identity
-        # of its group-begin item: the page box they paint within, or None if
-        # it has none. See plain_fill_members_box.
         self.group_member_boxes: dict[int, tuple[float, float, float, float] | None] = {}
-        # A glyph style's paint fields, normalized, keyed by the style's
-        # identity and holding the style so that identity stays its own.
         self.glyph_paint_fields: dict[int, tuple[GlyphStyle, tuple[Any, ...]]] = {}
 
     def __repr__(self) -> str:
@@ -240,7 +226,6 @@ class DisplayList:
                 self.shape_tracking_groups.append(
                     data.get("group_knockout") is True or data.get("group_track_shape") is True
                 )
-                # The group-begin item is appended next, at this index.
                 self.open_group_indexes.append(len(self.items))
             case "group-end":
                 floor = self.group_scope_floors[-1] if self.group_scope_floors else 0
@@ -261,14 +246,6 @@ class DisplayList:
         edge_array: Any,
         style: GlyphStyle,
     ) -> None:
-        """append() for a glyph's path paint, whose other fields are its style's.
-
-        A page appends one per glyph drawn, and every glyph of a text
-        operation shares one style, so its fields are normalized once, as
-        append normalizes them, and each item is built positionally from them;
-        the keyword calls this replaced were most of the cost. A pattern is
-        never given.
-        """
         cached = self.glyph_paint_fields.get(id(style))
         if cached is None or cached[0] is not style:
             line_width = style.line_width
@@ -294,7 +271,6 @@ class DisplayList:
             self.glyph_paint_fields[id(style)] = (style, fields)
         else:
             fields = cached[1]
-        # Both checkers miscount a star argument followed by another positional.
         item = PathPaintItem(paint_kind, seqno, bbox, path, *fields, edge_array)  # type: ignore[call-arg]  # ty: ignore[too-many-positional-arguments]
         self.items.append(item)
 
@@ -421,8 +397,6 @@ class DisplayList:
                 drawing_box = rect_tuple(drawing.rect)
                 merged = previous.path.coalesced_with(path)
                 if merged is not None:
-                    # Both are flattened paths whose points wait: so does
-                    # the join.
                     previous.path = merged
                     previous.coalesced_path = True
                 elif previous.coalesced_path:

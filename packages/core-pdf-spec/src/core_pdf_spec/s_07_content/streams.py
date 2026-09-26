@@ -331,17 +331,11 @@ class ContentStreamFrame(ReprFields):
 
 class ContentStreamExecutor:
     __slots__ = ("state", "active_streams", "decoded_streams")
-    # The deepest nesting a subclass enters; None leaves it unbounded, so only
-    # a stream already being executed is reentry.
     max_depth: ClassVar[int | None] = None
 
     def __init__(self, state: ContentInterpreter) -> None:
         self.state = state
         self.active_streams: set[StreamKey] = set()
-        # Nested streams are entered again and again: a Type 3 glyph's CharProc
-        # once per glyph shown, a form once per Do. Decoding is a pure function
-        # of the stream, so each is decoded once. The stream is kept beside its
-        # bytes so its id cannot be reused while the entry exists.
         self.decoded_streams: dict[int, tuple[PdfStream, bytes]] = {}
 
     def stream_data(self, frame: ContentStreamFrame) -> bytes:
@@ -389,18 +383,10 @@ class ContentStreamExecutor:
         return frame
 
     def is_reentry(self, stream_key: StreamKey, depth: int) -> bool:
-        """Whether a stream under `stream_key` at `depth` would reenter one
-        already executing, or nest past max_depth."""
         limit = self.max_depth
         return (limit is not None and depth > limit) or stream_key in self.active_streams
 
     def reject_reentry(self, frame: ContentStreamFrame) -> bool:
-        """Refuse `frame`, which is_reentry reports; returning True skips it.
-
-        Returning False runs it anyway, which a subclass does at its own risk:
-        a stream run inside itself leaves the active set when the inner run
-        ends.
-        """
         limit = self.max_depth
         if limit is not None and frame.depth > limit:
             raise PdfParseError("content streams nest too deeply")

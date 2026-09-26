@@ -1,5 +1,3 @@
-"""Whole-document passes: what is built once, and what is freed page by page."""
-
 import gc
 import weakref
 from typing import Any
@@ -23,8 +21,6 @@ def test_pages_are_built_once_per_document() -> None:
 
 
 def test_extracting_every_page_groups_form_fields_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Each page asks for its fields, and grouping them walks every page, so a
-    # grouping per page made a whole-document pass quadratic in its length.
     calls: list[int] = []
     original = PdfDocument.group_fields_by_page
 

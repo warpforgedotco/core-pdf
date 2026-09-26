@@ -62,20 +62,6 @@ class PdfObjectStream(SyntaxObjectStream):
             return self.handle_object_error(offset)
 
     def scan_dictionary_at(self, offset: int, end: int) -> PdfDict | None:
-        """The dictionary spanning [offset, end), scanned in place, or None.
-
-        The base parses each object through a lexer of its own over just its
-        bytes -- on a document with thousands of compressed annotations,
-        building those lexers costs as much as parsing. This reads a
-        dictionary with one compiled scanner over the whole body instead, and
-        keeps the result only where the per-object lexer must agree: the
-        object starts with its "<<", and the scanner's closing ">>" lies
-        within the object's span followed by nothing but whitespace. The
-        scanner reads no byte past that ">>", so it saw what the object's own
-        lexer would, which would find the same dictionary, no stream keyword
-        after it and no trailing data. Anything else, including every
-        declined dictionary, takes the base path unchanged.
-        """
         body = self.raw_body
         if not 0 <= offset < end <= len(body) or body[offset : offset + 2] != b"<<":
             return None
@@ -121,8 +107,6 @@ class PdfObjectStream(SyntaxObjectStream):
         return PdfLexer(body, semantic_context=self.semantic_context)
 
     def lexer_over_body(self) -> PdfLexer:
-        """One lexer over the whole body, kept until close: every parse
-        through it starts from an explicit position."""
         lexer = self.body_lexer
         if lexer is None:
             lexer = self.body_lexer = self.create_lexer(self.raw_body)
@@ -188,12 +172,6 @@ def scan_object_stream_pairs(data: bytes | memoryview, n: int) -> tuple[list[tup
 
 
 def scan_digit_pairs(data: bytes, n: int) -> tuple[list[tuple[int, int]], int]:
-    """scan_object_stream_pairs for a header of nothing but digits and whitespace.
-
-    The lexer's words there are the digit runs, each an integer token, so the
-    pairs are the runs taken two at a time; an unpaired last run ends the
-    scan as the lexer's failed second read did.
-    """
     pairs: list[tuple[int, int]] = []
     last_end = 0
     runs = DIGIT_RUN_RE.finditer(data)

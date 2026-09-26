@@ -1,5 +1,3 @@
-"""A merged run's glyph clusters follow its text, whichever side a run joins."""
-
 from core_pdf.impl.capture_text_runs import RunAccumulator
 from core_pdf.impl.glyphs import GlyphCluster
 from core_pdf.impl.runs import TextRun
@@ -37,7 +35,6 @@ def cluster_text(result: TextRun) -> str:
 
 
 def test_run_prepended_on_the_left_puts_its_clusters_first() -> None:
-    # "b" arrives first; "a" sits just to its left, so it is prepended.
     result = merged(run("b", 10, 15), run("a", 5, 10))
     assert result.text == "ab"
     assert cluster_text(result) == "ab"
@@ -50,8 +47,6 @@ def test_mixed_directions_keep_clusters_in_text_order() -> None:
 
 
 def test_right_to_left_rotation_appends_on_the_left_side() -> None:
-    # At 180 degrees the forward direction is leftward; a run on the right is
-    # the reverse merge and so comes first.
     result = merged(run("b", 10, 15, rotation=180), run("a", 15, 20, rotation=180))
     assert result.text == "ab"
     assert cluster_text(result) == "ab"

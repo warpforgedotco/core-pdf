@@ -1,10 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Inside a knockout group, an element that misses everything painted so far
-composites the same whether or not it goes through an elementary group, so it
-skips one. These pin the decision, not the arithmetic: which items are
-eligible, what gets recorded as painted, and that a genuine overlap is never
-skipped."""
 
 from types import SimpleNamespace
 from typing import Any
@@ -25,8 +20,6 @@ from tests.src.core_pdf.raster_support import make_target as make_real_target
 
 def make_target() -> RasterTarget:
     target = RasterTarget.__new__(RasterTarget)
-    # Only clipped_pixel_box is reached; the rest of ClipState is irrelevant
-    # to the decision under test.
     target.clip = SimpleNamespace(  # ty: ignore[invalid-assignment]
         clipped_pixel_box=lambda bbox: (
             None,
@@ -69,11 +62,6 @@ def knockout_group() -> RasterGroup:
 
 
 def needs_group(target: RasterTarget, group: RasterGroup, item: Any) -> bool:
-    """The decision paint_item makes, with the recording its skip path does.
-
-    An element that takes the group is recorded by composite_group from what
-    it actually painted, which these stub-target tests do not paint.
-    """
     target.buffer_stack = [group]
     boxes = group.painted_boxes
     assert boxes is not None
@@ -84,8 +72,6 @@ def needs_group(target: RasterTarget, group: RasterGroup, item: Any) -> bool:
 
 
 def test_a_group_that_does_not_knock_out_records_nothing() -> None:
-    # The list is what paint_item tests before it reaches the decision at all,
-    # and only a knockout group is given one.
     assert RasterGroup(bytearray(4), view=pixel_view()).painted_boxes is None
 
 
@@ -99,12 +85,10 @@ def test_disjoint_fills_skip_and_are_remembered() -> None:
 def test_an_overlapping_fill_takes_the_group() -> None:
     target, group = make_target(), knockout_group()
     assert needs_group(target, group, fill_item((0, 0, 10, 10))) is False
-    # Shares a pixel column with the first.
     assert needs_group(target, group, fill_item((9, 0, 20, 10))) is True
 
 
 def test_boxes_that_merely_touch_are_disjoint() -> None:
-    """The box is exactly what fill_path paints into, so abutting is a miss."""
     target, group = make_target(), knockout_group()
     assert needs_group(target, group, fill_item((0, 0, 10, 10))) is False
     assert needs_group(target, group, fill_item((10, 0, 20, 10))) is False
@@ -128,7 +112,6 @@ def test_only_plain_edge_array_fills_are_eligible() -> None:
     ):
         group = knockout_group()
         assert needs_group(target, group, item) is True
-        # It is left to composite_group to record what the group painted.
         assert group.painted_boxes == []
 
 
@@ -143,20 +126,12 @@ def test_the_scan_gives_up_past_its_limit() -> None:
     target, group = make_target(), knockout_group()
     for index in range(RasterTarget.KNOCKOUT_DISJOINT_LIMIT):
         assert needs_group(target, group, fill_item((index * 2, 0, index * 2 + 1, 1))) is False
-    # The one that fills the list is still genuinely disjoint, but recording it
-    # trips the limit, and past there the page stands in for the boxes.
     assert needs_group(target, group, fill_item((5_000, 5_000, 5_001, 5_001))) is False
     assert group.painted_boxes == [(0, 0, target.width, target.height)]
     assert needs_group(target, group, fill_item((9_000, 9_000, 9_001, 9_001))) is True
 
 
-# The unit tests above drive the decision directly. These drive paint_item, so
-# they also cover what the elementary-group path leaves behind: an element that
-# took a group still painted, and composite_group records the pixels it did.
-
-
 def grouped(target: RasterTarget, items: list[Any], monkeypatch: pytest.MonkeyPatch) -> list[bool]:
-    """Whether each item went through an elementary group, painting for real."""
     used: list[bool] = []
     original = RasterTarget.push_scratch_group
 
@@ -215,8 +190,6 @@ def test_painting_a_fill_back_over_the_first_takes_a_group(
 
 
 def test_a_stroke_records_the_pixels_it_painted(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A stroke takes its group, and composite_group records the window that
-    group painted -- so it no longer stands for the whole page."""
     target = knockout_target()
     stroke = stroke_item(2, 2, 30, 2)
     assert grouped(target, [stroke], monkeypatch) == [True]
@@ -234,7 +207,6 @@ def test_a_fill_over_a_stroke_takes_a_group(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_a_fill_clear_of_a_stroke_skips(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A stroke used to retire the test for the rest of the group."""
     target = knockout_target()
     items = [stroke_item(2, 2, 30, 2), fill_item((0, 30, 5, 35))]
     assert grouped(target, items, monkeypatch) == [True, False]
@@ -248,8 +220,6 @@ def nested_group(target: RasterTarget, items: list[Any]) -> None:
 
 
 def test_a_fill_over_a_nested_group_takes_a_group(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A nested group composites straight into the knockout parent without
-    passing through paint_item; composite_group records what it painted."""
     target = knockout_target()
     nested_group(target, [stroke_item(2, 2, 30, 2)])
     assert grouped(target, [fill_item((10, 1, 15, 3))], monkeypatch) == [True]

@@ -1,19 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""JBIG2 generic template 0: byte-for-byte agreement with the Python original.
-
-jbig2_generic_golden.pkl.gz holds 532 cases from core_jbig2's decoder before
-it was deleted: every generic region the JBIG2 fixtures decode (18, from
-full-page scans down to 23-pixel strips), 40 prefixes of those that run the
-decoder off the end of its data, rows read with fewer lines than were encoded,
-66 marker edge cases (empty data, 0xFF followed by bytes either side of the
-0x8F boundary T.88 E.3.4 turns on), and 400 seeded random buffers over widths
-that do and do not fill a byte.
-
-The algorithm moved here rather than being copied, so this file and the
-conformance test below are its only tests; core_jbig2 now declines arithmetic
-regions.
-"""
 
 import gzip
 import pickle
@@ -53,8 +39,6 @@ def test_accepts_any_byte_buffer():
 
 
 def test_template_zero_decodes_a_black_row():
-    # One 8-pixel row, all black, coded by an encoder (was spec's
-    # test_supported_arithmetic_template_zero_decodes_black_row).
     assert decode_arithmetic_generic_template0(bytes.fromhex("ff ac"), 8, 1) == b"\xff"
 
 
@@ -70,8 +54,6 @@ def test_negative_sizes_are_rejected(width, height):
 
 
 def test_core_decodes_arithmetic_regions_with_the_kernel():
-    # Wire-up needs the consumer installed; the kernel tests above stand alone
-    # so cibuildwheel can run them against a bare wheel.
     pytest.importorskip("core_pdf")
     from core_pdf.impl import graphics_stream_decoding as stream_decoding
 
@@ -83,5 +65,4 @@ def test_core_decodes_arithmetic_regions_with_the_kernel():
     region = header + bytes.fromhex("ff ac")
     segment = struct.pack(">IBBBI", 2, 38, 0, 1, len(region)) + region
     end = struct.pack(">IBBBI", 3, 49, 0, 1, 0)
-    # PDF polarity: the T.88 black row reads back as 0x00.
     assert stream_decoding.decode_jbig2(page + segment + end, None) == b"\x00"

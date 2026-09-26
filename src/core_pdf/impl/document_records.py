@@ -183,8 +183,6 @@ class RawFormField:
         result: list[str] = []
         for item in value:
             if isinstance(item, PdfString):
-                # A text string (7.9.2.2), decoded as field values are; one
-                # that is not valid in its encoding keeps the lenient reading.
                 try:
                     result.append(decode_pdf_text_string(item.data))
                 except ValueError:

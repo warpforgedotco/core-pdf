@@ -43,7 +43,6 @@ def tiling_cell(target: RasterTarget, pattern: TilingPattern) -> tuple[DisplayLi
     return display, cell_clip
 
 
-# Display items that change what later items paint into, but paint nothing.
 NON_PAINTING_KINDS = frozenset(
     {"scope-begin", "scope-end", "state-push", "state-pop", "clip", "group-begin", "group-end"}
 )
@@ -52,15 +51,6 @@ NON_PAINTING_KINDS = frozenset(
 def cell_paints_nothing(
     items: Iterable[DisplayItem], cell_clip: CapturedPath, scale: float
 ) -> bool:
-    """Whether a tiling cell's items all lie outside the cell clip they are painted under.
-
-    A tile paints its items translated, under the cell clip translated by the
-    same amount, so whether anything lands inside the clip does not depend on
-    which tile it is. Conservative: an item whose extent is not known -- a
-    shading, an unknown kind, a missing box -- answers no. Strokes are widened
-    by ten line widths for miter joins, and every box by two device pixels,
-    so a partly covered pixel at either edge cannot slip through.
-    """
     clip_box = cell_clip.bbox()
     if clip_box is None:
         return False
@@ -107,14 +97,6 @@ def shading_color_rgba(
     opacity: Any,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int, int]:
-    """A shading function's output as RGBA, chosen by the shading's colour model.
-
-    Not render_blend.convert_color_rgba, which chooses by component count
-    alone: here a CMYK model takes four or more components, the conversion
-    follows the rendering intent, and anything else -- a CMYK model with
-    fewer components included -- is read as RGB. The two have drifted and
-    are kept apart so neither changes what it paints.
-    """
     alpha = color_component(opacity, 255) if type(opacity) in {int, float} else 255
     name = color_model or "DeviceRGB"
     if name.endswith("DeviceGray") or len(components) == 1:

@@ -111,8 +111,6 @@ class CaptureGraphicsSave:
 
 @dataclass(slots=True)
 class MarkedContentEntry:
-    """A marked-content span's ActualText, and the one run it collapses to."""
-
     layer: str | None = None
     actual_text: str | None = None
     mcid: int | None = None
@@ -145,8 +143,6 @@ def detect_rotation_from_linear(A: float, B: float, C: float, D: float) -> int:
     if scale_x <= 0 or scale_y <= 0:
         return 0
     na, nb, nc, nd = A / scale_x, B / scale_x, C / scale_y, D / scale_y
-    # Upright is the common case and falls through: each test below fails
-    # on its first comparison for it, cheaper than confirming all four.
     tolerance = MATRIX_TOLERANCE
     if (
         abs(na) < tolerance
@@ -172,55 +168,20 @@ def detect_rotation_from_linear(A: float, B: float, C: float, D: float) -> int:
     return 0
 
 
-# The product lists a CapturedProgram is cut from, in the order its fields
-# take them. capture_marks/captured_program are the only places that need to
-# know the set, so adding a product means touching this tuple and those two.
 CaptureMarks: TypeAlias = tuple[int, int, int, int, int, int]
 NO_MARKS: CaptureMarks = (0, 0, 0, 0, 0, 0)
 
 
-# The operators that change nothing a glyph's paint reads -- colours and
-# colour spaces, line state, the CTM, clip, opacity, blend, masks, render
-# mode, marked-content visibility -- only the text position, text state and
-# font, and showing text. Any other operator drops the shared paint. A soft
-# mask is captured under the whole graphics state, text state included, so
-# text shown under one never shares a paint.
 GLYPH_PAINT_KEEPING_OPERATORS = frozenset(
     ("BT", "Td", "TD", "Tm", "T*", "Tj", "TJ", "'", '"', "Tc", "Tw", "Tz", "TL", "Ts", "Tf")
 )
 
 
-# Of those, the ones that change nothing a TextLayout holds, and the ones
-# that move only the line origin, which its glyph style records.
 TEXT_LAYOUT_KEEPING_OPERATORS = frozenset(("Tj", "TJ", "TL", "Tw"))
 LINE_MOVING_OPERATORS = frozenset(("Td", "TD", "T*", "'"))
 
 
 class TextLayout:
-    """What a text-showing operator's strings share, worked out once for all of them.
-
-    A TJ array shows each of its strings through show_text, and between them
-    only the text position moves: the graphics and text state, the font, the
-    marked content and the clip are all the operator's. Everything here is a
-    function of those, so the strings after the first reuse it, and so do the
-    operators after it that change none of them: dispatch_frame keeps it
-    across TEXT_LAYOUT_KEEPING_OPERATORS, drops only the style across
-    LINE_MOVING_OPERATORS, and drops the rest before any other operator. A
-    stream's entry and exit drop it too, so a Type 3 glyph procedure run
-    inside a TJ never sees its caller's.
-
-    A caller that passes show_text its own glyph paint -- the pdfminer
-    facade, a glyph at a time -- gets a layout of its own, reused only while
-    it passes that same paint; `given_paint` is it, or None for the paint
-    show_text works out.
-
-    The text matrix's linear part is the operator's too, but the combined
-    matrix is not quite: Matrix.multiply returns the CTM itself when the text
-    matrix is the identity, and the product otherwise, which can differ in
-    the sign of a zero. `identity_text_matrix` records which branch this was
-    built under, and a string under the other branch builds its own.
-    """
-
     __slots__ = (
         "decoder",
         "given_paint",
@@ -268,9 +229,6 @@ class TextLayout:
     run_provenance: tuple[tuple[str, object], ...]
 
 
-# The path operators the content scanner can apply to a state itself, and
-# the handlers it reproduces: it does so only for a state whose table holds
-# exactly these, and whose curve and operand coercion are the tolerant ones.
 NATIVE_PATH_HANDLERS: dict[str, Callable[..., None]] = {
     "m": ContentInterpreter.op_m,
     "l": RecoveringTextState.op_l,
@@ -299,7 +257,6 @@ class CaptureStreamExecutor(ContentStreamExecutor):
     state: TextState
     _operator_names: frozenset[bytes] | None = None
 
-    # Streams nest at most this deep, and a reentered stream is skipped.
     max_depth = 10
 
     def reject_reentry(self, frame: ContentStreamFrame) -> bool:
@@ -308,8 +265,6 @@ class CaptureStreamExecutor(ContentStreamExecutor):
     def enter(self, frame: ContentStreamFrame) -> bool:
         if not super().enter(frame):
             return False
-        # A stream starts under its own clip, group alpha and state, and on
-        # the way out the caller's come back: either way the paint is stale.
         self.state.shared_glyph_paint = None
         self.state.text_layout = None
         return True
@@ -322,11 +277,6 @@ class CaptureStreamExecutor(ContentStreamExecutor):
             self.state.text_layout = None
 
     def operator_names(self, table: Mapping[str, OperationHandler]) -> frozenset[bytes]:
-        # Encoding all 71 handler names costs 6us, and iter_content_operations
-        # wants the set once per frame -- a page of form XObjects, tiling
-        # patterns and soft masks has thousands. The default table is built in
-        # the interpreter's __init__ and never changes, so its names are cached;
-        # a table with overrides in it (only tests install one) is encoded as is.
         state = self.state
         if table is not state.default_handlers:
             return frozenset(name.encode("latin-1") for name in table)
@@ -338,11 +288,6 @@ class CaptureStreamExecutor(ContentStreamExecutor):
     def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
         state = self.state
         assert frame.lexer is not None
-        # The loop below runs millions of times per corpus page, so it calls
-        # handlers straight from the state's operation table rather than going
-        # through execute_operation, which reads the same table per call. The
-        # table is taken once per stream, the last moment an override can be
-        # installed and still take effect for it.
         handlers = state.operation_table()
         depth = frame.depth
         for name, operands in iter_content_operations(
@@ -374,8 +319,6 @@ class CaptureStreamExecutor(ContentStreamExecutor):
 
 class TextState(RecoveringTextState):
     document: Any
-    # The document's own resolver, typed as the recovering one: the spec's
-    # PdfValueResolver protocol has no name-or-text lookups.
     name_resolver: ObjectResolver
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
@@ -493,8 +436,6 @@ class TextState(RecoveringTextState):
         self.normalized_colors = {}
         self.parsed_soft_masks = {}
         self.scale_cache = None
-        # The paint the last text shown recorded, while nothing it reads can
-        # have changed since; see GLYPH_PAINT_KEEPING_OPERATORS.
         self.shared_glyph_paint = None
         self.text_layout = None
 
@@ -514,7 +455,6 @@ class TextState(RecoveringTextState):
         return parse_int_strict(value, "invalid numeric operand", python_syntax=True)
 
     def capture_marks(self) -> CaptureMarks:
-        """Where each product list stands, to cut a later program from."""
         return (
             len(self.runs),
             len(self.glyphs),
@@ -525,7 +465,6 @@ class TextState(RecoveringTextState):
         )
 
     def captured_program(self, since: CaptureMarks = NO_MARKS) -> CapturedProgram:
-        """Everything captured, or everything captured since `since`."""
         runs, glyphs, drawings, inline_images, lines, text_boundaries = since
         return CapturedProgram(
             runs=tuple(self.runs[runs:]),
@@ -538,27 +477,12 @@ class TextState(RecoveringTextState):
         )
 
     def release(self) -> None:
-        """Break the state's reference cycles once its program has been taken.
-
-        The state is its own sink, its handler table holds its bound methods,
-        and its stream executor points back at it. Left like that, a finished
-        state -- and every glyph observation, run and drawing it still lists --
-        is freed only when the cycle collector next runs. On lyft_2021 that
-        collector took 17% of a whole-document extraction, and a page's
-        garbage outlived it by up to a full collection cycle.
-
-        The state cannot run content afterwards. Dictionaries shared with a
-        parent or nested state (soft masks, image sources) are left alone.
-        """
         del self.sink
         del self.stream_executor
         self.default_handlers.clear()
 
     def resolve_soft_mask(self, value: object) -> PdfSoftMask | None:
         mask = super().resolve_soft_mask(value)
-        # The parse cache keys on the resource scope, so a mask only ever comes
-        # back under the scope it was parsed with and the entry never changes
-        # once written. Rewriting it on every gs was work with no effect.
         if mask is not None and id(mask) not in self.capture_mask_resources:
             self.capture_mask_resources[id(mask)] = (mask, self.resources)
         return mask
@@ -583,10 +507,6 @@ class TextState(RecoveringTextState):
 
     def graphics_scale(self) -> float:
         ctm = self.graphics.ctm
-        # Matrix is immutable, so identity is enough to know the scale still
-        # holds. Drawing-heavy pages emit long runs under one CTM, and every
-        # drawing asks for this once for the line width and again for the dash
-        # pattern, so the repeat is worth catching.
         cached = self.scale_cache
         if cached is not None and cached[0] is ctm:
             return cached[1]
@@ -731,8 +651,6 @@ class TextState(RecoveringTextState):
         layout.space_width = (
             metrics_decoder.glyph_width(32) * fs * 0.001 if metrics_decoder is not None else 0.0
         )
-        # Each of these reads the linear part only through hypot and abs, so a
-        # zero's sign, the one thing identity_text_matrix guards, cannot move them.
         layout.rotation = detect_rotation_from_linear(A, B, C, D)
         if font_decoder.is_vertical:
             layout.scale_factor = hypot(C, D)
@@ -772,17 +690,11 @@ class TextState(RecoveringTextState):
         *,
         glyph_paint: GlyphPaint | None = None,
     ) -> None:
-        # The capture's font_provider only ever makes FontDecoder and DecodedGlyph;
-        # the spec's FontService protocol is far narrower than what capture reads.
         font_decoder: FontDecoder = decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         decoded_glyphs: tuple[DecodedGlyph, ...] = glyphs  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         text_matrix = self.text_matrix
         ctm = self.graphics.ctm
         combined = text_matrix.multiply(ctm)
-        # combined already carries the translation: multiply_affine's last two
-        # terms are te * ca + tf * cc + ce and te * cb + tf * cd + cf, which is
-        # what this used to recompute by hand. Checked bit for bit over 44,001
-        # matrix pairs, including both of multiply's identity short circuits.
         A, B, C, D, E, F = combined
         te, tf = text_matrix.e, text_matrix.f
         identity_text_matrix = text_matrix == IDENTITY_MATRIX
@@ -797,8 +709,6 @@ class TextState(RecoveringTextState):
             layout.identity_text_matrix = identity_text_matrix
             self.text_layout = layout
 
-        # is_text_visible, with the part that does not read the text worked
-        # out once in the layout.
         visible = False
         if text and layout.paints_text:
             first_code = ord(text[0])
@@ -919,8 +829,6 @@ class TextState(RecoveringTextState):
         provenance = (("source", self.capture_source), ("seqno", seqno), *layout.run_provenance)
         advance_bbox = (x0, y0, x1, y1)
 
-        # Positional: a keyword call matches each of these 24 names at the
-        # call, 1.2us of the 1.6us it costs, once per text-showing operation.
         new_run = TextRun(
             normalize_extracted_text(text),
             x0,
@@ -968,11 +876,6 @@ class TextState(RecoveringTextState):
         self.sequence = seqno + 1
 
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
-        # An empty path paints nothing, and everything below -- pattern and
-        # colour-space probing, flattening, the CTM transform -- is setup for a
-        # mark that will not exist. Content streams hit this constantly: a
-        # paint operator resets current_path, so the common "m l S f" idiom
-        # runs f against an empty path. One corpus page does that 18,560 times.
         if not source.ops:
             return
         if not self.is_graphics_visible():
@@ -980,8 +883,6 @@ class TextState(RecoveringTextState):
         graphics = self.graphics
         fill_space = graphics.fill_space
         stroke_space = graphics.stroke_space
-        # initial_pattern, inlined: a Pattern colour space with no pattern set
-        # yet paints nothing.
         fills = kind != "stroke" and not (
             fill_space.kind == "Pattern" and graphics.fill_pattern is None
         )
@@ -990,8 +891,6 @@ class TextState(RecoveringTextState):
         )
         if not fills and not strokes:
             return
-        # The operator asked for one of the three; what actually paints after
-        # the pattern and colour-space probes above may be narrower.
         painted: PaintedDrawingKind = (
             "fillstroke" if fills and strokes else "fill" if fills else "stroke"
         )
@@ -1383,9 +1282,6 @@ class TextState(RecoveringTextState):
             spec = graphics.fill_space
         if color is None or spec is None or not color_space_paints(spec):
             return color
-        # Keyed on the two fields the rendering is made from rather than the
-        # ColorRendering itself, whose hash and equality run in Python: every
-        # painted path asks this twice.
         intent = graphics.render_intent
         black_point = graphics.black_point_compensation
         key = (id(spec), color, intent, black_point)
@@ -1400,10 +1296,6 @@ class TextState(RecoveringTextState):
         return result
 
     def capture_shading_dictionary(self, dictionary: dict) -> dict:
-        # One captured dictionary per shading, so a shading painted again --
-        # an sh per tile -- is resolved once and the rasterizer, which keys
-        # its prepared shadings by the dictionary, prepares it once. The
-        # entry keeps the source alive, so its identity cannot be reused.
         cached = self.capture_shadings.get(id(dictionary))
         if cached is not None and cached[0] is dictionary:
             return cached[1]
@@ -1422,9 +1314,6 @@ class TextState(RecoveringTextState):
             hidden_layers=self.hidden_layers,
             options=self.options,
         )
-        # The caches are shared: every entry is checked against the identity
-        # of what it was made from, so a nested stream reaching the same
-        # fonts, colors, masks or images reuses the parent's work.
         nested.parsed_soft_masks = self.parsed_soft_masks
         nested.capture_soft_masks = self.capture_soft_masks
         nested.capture_mask_resources = self.capture_mask_resources
@@ -1503,7 +1392,6 @@ class TextState(RecoveringTextState):
                 if drawing.kind in {"stroke", "fillstroke"}:
                     drawing.stroke_color = base_color
             for glyph in nested.glyphs:
-                # One copy of the shared style, not one per field.
                 glyph.style = replace(glyph.style, fill=base_color, stroke_color=base_color)
         return TilingPattern(
             pattern.bbox,
@@ -1520,18 +1408,8 @@ class TextState(RecoveringTextState):
 
     def capture_graphics_soft_mask(self) -> CapturedSoftMask | None:
         mask = self.graphics.soft_mask
-        # A soft mask is captured to be rasterized under what it masks: a
-        # nested capture of its whole group, once per placement, since its
-        # CTM is baked in. A program without render details is never drawn
-        # -- CapturedProgram.commands refuses it -- so it records none. On
-        # PyMuPDF test_3450 that was 8,125 nested streams of a 2.6 s extract.
         if mask is None or not self.options.render_details:
             return None
-        # The five fields the nested capture overrides carry no information: four
-        # are the same literals every time, and the fifth is mask.ctm, which id(mask)
-        # already pins. Keying on the rest lets the lookup happen before the state is
-        # copied, which is the whole cost on a hit -- 1.5us of copy plus five fields
-        # of state_key, against a lookup that is measured in nanoseconds.
         key = (
             id(mask),
             tuple(state_key(getattr(self.graphics, name)) for name in MASK_KEYED_FIELDS),
@@ -1544,8 +1422,6 @@ class TextState(RecoveringTextState):
         graphics.soft_mask = None
         graphics.fill_opacity = graphics.stroke_opacity = 1.0
         graphics.blend_mode = None
-        # Bounded as parsed soft masks are: each placement of a mask with its
-        # CTM baked in is a new entry, so a page can make any number of them.
         if len(self.capture_soft_masks) >= SOFT_MASK_CACHE_LIMIT:
             self.capture_soft_masks.clear()
         self.capture_soft_masks[key] = (mask, None)
@@ -1601,12 +1477,6 @@ def image_source_from_stream(
 
 
 def soft_mask_mean_alpha(source: ImageSource) -> float | None:
-    """The image's soft mask averaged over its samples, or None without one.
-
-    The mask's stream bytes are still filter-encoded, so its samples are
-    decoded as the renderer decodes them; a mask that does not decode has
-    no average.
-    """
     mask = source.soft_mask
     if mask is None:
         return None
@@ -1626,11 +1496,6 @@ def flatten_path(
     lines: StrokeLineRows | None = None,
     line_width: float = 0.0,
 ) -> CapturedPath:
-    """The path flattened and put through `matrix`, its stroke lines added to `lines`.
-
-    The path's point lists wait until something reads them; see
-    CapturedPath.deferred_flattened.
-    """
     xs, ys, spans, bbox, has_segments = flatten_path_commands(
         source.ops,
         source.coords,
@@ -1643,12 +1508,6 @@ def flatten_path(
 
 
 class StrokeLineRows:
-    """The stroke lines captured so far, as one growing table of five-float rows.
-
-    flatten_path_commands appends to it in place, so a painted path costs no
-    array of its own; programs are cut out of it by row count.
-    """
-
     __slots__ = ("rows",)
 
     def __init__(self) -> None:
@@ -1659,18 +1518,14 @@ class StrokeLineRows:
         return len(self.rows) // 5
 
     def since(self, mark: int) -> CapturedLines:
-        """The lines appended after the first `mark`."""
         if mark >= self.count:
             return EMPTY_LINES
-        # A copy: a view would pin the table's buffer and stop it growing.
         table = numpy.frombuffer(self.rows, dtype=numpy.float64)
         return CapturedLines.from_array(table[mark * 5 :].reshape(-1, 5).copy())
 
 
 GRAPHICS_STATE_FIELDS = GraphicsState.__fields__
 
-# capture_graphics_soft_mask overrides these before capturing, so they are
-# constant for a given mask and cannot distinguish two of its cache entries.
 MASK_OVERRIDDEN_FIELDS = frozenset(
     {"ctm", "soft_mask", "fill_opacity", "stroke_opacity", "blend_mode"}
 )

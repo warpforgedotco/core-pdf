@@ -54,7 +54,6 @@ def test_mask_pixels_ignore_destination_clip_and_backdrop(
     np.testing.assert_array_equal(plane, 1 - expected if invert else expected)
     assert plane.dtype == np.float32
     assert not result.alpha.flags.writeable
-    # A window reads as the same window of the whole plane.
     np.testing.assert_array_equal(result[1:3, 2:4], plane[1:3, 2:4])
     assert bytes(target.pixels) == original_pixels
     assert target.clip.depth == 1
@@ -80,8 +79,6 @@ def test_sibling_reuses_mask_cache_without_sharing_paint_state() -> None:
 
 
 def test_transfer_runs_only_on_alphas_the_mask_holds() -> None:
-    # The mask holds 0 and 255 only. A transfer undefined elsewhere must not
-    # fail it, which rules out tabulating all 256 inputs up front.
     target = make_target(4, 4)
     samples: list[float] = []
 
@@ -119,7 +116,6 @@ def test_transfer_failure_is_cached_and_does_not_poison_other_masks() -> None:
     assert not target.active_soft_masks
 
 
-# A page dense in repeated soft masks; the parse cache exists for this shape.
 REPEATED_SOFT_MASK_PDF = (
     Path(__file__).resolve().parents[3] / "tests/fixtures/PyMuPDF/tests/resources/test_4942.pdf"
 )
@@ -127,11 +123,6 @@ REPEATED_SOFT_MASK_PDF = (
 
 @pytest.fixture
 def state(text_pdf_bytes: bytes) -> Iterator[TextState]:
-    """A capture state over a trivial document.
-
-    The cache tests stub parse_soft_mask out, so nothing here reads the
-    document's content and a real mask would only slow them down.
-    """
     from core_pdf import PdfDocument
     from core_pdf.impl.capture_recording import TextState
 
@@ -141,7 +132,6 @@ def state(text_pdf_bytes: bytes) -> Iterator[TextState]:
 
 @pytest.fixture
 def parses(monkeypatch: pytest.MonkeyPatch) -> list[object]:
-    """Counts reaching the real parse, standing in for its result."""
     from core_pdf.impl import capture_tolerant_state as tolerant_state
 
     reached: list[object] = []
@@ -156,9 +146,6 @@ def parses(monkeypatch: pytest.MonkeyPatch) -> list[object]:
 def test_a_repeated_soft_mask_is_parsed_once_per_distinct_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Every gs used to re-parse the ExtGState soft mask into a fresh SoftMask
-    # carrying a freshly compiled transfer closure, and every cache downstream
-    # is keyed by one of those identities, so none of them could ever hit.
     from core_pdf import PdfDocument
     from core_pdf.impl import capture_tolerant_state as tolerant_state
 
@@ -189,8 +176,6 @@ def test_the_same_source_under_the_same_state_parses_once(
     assert state.resolve_soft_mask(value) is None
     assert state.resolve_soft_mask(value) is None
     assert state.resolve_soft_mask(value) is None
-    # A None result is the commonest case -- an Identity or absent mask -- so
-    # it has to be cached too, not treated as a miss.
     assert len(parses) == 1
     assert len(state.parsed_soft_masks) == 1
 
@@ -198,8 +183,6 @@ def test_the_same_source_under_the_same_state_parses_once(
 def test_the_parse_cache_separates_masks_by_transform(
     state: TextState, parses: list[object]
 ) -> None:
-    # The ctm is baked into the parsed mask, so the same source under a
-    # different transform must not be served from the cache.
     from core_pdf_spec.s_08_graphics.matrix import Matrix
 
     value = {"S": "Alpha"}
@@ -212,8 +195,6 @@ def test_the_parse_cache_separates_masks_by_transform(
 def test_the_parse_cache_separates_masks_by_resource_scope(
     state: TextState, parses: list[object]
 ) -> None:
-    # A mask reached through different resources stays a separate object, so a
-    # program captured under one scope is never reused under another.
     value = {"S": "Alpha"}
     state.resolve_soft_mask(value)
     state.resources = dict(state.resources)
@@ -233,9 +214,6 @@ def test_the_parse_cache_is_bounded(
 
 
 def test_a_nested_capture_shares_the_parse_cache(state: TextState) -> None:
-    # Patterns and mask groups each capture a whole nested content stream. If
-    # the nested state started with an empty cache, every gs inside one would
-    # mint a fresh mask identity again and miss every cache downstream.
     assert state.nested_capture_state().parsed_soft_masks is state.parsed_soft_masks
 
 
@@ -256,16 +234,12 @@ def store_plane(cache, key, plane) -> None:
 
 
 def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
-    # A resolved plane covers the whole page in float32, so a page using many
-    # distinct masks kept far more than it could afford: one corpus page held
-    # 1,598 planes totalling 3,208MB, 91% of its peak resident set.
     from core_pdf.impl.render_target import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=10_000_000)
     for index in range(4):
         store_plane(cache, plane_key(index), make_plane(3))
     assert cache.size <= cache.budget
-    # The oldest went first, the newest are still there.
     assert cache.get(plane_key(0)) is None
     assert cache.get(plane_key(3)) is not None
 
@@ -275,10 +249,6 @@ def test_a_plane_larger_than_the_budget_is_not_cached_at_all() -> None:
 
     cache = ByteBudgetCache(budget=1_000_000)
     store_plane(cache, plane_key(1), make_plane(5))
-    # The plane is dropped rather than blowing the budget, and the key is left
-    # absent with it. Keeping the key with a None plane would read back as
-    # "this mask resolves to nothing", because resolve_soft_mask returns the
-    # cached plane, and every later use of the mask would paint unmasked.
     assert cache.get(plane_key(1)) is None
     assert cache.size == 0
 

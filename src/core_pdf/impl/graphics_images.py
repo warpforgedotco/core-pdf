@@ -295,8 +295,6 @@ def apply_soft_mask(raster: ImageRaster, mask: ImageRaster) -> ImageRaster:
         (numpy.arange(raster.width) * mask.width) // raster.width,
     )
     channels = raster.channels - int(raster.has_alpha)
-    # The mask sampled at those rows and columns, after the raster's colour
-    # channels, written in one pass.
     array = interleave_soft_mask(
         raster.array,
         channels,
@@ -407,16 +405,6 @@ def canonical_image_array(
 
 
 class FilterChainOutput:
-    """An image stream's filter chain output, decoded at most once.
-
-    The native paths and the fallbacks after them all may want the chain's
-    bytes. A JPX image the native path declines has already decoded the
-    codestream the chain's JPXDecode step would decode to the same array,
-    so it leaves its bytes here instead of the chain decoding it again; a
-    flate image whose size the native path rejects leaves its bytes too. A
-    decode that raises is not remembered, and raises again when asked.
-    """
-
     __slots__ = ("raw", "spec", "output")
 
     def __init__(self, raw: bytes | memoryview, spec: StreamDecodeSpec) -> None:
@@ -437,7 +425,6 @@ def decode_image_samples(
     *,
     size: tuple[int, int] | None = None,
 ) -> bytes | memoryview | DecodedImage | None:
-    """The image's samples; `size` is its (Width, Height) if the caller has read them."""
     if size is None:
         width = image_dimension(dictionary, "Width")
         height = image_dimension(dictionary, "Height")
@@ -755,15 +742,6 @@ def decode_stream_image_data(
     dictionary: object,
     chain: FilterChainOutput,
 ) -> DecodedImage | None:
-    """The image natively decoded, or None.
-
-    A JPX image that decodes to eight bits a sample in a color space given
-    as an array or dictionary is declined here, and the caller then takes
-    the whole filter chain's output, whose JPXDecode step decodes the same
-    codestream to the same array -- preserve_precision only keeps a
-    sixteen-bit one. Its bytes go to `chain`, so a large image is not
-    decoded twice.
-    """
     stream_spec = chain.spec
     if stream_spec.steps and stream_spec.steps[-1].name == "JPXDecode":
         try:

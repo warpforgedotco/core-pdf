@@ -62,7 +62,6 @@ def require_pdf_number_pairs(
     count: int | None = None,
     length_message: str | None = None,
 ) -> tuple[tuple[float, float], ...]:
-    """(low, high) pairs of a number array: `count` pairs, or any nonzero number of them."""
     values = require_pdf_number_array(value, message)
     if len(values) != 2 * count if count is not None else not values or len(values) % 2:
         raise ValueError(message if length_message is None else length_message)
@@ -85,7 +84,6 @@ def scalar_token(value: object) -> bytes | None:
 
 
 def scalar_text(value: object) -> str | None:
-    """The text Python's int() and float() parse: str as is, bytes that are ASCII."""
     if type(value) is bool:
         return None
     if type(value) is memoryview:
@@ -98,12 +96,6 @@ def scalar_text(value: object) -> str | None:
         except UnicodeDecodeError:
             return None
     return value if type(value) is str else None
-
-
-# python_syntax=True parses text with Python's int() and float() grammar (so
-# "1_000", " 7 ", "1e3" and "inf" are numbers) and keeps non-finite floats;
-# core's recovery reads values that way. The default is the PDF grammar of
-# 7.3.3, which admits none of those.
 
 
 @overload
@@ -194,7 +186,6 @@ def parse_float_strict(
 def parse_box(
     value: object, *, python_syntax: bool = False
 ) -> tuple[float, float, float, float] | None:
-    """Four numbers, or None; `python_syntax` reads each as parse_float_strict does."""
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
     try:

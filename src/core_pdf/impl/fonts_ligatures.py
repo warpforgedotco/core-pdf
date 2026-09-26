@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Recovering an "ft" ligature that a font encodes without a Unicode mapping.
-
-Some producers emit the ligature as a composite glyph with no cmap entry, so
-the decoder has nothing to map it to. The only evidence left is metric: the
-composite is roughly as wide as the two starter glyphs it stands in for, and a
-companion font in the same resource dictionary still carries those starters.
-"""
 
 from __future__ import annotations
 
@@ -67,8 +60,6 @@ def find_companion_font(
         fobj = document.resolve(fref)
         if not isinstance(fobj, dict):
             continue
-        # base_name is never empty, so a font with no name (None) is skipped
-        # as one named "" was.
         comp_base = normalized_base_font_name(
             recover_pdf_name(document.resolve(fobj.get("BaseFont")))
         )
@@ -155,7 +146,6 @@ def detect_ligature_overrides(
             document, resources, base_name, set("ftscFTSC")
         )
     except ValueError:
-        # A malformed companion only matters when this font's own tables load.
         if load_font_file_tables(font_file) is None:
             return {}
         raise

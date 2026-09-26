@@ -1,6 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Spec's number and name tree walkers with the reader's limits: a null node
-is an empty subtree, and trees end 100 levels down."""
 
 from __future__ import annotations
 
@@ -20,7 +18,6 @@ MAX_TREE_DEPTH = 100
 
 
 def skipping_null_nodes(on_malformed: MalformedFn) -> MalformedFn:
-    """on_malformed, except that a null node is skipped as an empty subtree."""
 
     def report(message: str) -> None:
         if isinstance(message, MalformedTreeNode) and message.node is None:

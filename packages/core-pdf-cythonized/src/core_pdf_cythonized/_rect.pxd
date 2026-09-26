@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# The rectangle fill's pixel core, for the stroke kernel's square joins and caps.
 
 cdef int fill_rect_pixels(
     unsigned char* base,

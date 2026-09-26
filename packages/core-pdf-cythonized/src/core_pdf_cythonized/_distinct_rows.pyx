@@ -1,30 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Distinct colour rows, and the scatter back (core_pdf.impl.graphics_icc_profiles).
-
-An ICC image conversion hands lcms every pixel, but a photograph uses few
-of the colours it could: 908,510 distinct among 36.6 million pixels on
-SCORE-Bench 153rd-Omaha-Pow-Wow, 66,646 among 10.6 million on another page.
-lcms converts each pixel independently, so converting each distinct colour
-once and scattering the results is the same image -- and lcms was 2.6 s of
-that page. numpy.unique would sort the rows to find them, which alone took
-over a second; this finds them with a hash table in one pass.
-
-distinct_uint16_rows returns the distinct rows in first-seen order and each
-row's index into them, or None once there are more than `limit` distinct
-rows, when converting everything directly is cheaper than the scatter.
-gather_uint8_rows is the scatter, taking the uint32 indices directly rather
-than having numpy widen them to intp first.
-
-code_presence and gather_uint8_rows over uint16 codes are the same two steps for a
-one-component image (core_pdf.impl.graphics_image_samples.
-convert_distinct_codes), whose samples are already codes into a table of at
-most 65,536 entries: which codes occur, and the converted row of each pixel's
-code. numpy marked the codes with a fancy-indexed scatter and gathered with
-take, about 5.7 ns a sample over PyMuPDF test_3806's 43 million.
-
-Nothing here is arithmetic on colour values: rows are compared bit for bit,
-and lcms still does every conversion.
-"""
 
 from libc.stdlib cimport free, malloc, realloc
 from libc.stdint cimport int32_t, uint16_t, uint32_t, uint64_t
@@ -50,7 +24,6 @@ cdef inline Py_ssize_t slot_of(uint64_t key, int shift) noexcept nogil:
 
 
 def distinct_uint16_rows(const uint16_t[:, ::1] samples, Py_ssize_t limit):
-    """(distinct rows, uint32 index of each row into them), or None past `limit` distinct."""
     cdef Py_ssize_t rows = samples.shape[0]
     cdef Py_ssize_t channels = samples.shape[1]
     if channels < 1 or channels > 4:
@@ -98,7 +71,6 @@ def distinct_uint16_rows(const uint16_t[:, ::1] samples, Py_ssize_t limit):
                 index_out[i] = <uint32_t> count
                 count += 1
                 if count * 2 >= capacity:
-                    # Grow and rehash, keeping the load at or under a half.
                     old_capacity = capacity
                     capacity *= 2
                     shift -= 1
@@ -156,12 +128,6 @@ ctypedef fused row_index:
 
 
 def gather_uint8_rows(const unsigned char[:, ::1] table, const row_index[::1] indices):
-    """table[indices], row by row, into a new (len(indices), columns) uint8 array.
-
-    One specialization per index width: uint32 inverse indices from
-    distinct_uint16_rows, and a one-component image's uint16 codes, which
-    index their table directly.
-    """
     cdef Py_ssize_t count = indices.shape[0]
     cdef Py_ssize_t columns = table.shape[1]
     cdef Py_ssize_t available = table.shape[0]
@@ -193,7 +159,6 @@ def gather_uint8_rows(const unsigned char[:, ::1] table, const row_index[::1] in
 
 
 def code_presence(const uint16_t[::1] codes):
-    """(present, largest): which of the 65,536 codes occur, and the largest, or -1 if none."""
     present = numpy.zeros(65536, dtype=numpy.bool_)
     cdef unsigned char[::1] marks = present.view(numpy.uint8)
     cdef Py_ssize_t i, count = codes.shape[0]

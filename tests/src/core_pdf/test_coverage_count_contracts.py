@@ -1,15 +1,3 @@
-"""Small fills and stroke segments in any blend paint what their per-pixel loops did.
-
-fill_path and fill_line each ended in a Python loop for what their kernels
-did not take -- a blend other than normal, a group recording planes, a clip
-that is not rectangles: sample each pixel 4x4, then blend_coverage_pixel.
-The loops are gone. Their counts now come from supersampled_coverage_plane
-and stroke_segment_samples, checked here against the sampling loops as they
-were, and their blending from blend_coverage_counts, checked against
-blend_coverage_pixel's blend_px call for each pixel, in every blend mode,
-with and without group planes, including where blend_px raises part way.
-"""
-
 import random
 from typing import Any
 
@@ -26,7 +14,6 @@ OFFSETS = (0.125, 0.375, 0.625, 0.875)
 
 
 def loop_path_counts(edges, box, view, fill_rule):
-    """fill_path's sampling: four scanlines a row, four samples a pixel on each."""
     crop_x0, crop_y1, scale = view
     ix0, iy0, ix1, iy1 = box
     segments = [
@@ -59,7 +46,6 @@ def loop_path_counts(edges, box, view, fill_rule):
 
 
 def loop_segment_counts(segment, half, box, view, cap_extension):
-    """fill_line's sampling of a diagonal, butt- or square-capped segment."""
     crop_x0, crop_y1, scale = view
     x0, y0, x1, y1 = segment
     ix0, iy0, ix1, iy1 = box
@@ -154,7 +140,6 @@ def reference_blend_counts(
     rgba: tuple[int, int, int, int],
     blend_mode: str | None,
 ) -> None:
-    """blend_coverage_pixel for each covered pixel the clip lets through."""
     mode = self.resolved_blend(blend_mode)
     track_shape = self.group_source_shape is not None
     rows, columns = counts.shape
@@ -201,7 +186,7 @@ def test_blended_counts_are_blend_coverage_pixels(
         try:
             blend(target, counts, 2, 1, allowed, (250, 30, 120, 170), mode)
             raised = None
-        except Exception as error:  # noqa: BLE001 -- the comparison covers failures too
+        except Exception as error:  # noqa: BLE001
             raised = (type(error), str(error))
         outcomes.append((raised, *state(target)))
     assert outcomes[0] == outcomes[1]

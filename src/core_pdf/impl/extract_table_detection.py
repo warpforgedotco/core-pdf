@@ -276,7 +276,6 @@ def detect_tables(
             continue
         for conflict in conflicts:
             tables.remove(conflict)
-        # Cleaned only once it has won: a conflict is judged on the table as detected.
         cleaned = clean_stream_table(stream)
         if cleaned is not None:
             tables.append(cleaned)

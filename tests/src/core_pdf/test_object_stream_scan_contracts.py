@@ -1,5 +1,3 @@
-"""Object stream headers and dictionaries read without a lexer read as the lexer reads them."""
-
 import pytest
 
 from core_pdf.impl.exceptions import PdfParseError
@@ -36,7 +34,7 @@ def object_stream(parts: list[bytes]) -> PdfStream:
 def outcome(container: PdfObjectStream, number: int) -> str:
     try:
         return repr(container.get(number))
-    except Exception as error:  # noqa: BLE001 -- the comparison covers failures too
+    except Exception as error:  # noqa: BLE001
         return f"raised {type(error).__name__}: {error}"
 
 

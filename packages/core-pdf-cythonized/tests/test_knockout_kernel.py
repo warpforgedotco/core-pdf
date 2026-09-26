@@ -1,17 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""The fused knockout wrapper against the core implementation it replaced.
-
-knockout_golden.pkl.gz holds buffers captured while rasterizing three corpus
-pages, with the output produced by core's composite_knockout_group before it
-was deleted. That function built a mask, took three boolean fancy-index
-copies, called into spec and scattered the result back; the kernel does all of
-it in one pass, so this pins the fused version to the staged one.
-
-The ISO 32000-2 11.4.x conformance tests for the algorithm itself live beside
-this file in test_knockout_groups.py, moved here from core-pdf-spec along with
-the function.
-"""
 
 import gzip
 import pickle
@@ -48,7 +36,6 @@ def test_fused_wrapper_reproduces_staged_output_bitwise(index):
 
 
 def test_pixels_outside_the_shape_are_left_alone():
-    """The original masked on `shape > 0` after folding in element alpha."""
     destination = numpy.full((2, 2, 4), 7, numpy.uint8)
     before = destination.copy()
     group_alpha = numpy.zeros((2, 2), numpy.float32)
@@ -64,9 +51,6 @@ def test_pixels_outside_the_shape_are_left_alone():
 
 
 def test_render_target_uses_the_kernel():
-    # These wire-up assertions need the consumer installed. The kernel tests
-    # otherwise stand alone, so cibuildwheel can run the golden vectors
-    # against a freshly built wheel with nothing else present.
     pytest.importorskip("core_pdf")
     from core_pdf.impl import render_target as target
 
@@ -78,5 +62,4 @@ def test_spec_no_longer_owns_the_algorithm():
     from core_pdf_spec.s_11_transparency import groups
 
     assert "composite_knockout_element" not in groups.__all__
-    # remove_group_backdrop and its helper stay behind.
     assert hasattr(groups, "remove_group_backdrop")

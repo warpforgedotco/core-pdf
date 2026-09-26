@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Nearest-sample opaque blit: the bytes the tiled numpy gather wrote.
-
-sample_blit_golden.pkl.gz was produced by RasterTarget.blit_opaque_sampled_tiles
-as it was before the kernel replaced its gather: grey, RGB and four-channel
-sources, both orientations, row and column validity masks with gaps and
-without, each blitted into a window of a larger RGBA buffer whose pixels
-around the window must come through untouched.
-"""
 
 import gzip
 import pickle

@@ -112,12 +112,10 @@ def shading_rgba(
     rendering: ColorRendering,
     shading_alpha: float | None,
 ) -> tuple[int, int, int, int]:
-    """paint_shading's colour for one value: the shading's, scaled by any soft mask alpha."""
     rgba = shading_color_rgba(color_model, components, fill_opacity, rendering)
     return rgba if shading_alpha is None else scale_rgba_alpha(rgba, shading_alpha)
 
 
-# blend_px's modes, as shading_blend numbers them; any other composites as normal.
 BLEND_COLOR_DODGE = 3
 BLEND_COLOR_BURN = 4
 BLEND_MODE_CODES: dict[str | None, int] = {
@@ -151,8 +149,6 @@ def prepared_image_bytes(prepared: PreparedImage | None) -> int:
 
 
 class ByteBudgetCache[K, V]:
-    """Values evicted oldest first once the bytes they hold exceed the budget."""
-
     __slots__ = ("budget", "entries", "size")
 
     def __init__(self, budget: int) -> None:
@@ -170,8 +166,6 @@ class ByteBudgetCache[K, V]:
         if previous is not None:
             self.size -= previous[1]
         if size > self.budget:
-            # Too large to keep. Leave the key absent so the value is built
-            # again: a stored placeholder would read back as a real result.
             return
         while entries and self.size + size > self.budget:
             self.size -= entries.pop(next(iter(entries)))[1]
@@ -179,12 +173,8 @@ class ByteBudgetCache[K, V]:
         self.size += size
 
 
-# Keyed by id(source); the entry holds the source, so the id cannot be reused
-# while it is cached.
 type PreparedImageCache = ByteBudgetCache[int, tuple[ImageSource, PreparedImage | None]]
 type PreparedShadingCache = dict[tuple[int, ColorRendering], tuple[object, PreparedShading | None]]
-# Each cache is cleared when it reaches this many entries: a tiled sh adds one
-# shading dictionary per tile, and the cache holds each of them.
 SHADING_CACHE_LIMIT = 4096
 
 
@@ -227,13 +217,6 @@ def subpath_columns(
     bytes,
     bytes,
 ]:
-    """A built path's points as stroke_polylines takes them.
-
-    With each subpath's two comparisons made here, as the Python walk made
-    them on the point tuples: whether its last point differs from its first,
-    and for two points whether they coincide. A float object can be shared
-    between points, and tuple comparison tries identity first.
-    """
     xs: list[float] = []
     ys: list[float] = []
     spans: list[tuple[int, int, bool]] = []
@@ -271,11 +254,6 @@ def paint_stroke_once(
     line_cap: int,
     line_join: int,
 ) -> None:
-    # The stroke paints its coverage into a page-sized scratch buffer, and
-    # only its paint window can hold any: the window covers every write, as
-    # a group's compositing relies on. So the covered box is found inside the
-    # window rather than across the page, and the buffer is kept and zeroed
-    # over the window afterwards rather than allocated again per stroke.
     size = len(target.pixels)
     coverage_buffer = target.stroke_scratch
     if coverage_buffer is None or len(coverage_buffer) != size:
@@ -333,9 +311,6 @@ def composite_nonisolated_group(
     opacity = clamp01(opacity)
     mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
     if opacity == 1.0 and mode in {None, "normal"} and mask_alpha is None:
-        # Every elementary group around a glyph lands here: quantizing the
-        # coverage and copying the covered pixels across is the whole of it,
-        # and the planes are far too small to pay for nine numpy passes.
         return composite_elementary_normal(destination, rendered, source_alpha)
     scaled_alpha = source_alpha.astype(numpy.float64) * opacity * 255.0
     if mask_alpha is not None:
@@ -345,7 +320,6 @@ def composite_nonisolated_group(
     if not numpy.any(visible):
         return effective_alpha
     if opacity == 1.0 and mode in {None, "normal"}:
-        # Reachable only with a soft mask; the unmasked case went to the kernel.
         unchanged_alpha = visible & (mask_alpha == 1.0)
         destination[unchanged_alpha] = rendered[unchanged_alpha]
         visible &= ~unchanged_alpha
@@ -388,11 +362,6 @@ def composite_masked_group(
 ) -> UInt8Array:
     mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
     if source_alpha is None and mode in {None, "normal"}:
-        # Every soft-masked group in the corpus lands here. The planes run to
-        # tens of thousands of pixels, and boolean-mask gathers and scatters
-        # around the arithmetic were almost all of what numpy spent on them.
-        # The kernel reads the mask's bytes through its table, so the window
-        # is never converted to float32 at all.
         return composite_masked_normal(
             destination, rendered, opacity, mask.alpha[window], mask.values()
         )
@@ -428,16 +397,8 @@ def composite_masked_group(
 
 
 SoftMaskKey = tuple[int, int, tuple[float, float]]
-# A resolved plane covers the whole page in float32, so a page that uses many
-# distinct masks keeps far more of them than it can afford: one corpus page,
-# PyMuPDF/tests/resources/test_3450.pdf, held 1,598 planes totalling 3,208MB,
-# which was 91% of its peak resident set. The budget is generous next to the
-# prepared-image one because re-resolving a mask means replaying its content
-# stream, which is dearer than re-preparing an image.
 SOFT_MASK_CACHE_BYTES = 512 << 20
 
-# A half-open pixel box, as clipped_pixel_box returns it, and the one that
-# stands for "this element lands nowhere on the page".
 type PixelBox = tuple[int, int, int, int]
 EMPTY_PIXEL_BOX: PixelBox = (0, 0, 0, 0)
 
@@ -466,17 +427,11 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
         display = DisplayList(target.width, target.height, preserve_object_boundaries=True)
         append_captured_program(display, mask.program, include_text=True)
         nested.paint_items(display.items, translation=mask.offset)
-        # A contiguous copy of the alpha alone: a view would keep the
-        # sibling's whole RGBA page alive, four times what the cache counts.
         alpha, present = alpha_channel(view, mask.transfer is not None)
         alpha.setflags(write=False)
         if mask.transfer is None or present is None:
             result = SoftMaskPlane(alpha, None)
         else:
-            # The transfer runs once per alpha the plane holds, in ascending
-            # order -- not over all 256, since a transfer that fails on a value
-            # the mask never uses must not fail the mask. alpha_channel marks
-            # the values present as it copies the plane.
             samples = numpy.flatnonzero(present)
             values = [mask.transfer(int(sample) / 255.0)[0] for sample in samples]
             table = numpy.zeros(256, dtype=numpy.float32)
@@ -516,9 +471,6 @@ def box_downsample(
         target_width
     )
     if grid.dtype == numpy.uint8:
-        # Compiled: one pass over the source, integer sums with reduceat's
-        # uint32 width. numpy's reduceat spent 376 ms taking one 33-megapixel
-        # scan to 788x788, casting element by element.
         reduced = box_downsample_blocks(grid, row_edges, column_edges)
         return reduced.reshape(-1), target_width, target_height
     totals = numpy.add.reduceat(grid, row_edges[:-1], axis=0, dtype=numpy.uint32)
@@ -589,10 +541,6 @@ class RasterTarget:
     ) -> None:
         self.semantic_context = blend_context(semantic_context)
         self.buffer_stack = [RasterGroup(pixels, view=page_view)]
-        # pixels, pixel_array, group_source_alpha, group_source_shape and
-        # paint_window mirror the innermost group for the paint loops, which
-        # read them per pixel.
-        # sync_group_mirrors is the only thing that sets them.
         self.pixels: bytearray
         self.pixel_array: UInt8Array
         self.group_source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
@@ -617,16 +565,11 @@ class RasterTarget:
         self.soft_mask_cache: SoftMaskCache = ByteBudgetCache(SOFT_MASK_CACHE_BYTES)
         self.prepared_image_cache: PreparedImageCache = ByteBudgetCache(PREPARED_IMAGE_CACHE_BYTES)
         self.tiling_cell_cache: TilingCellCache = {}
-        # A shading dictionary's prepared form, per dictionary and rendering.
-        # The entry keeps its dictionary alive, so the identity key cannot be
-        # reused while it is here.
         self.prepared_shading_cache: PreparedShadingCache = {}
         self.shading_evaluator_cache: ShadingEvaluatorCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, ElementaryScratch] = {}
-        # DisplayList.group_member_boxes of the list being painted, if known.
         self.group_member_boxes: dict[int, tuple[float, float, float, float] | None] | None = None
-        # paint_stroke_once's coverage buffer, all zero between strokes.
         self.stroke_scratch: bytearray | None = None
         if group_alpha is not None:
             self.push_group(bytearray(len(pixels)), group_alpha, None)
@@ -716,24 +659,9 @@ class RasterTarget:
         finally:
             self.pop_scope()
 
-    # Past this many boxes the linear scan stops paying for itself, and a
-    # knockout group with that many elements is not the text case this is for.
     KNOCKOUT_DISJOINT_LIMIT = 96
 
     def knockout_glyph_fill(self, item: DisplayItem) -> bool:
-        """Paint a plain glyph fill into a knockout parent without its elementary group.
-
-        Every glyph of a text knockout group that touches another went
-        through a scratch group: pushed as a copy of the parent's backdrop
-        with empty planes, filled, popped and composited in. Over the fill's
-        box that group holds exactly the backdrop and zeros, and nothing
-        outside the box is read, so fill_glyph_knockout does what the group's
-        two kernels, fill_glyph_coverage and composite_elementary_knockout,
-        did with that copy and those planes, per pixel and straight into the
-        parent. This follows paint_typed_path and fill_path to their glyph
-        branch; wherever they would go another way it returns False and the
-        group is used after all.
-        """
         if type(item) is not PathPaintItem or item.paint_kind is not PathPaintKind.FILL:
             return False
         edge_array = item.edge_array
@@ -792,18 +720,6 @@ class RasterTarget:
         return True
 
     def knockout_group_region(self, item: DisplayItem) -> PixelBox | None:
-        """The pixels a non-isolated knockout group can touch, or None if unknown.
-
-        A text object's knockout group copied the whole page as its backdrop
-        and cleared two page-sized planes, to paint a line of glyphs: on
-        pdfminer.six issue_495 that was half the page's render. When every
-        member is a plain fill, each paints inside its clipped bbox (see
-        knockout_paint_box), and so does an elementary group composited in
-        for one; the group is composited over what it painted. Nothing reads
-        or writes the group outside the union of those boxes under the clip
-        it begins in -- which a member's own clip only narrows, since a plain
-        fill group holds no clip -- so that union is all it needs set up.
-        """
         boxes = self.group_member_boxes
         if boxes is None:
             return None
@@ -815,36 +731,14 @@ class RasterTarget:
         return EMPTY_PIXEL_BOX if clipped is None else clipped[1]
 
     def knockout_paint_box(self, item: DisplayItem) -> PixelBox | None:
-        """The pixel box `item` would paint straight into a knockout group, or
-        None if it cannot skip its elementary group at all.
-
-        Only a plain fill qualifies: an edge-array fill, where fill_path
-        provably paints inside item.bbox, with no pattern and a Normal blend.
-        Anything else composites through a group, and composite_group records
-        what that group actually painted, so nothing else needs predicting.
-        """
         if not is_plain_fill(item):
             return None
         clipped = self.clip.clipped_pixel_box(item.bbox)
         if clipped is None:
-            # Nothing of it lands on the page, so it paints nothing at all.
             return EMPTY_PIXEL_BOX
-        # Exactly the box fill_path will paint into -- it clips the coverage
-        # plane to this and blends only inside it -- so no margin is needed.
-        # An earlier version inflated by a pixel for antialiasing and skipped
-        # only 7.6% of a dense text page, because adjacent glyph boxes tile
-        # contiguously and a one-pixel margin makes every neighbour an overlap.
         return clipped[1]
 
     def record_knockout_paint(self, box: PixelBox) -> None:
-        """Record a box painted into the innermost group, if it knocks out.
-
-        Everything painted into the group is recorded, not only the elements
-        that skipped its elementary group: one composited in through a group
-        leaves pixels behind just the same, and a later element landing on them
-        would no longer be painting over the initial backdrop. composite_group
-        records those from the window the group actually painted.
-        """
         boxes = self.buffer_stack[-1].painted_boxes
         if boxes is None or box == EMPTY_PIXEL_BOX:
             return
@@ -855,21 +749,8 @@ class RasterTarget:
             boxes.append(box)
 
     def knockout_skip_box(self, item: DisplayItem, boxes: list[PixelBox]) -> PixelBox | None:
-        """The box `item` paints, when it misses every pixel painted into the
-        knockout group so far and so can knock out without an elementary group;
-        None when it needs the group.
-
-        Knockout composites each element against the group's *initial*
-        backdrop rather than the accumulated result. Where nothing has been
-        painted yet those are the same buffer, the accumulated source alpha is
-        zero, and the knockout formula collapses: `dst == bak` makes
-        `colour * complete - backdrop * initial` vanish, `rga` becomes the
-        element's own alpha and `ra` equals it, so the component reduces to the
-        element itself. Painting straight into the parent produces that.
-        """
         box = self.knockout_paint_box(item)
         if box is None or box == EMPTY_PIXEL_BOX:
-            # One that paints nothing would have its group paint nothing either.
             return box
         x0, y0, x1, y1 = box
         for bx0, by0, bx1, by1 in boxes:
@@ -967,15 +848,8 @@ class RasterTarget:
                     if (graphics_mask := data.get("graphics_soft_mask")) is not None
                     else None
                 )
-                # A knockout group takes scratch only where the pixels it
-                # can touch are known.
                 region = self.knockout_group_region(item) if not isolated and knockout else None
                 if not isolated and (not knockout or region is not None):
-                    # A non-isolated group starts as its backdrop, as an
-                    # elementary group does, so it takes the same per-depth
-                    # scratch: a page of Type 3 text inside a knockout group
-                    # opened 9,956 of these, each copying the whole page and
-                    # zeroing two page-sized planes to paint a glyph.
                     self.push_scratch_group(
                         opacity,
                         data.get("blend_mode"),
@@ -1026,17 +900,6 @@ class RasterTarget:
         alpha_is_shape: bool,
         region: PixelBox | None = None,
     ) -> None:
-        """Push a non-isolated group onto this depth's scratch buffer.
-
-        Such a group starts as a copy of its backdrop with empty source planes.
-        The scratch keeps that state between uses, and pop_group records what
-        the last group painted, so when the backdrop is a knockout parent's
-        (which does not change) only that window is restored.
-
-        With a `region`, the group is a knockout group that reads and writes
-        nothing outside it, and only the region is set up: see
-        knockout_group_region.
-        """
         parent = self.buffer_stack[-1]
         backdrop = parent.backdrop if parent.knockout else self.pixels
         knockout = region is not None
@@ -1067,8 +930,6 @@ class RasterTarget:
                 scratch.view[y0:y1, x0:x1] = self.pixel_view(backdrop)[y0:y1, x0:x1]
                 source_alpha[y0:y1, x0:x1] = 0.0
                 source_shape[y0:y1, x0:x1] = 0.0
-            # Outside the region the scratch is left as it was, so the next
-            # group at this depth cannot count on it matching any backdrop.
             scratch.synced_parent = None
         elif parent.knockout and scratch.synced_parent is parent:
             dirty = scratch.dirty
@@ -1141,7 +1002,6 @@ class RasterTarget:
                 knockout=knockout,
                 alpha_is_shape=alpha_is_shape,
                 mask_alpha=mask_alpha,
-                # Only a knockout group needs this, and only it reads it.
                 painted_boxes=[] if knockout else None,
             )
         )
@@ -1149,9 +1009,6 @@ class RasterTarget:
 
     def pop_group(self) -> RasterGroup:
         child = self.buffer_stack.pop()
-        # A scratch group leaves its buffer and planes changed only inside
-        # its paint window, which the next push at this depth restores.
-        # Recorded here so every way of popping it does.
         scratch = self.elementary_scratch.get(len(self.buffer_stack))
         if scratch is not None and child.pixels is scratch.buffer:
             scratch.dirty = list(child.paint_window) if child.paint_window else None
@@ -1159,11 +1016,6 @@ class RasterTarget:
         return child
 
     def sync_group_mirrors(self) -> None:
-        """Point the paint loops' attributes at the innermost group.
-
-        The page level keeps no paint window: nothing composites it, so
-        tracking one there would be pure cost.
-        """
         group = self.buffer_stack[-1]
         self.pixels = group.pixels
         self.pixel_array = group.view
@@ -1173,13 +1025,6 @@ class RasterTarget:
 
     @contextmanager
     def detached_buffer(self, buffer: bytearray, window: list[int] | None = None) -> Iterator[None]:
-        """Paint into `buffer` alone, with no group planes, tracking `window`.
-
-        For a pass that paints coverage into scratch and records it into the
-        group itself afterwards; the group's mirrors come back on the way out.
-        `window`, if given, collects the pass's paint window, which covers
-        every pixel it writes.
-        """
         self.pixels = buffer
         self.pixel_array = self.pixel_view(buffer)
         self.group_source_alpha = None
@@ -1196,7 +1041,6 @@ class RasterTarget:
     def extend_paint_window(self, rows: int | slice, columns: int | slice) -> None:
         if self.paint_window is None:
             return
-        # Every painted element comes through here, so the extents are inline.
         if isinstance(rows, slice):
             y0, y1, _ = rows.indices(self.height)
             y1 = max(y0, y1)
@@ -1210,7 +1054,6 @@ class RasterTarget:
         self.extend_paint_box(y0, y1, x0, x1)
 
     def extend_paint_box(self, y0: int, y1: int, x0: int, x1: int) -> None:
-        """extend_paint_window for rows [y0, y1) and columns [x0, x1), already in range."""
         window = self.paint_window
         if window is None:
             return
@@ -1256,12 +1099,6 @@ class RasterTarget:
             self.record_plane(plane, rows, columns, alpha / 255.0, visible)
 
     def pixel_view(self, buffer: bytearray | bytes) -> UInt8Array:
-        """A (height, width, 4) view over a buffer no group owns.
-
-        Every group holds its own view -- self.pixel_array is the innermost
-        one's -- so this is for one-off buffers: a stroke's scratch coverage,
-        and a backdrop reached through a knockout parent.
-        """
         if buffer is self.page_buffer:
             return self.page_pixels
         return uint8_image_view(buffer, (self.height, self.width, 4))
@@ -1289,19 +1126,8 @@ class RasterTarget:
         scale: float,
         visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]] | None,
     ) -> bool:
-        """record_plane for a uint8 coverage window, compiled; False if not that call.
-
-        Every painted element in a group records its coverage here, over a
-        window of about thirty pixels, so numpy's temporaries were the cost.
-        The kernel reproduces record_plane's float32/float64 promotion for a
-        two-dimensional uint8 window of the plane's exact shape with no mask;
-        a scalar coverage, a row or a mask promotes differently and stays in
-        numpy.
-        """
         if (
             visible is not None
-            # isinstance narrows the type; the exact check keeps subclasses
-            # (masked arrays) on numpy, whose arithmetic they override.
             or not isinstance(coverage, numpy.ndarray)
             or type(coverage) is not numpy.ndarray
             or coverage.dtype != numpy.uint8
@@ -1350,9 +1176,6 @@ class RasterTarget:
             row, column = divmod(idx // 4, self.width)
             self.record_source_shape(row, column, shape)
         elif alpha_plane is None and self.paint_window is not None:
-            # Neither plane is recording, so nothing else will note that the
-            # group's buffer was written here, and the window it composites
-            # over would miss this pixel.
             row, column = divmod(idx // 4, self.width)
             self.extend_paint_window(row, column)
         if sa <= 0:
@@ -1378,10 +1201,6 @@ class RasterTarget:
         dst_r = dr / 255.0
         dst_g = dg / 255.0
         dst_b = db / 255.0
-        # The same formulas as render_blend.blend_channels_f64, kept scalar
-        # on purpose: one pixel through numpy costs far more than this.
-        # test_scalar_blend_agreement_contracts pins the two to the same
-        # bytes; change one and change the other.
         if mode == "multiply":
             src_r = src_r * (1.0 - dst_a) + dst_a * (src_r * dst_r)
             src_g = src_g * (1.0 - dst_a) + dst_a * (src_g * dst_g)
@@ -1451,14 +1270,6 @@ class RasterTarget:
             pixels[idx + 3] = max(0, min(255, out_a_i))
 
     def group_window(self, group: RasterGroup) -> tuple[slice, slice] | None:
-        """The rows and columns `group` has to be composited over.
-
-        Outside the window the group is untouched -- transparent if it was
-        isolated, equal to the backdrop it was seeded with if it was not -- and
-        every compositing formula here leaves the destination alone where the
-        source contributes nothing. So the window is the whole of the work, and
-        an empty one means the group painted nothing at all.
-        """
         window = group.paint_window
         if not window:
             return None
@@ -1472,9 +1283,6 @@ class RasterTarget:
             return
         rows, columns = window
         if parent.painted_boxes is not None:
-            # Whatever reached the knockout parent -- an element's elementary
-            # group, a nested group, a pattern cell -- touched these pixels and
-            # no others, so they are what a later element has to miss.
             self.record_knockout_paint((columns.start, rows.start, columns.stop, rows.stop))
         shape = group.source_shape[rows, columns] if group.source_shape is not None else None
         if shape is not None and group.alpha_is_shape:
@@ -1493,8 +1301,6 @@ class RasterTarget:
                 or (isinstance(group.blend_mode, str) and group.blend_mode.casefold() == "normal")
             )
         ):
-            # An opaque normal elementary group into its knockout parent: the
-            # element, its knockout and the shape record in one pass.
             assert parent.source_alpha is not None
             assert shape is not None
             composite_elementary_knockout(
@@ -1574,8 +1380,6 @@ class RasterTarget:
                 semantic_context=self.semantic_context,
             )
         if normalized_blend_mode in {None, "normal"} and len(group.pixels) >= 4_096:
-            # The kernel reads the effective alpha out of its own table as it
-            # scans the group, rather than numpy making it in five passes.
             plane = composite_normal_group(destination, child, source_scale, 1.0, True)
             assert plane is not None
             return plane
@@ -2106,8 +1910,6 @@ class RasterTarget:
                 source_shape[rows, columns] if source_shape is not None else None,
                 self.shape_alpha,
             )
-            # Both plane records extended the window by the whole box, as the
-            # no-plane path does.
             self.extend_paint_window(rows, columns)
             return
         if rgba[3] == 255 and blend_mode is None and rectangular_clip:
@@ -2416,10 +2218,6 @@ class RasterTarget:
         edge_count = len(edge_segments)
         pending_order = sorted(range(edge_count), key=lambda i: -edge_segments[i][5])
         pending_index = 0
-        # Keyed on the negated low edge, so the top of the heap is the edge
-        # the descending scan line leaves first: every edge wholly above the
-        # line is dropped, not only those under the lowest one. Crossing order
-        # does not matter, as fill_path_crossing_spans orders them by x.
         active_heap: list[tuple[float, int]] = []
         for py in range(iy0, iy1):
             visible_spans = clip_row_visible_spans(py)
@@ -2578,8 +2376,6 @@ class RasterTarget:
             return
         edges: list[tuple[float, float, float, float]] | None
         if edge_array is None:
-            # A flattened path's edges come as an array from its point
-            # columns, without building its subpaths.
             edge_array = path.fill_edge_array()
         if edge_array is None:
             edges = path.fill_edges()
@@ -2625,11 +2421,6 @@ class RasterTarget:
                 edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
             )
             if normal_fast and rectangular_clip and fill_rule == "nonzero":
-                # The transform and the flat-edge filter fuse into the
-                # kernel's own pass over the edges. None means no edge spans
-                # any y, which is the early return the sloped mask used to
-                # give: coverage would be zero everywhere and the blend a
-                # no-op.
                 rows = slice(iy0, iy1)
                 columns = slice(ix0, ix1)
                 source_alpha = self.group_source_alpha
@@ -2650,13 +2441,8 @@ class RasterTarget:
                     self.shape_alpha,
                 )
                 if drawn is not None:
-                    # Both plane records extended the window by the whole
-                    # box, as the no-plane path does.
                     self.extend_paint_window(rows, columns)
                 return
-            # What is left of a small fill takes the 4x4 counts the per-pixel
-            # loop this replaced sampled. A row the sampling misses is left
-            # out of the plane, as the row-by-row original skipped it.
             sampled = supersampled_coverage_plane(
                 source, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
             )
@@ -2664,8 +2450,6 @@ class RasterTarget:
                 return
             counts, first_row = sampled
             if normal_fast and rectangular_clip:
-                # A fill fill_glyph_coverage cannot take -- in practice an
-                # even-odd one.
                 rows = slice(iy0 + first_row, iy0 + first_row + len(counts))
                 columns = slice(ix0, ix1)
                 coverage = counts.astype(numpy.float32)
@@ -2677,10 +2461,6 @@ class RasterTarget:
                         rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
                     )
                 return
-            # A clip that is not rectangles, or a blend other than normal,
-            # which the kernels above cannot take: blend_counts gives the
-            # loop's clip test, blend_px's arithmetic and the per-pixel
-            # group-plane updates.
             top = iy0 + first_row
             self.blend_counts(
                 counts,
@@ -2712,11 +2492,6 @@ class RasterTarget:
         fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
 
     def blend_rules(self, mode: int) -> tuple[bool, Exception | None]:
-        """blend_component's revised flag for `mode`, or the error it raises.
-
-        Only color dodge and color burn ask blend_component, and only the
-        revised rules send a black backdrop to zero there.
-        """
         if mode not in (BLEND_COLOR_DODGE, BLEND_COLOR_BURN):
             return True, None
         try:
@@ -2734,12 +2509,6 @@ class RasterTarget:
         rgba: tuple[int, int, int, int],
         blend_mode: str | None,
     ) -> None:
-        """Blend 4x4 coverage counts at (left, top) as blend_coverage_pixel did, pixel by pixel.
-
-        Where blend_px would have raised, at the first visible pixel of a
-        blend whose rules cannot be told, the pixels before it are painted,
-        that one recorded, and the same error raised.
-        """
         mode = BLEND_MODE_CODES.get(self.resolved_blend(blend_mode), 0)
         revised, blend_error = self.blend_rules(mode)
         shape_plane = self.group_source_shape
@@ -2765,19 +2534,12 @@ class RasterTarget:
             raise blend_error
 
     def clip_pixel_mask(self, ix0: int, iy0: int, ix1: int, iy1: int) -> bytearray:
-        """One byte per pixel of the box, row by row: 1 where pixel_in_clip is true.
-
-        pixel_in_clip's own rule, with each row's spans fetched once, for the
-        kernels that take the place of a loop that asked it pixel by pixel.
-        """
         box_width = ix1 - ix0
         allowed = bytearray(box_width * (iy1 - iy0))
         ones = b"\x01" * box_width
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         for py in range(iy0, iy1):
             row_start = (py - iy0) * box_width - ix0
-            # A row's spans are sorted and do not overlap, so the pixels
-            # pixel_in_clip's bisect finds are exactly the spans' own.
             for span_start, span_end in clip_row_visible_spans(py):
                 start = max(ix0, span_start)
                 end = min(ix1, span_end)
@@ -2795,14 +2557,6 @@ class RasterTarget:
         rgba: tuple[int, int, int, int],
         blend_mode: str | None = None,
     ) -> None:
-        """One butt-capped segment of a stroke that stroke_polylines calls back.
-
-        That is a stroke under a blend other than normal, or into a group
-        recording planes; stroke_path paints every other stroke in the
-        kernel, and its caps and joins are fill_cap's and fill_join's. The
-        cap extension is zero, and still multiplied through as it was, so a
-        NaN or infinite segment boxes as before.
-        """
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
         clip_regions = clip.regions
@@ -2891,12 +2645,9 @@ class RasterTarget:
             if shape_plane is not None:
                 self.record_source_shape(slice(iy0, iy1), slice(ix0, ix1), shape_plane)
             if alpha_plane is None and shape_plane is None:
-                # Neither plane recorded the box, which is what extends the
-                # paint window, and the pixels in it were written all the same.
                 self.extend_paint_window(slice(iy0, iy1), slice(ix0, ix1))
             return
         allowed = self.clip_pixel_mask(ix0, iy0, ix1, iy1) if clip_regions else None
-        # The segment's samples as counts, blended as blend_px blends them.
         counts = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
         stroke_segment_samples(
             self.pixel_array,
@@ -3009,8 +2760,6 @@ class RasterTarget:
         else:
             xs, ys, spans, ends_differ, coincident = subpath_columns(path.subpaths)
             outline = False
-        # Normal blending with no group planes is painted in the kernel;
-        # anything else is the Python primitives, called back from its walk.
         width_type = type(line_width)
         native = (
             blend_mode is None
@@ -3073,7 +2822,6 @@ class RasterTarget:
         )
 
     def raster_page_box(self) -> tuple[float, float, float, float]:
-        """The page area the raster covers, the box of a paint that gives none."""
         return (self.crop_x0, self.crop_y0, self.crop_x0 + self.width / self.scale, self.crop_y1)
 
     def shading_box(
@@ -3091,15 +2839,6 @@ class RasterTarget:
     def prepared_shading(
         self, dictionary: object, rendering: ColorRendering
     ) -> PreparedShading | None:
-        """prepare_shading's answer for the dictionary, prepared once per target.
-
-        A page that paints one shading many times -- a pattern fill per
-        path, an sh per tile -- parsed its function and colour space again
-        each time, and started a fresh colour cache. A tiled sh paints a copy
-        of the dictionary per tile, with the tile's own Coords and BBox, so
-        those share the evaluator cache, keyed on the Function and
-        ColorSpace the copies have in common.
-        """
         key = (id(dictionary), rendering)
         cache = self.prepared_shading_cache
         cached = cache.get(key)
@@ -3115,19 +2854,6 @@ class RasterTarget:
         return shading
 
     def paint_shading(self, data: dict[str, Any], blend_mode: str | None) -> None:
-        """Paint an axial or radial shading over the clip, in two kernels.
-
-        shading_values gives each pixel's value where the shading paints it,
-        as the per-pixel loop this replaced computed it; each distinct
-        value's colour comes from the shading's function once, for the
-        value's first pixel in that loop's order, so a zero keeps the sign
-        that pixel gave it; shading_blend blends and records them as
-        blend_px did. Where the loop would have raised part way -- a colour
-        that cannot be made, or blending rules that cannot be told -- the
-        pixels before that point are painted and recorded, the one it
-        raised at recorded as blend_px recorded it, and the same error
-        raised.
-        """
         shading = self.prepared_shading(
             data.get("dictionary"), data.get("color_rendering", DEFAULT_COLOR_RENDERING)
         )
@@ -3166,7 +2892,6 @@ class RasterTarget:
         if not len(ordered):
             return
         _, first, inverse = numpy.unique(ordered, return_index=True, return_inverse=True)
-        # Colours in the order the loop first needed them, until one fails.
         by_first = numpy.argsort(first, kind="stable")
         colors = numpy.zeros((len(first), 4), dtype=numpy.int32)
         reached = len(ordered)
@@ -3230,9 +2955,6 @@ class RasterTarget:
             return False
         display, cell_clip = tiling_cell(self, pattern)
         if cell_paints_nothing(display.items, cell_clip, scale):
-            # Every tile would be clipped to nothing, wherever it lands: PyMuPDF
-            # test_4388_BUL1 spent 24 s replaying 353,626 such tiles. The group
-            # they would have composited stays empty, so nothing is pushed.
             return True
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
         if (type(target_box) is list or type(target_box) is tuple) and len(target_box) == 4:

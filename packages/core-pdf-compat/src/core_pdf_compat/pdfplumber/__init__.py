@@ -234,11 +234,6 @@ class EnginePageAdapter:
         except ValueError:
             raise
         except Exception:
-            # A box that is missing or malformed fails the page (ValueError);
-            # one the resolver cannot read at all keeps the engine page's own
-            # size. The resolver's failures are not one family of errors, so
-            # this stays broad. Core's page.media_box is not used: it reads a
-            # malformed box as no box, where pdfplumber fails the page.
             pass
         self.info = SimpleNamespace(
             index=page.page_number - 1,
@@ -269,9 +264,6 @@ class EnginePageAdapter:
         pdfminer_validate_page_resources(self.page)
         projected_glyphs: tuple[Any, ...] = pdfminer_page_program(self.page).glyphs
         ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
-        # The glyphs of a text operation share one provenance tuple, and what
-        # is made of it here is only read, so it is made once per tuple:
-        # whether it marks an annotation appearance, and its dict.
         provenances: dict[int, tuple[object, bool, dict[str, Any]]] = {}
         for glyph in projected_glyphs:
             if pdfminer_embedded_cmap_is_unusable(glyph):
@@ -364,9 +356,6 @@ class EnginePageAdapter:
             )
 
     def page_program(self) -> Any:
-        # The page's drawings and images come from its full program, while
-        # its characters come from pdfminer's own text walk; the full one is
-        # interpreted once and kept until the page's caches are flushed.
         if self._program is None:
             self._program = self.page.get_page_program()
         return self._program
@@ -436,8 +425,6 @@ def _envelope(
 def _filtered_rows(
     rows: Iterable[Any], include: Iterable[str] | None, exclude: Set[str]
 ) -> list[Any]:
-    # Each object dict copied with only the attributes include_attrs keeps
-    # (object_type always) and exclude_attrs does not drop, in their order.
     allowed = set(include) | {"object_type"} if include is not None else None
     return [
         {
@@ -610,8 +597,6 @@ class Page:
         self._structured_page = None
         self._layout = None
         self._adapter.flush_program()
-        # PDF.objects merges every page's objects and keeps them; drop the
-        # merge so a closed page's objects are not held through it.
         self.pdf.flush_merged_objects()
 
     def flush_cache(self, *_: Any) -> None:
@@ -855,8 +840,6 @@ class Page:
                 laparams = LAParams(**laparams)
 
             if self.pdf._opened_as_pdfminer:
-                # The open document is the one extract_pages would open, and
-                # this page is the one it would pick out of the same walk.
                 engine_page = self._adapter.page
                 self._layout = (
                     project_page(engine_page, laparams or LAParams())
@@ -1013,15 +996,8 @@ class Page:
             ):
                 raise ValueError(f"explicit {axis} strategy requires at least two lines")
         tables: tuple[StructuredTable | _CompatNativeTable, ...] = self._structured().tables
-        # The constants below reshape core's tables into the ones pdfplumber's
-        # edge-based finder reports on the reference corpus; they are matched
-        # to that corpus, not derived from the PDF specification.
         if tables:
             if len(tables) == 1:
-                # A lone table under 5% of the page tall is a ruled header
-                # strip: pdfplumber's lines run on and frame the whole body,
-                # so on a text-dense page (over 500 characters above the
-                # 45pt footer band) the table spans the body instead.
                 table_box = tables[0].bbox
                 if table_box is not None and table_box[3] - table_box[1] < self.height * 0.05:
                     body = [char for char in self.chars if char["bottom"] < self.height - 45]
@@ -1034,8 +1010,6 @@ class Page:
                         )
                         tables = (_CompatNativeTable(body_box, list(tables[0].rows)),)
             if len(tables) > 1:
-                # Tables whose left and right edges agree within 2pt share one
-                # ruled grid in pdfplumber, which reports them as one table.
                 first = tables[0]
                 first_box = first.bbox
                 boxes = [box for table in tables if (box := table.bbox) is not None]
@@ -1075,9 +1049,6 @@ class Page:
 
     def _fallback_tables(self, settings: TableSettings) -> list[Table]:
         chars = self.chars
-        # Each character's vertical center, sorted, so a cell reads only the
-        # band of characters between its top and bottom; a NaN center is in
-        # no cell and would break the sort.
         middles = sorted(
             (middle, index)
             for index, char in enumerate(chars)
@@ -1087,7 +1058,6 @@ class Page:
         middle_tops = [middle for middle, _index in middles]
 
         def cell_text(bbox: BBox) -> str:
-            # The text of the characters centered in bbox, in page order.
             left, top, right, bottom = bbox
             band = middles[bisect_left(middle_tops, top) : bisect_left(middle_tops, bottom)]
             selected = self.filter(lambda _obj: True)
@@ -1103,12 +1073,6 @@ class Page:
             }
             return selected.extract_text(**settings.text_settings)
 
-        # With no core table, the text strategy reads the first line of words
-        # as a header row: words within 5pt of a line's top share the line,
-        # the table stops at the first gap over 20pt between line tops,
-        # columns split halfway between header words, and each row runs from
-        # 2pt above its line to 2pt above the next (the last row as tall as
-        # the one before it, or 16pt when it is the only one).
         words = self.extract_words(return_chars=False, **settings.text_settings)
         if words and settings.vertical_strategy == settings.horizontal_strategy == "text":
             lines: list[list[ObjectDict]] = []
@@ -1894,14 +1858,11 @@ class PDF(ClosingMixin):
         unicode_norm: str | None = None,
     ) -> None:
         self._unicode_norm = unicode_norm
-        # PDF(source) opens the source; PDF(document, source) wraps an open one.
         opened_here = source is None
         if source is None:
             source = cast(PdfInput, document)
             document = _source(source)
         self._document = cast(PdfDocument, document)
-        # A document opened from source with no password, which is how
-        # pdfminer's extract_pages opens it, lays pages out itself.
         self._opened_as_pdfminer = opened_here
         self.doc = self._document
         self.source: PdfInput = source

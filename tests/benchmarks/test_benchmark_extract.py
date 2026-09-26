@@ -1,10 +1,3 @@
-"""Benchmarks for opening documents and extracting pages.
-
-These are not collected by a bare `pytest` run: `testpaths` in `pyproject.toml`
-does not include this directory, so they only run when named explicitly. See
-`tests/benchmarks/README.md` for how to run them under CodSpeed.
-"""
-
 import os
 from functools import cache
 
@@ -20,19 +13,11 @@ from tests.benchmarks.corpus import (
     Sample,
 )
 
-# CI sets this so a submodule that failed to check out fails the job instead
-# of silently skipping every benchmark and reporting success having measured
-# nothing. Locally the skip is the friendlier behaviour.
 REQUIRE_FIXTURES = os.environ.get("CORE_PDF_BENCHMARK_REQUIRE_FIXTURES") == "1"
 
 
 @cache
 def sample_bytes(sample: Sample) -> bytes:
-    """Read a sample once, outside the measured region.
-
-    Reference corpora are git submodules, so a file can legitimately be absent
-    in a working tree that has not run `git submodule update --init`.
-    """
     if not sample.file.exists():
         message = f"fixture not present, needs a submodule checkout: {sample.path}"
         if REQUIRE_FIXTURES:
@@ -40,9 +25,6 @@ def sample_bytes(sample: Sample) -> bytes:
         pytest.skip(message)
     data = sample.file.read_bytes()
     if not data.startswith(b"%PDF"):
-        # Parts of some reference corpora are kept in git LFS. Without a pull
-        # those paths exist as small pointer files, which would otherwise be
-        # benchmarked as if they were documents.
         raise ValueError(f"not a PDF, probably an unfetched LFS pointer: {sample.path}")
     return data
 
@@ -64,10 +46,6 @@ def test_open_document(benchmark: BenchmarkFixture, sample: Sample) -> None:
 
 @pytest.mark.parametrize("sample", EXTRACT_SAMPLES, ids=lambda sample: sample.id)
 def test_extract_first_page(benchmark: BenchmarkFixture, sample: Sample) -> None:
-    # Opening is measured by test_open_document and is left outside the
-    # measured region here. Keeping it inside made this benchmark mostly a
-    # document-open measurement for samples with an expensive xref: the
-    # billionaires_page sample spent 8.3 s of its 10.6 s opening the file.
     with PdfDocument(sample_bytes(sample)) as document:
         assert benchmark(extract_pages, document, 1) >= 0
 

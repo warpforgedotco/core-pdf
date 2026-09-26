@@ -1,11 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Capture skips the rasterizer's per-glyph payload when the caller only wants
-text. The danger in that is silent: a program captured without it has no glyph
-transforms, so every glyph reports no paint and the page renders blank. These
-pin the two halves -- that the options are recorded on the program, and that
-its commands, the only thing a renderer draws from, refuse such a program
-instead of drawing nothing."""
 
 import pytest
 
@@ -46,7 +40,6 @@ def test_extraction_captures_without_render_detail(text_pdf_bytes: bytes) -> Non
 
     assert text_only.options.render_details is False
     assert full.options.render_details is True
-    # Same text, same boxes: only the rasterizer's payload differs.
     assert [glyph.text for glyph in text_only.glyphs] == [glyph.text for glyph in full.glyphs]
     assert [glyph.advance_bbox for glyph in text_only.glyphs] == [
         glyph.advance_bbox for glyph in full.glyphs
@@ -65,13 +58,6 @@ def test_rendering_still_works_from_a_full_capture(text_pdf_bytes: bytes) -> Non
 
 
 def test_a_text_only_capture_splits_glyphs_the_same_way(text_pdf_bytes: bytes) -> None:
-    """The flag is about the render payload, not about what the text is.
-
-    `suspicious` decides whether a multi-character glyph is split into one
-    observation per character. It once hung off the render flag, which split
-    "A/B" into three observations for a text-only capture and left it as one
-    otherwise -- a silent extraction difference from a rendering switch.
-    """
     with PdfDocument(text_pdf_bytes) as document:
         page = document.pages[0]
         text_only = page.get_page_program(options=EXTRACTION_CAPTURE)
@@ -86,9 +72,6 @@ def test_a_text_only_capture_splits_glyphs_the_same_way(text_pdf_bytes: bytes) -
 
 @pytest.mark.parametrize("want_transform", [True, False])
 def test_a_vertical_run_honours_the_render_details_gate(want_transform: bool) -> None:
-    """The vertical path used to build a transform tuple per glyph whatever the
-    flag said, so a text-only capture of a vertical page still carried the
-    render payload the flag exists to leave out."""
     from core_pdf.impl.capture_glyph_geometry import vertical_glyph_geometry
 
     _advance, _baseline, transforms, _ink, _visible, _bitmap = vertical_glyph_geometry(

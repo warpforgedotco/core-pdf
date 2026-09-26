@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""A group composites over what it painted, not over the page.
-
-Outside its paint window a group is untouched -- transparent if it was
-isolated, equal to the backdrop it was seeded with if it was not -- and every
-compositing formula leaves the destination alone where the source contributes
-nothing. So the window has to cover every write into the group's buffer, and
-these pin the paths that were found not to."""
 
 from typing import Any
 
@@ -29,8 +22,6 @@ def window(target: RasterTarget) -> list[int]:
 
 
 def test_the_page_tracks_no_window() -> None:
-    # Most documents have no groups at all, and tracking a window they would
-    # never read is pure cost.
     assert make_target().paint_window is None
 
 
@@ -56,10 +47,6 @@ def test_the_window_covers_every_fill() -> None:
 
 
 def test_a_per_pixel_span_extends_the_window() -> None:
-    """blend_px is the one primitive that writes without going through a plane
-    recorder. Short spans -- the corners of a rounded rectangle -- take it, and
-    for 9 documents in the corpus those corners were the only thing outside the
-    window the group composited over."""
     target = grouped_target()
     assert target.group_source_alpha is None
     assert target.group_source_shape is None
@@ -81,7 +68,6 @@ def test_the_window_survives_a_nested_group(isolated: bool) -> None:
     target.fill_rect((4.0, 30.0, 9.0, 36.0), (255, 0, 0, 255))
     assert window(target) == [4, 10, 4, 9]
     target.composite_group(target.pop_group())
-    # Compositing the child in is itself a paint into the parent.
     assert window(target) == [4, 10, 4, 9]
 
 
@@ -93,8 +79,6 @@ def test_leaving_the_last_group_stops_the_tracking() -> None:
 
 
 def test_a_stroke_records_its_own_region_rather_than_the_scratch_it_uses() -> None:
-    """paint_stroke_once paints into a throwaway full-page coverage buffer, so
-    the window must not follow it there."""
     from core_pdf.impl.capture_records import CapturedPath
     from core_pdf.impl.render_target import paint_stroke_once
 
@@ -109,7 +93,6 @@ def test_a_stroke_records_its_own_region_rather_than_the_scratch_it_uses() -> No
 
 
 def test_every_written_pixel_lies_inside_the_window() -> None:
-    """The invariant itself, over the primitives that reach a group."""
     target = grouped_target(width=60, height=60)
     target.fill_rect((4.0, 50.0, 9.0, 56.0), (255, 0, 0, 255))
     target.blend_px((40 * target.width + 51) * 4, (0, 255, 0, 200), None)
@@ -125,10 +108,6 @@ def test_every_written_pixel_lies_inside_the_window() -> None:
 
 
 def test_a_diagonal_line_with_no_plane_recording_extends_the_window() -> None:
-    """A slanted segment over more than 64 pixels of box is rasterized by numpy
-    and recorded through the planes; with neither plane recording, nothing
-    extended the window. On pdfminer.six cmp_itext_logo that left a stroke's
-    rows outside it."""
     target = grouped_target(width=60, height=60)
     assert target.group_source_alpha is None
     assert target.group_source_shape is None
@@ -145,9 +124,6 @@ def test_a_diagonal_line_with_no_plane_recording_extends_the_window() -> None:
 
 
 def test_a_stroke_leaves_its_reused_scratch_zeroed() -> None:
-    """paint_stroke_once keeps its coverage buffer between strokes and clears
-    only the window it painted, so a later stroke starts from zeros and paints
-    what it would into a fresh buffer."""
     from core_pdf.impl.capture_records import CapturedPath
     from core_pdf.impl.render_target import paint_stroke_once
 

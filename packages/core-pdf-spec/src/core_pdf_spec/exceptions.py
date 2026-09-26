@@ -19,8 +19,7 @@ class PdfUnsupportedError(PdfError):
     pass
 
 
-class PdfPasswordError(PdfUnsupportedError):
-    """The password opens neither as the user nor as the owner password."""
+class PdfPasswordError(PdfUnsupportedError): ...
 
 
 __all__ = (

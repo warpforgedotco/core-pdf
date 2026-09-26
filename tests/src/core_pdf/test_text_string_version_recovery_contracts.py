@@ -1,14 +1,3 @@
-"""Core decodes text strings the same way whatever version the document claims.
-
-Recovery used to pass the resolver's semantic context to spec after checking
-the version against each form the string took, dropping the context whenever
-that version would refuse the form. Spec recognizes versions only up to 2.0,
-so every context the checks let through decoded exactly as no context does.
-These tests pin that equivalence over every version, byte-order mark, and the
-0xA0 byte undefined before PDF 1.3, so decoding with no context stays the same
-answer the version-guarded path gave.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -49,7 +38,6 @@ PAYLOADS = (
 
 
 def version_guarded_decode(data: bytes, context: SemanticContext | None) -> str:
-    """The removed recovery path: spec with the context, unless it would refuse."""
     if data.startswith(b"\xff\xfe"):
         try:
             return data[2:].decode("utf-16-le")

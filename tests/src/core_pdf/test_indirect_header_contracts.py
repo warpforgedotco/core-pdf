@@ -1,5 +1,3 @@
-"""An indirect object header read by one match reads as its three words do."""
-
 import pytest
 
 from core_pdf.impl.exceptions import PdfParseError

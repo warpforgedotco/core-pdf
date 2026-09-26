@@ -1,5 +1,3 @@
-"""An xref subsection read at once reads as its rows do one by one (ISO 32000-2 7.5.4)."""
-
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError

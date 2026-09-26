@@ -1,20 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Object header checks: agreement with the regular expression they replaced.
-
-xref_headers_golden.pkl.gz holds 16,444 cases: windows of 291 corpus
-documents around in-use xref offsets, at the offset and one or two bytes
-off it, mostly with the entry's own key and sometimes with the next one,
-plus synthetic cases for the corners -- leading zeros, object numbers and
-runs too long for 63 bits, every whitespace byte, every delimiter after
-"obj", the end of the data, offsets outside it. Each records whether the
-expression matched at the offset with the key's object number and
-generation.
-
-The kernel answers every case whose object number fits 63 bits; for the
-others it may only say the header is there with a run too long to compare,
-which core settles by digits and tests against the same cases.
-"""
 
 import gzip
 import pickle
@@ -52,7 +37,6 @@ def test_each_case_answers_as_the_expression_did():
     for case in GOLDEN:
         got = state(case)
         if case["key"] >> 16 >= HUGE:
-            # Only a header there with a run too long to hold is left open.
             assert got in ((2,) if case["expected"] else (0, 2)), case
         else:
             assert got == int(case["expected"]), case

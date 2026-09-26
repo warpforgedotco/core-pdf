@@ -8,8 +8,6 @@ from copy import replace
 from core_pdf.impl.types import TextWord
 
 NORMALIZE_TEXT_TABLE = dict.fromkeys(range(0xD800, 0xE000))
-# Surrogates are rare in extracted text, and a search finds that out in C
-# without building the copy translate always returns.
 SURROGATE_RE = re.compile("[\ud800-\udfff]")
 
 

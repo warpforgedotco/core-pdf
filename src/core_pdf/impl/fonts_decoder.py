@@ -265,7 +265,6 @@ def font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
     return None
 
 
-# FontDecoder.string_glyph_cache: the longest string it keeps, and how many.
 STRING_GLYPH_CACHE_MAX_BYTES = 8
 STRING_GLYPH_CACHE_MAX_ENTRIES = 8192
 
@@ -316,10 +315,6 @@ class DecodedGlyph(DecodedFontGlyph):
         bitmap_code: int,
         split_unicode: bool = False,
     ) -> None:
-        # Slot descriptors rather than object.__setattr__: both bypass the
-        # frozen __setattr__, but the descriptor writes the slot directly
-        # while __setattr__ looks the name up first. One glyph is built per
-        # character of every page, so the ten lookups are worth removing.
         _set_code_bytes(self, code_bytes)
         _set_char_code(self, char_code)
         _set_cid(self, cid)
@@ -366,9 +361,6 @@ class DecodedGlyph(DecodedFontGlyph):
         )
 
 
-# Bound once, next to the class whose __init__ uses them. Reached through
-# getattr because a type checker reads DecodedGlyph.code_bytes as the
-# attribute's type rather than as the slot descriptor it is at runtime.
 def slot_setter(owner: type, name: str) -> Callable[[object, Any], None]:
     return getattr(owner, name).__set__
 
@@ -420,7 +412,6 @@ class UnicodeChoice(Record):
         return hash((self.text, self.source, self.alternates))
 
 
-# Slot descriptors bypass the frozen __setattr__ without its name lookup.
 _unicodechoice_set_text = slot_setter(UnicodeChoice, "text")
 _unicodechoice_set_source = slot_setter(UnicodeChoice, "source")
 _unicodechoice_set_alternates = slot_setter(UnicodeChoice, "alternates")
@@ -763,8 +754,6 @@ class FontDecoder:
         self.is_type3 = is_type3
         self.byte_decode_table = byte_decode_table
         self.widths = widths
-        # Every code without a width, the space included, takes the default:
-        # an explicit DW or MissingWidth, else 1000 from parse_font_widths.
         self.default_width = default_width
         self.default_vertical_displacement_y = font_metrics.default_vertical_displacement_y
         self.default_vertical_origin_y = font_metrics.default_vertical_origin_y
@@ -783,29 +772,8 @@ class FontDecoder:
             font, self.font_program, to_unicode, cmap
         )
         self.cff_unicode_repairs = {}
-        # A simple font addresses 256 codes, and a glyph decoded from one
-        # is a pure function of that code and this decoder's tables, all of
-        # which are fixed above. A text page decodes thousands of glyphs
-        # from a few dozen distinct codes, so the objects are shared rather
-        # than rebuilt: DecodedGlyph is frozen, nothing compares one by
-        # identity, and the working set drops from one object per character
-        # to one per character *class*, which is the point -- the profile
-        # says this path is ~65% cache stalls, not instructions.
-        #
-        # CID fonts share the same way, keyed by the pair the cmap yields.
-        # Their one piece of mutable input is cff_unicode_repairs, which
-        # decode_cid_glyphs can rewrite partway through a document; it already
-        # purges unicode_choice_cache for the codes that changed, and purges
-        # this alongside it.
         self.simple_glyph_cache = {}
         self.cid_glyph_cache = {}
-        # Whole short strings, decoded. A page that places every glyph with its
-        # own Tj decodes the same one- or two-byte strings thousands of times,
-        # and each decode still walked the cmap, and for a CFF font the repair
-        # check, before reaching the per-code caches above. Only short strings
-        # repeat enough to be worth keeping, and the cache is cleared when it
-        # fills, so it cannot grow with the document. Purged with the two
-        # above when a CFF repair changes a mapping.
         self.string_glyph_cache = {}
 
     @staticmethod
@@ -1346,8 +1314,6 @@ class FontDecoder:
         try:
             return cache[key]
         except KeyError:
-            # The contours are only the arrays' input here, so they are not
-            # cached as well; glyph_outline caches them for its own callers.
             contours = self.glyph_outline_cache.get(key)
             if contours is None:
                 contours = self.glyph_outline_uncached(code, gid, text)
@@ -1412,8 +1378,6 @@ class FontDecoder:
         if glyphs is None:
             glyphs = self.decode_glyphs(bytes(data))
 
-        # The sum of glyph_advance_vector over the glyphs, with the helper's
-        # arithmetic inlined per glyph; test_font_decoding_contracts pins them.
         if self.is_vertical:
             total_y = 0.0
             vertical_glyph_metric = self.vertical_glyph_metric
@@ -1444,7 +1408,6 @@ def dedupe_alternates(values: Iterable[str], selected: str) -> tuple[str, ...]:
     return tuple(alternates)
 
 
-# A predefined CMap inverted: each CID's codes that decode to it.
 CompactCMap = dict[int, tuple[bytes, ...]]
 
 
@@ -1522,8 +1485,6 @@ class CIDUnicodeMap:
             return None
         sources = collection[self.vertical]
         opposite_sources = collection[not self.vertical]
-        # Weighted votes from this writing mode's CMaps, else the other mode's,
-        # else one vote each from the CMaps given no weight.
         candidates = (
             tally_cid_votes(sources, cid)
             or tally_cid_votes(opposite_sources, cid)
@@ -1541,7 +1502,6 @@ class CIDUnicodeMap:
 def tally_cid_votes(
     sources: Iterable[CMapUnicodeSource], cid: int, *, unweighted: bool = False
 ) -> Counter[str]:
-    """Each source's preferred text for `cid`, from the weighted or the unweighted sources."""
     candidates: Counter[str] = Counter()
     for cmap_name, codec, weight in sources:
         if (weight <= 0) != unweighted:

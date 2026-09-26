@@ -103,8 +103,6 @@ FONT_PROJECTION_CACHE_MAX_ENTRIES = 128
 FONT_PROJECTION_CACHE: OrderedDict[int, _FontProjection] = OrderedDict()
 
 
-# The entry returned last, which is always the cache's most recent: a run of
-# lookups for one font -- ten per glyph shown -- skips the move to the end.
 LAST_FONT_PROJECTION: list[_FontProjection | None] = [None]
 
 
@@ -159,12 +157,10 @@ def _font_value(font: object, name: str) -> object | None:
     return _font_projection(font).values.get(name)
 
 
-# A simple font's base encoding table by name; any other name reads StandardEncoding.
 BASE_ENCODING_TABLES = {
     "MacRomanEncoding": MAC_ROMAN_ENCODING,
     "WinAnsiEncoding": WIN_ANSI_ENCODING,
 }
-# The codes pdfminer reads as no text in each base encoding.
 WIN_ANSI_BLANK_CODES = frozenset({127, 129, 141, 143, 144, 157})
 MAC_ROMAN_BLANK_CODES = frozenset(
     {173, 176, 178, 179, 182, 183, 184, 185, 186, 189, 195, 197, 198, 215}
@@ -291,14 +287,8 @@ def pdfminer_glyph_text(glyph: Any) -> str:
     return glyph.text
 
 
-# A decoder's answer, keyed by its identity and holding it so the identity
-# stays its own: every glyph asks, twice, and a CID font's answer runs two
-# regular expressions over its CMap. A missing /DescendantFonts raises and is
-# not kept, so it raises every time as it did.
 EMBEDDED_CMAP_UNUSABLE: dict[int, tuple[object, bool]] = {}
 EMBEDDED_CMAP_UNUSABLE_LIMIT = 256
-# Whether each predefined CMap name resolves, which parses the whole CMap:
-# the resources do not change, so each name is parsed once.
 PREDEFINED_CMAP_RESOLVES: dict[str, bool] = {}
 
 
@@ -451,10 +441,6 @@ def pdfminer_ligature_overrides(
 
 
 def _pdfminer_builtin_width(glyph: Any, projected_text: str | None = None) -> float | None:
-    """The width pdfminer's own metrics give glyph, or None to keep the font's.
-
-    projected_text is pdfminer_glyph_text(glyph), passed when the caller has it.
-    """
     decoder = glyph.font_decoder
     if projected_text is None:
         projected_text = pdfminer_glyph_text(glyph)

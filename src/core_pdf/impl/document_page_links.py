@@ -16,7 +16,6 @@ def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDic
 
 
 def link_target(resolver: PdfValueResolver, action: PdfDict, link_type: str | None) -> str | None:
-    """A URI action's URI or a GoTo action's destination, as text."""
     key = "URI" if link_type == "URI" else "D" if link_type == "GoTo" else None
     if key is None:
         return None
@@ -26,7 +25,6 @@ def link_target(resolver: PdfValueResolver, action: PdfDict, link_type: str | No
 
 
 def goto_action_destination(resolver: PdfValueResolver, action: object) -> PdfObject:
-    """The destination of a GoTo action dictionary, or None."""
     if isinstance(action, dict) and resolver.resolve_name(action.get("S")) == "GoTo":
         return action.get("D")
     return None
@@ -35,12 +33,6 @@ def goto_action_destination(resolver: PdfValueResolver, action: object) -> PdfOb
 def resolve_destination_references(
     resolver: PdfValueResolver, value: object, depth: int = 0
 ) -> object:
-    """A destination or action with its references to plain values resolved.
-
-    A reference to a dictionary or array stays a reference -- a destination's
-    page is one -- and so does anything nested deeper than eight levels. The
-    rest of the conversion to plain values is plain_pdf_value's.
-    """
     if depth > 8:
         return value
     if isinstance(value, PdfReference):

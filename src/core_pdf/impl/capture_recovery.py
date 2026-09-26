@@ -110,24 +110,13 @@ def iter_content_operations(
     is_operator: Callable[[bytes], bool] | None = None,
     path_state: object | None = None,
 ) -> Iterator[ContentOperation]:
-    """The stream's operations; with `path_state`, all but the path operators
-    the scanner applies to it itself (see ContentScanner.set_path_state)."""
     recovery = recovery if recovery is not None else CaptureRecovery()
-    # The kernel scans whitespace, comments, numbers, names and operators,
-    # appending operands as it goes and handing back each operation whole, so
-    # the loop below runs once per operation rather than once per token. It
-    # hands back a byte offset for anything it does not own -- strings,
-    # arrays, dictionaries, inline images, the BI/true/false/null keywords,
-    # and anything malformed -- and every one of those, with all the recovery
-    # around them, is still parsed here onto the kernel's operand list.
     scanner = ContentScanner(lexer.raw_data, KEYWORD_TOKENS, OBJECT_KEYWORDS, PdfName.of)
     if path_state is not None:
         scanner.set_path_state(path_state)
     operands: list[ContentOperand] = scanner.operands
     scan = scanner.next_operation
     while True:
-        # The slow path below owns lexer.pos and moves it in ways the scanner
-        # cannot see, so the two cursors meet here once per operation.
         scanner.pos = lexer.pos
         result = scan()
         if isinstance(result, tuple):

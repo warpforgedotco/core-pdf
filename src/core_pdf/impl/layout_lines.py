@@ -116,13 +116,8 @@ class LayoutLine:
             text_length = len(text)
             for index, char in enumerate(text):
                 if char.isspace():
-                    # The bounding box is only ever used to grow a word, so a
-                    # space does not need one computed and thrown away.
                     append_space()
                     continue
-                # extend_word, inlined: this ran once per character of the
-                # page, and a call plus five nonlocal cells is most of what it
-                # cost. flush_word stays a closure -- it runs per word.
                 bx0, by0, bx1, by1 = layout_line_segment_char_bbox(segment, index, text_length)
                 if word:
                     if bx0 < word_x0:

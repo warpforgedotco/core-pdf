@@ -76,8 +76,6 @@ class PageProducts(Record):
 
     tables: tuple[Table, ...]
     blocks: tuple[ParsedBlock, ...]
-    # Whether the layout's reading order is ambiguous, which the page reports
-    # as a diagnostic.
     order_ambiguous: bool
 
     __fields__: ClassVar[tuple[str, ...]] = ("tables", "blocks", "order_ambiguous")

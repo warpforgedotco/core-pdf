@@ -1,17 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Fused glyph coverage: agreement with the numpy prep it replaced.
-
-glyph_coverage_golden.pkl.gz holds the arguments of every fast-path fill on
-three corpus pages -- the page-space edge array, the crop origin, the scale,
-the plane's pixel origin and its size -- together with the coverage plane the
-original produced by building a device-space copy with twelve numpy operations
-and handing it to signed_area_coverage.
-
-The transform is four affine expressions per edge, so fusing it into the
-kernel's own read of each edge is value-for-value identical rather than merely
-close: the assertions below demand array_equal, not allclose.
-"""
 
 import gzip
 import pickle
@@ -55,8 +43,6 @@ def test_kernel_reproduces_numpy_prep_bitwise(index):
 
 
 def test_flat_edges_only_returns_none():
-    # Every edge horizontal in page space: the original's sloped mask was empty
-    # and it returned before touching the buffer.
     edges = numpy.array([[0.0, 4.0, 9.0, 4.0], [9.0, 7.0, 0.0, 7.0]])
     assert glyph_coverage_plane(edges, 0.0, 10.0, 1.0, 0.0, 0.0, 9, 10) is None
 
@@ -73,8 +59,6 @@ def test_flat_edges_are_skipped_not_counted():
 
 
 def test_it_agrees_with_the_device_space_entry_point():
-    # The same edges, transformed by hand, must reach the shared core with the
-    # same values -- this is the seam the fusion removed.
     src = numpy.array([[1.0, 2.0, 3.0, 9.0], [3.0, 9.0, 6.0, 2.0], [6.0, 2.0, 1.0, 2.0]])
     crop_x0, crop_y1, scale, ix0, iy0 = 0.5, 11.0, 1.5, 2.0, 3.0
     device = numpy.empty(src.shape, dtype=numpy.float64)

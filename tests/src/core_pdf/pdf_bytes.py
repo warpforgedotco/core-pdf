@@ -1,5 +1,3 @@
-"""Small PDF files built byte by byte for tests; imports nothing from core."""
-
 from collections.abc import Mapping, Sequence
 
 MULTI_PAGE_COUNT = 3
@@ -11,11 +9,6 @@ def serialize_pdf(
     *,
     header_end: bytes = b"\n",
 ) -> bytes:
-    """Write objects 1..n with a classic xref table and a trailer whose Root is 1 0 R.
-
-    A sequence numbers its objects from 1; a mapping must number them 1..n.
-    header_end follows each ``N 0 obj`` keyword.
-    """
     numbered: dict[int, bytes] = (
         dict(objects) if isinstance(objects, Mapping) else dict(enumerate(objects, 1))
     )
@@ -39,7 +32,6 @@ def stream_object(content: bytes) -> bytes:
 
 
 def one_page_pdf(content: bytes, *, width: int = 200, height: int = 200) -> bytes:
-    """One page whose content stream may show text in Helvetica as /F1."""
     return serialize_pdf(
         {
             1: b"<< /Type /Catalog /Pages 2 0 R >>",
@@ -53,7 +45,6 @@ def one_page_pdf(content: bytes, *, width: int = 200, height: int = 200) -> byte
 
 
 def multi_page_pdf(count: int = MULTI_PAGE_COUNT, *, tagged: bool = False) -> bytes:
-    """count pages reading "Page 1".."Page n", optionally with an empty structure tree."""
     page_numbers = [3 + 2 * index for index in range(count)]
     tree_number = 4 + 2 * count
     catalog = b"<< /Type /Catalog /Pages 2 0 R"

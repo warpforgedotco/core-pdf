@@ -1,24 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Axial and radial shading fills (core_pdf.impl.render_target.paint_shading).
-
-paint_shading walked the shading's pixel box in Python: for each pixel the
-clip allowed, axial_shading_t or radial_shading_t for its centre, the extend
-rules, the domain value, a colour from a dictionary memo, and blend_px. A
-page-filling gradient is a few hundred thousand pixels at about 5 us each.
-
-shading_values is the per-pixel parameter, and shading_blend the blend and
-the group plane records, as blend_px makes them for every blend mode it
-knows; the colour of each distinct value stays in Python, where the
-shading's function is. Every
-step is the Python's, in its order and in double: the pixel centres, the
-axial projection, the radial quadratic -- its square root taken with pow,
-as ``disc**0.5`` is -- with the exponent passed in, not written, so the
-compiler cannot turn it into sqrt, which differs by an ulp now and then --
-its roots filtered for finiteness, the largest root in
-[0, 1] or else the root nearest 0.5, the first of two equal ones -- the
-extend clamps, ``domain0 + t * span``. setup.py builds with
--ffp-contract=off.
-"""
 
 from libc.math cimport fabs, isfinite, pow
 
@@ -74,13 +54,11 @@ cdef inline bint radial_t(
     in0 = valid0 and 0.0 <= t0 <= 1.0
     in1 = valid1 and 0.0 <= t1 <= 1.0
     if in0 or in1:
-        # max(in_range): the first of the largest.
         if in0 and in1:
             t[0] = t1 if t1 > t0 else t0
         else:
             t[0] = t0 if in0 else t1
         return True
-    # min(valid, key=abs(t - 0.5)): the first of the nearest.
     if valid0 and valid1:
         t[0] = t1 if fabs(t1 - 0.5) < fabs(t0 - 0.5) else t0
     else:
@@ -89,11 +67,6 @@ cdef inline bint radial_t(
 
 
 def shading_t(int kind, coords, double px, double py, double half):
-    """The shading parameter at one point before the extend rules, or None.
-
-    ``kind`` is 2 for axial and 3 for radial; ``half`` is 0.5, as for
-    shading_values.
-    """
     cdef double c[6]
     cdef double t
     cdef Py_ssize_t i, need = 4 if kind == 2 else 6
@@ -122,16 +95,6 @@ def shading_values(
     double domain_span,
     double half,
 ):
-    """Each allowed pixel's shading value, where the shading paints it.
-
-    ``kind`` is 2 for axial, 3 for radial; ``allowed`` holds one byte per
-    pixel of the box [iy0, iy1) x [ix0, ix1), non-zero where the clip lets
-    it through. ``half`` is 0.5, the exponent of the radial square root:
-    ``disc**0.5`` is libm's pow, which differs from sqrt by an ulp now and
-    then, and a compiler that saw a constant 0.5 would call sqrt instead.
-    Returns (values, painted): float64 values and a uint8 mask of the pixels
-    painted, both the box's shape.
-    """
     cdef Py_ssize_t height = iy1 - iy0, width = ix1 - ix0
     if allowed.shape[0] != height or allowed.shape[1] != width:
         raise ValueError("allowed differs from the box in shape")
@@ -189,25 +152,6 @@ def shading_blend(
     double shape_source,
     bint stop_at_visible,
 ):
-    """Blend the first len(color_index) painted pixels of the box, as blend_px does.
-
-    ``color_index`` holds, in row-major order of the painted pixels, the row
-    of ``colors`` (r, g, b, a) each is painted with; it may stop short of
-    the last. ``mode`` is 0 for any blend blend_px composites as normal, 1
-    multiply, 2 screen, 3 color dodge, 4 color burn; ``revised`` is
-    blend_component's revised-blending flag. Each pixel is first recorded,
-    as blend_px records it, into ``shape_plane`` (with ``shape_source``) and,
-    when its alpha is not zero, into ``alpha_plane``. With
-    ``stop_at_visible``, the first pixel of non-zero alpha is recorded and
-    then not blended, and the scan stops there: blend_px raises at that
-    point when it cannot tell which blending rules apply.
-
-    Returns (window, stopped): (x0, y0, x1, y1), half-open, of the pixels
-    that extend the paint window -- every one without an alpha plane or with
-    a shape plane, as blend_px extends it before it looks at alpha; only
-    those of non-zero alpha with just an alpha plane -- or None; and whether
-    the scan stopped at a visible pixel.
-    """
     cdef Py_ssize_t height = painted.shape[0], width = painted.shape[1]
     if iy0 < 0 or ix0 < 0 or iy0 + height > pixels.shape[0] or ix0 + width > pixels.shape[1]:
         raise ValueError("box runs past the pixels")

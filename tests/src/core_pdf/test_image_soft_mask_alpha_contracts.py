@@ -1,5 +1,3 @@
-"""An image's soft_mask_alpha averages its soft mask's decoded samples."""
-
 import zlib
 
 import pytest

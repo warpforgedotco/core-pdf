@@ -160,8 +160,6 @@ class StructureElement(StructureNode):
         element_cache: dict[int, StructureElement] | None = None,
     ) -> None:
         super().__init__(document, props, page_lookup=page_lookup)
-        # Shared with the page structure this element came from, so a parent
-        # that many elements share is one object, resolved once.
         self.element_cache = element_cache
         self.role_resolution_value: StructureRole | None | object = MISSING
         self.role_error_value: str | None = None

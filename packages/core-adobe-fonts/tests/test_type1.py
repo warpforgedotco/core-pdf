@@ -40,15 +40,11 @@ def test_eexec_ciphertext_is_the_payload_decode_eexec_payload_decrypts() -> None
 
 def test_tolerant_eexec_ciphertext_recovers_what_strict_rejects() -> None:
     hex_payload = b"currentfile eexec 0a1b2c3d4e5f607"
-    # An odd trailing hex digit is dropped rather than rejected.
     with pytest.raises(ValueError, match="odd"):
         eexec_ciphertext(hex_payload, None)
     assert eexec_ciphertext(hex_payload, None, tolerant=True) == bytes.fromhex("0a1b2c3d4e5f60")
-    # A Length1 outside the data falls back to the eexec marker.
     with pytest.raises(ValueError, match="Length1"):
         eexec_ciphertext(hex_payload, 999)
     assert eexec_ciphertext(hex_payload, 999, tolerant=True) == bytes.fromhex("0a1b2c3d4e5f60")
-    # Binary data whose first four bytes happen to be hex digits is only read
-    # as hex when the wider sample agrees.
     binary = b"currentfile eexec abcd\x80\x81\x82"
     assert eexec_ciphertext(binary, None, tolerant=True) == b"abcd\x80\x81\x82"

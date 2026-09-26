@@ -1,24 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""JBIG2 arithmetic generic region decoding (ITU-T T.88 6.2, Annex E).
-
-Moved here from core_jbig2.codec. Like the knockout kernel it owns a
-standard-defined algorithm rather than mirroring a helper: core_jbig2 keeps
-segment parsing and page composition, and its base decoder now reports
-arithmetic generic regions as unsupported, the way it already reported MMR
-and text regions. Core's recovery decoder calls this instead. core_jbig2 --
-and spec above it -- stay pure Python.
-
-It came here because it is the whole cost of a JBIG2 page: a per-pixel MQ
-decode (T.88 E.3) over a 65,536-entry context table, pure integer arithmetic
-on byte buffers. no_bad_redactions.4.1.pdf spent 1.60s of a 1.69s render in
-it.
-
-Only generic template 0 with its default adaptive pixels and no typical
-prediction is implemented; callers check the region header first. The
-arithmetic is integer throughout, so there is no float contract to keep, and
-the loop follows the Python original step for step, including reading 0xFF
-past the end of the data (T.88 E.3.4).
-"""
 
 from libc.string cimport memset
 from cpython.mem cimport PyMem_Free, PyMem_Malloc
@@ -26,7 +6,6 @@ from cpython.mem cimport PyMem_Free, PyMem_Malloc
 __all__ = ("decode_arithmetic_generic_template0",)
 
 
-# T.88 Table E.1: Qe, NMPS, NLPS and SWITCH for each of the 47 states.
 cdef unsigned int MQ_QE[47]
 cdef unsigned char MQ_NMPS[47]
 cdef unsigned char MQ_NLPS[47]
@@ -56,7 +35,6 @@ MQ_SWITCH[:] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]
 
-# Context bits kept when the template slides one pixel right (T.88 6.2.5.3).
 cdef unsigned int OLD_PIXEL_MASK = 0x7BF7
 
 
@@ -75,7 +53,6 @@ cdef inline unsigned int byte_at(const MQState *s, Py_ssize_t pos) noexcept nogi
 
 
 cdef inline void byte_in(MQState *s) noexcept nogil:
-    # T.88 E.3.4 BYTEIN.
     cdef unsigned int current = byte_at(s, s.bp)
     cdef unsigned int following = byte_at(s, s.bp + 1)
     if current == 0xFF:
@@ -96,7 +73,6 @@ cdef inline void byte_in(MQState *s) noexcept nogil:
 
 
 cdef inline void init_decoder(MQState *s) noexcept nogil:
-    # T.88 E.3.5 INITDEC.
     s.bp = 0
     s.chigh = s.data[0] if s.data_end > 0 else 0xFF
     s.clow = 0
@@ -109,7 +85,6 @@ cdef inline void init_decoder(MQState *s) noexcept nogil:
 
 
 cdef inline unsigned int decode_bit(MQState *s, unsigned char *contexts, unsigned int context) noexcept nogil:
-    # T.88 E.3.2 DECODE, with the MPS/LPS exchanges of E.3.3 folded in.
     cdef unsigned int packed = contexts[context]
     cdef unsigned int idx = packed >> 1
     cdef unsigned int mps = packed & 1
@@ -140,7 +115,6 @@ cdef inline unsigned int decode_bit(MQState *s, unsigned char *contexts, unsigne
         else:
             pixel = mps
             idx = MQ_NMPS[idx]
-    # RENORMD (E.3.3).
     while not (next_a & 0x8000):
         if s.ct == 0:
             byte_in(s)
@@ -162,10 +136,6 @@ cdef void decode_template0(
     Py_ssize_t row_byte_length,
     unsigned char *buffers,
 ) noexcept nogil:
-    # Three rows of width + 4 pixels, one byte each: the row being decoded
-    # and the two above it. Before the second and third rows exist, the
-    # template reads the current row in their place, which is all zeros
-    # ahead of the pixel being decoded -- as T.88 6.2.5.2 requires.
     cdef Py_ssize_t stride = width + 4
     cdef unsigned char *row
     cdef unsigned char *row1
@@ -210,11 +180,6 @@ cdef void decode_template0(
 def decode_arithmetic_generic_template0(
     const unsigned char[:] data, Py_ssize_t width, Py_ssize_t height
 ) -> bytearray:
-    """Decode a template-0 generic region to a packed, MSB-first bitmap.
-
-    Rows are (width + 7) // 8 bytes. A 1 bit is a black pixel in T.88
-    polarity; inverting it for PDF is the caller's job.
-    """
     if width < 0 or height < 0:
         raise ValueError("negative JBIG2 generic region size")
     cdef Py_ssize_t row_byte_length = (width + 7) // 8

@@ -23,8 +23,7 @@ from ._fonts import (
 )
 
 
-class InvalidContentDictionaryError(PdfParseError):
-    """A dictionary in a content stream pdfminer cannot read, which fails the page."""
+class InvalidContentDictionaryError(PdfParseError): ...
 
 
 class PdfminerContentLexer(PdfLexer):

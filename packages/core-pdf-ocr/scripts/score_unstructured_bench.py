@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Evaluate OCR extraction with the shared SCORE-Bench scorer."""
 
 from __future__ import annotations
 

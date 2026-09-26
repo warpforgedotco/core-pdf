@@ -1,12 +1,3 @@
-"""impl is flat, so its import contracts list modules; these keep the lists complete.
-
-A feature's modules share its prefix. Shared code lives in the unprefixed
-modules, which the root contract binds; every feature module is forbidden to
-them. A contract that names one module of a feature names all of them, except
-the lists that deliberately name part of one: two contracts forbid only
-part of document composition, and serialization binds output_serialize alone.
-"""
-
 import tomllib
 from pathlib import Path
 

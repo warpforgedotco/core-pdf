@@ -9,9 +9,6 @@ from core_pdf_spec.s_07_syntax_primitives.text_string import (
 
 
 def decode_pdf_text_string(data: bytes | memoryview) -> str:
-    # Decoded without a semantic context: a reader accepts every text-string
-    # form whatever version the document claims, which is exactly what spec
-    # decodes when no version pins it.
     if type(data) is memoryview:
         data = data.tobytes()
     if data.startswith(b"\xff\xfe"):

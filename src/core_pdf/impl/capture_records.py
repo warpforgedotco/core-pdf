@@ -23,9 +23,6 @@ if TYPE_CHECKING:
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
 
 
-# Compared by identity before this was a dataclass: it defined no __eq__ and
-# no Record base supplies one. A generated __eq__ would deep-walk the whole
-# CapturedProgram whenever a drawing or inline image compares its soft mask.
 @dataclass(frozen=True, slots=True, eq=False)
 class CapturedSoftMask:
     program: CapturedProgram
@@ -50,18 +47,6 @@ class CapturedLine:
 
 
 class CapturedLines(Sequence[CapturedLine]):
-    """A page's stroke lines as one array: a row of x0, y0, x1, y1, line_width each.
-
-    A path's stroke lines used to be a CapturedLine object per segment -- 733,122
-    of them for one corpus page -- built by a Python walk of the flattened path
-    and walked again by table detection, which turned them straight back into
-    arrays. Capture now writes rows and table detection reads columns.
-
-    It is still a sequence of CapturedLine, built on access, for code that wants
-    records rather than columns. Those are new objects on every access, so a line
-    has no identity to keep; nothing compares lines by identity.
-    """
-
     __slots__ = ("array",)
 
     array: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
@@ -72,7 +57,6 @@ class CapturedLines(Sequence[CapturedLine]):
 
     @classmethod
     def from_array(cls, array: numpy.ndarray[Any, Any]) -> CapturedLines:
-        """Lines over an (n, 5) float64 array, which must not change afterwards."""
         lines = cls.__new__(cls)
         lines.array = read_only(array)
         return lines
@@ -94,7 +78,6 @@ class CapturedLines(Sequence[CapturedLine]):
         numpy.ndarray[Any, numpy.dtype[numpy.float64]],
         numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     ]:
-        """The x0, y0, x1 and y1 columns."""
         array = self.array
         return array[:, 0], array[:, 1], array[:, 2], array[:, 3]
 
@@ -199,10 +182,6 @@ class CapturedSubpath:
         return edges
 
 
-# What a deferred path's point lists are rebuilt from: the point columns, a
-# (start, end, flag) span per subpath, and whether it is a glyph outline. For an
-# outline the flag is the outline kernel's and every subpath is closed; for a
-# flattened path the flag is the subpath's own closed state.
 DeferredPoints: TypeAlias = tuple[Any, Any, list[tuple[int, int, bool]], bool]
 
 
@@ -212,12 +191,7 @@ class CapturedPath:
     def __init__(self, subpaths: list[CapturedSubpath] | None = None) -> None:
         self.subpaths = subpaths if subpaths is not None else []
         self._deferred: DeferredPoints | None = None
-        # A coalesced deferred path's flattened parts, in order, joined into
-        # _deferred the first time anything reads the points.
         self._parts: list[DeferredPoints] | None = None
-        # bbox() and has_segments() of a deferred flattened path, known without
-        # its points. Read only while _deferred is set: once the subpaths exist
-        # they can change, and are asked instead.
         self._summary: tuple[Rectangle | None, bool] | None = None
 
     @classmethod
@@ -227,29 +201,6 @@ class CapturedPath:
         column_y: Any,
         spans: list[tuple[int, int, bool]],
     ) -> CapturedPath:
-        """A path whose point lists are built only if something asks for them.
-
-        The kernel that builds a glyph's edges already returns everything a
-        fill needs -- the edge array and the bounding box -- so the
-        CapturedSubpath objects and their point tuples were built for one
-        caller, fill_path asking axis_aligned_rect whether the path is a
-        rectangle, and then dropped. That is a hundred-odd tuples per glyph,
-        several thousand times a page, and it measured at about a fifth of the
-        render.
-
-        The subpaths slot is left unset rather than filled, so the first
-        attribute access falls through to __getattr__ and builds them there.
-        Paths that are not deferred keep a plain slot read, and the type is
-        unchanged, which matters because the renderer tests for it by identity
-        rather than with isinstance.
-
-        Reading subpaths is the only supported way to fill a deferred path.
-        Assigning the slot directly would leave the deferred spans in place and
-        axis_aligned_rect would keep answering from them; enforcing that would
-        mean a __setattr__ or a property, and both put a Python call on the
-        read path this exists to keep free. Nothing outside this class assigns
-        subpaths.
-        """
         path = cls.__new__(cls)
         path._deferred = (column_x, column_y, spans, True)
         path._parts = None
@@ -265,13 +216,6 @@ class CapturedPath:
         bbox: Rectangle | None,
         has_segments: bool,
     ) -> CapturedPath:
-        """A flattened path, from flatten_path_commands, whose point lists wait.
-
-        Extraction asks a painted path for its bounding box and whether it has a
-        segment, both of which the kernel already computed, and for nothing
-        else. The renderer and OCR read the subpaths, and build them then, as a
-        deferred outline does.
-        """
         path = cls.__new__(cls)
         path._deferred = (column_x, column_y, spans, False)
         path._parts = None
@@ -279,15 +223,6 @@ class CapturedPath:
         return path
 
     def coalesced_with(self, other: CapturedPath) -> CapturedPath | None:
-        """This path's subpaths then `other`'s, as one deferred path, or None.
-
-        The display list joins consecutive strokes of the same state into one
-        path. Joining their subpath lists built every point of both; when
-        both are deferred flattened paths, this keeps their columns as parts
-        instead, joined only when something reads them -- and the stroke
-        kernel reads the columns, so a coalesced stroke never builds a
-        subpath at all.
-        """
         mine = self.flattened_parts()
         theirs = other.flattened_parts()
         if mine is None or theirs is None:
@@ -295,13 +230,10 @@ class CapturedPath:
         path = CapturedPath.__new__(CapturedPath)
         path._deferred = None
         path._parts = [*mine, *theirs]
-        # Its box and whether it has a segment are worked out from the
-        # columns when first asked, as any deferred path's are.
         path._summary = None
         return path
 
     def flattened_parts(self) -> list[DeferredPoints] | None:
-        """The deferred flattened columns this path is made of, or None."""
         if self._parts is not None:
             return self._parts
         deferred = self._deferred
@@ -310,7 +242,6 @@ class CapturedPath:
         return [deferred]
 
     def subpath_count(self) -> int:
-        """len(self.subpaths), without building a deferred path's subpaths."""
         if self._parts is not None:
             return sum(len(part[2]) for part in self._parts)
         deferred = self._deferred
@@ -319,8 +250,6 @@ class CapturedPath:
         return len(self.subpaths)
 
     def __getattr__(self, name: str) -> Any:
-        # Only ever reached for an unset slot, which means a deferred outline
-        # whose points nobody had needed until now.
         if name == "subpaths":
             deferred = self.deferred_columns()
             if deferred is not None:
@@ -368,18 +297,12 @@ class CapturedPath:
     def axis_aligned_rect(self) -> Rectangle | None:
         deferred = self.deferred_columns()
         if deferred is not None:
-            # Settled from the spans and the last one's points, without
-            # building a subpath: flattened paths reach here several thousand
-            # times a page, and building them all to answer no cost 15us each.
             column_x, column_y, spans, outline = deferred
             if not spans:
                 return None
             start, end, flag = spans[-1]
             if outline and (len(spans) != 1 or end - start != 4):
-                # A rectangle is one subpath of exactly four points, and the
-                # outline kernel has already dropped a duplicated closing one.
                 return None
-            # The path's only subpath with segments must be its last.
             if end - start < 2 or any(e - s > 1 for s, e, _ in spans[:-1]):
                 return None
             if end - start > 5:
@@ -415,11 +338,6 @@ class CapturedPath:
         return bbox_union(box for subpath in self.subpaths if (box := subpath.bbox()))
 
     def deferred_summary(self) -> tuple[Rectangle | None, bool] | None:
-        """bbox() and has_segments() of a deferred path, from its columns; None if built.
-
-        path_bounds follows bbox_union over the subpaths' points_bbox, so a
-        glyph outline or a coalesced stroke answers without building them.
-        """
         if self._summary is not None and (self._deferred is not None or self._parts is not None):
             return self._summary
         deferred = self.deferred_columns()
@@ -429,7 +347,6 @@ class CapturedPath:
         return self._summary
 
     def deferred_columns(self) -> DeferredPoints | None:
-        """The point columns and spans a deferred path is built from, or None."""
         parts = self._parts
         if parts is not None:
             spans: list[tuple[int, int, bool]] = []
@@ -449,12 +366,6 @@ class CapturedPath:
         return self._deferred
 
     def fill_edge_array(self) -> numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None:
-        """fill_edges as an (n, 4) array, for a deferred path; None for any other.
-
-        The edges come straight from the point columns, in fill_edges' order:
-        each subpath's consecutive pairs, then its closing edge when its last
-        point differs from its first. No subpath is built.
-        """
         deferred = self.deferred_columns()
         if deferred is None:
             return None
@@ -479,7 +390,6 @@ class CapturedPath:
         y0 = column_y[first]
         x1 = column_x[second]
         y1 = column_y[second]
-        # A closing edge is kept where the points differ, as tuples compare.
         keep = ~numpy.asarray(closing, dtype=numpy.bool_) | (x0 != x1) | (y0 != y1)
         return numpy.column_stack((x0, y0, x1, y1))[keep]
 
@@ -494,9 +404,6 @@ DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
 EMPTY_DRAWING_ITEMS: tuple[DrawingItem, ...] = ()
 
 
-# CapturedDrawing is one record for twelve things, told apart by `kind`. Six
-# paint something; the other six are control-flow signals the renderer replays
-# to rebuild the graphics stack, and they leave most of the record unset.
 PaintedDrawingKind: TypeAlias = Literal[
     "fill",
     "stroke",
@@ -505,8 +412,6 @@ PaintedDrawingKind: TypeAlias = Literal[
     "image",
     "shading",
 ]
-# What marker_drawing emits. "scope-begin" is not here: it carries the form's
-# clip path, so it is built as a full record.
 MarkerDrawingKind: TypeAlias = Literal[
     "state-push",
     "state-pop",
@@ -659,7 +564,6 @@ __all__ = (
 
 
 def rect_from_points(subpath_points: list[tuple[float, float]], closed: bool) -> Rectangle | None:
-    """The rectangle one subpath's points trace, axis-aligned, or None."""
     points = list(subpath_points)
     if len(points) >= 2 and points[0] == points[-1]:
         points.pop()

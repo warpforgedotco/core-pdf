@@ -1,22 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Glyph outline edge construction (core_pdf.impl.render_commands).
-
-transformed_outline is the largest single item left in rendering, about 20% of
-it across the corpus. Only part of that is worth compiling, and measuring said
-which part:
-
-    points via tolist() + zip()  ->  C loop     0.72x   (slower)
-    edges via column_stack       ->  C loop     2.01x
-
-Building Python tuples in C loses to CPython's zip, so the point lists stay in
-the caller. This takes only the numeric half: it decides which spans survive,
-and writes every edge of every surviving span into one array in a single pass.
-The original allocated a column_stack per span, a separate 1x4 array for each
-closing edge, and then concatenated the lot.
-
-The span bookkeeping is returned rather than recomputed, so the caller builds
-point lists for exactly the spans that were kept, with the same adjusted ends.
-"""
 
 from libc.math cimport isnan
 
@@ -24,13 +6,6 @@ import numpy
 
 
 def outline_edges(double[::1] xs, double[::1] ys, spans):
-    """Edges for all surviving spans, plus which spans survived.
-
-    Returns (edges, kept, dropped) where `kept` is a list of (start, end) with
-    end already adjusted for a duplicated closing point, and `dropped` is True
-    if any span was too short to contribute. A span reaching outside the
-    columns raises IndexError.
-    """
     cdef Py_ssize_t count = min(xs.shape[0], ys.shape[0])
     if not _spans_inside(spans, count):
         raise IndexError("outline span outside the columns")
@@ -38,11 +13,6 @@ def outline_edges(double[::1] xs, double[::1] ys, spans):
 
 
 cdef tuple _outline_edges(const double* xs, const double* ys, spans):
-    # The edges over raw columns, shared by outline_edges and
-    # translated_outline_edges, so the latter reaches it without a Python call
-    # and two more buffer acquisitions per glyph. The kernels build without
-    # bounds checks or wraparound, so each caller first proves with
-    # _spans_inside that every span lies inside the columns.
     cdef Py_ssize_t start, end, i, total = 0
     cdef bint dropped = False
     cdef bint closes
@@ -51,9 +21,6 @@ cdef tuple _outline_edges(const double* xs, const double* ys, spans):
     for span in spans:
         start = span[0]
         end = span[1]
-        # The original built the point list first, dropped a duplicated final
-        # point, and only then checked the length -- so a two-point span whose
-        # ends coincide collapses to one point and is dropped, not kept.
         if end > start and xs[start] == xs[end - 1] and ys[start] == ys[end - 1]:
             end -= 1
         if end - start >= 2:
@@ -107,13 +74,6 @@ cdef enum:
 cdef int column_range(
     const double* values, Py_ssize_t count, double* low, double* high
 ) noexcept nogil:
-    """The first-found minimum and maximum of a non-empty column, and flags.
-
-    Each bound is kept as `if value < low: low = value` keeps it, from the
-    first element, so equal values resolve as a one-sided scan resolves them.
-    The flags say whether the column holds a NaN, a positive zero or a
-    negative zero, for column_extreme to settle the cases numpy decides.
-    """
     cdef Py_ssize_t i
     cdef double value, lo = values[0], hi = values[0]
     cdef int flags = 0
@@ -135,15 +95,6 @@ cdef int column_range(
 cdef object column_extreme(
     const double* values, Py_ssize_t count, object column, bint maximum, double bound, int flags
 ):
-    """numpy's column.min() or column.max() as a float, for a non-empty column.
-
-    A NaN anywhere is the answer, as numpy propagates it: the first one, as
-    a scan that stops at it returns. Two zeros of opposite sign compare
-    equal, and which of them numpy's reduction returns is its own business,
-    so a column holding both is handed to numpy. Otherwise it is `bound`,
-    which column_range found by the comparisons a one-sided scan makes; a
-    NaN never enters them, since it compares false.
-    """
     cdef Py_ssize_t i
     if flags & HAS_NAN:
         for i in range(count):
@@ -155,20 +106,6 @@ cdef object column_extreme(
 
 
 def translated_outline_edges(double[::1] linear_x, double[::1] linear_y, double e, double f, spans):
-    """outline_edges over the columns linear_x + e and linear_y + f, with their bounds.
-
-    transformed_outline added the translation to the cached linear columns
-    with numpy, called outline_edges, and took the bounds with four numpy
-    reductions -- six array operations around one kernel, per glyph drawn.
-    This makes the translated columns, the edges and the bounds in one call:
-    each column entry is the same double sum, the edges come from
-    outline_edges on those columns, and each bound is what numpy's min or max
-    of the column gives.
-
-    Returns (column_x, column_y, edges, kept, dropped, bounds), where edges is
-    None as outline_edges returns it, and bounds is (min x, min y, max x,
-    max y), or None when there are no edges.
-    """
     cdef Py_ssize_t count = linear_x.shape[0], i
     if linear_y.shape[0] != count:
         raise ValueError("columns differ in length")

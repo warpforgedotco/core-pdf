@@ -24,22 +24,12 @@ PageCommand: TypeAlias = (
 
 @dataclass(frozen=True, slots=True)
 class CaptureOptions:
-    """What a capture records beyond the text itself.
-
-    ink_bounds: each horizontal glyph's ink box, from the font's glyph bbox.
-    text_runs: the layout runs, clusters and run geometry extraction builds on.
-    render_details: the rasterizer's per-glyph payload -- glyph transforms and
-    bitmap requests. A program captured without it describes the page's text
-    correctly but cannot be drawn.
-    """
-
     ink_bounds: bool = True
     text_runs: bool = True
     render_details: bool = True
 
 
 DEFAULT_CAPTURE = CaptureOptions()
-# Extraction composes blocks, not pixels, so it skips the render payload.
 EXTRACTION_CAPTURE = CaptureOptions(render_details=False)
 
 
@@ -51,18 +41,7 @@ class CapturedProgram:
     inline_images: tuple[CapturedInlineImage, ...] = ()
     lines: CapturedLines = EMPTY_LINES
     text_boundaries: tuple[CapturedTextBoundary, ...] = field(default=(), kw_only=True)
-    # What the capture recorded. commands refuses a program captured without
-    # render details rather than draw a page with no glyphs on it.
     options: CaptureOptions = field(default=DEFAULT_CAPTURE, kw_only=True)
-    # Derived from the six products above, and built only when something asks for it.
-    # init=False keeps it out of __init__, __match_args__ and copy.replace,
-    # which is what the hand-written __replace__ arranged by listing the other
-    # six explicitly. compare=False because it is a function of them.
-    #
-    # Lazy because the renderer is its only reader in the workspace: an
-    # extract never touches it, and building it eagerly meant a has_paint call
-    # on every glyph and a sort of every product on the page, for a tuple that
-    # was then dropped.
     _commands: tuple[PageCommand, ...] | None = field(
         init=False, default=None, repr=False, compare=False
     )
@@ -72,8 +51,6 @@ class CapturedProgram:
         object.__setattr__(self, "glyphs", tuple(self.glyphs))
         object.__setattr__(self, "drawings", tuple(self.drawings))
         object.__setattr__(self, "inline_images", tuple(self.inline_images))
-        # Accepted as any iterable of CapturedLine for construction by hand;
-        # capture itself always hands over a CapturedLines.
         if type(self.lines) is not CapturedLines:
             object.__setattr__(self, "lines", CapturedLines(self.lines))
         object.__setattr__(self, "text_boundaries", tuple(self.text_boundaries))
@@ -83,9 +60,6 @@ class CapturedProgram:
         commands = self._commands
         if commands is None:
             if not self.options.render_details:
-                # Without glyph transforms and bitmap requests every glyph
-                # reports no paint, so the page would draw with no text on it.
-                # Refusing is better than silently drawing that.
                 raise ValueError(
                     "page program was captured without render details and cannot be drawn; "
                     "capture it with CaptureOptions(render_details=True)"
@@ -112,15 +86,12 @@ class AppearanceProgram:
 class PageProgram:
     body: CapturedProgram = field(default_factory=CapturedProgram)
     appearances: tuple[AppearanceProgram, ...] = ()
-    # Concatenations of body and appearances, rebuilt by __post_init__.
     runs: tuple[TextRun, ...] = field(init=False)
     glyphs: tuple[GlyphObservation, ...] = field(init=False)
     drawings: tuple[CapturedDrawing, ...] = field(init=False)
     inline_images: tuple[CapturedInlineImage, ...] = field(init=False)
     lines: CapturedLines = field(init=False)
     text_boundaries: tuple[CapturedTextBoundary, ...] = field(init=False)
-    # Lazy for the same reason as CapturedProgram.commands, and it has to be:
-    # reading body.commands here would force the body's.
     _commands: tuple[PageCommand, ...] | None = field(
         init=False, default=None, repr=False, compare=False
     )
@@ -131,7 +102,6 @@ class PageProgram:
         set_derived("appearances", appearances)
         body = self.body
         if not appearances:
-            # Nothing to concatenate, so the body's own tuples stand as they are.
             set_derived("runs", body.runs)
             set_derived("glyphs", body.glyphs)
             set_derived("drawings", body.drawings)
@@ -139,9 +109,6 @@ class PageProgram:
             set_derived("lines", body.lines)
             set_derived("text_boundaries", body.text_boundaries)
             return
-        # Body first, then each appearance in capture order. Nothing is
-        # re-sorted: one TextState numbers the body and every appearance off a
-        # single counter, so concatenating in that order is already by seqno.
         programs = (body, *(appearance.program for appearance in appearances))
         merge = chain.from_iterable
         set_derived("runs", tuple(merge(p.runs for p in programs)))
@@ -153,7 +120,6 @@ class PageProgram:
 
     @property
     def options(self) -> CaptureOptions:
-        # One TextState captures the body and every appearance, so they share it.
         return self.body.options
 
     @property

@@ -51,7 +51,6 @@ class StructuredState(ClosingMixin):
     def __init__(self, pdf: PdfDocument | None, structured: Document | None = None) -> None:
         self.pdf = pdf
         self._structured = structured
-        # The legacy extractor's fonts and form text, shared by every page.
         self.text_caches = LegacyTextCaches()
 
     @property
@@ -91,11 +90,6 @@ class StructuredState(ClosingMixin):
         return self.structured.pages
 
     def page_count(self) -> int:
-        """How many pages the structured document has, without extracting it.
-
-        It is empty when the page tree declares no pages, and otherwise has
-        one page for each of the source's pages.
-        """
         pdf = self.source_pdf
         return len(pdf.pages) if pdf.page_count() else 0
 
@@ -173,12 +167,6 @@ class Rectangle(tuple[float, float, float, float]):
 
 
 class PdfPageObject:
-    """A page of a reader: its structured page is extracted only when read.
-
-    page is the structured page, or None for the document's own page
-    page_number, which reading _page extracts from the document.
-    """
-
     def __init__(
         self, document: StructuredState, page: Page | None, page_number: int | None = None
     ) -> None:
@@ -217,7 +205,6 @@ class PdfPageObject:
         self._loaded_page = page
 
     def _is_source_page(self) -> bool:
-        # A page never extracted is its document's page, unchanged.
         page = self._loaded_page
         return page is None or page is self._document.pages[page.page_number - 1]
 
@@ -352,8 +339,6 @@ class PdfReader(ClosingMixin):
             PdfPageObject(document, None, page_number)
             for page_number in range(1, document.page_count() + 1)
         )
-        # The pages' structured pages carry distinct page numbers, so a page
-        # of this reader equals no other page of it.
         self._page_indexes = {id(page): index for index, page in enumerate(self.pages)}
         raw_metadata = document.source_pdf.get_metadata()
         info = raw_metadata.get("info", {}) if isinstance(raw_metadata, dict) else {}

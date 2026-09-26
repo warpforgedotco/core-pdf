@@ -124,7 +124,6 @@ def inline_image_unfiltered_data_length(dictionary: PdfDict) -> int | None:
         if type(bits) is not int or bits <= 0:
             return None
         color_space = decoded_name(dictionary.get("ColorSpace"))
-        # normalize_inline_image_dictionary has expanded the abbreviated names.
         if color_space in {None, "DeviceGray"}:
             colors = 1
         elif color_space == "DeviceRGB":

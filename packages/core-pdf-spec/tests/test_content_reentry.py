@@ -1,5 +1,3 @@
-"""The executor refuses a stream that reenters itself through reject_reentry."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -41,7 +39,6 @@ class SkippingInterpreter(ContentInterpreter):
 
 
 def chain(length: int) -> PdfDict:
-    """Forms F0 .. F{length-1}, each drawing the next."""
     forms: PdfDict = {}
     resources: PdfDict = {"XObject": forms}
     for index in range(length):

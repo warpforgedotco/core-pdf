@@ -127,10 +127,6 @@ def line_decoration_flags(
     x0, y0, x1, y1 = line.bbox
     line_height = max(1.0, y1 - y0)
     flags = {"underline": False, "strikeout": False}
-    # Only a rule centred in the union of the underline and strikeout bands
-    # below can set either flag, so bisect to that slice rather than scanning
-    # every rule on the page. Drawing-heavy pages carry thousands of them, and
-    # the scan was the dominant cost of assembling such a page.
     first = bisect_left(decoration_centers, y0 - 3.0)
     last = bisect_right(decoration_centers, y0 + max(1.5, line_height * 0.75))
     for dx0, dx1, center_y in decoration_boxes[first:last]:
@@ -156,8 +152,6 @@ def normalize_blocks(
     parsed_blocks: tuple[ParsedBlock, ...],
     drawings: tuple[CapturedDrawing, ...],
 ) -> list[Block]:
-    # Sorted by centre so line_decoration_flags can bisect. The flags are
-    # order-independent, so ordering the rules changes nothing it reports.
     decoration_boxes = tuple(
         sorted(
             (

@@ -1,27 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Supersampled coverage: agreement with the fill_path loop it replaced.
-
-supersampled_coverage_golden.pkl.gz was generated from the deltas branch of
-core_pdf.impl.render_target.RasterTarget.fill_path before it was deleted. The
-generator first proved its transcription of that loop against every one of
-the 15,426 calls a corpus sweep sent through the live code, row by row, and
-only then used it. It holds:
-
-- corpus: every call from the documents other than PyMuPDF test_3806 that
-  reach the branch, and an even spread by size of test_3806's own 15,407.
-  All of them are even-odd fills.
-- synthetic: under both fill rules and three device mappings, the shapes the
-  corpus does not reach -- a hole wound against and with the outer contour,
-  five- and nine-point stars, overlapping and coincident contours, a comb,
-  slivers and sub-pixel triangles, a path far past the box, one of only
-  horizontal edges -- and forty random polygons with 3 to 20 edges, on both
-  sides of the eight edges where the original switched to numpy crossings.
-
-Expected results are stored as the kernel returns them: the count plane
-trimmed to its first and last covered rows, with the offset of the first, or
-None where the original covered no row.
-"""
 
 import gzip
 import pickle
@@ -84,8 +62,6 @@ def test_kernel_reproduces_the_loop(index):
 
 
 def test_fill_rules_differ_only_where_winding_does():
-    # A hole wound the same way as its outer contour: nonzero fills it and
-    # even-odd does not.
     edges = numpy.concatenate([square(0, 0, 8, 8), square(2, 2, 6, 6)])
     evenodd = supersampled_coverage_plane(edges, 0.0, 8.0, 1.0, 0, 0, 8, 8, True)
     nonzero = supersampled_coverage_plane(edges, 0.0, 8.0, 1.0, 0, 0, 8, 8, False)
@@ -97,7 +73,6 @@ def test_fill_rules_differ_only_where_winding_does():
 
 
 def test_uncovered_rows_are_trimmed():
-    # Covers only device rows 3 and 4 of a ten-row box.
     sampled = supersampled_coverage_plane(square(0, 5, 10, 7), 0.0, 10.0, 1.0, 0, 0, 10, 10, True)
     assert sampled is not None
     plane, first_row = sampled
@@ -115,9 +90,6 @@ def test_nothing_to_cover():
 
 
 def test_non_finite_spans_raise_what_math_ceil_raised():
-    # A crossing at an infinite x is NaN (inf + t * (inf - inf)) and forms no
-    # span, in the original too. A span edge goes non-finite in the device
-    # mapping instead: a scale that overflows it, or a NaN origin.
     edges = square(0, 0, 4, 4)
     with pytest.raises(OverflowError):
         supersampled_coverage_plane(edges, 0.0, 2.0, 1e308, 0, 0, 4, 4, True)

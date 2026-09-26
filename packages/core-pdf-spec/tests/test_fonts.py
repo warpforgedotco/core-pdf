@@ -97,7 +97,6 @@ def test_tounicode_usecmap_chain_past_the_depth_limit_goes_through_reject_parent
         b"/P usecmap 1 beginbfchar <01> <0041> endbfchar", usecmap_resolver=resolve
     )
     assert cmap.lookup(b"\x01") == "A"
-    # The chain resolves one name past the limit before refusing it.
     assert calls == ["P", "Px", "Pxx"]
     assert RecordingToUnicodeCMap.reasons == ["ToUnicode CMap usecmap nesting too deep"]
 

@@ -1,9 +1,3 @@
-"""blend_px's scalar arithmetic is blend_channels_f64's, one pixel at a time.
-
-RasterTarget.blend_px is the per-pixel fast path and keeps its own copy of
-the separable blend formulas; this pins the two to the same bytes.
-"""
-
 import itertools
 
 import numpy

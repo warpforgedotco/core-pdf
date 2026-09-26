@@ -1,34 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Path flattening: agreement with the capture code it replaced.
-
-flatten_path_golden.pkl.gz was generated from the pre-change Python: the
-recording module's flatten_path, CapturedPath.transformed, bbox,
-has_segments and derived_lines, loaded from the last revision that had
-them. The generator first proved that reference against 35,625 paths a
-corpus sweep sent through the live capture code, point for point, and only
-then used it. It holds:
-
-- corpus: a spread of those paths from each of 94 documents, most heavily
-  from the two -- PyMuPDF test_3806 and test_3362 -- that stroke hundreds of
-  thousands of segments.
-- synthetic: under five matrices including none and the identity, which
-  differ on signed zeros, the rules a hand-written path can break -- a line
-  after a close, a close with one point, a curve or line on an empty path, a
-  rectangle beside open subpaths, a closing duplicate point, a move with
-  nothing after it -- plus flatness and segment-count bounds, a scaled curve
-  CTM, signed zeros in the box, an unknown operator, and the inputs the
-  original raised on; and forty random paths.
-
-Every value is compared by its bits. The commands are plain tuples, encoded
-here the way core_pdf_spec's PdfPath stores them -- an operator byte each and
-their numbers in one float array, a curve followed by its CTM's linear part
-and its flatness -- so this runs without core_pdf_spec installed. PdfPath
-cannot hold a command with the wrong number of operands, or operands that are
-not numbers, so the golden inputs that raised for those are not encodable and
-are checked to be exactly the ones that raised; an operator PdfPath does not
-have was ignored, and is left out.
-"""
 
 import gzip
 import math
@@ -51,7 +22,6 @@ CODES = {"m": b"m", "l": b"l", "h": b"h", "re": b"r", "c": b"c"}
 
 
 def encode(commands):
-    """(ops, coords) as PdfPath stores these commands, or None if it cannot."""
     ops = bytearray()
     coords = array("d")
     for operator, operands, ctm, flatness in commands:
@@ -98,8 +68,6 @@ def run(case):
         )
     except Exception as error:
         return ("raises", type(error).__name__)
-    # The line table is appended to, never rewritten, and every row carries
-    # the width it was given.
     assert rows[:5] == array("d", [7.0] * 5)
     lines = numpy.frombuffer(rows, dtype=numpy.float64).reshape(-1, 5)[1:]
     assert (lines[:, 4] == 2.5).all()
@@ -158,8 +126,6 @@ def test_lines_come_from_consecutive_points_within_a_subpath():
         identity("l", (50.0, 60.0)),
     ]
     _, _, spans, bbox, has_segments, lines = flatten(path, None)
-    # No line across the subpath break, none for the closing edge, none for
-    # the 0.005 step.
     assert lines.tolist() == [[0.0, 0.0, 10.0, 0.0], [50.0, 50.0, 50.0, 60.0]]
     assert spans == [(0, 3, True), (3, 5, False)]
     assert bbox == (0.0, 0.0, 50.0, 60.0)
@@ -205,7 +171,6 @@ def test_segment_count_goes_through_the_hypot_it_is_given():
 
     curve = [identity("c", (0.0, 0.0, 1.0, 1.0, 2.0, 1.0, 3.0, 0.0))]
     flatten(curve, None, counting_hypot)
-    # Two for the CTM's scale, three for the control polygon.
     assert len(calls) == 5
 
 

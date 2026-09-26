@@ -1,22 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Short stroked segments: byte-for-byte agreement with fill_line's Python loop.
-
-stroke_segment_golden.pkl.gz holds 4,000 segments sampled from the 62,640
-that rendering six corpus pages sent down fill_line's per-pixel loop --
-the pixel box before and after the real renderer painted it, and which of
-its pixels the clip let through, asked of pixel_in_clip itself. They are
-all clipped butt caps in opaque colour, as the corpus draws them. So it
-also holds 1,200 synthetic segments over every cap style, alpha from 0 to
-255, clear and random backgrounds, random clip masks and several scales,
-computed by a verbatim copy of that loop and blend_px's normal-mode
-arithmetic; the copy was required to reproduce all 4,000 captured segments
-before any synthetic case was kept.
-
-The round-capped cases pinned a branch nothing reaches any more -- a stroke's
-caps are fill_cap's, and every segment is butt- or square-capped -- and the
-kernel no longer has it, so they are left out.
-"""
 
 import gzip
 import pickle

@@ -186,7 +186,6 @@ def test_subbyte_tiff_prediction_returns_empty_for_missing_row(bits):
 def test_prediction_codecs_report_unavailability_instead_of_raising(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both prediction backends answer "not this shape" with None, never an exception."""
 
     def explode(*args: object, **kwargs: object) -> object:
         raise RuntimeError("codec unavailable")
@@ -202,13 +201,6 @@ def test_prediction_codecs_report_unavailability_instead_of_raising(
 @pytest.mark.parametrize("colors", [1, 3])
 @pytest.mark.parametrize("columns", [1, 7])
 def test_prediction_backends_agree_with_the_pure_python_kernels(bits, colors, columns):
-    """The codec path and the fallback must be interchangeable.
-
-    stream_decoding tries the imagecodecs backend and silently falls back to
-    the spec kernels, so a divergence between them would change output based on
-    nothing the caller can see. The two carry separate copies of the row
-    framing, masking and padding rules; this pins them together.
-    """
     row_bytes = max(1, (columns * colors * bits + 7) // 8)
     rng = np.random.default_rng(seed=bits * 100 + colors * 10 + columns)
     data = rng.integers(0, 256, size=row_bytes * 4, dtype=np.uint8).tobytes()

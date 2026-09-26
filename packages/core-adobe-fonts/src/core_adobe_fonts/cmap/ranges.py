@@ -40,7 +40,6 @@ class CIDRange(Record):
         return hash((self.start, self.end, self.first_cid))
 
     def cid_for(self, code: bytes) -> int:
-        """The CID of a code inside the range: first_cid plus its offset from start."""
         return self.first_cid + range_offset(
             code, self.start, self.end, validate_range=False, validate_code=False
         )
@@ -71,8 +70,7 @@ class NotdefRange(Record):
     def __hash__(self) -> int:
         return hash((self.start, self.end, self.cid))
 
-    def cid_for(self, code: bytes) -> int:  # noqa: ARG002 -- CIDRange.cid_for's signature
-        """Every code in a notdef range maps to the one CID."""
+    def cid_for(self, code: bytes) -> int:  # noqa: ARG002
         return self.cid
 
 
