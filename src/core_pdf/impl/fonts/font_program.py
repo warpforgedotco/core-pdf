@@ -1339,9 +1339,6 @@ class TrueTypeFontProgram(BitmapFromOutlines):
     def unicode_for_gid(self, gid: int) -> str:
         return self.glyph_to_unicode.get(gid, "")
 
-    def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
-        return self.glyph_bitmap_for_gid(self.glyph_id_for_code(code), width=width, height=height)
-
     def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
         return self.glyph_bbox_for_gid(self.glyph_id_for_code(code))
 
@@ -1354,9 +1351,6 @@ class TrueTypeFontProgram(BitmapFromOutlines):
             return bbox
         x0, y0, x1, y1 = bbox
         return (x0 * scale, y0 * scale, x1 * scale, y1 * scale)
-
-    def glyph_contours(self, gid: int) -> list[list[Point]]:
-        return [list(contour) for contour in self.glyph_contours_for_gid(gid)]
 
     def normalized_glyph_contours(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         return self.outlines.normalized_glyph_contours(gid)
