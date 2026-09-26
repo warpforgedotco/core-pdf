@@ -20,7 +20,7 @@ finally:
 
 Modules follow PDF chapters: syntax primitives, objects/xref, filters, content execution,
 document semantics, security, graphics, fonts, and structure. A module's `__all__` lists its
-supported exports; `internal_` names are private. Public parser methods document strict
+supported exports; other names are private. Public parser methods document strict
 parsing and the extension points consumers can implement.
 
 The library contains implemented PDF semantics and the PDF-facing wrappers over the
