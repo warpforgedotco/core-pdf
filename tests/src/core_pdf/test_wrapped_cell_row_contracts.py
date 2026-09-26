@@ -68,14 +68,10 @@ def test_wrapped_cells_merge_by_column_and_union_geometry(tall, ragged, missing_
     assert "logical_rows" not in original.metadata
 
 
-@pytest.mark.parametrize(
-    "reason", ["source", "short", "narrow", "numeric", "no_geometry", "not_tall"]
-)
+@pytest.mark.parametrize("reason", ["short", "narrow", "numeric", "no_geometry", "not_tall"])
 def test_wrapped_cell_repair_requires_positive_geometry_and_text_evidence(reason):
     table = make_table(tall=29 if reason == "not_tall" else 30)
-    if reason == "source":
-        table = replace(table, metadata={"source": "grid"})
-    elif reason == "short":
+    if reason == "short":
         table = replace(table, rows=table.rows[:3])
     elif reason == "narrow":
         table = replace(table, rows=tuple(row[:4] for row in table.rows))

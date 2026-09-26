@@ -27,13 +27,10 @@ from core_pdf.impl.extract_table_cleanup import (
     TableFacts,
     annotate_table_associations,
     cell_text,
+    clean_stream_table,
     merge_adjacent_tables,
-    merge_stream_text_columns,
-    merge_wrapped_cell_rows,
-    merge_wrapped_stream_rows,
     numeric_cell,
     split_semantic_table,
-    stream_table_reads_like_prose,
     table_character_spaced_prose,
     table_is_single_column_prose,
     table_quality,
@@ -279,10 +276,10 @@ def detect_tables(
             continue
         for conflict in conflicts:
             tables.remove(conflict)
-        merged_stream = merge_wrapped_stream_rows(merge_stream_text_columns(stream))
-        if stream_table_reads_like_prose(merged_stream):
-            continue
-        tables.append(merge_wrapped_cell_rows(merged_stream))
+        # Cleaned only once it has won: a conflict is judged on the table as detected.
+        cleaned = clean_stream_table(stream)
+        if cleaned is not None:
+            tables.append(cleaned)
     tables = [
         segment
         for table in merge_adjacent_tables(tables)
