@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import struct
-import zlib
+import mmap
 from typing import Any
 
-from core_pdf.impl.geometry import rect_tuple
-from core_pdf.impl.graphics.codec_backends import PNG_SIGNATURE, png_chunk
+from core_pdf.impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl.types import PdfSource
 
 BBox = tuple[float, float, float, float]
-PdfInput = Any
+PdfInput = PdfSource
 
 
 class ClosingMixin:
@@ -22,28 +21,17 @@ class ClosingMixin:
         self.close()
 
 
-def coerce_bbox(value: object) -> BBox:
-    box = rect_tuple(value)
-    if box is None:
-        raise ValueError(f"value does not describe a rectangle: {value!r}")
-    return box
+def parse_indirect_object_at(
+    data: bytes | bytearray | memoryview | mmap.mmap, offset: int, **lexer_options: Any
+) -> Any:
+    """The indirect object whose header starts at offset, parsed by a fresh lexer.
 
-
-def float32(value: float) -> float:
-    return struct.unpack("f", struct.pack("f", value))[0]
-
-
-def encode_png(width: int, height: int, channels: int, pixels: bytes | bytearray) -> bytes:
-    if channels not in (3, 4):
-        raise ValueError("PNG output requires RGB or RGBA pixels")
-    stride = width * channels
-    scanlines = b"".join(
-        b"\x00" + pixels[row * stride : (row + 1) * stride] for row in range(height)
-    )
-    header = struct.pack(">IIBBBBB", width, height, 8, 6 if channels == 4 else 2, 0, 0, 0)
-    return (
-        PNG_SIGNATURE
-        + png_chunk(b"IHDR", header)
-        + png_chunk(b"IDAT", zlib.compress(scanlines))
-        + png_chunk(b"IEND", b"")
-    )
+    Whatever the parse raises reaches the caller, and the lexer is closed
+    either way.
+    """
+    lexer = PdfLexer(data, **lexer_options)
+    try:
+        lexer.rewind(offset)
+        return lexer.parse_indirect_object()
+    finally:
+        lexer.close()

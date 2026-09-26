@@ -9,7 +9,6 @@ from typing import Any, overload
 from core_pdf import PdfDocument
 from core_pdf.impl.document.metadata import resolve_info_metadata
 from core_pdf.impl.document.page_tree import resolve_page_tree_node_type
-from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.output.model import Document
 from core_pdf.impl.output.model import Page as StructuredPage
@@ -19,7 +18,9 @@ from core_pdf_compat.pypdf import (
     PdfReader,
     StructuredState,
 )
+from core_pdf_spec.s_07_syntax.xref import key_for
 
+from .._shared import parse_indirect_object_at
 from .._strict_page_tree import has_malformed_shadowed_definition
 
 
@@ -75,21 +76,18 @@ def _pike_value(value: object) -> object:
 def _pikepdf_info_metadata(pdf: PdfDocument) -> dict[str, Any]:
     info = pdf.trailer_dict.get("Info")
     if isinstance(info, PdfReference):
-        entry = pdf.xref.get((info.object_number << 16) | info.generation_number)
+        entry = pdf.xref.get(key_for(info.object_number, info.generation_number))
         if entry is not None and entry.object_stream is None:
-            lexer = PdfLexer(
-                pdf.raw_data,
-                reference_resolver=pdf.resolver.resolve,
-                decipher=pdf.decipher,
-                recover_dictionary_structure=False,
-            )
             try:
-                lexer.rewind(entry.offset)
-                lexer.parse_indirect_object()
+                parse_indirect_object_at(
+                    pdf.raw_data,
+                    entry.offset,
+                    reference_resolver=pdf.resolver.resolve,
+                    decipher=pdf.decipher,
+                    recover_dictionary_structure=False,
+                )
             except PdfParseError:
                 return {}
-            finally:
-                lexer.close()
     return dict(resolve_info_metadata(pdf.resolver, pdf.trailer_dict, recover=True))
 
 
@@ -125,7 +123,7 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
     if isinstance(pages, PdfReference) and has_malformed_shadowed_definition(pdf, pages):
         raise PdfUnsupportedError("shadowed page tree root")
     if isinstance(pages, PdfReference) and pdf.xref_was_recovered:
-        entry = pdf.xref.get((pages.object_number << 16) | pages.generation_number)
+        entry = pdf.xref.get(key_for(pages.object_number, pages.generation_number))
         if (
             pdf.strict_xref_validation_error() is not None
             and entry is not None
@@ -136,7 +134,7 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
 
     def visit(value: object) -> None:
         if isinstance(value, PdfReference):
-            key = (value.object_number << 16) | value.generation_number
+            key = key_for(value.object_number, value.generation_number)
             if key not in pdf.xref:
                 raise PdfUnsupportedError("invalid page tree reference")
         marker = (
@@ -162,7 +160,7 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
 
 
 def _raw_indirect_object(pdf: PdfDocument, reference: PdfReference) -> bytes:
-    entry = pdf.xref.get((reference.object_number << 16) | reference.generation_number)
+    entry = pdf.xref.get(key_for(reference.object_number, reference.generation_number))
     if entry is None:
         return b""
     if entry.object_stream is None:

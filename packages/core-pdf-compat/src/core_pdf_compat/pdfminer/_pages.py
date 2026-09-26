@@ -6,12 +6,13 @@ from functools import partial
 from typing import Any, cast
 
 from core_pdf import PdfDocument, PdfPage
-from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.document.recovery.xref import XRefScanner
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfReference
-from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, merge_xref_sections
+from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, key_for, merge_xref_sections
+
+from .._shared import parse_indirect_object_at
 
 
 def pdfminer_resolvable_pages(  # noqa: C901
@@ -26,13 +27,13 @@ def pdfminer_resolvable_pages(  # noqa: C901
             if object_number in seen:
                 continue
             seen.add(object_number)
-            entry = strict_xref.get((object_number << 16) | generation_number)
+            entry = strict_xref.get(key_for(object_number, generation_number))
             value: object = None
             if entry is not None and entry.object_stream is None:
-                lexer = PdfLexer(data, recover_malformed_objects=False)
-                lexer.rewind(entry.offset)
                 try:
-                    parsed = lexer.parse_indirect_object()
+                    parsed = parse_indirect_object_at(
+                        data, entry.offset, recover_malformed_objects=False
+                    )
                 except Exception:
                     parsed = None
                 if isinstance(parsed, dict):
@@ -82,10 +83,10 @@ def pdfminer_resolvable_pages(  # noqa: C901
             root_generation = int(root_match.group(2))
             recovered_root = recovered.get(root_number)
             if recovered_root is not None and recovered_root[0] == root_generation:
-                root_lexer = PdfLexer(data, recover_malformed_objects=True)
-                root_lexer.rewind(recovered_root[1])
                 try:
-                    root_value = root_lexer.parse_indirect_object()
+                    root_value = parse_indirect_object_at(
+                        data, recovered_root[1], recover_malformed_objects=True
+                    )
                 except Exception:
                     root_value = None
                 if (
@@ -162,10 +163,8 @@ def pdfminer_resolvable_pages(  # noqa: C901
             value_start += len(data[value_start:]) - len(data[value_start:].lstrip())
             if data[value_start : value_start + 2] != b"<<" and not malformed_root:
                 continue
-            lexer = PdfLexer(data, recover_malformed_objects=True)
-            lexer.rewind(offset)
             try:
-                value = lexer.parse_indirect_object()
+                value = parse_indirect_object_at(data, offset, recover_malformed_objects=True)
             except Exception:
                 continue
             if not isinstance(value, dict):
@@ -256,10 +255,14 @@ def pdfminer_resolvable_pages(  # noqa: C901
     except Exception:
         xref_sections = [strict_xref]
 
+    def in_use_object_keys() -> Iterator[tuple[int, int]]:
+        return ((key >> 16, key & 0xFFFF) for key, entry in strict_xref.items() if entry.in_use)
+
     info_reference = strict_trailer.get("Info")
     if isinstance(info_reference, PdfReference):
-        info_key = (info_reference.object_number << 16) | info_reference.generation_number
-        info_entry = strict_xref.get(info_key)
+        info_entry = strict_xref.get(
+            key_for(info_reference.object_number, info_reference.generation_number)
+        )
         if info_entry is not None and info_entry.in_use and info_entry.object_stream is None:
             expected_header = re.compile(
                 rb"\s*"
@@ -269,14 +272,12 @@ def pdfminer_resolvable_pages(  # noqa: C901
                 + rb"\s+obj\b"
             )
             if expected_header.match(data, info_entry.offset):
-                info_lexer = PdfLexer(data, recover_malformed_objects=False)
-                info_lexer.rewind(info_entry.offset)
-                info_lexer.parse_indirect_object()
+                parse_indirect_object_at(data, info_entry.offset, recover_malformed_objects=False)
 
     def reference_is_resolvable(value: object) -> bool:
         if not isinstance(value, PdfReference):
             return True
-        key = (value.object_number << 16) | value.generation_number
+        key = key_for(value.object_number, value.generation_number)
         candidates = [section[key] for section in xref_sections if key in section]
         if not candidates:
             return False
@@ -315,7 +316,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
     if not reference_is_resolvable(root_reference):
         hard_mismatch = False
         if isinstance(root_reference, PdfReference):
-            root_key = (root_reference.object_number << 16) | root_reference.generation_number
+            root_key = key_for(root_reference.object_number, root_reference.generation_number)
             root_entry = strict_xref.get(root_key)
             if root_entry is not None and root_entry.object_stream is None:
                 offset = XRefScanner.skip_ws(data, root_entry.offset)
@@ -326,9 +327,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
                         root_reference.generation_number,
                     )
         if not hard_mismatch:
-            yield from fallback_pages(
-                ((key >> 16, key & 0xFFFF) for key, entry in strict_xref.items() if entry.in_use)
-            )
+            yield from fallback_pages(in_use_object_keys())
         return
     try:
         catalog = document.resolver.resolve(root_reference)
@@ -379,6 +378,4 @@ def pdfminer_resolvable_pages(  # noqa: C901
     if declared_pages:
         yield from declared_pages
         return
-    yield from fallback_pages(
-        ((key >> 16, key & 0xFFFF) for key, entry in strict_xref.items() if entry.in_use)
-    )
+    yield from fallback_pages(in_use_object_keys())

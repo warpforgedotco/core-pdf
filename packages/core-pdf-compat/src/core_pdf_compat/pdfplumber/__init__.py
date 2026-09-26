@@ -3,21 +3,24 @@ from __future__ import annotations
 import builtins
 import math
 import re
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+import struct
+import zlib
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
 from copy import copy
 from io import BytesIO
 from itertools import accumulate, groupby, pairwise
 from operator import itemgetter
 from types import SimpleNamespace
-from typing import Any, ClassVar, TypeAlias
+from typing import Any, ClassVar, TypeAlias, cast
 
 from core_pdf import PdfDocument
+from core_pdf.impl.fonts.helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.geometry import (
     bbox_contains,
     bbox_union,
     flip_rect_vertical,
 )
-from core_pdf.impl.graphics.codec_backends import png_chunk
+from core_pdf.impl.graphics.codec_backends import PNG_SIGNATURE, png_chunk
 from core_pdf.impl.output.model import Table as StructuredTable
 from core_pdf.impl.output.model import TableCell
 from core_pdf.impl.pdf_names import recover_pdf_name
@@ -32,24 +35,12 @@ from core_pdf.impl.types import (
     frozen_setattr,
 )
 
-from .._shared import ClosingMixin, PdfInput, encode_png
+from .._shared import BBox, ClosingMixin, PdfInput
 from .exceptions import PdfminerException
 
-BBox: TypeAlias = tuple[float, float, float, float]
 ObjectDict: TypeAlias = dict[str, Any]
-LIGATURE_EXPANSIONS = {
-    "ﬀ": "ff",
-    "ﬁ": "fi",
-    "ﬂ": "fl",
-    "ﬃ": "ffi",
-    "ﬄ": "ffl",
-    "ﬅ": "ft",
-    "ﬆ": "st",
-}
-
-
-def flip_box(box: object, height: float) -> BBox:
-    return flip_rect_vertical(box, height)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+LIGATURE_EXPANSIONS = {**LIGATURE_TEXT_OVERRIDES, "ﬅ": "ft", "ﬆ": "st"}
+flip_box = flip_rect_vertical
 
 
 def cluster_by(
@@ -405,10 +396,6 @@ class EnginePageAdapter:
         )
 
 
-def _bbox(page: EnginePageAdapter, box: Any) -> BBox:
-    return flip_box(box, page.info.height)
-
-
 def _envelope(
     object_type: str, page_number: int, box: BBox, doctop: float, **extra: Any
 ) -> ObjectDict:
@@ -427,28 +414,36 @@ def _envelope(
     }
 
 
-def _filter_objects(
-    value: dict[str, Any], include: Iterable[str] | None, exclude: Iterable[str]
-) -> None:
+def _filtered_rows(
+    rows: Iterable[Any], include: Iterable[str] | None, exclude: Set[str]
+) -> list[Any]:
+    # Each object dict copied with only the attributes include_attrs keeps
+    # (object_type always) and exclude_attrs does not drop, in their order.
     allowed = set(include) | {"object_type"} if include is not None else None
+    return [
+        {
+            key: value
+            for key, value in row.items()
+            if (allowed is None or key in allowed) and key not in exclude
+        }
+        if isinstance(row, dict)
+        else row
+        for row in rows
+    ]
+
+
+def _filter_objects(
+    value: dict[str, Any], include: Iterable[str] | None, exclude: Set[str]
+) -> None:
     for kind, objects in value.items():
-        if not isinstance(objects, list):
-            continue
-        objects = [dict(obj) if isinstance(obj, dict) else obj for obj in objects]
-        value[kind] = objects
-        for obj in objects:
-            if not isinstance(obj, dict):
-                continue
-            if allowed is not None:
-                for key in tuple(obj):
-                    if key not in allowed:
-                        del obj[key]
-            for key in exclude:
-                obj.pop(key, None)
+        if isinstance(objects, list):
+            value[kind] = _filtered_rows(objects, include, exclude)
 
 
 def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
-    x0, top, x1, bottom = _bbox(page, (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1))
+    x0, top, x1, bottom = flip_box(
+        (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1), page.info.height
+    )
     if page.info.rotation % 360 == 90:
         rotated_width = page.info.height
         x0, x1, top, bottom = (
@@ -494,7 +489,7 @@ def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
 
 def _drawing(page: EnginePageAdapter, drawing: DrawingRecord, doctop: float) -> ObjectDict:
     box = drawing.rect
-    x0, top, x1, bottom = _bbox(page, box) if box else (0, 0, 0, 0)
+    x0, top, x1, bottom = flip_box(box, page.info.height) if box else (0, 0, 0, 0)
     return _envelope(
         drawing.kind.lower(),
         page.info.number,
@@ -525,7 +520,7 @@ def _image(page: EnginePageAdapter, image: ImageRecord, doctop: float) -> Object
         return None
     data = image.data
     payload = bytes(data) if isinstance(data, (bytes, bytearray, memoryview)) else None
-    x0, top, x1, bottom = _bbox(page, box)
+    x0, top, x1, bottom = flip_box(box, page.info.height)
     return _envelope(
         "image",
         page.info.number,
@@ -703,7 +698,7 @@ class Page:
             for item in native:
                 if item.rect is None:
                     continue
-                x0, top, x1, bottom = _bbox(self._adapter, item.rect)
+                x0, top, x1, bottom = flip_box(item.rect, self._adapter.info.height)
                 if self.rotation == 90:
                     x0, top, x1, bottom = top, x0, bottom, x1
                 elif self.rotation == 270:
@@ -747,7 +742,7 @@ class Page:
         if native:
             results: list[ObjectDict] = []
             for item in native:
-                x0, top, x1, bottom = _bbox(self._adapter, item.bbox)
+                x0, top, x1, bottom = flip_box(item.bbox, self._adapter.info.height)
                 results.append(
                     {
                         "object_type": "annot",
@@ -1681,7 +1676,7 @@ class PageImage:
             raise ValueError("PNG output requires RGB or RGBA raster data")
         pixels = bytearray(self.raster.data)
         self._render_drawings(pixels)
-        png = encode_png(self.width, self.height, channels, pixels)
+        png = _encode_png(self.width, self.height, channels, pixels)
         if kwargs.get("quantize") is False:
             png += png_chunk(b"tEXt", b"quantize\x00false")
         if hasattr(path, "write"):
@@ -1804,6 +1799,20 @@ class PageImage:
             image.show()
 
 
+def _encode_png(width: int, height: int, channels: int, pixels: bytes | bytearray) -> bytes:
+    stride = width * channels
+    scanlines = b"".join(
+        b"\x00" + pixels[row * stride : (row + 1) * stride] for row in range(height)
+    )
+    header = struct.pack(">IIBBBBB", width, height, 8, 6 if channels == 4 else 2, 0, 0, 0)
+    return (
+        PNG_SIGNATURE
+        + png_chunk(b"IHDR", header)
+        + png_chunk(b"IDAT", zlib.compress(scanlines))
+        + png_chunk(b"IEND", b"")
+    )
+
+
 class PDF(ClosingMixin):
     def __init__(
         self,
@@ -1814,12 +1823,13 @@ class PDF(ClosingMixin):
         unicode_norm: str | None = None,
     ) -> None:
         self._unicode_norm = unicode_norm
+        # PDF(source) opens the source; PDF(document, source) wraps an open one.
         if source is None:
-            source = document
+            source = cast(PdfInput, document)
             document = _source(source)
-        self._document = document
-        self.doc = document
-        self.source = source
+        self._document = cast(PdfDocument, document)
+        self.doc = self._document
+        self.source: PdfInput = source
         self.stream = source
         self.path = source if isinstance(source, (str, bytes)) else None
         raw_metadata = self._document.get_metadata()
@@ -1930,18 +1940,10 @@ class PDF(ClosingMixin):
         if object_types is not None:
             allowed = set(object_types)
             rows = [obj for obj in rows if obj.get("object_type") in allowed]
-        include = kwargs.get("include_attrs")
-        exclude = set(kwargs.get("exclude_attrs", ()) or ())
+        rows = _filtered_rows(
+            rows, kwargs.get("include_attrs"), set(kwargs.get("exclude_attrs", ()) or ())
+        )
         precision = kwargs.get("precision")
-        if include is not None:
-            allowed_attrs = set(include) | {"object_type"}
-            rows = [
-                {key: value for key, value in row.items() if key in allowed_attrs} for row in rows
-            ]
-        if exclude:
-            rows = [
-                {key: value for key, value in row.items() if key not in exclude} for row in rows
-            ]
         fields: list[str] = []
         for row in rows:
             for key, value in row.items():
@@ -2041,8 +2043,7 @@ def cluster_list(values: Iterable[float], tolerance: float = 0) -> list[list[flo
     return cluster_by(ordered, lambda value: value, tolerance)
 
 
-def cluster_objects(values: Iterable[Any], key: Any, tolerance: float = 0) -> list[list[Any]]:
-    return cluster_by(values, key, tolerance)
+cluster_objects = cluster_by
 
 
 def merge_bboxes(bboxes: Iterable[BBox]) -> BBox:
