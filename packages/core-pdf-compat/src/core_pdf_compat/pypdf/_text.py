@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from contextlib import suppress
 from typing import Any, ClassVar
 
+from core_adobe_fonts.afm.core14 import FONT_DATA as CORE14_FONT_DATA
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_pdf.impl.capture_recovery import iter_content_operations
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
@@ -18,12 +19,12 @@ from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.types import PdfName, PdfString, ReplaceFields, ReprFields
 from core_pdf_compat._text_state import (
     IDENTITY_MATRIX,
-    PREDEFINED_ENCODING_CODECS,
     TextMachine,
     append_directional_text,
     embedded_font_program_count,
     ensure_line_break,
     legacy_base_table,
+    predefined_encoding_codec,
     type1_encoding_entries,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -212,19 +213,35 @@ class LegacyFont(ReprFields, ReplaceFields):
         return glyph.unicode
 
 
+class LegacyTextCaches:
+    """What a document's pages share when their text is extracted.
+
+    fonts holds each font dictionary's LegacyFont, and forms each top-level
+    form XObject's text; both are keyed by the object's identity and hold
+    the object, so the identity stays its own. Neither depends on the page
+    that shows it.
+    """
+
+    __slots__ = ("fonts", "forms")
+
+    def __init__(self) -> None:
+        self.fonts: dict[int, tuple[object, LegacyFont | None]] = {}
+        self.forms: dict[int, tuple[PdfStream, str]] = {}
+
+
 class LegacyTextExtractor(TextMachine[LegacyFont]):
     def __init__(
         self,
         page: Any,
         resources: object | None = None,
         known_forms: set[int] | None = None,
-        form_text_cache: dict[int, tuple[PdfStream, str]] | None = None,
+        caches: LegacyTextCaches | None = None,
     ) -> None:
         self.page = page
         self.document = page.document
         self.resources = resources if resources is not None else page.resources
         self.known_forms = known_forms if known_forms is not None else set()
-        self.form_text_cache = form_text_cache if form_text_cache is not None else {}
+        self.caches = caches if caches is not None else LegacyTextCaches()
         super().__init__(self.collect_fonts(self.resources))
 
     def collect_fonts(self, resources: object) -> dict[str, LegacyFont]:
@@ -235,94 +252,95 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         if not isinstance(raw_fonts, dict):
             return {}
         fonts: dict[str, LegacyFont] = {}
+        font_cache = self.caches.fonts
         for resource_name, raw_font in raw_fonts.items():
             font = self.document.resolver.resolve(raw_font)
             if not isinstance(font, dict):
                 continue
-            subtype = recover_pdf_name(font.get("Subtype") or "")
-            if subtype not in {"Type1", "MMType1", "TrueType", "Type3"}:
-                descendants = self.document.resolver.resolve(font.get("DescendantFonts"))
-                if not isinstance(descendants, (list, tuple)) or not descendants:
-                    raise KeyError("DescendantFonts")
-                descriptor_font = self.document.resolver.resolve(descendants[0])
-            else:
-                descriptor_font = font
-            descriptor = (
-                self.document.resolver.resolve(descriptor_font.get("FontDescriptor"))
-                if isinstance(descriptor_font, dict)
-                else None
-            )
-            if isinstance(descriptor, dict) and embedded_font_program_count(descriptor) > 1:
-                raise ValueError("font descriptor contains more than one font program")
-            try:
-                decoder = FontDecoder(self.document.resolver.resolve_font_dict(font))
-            except TypeError, ValueError:
-                continue
-            cmap: ToUnicodeCMap | None = None
-            to_unicode = self.document.resolver.resolve(font.get("ToUnicode"))
-            if isinstance(to_unicode, PdfStream):
-                try:
-                    cmap = ToUnicodeCMap(self.document.resolver.resolve_stream(to_unicode).data)
-                except ValueError:
-                    cmap = None
-            encoding_table, encoding_codec, character_map = self.legacy_encoding(font, decoder)
-            raw_encoding = self.document.resolver.resolve(font.get("Encoding"))
-            width_uses_source_code = decoder.is_cid_font and isinstance(raw_encoding, PdfStream)
-            encoding_is_mapping = self.encoding_is_mapping(font)
-            widths, default_width, space_width = self.font_widths(
-                font, decoder, cmap, encoding_table, encoding_is_mapping
-            )
-            if decoder.is_cid_font:
-                space_code_bytes = next(
-                    (
-                        code
-                        for code, mapped in (cmap.mappings.items() if cmap is not None else ())
-                        if mapped == " "
-                    ),
-                    b"\x00 " if encoding_codec == "utf-16-be" else b" ",
-                )
-            else:
-                space_code_bytes = bytes(
-                    (self.resolve_space_code(cmap, encoding_table, encoding_is_mapping),)
-                )
-            synthetic_space_width = self.resolve_synthetic_space_width(
-                decoder,
-                cmap,
-                encoding_table,
-                encoding_is_mapping,
-                widths,
-                default_width,
-                space_width,
-            )
-            fonts[str(resource_name)] = LegacyFont(
-                decoder,
-                cmap,
-                widths,
-                default_width,
-                space_width,
-                synthetic_space_width,
-                space_code_bytes,
-                encoding_table,
-                encoding_codec,
-                character_map,
-                self.difference_fallbacks(font),
-                width_uses_source_code,
-            )
+            known = font_cache.get(id(font))
+            if known is None or known[0] is not font:
+                # A font that fails raises before it is kept, and so every time.
+                known = font_cache[id(font)] = (font, self.legacy_font(font))
+            if known[1] is not None:
+                fonts[str(resource_name)] = known[1]
         return fonts
 
+    def legacy_font(self, font: dict[object, object]) -> LegacyFont | None:
+        subtype = recover_pdf_name(font.get("Subtype") or "")
+        if subtype not in {"Type1", "MMType1", "TrueType", "Type3"}:
+            descendants = self.document.resolver.resolve(font.get("DescendantFonts"))
+            if not isinstance(descendants, (list, tuple)) or not descendants:
+                raise KeyError("DescendantFonts")
+            descriptor_font = self.document.resolver.resolve(descendants[0])
+        else:
+            descriptor_font = font
+        descriptor = (
+            self.document.resolver.resolve(descriptor_font.get("FontDescriptor"))
+            if isinstance(descriptor_font, dict)
+            else None
+        )
+        if isinstance(descriptor, dict) and embedded_font_program_count(descriptor) > 1:
+            raise ValueError("font descriptor contains more than one font program")
+        try:
+            decoder = FontDecoder(self.document.resolver.resolve_font_dict(font))
+        except TypeError, ValueError:
+            return None
+        cmap: ToUnicodeCMap | None = None
+        to_unicode = self.document.resolver.resolve(font.get("ToUnicode"))
+        if isinstance(to_unicode, PdfStream):
+            try:
+                cmap = ToUnicodeCMap(self.document.resolver.resolve_stream(to_unicode).data)
+            except ValueError:
+                cmap = None
+        encoding_table, encoding_codec, character_map = self.legacy_encoding(font, decoder)
+        raw_encoding = self.document.resolver.resolve(font.get("Encoding"))
+        width_uses_source_code = decoder.is_cid_font and isinstance(raw_encoding, PdfStream)
+        encoding_is_mapping = self.encoding_is_mapping(font)
+        # A CID font's space codes come from its CMap, so it has no one code.
+        space_code = (
+            32
+            if decoder.is_cid_font
+            else self.resolve_space_code(cmap, encoding_table, encoding_is_mapping)
+        )
+        widths, default_width, space_width = self.font_widths(font, decoder, cmap, space_code)
+        if decoder.is_cid_font:
+            space_code_bytes = next(
+                (
+                    code
+                    for code, mapped in (cmap.mappings.items() if cmap is not None else ())
+                    if mapped == " "
+                ),
+                b"\x00 " if encoding_codec == "utf-16-be" else b" ",
+            )
+        else:
+            space_code_bytes = bytes((space_code,))
+        synthetic_space_width = (
+            space_width
+            if decoder.is_cid_font
+            else self.resolve_synthetic_space_width(space_code, widths, default_width, space_width)
+        )
+        return LegacyFont(
+            decoder,
+            cmap,
+            widths,
+            default_width,
+            space_width,
+            synthetic_space_width,
+            space_code_bytes,
+            encoding_table,
+            encoding_codec,
+            character_map,
+            self.difference_fallbacks(font),
+            width_uses_source_code,
+        )
+
+    @staticmethod
     def resolve_synthetic_space_width(
-        self,
-        decoder: FontDecoder,
-        cmap: ToUnicodeCMap | None,
-        encoding_table: tuple[str, ...] | None,
-        encoding_is_mapping: bool,
+        space_code: int,
         widths: Mapping[int, float],
         default_width: float,
         space_width: float,
     ) -> float:
-        if decoder.is_cid_font:
-            return space_width
-        space_code = self.resolve_space_code(cmap, encoding_table, encoding_is_mapping)
         if space_code == 32:
             return space_width
         return float(int(widths.get(32, default_width)))
@@ -374,33 +392,16 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
             return True
         if encoding is not None:
             return False
+        # A standard 14 font with no /Encoding reads its built-in one.
         base_font = strip_subset_tag(recover_pdf_name(font.get("BaseFont") or "") or "")
-        return base_font in {
-            "Courier",
-            "Courier-Bold",
-            "Courier-BoldOblique",
-            "Courier-Oblique",
-            "Helvetica",
-            "Helvetica-Bold",
-            "Helvetica-BoldOblique",
-            "Helvetica-Oblique",
-            "Times-Bold",
-            "Times-BoldItalic",
-            "Times-Italic",
-            "Times-Roman",
-            "Symbol",
-            "ZapfDingbats",
-        }
+        return base_font in CORE14_FONT_DATA
 
     def legacy_encoding(
         self, font: dict[object, object], decoder: FontDecoder
     ) -> tuple[tuple[str, ...] | None, str | None, dict[str, str]]:
         if decoder.is_cid_font:
             encoding_name = recover_pdf_name(font.get("Encoding") or "") or ""
-            codec = PREDEFINED_ENCODING_CODECS.get(encoding_name)
-            if codec is None and "-UCS2-" in encoding_name:
-                codec = "utf-16-be"
-            return None, codec, {}
+            return None, predefined_encoding_codec(encoding_name), {}
         encoding_obj = self.document.resolver.resolve(font.get("Encoding"))
         base_font = recover_pdf_name(font.get("BaseFont"))
         if encoding_obj is None and base_font not in {"Symbol", "ZapfDingbats"}:
@@ -494,9 +495,12 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         font: dict[object, object],
         decoder: FontDecoder,
         cmap: ToUnicodeCMap | None,
-        encoding_table: tuple[str, ...] | None,
-        encoding_is_mapping: bool,
+        space_code: int,
     ) -> tuple[Mapping[int, float], float, float]:
+        """The font's widths, default width and space width.
+
+        space_code is resolve_space_code's answer; a CID font's is not read.
+        """
         subtype = recover_pdf_name(font.get("Subtype") or "")
         widths = decoder.widths
         if decoder.is_type3:
@@ -527,7 +531,6 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
                 else 0
             )
             positive_widths = [int(width) for _, width in widths.items() if int(width) > 0]
-            space_code = self.resolve_space_code(cmap, encoding_table, encoding_is_mapping)
             raw_space = widths.get(space_code)
             space = int(raw_space) if raw_space is not None else 0
             if isinstance(missing_width, (int, float)) and missing_width:
@@ -546,7 +549,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
                 if mapped == " "
             ] or [32]
         else:
-            space_codes = [self.resolve_space_code(cmap, encoding_table, encoding_is_mapping)]
+            space_codes = [space_code]
         for code in space_codes:
             width = widths.get(code)
             legacy_width = width if decoder.is_cid_font else int(width or 0)
@@ -677,7 +680,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         form_resources = xobject.dictionary.get("Resources")
         if form_resources is None:
             return
-        cached = self.form_text_cache.get(form_id) if top_level else None
+        cached = self.caches.forms.get(form_id) if top_level else None
         if cached is not None:
             child_text = cached[1]
         else:
@@ -685,17 +688,18 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
             self.known_forms.add(form_id)
             try:
                 child = LegacyTextExtractor(
-                    self.page, form_resources, self.known_forms, self.form_text_cache
+                    self.page, form_resources, self.known_forms, self.caches
                 )
                 child_text = child.extract((stream,))
             finally:
                 self.known_forms.discard(form_id)
             if top_level:
-                self.form_text_cache[form_id] = (xobject, child_text)
+                self.caches.forms[form_id] = (xobject, child_text)
         if child_text:
             self.output_parts.append(child_text)
             self.output_last = child_text[-1]
 
 
-def extract_legacy_text(page: Any) -> str:
-    return LegacyTextExtractor(page).extract()
+def extract_legacy_text(page: Any, caches: LegacyTextCaches | None = None) -> str:
+    """page's text as pypdf extracts it; caches carries fonts and form text across pages."""
+    return LegacyTextExtractor(page, caches=caches).extract()

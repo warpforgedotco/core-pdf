@@ -35,12 +35,8 @@ from core_pdf.impl.extract_contracts import (
     PageAnalysis as NativePageAnalysis,
 )
 from core_pdf.impl.extract_quality import analyze_text
-from core_pdf.impl.geometry import bbox_union, rect_tuple
-from core_pdf.impl.glyphs import (
-    GlyphObservation,
-    GlyphUnicodeSemantics,
-    glyph_unicode_semantics,
-)
+from core_pdf.impl.geometry import bbox_area, bbox_union, rect_tuple
+from core_pdf.impl.glyphs import GlyphObservation, UnicodeSource
 from core_pdf.impl.graphics_filter_registry import declared_filter_names
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.text import normalize_extracted_text
@@ -278,7 +274,7 @@ def uncovered_vector_area(
         if rect is None:
             continue
         x0, y0, x1, y1 = rect
-        area = max(0.0, x1 - x0) * max(0.0, y1 - y0)
+        area = bbox_area(rect)
         if page_area is not None and area >= max(1.0, page_area) * 0.80:
             continue
         if area > 0.0:
@@ -341,8 +337,6 @@ def capture_with_newstroke_text(
         text_quality=text_quality,
         all_text_quality=text_quality,
         painted_native_characters=characters,
-        vector_text_candidate_segments=decoded.candidate_segments,
-        vector_text_matched_segments=decoded.matched_segments,
         vector_text_trusted=True,
     )
     return replace(
@@ -387,44 +381,23 @@ def glyph_evidence_fields(
     runs: tuple[TextRun, ...],
     replacements: Mapping[int, str],
 ) -> GlyphEvidence:
-    evidence = native_glyph_evidence_fields(
-        ((glyph.text, glyph.unicode_source, glyph.confidence) for glyph in glyphs),
+    """Core's glyph evidence, with each learned character in place of its glyph's.
+
+    A glyph's replacement is the character a document's OCR taught its code,
+    counted as a confident heuristic mapping, or "" for a glyph whose cluster
+    another glyph now speaks for, which is not counted at all.
+    """
+    return native_glyph_evidence_fields(
+        (
+            (glyph.text, glyph.unicode_source, glyph.confidence)
+            if (replacement := replacements.get(id(glyph))) is None
+            or not glyph.text
+            or glyph.text.isspace()
+            else (replacement, UnicodeSource.ENCODING, 1.0)
+            for glyph in glyphs
+        ),
         runs,
     )
-    if not replacements:
-        return evidence
-    changes = {
-        "glyph_count": evidence.glyph_count,
-        "semantic_characters": evidence.semantic_characters,
-        "authoritative_glyphs": evidence.authoritative_glyphs,
-        "heuristic_glyphs": evidence.heuristic_glyphs,
-        "unknown_glyphs": evidence.unknown_glyphs,
-        "unsupported_glyphs": evidence.unsupported_glyphs,
-        "low_confidence_glyphs": evidence.low_confidence_glyphs,
-    }
-    counts = {
-        GlyphUnicodeSemantics.AUTHORITATIVE: "authoritative_glyphs",
-        GlyphUnicodeSemantics.HEURISTIC: "heuristic_glyphs",
-        GlyphUnicodeSemantics.UNSUPPORTED: "unsupported_glyphs",
-        GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER: "unknown_glyphs",
-    }
-    for glyph in glyphs:
-        replacement = replacements.get(id(glyph))
-        text = glyph.text
-        if replacement is None or not text or text.isspace():
-            continue
-        semantics = glyph_unicode_semantics(text, glyph.unicode_source)
-        changes[counts[semantics]] -= 1
-        if semantics in {GlyphUnicodeSemantics.AUTHORITATIVE, GlyphUnicodeSemantics.HEURISTIC}:
-            changes["semantic_characters"] -= sum(not character.isspace() for character in text)
-        if replacement:
-            changes["heuristic_glyphs"] += 1
-            changes["semantic_characters"] += 1
-        else:
-            changes["glyph_count"] -= 1
-        if glyph.confidence is None or glyph.confidence < 0.50:
-            changes["low_confidence_glyphs"] -= 1
-    return replace(evidence, **changes)
 
 
 def enrich_capture(native: NativePageAnalysis) -> PageAnalysis:

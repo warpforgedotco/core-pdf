@@ -614,7 +614,7 @@ requires-dist = [
 
 [[package]]
 name = "core-pdf-spec"
-version = "0.12.0"
+version = "0.13.0"
 source = { editable = "packages/core-pdf-spec" }
 dependencies = [
     { name = "core-adobe-fonts" },
@@ -641,12 +641,14 @@ version = "0.1.0"
 source = { editable = "packages/core-pdf-validate" }
 dependencies = [
     { name = "core-pdf" },
+    { name = "core-records" },
     { name = "defusedxml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "core-pdf", editable = "." },
+    { name = "core-records", editable = "packages/core-records" },
     { name = "defusedxml", specifier = ">=0.7.1" },
 ]
 

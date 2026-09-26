@@ -69,18 +69,8 @@ class FontEnrichment(Record):
             else recognition_by_index,
         )
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.learned_unicode == other.learned_unicode
-            and self.recognition_by_index == other.recognition_by_index
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.learned_unicode, self.recognition_by_index))
+    # Holds mappings, which do not hash: equality is identity.
+    __hash__ = None  # type: ignore[assignment]
 
 
 def unknown_decoder_counts(capture: PageAnalysis) -> Counter[object]:

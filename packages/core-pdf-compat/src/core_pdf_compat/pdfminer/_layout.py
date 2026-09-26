@@ -231,10 +231,12 @@ class LTChar(LTComponent, LTText):
         return (1.0, 0.0, 0.0, 1.0, self.x0, self.y0)
 
 
-class LTTextLine(LTComponent, LTText):
+class _LTTextGroup[ItemT: LTText](LTComponent, LTText):
+    """A box holding text items in order, whose text is theirs joined."""
+
     __slots__ = ("_objs",)
 
-    _objs: list[LTText | LTChar]
+    _objs: list[ItemT]
 
     __fields__: ClassVar[tuple[str, ...]] = ("bbox", "_objs")
     __match_args__ = ("bbox", "_objs")
@@ -242,7 +244,7 @@ class LTTextLine(LTComponent, LTText):
     def __init__(
         self,
         bbox: tuple[float, float, float, float],
-        _objs: list[LTText | LTChar] | None = None,
+        _objs: list[ItemT] | None = None,
     ) -> None:
         self.bbox = bbox
         self._objs = [] if _objs is None else _objs
@@ -251,17 +253,21 @@ class LTTextLine(LTComponent, LTText):
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
-        if other.__class__ is not self.__class__:
+        if other.__class__ is not self.__class__ or not isinstance(other, _LTTextGroup):
             return NotImplemented
         return self.bbox == other.bbox and self._objs == other._objs
 
     __hash__ = None  # type: ignore[assignment]
 
-    def __iter__(self) -> Iterator[LTText | LTChar]:
+    def __iter__(self) -> Iterator[ItemT]:
         return iter(self._objs)
 
     def get_text(self) -> str:
         return "".join(item.get_text() for item in self._objs)
+
+
+class LTTextLine(_LTTextGroup[LTText]):
+    __slots__ = ()
 
 
 class LTTextLineHorizontal(LTTextLine):
@@ -272,37 +278,8 @@ class LTTextLineVertical(LTTextLine):
     pass
 
 
-class LTTextBox(LTComponent, LTText):
-    __slots__ = ("_objs",)
-
-    _objs: list[LTTextLine]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "_objs")
-    __match_args__ = ("bbox", "_objs")
-
-    def __init__(
-        self,
-        bbox: tuple[float, float, float, float],
-        _objs: list[LTTextLine] | None = None,
-    ) -> None:
-        self.bbox = bbox
-        self._objs = [] if _objs is None else _objs
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.bbox == other.bbox and self._objs == other._objs
-
-    __hash__ = None  # type: ignore[assignment]
-
-    def __iter__(self) -> Iterator[LTTextLine]:
-        return iter(self._objs)
-
-    def get_text(self) -> str:
-        return "".join(line.get_text() for line in self._objs)
+class LTTextBox(_LTTextGroup[LTTextLine]):
+    __slots__ = ()
 
 
 class LTTextBoxHorizontal(LTTextBox):
@@ -741,12 +718,14 @@ def _reading_order(
         second_area = (second.bbox[2] - second.bbox[0]) * (second.bbox[3] - second.bbox[1])
         return (x1 - x0) * (y1 - y0) - first_area - second_area
 
-    queue: list[tuple[bool, float, int, int]] = []
-    for first_index, first in enumerate(boxes):
-        first_id = id(first)
-        for second in boxes[first_index + 1 :]:
-            second_id = id(second)
-            heapq.heappush(queue, (False, area_gap(first, second), first_id, second_id))
+    # Entries order totally (the id pair breaks every tie), so building the
+    # heap at once pops them in the order pushing them one by one would.
+    queue: list[tuple[bool, float, int, int]] = [
+        (False, area_gap(first, second), id(first), id(second))
+        for first_index, first in enumerate(boxes)
+        for second in boxes[first_index + 1 :]
+    ]
+    heapq.heapify(queue)
     compact_at = len(active) // 2
     while queue:
         skip_between, _distance, first_id, second_id = heapq.heappop(queue)

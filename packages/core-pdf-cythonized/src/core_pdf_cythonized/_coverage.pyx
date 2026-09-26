@@ -19,16 +19,13 @@ from libc.math cimport ceil, fabs, floor, rint
 from core_pdf_cythonized._alpha_blend cimport accumulate_plane, blend_one, opaque_channel
 from core_pdf_cythonized._byte_clamp cimport unit_to_byte
 from core_pdf_cythonized._knockout_math cimport knockout_component
+# The original's min(a, b) and max(a, b) were written a if a < b else b and
+# a if a > b else b: Python's min and max with the arguments swapped, which
+# is why every call below names its second operand first. The swap decides
+# which operand a tie or a NaN returns.
+from core_pdf_cythonized._pymath cimport py_max, py_min
 
 import numpy
-
-
-cdef inline double dmin(double a, double b) noexcept nogil:
-    return a if a < b else b
-
-
-cdef inline double dmax(double a, double b) noexcept nogil:
-    return a if a > b else b
 
 
 cdef object _coverage_from_device(const double* e, Py_ssize_t count, int width, int height):
@@ -50,7 +47,7 @@ cdef object _coverage_from_device(const double* e, Py_ssize_t count, int width, 
                 running = 0.0
                 for c in range(width):
                     running += acc[r * stride + c]
-                    out[r, c] = dmin(fabs(running), 1.0)
+                    out[r, c] = py_min(1.0, fabs(running))
     finally:
         PyMem_Free(acc)
     return result
@@ -108,21 +105,21 @@ cdef int _accumulate_device(
                 top_x = ex; top_y = ey; bottom_x = sx; bottom_y = sy
             slope = (bottom_x - top_x) / (bottom_y - top_y)
 
-            first_row = <Py_ssize_t> dmax(0.0, floor(top_y))
-            last_row = <Py_ssize_t> dmin(<double> height, ceil(bottom_y))
+            first_row = <Py_ssize_t> py_max(floor(top_y), 0.0)
+            last_row = <Py_ssize_t> py_min(ceil(bottom_y), <double> height)
 
             for r in range(first_row, last_row):
-                row_top = dmax(top_y, <double> r)
-                row_bottom = dmin(bottom_y, r + 1.0)
+                row_top = py_max(<double> r, top_y)
+                row_bottom = py_min(r + 1.0, bottom_y)
                 row_height = row_bottom - row_top
                 if row_height <= 0.0:
                     continue
                 entry_x = top_x + (row_top - top_y) * slope
                 exit_x = top_x + (row_bottom - top_y) * slope
-                left_x = dmin(entry_x, exit_x)
-                right_x = dmax(entry_x, exit_x)
-                walk_left = dmin(dmax(left_x, -1.0), width + 1.0)
-                walk_right = dmin(dmax(right_x, -1.0), width + 1.0)
+                left_x = py_min(exit_x, entry_x)
+                right_x = py_max(exit_x, entry_x)
+                walk_left = py_min(width + 1.0, py_max(-1.0, left_x))
+                walk_right = py_min(width + 1.0, py_max(-1.0, right_x))
                 floor_left = floor(walk_left)
                 column_count = <Py_ssize_t> (floor(walk_right) - floor_left + 1.0)
                 piece_span = right_x - left_x
@@ -139,8 +136,8 @@ cdef int _accumulate_device(
                     share = 1.0 if vertical else (fragment_right - fragment_left) / piece_span
                     fragment_height = row_height * share
                     midpoint = (fragment_left + fragment_right) * 0.5
-                    column = <Py_ssize_t> dmin(dmax(floor(midpoint), 0.0), <double> width)
-                    offset_in_cell = dmin(dmax(midpoint - column, 0.0), 1.0)
+                    column = <Py_ssize_t> py_min(<double> width, py_max(0.0, floor(midpoint)))
+                    offset_in_cell = py_min(1.0, py_max(0.0, midpoint - column))
                     signed_height = direction * fragment_height
 
                     if pieces == capacity:
@@ -176,8 +173,6 @@ def signed_area_coverage(edges, int width, int height):
         return numpy.zeros((max(height, 0), max(width, 0)), numpy.float64)
 
     cdef double[:, ::1] view = numpy.ascontiguousarray(edges, dtype=numpy.float64)
-    if view.shape[0] == 0:
-        return numpy.zeros((height, width), numpy.float64)
     return _coverage_from_device(&view[0, 0], view.shape[0], width, height)
 
 
@@ -322,7 +317,7 @@ def fill_glyph_coverage(
                 running = 0.0
                 for c in range(width):
                     running += acc[r * stride + c]
-                    coverage = dmin(fabs(running), 1.0)
+                    coverage = py_min(1.0, fabs(running))
                     raw = <unsigned char> rint(coverage * alpha)
                     if raw != 0:
                         if raw >= opaque_from:
@@ -426,7 +421,7 @@ def fill_glyph_knockout(
                 running = 0.0
                 for c in range(width):
                     running += acc[r * stride + c]
-                    coverage = dmin(fabs(running), 1.0)
+                    coverage = py_min(1.0, fabs(running))
                     # fill_glyph_coverage into a copy of the backdrop and two
                     # zeroed planes.
                     raw = <unsigned char> rint(coverage * alpha)

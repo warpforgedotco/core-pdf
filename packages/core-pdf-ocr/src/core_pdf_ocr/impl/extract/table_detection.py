@@ -15,6 +15,7 @@ from core_pdf.impl.extract_table_detection import (
 )
 from core_pdf.impl.geometry import bbox_union, finite_rect, overlap_ratio_min_exact
 from core_pdf.impl.output_model import Table, TableCell
+from core_pdf.impl.text import text_word_tokens
 from core_pdf.impl.types import Rectangle
 from core_pdf_ocr.impl.extract.contracts import ObservationSource, PageAnalysis
 
@@ -35,7 +36,7 @@ def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tup
 
 
 def chart_cell_texts(text: str) -> tuple[str, ...]:
-    tokens = tuple(text.split())
+    tokens = text_word_tokens(text)
     numeric_count = sum(bool(CHART_NUMERIC_TOKEN.fullmatch(part)) for part in tokens)
     if len(tokens) >= 4 and numeric_count >= 3:
         return tokens

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from typing import Any
+from typing import Any, ClassVar
 
 from core_pdf import PdfPage
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.geometry import bbox_union, overlap_ratio_of
+from core_pdf.impl.types import Record, frozen_setattr
 
 from ._capture import (
     pdfminer_page_program,
@@ -30,6 +31,46 @@ from ._layout import (
     _group_objects,
     _reading_order,
 )
+
+
+class ProjectionPolicy(Record):
+    """How strictly a page is laid out: as pdfminer does, or as Unstructured calls it.
+
+    strict_resources fails a page whose resources pdfminer rejects, and
+    skips the glyphs of a Type0 font whose embedded CMap it cannot use.
+    Unstructured's fast strategy reads such pages anyway, and when the page
+    tree walk pdfminer takes fails it falls back to the document's pages;
+    tolerant_pages says so.
+    """
+
+    __slots__ = ("strict_resources", "tolerant_pages")
+
+    strict_resources: bool
+    tolerant_pages: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = ("strict_resources", "tolerant_pages")
+    __match_args__ = ("strict_resources", "tolerant_pages")
+
+    def __init__(self, strict_resources: bool, tolerant_pages: bool) -> None:
+        frozen_setattr(self, "strict_resources", strict_resources)
+        frozen_setattr(self, "tolerant_pages", tolerant_pages)
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.strict_resources == other.strict_resources
+            and self.tolerant_pages == other.tolerant_pages
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.strict_resources, self.tolerant_pages))
+
+
+PDFMINER_POLICY = ProjectionPolicy(strict_resources=True, tolerant_pages=False)
+UNSTRUCTURED_POLICY = ProjectionPolicy(strict_resources=False, tolerant_pages=True)
 
 
 def _pdfminer_form_glyph_is_clipped(provenance: dict[str, Any]) -> bool:
@@ -109,13 +150,13 @@ def project_page(
     page: PdfPage,
     params: LAParams,
     *,
-    unstructured_mode: bool = False,
+    policy: ProjectionPolicy = PDFMINER_POLICY,
 ) -> LTPage:
     page_width = abs(page.width)
     page_height = abs(page.height)
     page_media_box = page.media_box or (0.0, 0.0, page_width, page_height)
     chars: list[LTChar] = []
-    if not unstructured_mode:
+    if policy.strict_resources:
         pdfminer_validate_page_resources(page)
     products = pdfminer_page_program(page)
     projected_glyphs: tuple[Any, ...] = products.glyphs
@@ -139,7 +180,7 @@ def project_page(
     # made from it is only read, so each is made once per page.
     provenance_dicts: dict[int, tuple[object, dict[str, Any]]] = {}
     for glyph_index, glyph in enumerate(projected_glyphs):
-        if not unstructured_mode and pdfminer_embedded_cmap_is_unusable(glyph):
+        if policy.strict_resources and pdfminer_embedded_cmap_is_unusable(glyph):
             continue
         source_provenance = glyph.provenance
         if source_provenance:
@@ -162,7 +203,8 @@ def project_page(
         ligature = ligatures.get(id(glyph))
         x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
         baseline = ligature[2] if ligature is not None else glyph.baseline
-        text = ligature[0] if ligature is not None else pdfminer_glyph_text(glyph)
+        glyph_text = pdfminer_glyph_text(glyph) if ligature is None else None
+        text = ligature[0] if ligature is not None else glyph_text
         if not text:
             continue
         effective_font_size = glyph.effective_font_size or glyph.font_size
@@ -191,14 +233,18 @@ def project_page(
             else glyph.cid
         )
         width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
+        font_width = (
+            float(width_lookup(width_code)) * 0.001
+            if width_code is not None and callable(width_lookup)
+            else None
+        )
         if (
             glyph.rotation_angle % 180 == 0
             and baseline is not None
             and not glyph.effective_font_size
-            and width_code is not None
-            and callable(width_lookup)
+            and font_width is not None
         ):
-            normalized_width = float(width_lookup(width_code)) * 0.001
+            normalized_width = font_width
             if normalized_width > 0:
                 baseline_x0, baseline_y0, baseline_x1, baseline_y1 = baseline
                 baseline_length = (
@@ -206,9 +252,9 @@ def project_page(
                 ) ** 0.5
                 effective_font_size = baseline_length / normalized_width
         normalized_width = 0.0
-        if width_code is not None and callable(width_lookup):
-            normalized_width = float(width_lookup(width_code)) * 0.001
-            builtin_width = _pdfminer_builtin_width(glyph)
+        if font_width is not None:
+            normalized_width = font_width
+            builtin_width = _pdfminer_builtin_width(glyph, glyph_text)
             if builtin_width is not None:
                 normalized_width = builtin_width * 0.001
             base_font = str(_font_value(glyph.font_decoder.font, "BaseFont"))

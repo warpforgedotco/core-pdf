@@ -20,27 +20,7 @@ drives the golden vectors that pin all of it.
 from libc.math cimport ceil, isnan
 from libc.stdlib cimport free, malloc
 
-
-cdef inline double dmin4(double a, double b, double c, double d) noexcept nogil:
-    cdef double m = a
-    if b < m:
-        m = b
-    if c < m:
-        m = c
-    if d < m:
-        m = d
-    return m
-
-
-cdef inline double dmax4(double a, double b, double c, double d) noexcept nogil:
-    cdef double m = a
-    if b > m:
-        m = b
-    if c > m:
-        m = c
-    if d > m:
-        m = d
-    return m
+from core_pdf_cythonized._pymath cimport py_max, py_min
 
 
 def horizontal_glyph_geometry(
@@ -203,10 +183,10 @@ def horizontal_glyph_geometry(
                 cy1 = tx1 * b + dr * d + base_y
                 cy2 = tx0 * b + ar * d + base_y
                 cy3 = tx1 * b + ar * d + base_y
-                abx0 = dmin4(cx0, cx1, cx2, cx3)
-                abx1 = dmax4(cx0, cx1, cx2, cx3)
-                aby0 = dmin4(cy0, cy1, cy2, cy3)
-                aby1 = dmax4(cy0, cy1, cy2, cy3)
+                abx0 = py_min(py_min(py_min(cx0, cx1), cx2), cx3)
+                abx1 = py_max(py_max(py_max(cx0, cx1), cx2), cx3)
+                aby0 = py_min(py_min(py_min(cy0, cy1), cy2), cy3)
+                aby1 = py_max(py_max(py_max(cy0, cy1), cy2), cy3)
                 blx0 = base_x + tx0 * a + rise * c
                 bly0 = base_y + tx0 * b + rise * d
                 blx1 = base_x + tx1 * a + rise * c
@@ -287,10 +267,10 @@ def horizontal_glyph_geometry(
                     ey1 = ix1 * b + iy0 * d + base_y
                     ey2 = ix0 * b + iy1 * d + base_y
                     ey3 = ix1 * b + iy1 * d + base_y
-                    rx0 = dmin4(ex0, ex1, ex2, ex3)
-                    rx1 = dmax4(ex0, ex1, ex2, ex3)
-                    ry0 = dmin4(ey0, ey1, ey2, ey3)
-                    ry1 = dmax4(ey0, ey1, ey2, ey3)
+                    rx0 = py_min(py_min(py_min(ex0, ex1), ex2), ex3)
+                    rx1 = py_max(py_max(py_max(ex0, ex1), ex2), ex3)
+                    ry0 = py_min(py_min(py_min(ey0, ey1), ey2), ey3)
+                    ry1 = py_max(py_max(py_max(ey0, ey1), ey2), ey3)
                 fb_w = abx1 - abx0
                 fb_h = aby1 - aby0
                 r_w = rx1 - rx0

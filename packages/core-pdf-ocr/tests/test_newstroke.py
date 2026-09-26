@@ -430,7 +430,8 @@ def test_template_loader_accepts_repeated_pen_up_markers(monkeypatch) -> None:
     encoded = NEWSTROKE_ASCII[ord("R") - 32]
     repeated = encoded[:2] + " R R" + encoded[2:]
     monkeypatch.setattr(newstroke, "NEWSTROKE_ASCII_ALTERNATES", {"R": repeated})
-    templates = newstroke.make_templates()
+    # make_templates caches the templates it built from the real data.
+    templates = newstroke.make_templates.__wrapped__()
     variants = [template for template in templates.all if template.char == "R"]
     assert len(variants) == 2
     numpy.testing.assert_array_equal(variants[0].points, variants[1].points)

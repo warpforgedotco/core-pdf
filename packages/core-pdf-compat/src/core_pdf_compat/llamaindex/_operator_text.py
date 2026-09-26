@@ -7,18 +7,18 @@ from typing import Any, ClassVar
 from core_pdf.impl.capture_recovery import iter_content_operations
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder
-from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode
+from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode, is_uni_sequence
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.types import PdfName, PdfString, Record, frozen_setattr
 from core_pdf_compat._text_state import (
     IDENTITY_MATRIX,
-    PREDEFINED_ENCODING_CODECS,
     TextMachine,
     append_directional_text,
     embedded_font_program_count,
     ensure_line_break,
     legacy_base_table,
+    predefined_encoding_codec,
     type1_encoding_entries,
 )
 from core_pdf_spec.s_07_filters.errors import FilterParseError
@@ -63,12 +63,7 @@ def difference_text(glyph_name: str, code: int) -> str:
         return chr(code)
     if glyph_name.isdigit():
         return f"/{glyph_name}"
-    if (
-        glyph_name.startswith("uni")
-        and len(glyph_name) > 3
-        and len(glyph_name[3:]) % 4 == 0
-        and all(character in "0123456789abcdefABCDEF" for character in glyph_name[3:])
-    ):
+    if is_uni_sequence(glyph_name):
         return f"/{glyph_name}"
     mapped = legacy_glyph_name_to_unicode(glyph_name)
     if len(glyph_name) == 1:
@@ -490,11 +485,10 @@ class OperatorTextProjection:
         if raw_encoding is None:
             return "charmap"
         if encoding_name is not None:
-            name = encoding_name
-            codecs = PREDEFINED_ENCODING_CODECS
-            if name in codecs or "-UCS2-" in name:
-                return codecs.get(name, "utf-16-be")
-            table = base_encoding_table(name)
+            codec = predefined_encoding_codec(encoding_name)
+            if codec is not None:
+                return codec
+            table = base_encoding_table(encoding_name)
         elif isinstance(raw_encoding, dict):
             table = base_encoding_table(recover_pdf_name(raw_encoding.get("BaseEncoding")))
         else:

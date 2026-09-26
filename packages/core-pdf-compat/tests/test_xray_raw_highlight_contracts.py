@@ -42,7 +42,7 @@ def test_raw_highlight_recovery_tracks_font_position_and_width_evidence(
             media_box=(0, 0, 200, 200),
             user_unit=1,
         )
-        result = xray._raw_highlight_redactions(page)
+        result = xray._raw_highlight_redactions(page, xray._DocumentRecovery(document))
         assert [item["text"] for item in result] == ([expected] if expected else [])
         if result:
             assert result[0]["bbox"] == pytest.approx((20, 92, 40, 102), abs=0.00001)
@@ -73,7 +73,7 @@ def test_raw_highlight_recovery_requires_annotation_and_font_evidence(text_pdf_b
         page = SimpleNamespace(
             document=document, resources=resources, get_annotations=lambda: annotations
         )
-        assert xray._raw_highlight_redactions(page) == []
+        assert xray._raw_highlight_redactions(page, xray._DocumentRecovery(document)) == []
 
 
 @pytest.mark.parametrize("unit", [1, 2])
@@ -89,7 +89,7 @@ def test_raw_highlight_output_uses_crop_origin_and_user_units(text_pdf_bytes, un
             media_box=(0, 0, 200, 200),
             user_unit=unit,
         )
-        result = xray._raw_highlight_redactions(page)
+        result = xray._raw_highlight_redactions(page, xray._DocumentRecovery(document))
         assert result[0]["text"] == "A"
         assert result[0]["bbox"] == pytest.approx(
             tuple(value * unit for value in (10, 42, 30, 52)), abs=0.00001

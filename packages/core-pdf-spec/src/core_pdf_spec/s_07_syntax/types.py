@@ -12,7 +12,6 @@ PdfNull: TypeAlias = None
 PdfBoolean: TypeAlias = bool
 PdfInteger: TypeAlias = int
 PdfReal: TypeAlias = float
-PdfNumber: TypeAlias = PdfInteger | PdfReal
 PdfTextString: TypeAlias = PdfString
 PdfByteString: TypeAlias = bytes | bytearray | memoryview
 PdfStringObject: TypeAlias = PdfTextString | PdfByteString
@@ -72,7 +71,6 @@ __all__ = (
     "PdfInteger",
     "PdfKey",
     "PdfNull",
-    "PdfNumber",
     "PdfObject",
     "PdfPrimitive",
     "PdfReal",

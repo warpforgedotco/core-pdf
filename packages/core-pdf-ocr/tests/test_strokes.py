@@ -44,7 +44,7 @@ def test_invalid_ocr_tokens_are_ineligible(text: str, confidence: float) -> None
     profile = make_profile("AB")
     seed = replace(make_seed(profile, 0, text), confidence=confidence)
     decoded = strokes.decode_stroked_text_profile(profile, (seed,))
-    assert decoded.eligible_seeds == 0
+    assert decoded.aligned_seeds == 0
     assert decoded.observations == ()
 
 
@@ -53,8 +53,7 @@ def test_two_independent_votes_decode_unseeded_repetitions() -> None:
     seeds = tuple(make_seed(profile, index, " AB ") for index in (0, 1))
     decoded = strokes.decode_stroked_text_profile(profile, seeds)
     assert [o.text for o in decoded.observations] == ["AB", "AB", "BA"]
-    assert decoded.eligible_seeds == decoded.aligned_seeds == decoded.accepted_seeds == 2
-    assert decoded.initial_signatures == decoded.learned_signatures == 2
+    assert decoded.aligned_seeds == decoded.learned_signatures == 2
     assert decoded.candidate_runs == decoded.decoded_candidate_runs == 3
     assert decoded.candidate_glyphs == decoded.decoded_candidate_glyphs == 6
     assert decoded.candidate_run_coverage == decoded.candidate_glyph_coverage == 1
@@ -91,7 +90,6 @@ def test_anchored_word_teaches_unique_glyph_without_overwriting_consensus() -> N
     profile = make_profile("AB", "AB", "ABC", "CA")
     seeds = tuple(make_seed(profile, i, text) for i, text in enumerate(("AB", "AB", "ABC")))
     decoded = strokes.decode_stroked_text_profile(profile, seeds)
-    assert decoded.initial_signatures == 2
     assert decoded.learned_signatures == 3
     assert [o.text for o in decoded.observations] == ["AB", "AB", "ABC", "CA"]
 
@@ -105,7 +103,7 @@ def test_supplemental_conflicting_labels_never_replace_primary_alphabet() -> Non
     )
     assert [o.text for o in decoded.observations] == ["AB", "AB", "ABC", "ABC", "BA"]
     assert decoded.learned_signatures == 3
-    assert decoded.eligible_seeds == decoded.aligned_seeds == 4
+    assert decoded.aligned_seeds == 4
     assert strokes.decode_stroked_text_profile_with_supplemental_seeds(profile, primary, ()) == (
         strokes.decode_stroked_text_profile(profile, primary)
     )
@@ -124,8 +122,8 @@ def test_document_alphabet_decodes_without_mutating_caller_mapping() -> None:
     target = make_profile("BA")
     decoded = strokes.decode_stroked_text_profile_with_alphabet(target, alphabet.items())
     assert [o.text for o in decoded.observations] == ["BA"]
-    assert decoded.eligible_seeds == decoded.aligned_seeds == decoded.accepted_seeds == 0
-    assert decoded.initial_signatures == 2
+    assert decoded.aligned_seeds == 0
+    assert decoded.learned_signatures == 2
     assert alphabet == dict(learned.alphabet)
 
 
@@ -136,7 +134,7 @@ def test_seed_alignment_can_use_geometry_when_sequence_is_unavailable() -> None:
     assert [o.text for o in decoded.observations] == ["AB", "AB"]
     miss = replace(seeds[0], bbox=(100, 100, 110, 110))
     decoded = strokes.decode_stroked_text_profile(profile, (miss,))
-    assert decoded.eligible_seeds == 1
+    assert strokes.seed_text(miss) is not None
     assert decoded.aligned_seeds == 0
 
 
@@ -199,7 +197,6 @@ def test_approximate_mapping_accepts_small_unique_variants_without_mutating_inpu
     mapping = {signature(exact): "A"}
     decoded = strokes.decode_stroked_text_profile_with_alphabet(variant, mapping)
     assert [o.text for o in decoded.observations] == ["A"]
-    assert decoded.approximate_signatures == 1
     assert decoded.learned_signatures == 2
     assert len(mapping) == 1
 
@@ -298,7 +295,7 @@ def test_supplemental_seeds_report_missing_or_unaligned_evidence() -> None:
     decoded = strokes.decode_stroked_text_profile_with_supplemental_seeds(
         profile, (), (no_alignment,)
     )
-    assert decoded.eligible_seeds == 1
+    assert strokes.seed_text(no_alignment) is not None
     assert decoded.aligned_seeds == 0
     decoded = strokes.decode_stroked_text_profile_with_supplemental_seeds(profile, (), (seed,))
     assert decoded.aligned_seeds == 1
@@ -311,8 +308,9 @@ def test_empty_geometry_with_explicit_bounds_cannot_teach_a_glyph() -> None:
         for i in range(2)
     )
     profile = strokes.profile_stroked_text(drawings, (0, 1))
-    decoded = strokes.decode_stroked_text_profile(profile, (make_seed(profile, 0, "AB"),))
-    assert decoded.eligible_seeds == 1
+    seed = make_seed(profile, 0, "AB")
+    decoded = strokes.decode_stroked_text_profile(profile, (seed,))
+    assert strokes.seed_text(seed) is not None
     assert decoded.aligned_seeds == 0
     assert decoded.observations == ()
 
@@ -342,7 +340,5 @@ def test_anchored_learning_reaches_all_supported_glyphs_in_long_chain() -> None:
         )
         for i, word in enumerate(words)
     )
-    mapping, initial, accepted = strokes.consensus_mapping(samples)
-    assert initial == 2
+    mapping = strokes.consensus_mapping(samples)
     assert mapping == {signature: char for char, signature in signatures.items()}
-    assert accepted == 2

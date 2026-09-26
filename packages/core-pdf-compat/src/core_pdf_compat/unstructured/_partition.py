@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf_compat.pdfminer._extract import extract_document_pages
 from core_pdf_compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
+from core_pdf_compat.pdfminer._projection import UNSTRUCTURED_POLICY
 
 from ._classification import (
     BULLET,
@@ -39,6 +40,10 @@ TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|
 
 
 def pdf_too_complex(filename: object, password: str) -> bool:
+    # Unstructured's pre-flight opens the file with every revision scanned,
+    # which its layout pass then does not, so the two opens stay separate.
+    # A Type0 font with no descendants is judged here, as the layout pass
+    # under UNSTRUCTURED_POLICY does not check resources.
     with PdfDocument.open(filename, password=password) as document:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         strict_xref_error = document.strict_xref_validation_error()
         if strict_xref_error == "invalid hex string" or (
@@ -88,14 +93,8 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     try:
         if pdf_too_complex(filename, password):
             return []
-    except PdfUnsupportedError as error:
-        if str(error) == "Incorrect password":
-            return []
-        raise
-    except PdfSourceError as error:
-        if str(error) == "PDF source is empty":
-            return []
-        raise
+    except PdfPasswordError, PdfEmptySourceError:
+        return []
     result: list[Element] = []
     document = PdfDocument.open(
         filename,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
@@ -104,7 +103,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     )
     try:
         pages = extract_document_pages(
-            document, LAParams(word_margin=word_margin), unstructured_mode=True
+            document, LAParams(word_margin=word_margin), policy=UNSTRUCTURED_POLICY
         )
         source_pages = iter(document.pages)
         for page in pages:

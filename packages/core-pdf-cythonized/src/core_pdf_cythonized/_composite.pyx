@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Group compositing on the normal blend mode
-(core_pdf.impl.render_target.composite_nonisolated_group and
-composite_masked_group, and core_pdf.impl.render_blend's
-composite_normal_group_numpy).
+(core_pdf.impl.render_target's composite_nonisolated_group,
+composite_masked_group and RasterTarget.composite_group_into).
 
 composite_elementary_normal owns the opaque, unmasked elementary case;
 composite_masked_normal owns the isolated soft-masked case;
@@ -31,7 +30,7 @@ from libc.math cimport isfinite, rint, rintf
 
 import numpy
 
-from core_pdf_cythonized._byte_clamp cimport double_to_byte, float_to_byte
+from core_pdf_cythonized._byte_clamp cimport double_to_byte, float_to_byte, unit_to_byte_checked
 
 
 cdef struct Strides:
@@ -64,7 +63,6 @@ def composite_elementary_normal(destination, rendered, source_alpha):
     cdef unsigned char[:, ::1] out = effective
 
     cdef Py_ssize_t y, x, c
-    cdef double scaled
     cdef unsigned char quantized
     cdef bint any_visible = False
 
@@ -72,10 +70,7 @@ def composite_elementary_normal(destination, rendered, source_alpha):
         for x in range(width):
             # float32 widens to float64 exactly, and the original's extra
             # multiply by an opacity of exactly 1.0 cannot change a bit.
-            scaled = rint(<double> alpha[y, x] * 255.0)
-            if scaled < 0.0 or scaled > 255.0:
-                raise ValueError("source_alpha must lie in [0, 1]")
-            quantized = <unsigned char> <int> scaled
+            quantized = <unsigned char> unit_to_byte_checked(<double> alpha[y, x])
             out[y, x] = quantized
             if quantized > 0:
                 any_visible = True
@@ -152,11 +147,7 @@ def composite_masked_normal(destination, rendered, double opacity, mask_codes, m
                 scaled = rint(<double> alpha_in * opacity * <double> table[code])
                 if scaled != scaled:
                     raise ValueError("effective alpha is NaN")
-                if scaled < 0.0:
-                    scaled = 0.0
-                elif scaled > 255.0:
-                    scaled = 255.0
-                last_out = <unsigned char> <int> scaled
+                last_out = double_to_byte(scaled)
                 last_alpha = alpha_in
                 last_code = code
             out[y, x] = last_out
@@ -264,8 +255,11 @@ def composite_normal_group(
     cdef unsigned char effective_bytes[256]
     cdef int value
     for value in range(256):
-        effective[value] = effective_alpha(<unsigned char> value, source_alpha_scale, target_alpha_scale)
-        effective_bytes[value] = <unsigned char> <int> effective[value]
+        effective_bytes[value] = effective_alpha(
+            <unsigned char> value, source_alpha_scale, target_alpha_scale
+        )
+        # A clipped whole number, so the double holds the byte exactly.
+        effective[value] = effective_bytes[value]
         general_alpha[value] = general_source_alpha(
             <unsigned char> value, source_alpha_scale, target_alpha_scale
         )
@@ -314,16 +308,14 @@ def composite_normal_group(
     return plane
 
 
-cdef double effective_alpha(unsigned char alpha, double source_scale, double target_scale) noexcept nogil:
+cdef unsigned char effective_alpha(
+    unsigned char alpha, double source_scale, double target_scale
+) noexcept nogil:
     # rint(alpha * s), then rint(* t) only when t is not 1, then clip: float64.
     cdef double value = rint(<double> alpha * source_scale)
     if target_scale != 1.0:
         value = rint(value * target_scale)
-    if value < 0.0:
-        return 0.0
-    if value > 255.0:
-        return 255.0
-    return value
+    return double_to_byte(value)
 
 
 cdef float general_source_alpha(unsigned char alpha, double source_scale, double target_scale) noexcept nogil:

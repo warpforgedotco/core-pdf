@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from functools import cache
 from typing import Any, ClassVar
 
 import numpy
@@ -187,35 +188,8 @@ class Template(Record):
         frozen_setattr(self, "centroid_x", centroid_x)
         frozen_setattr(self, "centroid_y", centroid_y)
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.char == other.char
-            and self.width == other.width
-            and self.segments == other.segments
-            and self.continuity == other.continuity
-            and self.solver == other.solver
-            and self.points == other.points
-            and self.centroid_x == other.centroid_x
-            and self.centroid_y == other.centroid_y
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.char,
-                self.width,
-                self.segments,
-                self.continuity,
-                self.solver,
-                self.points,
-                self.centroid_x,
-                self.centroid_y,
-            )
-        )
+    # Holds arrays, which compare element-wise: equality is identity.
+    __hash__ = None  # type: ignore[assignment]
 
 
 class TemplateSet(Record):
@@ -238,19 +212,8 @@ class TemplateSet(Record):
         frozen_setattr(self, "robust", robust)
         frozen_setattr(self, "by_first_delta", by_first_delta)
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.all == other.all
-            and self.robust == other.robust
-            and self.by_first_delta == other.by_first_delta
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.all, self.robust, self.by_first_delta))
+    # Holds templates, which compare by identity, and an unhashable dict.
+    __hash__ = None  # type: ignore[assignment]
 
 
 class Segment(Record):
@@ -301,16 +264,15 @@ class Segment(Record):
 
 
 class Transform(Record):
-    __slots__ = ("matrix", "inverse", "scale", "x_scale", "y_scale")
+    __slots__ = ("matrix", "inverse", "scale", "x_scale")
 
     matrix: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
     inverse: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
     scale: float
     x_scale: float
-    y_scale: float
 
-    __fields__: ClassVar[tuple[str, ...]] = ("matrix", "inverse", "scale", "x_scale", "y_scale")
-    __match_args__ = ("matrix", "inverse", "scale", "x_scale", "y_scale")
+    __fields__: ClassVar[tuple[str, ...]] = ("matrix", "inverse", "scale", "x_scale")
+    __match_args__ = ("matrix", "inverse", "scale", "x_scale")
 
     def __init__(
         self,
@@ -318,29 +280,14 @@ class Transform(Record):
         inverse: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
         scale: float,
         x_scale: float,
-        y_scale: float,
     ) -> None:
         frozen_setattr(self, "matrix", matrix)
         frozen_setattr(self, "inverse", inverse)
         frozen_setattr(self, "scale", scale)
         frozen_setattr(self, "x_scale", x_scale)
-        frozen_setattr(self, "y_scale", y_scale)
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.matrix == other.matrix
-            and self.inverse == other.inverse
-            and self.scale == other.scale
-            and self.x_scale == other.x_scale
-            and self.y_scale == other.y_scale
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.matrix, self.inverse, self.scale, self.x_scale, self.y_scale))
+    # Holds arrays, which compare element-wise: equality is identity.
+    __hash__ = None  # type: ignore[assignment]
 
 
 class Match(Record):
@@ -383,36 +330,13 @@ class Match(Record):
         frozen_setattr(self, "translation", translation)
         frozen_setattr(self, "error", error)
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.char == other.char
-            and self.start == other.start
-            and self.stop == other.stop
-            and self.width == other.width
-            and self.transform == other.transform
-            and self.translation == other.translation
-            and self.error == other.error
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.char,
-                self.start,
-                self.stop,
-                self.width,
-                self.transform,
-                self.translation,
-                self.error,
-            )
-        )
+    # Holds arrays, which compare element-wise: equality is identity.
+    __hash__ = None  # type: ignore[assignment]
 
 
+@cache
 def make_templates() -> TemplateSet:
+    """The Newstroke glyph templates, built once: every caller only reads them."""
     templates: list[Template] = []
     by_first_delta: dict[tuple[int, int], list[Template]] = {}
     encoded_glyphs = (
@@ -599,7 +523,7 @@ def fit_match(
         return None
     determinant = a * d - b * c
     inverse = numpy.asarray(((d, -b), (-c, a)), dtype=numpy.float64) / determinant
-    transform = Transform(matrix, inverse, scale, x_scale, y_scale)
+    transform = Transform(matrix, inverse, scale, x_scale)
     return Match(
         template.char,
         start,

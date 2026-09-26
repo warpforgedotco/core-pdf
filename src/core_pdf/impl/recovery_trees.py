@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from core_pdf_spec.s_07_syntax import trees
 from core_pdf_spec.s_07_syntax.trees import (
     MalformedFn,
+    MalformedTreeNode,
     NameDecodeFn,
     NumberDecodeFn,
     ResolveFn,
@@ -16,6 +17,17 @@ from core_pdf_spec.s_07_syntax.trees import (
 )
 
 MAX_TREE_DEPTH = 100
+
+
+def skipping_null_nodes(on_malformed: MalformedFn) -> MalformedFn:
+    """on_malformed, except that a null node is skipped as an empty subtree."""
+
+    def report(message: str) -> None:
+        if isinstance(message, MalformedTreeNode) and message.node is None:
+            return
+        on_malformed(message)
+
+    return report
 
 
 def iter_number_tree_items(
@@ -36,9 +48,8 @@ def iter_number_tree_items(
         resolve_values=resolve_values,
         tree_name=tree_name,
         max_depth=max_depth,
-        on_malformed=on_malformed,
+        on_malformed=skipping_null_nodes(on_malformed),
         on_malformed_entry=on_malformed_entry,
-        skip_null_nodes=True,
     )
 
 
@@ -54,6 +65,5 @@ def iter_name_tree_items(
         resolve,
         decode_name,
         max_depth=MAX_TREE_DEPTH,
-        on_malformed=on_malformed,
-        skip_null_nodes=True,
+        on_malformed=skipping_null_nodes(on_malformed),
     )

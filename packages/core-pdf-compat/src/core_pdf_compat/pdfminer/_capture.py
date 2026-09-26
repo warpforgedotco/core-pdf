@@ -23,6 +23,10 @@ from ._fonts import (
 )
 
 
+class InvalidContentDictionaryError(PdfParseError):
+    """A dictionary in a content stream pdfminer cannot read, which fails the page."""
+
+
 class PdfminerContentLexer(PdfLexer):
     def read_string(
         self,
@@ -41,10 +45,10 @@ class PdfminerContentLexer(PdfLexer):
         return self.parse_dictionary()
 
     def handle_dictionary_key_error(self) -> bool:
-        raise PdfParseError("invalid content dictionary")
+        raise InvalidContentDictionaryError("invalid content dictionary")
 
     def handle_dictionary_entry_error(self, value_start: int) -> bool:
-        raise PdfParseError("invalid content dictionary")
+        raise InvalidContentDictionaryError("invalid content dictionary")
 
 
 class PdfminerRecovery(CaptureRecovery):
@@ -56,7 +60,7 @@ class PdfminerRecovery(CaptureRecovery):
         start: int,
         is_operator: Callable[[bytes], bool] | None = None,
     ) -> int | None:
-        if str(error) == "invalid content dictionary":
+        if isinstance(error, InvalidContentDictionaryError):
             raise PdfError(str(error)) from error
         return super().resume(lexer, error, kind, start, is_operator)
 

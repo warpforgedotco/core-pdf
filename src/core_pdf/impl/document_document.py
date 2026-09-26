@@ -44,6 +44,7 @@ from core_pdf.impl.document_standards import (
 from core_pdf.impl.document_structure import StructureTree
 from core_pdf.impl.exceptions import (
     PdfDocumentClosedError,
+    PdfEmptySourceError,
     PdfParseError,
     PdfSourceError,
     PdfUnsupportedError,
@@ -311,6 +312,7 @@ class PdfDocument(Generic[PageT]):
         "page_lookup_cache",
         "brute_force_objects",
         "literal_trailers_cache",
+        "strict_xref_error_cache",
     )
 
     source: PdfSource
@@ -341,6 +343,7 @@ class PdfDocument(Generic[PageT]):
     page_lookup_cache: PageLookup[PageT] | None
     brute_force_objects: tuple[SemanticContext | None, dict[int, object]] | None
     literal_trailers_cache: tuple[SemanticContext | None, tuple[PdfDict, ...]] | None
+    strict_xref_error_cache: tuple[SemanticContext | None, str | None] | None
 
     def __init__(
         self,
@@ -371,6 +374,7 @@ class PdfDocument(Generic[PageT]):
         self.font_decoders = {}
         self.brute_force_objects = None
         self.literal_trailers_cache = None
+        self.strict_xref_error_cache = None
         # The document is read-only once open, so its page tree and form fields
         # are built once. Every page.extract() asks for the fields, and building
         # them walks every page, so without this a whole-document pass is
@@ -613,7 +617,7 @@ class PdfDocument(Generic[PageT]):
                 file_handle.close()
                 self.file_handle = None
                 if is_empty:
-                    raise PdfSourceError("PDF source is empty") from exc
+                    raise PdfEmptySourceError("PDF source is empty") from exc
                 raise PdfSourceError(str(exc)) from exc
         if isinstance(source, bytes):
             return source
@@ -657,7 +661,7 @@ class PdfDocument(Generic[PageT]):
         try:
             return mmap.mmap(fd, 0, access=mmap.ACCESS_READ)
         except ValueError as error:
-            raise PdfSourceError("PDF source is empty") from error
+            raise PdfEmptySourceError("PDF source is empty") from error
         except OSError:
             return None
 
@@ -1508,6 +1512,18 @@ class PdfDocument(Generic[PageT]):
         return self.resolver.semantic_context
 
     def strict_xref_validation_error(self) -> str | None:
+        """Why a strict walk of the xref revisions from startxref fails, or None.
+
+        It depends only on the data and the context, so it is read once per
+        context.
+        """
+        context = self.xref_context
+        cached = self.strict_xref_error_cache
+        if cached is None or cached[0] != context:
+            cached = self.strict_xref_error_cache = (context, self.read_strict_xref_error())
+        return cached[1]
+
+    def read_strict_xref_error(self) -> str | None:
         start = XRefScanner.find_startxref(self.raw_data, semantic_context=self.xref_context)
         if start is None:
             return None

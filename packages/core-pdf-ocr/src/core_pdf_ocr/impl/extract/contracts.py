@@ -26,7 +26,6 @@ PRIMARY_OCR_PIXELS = 6_000_000
 OCR_PREFLIGHT_PIXELS = 1_000_000
 HIDDEN_TEXT_VERIFY_PIXELS = 2_000_000
 MAX_OCR_PIXELS = 16_000_000
-MAX_OCR_RASTER_BYTES = MAX_OCR_PIXELS * 4
 OCR_RESCUE_MIN_WEAK_INK_RATIO = 0.03
 OCR_RESCUE_SATURATED_MEAN_INK = 0.85
 OCR_RESCUE_MIN_CONFIDENCE = 95.0
@@ -142,8 +141,6 @@ class PageEvidence(NativePageEvidence):
         "vector_complexity",
         "image_filters",
         "uncovered_vector_area",
-        "vector_text_candidate_segments",
-        "vector_text_matched_segments",
         "vector_text_trusted",
         "stroked_vector_text",
     )
@@ -151,8 +148,6 @@ class PageEvidence(NativePageEvidence):
     vector_complexity: int
     image_filters: tuple[str, ...]
     uncovered_vector_area: float | None
-    vector_text_candidate_segments: int
-    vector_text_matched_segments: int
     vector_text_trusted: bool
     stroked_vector_text: StrokedVectorTextEvidence
 
@@ -174,8 +169,6 @@ class PageEvidence(NativePageEvidence):
         "vector_complexity",
         "image_filters",
         "uncovered_vector_area",
-        "vector_text_candidate_segments",
-        "vector_text_matched_segments",
         "vector_text_trusted",
         "stroked_vector_text",
     )
@@ -197,8 +190,6 @@ class PageEvidence(NativePageEvidence):
         "vector_complexity",
         "image_filters",
         "uncovered_vector_area",
-        "vector_text_candidate_segments",
-        "vector_text_matched_segments",
         "vector_text_trusted",
         "stroked_vector_text",
     )
@@ -222,8 +213,6 @@ class PageEvidence(NativePageEvidence):
         vector_complexity: int = 0,
         image_filters: tuple[str, ...] = (),
         uncovered_vector_area: float | None = None,
-        vector_text_candidate_segments: int = 0,
-        vector_text_matched_segments: int = 0,
         vector_text_trusted: bool = False,
         stroked_vector_text: StrokedVectorTextEvidence | None = None,
     ) -> None:
@@ -250,8 +239,6 @@ class PageEvidence(NativePageEvidence):
         frozen_setattr(self, "vector_complexity", vector_complexity)
         frozen_setattr(self, "image_filters", image_filters)
         frozen_setattr(self, "uncovered_vector_area", uncovered_vector_area)
-        frozen_setattr(self, "vector_text_candidate_segments", vector_text_candidate_segments)
-        frozen_setattr(self, "vector_text_matched_segments", vector_text_matched_segments)
         frozen_setattr(self, "vector_text_trusted", vector_text_trusted)
         frozen_setattr(
             self,
@@ -282,8 +269,6 @@ class PageEvidence(NativePageEvidence):
             and self.vector_complexity == other.vector_complexity
             and self.image_filters == other.image_filters
             and self.uncovered_vector_area == other.uncovered_vector_area
-            and self.vector_text_candidate_segments == other.vector_text_candidate_segments
-            and self.vector_text_matched_segments == other.vector_text_matched_segments
             and self.vector_text_trusted == other.vector_text_trusted
             and self.stroked_vector_text == other.stroked_vector_text
         )
@@ -308,8 +293,6 @@ class PageEvidence(NativePageEvidence):
                 self.vector_complexity,
                 self.image_filters,
                 self.uncovered_vector_area,
-                self.vector_text_candidate_segments,
-                self.vector_text_matched_segments,
                 self.vector_text_trusted,
                 self.stroked_vector_text,
             )

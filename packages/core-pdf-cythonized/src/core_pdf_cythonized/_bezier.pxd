@@ -3,6 +3,11 @@
 # through Python. _type2 uses it: sharing the declaration is what keeps one
 # implementation of the sampling, rather than a second copy that could drift.
 
+# How many times sample_times_c can write. rec() appends one time per leaf;
+# depth is capped, so leaves <= 2**12, plus 1.0 and up to four extrema.
+cdef enum:
+    CUBIC_SAMPLE_CAPACITY = 4101
+
 cdef int sample_times_c(double x0, double y0, double x1, double y1,
                         double x2, double y2, double x3, double y3,
                         double* out) noexcept nogil

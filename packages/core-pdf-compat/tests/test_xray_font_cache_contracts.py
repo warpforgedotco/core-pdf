@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -59,7 +60,10 @@ def test_font_recovery_cache_is_shared_across_glyphs_and_routes(monkeypatch, rec
         if route == "control"
         else {b"A": b"AB", **({b"B": b"BA"} if route == "override" else {})}
     )
-    result = xray._page_redactions(page, {"overrides": overrides})
+    document: Any = SimpleNamespace()
+    recovery = xray._DocumentRecovery(document)
+    recovery.overrides = overrides
+    result = xray._page_redactions(page, recovery)
     assert calls == ["F1"]
     if recovered:
         assert result == [

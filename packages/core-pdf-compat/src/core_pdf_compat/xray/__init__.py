@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import struct
 from collections import defaultdict
-from math import ceil, floor
+from math import ceil, floor, isfinite
 from os import PathLike
 from pathlib import Path
 from typing import Any, ClassVar
@@ -273,6 +273,15 @@ def _parse_object_at(document: Any, offset: int) -> object | None:
         return None
 
 
+# _recover_font, _operand_overrides and _raw_highlight_redactions read the raw
+# file, not the capture: the font is the one the last `/<name> n g R` in the
+# file names, found at the first `n g obj` header rather than through the
+# xref or the page's resources, and a Tj given several hex strings is read
+# from its text. That is how the reference sees the damaged files x-ray's
+# corpus holds, and the capture's resolved fonts and operands have not been
+# shown to give the same findings on it, so the scans stay.
+
+
 def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
     document = page.document
     raw_data = bytes(document.raw_data)
@@ -316,6 +325,77 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
     return None
 
 
+class _DocumentRecovery:
+    """What x-ray recovers from a document's raw bytes, found once for all pages.
+
+    _recover_font reads only the document, so a font name recovers the same
+    font on every page.
+    """
+
+    __slots__ = ("document", "fonts", "overrides")
+
+    def __init__(self, document: PdfDocument) -> None:
+        self.document = document
+        self.fonts: dict[str, _RecoveredFont | None] = {}
+        self.overrides: dict[bytes, bytes] | None = None
+
+    def font(self, page: Any, font_name: str) -> _RecoveredFont | None:
+        if font_name not in self.fonts:
+            self.fonts[font_name] = _recover_font(page, font_name)
+        return self.fonts[font_name]
+
+    def operand_overrides(self) -> dict[bytes, bytes]:
+        if self.overrides is None:
+            self.overrides = _operand_overrides(bytes(self.document.raw_data))
+        return self.overrides
+
+
+class _BoxGrid:
+    """Boxes bucketed by grid cell, so a box finds the ones it may intersect.
+
+    A box intersects another only where both have positive overlap on each
+    axis, and two such boxes always share a cell. A box that is not finite,
+    or spans too many cells, is a candidate for every query instead; so is
+    every box when the query itself is one of those.
+    """
+
+    CELL = 64.0
+    MAX_CELLS = 1024
+
+    def __init__(self, boxes: list[tuple[float, float, float, float]]) -> None:
+        self.count = len(boxes)
+        self.everywhere: list[int] = []
+        self.cells: defaultdict[tuple[int, int], list[int]] = defaultdict(list)
+        for index, box in enumerate(boxes):
+            span = self.span(box)
+            if span is None:
+                self.everywhere.append(index)
+                continue
+            for cell in span:
+                self.cells[cell].append(index)
+
+    @classmethod
+    def span(cls, box: tuple[float, float, float, float]) -> list[tuple[int, int]] | None:
+        x0, y0, x1, y1 = box
+        if not (isfinite(x0) and isfinite(y0) and isfinite(x1) and isfinite(y1)):
+            return None
+        columns = range(floor(x0 / cls.CELL), floor(x1 / cls.CELL) + 1)
+        rows = range(floor(y0 / cls.CELL), floor(y1 / cls.CELL) + 1)
+        if len(columns) * len(rows) > cls.MAX_CELLS:
+            return None
+        return [(column, row) for column in columns for row in rows]
+
+    def candidates(self, box: tuple[float, float, float, float]) -> list[int]:
+        """The indexes, ascending, of every box that may intersect box."""
+        span = self.span(box)
+        if span is None:
+            return list(range(self.count))
+        found = set(self.everywhere)
+        for cell in span:
+            found.update(self.cells.get(cell, ()))
+        return sorted(found)
+
+
 def _operand_overrides(raw_data: bytes) -> dict[bytes, bytes]:
     return {
         bytes.fromhex(groups[0].decode()): bytes.fromhex(groups[-1].decode())
@@ -324,9 +404,7 @@ def _operand_overrides(raw_data: bytes) -> dict[bytes, bytes]:
     }
 
 
-def _page_redactions(
-    page: Any, override_cache: dict[str, dict[bytes, bytes]]
-) -> list[dict[str, object]]:
+def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, object]]:
     source_crop_box = page.crop_box or page.media_box
     user_unit = page.user_unit
     crop_box = tuple(float(value) for value in source_crop_box)
@@ -349,17 +427,21 @@ def _page_redactions(
     non_annotation_rectangles = [
         rectangle for rectangle in rectangles if rectangle.bbox not in annotation_boxes
     ]
-    recovered_fonts: dict[str, _RecoveredFont | None] = {}
+    rectangle_grid = _BoxGrid([rectangle.bbox for rectangle in rectangles])
+    non_annotation_grid = _BoxGrid([rectangle.bbox for rectangle in non_annotation_rectangles])
     recovered_positions: dict[tuple[str, int], float] = {}
 
     def recover_font(font_name: str) -> _RecoveredFont | None:
-        if font_name not in recovered_fonts:
-            recovered_fonts[font_name] = _recover_font(page, font_name)
-        return recovered_fonts[font_name]
+        return recovery.font(page, font_name)
 
-    if "overrides" not in override_cache:
-        override_cache["overrides"] = _operand_overrides(bytes(page.document.raw_data))
-    operand_overrides = override_cache["overrides"]
+    def occluded(character: _Character, candidates: list[_Rectangle], grid: _BoxGrid) -> bool:
+        # Only rectangles the character's box meets can occlude it.
+        return any(
+            _occluded(character, candidates[index], 0.8)
+            for index in grid.candidates(character.bbox)
+        )
+
+    operand_overrides = recovery.operand_overrides()
     glyphs = program.glyphs
     raster_page = _PageRaster(page, program)
     sequence_parts: defaultdict[int, list[bytes]] = defaultdict(list)
@@ -396,7 +478,7 @@ def _page_redactions(
                         glyph.seqno,
                         glyph.fill,
                     )
-                    if any(_occluded(character, rectangle, 0.8) for rectangle in rectangles):
+                    if occluded(character, rectangles, rectangle_grid):
                         characters.append(character)
                     x0 = x1
                 continue
@@ -414,23 +496,24 @@ def _page_redactions(
                     recovered_positions[position_key] = x1
                     glyph_box = (x0, glyph_box[1], x1, glyph_box[3])
         character = _Character(glyph_box, text, glyph.seqno, glyph.fill)
-        matching_rectangles = (
-            non_annotation_rectangles if glyph.font_size * user_unit == 1.0 else rectangles
-        )
-        if any(_occluded(character, rectangle, 0.8) for rectangle in matching_rectangles):
+        if glyph.font_size * user_unit == 1.0:
+            is_occluded = occluded(character, non_annotation_rectangles, non_annotation_grid)
+        else:
+            is_occluded = occluded(character, rectangles, rectangle_grid)
+        if is_occluded:
             characters.append(character)
 
     redactions: list[dict[str, object]] = []
-    remaining = characters
+    # Each rectangle, latest first, takes the characters it meets that no
+    # later rectangle took, in their order.
+    character_grid = _BoxGrid([character.bbox for character in characters])
+    taken = [False] * len(characters)
     for rectangle in sorted(rectangles, key=lambda item: item.seqno, reverse=True):
         covered = []
-        kept = []
-        for character in remaining:
-            if bbox_intersects(character.bbox, rectangle.bbox):
-                covered.append(character)
-            else:
-                kept.append(character)
-        remaining = kept
+        for index in character_grid.candidates(rectangle.bbox):
+            if not taken[index] and bbox_intersects(characters[index].bbox, rectangle.bbox):
+                taken[index] = True
+                covered.append(characters[index])
         text = "".join(character.text for character in covered)
         if len(text) > 1 and len(set(text)) == 1:
             continue
@@ -525,7 +608,7 @@ def _validate_mupdf_structure(document: PdfDocument) -> None:
             raise PdfUnsupportedError("invalid binary trailer data")
 
 
-def _raw_highlight_redactions(page: Any) -> list[dict[str, object]]:
+def _raw_highlight_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, object]]:
     highlights = [
         tuple(annotation.rect)
         for annotation in page.get_annotations()
@@ -550,7 +633,7 @@ def _raw_highlight_redactions(page: Any) -> list[dict[str, object]]:
     if font_match is None:
         return []
     font_name = font_match.group(1).decode("latin-1")
-    recovered_font = _recover_font(page, font_name)
+    recovered_font = recovery.font(page, font_name)
     if recovered_font is None:
         return []
     begin = raw_data.rfind(b"BT", 0, font_match.start())
@@ -625,16 +708,6 @@ def _source_bytes(source: object) -> bytes | None:
     return None
 
 
-def _requires_password(document: PdfDocument) -> bool:
-    if document.decipher is None:
-        return False
-    handler = document.decipher.__self__  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-    if getattr(handler, "r", 0) < 5:
-        return False
-    empty_hash = handler.password_hash(b"", handler.u_validation_salt)
-    return empty_hash != handler.u_hash
-
-
 def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
     output: dict[int, list[dict[str, object]]] = {}
     try:
@@ -650,15 +723,13 @@ def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
         raise
     with document:
         _validate_mupdf_structure(document)
-        if _requires_password(document):
-            raise PdfUnsupportedError("document closed or encrypted")
-        override_cache: dict[str, dict[bytes, bytes]] = {}
+        recovery = _DocumentRecovery(document)
         try:
             for page in document.pages:
                 try:
-                    redactions = _page_redactions(page, override_cache)
+                    redactions = _page_redactions(page, recovery)
                 except TTLibError:
-                    redactions = _raw_highlight_redactions(page)
+                    redactions = _raw_highlight_redactions(page, recovery)
                 except KeyError, TypeError, ValueError:
                     redactions = []
                 if redactions:

@@ -17,7 +17,7 @@ def has_malformed_shadowed_definition(
     entry = pdf.xref.get(key_for(reference.object_number, reference.generation_number))
     if entry is None or entry.object_stream is not None:
         return False
-    data = bytes(pdf.raw_data)
+    data = pdf.raw_data
     header = f"{reference.object_number} {reference.generation_number} obj".encode()
     position = data.find(header, entry.offset + len(header))
     while position >= 0:

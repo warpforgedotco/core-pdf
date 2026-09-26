@@ -12,7 +12,12 @@ from types import MappingProxyType
 from typing import ClassVar, Literal
 
 from core_pdf_crypto.ciphers import aes_cbc_encrypt, rc4_crypt
-from core_pdf_spec.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
+from core_pdf_spec.exceptions import (
+    PdfDecryptionError,
+    PdfParseError,
+    PdfPasswordError,
+    PdfUnsupportedError,
+)
 from core_pdf_spec.s_07_filters.decode_spec import normalize_stream_decode_spec
 from core_pdf_spec.s_07_security.ciphers import (
     aes_cbc_decrypt,
@@ -334,7 +339,7 @@ def create_standard_security_handler(
         raise PdfUnsupportedError("Invalid encryption dictionary") from exc
     file_key = authenticate(config, password)
     if file_key is None:
-        raise PdfUnsupportedError("Incorrect password")
+        raise PdfPasswordError("Incorrect password")
     if config.revision >= 5 and not validate_permissions(config, file_key):
         raise PdfDecryptionError("Invalid encryption permissions")
     return StandardSecurityHandler(config, file_key)

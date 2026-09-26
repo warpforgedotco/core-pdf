@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from core_pdf.impl.geometry import bbox_area
 from core_pdf.impl.render_model import RasterImage
 from core_pdf.impl.types import Record, frozen_setattr
 
@@ -174,8 +175,7 @@ class OcrRegion(Record):
 
     @property
     def area(self) -> float:
-        x0, y0, x1, y1 = self.page_box
-        return max(0.0, x1 - x0) * max(0.0, y1 - y0)
+        return bbox_area(self.page_box)
 
 
 class OcrTask(Record):

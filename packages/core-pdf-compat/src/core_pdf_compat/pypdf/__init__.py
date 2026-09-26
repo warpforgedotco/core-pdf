@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from copy import replace
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfUnsupportedError
@@ -13,7 +13,7 @@ from core_pdf.impl.output_model import (
 )
 from core_pdf.impl.types import PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
-from core_pdf_compat.pypdf._text import extract_legacy_text
+from core_pdf_compat.pypdf._text import LegacyTextCaches, extract_legacy_text
 from core_pdf_spec.s_07_syntax.xref import key_for
 
 
@@ -51,6 +51,8 @@ class StructuredState(ClosingMixin):
     def __init__(self, pdf: PdfDocument | None, structured: Document | None = None) -> None:
         self.pdf = pdf
         self._structured = structured
+        # The legacy extractor's fonts and form text, shared by every page.
+        self.text_caches = LegacyTextCaches()
 
     @property
     def structured(self) -> Document:
@@ -87,6 +89,15 @@ class StructuredState(ClosingMixin):
     @property
     def pages(self) -> tuple[Page, ...]:
         return self.structured.pages
+
+    def page_count(self) -> int:
+        """How many pages the structured document has, without extracting it.
+
+        It is empty when the page tree declares no pages, and otherwise has
+        one page for each of the source's pages.
+        """
+        pdf = self.source_pdf
+        return len(pdf.pages) if pdf.page_count() else 0
 
     @property
     def form_fields(self) -> tuple[Any, ...]:
@@ -162,13 +173,22 @@ class Rectangle(tuple[float, float, float, float]):
 
 
 class PdfPageObject:
-    def __init__(self, document: StructuredState, page: Page) -> None:
+    """A page of a reader: its structured page is extracted only when read.
+
+    page is the structured page, or None for the document's own page
+    page_number, which reading _page extracts from the document.
+    """
+
+    def __init__(
+        self, document: StructuredState, page: Page | None, page_number: int | None = None
+    ) -> None:
         self._document = document
-        self._page = page
+        self._loaded_page = page
+        self._page_number = page.page_number if page is not None else page_number or 0
         self.text_override: str | None = None
-        if document.pdf is not None and 0 < page.page_number <= len(document.pdf.pages):
-            source_page = document.pdf.pages[page.page_number - 1]
-            media_box = source_page.media_box or (0.0, 0.0, page.width, page.height)
+        if document.pdf is not None and 0 < self._page_number <= len(document.pdf.pages):
+            source_page = document.pdf.pages[self._page_number - 1]
+            media_box = source_page.media_box or (0.0, 0.0, self._page.width, self._page.height)
             crop_box = source_page.crop_box or media_box
             self.mediabox = Rectangle(*media_box)
             self.cropbox = Rectangle(*crop_box)
@@ -180,10 +200,26 @@ class PdfPageObject:
                 else source_page.rotation
             )
         else:
+            page = self._page
             self.mediabox = Rectangle(0, 0, page.width, page.height)
             self.cropbox = Rectangle(*(page.cropbox or self.mediabox))
             self.user_unit = page.user_unit
             self.rotation = page.rotation
+
+    @property
+    def _page(self) -> Page:
+        if self._loaded_page is None:
+            self._loaded_page = self._document.pages[self._page_number - 1]
+        return self._loaded_page
+
+    @_page.setter
+    def _page(self, page: Page) -> None:
+        self._loaded_page = page
+
+    def _is_source_page(self) -> bool:
+        # A page never extracted is its document's page, unchanged.
+        page = self._loaded_page
+        return page is None or page is self._document.pages[page.page_number - 1]
 
     def _capability_view(self) -> Any:
         return self._document.capability_page(self._page.page_number).structured_view
@@ -192,10 +228,9 @@ class PdfPageObject:
         del args, kwargs
         if self.text_override is not None:
             return self.text_override
-        source_page = self._document.pages[self._page.page_number - 1]
-        if self._document.pdf is not None and self._page is source_page:
-            page = self._document.capability_page(self._page.page_number)
-            return extract_legacy_text(page)
+        if self._is_source_page() and self._document.pdf is not None:
+            page = self._document.capability_page(self._page_number)
+            return extract_legacy_text(page, self._document.text_caches)
         return "\n".join(line.text for block in self._page.blocks for line in block.lines)
 
     def rotate(self, angle: int) -> PdfPageObject:
@@ -303,6 +338,7 @@ class PdfReader(ClosingMixin):
         self._document = document  # type: ignore[assignment]
         self.__dict__.pop("pages", None)
         self.__dict__.pop("metadata", None)
+        self.__dict__.pop("_page_indexes", None)
 
     def __getattr__(self, name: str) -> Any:
         if name in {"pages", "metadata"} and self.__dict__.get("_document") is not None:
@@ -311,9 +347,15 @@ class PdfReader(ClosingMixin):
         raise AttributeError(name)
 
     def _materialize(self) -> None:
-        document = self._document
-        self.pages = tuple(PdfPageObject(document, page) for page in document.pages)  # type: ignore[arg-type,attr-defined]  # ty: ignore[invalid-argument-type,unresolved-attribute]
-        raw_metadata = document.source_pdf.get_metadata()  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        document = cast(StructuredState, self._document)
+        self.pages = tuple(
+            PdfPageObject(document, None, page_number)
+            for page_number in range(1, document.page_count() + 1)
+        )
+        # The pages' structured pages carry distinct page numbers, so a page
+        # of this reader equals no other page of it.
+        self._page_indexes = {id(page): index for index, page in enumerate(self.pages)}
+        raw_metadata = document.source_pdf.get_metadata()
         info = raw_metadata.get("info", {}) if isinstance(raw_metadata, dict) else {}
         self.metadata = (
             {f"/{str(key).lstrip('/')}": value for key, value in info.items()}
@@ -329,9 +371,15 @@ class PdfReader(ClosingMixin):
         return self.pages[page_number]
 
     def get_page_number(self, page: PdfPageObject | Page) -> int:
+        pages = self.pages
+        page_indexes = self.__dict__.get("_page_indexes")
+        if page_indexes is not None and isinstance(page, PdfPageObject):
+            index = page_indexes.get(id(page))
+            if index is not None and pages[index] is page:
+                return index
         value = page._page if isinstance(page, PdfPageObject) else page
         candidate: PdfPageObject
-        for index, candidate in enumerate(self.pages):
+        for index, candidate in enumerate(pages):
             if candidate._page is value or candidate._page == value:
                 return index
         raise ValueError("page is not part of this reader")

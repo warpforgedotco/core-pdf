@@ -119,12 +119,8 @@ class StrokedTextObservation(Record):
 class StrokedTextDecode(Record):
     __slots__ = (
         "observations",
-        "eligible_seeds",
         "aligned_seeds",
-        "accepted_seeds",
-        "initial_signatures",
         "learned_signatures",
-        "approximate_signatures",
         "alphabet",
         "candidate_runs",
         "decoded_candidate_runs",
@@ -133,12 +129,8 @@ class StrokedTextDecode(Record):
     )
 
     observations: tuple[StrokedTextObservation, ...]
-    eligible_seeds: int
     aligned_seeds: int
-    accepted_seeds: int
-    initial_signatures: int
     learned_signatures: int
-    approximate_signatures: int
     alphabet: tuple[tuple[GlyphSignature, str], ...]
     candidate_runs: int
     decoded_candidate_runs: int
@@ -147,12 +139,8 @@ class StrokedTextDecode(Record):
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "observations",
-        "eligible_seeds",
         "aligned_seeds",
-        "accepted_seeds",
-        "initial_signatures",
         "learned_signatures",
-        "approximate_signatures",
         "alphabet",
         "candidate_runs",
         "decoded_candidate_runs",
@@ -161,12 +149,8 @@ class StrokedTextDecode(Record):
     )
     __match_args__ = (
         "observations",
-        "eligible_seeds",
         "aligned_seeds",
-        "accepted_seeds",
-        "initial_signatures",
         "learned_signatures",
-        "approximate_signatures",
         "alphabet",
         "candidate_runs",
         "decoded_candidate_runs",
@@ -177,12 +161,8 @@ class StrokedTextDecode(Record):
     def __init__(
         self,
         observations: tuple[StrokedTextObservation, ...] = (),
-        eligible_seeds: int = 0,
         aligned_seeds: int = 0,
-        accepted_seeds: int = 0,
-        initial_signatures: int = 0,
         learned_signatures: int = 0,
-        approximate_signatures: int = 0,
         alphabet: tuple[tuple[GlyphSignature, str], ...] = (),
         candidate_runs: int = 0,
         decoded_candidate_runs: int = 0,
@@ -190,12 +170,8 @@ class StrokedTextDecode(Record):
         decoded_candidate_glyphs: int = 0,
     ) -> None:
         frozen_setattr(self, "observations", observations)
-        frozen_setattr(self, "eligible_seeds", eligible_seeds)
         frozen_setattr(self, "aligned_seeds", aligned_seeds)
-        frozen_setattr(self, "accepted_seeds", accepted_seeds)
-        frozen_setattr(self, "initial_signatures", initial_signatures)
         frozen_setattr(self, "learned_signatures", learned_signatures)
-        frozen_setattr(self, "approximate_signatures", approximate_signatures)
         frozen_setattr(self, "alphabet", alphabet)
         frozen_setattr(self, "candidate_runs", candidate_runs)
         frozen_setattr(self, "decoded_candidate_runs", decoded_candidate_runs)
@@ -209,12 +185,8 @@ class StrokedTextDecode(Record):
             return NotImplemented
         return (
             self.observations == other.observations
-            and self.eligible_seeds == other.eligible_seeds
             and self.aligned_seeds == other.aligned_seeds
-            and self.accepted_seeds == other.accepted_seeds
-            and self.initial_signatures == other.initial_signatures
             and self.learned_signatures == other.learned_signatures
-            and self.approximate_signatures == other.approximate_signatures
             and self.alphabet == other.alphabet
             and self.candidate_runs == other.candidate_runs
             and self.decoded_candidate_runs == other.decoded_candidate_runs
@@ -226,12 +198,8 @@ class StrokedTextDecode(Record):
         return hash(
             (
                 self.observations,
-                self.eligible_seeds,
                 self.aligned_seeds,
-                self.accepted_seeds,
-                self.initial_signatures,
                 self.learned_signatures,
-                self.approximate_signatures,
                 self.alphabet,
                 self.candidate_runs,
                 self.decoded_candidate_runs,
@@ -534,9 +502,8 @@ def seed_run_overlap(
 def seed_samples(
     profile: StrokedTextProfile,
     seeds: tuple[StrokedTextSeed, ...],
-) -> tuple[tuple[SeedSample, ...], int]:
+) -> tuple[SeedSample, ...]:
     samples: list[SeedSample] = []
-    eligible = 0
     records = profile.records
     direct_runs = {
         run.first_drawing: run for run in profile.run_profiles if run.seed_run is not None
@@ -549,7 +516,6 @@ def seed_samples(
         text = seed_text(seed)
         if text is None:
             continue
-        eligible += 1
         direct = direct_runs.get(seed.sequence)
         if (
             direct is not None
@@ -592,12 +558,12 @@ def seed_samples(
                 tuple(signature for signature in signatures if signature is not None),
             )
         )
-    return tuple(samples), eligible
+    return tuple(samples)
 
 
 def consensus_mapping(
     samples: tuple[SeedSample, ...],
-) -> tuple[dict[GlyphSignature, str], int, int]:
+) -> dict[GlyphSignature, str]:
     votes: dict[GlyphSignature, dict[str, set[int]]] = defaultdict(lambda: defaultdict(set))
     for sample in samples:
         for character, signature in zip(sample.text, sample.signatures, strict=True):
@@ -614,9 +580,7 @@ def consensus_mapping(
         runner_up = ranked[1][0] if len(ranked) > 1 else 0
         if winner_count >= 2 and winner_count / total >= 0.75 and winner_count > runner_up:
             mapping[signature] = winner
-    initial = len(mapping)
 
-    accepted_sequences: set[int] = set()
     while True:
         anchored_votes: dict[GlyphSignature, dict[str, set[int]]] = defaultdict(
             lambda: defaultdict(set)
@@ -632,7 +596,6 @@ def consensus_mapping(
             alphanumeric_anchors = sum(sample.text[index].isalnum() for index in known)
             if alphanumeric_anchors < 1 or (len(known) < 2 and len(sample.text) < 3):
                 continue
-            accepted_sequences.add(sample.seed.sequence)
             for character, signature in zip(sample.text, sample.signatures, strict=True):
                 anchored_votes[signature][character].add(sample.seed.sequence)
 
@@ -645,7 +608,7 @@ def consensus_mapping(
                 additions += 1
         if not additions:
             break
-    return mapping, initial, len(accepted_sequences)
+    return mapping
 
 
 def required_bbox(boxes: Iterable[Rectangle]) -> Rectangle:
@@ -696,8 +659,7 @@ def signature_topology(signature: GlyphSignature) -> GlyphTopology:
 def expand_mapping(
     runs: tuple[StrokedTextRunProfile, ...],
     mapping: dict[GlyphSignature, str],
-) -> int:
-    additions = 0
+) -> None:
     learned_by_topology: dict[GlyphTopology, list[tuple[GlyphSignature, str]]] = defaultdict(list)
     for learned_signature, character in mapping.items():
         learned_by_topology[signature_topology(learned_signature)].append(
@@ -719,8 +681,6 @@ def expand_mapping(
         }
         if len(candidates) == 1:
             mapping[signature] = candidates.pop()
-            additions += 1
-    return additions
 
 
 def path_runs(
@@ -906,11 +866,13 @@ def decode_runs(
     return tuple(observations)
 
 
-def decode_with_mapping(
+def decoded_profile(
     profile: StrokedTextProfile,
     mapping: dict[GlyphSignature, str],
-) -> tuple[tuple[StrokedTextObservation, ...], int, int, int, int, int]:
-    approximate = expand_mapping(profile.run_profiles, mapping)
+    *,
+    aligned_seeds: int = 0,
+) -> StrokedTextDecode:
+    expand_mapping(profile.run_profiles, mapping)
     observations = decode_runs(profile.run_profiles, mapping)
     decoded_spans = {
         (observation.first_drawing, observation.last_drawing) for observation in observations
@@ -921,42 +883,36 @@ def decode_with_mapping(
         for candidate in candidates
         if (candidate.drawing_indexes[0], candidate.drawing_indexes[-1]) in decoded_spans
     )
-    return (
-        observations,
-        approximate,
-        len(candidates),
-        len(decoded_candidates),
-        sum(candidate.glyph_count for candidate in candidates),
-        sum(candidate.glyph_count for candidate in decoded_candidates),
-    )
-
-
-def decoded_profile(
-    profile: StrokedTextProfile,
-    mapping: dict[GlyphSignature, str],
-    *,
-    eligible_seeds: int = 0,
-    aligned_seeds: int = 0,
-    accepted_seeds: int = 0,
-    initial_signatures: int = 0,
-) -> StrokedTextDecode:
-    observations, approximate, candidates, decoded_candidates, glyphs, decoded_glyphs = (
-        decode_with_mapping(profile, mapping)
-    )
     return StrokedTextDecode(
         observations=observations,
-        eligible_seeds=eligible_seeds,
         aligned_seeds=aligned_seeds,
-        accepted_seeds=accepted_seeds,
-        initial_signatures=initial_signatures,
         learned_signatures=len(mapping),
-        approximate_signatures=approximate,
         alphabet=tuple(mapping.items()),
-        candidate_runs=candidates,
-        decoded_candidate_runs=decoded_candidates,
-        candidate_glyphs=glyphs,
-        decoded_candidate_glyphs=decoded_glyphs,
+        candidate_runs=len(candidates),
+        decoded_candidate_runs=len(decoded_candidates),
+        candidate_glyphs=sum(candidate.glyph_count for candidate in candidates),
+        decoded_candidate_glyphs=sum(candidate.glyph_count for candidate in decoded_candidates),
     )
+
+
+def decode_from_samples(
+    profile: StrokedTextProfile,
+    samples: tuple[SeedSample, ...],
+    primary_mapping: Mapping[GlyphSignature, str] | None = None,
+) -> StrokedTextDecode:
+    """Decode the profile with the alphabet the seed samples agree on.
+
+    A primary mapping, learned from the trusted seeds alone, wins over what
+    the samples as a whole voted for the same signature.
+    """
+    if not samples:
+        return StrokedTextDecode()
+    mapping = consensus_mapping(samples)
+    if primary_mapping:
+        mapping.update(primary_mapping)
+    if not mapping:
+        return StrokedTextDecode(aligned_seeds=len(samples))
+    return decoded_profile(profile, mapping, aligned_seeds=len(samples))
 
 
 def decode_stroked_text_profile(
@@ -965,23 +921,7 @@ def decode_stroked_text_profile(
 ) -> StrokedTextDecode:
     if not profile.records or not seeds:
         return StrokedTextDecode()
-    samples, eligible = seed_samples(profile, seeds)
-    if not samples:
-        return StrokedTextDecode(eligible_seeds=eligible)
-    mapping, initial, accepted = consensus_mapping(samples)
-    if not mapping:
-        return StrokedTextDecode(
-            eligible_seeds=eligible,
-            aligned_seeds=len(samples),
-        )
-    return decoded_profile(
-        profile,
-        mapping,
-        eligible_seeds=eligible,
-        aligned_seeds=len(samples),
-        accepted_seeds=accepted,
-        initial_signatures=initial,
-    )
+    return decode_from_samples(profile, seed_samples(profile, seeds))
 
 
 def decode_stroked_text_profile_with_supplemental_seeds(
@@ -993,32 +933,12 @@ def decode_stroked_text_profile_with_supplemental_seeds(
         return decode_stroked_text_profile(profile, primary_seeds)
     if not profile.records:
         return StrokedTextDecode()
-
-    primary_samples, primary_eligible = seed_samples(profile, primary_seeds)
-    supplemental_samples, supplemental_eligible = seed_samples(profile, supplemental_seeds)
-    samples = (*primary_samples, *supplemental_samples)
-    eligible = primary_eligible + supplemental_eligible
-    if not samples:
-        return StrokedTextDecode(eligible_seeds=eligible)
-
-    primary_mapping: dict[GlyphSignature, str] = {}
-    if primary_samples:
-        primary_mapping, _, _ = consensus_mapping(primary_samples)
-    mapping, initial, accepted = consensus_mapping(samples)
-    mapping.update(primary_mapping)
-    if not mapping:
-        return StrokedTextDecode(
-            eligible_seeds=eligible,
-            aligned_seeds=len(samples),
-        )
-
-    return decoded_profile(
+    primary_samples = seed_samples(profile, primary_seeds)
+    samples = (*primary_samples, *seed_samples(profile, supplemental_seeds))
+    return decode_from_samples(
         profile,
-        mapping,
-        eligible_seeds=eligible,
-        aligned_seeds=len(samples),
-        accepted_seeds=accepted,
-        initial_signatures=initial,
+        samples,
+        consensus_mapping(primary_samples) if primary_samples else None,
     )
 
 
@@ -1029,4 +949,4 @@ def decode_stroked_text_profile_with_alphabet(
     mapping = dict(alphabet)
     if not profile.records or not mapping:
         return StrokedTextDecode()
-    return decoded_profile(profile, mapping, initial_signatures=len(mapping))
+    return decoded_profile(profile, mapping)
