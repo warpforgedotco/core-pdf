@@ -17,7 +17,6 @@ from core_pdf.impl.extract_contracts import (
     ObservationBatch,
     PageAnalysis,
     ParsedBlock,
-    ReadingOrderEvidence,
     ReadingOrderPolicy,
 )
 from core_pdf.impl.extract_emit import (
@@ -51,7 +50,7 @@ class Layout(Protocol):
         rotation: int,
         page_width: float,
         page_height: float,
-    ) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]: ...
+    ) -> tuple[tuple[ParsedBlock, ...], bool]: ...
 
 
 def collected_records[Record, T](
@@ -73,24 +72,26 @@ def collected_records[Record, T](
 
 
 class PageProducts(Record):
-    __slots__ = ("tables", "blocks", "order_evidence")
+    __slots__ = ("tables", "blocks", "order_ambiguous")
 
     tables: tuple[Table, ...]
     blocks: tuple[ParsedBlock, ...]
-    order_evidence: ReadingOrderEvidence
+    # Whether the layout's reading order is ambiguous, which the page reports
+    # as a diagnostic.
+    order_ambiguous: bool
 
-    __fields__: ClassVar[tuple[str, ...]] = ("tables", "blocks", "order_evidence")
-    __match_args__ = ("tables", "blocks", "order_evidence")
+    __fields__: ClassVar[tuple[str, ...]] = ("tables", "blocks", "order_ambiguous")
+    __match_args__ = ("tables", "blocks", "order_ambiguous")
 
     def __init__(
         self,
         tables: tuple[Table, ...],
         blocks: tuple[ParsedBlock, ...],
-        order_evidence: ReadingOrderEvidence,
+        order_ambiguous: bool,
     ) -> None:
         frozen_setattr(self, "tables", tables)
         frozen_setattr(self, "blocks", blocks)
-        frozen_setattr(self, "order_evidence", order_evidence)
+        frozen_setattr(self, "order_ambiguous", order_ambiguous)
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -100,11 +101,11 @@ class PageProducts(Record):
         return (
             self.tables == other.tables
             and self.blocks == other.blocks
-            and self.order_evidence == other.order_evidence
+            and self.order_ambiguous == other.order_ambiguous
         )
 
     def __hash__(self) -> int:
-        return hash((self.tables, self.blocks, self.order_evidence))
+        return hash((self.tables, self.blocks, self.order_ambiguous))
 
 
 class PageExtraction:
@@ -167,7 +168,7 @@ class PageExtraction:
         capture = self.capture
         policy = self.reading_order
         table_obstacles = tuple(table.bbox for table in tables if table.bbox is not None)
-        blocks, order_evidence = layout(
+        blocks, order_ambiguous = layout(
             observations,
             obstacles=(*table_obstacles, *policy.image_obstacles),
             use_xy_cut=policy.use_xy_cut,
@@ -175,7 +176,7 @@ class PageExtraction:
             page_width=capture.width,
             page_height=capture.height,
         )
-        return PageProducts(tables, blocks, order_evidence)
+        return PageProducts(tables, blocks, order_ambiguous)
 
     @cached_property
     def reading_order(self) -> ReadingOrderPolicy:
@@ -186,7 +187,6 @@ class PageExtraction:
         policy = self.reading_order
         products = self.run(context)
         blocks = products.blocks
-        order_evidence = products.order_evidence
         figures = (
             ()
             if policy.full_page_image
@@ -204,7 +204,7 @@ class PageExtraction:
             route=self.route_name,
             tables=products.tables,
             figures=figures,
-            diagnostics=(("reading-order-ambiguous",) if order_evidence.ambiguous else ()),
+            diagnostics=(("reading-order-ambiguous",) if products.order_ambiguous else ()),
             reading_order=policy,
             drawings=capture.program.drawings,
         )

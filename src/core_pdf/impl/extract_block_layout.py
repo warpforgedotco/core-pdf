@@ -18,7 +18,6 @@ from core_pdf.impl.extract_contracts import (
     ObservationSource,
     ParsedBlock,
     ParsedLine,
-    ReadingOrderEvidence,
     bbox_tuple,
 )
 from core_pdf.impl.geometry import horizontal_overlap_ratio, interval_overlap
@@ -457,11 +456,12 @@ def layout_blocks_with_evidence(
     page_height: float = 0.0,
     source_labels: Mapping[int, str] | None = None,
     group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
-) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
+) -> tuple[tuple[ParsedBlock, ...], bool]:
+    """The page's blocks in reading order, and whether that order is ambiguous."""
     built_lines = build_lines(observations, source_labels=source_labels, group_order=group_order)
     lines = built_lines.lines
     if not lines:
-        return (), reading_order_evidence(())
+        return (), False
     boxes = display_boxes(
         built_lines.boxes,
         rotation,
@@ -492,7 +492,7 @@ def layout_blocks_with_evidence(
     classified = tuple(
         classify_blocks(assign_columns(blocks), body_font_size=semantic_body_font_size(lines))
     )
-    return classified, reading_order_evidence(classified)
+    return classified, has_mixed_rotation_block(classified)
 
 
 def xy_cut_blocks(
@@ -567,53 +567,9 @@ def block_bbox(lines: tuple[ParsedLine, ...]) -> tuple[float, float, float, floa
     )
 
 
-def inversion_count(values: tuple[int, ...]) -> int:
-    if len(values) < 2:
-        return 0
-    ranks = {value: rank + 1 for rank, value in enumerate(sorted(values))}
-    tree = [0] * (len(values) + 1)
-    inversions = 0
-    for seen, value in enumerate(values):
-        rank = ranks[value]
-        prefix = 0
-        index = rank
-        while index:
-            prefix += tree[index]
-            index -= index & -index
-        inversions += seen - prefix
-        index = rank
-        while index < len(tree):
-            tree[index] += 1
-            index += index & -index
-    return inversions
-
-
-def reading_order_evidence(
-    blocks: tuple[ParsedBlock, ...],
-) -> ReadingOrderEvidence:
-    lines = tuple(line for block in blocks for line in block.lines)
-    sequences = tuple(line.sequence for line in lines)
-    inversions = inversion_count(sequences)
-    maximum = len(lines) * (len(lines) - 1) // 2
-    rotations = {line.rotation % 360 for line in lines}
-    mixed_rotation_block = any(
-        len({line.rotation % 360 for line in block.lines}) > 1 for block in blocks
-    )
-    columns = {block.column_index for block in blocks if block.column_index is not None}
-    repaired = inversions > 0
-    ambiguous = mixed_rotation_block
-    confidence = 0.5 if ambiguous else (0.85 if len(rotations) > 1 else 1.0)
-    return ReadingOrderEvidence(
-        line_count=len(lines),
-        source_inversions=inversions,
-        source_inversion_ratio=inversions / maximum if maximum else 0.0,
-        column_count=max(1, len(columns)) if lines else 0,
-        rotation_count=len(rotations),
-        repaired=repaired,
-        ambiguous=ambiguous,
-        confidence=confidence,
-        strategy="geometric-repair" if repaired else "source-stable",
-    )
+def has_mixed_rotation_block(blocks: tuple[ParsedBlock, ...]) -> bool:
+    """Whether a block mixes line rotations, which leaves its reading order ambiguous."""
+    return any(len({line.rotation % 360 for line in block.lines}) > 1 for block in blocks)
 
 
 def interval_overlap_pairs(starts: numpy.ndarray, ends: numpy.ndarray) -> set[tuple[int, int]]:
