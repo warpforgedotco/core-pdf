@@ -109,7 +109,7 @@ class PdfPage:
         return self._annotation_dicts(strict=False)
 
     def _annotation_dicts(self, *, strict: bool) -> list[PdfDict]:
-        malformed = self.document.recovery_policy()
+        malformed = self.document.recovery.malformed
         raw_annots = self.document.resolver.resolve(self.inherited_values.get("Annots"))
         if raw_annots is None:
             return []
@@ -130,7 +130,7 @@ class PdfPage:
         return resolved_annots
 
     def get_annotations(self) -> list[RawAnnotation]:
-        malformed = self.document.recovery_policy()
+        malformed = self.document.recovery.malformed
         results = []
         for annot in self._annotation_dicts(strict=True):
             subtype = self.document.resolver.resolve_name(annot.get("Subtype"))
@@ -222,10 +222,8 @@ class PdfPage:
     def user_unit(self) -> float:
         try:
             return page_user_unit(self.document.resolver.resolve(self.page_dict.get("UserUnit")))
-        except ValueError, PdfParseError:
-            if not self.document.recovery_enabled:
-                raise
-            return 1.0
+        except (ValueError, PdfParseError) as error:
+            return self.document.recovery.reject(error, "user-unit", 1.0)
 
     @property
     def label(self) -> str | None:

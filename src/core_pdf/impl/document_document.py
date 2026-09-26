@@ -56,7 +56,7 @@ from core_pdf.impl.output_model import Document as StructuredDocument
 from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer, reader_rules_for
-from core_pdf.impl.recovery_policy import MalformedFn, malformed_policy
+from core_pdf.impl.recovery_policy import LENIENT, STRICT, Recovery
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_text_strings import parse_text_string
 from core_pdf.impl.recovery_trees import iter_name_tree_items, iter_number_tree_items
@@ -545,7 +545,7 @@ class PdfDocument(Generic[PageT]):
         return resolve_metadata(
             self.resolver,
             self.trailer_dict,
-            recover=self.recovery_enabled,
+            recover=self.recovery,
         )
 
     def get_standards(self) -> DocumentStandards:
@@ -580,12 +580,12 @@ class PdfDocument(Generic[PageT]):
     def recovery_enabled(self) -> bool:
         return self.xref_was_recovered or self.page_tree_was_recovered
 
-    def malformed(self, message: str) -> None:
-        if not self.recovery_enabled:
-            raise ValueError(message)
+    @property
+    def recovery(self) -> Recovery:
+        return LENIENT if self.recovery_enabled else STRICT
 
-    def recovery_policy(self) -> MalformedFn:
-        return malformed_policy(self.recovery_enabled)
+    def malformed(self, message: str) -> None:
+        self.recovery.malformed(message)
 
     def load_data(self, source: PdfSource) -> PdfByteBuffer:
         if isinstance(source, (str, PathLike)):
@@ -968,10 +968,8 @@ class PdfDocument(Generic[PageT]):
     def build_page_labels(self, *, page_count: int | None = None) -> list[str] | None:
         try:
             labels_root = self.resolve(self.catalog().get("PageLabels"))
-        except ValueError:
-            if self.recovery_enabled:
-                return None
-            raise
+        except ValueError as error:
+            return self.recovery.reject(error, "page-labels", None)
         if labels_root is None:
             return None
         if not isinstance(labels_root, dict):
@@ -982,7 +980,7 @@ class PdfDocument(Generic[PageT]):
             for page_index, spec in iter_number_tree_items(
                 labels_root,
                 self.resolve,
-                on_malformed=self.recovery_policy(),
+                on_malformed=self.recovery.malformed,
             )
             if isinstance(spec, dict)
         ]
@@ -1040,8 +1038,8 @@ class PdfDocument(Generic[PageT]):
     ) -> list[RawOutlineItem]:
         if page_lookup is None:
             page_lookup = self.page_lookup
-        recover_outlines = self.recovery_enabled
-        malformed = malformed_policy(recover_outlines)
+        recovery = self.recovery
+        malformed = recovery.malformed
         if level > 200:
             raise ValueError("invalid outline depth")
         if not isinstance(item, dict):
@@ -1077,7 +1075,7 @@ class PdfDocument(Generic[PageT]):
                     )
                 )
             except ValueError:
-                if not recover_outlines:
+                if not recovery.enabled:
                     raise
             first = current.get("First")
             if first is not None:
@@ -1207,7 +1205,7 @@ class PdfDocument(Generic[PageT]):
                         dests_tree,
                         self.resolver.resolve,
                         self.resolver.resolve_str,
-                        on_malformed=self.recovery_policy(),
+                        on_malformed=self.recovery.malformed,
                     )
                 )
 
@@ -1257,7 +1255,7 @@ class PdfDocument(Generic[PageT]):
             for field in field_list:
                 field_obj = self.resolver.resolve(field)
                 records.extend(
-                    collect_field_records(self.resolver, field_obj, self.recovery_policy())
+                    collect_field_records(self.resolver, field_obj, self.recovery.malformed)
                 )
         if not records or self.recovery_enabled:
             records.extend(self.discover_widget_field_records(records))
@@ -1344,7 +1342,7 @@ class PdfDocument(Generic[PageT]):
                     continue
                 seen_widgets.add(id(root))
                 seen_widgets.add(id(annot))
-                records.extend(collect_field_records(self.resolver, root, self.recovery_policy()))
+                records.extend(collect_field_records(self.resolver, root, self.recovery.malformed))
         return records
 
     def widget_field_root(self, annot: PdfDict) -> PdfDict:
@@ -1368,18 +1366,18 @@ class PdfDocument(Generic[PageT]):
         if not isinstance(embedded_tree, dict):
             raise ValueError("invalid EmbeddedFiles name tree")
 
-        recover = self.recovery_enabled
+        recovery = self.recovery
         records: list[RawEmbeddedFile] = []
         for name, value in iter_name_tree_items(
             embedded_tree,
             self.resolver.resolve,
             self.resolver.resolve_str,
-            on_malformed=malformed_policy(recover),
+            on_malformed=recovery.malformed,
         ):
             try:
                 record = self.embedded_file_record(name, value)
             except ValueError:
-                if recover:
+                if recovery.enabled:
                     continue
                 raise
             records.append(record)
@@ -1417,7 +1415,7 @@ class PdfDocument(Generic[PageT]):
         return hidden
 
     def build_oc_hidden_layers(self) -> frozenset[str]:
-        malformed = self.recovery_policy()
+        malformed = self.recovery.malformed
         try:
             self.catalog()
         except ValueError:

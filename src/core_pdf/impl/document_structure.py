@@ -396,7 +396,7 @@ class StructureTree(StructureNode):
                 resolved,
                 self.document.resolver.resolve,
                 decode_number=self.document.resolver.resolve_int,
-                on_malformed_entry=self.document.recovery_policy(),
+                on_malformed_entry=self.document.recovery.malformed,
                 resolve_values=False,
                 tree_name="parent",
                 max_depth=MAX_PARENT_TREE_DEPTH,
@@ -521,7 +521,7 @@ def make_kids(
     *,
     page_lookup: PageLookup[Any] | None = None,
 ) -> Iterator[StructureChild]:
-    malformed = document.recovery_policy()
+    malformed = document.recovery.malformed
     stack: list[tuple[Any, int]] = [(kid, depth)]
     while stack:
         current, depth = stack.pop()
