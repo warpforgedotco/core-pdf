@@ -63,7 +63,9 @@ class CMapToken(Record):
         return hash((self.value, self.start, self.end, self.kind))
 
 
-class CMapBlock(Record):
+class CMapTokenRun(Record):
+    """Source bytes and the tokens read from them, shared by a CMap and its blocks."""
+
     __slots__ = ("data", "tokens")
 
     data: bytes
@@ -85,6 +87,10 @@ class CMapBlock(Record):
 
     def __hash__(self) -> int:
         return hash((self.data, self.tokens))
+
+
+class CMapBlock(CMapTokenRun):
+    __slots__ = ()
 
     def token_values(
         self, *, include_arrays: bool = False, include_words: bool = False
@@ -94,28 +100,8 @@ class CMapBlock(Record):
         )
 
 
-class CMapProgram(Record):
-    __slots__ = ("data", "tokens")
-
-    data: bytes
-    tokens: tuple[CMapToken, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("data", "tokens")
-    __match_args__ = ("data", "tokens")
-
-    def __init__(self, data: bytes, tokens: tuple[CMapToken, ...]) -> None:
-        frozen_setattr(self, "data", data)
-        frozen_setattr(self, "tokens", tokens)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.data == other.data and self.tokens == other.tokens
-
-    def __hash__(self) -> int:
-        return hash((self.data, self.tokens))
+class CMapProgram(CMapTokenRun):
+    __slots__ = ()
 
     @classmethod
     def parse(cls, data: bytes | bytearray | memoryview) -> CMapProgram:
