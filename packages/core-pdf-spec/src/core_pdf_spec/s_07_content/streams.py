@@ -331,6 +331,9 @@ class ContentStreamFrame(ReprFields):
 
 class ContentStreamExecutor:
     __slots__ = ("state", "active_streams", "decoded_streams")
+    # The deepest nesting a subclass enters; None leaves it unbounded, so only
+    # a stream already being executed is reentry.
+    max_depth: ClassVar[int | None] = None
 
     def __init__(self, state: ContentInterpreter) -> None:
         self.state = state
@@ -369,9 +372,7 @@ class ContentStreamExecutor:
         stream_key: StreamKey | None = None,
     ) -> ContentStreamFrame | None:
         execution_key = stream_key or self.execution_key(stream)
-        if execution_key in self.active_streams:
-            raise PdfParseError("recursive content stream")
-        return ContentStreamFrame(
+        frame = ContentStreamFrame(
             stream,
             resources,
             ctm,
@@ -383,12 +384,33 @@ class ContentStreamExecutor:
             source_key=stream_key,
             stream_key=execution_key,
         )
+        if self.is_reentry(execution_key, depth) and self.reject_reentry(frame):
+            return None
+        return frame
+
+    def is_reentry(self, stream_key: StreamKey, depth: int) -> bool:
+        """Whether a stream under `stream_key` at `depth` would reenter one
+        already executing, or nest past max_depth."""
+        limit = self.max_depth
+        return (limit is not None and depth > limit) or stream_key in self.active_streams
+
+    def reject_reentry(self, frame: ContentStreamFrame) -> bool:
+        """Refuse `frame`, which is_reentry reports; returning True skips it.
+
+        Returning False runs it anyway, which a subclass does at its own risk:
+        a stream run inside itself leaves the active set when the inner run
+        ends.
+        """
+        limit = self.max_depth
+        if limit is not None and frame.depth > limit:
+            raise PdfParseError("content streams nest too deeply")
+        raise PdfParseError("recursive content stream")
 
     def enter(self, frame: ContentStreamFrame) -> bool:
         state = self.state
         stream_key = frame.stream_key or self.execution_key(frame.stream)
-        if stream_key in self.active_streams:
-            raise PdfParseError("recursive content stream")
+        if self.is_reentry(stream_key, frame.depth) and self.reject_reentry(frame):
+            return False
         frame.lexer = state.create_lexer(self.stream_data(frame))
         frame.old_state = state.capture_stream_state()
         state.initial_alpha_is_shape = state.graphics.alpha_is_shape

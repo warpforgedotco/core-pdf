@@ -77,7 +77,6 @@ from core_pdf_spec.s_07_content.operations import OperationHandler
 from core_pdf_spec.s_07_content.streams import (
     ContentStreamExecutor,
     ContentStreamFrame,
-    StreamKey,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
@@ -299,42 +298,20 @@ class CaptureStreamExecutor(ContentStreamExecutor):
     state: TextState
     _operator_names: frozenset[bytes] | None = None
 
-    def is_reentrant(self, stream: PdfStream, stream_key: StreamKey | None, depth: int) -> bool:
-        return depth > 10 or (stream_key or self.execution_key(stream)) in self.active_streams
+    # Streams nest at most this deep, and a reentered stream is skipped.
+    max_depth = 10
 
-    def queue(
-        self,
-        stream: PdfStream,
-        resources: PdfDict,
-        ctm: Matrix,
-        depth: int,
-        *,
-        clip_bbox: Rectangle | None = None,
-        form_bbox_operand: object = None,
-        group_alpha: float | None = None,
-        stream_key: StreamKey | None = None,
-    ) -> ContentStreamFrame | None:
-        if self.is_reentrant(stream, stream_key, depth):
-            return None
-        return super().queue(
-            stream,
-            resources,
-            ctm,
-            depth,
-            clip_bbox=clip_bbox,
-            form_bbox_operand=form_bbox_operand,
-            group_alpha=group_alpha,
-            stream_key=stream_key,
-        )
+    def reject_reentry(self, frame: ContentStreamFrame) -> bool:
+        return True
 
     def enter(self, frame: ContentStreamFrame) -> bool:
-        if self.is_reentrant(frame.stream, frame.stream_key, frame.depth):
+        if not super().enter(frame):
             return False
         # A stream starts under its own clip, group alpha and state, and on
         # the way out the caller's come back: either way the paint is stale.
         self.state.shared_glyph_paint = None
         self.state.text_layout = None
-        return super().enter(frame)
+        return True
 
     def exit(self, frame: ContentStreamFrame) -> None:
         try:
