@@ -95,7 +95,7 @@ class Page(PdfPageObject):
     def __init__(
         self,
         document: StructuredState,
-        page: Any,
+        page: StructuredPage,
         media_box: tuple[Decimal, Decimal, Decimal, Decimal] | None = None,
     ) -> None:
         super().__init__(document, page)
@@ -110,7 +110,7 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
     if document.pdf is None:
         return
     pdf = document.source_pdf
-    raw_data = bytes(pdf.raw_data)
+    raw_data = pdf.raw_data
     trailer_at = raw_data.rfind(b"trailer")
     if trailer_at >= 0:
         trailer = raw_data[trailer_at + 7 :]
@@ -165,7 +165,7 @@ def _raw_indirect_object(pdf: PdfDocument, reference: PdfReference) -> bytes:
         return b""
     if entry.object_stream is None:
         start = entry.offset
-        data = bytes(pdf.raw_data)
+        data = pdf.raw_data
         end = data.find(b"endobj", start)
         return data[start : end if end >= 0 else len(data)]
     pdf.resolver.resolve(reference)
@@ -323,7 +323,6 @@ class Pdf(PdfReader):
         instance.metadata = {}
         instance.trailer = {}
         instance._attachments = Attachments()
-        instance._outlines = []
         instance._source_name = None
         return instance
 
@@ -366,15 +365,6 @@ class Pdf(PdfReader):
                     for index, page in enumerate(pages)
                 ),
             )
-            try:
-                outline = self.outline
-            except KeyError, TypeError, ValueError:
-                outline = []
-            self._outlines = [
-                [item.level + 1, item.title, item.page + 1]
-                for item in outline
-                if item.page is not None
-            ]
             self._attachments = Attachments(
                 {
                     embedded.filename: embedded.data
