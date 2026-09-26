@@ -17,7 +17,7 @@ from core_pdf.impl.graphics_image_samples import (
     convert_components,
     convert_integer_image,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
+from core_pdf.impl.pdf_names import lenient_int
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 ImageDict: TypeAlias = dict[str, object]
@@ -113,4 +113,4 @@ def convert_cmyk(
 
 
 def image_dimension(image_dict: ImageDict, key: str) -> int:
-    return parse_int(image_dict.get(key), 0, python_syntax=True)
+    return lenient_int(image_dict.get(key), 0)

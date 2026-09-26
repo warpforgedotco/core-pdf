@@ -10,6 +10,7 @@ from core_pdf.impl.glyphs import GlyphStyle
 from core_pdf.impl.graphics_color import image_dimension
 from core_pdf.impl.graphics_color_spec import describe_color_space
 from core_pdf.impl.graphics_filter_registry import declared_filter_names
+from core_pdf.impl.pdf_names import lenient_int
 from core_pdf.impl.render_model import (
     DisplayItem,
     DisplayListItem,
@@ -19,7 +20,7 @@ from core_pdf.impl.render_model import (
     is_plain_fill,
     path_paint_fields,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number, parse_int
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
 PATH_PAINT_KINDS = {
@@ -42,9 +43,7 @@ def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
     height = max(0, height)
     image_mask = dictionary.get("ImageMask") is True
     default_bpc = 1 if image_mask else 0
-    bits_per_component = parse_int(
-        dictionary.get("BitsPerComponent"), default_bpc, python_syntax=True
-    )
+    bits_per_component = lenient_int(dictionary.get("BitsPerComponent"), default_bpc)
     bits_per_component = bits_per_component if bits_per_component > 0 else default_bpc
     image_source = data.get("image_source")
     has_soft_mask = (

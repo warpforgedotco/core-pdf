@@ -33,6 +33,7 @@ from core_pdf.impl.graphics_shading import (
     prepare_shading,
 )
 from core_pdf.impl.graphics_soft_masks import image_color_key_mask_is_shape
+from core_pdf.impl.pdf_names import lenient_int
 from core_pdf.impl.render_blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     blend_context,
@@ -97,7 +98,7 @@ from core_pdf_cythonized import (
     stroke_segment_samples,
     supersampled_coverage_plane,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number, parse_int
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_component
@@ -1985,8 +1986,8 @@ class RasterTarget:
         rows = [int(row) for row in bitmap if type(row) is int]
         if not rows:
             return
-        bitmap_h = parse_int(bitmap_height, 0, python_syntax=True) or len(rows)
-        bitmap_w = parse_int(bitmap_width, 0, python_syntax=True) or max(
+        bitmap_h = lenient_int(bitmap_height, 0) or len(rows)
+        bitmap_w = lenient_int(bitmap_width, 0) or max(
             (row.bit_length() for row in rows), default=0
         )
         if bitmap_w <= 0 or bitmap_h <= 0:

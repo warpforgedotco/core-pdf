@@ -36,12 +36,11 @@ from core_pdf.impl.graphics_stream_decoding import (
     decode_one_filter,
     decode_stream_data,
 )
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_names import lenient_int, recover_pdf_name
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_cythonized import interleave_soft_mask
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf_spec.s_08_graphics.color_kernels import (
     decode_sample_values,
     unpack_image_samples,
@@ -271,7 +270,7 @@ def decode_matte(
         ):
             decode = (0, 1)
     elif decoded is not None:
-        bits = parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True)
+        bits = lenient_int(dictionary.get("BitsPerComponent"), 8)
         integers = unpack_image_samples(decoded, bits, width, height, 1)
         maximum = (1 << bits) - 1
     else:
@@ -436,7 +435,7 @@ def decode_image_samples(
     native = decode_stream_image_data(raw, dictionary, chain)
     if native is not None and native.width == width and native.height == height:
         return native
-    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True)
+    bits_per_component = lenient_int(dictionary.get("BitsPerComponent"), 8)
     if bits_per_component == 16:
         try:
             return chain.decoded()
@@ -500,7 +499,7 @@ def decode_pdf_image(
             return None
         array, channels = canonical
         return DecodedRaster(array, width, height, channels)
-    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True)
+    bits_per_component = lenient_int(dictionary.get("BitsPerComponent"), 8)
     if bits_per_component == 16 or image_has_color_key_mask(dictionary):
         try:
             converted_words = convert_integer_image(
@@ -565,8 +564,7 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
         filters = dictionary.get("Filter", ())
         filters = filters if isinstance(filters, (list, tuple)) else (filters,)
         if soft_mask_source.dictionary.get("Matte") is not None and (
-            parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True) == 16
-            or "JPXDecode" in filters
+            lenient_int(dictionary.get("BitsPerComponent"), 8) == 16 or "JPXDecode" in filters
         ):
             try:
                 matte, alpha = decode_matte(source, soft_mask_source)

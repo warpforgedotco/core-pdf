@@ -6,10 +6,11 @@ import math
 from typing import Any
 
 import core_pdf_spec.s_08_graphics.pdf_function as strict
+from core_pdf.impl.pdf_names import lenient_float, lenient_int
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float, parse_int
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float
 from core_pdf_spec.s_08_graphics.pdf_function import (
     PdfFunctionEvaluator,
 )
@@ -86,7 +87,7 @@ def compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
     if not isinstance(source_dictionary, dict):
         raise ValueError("invalid PDF function")
     dictionary = dict(source_dictionary)
-    kind = parse_int(dictionary.get("FunctionType"), -1, python_syntax=True)
+    kind = lenient_int(dictionary.get("FunctionType"), -1)
     dictionary["FunctionType"] = kind
     if kind in {2, 3}:
         dictionary.pop("Range", None)
@@ -96,12 +97,10 @@ def compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             dictionary[name] = values
     if kind == 0:
         dictionary["Order"] = 1
-        dictionary["BitsPerSample"] = parse_int(
-            dictionary.get("BitsPerSample"), 0, python_syntax=True
-        )
+        dictionary["BitsPerSample"] = lenient_int(dictionary.get("BitsPerSample"), 0)
         sizes = dictionary.get("Size")
         if isinstance(sizes, (list, tuple)):
-            sizes = tuple(parse_int(value, 0, python_syntax=True) or 0 for value in sizes)
+            sizes = tuple(lenient_int(value, 0) or 0 for value in sizes)
             dictionary["Size"] = sizes
             domain = dictionary.get("Domain")
             if isinstance(domain, (list, tuple)):
@@ -111,8 +110,8 @@ def compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             for index, size in enumerate(sizes):
                 lower, upper = 0.0, float(size - 1)
                 if isinstance(raw_encode, (list, tuple)) and len(raw_encode) >= len(sizes) * 2:
-                    parsed_lower = parse_float(raw_encode[index * 2], None, python_syntax=True)
-                    parsed_upper = parse_float(raw_encode[index * 2 + 1], None, python_syntax=True)
+                    parsed_lower = lenient_float(raw_encode[index * 2], None)
+                    parsed_upper = lenient_float(raw_encode[index * 2 + 1], None)
                     if parsed_lower is not None and parsed_upper is not None:
                         lower, upper = parsed_lower, parsed_upper
                 encodes.extend((lower, upper))
@@ -139,7 +138,7 @@ def compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
         if dictionary.get("N") is None:
             dictionary["N"] = 1.0
         else:
-            dictionary["N"] = parse_float(dictionary["N"], None, python_syntax=True)
+            dictionary["N"] = lenient_float(dictionary["N"], None)
         c0 = list(number_array(dictionary.get("C0")) or (0.0,))
         c1 = list(number_array(dictionary.get("C1")) or (1.0,))
         count = max(len(c0), len(c1))

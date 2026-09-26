@@ -6,7 +6,7 @@ from typing import Any
 
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_names import lenient_float, lenient_int, recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.recovery_objects import PdfObjectStream
 from core_pdf.impl.recovery_text_strings import decode_pdf_text_string
@@ -23,10 +23,6 @@ from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
-)
-from core_pdf_spec.s_07_syntax_primitives.coercion import (
-    parse_float,
-    parse_int,
 )
 from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules
 
@@ -166,13 +162,13 @@ class ObjectResolver(SyntaxResolver):
         return None
 
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
-        return parse_float(self.resolve(value), default=default, python_syntax=True)
+        return lenient_float(self.resolve(value), default)
 
     def resolve_name(self, value: object) -> str | None:
         return recover_pdf_name(resolve_reference_chain(value, self.resolve))
 
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
-        return parse_int(self.resolve(value), default, python_syntax=True)
+        return lenient_int(self.resolve(value), default)
 
     def resolve_box(
         self, value: object, *, python_syntax: bool = True
