@@ -196,21 +196,10 @@ class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
             compose_packed_bitmap_region(region, bitmap, self.image, self.page_info)
 
 
-def decode(
-    call: Callable[..., numpy.ndarray[Any, Any]], *args: Any, **kwargs: Any
-) -> numpy.ndarray[Any, Any]:
-    try:
-        return call(*args, **kwargs)
-    except codec_backends.CodecParseError as exc:
-        raise FilterParseError(str(exc)) from exc
-    except codec_backends.CodecUnsupportedError as exc:
-        raise FilterUnsupportedError(str(exc)) from exc
-
-
 def decode_jpeg_image(
     data: bytes | memoryview, *, out: numpy.ndarray[Any, Any] | None = None
 ) -> numpy.ndarray[Any, Any]:
-    return decode(codec_backends.decode_jpeg_image, data, out=out)
+    return codec_backends.decode_jpeg_image(data, out=out)
 
 
 def decode_jpx_image(
@@ -219,9 +208,7 @@ def decode_jpx_image(
     out: numpy.ndarray[Any, Any] | None = None,
     preserve_precision: bool = False,
 ) -> numpy.ndarray[Any, Any]:
-    return decode(
-        codec_backends.decode_jpx_image, data, out=out, preserve_precision=preserve_precision
-    )
+    return codec_backends.decode_jpx_image(data, out=out, preserve_precision=preserve_precision)
 
 
 def decode_jpeg(data: bytes, parms: object) -> bytes:
@@ -235,8 +222,7 @@ def decode_jpx(data: bytes, parms: object) -> bytes:
 def decode_ccitt_fax_image(
     data: bytes | memoryview, parms: FilterParams, *, out: numpy.ndarray[Any, Any] | None = None
 ) -> numpy.ndarray[Any, Any]:
-    array = decode(
-        codec_backends.decode_ccitt_fax_image,
+    array = codec_backends.decode_ccitt_fax_image(
         data,
         width=parms.columns if parms.has_columns else 1728,
         height=parms.rows,

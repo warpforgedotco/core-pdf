@@ -11,13 +11,7 @@ from typing import NoReturn
 import imagecodecs
 import numpy
 
-
-class CodecParseError(ValueError):
-    pass
-
-
-class CodecUnsupportedError(ValueError):
-    pass
+from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 
 
 def env_int(name: str, default: int) -> int:
@@ -38,14 +32,14 @@ def raise_codec_error(
     name: str,
 ) -> NoReturn:
     if not data:
-        raise CodecParseError(f"invalid {name} stream") from exc
+        raise FilterParseError(f"invalid {name} stream") from exc
     try:
         valid = bool(check(data))
     except Exception:
         valid = False
     if not valid:
-        raise CodecParseError(f"invalid {name} stream") from exc
-    raise CodecUnsupportedError(f"unsupported {name} stream") from exc
+        raise FilterParseError(f"invalid {name} stream") from exc
+    raise FilterUnsupportedError(f"unsupported {name} stream") from exc
 
 
 def normalize_imagecodecs_array(
@@ -57,11 +51,11 @@ def normalize_imagecodecs_array(
 ) -> numpy.ndarray:
     array = numpy.asarray(decoded)
     if array.ndim not in {2, 3}:
-        raise CodecUnsupportedError(f"{name} decoder returned an unsupported shape")
+        raise FilterUnsupportedError(f"{name} decoder returned an unsupported shape")
     if array.dtype.kind not in ({"u", "i", "f"} if allow_float else {"u", "i"}):
-        raise CodecUnsupportedError(f"{name} decoder returned an unsupported dtype")
+        raise FilterUnsupportedError(f"{name} decoder returned an unsupported dtype")
     if array.ndim == 3 and array.shape[2] <= 0:
-        raise CodecUnsupportedError(f"{name} decoder returned zero channels")
+        raise FilterUnsupportedError(f"{name} decoder returned zero channels")
     if preserve_uint16 and array.dtype == numpy.uint16:
         return numpy.ascontiguousarray(array)
     if array.dtype != numpy.uint8:
@@ -140,7 +134,7 @@ def decode_ccitt_fax_image(
         raise_codec_error(data, exc, check=decoder_check, name="CCITT")
     array = numpy.asarray(decoded)
     if array.ndim != 2 or array.shape[1] != width or array.dtype != numpy.uint8:
-        raise CodecUnsupportedError("CCITT decoder returned an unsupported image")
+        raise FilterUnsupportedError("CCITT decoder returned an unsupported image")
     return array
 
 
