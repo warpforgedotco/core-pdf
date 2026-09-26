@@ -67,3 +67,17 @@ def test_edges_past_the_image_are_rejected():
     grid = numpy.zeros((2, 2, 1), dtype=numpy.uint8)
     with pytest.raises(ValueError, match="past the image"):
         box_downsample_blocks(grid, numpy.array([0, 3]), numpy.array([0, 2]))
+
+
+@pytest.mark.parametrize("channels", [1, 2, 3, 4, 5])
+def test_packed_rows_sum_as_strided_ones_do(channels):
+    rng = numpy.random.default_rng(channels)
+    grid = rng.integers(0, 256, size=(37, 53, channels), dtype=numpy.uint8)
+    padded = numpy.zeros((37, 53, channels + 1), dtype=numpy.uint8)
+    padded[:, :, :channels] = grid
+    strided = padded[:, :, :channels]
+    rows = (numpy.arange(8, dtype=numpy.int64) * 37) // 7
+    columns = (numpy.arange(12, dtype=numpy.int64) * 53) // 11
+    assert numpy.array_equal(
+        box_downsample_blocks(grid, rows, columns), box_downsample_blocks(strided, rows, columns)
+    )
