@@ -13,11 +13,11 @@ from __future__ import annotations
 from typing import Protocol
 
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.fonts_decoder import normalized_base_font_name
 from core_pdf.impl.fonts_font_program import (
     TrueTypeFontProgram,
     cached_truetype_program,
 )
-from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
@@ -67,8 +67,10 @@ def find_companion_font(
         fobj = document.resolve(fref)
         if not isinstance(fobj, dict):
             continue
-        comp_base = recover_strip_subset_tag(
-            recover_pdf_name(document.resolve(fobj.get("BaseFont"))) or ""
+        # base_name is never empty, so a font with no name (None) is skipped
+        # as one named "" was.
+        comp_base = normalized_base_font_name(
+            recover_pdf_name(document.resolve(fobj.get("BaseFont")))
         )
         if comp_base != base_name:
             continue
@@ -140,7 +142,7 @@ def detect_ligature_overrides(
     except ValueError:
         return {}
 
-    base_name = recover_strip_subset_tag(recover_pdf_name(font_obj.get("BaseFont")) or "")
+    base_name = normalized_base_font_name(recover_pdf_name(font_obj.get("BaseFont")))
     if not base_name:
         return {}
 
