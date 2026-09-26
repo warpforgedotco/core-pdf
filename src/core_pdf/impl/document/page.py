@@ -14,10 +14,9 @@ from core_pdf.impl.capture.page import (
 from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture.recording import TextState
 from core_pdf.impl.document.page_links import (
-    link_target_direct,
-    link_target_resolved,
+    goto_action_destination,
+    link_target,
     resolve_annotation_dict,
-    resolve_destination_value,
 )
 from core_pdf.impl.document.records import RawAnnotation, RawLink
 from core_pdf.impl.document.recovery.resolver import resolve_resource_dict
@@ -151,12 +150,8 @@ class PdfPage:
             action: object = annot.get("A")
             if isinstance(action, PdfReference):
                 action = self.document.resolver.resolve(action)
-            if (
-                dest is None
-                and isinstance(action, dict)
-                and self.document.resolver.resolve_name(action.get("S")) == "GoTo"
-            ):
-                dest = action.get("D")
+            if dest is None:
+                dest = goto_action_destination(self.document.resolver, action)
 
             results.append(
                 RawAnnotation(
@@ -195,11 +190,8 @@ class PdfPage:
             link_type = None
             url = None
             if isinstance(action, dict):
-                raw_type = action.get("S")
-                link_type = resolver.resolve_name(raw_type)
-                url = link_target_direct(action, link_type)
-                if url is None:
-                    url = link_target_resolved(resolver, action, link_type)
+                link_type = resolver.resolve_name(action.get("S"))
+                url = link_target(resolver, action, link_type)
 
             records.append(
                 RawLink(
@@ -509,11 +501,3 @@ class PdfPage:
             annotations=annotations,
             semantic_context=self.document.resolver.semantic_context,
         )
-
-
-__all__ = (
-    "link_target_direct",
-    "link_target_resolved",
-    "resolve_annotation_dict",
-    "resolve_destination_value",
-)

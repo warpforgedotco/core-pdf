@@ -61,9 +61,18 @@ WTPDF_PROFILES = {
 }
 
 
+def find_pdf_header(data: PdfByteBuffer) -> int:
+    """Where the %PDF- header starts within the first 1024 bytes, or -1."""
+    return data.find(b"%PDF-", 0, 1024)
+
+
+def local_name(tag: str) -> str:
+    """An XML tag or attribute name without its {namespace}."""
+    return tag.rsplit("}", 1)[-1]
+
+
 def discover_header_standards(data: PdfByteBuffer) -> DocumentStandards:
-    prefix = bytes(data[:1024])
-    offset = prefix.find(b"%PDF-")
+    offset = find_pdf_header(data)
     if offset < 0:
         return DocumentStandards(
             diagnostics=(StandardsDiagnostic("missing-header", "PDF header is missing", "header"),)
@@ -96,6 +105,16 @@ def discover_header_standards(data: PdfByteBuffer) -> DocumentStandards:
 def resolve_catalog(resolver: PdfValueResolver, trailer: PdfDict) -> PdfDict | None:
     value = resolve_reference_chain(trailer.get("Root"), resolver.resolve)
     return value if isinstance(value, dict) else None
+
+
+def catalog_version(resolver: PdfValueResolver, trailer: PdfDict) -> PdfVersion | None:
+    """The version the trailer's catalog declares; ValueError if it has no catalog."""
+    catalog = resolver.resolve(trailer.get("Root"))
+    if not isinstance(catalog, dict):
+        raise ValueError("missing catalog")
+    if "Version" not in catalog:
+        return None
+    return parse_catalog_version(resolver.resolve(catalog["Version"]))
 
 
 def discover_document_standards(
@@ -171,13 +190,7 @@ def bootstrap_security_context(
 ) -> SemanticContext | None:
     resolver = VersionProbeResolver(data, xref)
     try:
-        catalog = resolver.resolve(trailer.get("Root"))
-        if not isinstance(catalog, dict):
-            return None
-        catalog = catalog
-        version = None
-        if "Version" in catalog:
-            version = parse_catalog_version(resolver.resolve(catalog["Version"]))
+        version = catalog_version(resolver, trailer)
         current = replace(
             header, effective_version=effective_pdf_version(header.header_version, version)
         )
@@ -336,17 +349,13 @@ def preserve_historical_version(
 
     merged: dict[int, PdfXRefEntry] = {}
     floor = standards.effective_version
+    resolver_type = VersionProbeResolver if version_probe else ObjectResolver
     for revision in reversed(sections):
         overlay_xref_entries(merged, revision.entries)
-        resolver_type = VersionProbeResolver if version_probe else ObjectResolver
         resolver = resolver_type(data, merged, decipher=decipher)
         try:
-            catalog = resolver.resolve(revision.trailer.get("Root"))
-            if not isinstance(catalog, dict):
-                raise ValueError("missing historical catalog")
-            catalog = catalog
-            if "Version" in catalog:
-                version = parse_catalog_version(resolver.resolve(catalog["Version"]))
+            version = catalog_version(resolver, revision.trailer)
+            if version is not None:
                 floor = effective_pdf_version(floor, version)
         except PdfError, ValueError, RecursionError:
             diagnostics.append(
@@ -464,7 +473,7 @@ def profile_claim(
     fields: dict[str, str] = {}
     conflicting = False
     for key, value in properties:
-        name = key.rsplit("}", 1)[-1]
+        name = local_name(key)
         if name in fields and fields[name] != value:
             conflicting = True
         fields[name] = value

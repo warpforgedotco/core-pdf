@@ -21,6 +21,7 @@ import numpy
 from core_pdf.impl.document.fields import collect_field_records
 from core_pdf.impl.document.metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.document.page import PAGE_INHERITED_KEYS, PdfPage
+from core_pdf.impl.document.page_links import goto_action_destination
 from core_pdf.impl.document.page_tree import (
     MAX_PAGE_TREE_DEPTH,
     infer_page_tree_node_type,
@@ -42,6 +43,7 @@ from core_pdf.impl.document.standards import (
     discover_document_standards,
     discover_header_standards,
     discover_profile_claims,
+    find_pdf_header,
     preserve_historical_version,
 )
 from core_pdf.impl.document.structure import StructureTree
@@ -1062,11 +1064,9 @@ class PdfDocument(Generic[PageT]):
             yield page_index, page_objects[page_index]
 
     def iter_outlines(self) -> list[RawOutlineItem]:
-        outlines = self.resolver.resolve(self.catalog().get("Outlines"))
+        outlines = self.catalog_dict("Outlines")
         if outlines is None:
             return []
-        if not isinstance(outlines, dict):
-            raise ValueError("invalid Outlines dictionary")
         first = self.resolver.resolve(outlines.get("First"))
         if first is None:
             return []
@@ -1106,12 +1106,9 @@ class PdfDocument(Generic[PageT]):
             title = self.resolver.resolve_str(current.get("Title"))
             dest = current.get("Dest")
             if dest is None:
-                action = self.resolver.resolve(current.get("A"))
-                if (
-                    isinstance(action, dict)
-                    and self.resolver.resolve_name(action.get("S")) == "GoTo"
-                ):
-                    dest = action.get("D")
+                dest = goto_action_destination(
+                    self.resolver, self.resolver.resolve(current.get("A"))
+                )
             try:
                 result.append(
                     RawOutlineItem(
@@ -1390,15 +1387,8 @@ class PdfDocument(Generic[PageT]):
     def discover_widget_field_records(self, existing: list[RawFormField]) -> list[RawFormField]:
         seen_widgets = {id(record.widget) for record in existing if isinstance(record.widget, dict)}
         records: list[RawFormField] = []
-        for page_node in self.iter_recovered_page_nodes():
-            raw_annots = self.resolver.resolve(page_node.inherited_values.get("Annots"))
-            if raw_annots is None:
-                continue
-            annots = raw_annots if isinstance(raw_annots, list) else [raw_annots]
-            for annot_ref in annots:
-                annot = self.resolver.resolve(annot_ref)
-                if not isinstance(annot, dict):
-                    continue
+        for page in self.pages:
+            for annot in page.annotation_dicts():
                 if id(annot) in seen_widgets:
                     continue
                 subtype = self.resolver.resolve_name_or_text(annot.get("Subtype")) or ""
@@ -1487,16 +1477,12 @@ class PdfDocument(Generic[PageT]):
     def build_oc_hidden_layers(self) -> frozenset[str]:
         recover = self.recovery_enabled
         try:
-            catalog = self.catalog()
+            self.catalog()
         except ValueError:
             return frozenset()
-        oc = self.resolver.resolve(catalog.get("OCProperties"))
+        oc = self.catalog_dict("OCProperties", recoverable=True)
         if oc is None:
             return frozenset()
-        if not isinstance(oc, dict):
-            if recover:
-                return frozenset()
-            raise ValueError("invalid OCProperties dictionary")
         ocgs = self.resolver.resolve(oc.get("OCGs"))
         if ocgs is None:
             return frozenset()
@@ -1686,20 +1672,12 @@ class PdfDocument(Generic[PageT]):
             entry = entries[index]
             if self.xref_entry_header_nearby(key, entry):
                 continue
-            if header_offset and self.xref_entry_matches_header(
-                key,
-                PdfXRefEntry(
-                    entry.offset + header_offset,
-                    entry.generation,
-                    entry.in_use,
-                    object_stream=entry.object_stream,
-                    index_in_stream=entry.index_in_stream,
-                ),
-            ):
-                self.xref[key] = entry._replace(offset=entry.offset + header_offset)
-                repaired = True
-                continue
             if header_offset:
+                shifted = entry._replace(offset=entry.offset + header_offset)
+                if self.xref_entry_matches_header(key, shifted):
+                    self.xref[key] = shifted
+                    repaired = True
+                    continue
                 shifted_offset = self.find_xref_entry_header(
                     key,
                     entry.offset + header_offset,
@@ -1725,9 +1703,7 @@ class PdfDocument(Generic[PageT]):
             self.xref_was_recovered = True
 
     def pdf_header_offset(self) -> int:
-        data = self.raw_data
-        offset = data.find(b"%PDF-", 0, min(len(data), 1024))
-        return max(0, offset)
+        return max(0, find_pdf_header(self.raw_data))
 
     def find_xref_entry_header(self, key: int, offset: int) -> int | None:
         data = self.raw_data

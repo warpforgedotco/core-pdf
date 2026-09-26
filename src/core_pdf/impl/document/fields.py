@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal, Protocol, TypeAlias
 
 from core_pdf.impl.document.records import RawFormField
-from core_pdf.impl.document.recovery.text_strings import decode_pdf_text_string
+from core_pdf.impl.document.recovery.text_strings import parse_text_string
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_document.fields import (
     field_children,
@@ -38,12 +38,8 @@ def field_value_text(resolver: FieldResolver, value: object) -> str:
                 continue
             case PdfName(value=item_text):
                 pass
-            case PdfString(data=data):
-                item_text = decode_pdf_text_string(data).strip()
-            case bytes():
-                item_text = decode_pdf_text_string(current).strip()
-            case str():
-                item_text = current.strip()
+            case PdfString() | bytes() | str():
+                item_text = (parse_text_string(current) or "").strip()
             # bool is an int, and "true"/"false" are not field text
             case int() | float() if type(current) is not bool:
                 item_text = str(current)

@@ -7,7 +7,7 @@ from core_pdf.impl.document.recovery.text_strings import (
     parse_text_string,
 )
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
-from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 
 
 def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDict | None:
@@ -16,21 +16,21 @@ def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDic
     return value if isinstance(value, dict) else None
 
 
-def link_target_direct(action: PdfDict, link_type: str | None) -> str | None:
-    if link_type == "URI":
-        return parse_text_string(action.get("URI"))
-    if link_type == "GoTo":
-        return parse_text_string(action.get("D"))
-    return None
-
-
-def link_target_resolved(
-    resolver: PdfValueResolver, action: PdfDict, link_type: str | None
-) -> str | None:
+def link_target(resolver: PdfValueResolver, action: PdfDict, link_type: str | None) -> str | None:
+    """A URI action's URI or a GoTo action's destination, as text."""
     key = "URI" if link_type == "URI" else "D" if link_type == "GoTo" else None
     if key is None:
         return None
-    return resolver.resolve_str(action.get(key))
+    target = action.get(key)
+    text = parse_text_string(target)
+    return resolver.resolve_str(target) if text is None else text
+
+
+def goto_action_destination(resolver: PdfValueResolver, action: object) -> PdfObject:
+    """The destination of a GoTo action dictionary, or None."""
+    if isinstance(action, dict) and resolver.resolve_name(action.get("S")) == "GoTo":
+        return action.get("D")
+    return None
 
 
 def resolve_destination_value(resolver: PdfValueResolver, value: object, depth: int = 0) -> object:
@@ -56,8 +56,8 @@ def resolve_destination_value(resolver: PdfValueResolver, value: object, depth: 
 
 
 __all__ = (
-    "link_target_direct",
-    "link_target_resolved",
+    "goto_action_destination",
+    "link_target",
     "resolve_annotation_dict",
     "resolve_destination_value",
 )
