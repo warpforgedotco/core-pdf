@@ -323,12 +323,6 @@ class RecoveringTextState(ContentInterpreter):
         except (TypeError, ValueError) as error:
             return self.reject(error, "integer-operand", None)
 
-    def op_BX(self, operands: ContentOperands, depth: int) -> None:
-        self.compatibility_depth += 1
-
-    def op_EX(self, operands: ContentOperands, depth: int) -> None:
-        self.compatibility_depth = max(0, self.compatibility_depth - 1)
-
     def append_cubic_curve(
         self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float
     ) -> None:

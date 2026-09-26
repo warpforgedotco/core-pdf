@@ -100,3 +100,20 @@ def test_a_recovering_hook_clamps_line_parameters(
     # The clamp keeps the sign of a zero exact: recovery never stores -0.0.
     assert str(result) == str(expected)
     assert [context for context, _message in state.rejected] == rejected
+
+
+def test_the_default_hook_refuses_unmatched_ex() -> None:
+    state = make_interpreter()
+    with pytest.raises(PdfParseError, match="unmatched EX"):
+        state.op_EX((), 0)
+
+
+def test_a_recovering_hook_ignores_unmatched_ex() -> None:
+    state = recovering()
+    state.op_BX((), 0)
+    state.op_EX((), 0)
+    state.op_EX((), 0)
+    assert state.compatibility_depth == 0
+    state.op_BX((), 0)
+    assert state.compatibility_depth == 1
+    assert [context for context, _message in state.rejected] == ["compatibility"]

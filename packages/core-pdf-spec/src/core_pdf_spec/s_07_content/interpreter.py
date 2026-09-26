@@ -197,12 +197,10 @@ class ContentInterpreter:
         if handler is None:
             raise PdfParseError(f"unsupported content operator: {name}")
         validate_content_operands(name, operands)
-        if name == "BX":
-            self.compatibility_depth += 1
-        elif name == "EX":
-            if not self.compatibility_depth:
-                raise PdfParseError("unmatched EX operator")
-            self.compatibility_depth -= 1
+        if override is not None and name in {"BX", "EX"}:
+            # op_BX and op_EX own the compatibility depth; a handler installed
+            # in their place observes the scope without having to keep it.
+            self.default_handlers[name](operands, depth)
         if name in {"l", "c", "v", "y"} and self.current_point is None:
             raise PdfParseError("path operator has no current point")
         if name == "EMC" and not self.marked_content_stack:
@@ -994,10 +992,14 @@ class ContentInterpreter:
         return self.named_value(value, allow_text=True)
 
     def op_BX(self, operands: ContentOperands, depth: int) -> None:
-        pass
+        self.compatibility_depth += 1
 
     def op_EX(self, operands: ContentOperands, depth: int) -> None:
-        pass
+        if not self.compatibility_depth:
+            # Recovery leaves the depth at zero, as if the EX were absent.
+            self.reject(PdfParseError("unmatched EX operator"), "compatibility", None)
+            return
+        self.compatibility_depth -= 1
 
     def op_d0(self, operands: ContentOperands, depth: int) -> None:
         self.type3_uncolored = False
