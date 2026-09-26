@@ -27,7 +27,12 @@ from core_pdf.impl.graphics.icc_profiles import (
     srgb_profile,
 )
 from core_pdf.impl.scalars import parse_float
-from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
+from core_pdf_cythonized import (
+    code_presence,
+    distinct_uint16_rows,
+    gather_uint8_codes,
+    gather_uint8_rows,
+)
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -303,19 +308,19 @@ def convert_distinct_codes(
     """
     # Sized by the codes present rather than by `maximum`: damaged data can
     # hold samples above it, which decode the same way here as elsewhere.
-    size = max(maximum, int(codes.max())) + 1
-    present = numpy.zeros(size, dtype=numpy.bool_)
-    present[codes] = True
-    used = numpy.flatnonzero(present)
+    codes = numpy.ascontiguousarray(codes, dtype=numpy.uint16)
+    present, largest = code_presence(codes)
+    size = max(maximum, largest) + 1
+    used = numpy.flatnonzero(present[:size])
     values = decode_sample_values(used.reshape(-1, 1), pairs, maximum)
     converted = convert_components(values, space, rendering=rendering)
-    # A table indexed by the code itself, so the scatter is one take: no
-    # per-pixel array of positions, and take along an axis runs about twice
-    # as fast as the equivalent fancy index (101 ms against 235 ms over 33
-    # million codes).
+    # A table indexed by the code itself, so the scatter is one gather with
+    # no per-pixel array of positions.
     table = numpy.zeros((size, *converted.shape[1:]), dtype=converted.dtype)
     table[used] = converted
-    return numpy.take(table, codes, axis=0)
+    if table.dtype != numpy.uint8 or table.ndim != 2:
+        return numpy.take(table, codes, axis=0)
+    return gather_uint8_codes(table, codes)
 
 
 # Below this many pixels a multi-component image converts pixel by pixel.

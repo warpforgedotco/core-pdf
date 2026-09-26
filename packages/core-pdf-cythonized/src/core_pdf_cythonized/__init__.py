@@ -45,7 +45,12 @@ from core_pdf_cythonized._coverage import (
     signed_area_coverage,
 )
 from core_pdf_cythonized._coverage_blend import blend_coverage_counts
-from core_pdf_cythonized._distinct_rows import distinct_uint16_rows, gather_uint8_rows
+from core_pdf_cythonized._distinct_rows import (
+    code_presence,
+    distinct_uint16_rows,
+    gather_uint8_codes,
+    gather_uint8_rows,
+)
 from core_pdf_cythonized._downsample import box_downsample_blocks
 from core_pdf_cythonized._glyphs import horizontal_glyph_geometry
 from core_pdf_cythonized._jbig2 import decode_arithmetic_generic_template0
@@ -78,6 +83,7 @@ __all__ = (
     "alpha_channel",
     "blend_coverage_counts",
     "blend_normal_alpha_array_numpy",
+    "code_presence",
     "box_downsample_blocks",
     "composite_elementary_knockout",
     "composite_elementary_normal",
@@ -93,6 +99,7 @@ __all__ = (
     "fill_glyph_knockout",
     "fill_rect_coverage",
     "flatten_path_commands",
+    "gather_uint8_codes",
     "gather_uint8_rows",
     "glyph_coverage_plane",
     "horizontal_glyph_geometry",

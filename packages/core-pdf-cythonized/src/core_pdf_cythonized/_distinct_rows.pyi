@@ -11,3 +11,10 @@ def distinct_uint16_rows(samples: Rows, limit: int) -> tuple[Rows, Indices] | No
 def gather_uint8_rows(
     table: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], indices: Indices
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]: ...
+def code_presence(
+    codes: numpy.ndarray[Any, numpy.dtype[numpy.uint16]],
+) -> tuple[numpy.ndarray[Any, numpy.dtype[numpy.bool_]], int]: ...
+def gather_uint8_codes(
+    table: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    codes: numpy.ndarray[Any, numpy.dtype[numpy.uint16]],
+) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]: ...

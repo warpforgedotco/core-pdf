@@ -15,6 +15,13 @@ rows, when converting everything directly is cheaper than the scatter.
 gather_uint8_rows is the scatter, taking the uint32 indices directly rather
 than having numpy widen them to intp first.
 
+code_presence and gather_uint8_codes are the same two steps for a
+one-component image (core_pdf.impl.graphics.image_samples.
+convert_distinct_codes), whose samples are already codes into a table of at
+most 65,536 entries: which codes occur, and the converted row of each pixel's
+code. numpy marked the codes with a fancy-indexed scatter and gathered with
+take, about 5.7 ns a sample over PyMuPDF test_3806's 43 million.
+
 Nothing here is arithmetic on colour values: rows are compared bit for bit,
 and lcms still does every conversion.
 """
@@ -25,7 +32,7 @@ from libc.string cimport memcpy
 
 import numpy
 
-__all__ = ("distinct_uint16_rows", "gather_uint8_rows")
+__all__ = ("code_presence", "distinct_uint16_rows", "gather_uint8_codes", "gather_uint8_rows")
 
 cdef uint64_t MULTIPLIER = 0x9E3779B97F4A7C15ULL
 
@@ -164,4 +171,54 @@ def gather_uint8_rows(const unsigned char[:, ::1] table, const uint32_t[::1] ind
             memcpy(&out[i, 0], &table[row, 0], columns)
     if out_of_range:
         raise IndexError("row index out of range")
+    return output
+
+
+def code_presence(const uint16_t[::1] codes):
+    """(present, largest): which of the 65,536 codes occur, and the largest, or -1 if none."""
+    present = numpy.zeros(65536, dtype=numpy.bool_)
+    cdef unsigned char[::1] marks = present.view(numpy.uint8)
+    cdef Py_ssize_t i, count = codes.shape[0]
+    cdef int largest = -1
+    cdef uint16_t code
+    with nogil:
+        for i in range(count):
+            code = codes[i]
+            marks[code] = 1
+            if code > largest:
+                largest = code
+    return present, largest
+
+
+def gather_uint8_codes(const unsigned char[:, ::1] table, const uint16_t[::1] codes):
+    """table[codes], row by row, into a new (len(codes), columns) uint8 array."""
+    cdef Py_ssize_t count = codes.shape[0]
+    cdef Py_ssize_t columns = table.shape[1]
+    cdef Py_ssize_t available = table.shape[0]
+    output = numpy.empty((count, columns), dtype=numpy.uint8)
+    cdef unsigned char[:, ::1] out = output
+    cdef Py_ssize_t i, k
+    cdef uint16_t row
+    cdef bint out_of_range = False
+    if count == 0 or columns == 0:
+        return output
+    cdef const unsigned char *source = &table[0, 0]
+    cdef unsigned char *target = &out[0, 0]
+    with nogil:
+        for i in range(count):
+            row = codes[i]
+            if row >= available:
+                out_of_range = True
+                break
+            if columns == 3:
+                target[3 * i] = source[3 * row]
+                target[3 * i + 1] = source[3 * row + 1]
+                target[3 * i + 2] = source[3 * row + 2]
+            elif columns == 1:
+                target[i] = source[row]
+            else:
+                for k in range(columns):
+                    target[columns * i + k] = source[columns * row + k]
+    if out_of_range:
+        raise IndexError("code out of range")
     return output
