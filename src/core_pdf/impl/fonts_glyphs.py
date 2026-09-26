@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import unicodedata
-from collections.abc import Mapping
 from functools import lru_cache
 
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_adobe_fonts.agl.mapping import glyph_component_to_unicode
-from core_adobe_fonts.agl.zapf_dingbats import ZAPF_DINGBATS_GLYPHS
 
 HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 ADOBE_PUA_GLYPH_ALIASES = {
@@ -136,7 +134,6 @@ def glyph_name_to_unicode(name: str) -> str:
     if not name or name.startswith("."):
         return ""
 
-    full = GLYPH_DATA
     original_name = name
     name = name.split(".", 1)[0]
     alias = TEX_GLYPH_ALIASES.get(name)
@@ -148,7 +145,7 @@ def glyph_name_to_unicode(name: str) -> str:
         return name
     if "_" in name:
         raw_parts = name.split("_")
-        parts = [glyph_name_part_to_unicode(part, full) for part in raw_parts]
+        parts = [glyph_name_part_to_unicode(part) for part in raw_parts]
         if any(
             mapped == "" or "_" in mapped or (mapped == raw and len(raw) != 1)
             for raw, mapped in zip(raw_parts, parts, strict=True)
@@ -156,23 +153,15 @@ def glyph_name_to_unicode(name: str) -> str:
             return original_name
         return "".join(parts)
 
-    return glyph_name_part_to_unicode(name, full, unknown_name=original_name)
+    return glyph_name_part_to_unicode(name, unknown_name=original_name)
 
 
-def glyph_name_part_to_unicode(
-    name: str, full: Mapping[str, str], *, unknown_name: str | None = None
-) -> str:
+def glyph_name_part_to_unicode(name: str, *, unknown_name: str | None = None) -> str:
     result = ADOBE_PUA_GLYPH_ALIASES.get(name)
     if result is not None:
         return result
-    result = ZAPF_DINGBATS_GLYPHS.get(name)
-    if result is not None:
-        return result
-    result = glyph_component_to_unicode(name)
+    result = glyph_component_to_unicode(name, zapf_dingbats=True)
     if result:
-        return result
-    result = full.get(name)
-    if result is not None:
         return result
     result = TEX_GLYPH_ALIASES.get(name)
     if result is not None:

@@ -22,6 +22,7 @@ from core_pdf_spec.s_09_fonts.cmap_tounicode import (
     decode_utf16be,
 )
 from core_pdf_spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap as PdfToUnicodeCMap
+from core_pdf_spec.s_09_fonts.font_program_truetype import is_unicode_scalar
 
 
 def decode_utf16be_text(data: bytes) -> str:
@@ -285,9 +286,7 @@ MAX_CMAP_RANGE_SPAN = 65536
 
 
 def unicode_scalar_or_replacement(codepoint: int) -> str:
-    if 0 <= codepoint < 0x110000 and not 0xD800 <= codepoint <= 0xDFFF:
-        return chr(codepoint)
-    return "\ufffd"
+    return chr(codepoint) if is_unicode_scalar(codepoint) else "\ufffd"
 
 
 def expand_range(start: int, end: int, source_hex_len: int, base_dst: str) -> dict[bytes, str]:
