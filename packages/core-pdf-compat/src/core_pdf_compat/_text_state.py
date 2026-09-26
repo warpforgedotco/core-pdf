@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Iterator, Mapping, Sequence
 
 from core_pdf.impl.fonts.helpers import build_decode_table
 from core_pdf.impl.text import is_neutral_character, is_rtl_character
 from core_pdf_spec.s_08_graphics.matrix import multiply_affine
+
+IDENTITY_MATRIX = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+EMBEDDED_FONT_PROGRAM_KEYS = ("FontFile", "FontFile2", "FontFile3")
 
 PREDEFINED_ENCODING_CODECS = {
     "Identity-H": "utf-16-be",
@@ -125,3 +128,108 @@ def ensure_line_break(output_parts: list[str], output_last: str) -> str:
         output_parts.append("\n")
         return "\n"
     return output_last
+
+
+def embedded_font_program_count(descriptor: Mapping[object, object]) -> int:
+    return sum(descriptor.get(key) is not None for key in EMBEDDED_FONT_PROGRAM_KEYS)
+
+
+def type1_encoding_entries(segment: bytes) -> Iterator[tuple[int, str]]:
+    """The code and glyph name of each `dup <code> /<name> put` line, in order.
+
+    segment is the clear text of a Type 1 program after its /Encoding key;
+    lines that are not such an entry, and codes outside a byte, are skipped.
+    """
+    for line in segment.replace(b"\r", b"\n").split(b"\n"):
+        if not line.startswith(b"dup"):
+            continue
+        words = [word for word in line.split(b" ") if word]
+        if len(words) < 3 or (len(words) > 3 and words[3] != b"put"):
+            continue
+        try:
+            code = int(words[1])
+        except ValueError:
+            continue
+        if 0 <= code <= 255:
+            yield code, words[2].removeprefix(b"/").decode("latin-1")
+
+
+class TextMachine[FontT]:
+    """The text and graphics state the legacy text extractors share.
+
+    It holds what pypdf's and LlamaIndex's operator walks keep alike, and
+    runs the operators they treat alike: BT, ET, q, Q, cm and TL. Each facade
+    keeps its own font selection, positioning and showing operators, which
+    differ between them down to the float arithmetic of T*.
+    """
+
+    def __init__(self, fonts: Mapping[str, FontT]) -> None:
+        self.fonts = fonts
+        self.font: FontT | None = None
+        self.font_size = 12.0
+        self.half_space_width = 125.0
+        self.leading = 0.0
+        self.cm = list(IDENTITY_MATRIX)
+        self.tm = list(IDENTITY_MATRIX)
+        self.previous_cm = self.cm.copy()
+        self.previous_tm = self.tm.copy()
+        self.stack: list[tuple[list[float], FontT | None, float, float]] = []
+        self.text = ""
+        self.output_parts: list[str] = []
+        self.output_last = ""
+        self.rtl = False
+        self.accumulated_width = 0.0
+        self.actual_height = 0.0
+
+    def flush(self) -> None:
+        self.text, self.output_last = flush_text(self.output_parts, self.text, self.output_last)
+
+    def positioned(self, string_width: float) -> None:
+        self.text, self.output_last = positioned_text(
+            self.output_parts,
+            self.text,
+            self.output_last,
+            previous_text_matrix=self.previous_tm,
+            previous_current_matrix=self.previous_cm,
+            text_matrix=self.tm,
+            current_matrix=self.cm,
+            line_height=self.actual_height,
+            font_size=self.font_size,
+            space_width=self.half_space_width,
+            string_width=string_width,
+        )
+        self.previous_tm = self.tm.copy()
+        self.previous_cm = self.cm.copy()
+
+    def apply_state_operator(self, operator: str, operands: Sequence[object]) -> bool:
+        """Run operator if it is one both extractors treat alike; say whether it was."""
+        match operator:
+            case "BT":
+                self.tm = list(IDENTITY_MATRIX)
+                self.flush()
+            case "ET":
+                self.flush()
+            case "q":
+                self.stack.append((self.cm.copy(), self.font, self.font_size, self.leading))
+            case "Q":
+                if self.stack:
+                    self.cm, self.font, self.font_size, self.leading = self.stack.pop()
+                else:
+                    self.cm = list(IDENTITY_MATRIX)
+            case "cm":
+                self.flush()
+                try:
+                    values = [float(value) for value in operands[:6]]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                except TypeError, ValueError:
+                    values = []
+                self.cm = (
+                    list(multiply_affine(values, self.cm))
+                    if len(values) == 6
+                    else list(IDENTITY_MATRIX)
+                )
+            case "TL":
+                scale_x = math.hypot(self.tm[0], self.tm[2])
+                self.leading = float(operands[0]) * self.font_size * scale_x if operands else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            case _:
+                return False
+        return True

@@ -12,16 +12,17 @@ from core_pdf.impl.fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfString, Record, frozen_setattr
 from core_pdf_compat._text_state import (
+    IDENTITY_MATRIX,
     PREDEFINED_ENCODING_CODECS,
+    TextMachine,
     append_directional_text,
+    embedded_font_program_count,
     ensure_line_break,
-    flush_text,
     legacy_base_table,
-    positioned_text,
+    type1_encoding_entries,
 )
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     STANDARD_ENCODING,
 )
@@ -34,6 +35,16 @@ LEGACY_GLYPH_ALIASES = {
     "f_f_l": "ﬄ",
     "negationslash": "⁄",
 }
+
+
+def base_encoding_table(name: str | None) -> list[str]:
+    return list(
+        WIN_ANSI_ENCODING
+        if name == "WinAnsiEncoding"
+        else MAC_ROMAN_ENCODING
+        if name == "MacRomanEncoding"
+        else STANDARD_ENCODING
+    )
 
 
 def legacy_glyph_name_to_unicode(name: str) -> str:
@@ -172,45 +183,7 @@ class Font(Record):
         return chunks, width
 
 
-class TextState:
-    def __init__(self, fonts: Mapping[str, Font]) -> None:
-        self.fonts = fonts
-        self.font: Font | None = None
-        self.font_size = 12.0
-        self.half_space_width = 125.0
-        self.leading = 0.0
-        self.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-        self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-        self.previous_cm = self.cm.copy()
-        self.previous_tm = self.tm.copy()
-        self.stack: list[tuple[list[float], Font | None, float, float]] = []
-        self.text = ""
-        self.output_parts: list[str] = []
-        self.output_last = ""
-        self.width = 0.0
-        self.height = 0.0
-        self.rtl = False
-
-    def flush(self) -> None:
-        self.text, self.output_last = flush_text(self.output_parts, self.text, self.output_last)
-
-    def positioned(self, string_width: float) -> None:
-        self.text, self.output_last = positioned_text(
-            self.output_parts,
-            self.text,
-            self.output_last,
-            previous_text_matrix=self.previous_tm,
-            previous_current_matrix=self.previous_cm,
-            text_matrix=self.tm,
-            current_matrix=self.cm,
-            line_height=self.height,
-            font_size=self.font_size,
-            space_width=self.half_space_width,
-            string_width=string_width,
-        )
-        self.previous_tm = self.tm.copy()
-        self.previous_cm = self.cm.copy()
-
+class TextState(TextMachine[Font]):
     def show(self, data: bytes) -> None:
         if self.font is None:
             chunks: tuple[str, ...] = ("�",) * len(data)
@@ -219,8 +192,8 @@ class TextState:
             chunks, width = self.font.decode_parts(data)
         for chunk in chunks:
             self.text, self.rtl = append_directional_text(self.text, self.rtl, chunk)
-        self.width += width * self.font_size
-        self.height = self.font_size
+        self.accumulated_width += width * self.font_size
+        self.actual_height = self.font_size
         self.positioned(0.0)
 
     def insert_space(self) -> None:
@@ -232,15 +205,15 @@ class TextState:
             if self.font is not None
             else 200.0
         )
-        self.width += width * self.font_size
-        self.height = self.font_size
+        self.accumulated_width += width * self.font_size
+        self.actual_height = self.font_size
         self.positioned(0.0)
 
     def show_name(self, value: PdfName) -> None:
         text = f"/{value.value}"
         self.text += text
-        self.width += 250.0 * len(text) * self.font_size
-        self.height = self.font_size
+        self.accumulated_width += 250.0 * len(text) * self.font_size
+        self.actual_height = self.font_size
         self.positioned(0.0)
 
 
@@ -377,21 +350,7 @@ class OperatorTextProjection:
         encoding_parts = clear_text.split(b"/Encoding", 1)
         if len(encoding_parts) != 2:
             return {}
-        result: dict[int, str] = {}
-        for line in encoding_parts[1].replace(b"\r", b"\n").split(b"\n"):
-            if not line.startswith(b"dup"):
-                continue
-            words = [word for word in line.split(b" ") if word]
-            if len(words) < 3 or (len(words) > 3 and words[3] != b"put"):
-                continue
-            try:
-                code = int(words[1])
-                glyph_name = words[2].removeprefix(b"/").decode("latin-1")
-            except ValueError:
-                continue
-            if 0 <= code <= 255:
-                result[code] = glyph_name
-        return result
+        return dict(type1_encoding_entries(encoding_parts[1]))
 
     def type3_interpretable(self, font: Mapping[object, object]) -> bool:
         if font.get("ToUnicode") is not None:
@@ -437,10 +396,7 @@ class OperatorTextProjection:
             descriptor = self.resolver.resolve(owner.get("FontDescriptor"))
             if not isinstance(descriptor, dict):
                 continue
-            embedded_files = sum(
-                descriptor.get(key) is not None for key in ("FontFile", "FontFile2", "FontFile3")
-            )
-            if embedded_files > 1:
+            if embedded_font_program_count(descriptor) > 1:
                 raise ValueError("font descriptor declares more than one embedded font program")
 
     def font_flags(self, font: Mapping[object, object]) -> int:
@@ -538,22 +494,9 @@ class OperatorTextProjection:
             codecs = PREDEFINED_ENCODING_CODECS
             if name in codecs or "-UCS2-" in name:
                 return codecs.get(name, "utf-16-be")
-            table = list(
-                WIN_ANSI_ENCODING
-                if name == "WinAnsiEncoding"
-                else MAC_ROMAN_ENCODING
-                if name == "MacRomanEncoding"
-                else STANDARD_ENCODING
-            )
+            table = base_encoding_table(name)
         elif isinstance(raw_encoding, dict):
-            base = recover_pdf_name(raw_encoding.get("BaseEncoding"))
-            table = list(
-                WIN_ANSI_ENCODING
-                if base == "WinAnsiEncoding"
-                else MAC_ROMAN_ENCODING
-                if base == "MacRomanEncoding"
-                else STANDARD_ENCODING
-            )
+            table = base_encoding_table(recover_pdf_name(raw_encoding.get("BaseEncoding")))
         else:
             return "charmap"
         for code, glyph_name in decoder.differences.items():
@@ -605,37 +548,9 @@ class OperatorTextProjection:
         parsed = list(iter_content_operations(PdfLexer(content)))
         for operator, raw_operands in parsed:
             operands = list(raw_operands)
+            if state.apply_state_operator(operator, operands):
+                continue
             match operator:
-                case "BT":
-                    state.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                    state.flush()
-                case "ET":
-                    state.flush()
-                case "q":
-                    state.stack.append(
-                        (state.cm.copy(), state.font, state.font_size, state.leading)
-                    )
-                case "Q":
-                    if state.stack:
-                        state.cm, state.font, state.font_size, state.leading = state.stack.pop()
-                    else:
-                        state.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                case "cm":
-                    state.flush()
-                    try:
-                        matrix = [float(value) for value in operands[:6]]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                    except TypeError, ValueError:
-                        matrix = []
-                    state.cm = (
-                        list(multiply_affine(matrix, state.cm))
-                        if len(matrix) == 6
-                        else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                    )
-                case "TL":
-                    scale_x = math.hypot(state.tm[0], state.tm[2])
-                    state.leading = (
-                        float(operands[0]) * state.font_size * scale_x if operands else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                    )
                 case "Tf":
                     state.flush()
                     if operands:
@@ -653,27 +568,27 @@ class OperatorTextProjection:
                         state.leading = -ty * state.font_size * scale_x
                     state.tm[4] += tx * state.tm[0] + ty * state.tm[2]
                     state.tm[5] += tx * state.tm[1] + ty * state.tm[3]
-                    state.positioned(state.width / 1000.0)
-                    state.width = 0.0
+                    state.positioned(state.accumulated_width / 1000.0)
+                    state.accumulated_width = 0.0
                 case "Tm":
                     try:
                         matrix = [float(value) for value in operands[:6]]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                     except TypeError, ValueError:
                         matrix = []
-                    state.tm = matrix if len(matrix) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                    state.positioned(state.width / 1000.0)
-                    state.width = 0.0
+                    state.tm = matrix if len(matrix) == 6 else list(IDENTITY_MATRIX)
+                    state.positioned(state.accumulated_width / 1000.0)
+                    state.accumulated_width = 0.0
                 case "T*":
                     state.tm[4] -= state.leading * state.tm[2]
                     state.tm[5] -= state.leading * state.tm[3]
-                    state.positioned(state.width / 1000.0)
-                    state.width = 0.0
+                    state.positioned(state.accumulated_width / 1000.0)
+                    state.accumulated_width = 0.0
                 case "Tj" | "'" | '"':
                     if operator in {"'", '"'}:
                         state.tm[4] -= state.leading * state.tm[2]
                         state.tm[5] -= state.leading * state.tm[3]
-                        state.positioned(state.width / 1000.0)
-                        state.width = 0.0
+                        state.positioned(state.accumulated_width / 1000.0)
+                        state.accumulated_width = 0.0
                     value = (
                         operands[2]
                         if operator == '"' and len(operands) > 2
