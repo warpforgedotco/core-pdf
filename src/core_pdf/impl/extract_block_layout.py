@@ -746,13 +746,6 @@ def column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         if len(block.lines) < 80:
             output.append(block)
             continue
-        alphabetic = 0
-        total = 0
-        for line in block.lines:
-            for character in line.line.text:
-                is_alpha = character.isalpha()
-                alphabetic += is_alpha
-                total += is_alpha or character.isdigit()
         line_starts = numpy.fromiter(
             (line_bbox(line)[0] for line in block.lines), dtype=numpy.float64
         )
@@ -761,7 +754,19 @@ def column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         for start in starts:
             if not clusters or start - clusters[-1] > 40.0:
                 clusters.append(float(start))
-        if len(clusters) < 3 or alphabetic / max(1, total) < 0.45:
+        # The cluster test is the cheap one, so the characters are counted
+        # only for a block that passes it.
+        if len(clusters) < 3:
+            output.append(block)
+            continue
+        alphabetic = 0
+        total = 0
+        for line in block.lines:
+            for character in line.line.text:
+                is_alpha = character.isalpha()
+                alphabetic += is_alpha
+                total += is_alpha or character.isdigit()
+        if alphabetic / max(1, total) < 0.45:
             output.append(block)
             continue
         cluster_values = numpy.asarray(clusters, dtype=numpy.float64)
@@ -794,15 +799,18 @@ def transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[ParsedBloc
         if len(block.lines) < 300:
             output.append(block)
             continue
-        text = " ".join(line.line.text for line in block.lines)
-        numeric = sum(character.isdigit() for character in text)
-        alphanumeric = sum(character.isalnum() for character in text)
         starts = sorted(line_bbox(line)[0] for line in block.lines)
         columns: list[float] = []
         for start in starts:
             if not columns or start - columns[-1] > 8.0:
                 columns.append(start)
-        if numeric / max(1, alphanumeric) < 0.25 or len(columns) < 20:
+        if len(columns) < 20:
+            output.append(block)
+            continue
+        text = " ".join(line.line.text for line in block.lines)
+        numeric = sum(character.isdigit() for character in text)
+        alphanumeric = sum(character.isalnum() for character in text)
+        if numeric / max(1, alphanumeric) < 0.25:
             output.append(block)
             continue
         boxes = numpy.asarray(tuple(line_bbox(line) for line in block.lines))
