@@ -199,7 +199,7 @@ class ObjectResolver(SyntaxResolver):
         return super().resolve_box(value, python_syntax=python_syntax)
 
     def decode_text(self, data: bytes) -> str:
-        return decode_pdf_text_string(data, context=self.semantic_context)
+        return decode_pdf_text_string(data)
 
 
 def resolve_resource_dict(value: object, resolver: PdfValueResolver) -> PdfDict | None:
