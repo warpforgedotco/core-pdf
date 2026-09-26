@@ -38,12 +38,6 @@ def default_cmyk_transform() -> IccTransform | None:
     return transform
 
 
-def cmyk_bytes_to_srgb(
-    samples: ByteSamples, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
-) -> ByteSamples:
-    return cmyk_components_to_srgb(samples.astype(numpy.float64) / 255, rendering=rendering)
-
-
 def cmyk_components_to_srgb(
     values: numpy.ndarray, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 ) -> ByteSamples:
@@ -84,7 +78,8 @@ def cmyk_byte_tuple_to_srgb(
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int]:
     sample = numpy.asarray([[cyan, magenta, yellow, black]], dtype=numpy.uint8)
-    red, green, blue = cmyk_bytes_to_srgb(sample, rendering=rendering)[0]
+    components = sample.astype(numpy.float64) / 255
+    red, green, blue = cmyk_components_to_srgb(components, rendering=rendering)[0]
     return int(red), int(green), int(blue)
 
 
