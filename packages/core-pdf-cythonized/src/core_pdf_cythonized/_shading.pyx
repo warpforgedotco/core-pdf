@@ -24,18 +24,14 @@ from libc.math cimport fabs, isfinite, pow
 
 import numpy
 
-from core_pdf_cythonized._pixel_blend cimport blend_normal_pixel, clamp_byte, plane_accumulate
+from core_pdf_cythonized._pixel_blend cimport (
+    MODE_NORMAL,
+    blend_mode_pixel,
+    blend_normal_pixel,
+    plane_accumulate,
+)
 
 __all__ = ("shading_blend", "shading_t", "shading_values")
-
-# The blend modes blend_px treats apart; any other composites as normal.
-cdef enum:
-    MODE_NORMAL = 0
-    MODE_MULTIPLY = 1
-    MODE_SCREEN = 2
-    MODE_COLOR_DODGE = 3
-    MODE_COLOR_BURN = 4
-
 
 cdef inline bint axial_t(const double* c, double px, double py, double* t) noexcept nogil:
     cdef double dx = c[2] - c[0]
@@ -107,60 +103,6 @@ def shading_t(int kind, coords, double px, double py, double half):
         c[i] = coords[i]
     found = axial_t(c, px, py, &t) if kind == 2 else radial_t(c, px, py, half, &t)
     return t if found else None
-
-
-cdef inline double color_dodge(double backdrop, double source, bint revised) noexcept nogil:
-    # blend_component's ColorDodge.
-    if revised and backdrop == 0.0:
-        return 0.0
-    if backdrop >= 1.0 - source:
-        return 1.0
-    return backdrop / (1.0 - source)
-
-
-cdef inline double color_burn(double backdrop, double source, bint revised) noexcept nogil:
-    # blend_component's ColorBurn.
-    if revised and backdrop == 1.0:
-        return 1.0
-    if 1.0 - backdrop >= source:
-        return 0.0
-    return 1.0 - (1.0 - backdrop) / source
-
-
-cdef inline void blend_mode_pixel(
-    unsigned char* pixel, int red, int green, int blue, int sa, int mode, bint revised
-) noexcept nogil:
-    # blend_px for multiply, screen, color dodge and color burn, in double as
-    # Python computes it: the source adjusted against the backdrop, then the
-    # general compositing, with no opaque shortcut.
-    cdef double src_a = sa / 255.0
-    cdef double dst_a = pixel[3] / 255.0
-    cdef double source[3]
-    cdef double backdrop
-    cdef int k
-    cdef int destination[3]
-    source[0] = red / 255.0
-    source[1] = green / 255.0
-    source[2] = blue / 255.0
-    for k in range(3):
-        destination[k] = pixel[k]
-        backdrop = destination[k] / 255.0
-        if mode == MODE_MULTIPLY:
-            source[k] = source[k] * (1.0 - dst_a) + dst_a * (source[k] * backdrop)
-        elif mode == MODE_SCREEN:
-            source[k] = source[k] * (1.0 - dst_a) + dst_a * (
-                1.0 - (1.0 - source[k]) * (1.0 - backdrop)
-            )
-        elif mode == MODE_COLOR_DODGE:
-            source[k] = source[k] * (1.0 - dst_a) + dst_a * color_dodge(backdrop, source[k], revised)
-        else:
-            source[k] = source[k] * (1.0 - dst_a) + dst_a * color_burn(backdrop, source[k], revised)
-    cdef double out_a = src_a + dst_a * (1.0 - src_a)
-    for k in range(3):
-        pixel[k] = <unsigned char> clamp_byte(
-            ((source[k] * 255.0) * src_a + destination[k] * dst_a * (1.0 - src_a)) / out_a
-        )
-    pixel[3] = <unsigned char> clamp_byte(out_a * 255.0)
 
 
 def shading_values(

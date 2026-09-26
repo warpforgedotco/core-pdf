@@ -7,8 +7,9 @@ pixels. Below 64 pixels of box, fill_line samples each pixel 4x4 in Python
 and blends it through blend_px: 11 us a segment, 388 ms of that page's
 570 ms rasterize.
 
-This is that loop, for normal blending with no group source planes to
-record into. A clip is passed as `allowed`, one byte per pixel of the box,
+This is that loop's sampling, blended here for normal blending with no
+group source planes to record into, and otherwise written out as counts for
+blend_coverage_counts. A clip is passed as `allowed`, one byte per pixel of the box,
 built by the caller from the same row spans the loop tested each pixel
 against. It reproduces the Python arithmetic step by step in double -- the
 sample positions, the projection and cross-product tests (squared, not the
@@ -57,11 +58,16 @@ def stroke_segment_samples(
     int blue,
     int alpha,
     const unsigned char[::1] allowed=None,
+    unsigned char[:, ::1] counts=None,
 ):
     """Blend the segment into `pixels`, whose [0, 0] is pixel (origin_x, origin_y).
 
     `allowed`, if given, holds one byte per pixel of the box, row by row; a
     zero skips that pixel, as the clip test in fill_line's loop did.
+
+    With `counts`, a (rows, columns) array of the box, each pixel's 4x4
+    coverage is written there instead, and nothing is blended, for
+    blend_coverage_counts to blend in any mode.
 
     Returns (x0, y0, x1, y1), half-open, of the pixels with any coverage, or None.
     """
@@ -78,6 +84,9 @@ def stroke_segment_samples(
     cdef bint masked = allowed is not None
     if masked and allowed.shape[0] != box_width * (iy1 - iy0):
         raise ValueError("allowed must hold one byte per pixel of the box")
+    cdef bint counting = counts is not None
+    if counting and (counts.shape[0] != iy1 - iy0 or counts.shape[1] != box_width):
+        raise ValueError("counts must hold one byte per pixel of the box")
     with nogil:
         for py in range(iy0, iy1):
             for sy in range(4):
@@ -123,6 +132,9 @@ def stroke_segment_samples(
                     low_y = py
                 if py + 1 > high_y:
                     high_y = py + 1
+                if counting:
+                    counts[py - iy0, px - ix0] = <unsigned char> covered
+                    continue
                 sa = coverage_alpha(alpha, covered)
                 if sa <= 0:
                     continue

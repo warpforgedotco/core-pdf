@@ -13,8 +13,6 @@ from core_pdf.impl.geometry import intersect_bbox
 
 RASTER_KERNEL_MIN_PIXEL_AREA = 64
 RASTER_CIRCLE_MIN_PIXEL_AREA = 16
-RASTER_SAMPLE_OFFSETS = (0.125, 0.375, 0.625, 0.875)
-INTERNAL_CROSSING_MASK_CELL_LIMIT = 1 << 24
 CIRCLE_VERTICES = tuple(
     (math.cos(index * math.tau / 32), math.sin(index * math.tau / 32)) for index in range(32)
 )
@@ -269,77 +267,6 @@ def translate_rect(rect: Any, tx: float, ty: float) -> Any:
             float(rect[3]) + ty,
         )
     return rect
-
-
-def fill_path_sample_crossings(
-    edge_segments: list[tuple[float, float, float, float, float, float]],
-    page_y: float,
-) -> list[tuple[float, int]]:
-    crossings: list[tuple[float, int]] = []
-    for ex0, ey0, ex1, ey1, low, high in edge_segments:
-        if not (low <= page_y < high):
-            continue
-        t = (page_y - ey0) / (ey1 - ey0)
-        x_intersection = ex0 + t * (ex1 - ex0)
-        crossings.append((x_intersection, 1 if ey1 > ey0 else -1))
-    return crossings
-
-
-def fill_path_sample_crossings_numpy(
-    edge_segments: numpy.ndarray[Any, Any],
-    page_ys: numpy.ndarray[Any, Any],
-) -> list[list[tuple[float, int]]]:
-    row_count = len(page_ys)
-    if row_count == 0:
-        return []
-    edge_count = len(edge_segments)
-    if edge_count == 0:
-        return [[] for _ in range(row_count)]
-    if row_count * edge_count > INTERNAL_CROSSING_MASK_CELL_LIMIT:
-        return [fill_path_sample_crossings_row(edge_segments, float(page_y)) for page_y in page_ys]
-
-    ys = page_ys.reshape(-1, 1)
-    active = (edge_segments[:, 4].reshape(1, -1) <= ys) & (ys < edge_segments[:, 5].reshape(1, -1))
-    row_indexes, edge_indexes = numpy.nonzero(active)
-    if row_indexes.size == 0:
-        return [[] for _ in range(row_count)]
-
-    edge_x0 = edge_segments[edge_indexes, 0]
-    edge_y0 = edge_segments[edge_indexes, 1]
-    delta_y = edge_segments[edge_indexes, 3] - edge_y0
-    intersections = edge_x0 + (
-        (page_ys[row_indexes] - edge_y0) / delta_y * (edge_segments[edge_indexes, 2] - edge_x0)
-    )
-    directions = numpy.where(delta_y > 0.0, 1, -1)
-
-    xs = intersections.tolist()
-    ds = directions.tolist()
-    counts = numpy.bincount(row_indexes, minlength=row_count).tolist()
-    crossings_rows: list[list[tuple[float, int]]] = []
-    start = 0
-    for count in counts:
-        if count:
-            stop = start + count
-            crossings_rows.append(list(zip(xs[start:stop], ds[start:stop], strict=True)))
-            start = stop
-        else:
-            crossings_rows.append([])
-    return crossings_rows
-
-
-def fill_path_sample_crossings_row(
-    edge_segments: numpy.ndarray[Any, Any],
-    page_y: float,
-) -> list[tuple[float, int]]:
-    active = edge_segments[(edge_segments[:, 4] <= page_y) & (page_y < edge_segments[:, 5])]
-    if not len(active):
-        return []
-    delta_y = active[:, 3] - active[:, 1]
-    intersections = active[:, 0] + (
-        (page_y - active[:, 1]) / delta_y * (active[:, 2] - active[:, 0])
-    )
-    directions = numpy.where(delta_y > 0.0, 1, -1)
-    return list(zip(intersections.tolist(), directions.tolist(), strict=True))
 
 
 def fill_path_crossing_spans(

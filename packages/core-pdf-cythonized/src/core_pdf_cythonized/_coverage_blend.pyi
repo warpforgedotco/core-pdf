@@ -20,4 +20,7 @@ def blend_coverage_counts(
     source_shape: Plane | None,
     track_shape: bool,
     shape_alpha: float,
-) -> tuple[int, int, int, int] | None: ...
+    mode: int = ...,
+    revised: bool = ...,
+    stop_at_visible: bool = ...,
+) -> tuple[tuple[int, int, int, int] | None, bool]: ...

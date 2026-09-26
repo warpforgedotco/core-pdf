@@ -56,12 +56,9 @@ from core_pdf.impl.render.model import (
 from core_pdf.impl.render.paths import (
     RASTER_CIRCLE_MIN_PIXEL_AREA,
     RASTER_KERNEL_MIN_PIXEL_AREA,
-    RASTER_SAMPLE_OFFSETS,
     circle_path,
     dash_subpath,
     fill_path_crossing_spans,
-    fill_path_sample_crossings,
-    fill_path_sample_crossings_numpy,
     intersect_box,
     rasterize_unclipped_line_normal,
 )
@@ -516,21 +513,6 @@ class RasterTarget:
         "group_member_boxes",
         "stroke_scratch",
     )
-
-    def blend_coverage_pixel(
-        self,
-        offset: int,
-        rgba: tuple[int, int, int, int],
-        covered: int,
-        sample_total: int,
-        *,
-        track_shape: bool,
-        blend_resolved_mode: str | None,
-    ) -> None:
-        """Paint one antialiased pixel: coverage fraction to alpha, then blend."""
-        alpha = max(0, min(255, round(rgba[3] * covered / sample_total)))
-        shape = round(255 * covered / sample_total) if track_shape else 255
-        self.blend_px(offset, (rgba[0], rgba[1], rgba[2], alpha), blend_resolved_mode, shape=shape)
 
     def __init__(
         self,
@@ -2516,7 +2498,6 @@ class RasterTarget:
     ) -> None:
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
-        blend_resolved_mode = self.resolved_blend(blend_mode)
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         crop_x0 = self.crop_x0
@@ -2525,9 +2506,7 @@ class RasterTarget:
         fast_fill_path = self.fast_fill_path
         fill_path_scanlines = self.fill_path_scanlines
         fill_rect = self.fill_rect
-        pixel_in_clip = clip.pixel_in_clip
         scale = self.scale
-        width = self.width
         rect = path.axis_aligned_rect()
         if rect is not None:
             fill_rect(rect, rgba, blend_mode)
@@ -2629,12 +2608,12 @@ class RasterTarget:
                     rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
                 )
             return
-        if normal_fast and pixel_area < 10_000 and all(type(channel) is int for channel in rgba):
-            # A clip that is not rectangles, which the kernels above cannot
-            # take: the per-pixel loop below, compiled. supersampled_coverage_plane
-            # gives the same 4x4 counts the loop samples, and
-            # blend_coverage_counts does its clip test, blend_px's arithmetic
-            # and the per-pixel group-plane updates.
+        if pixel_area < 10_000:
+            # What is left of a small fill: a clip that is not rectangles, or
+            # a blend other than normal, which the kernels above cannot take.
+            # supersampled_coverage_plane gives the 4x4 counts the per-pixel
+            # loop this replaced sampled, and blend_counts its clip test,
+            # blend_px's arithmetic and the per-pixel group-plane updates.
             source = (
                 edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
             )
@@ -2645,24 +2624,16 @@ class RasterTarget:
                 return
             counts, first_row = sampled
             top = iy0 + first_row
-            touched = blend_coverage_counts(
-                self.pixel_array,
+            self.blend_counts(
                 counts,
                 ix0,
                 top,
                 None
                 if rectangular_clip
                 else self.clip_pixel_mask(ix0, top, ix1, top + len(counts)),
-                *rgba,
-                self.group_source_alpha,
-                self.group_source_shape,
-                self.group_source_shape is not None,
-                self.shape_alpha,
+                rgba,
+                blend_mode,
             )
-            if touched is not None:
-                self.extend_paint_window(
-                    slice(touched[1], touched[3]), slice(touched[0], touched[2])
-                )
             return
         if edges is None:
             edges = edge_tuples(edge_array)
@@ -2680,65 +2651,60 @@ class RasterTarget:
         ]
         if not edge_segments:
             return
-        edge_segments_array = (
-            numpy.asarray(edge_segments, dtype=numpy.float64) if len(edge_segments) >= 8 else None
+        fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
+
+    def blend_rules(self, mode: int) -> tuple[bool, Exception | None]:
+        """blend_component's revised flag for `mode`, or the error it raises.
+
+        Only color dodge and color burn ask blend_component, and only the
+        revised rules send a black backdrop to zero there.
+        """
+        if mode not in (BLEND_COLOR_DODGE, BLEND_COLOR_BURN):
+            return True, None
+        try:
+            revised = blend_component(0.0, 1.0, "ColorDodge", context=self.semantic_context)
+        except Exception as error:
+            return True, error
+        return revised == 0.0, None
+
+    def blend_counts(
+        self,
+        counts: UInt8Array,
+        left: int,
+        top: int,
+        allowed: bytearray | None,
+        rgba: tuple[int, int, int, int],
+        blend_mode: str | None,
+    ) -> None:
+        """Blend 4x4 coverage counts at (left, top) as blend_coverage_pixel did, pixel by pixel.
+
+        Where blend_px would have raised, at the first visible pixel of a
+        blend whose rules cannot be told, the pixels before it are painted,
+        that one recorded, and the same error raised.
+        """
+        mode = BLEND_MODE_CODES.get(self.resolved_blend(blend_mode), 0)
+        revised, blend_error = self.blend_rules(mode)
+        shape_plane = self.group_source_shape
+        window, stopped = blend_coverage_counts(
+            self.pixel_array,
+            counts,
+            left,
+            top,
+            allowed,
+            *rgba,
+            self.group_source_alpha,
+            shape_plane,
+            shape_plane is not None,
+            self.shape_alpha,
+            mode,
+            revised,
+            blend_error is not None,
         )
-        if pixel_area >= 10_000:
-            fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
-            return
-        samples = 4
-        track_shape = self.group_source_shape is not None
-        all_row_crossings = None
-        if edge_segments_array is not None:
-            row_count = iy1 - iy0
-            sample_offsets = (numpy.arange(samples, dtype=numpy.float64) + 0.5) / samples
-            page_ys = (
-                crop_y1
-                - (
-                    numpy.repeat(numpy.arange(iy0, iy1, dtype=numpy.float64), samples)
-                    + numpy.tile(sample_offsets, row_count)
-                )
-                / scale
-            )
-            all_row_crossings = fill_path_sample_crossings_numpy(edge_segments_array, page_ys)
-        for py in range(iy0, iy1):
-            row = py * width * 4
-            sample_spans: list[list[tuple[float, float]]] = []
-            if all_row_crossings is not None:
-                base = (py - iy0) * samples
-                sample_spans.extend(
-                    fill_path_crossing_spans(all_row_crossings[base + sy], fill_rule)
-                    for sy in range(samples)
-                )
-            else:
-                for sy in range(samples):
-                    page_y = crop_y1 - (py + (sy + 0.5) / samples) / scale
-                    crossings = fill_path_sample_crossings(edge_segments, page_y)
-                    sample_spans.append(fill_path_crossing_spans(crossings, fill_rule))
-            for px in range(ix0, ix1):
-                covered = 0
-                sample_x0 = crop_x0 + (px + 0.5 / samples) / scale
-                sample_step = 1.0 / (samples * scale)
-                for spans in sample_spans:
-                    if not spans:
-                        continue
-                    for sx in range(samples):
-                        page_x = sample_x0 + sx * sample_step
-                        for start_x, end_x in spans:
-                            if start_x <= page_x < end_x:
-                                covered += 1
-                                break
-                if covered:
-                    if not rectangular_clip and not pixel_in_clip(px, py):
-                        continue
-                    self.blend_coverage_pixel(
-                        row + px * 4,
-                        rgba,
-                        covered,
-                        samples * samples,
-                        track_shape=track_shape,
-                        blend_resolved_mode=blend_resolved_mode,
-                    )
+        if window is not None:
+            self.extend_paint_window(slice(window[1], window[3]), slice(window[0], window[2]))
+        if stopped:
+            assert blend_error is not None
+            raise blend_error
 
     def clip_pixel_mask(self, ix0: int, iy0: int, ix1: int, iy1: int) -> bytearray:
         """One byte per pixel of the box, row by row: 1 where pixel_in_clip is true.
@@ -2778,7 +2744,6 @@ class RasterTarget:
         crop_y1 = self.crop_y1
         fill_circle = self.fill_circle
         fill_rect = self.fill_rect
-        pixel_in_clip = clip.pixel_in_clip
         pixels = self.pixels
         scale = self.scale
         width = self.width
@@ -2844,13 +2809,10 @@ class RasterTarget:
             return
         box, pixel_box = clipped_box
         ix0, iy0, ix1, iy1 = pixel_box
-        samples = 4
-        sample_total = samples * samples
         half2 = half * half
         inv_seg_len2 = 1.0 / seg_len2
         projection_extension = cap_extension * seg_len
         normal_fast = blend_mode is None
-        track_shape = self.group_source_shape is not None
         if (
             (not clip_regions or clip_paths_are_axis_aligned_rects())
             and normal_fast
@@ -2892,18 +2854,17 @@ class RasterTarget:
                 # paint window, and the pixels in it were written all the same.
                 self.extend_paint_window(slice(iy0, iy1), slice(ix0, ix1))
             return
+        allowed = self.clip_pixel_mask(ix0, iy0, ix1, iy1) if clip_regions else None
         if (
             blend_resolved_mode is None
             and self.group_source_alpha is None
             and self.group_source_shape is None
-            and all(type(channel) is int for channel in rgba)
         ):
-            # The loop below, compiled, for the case short flattened strokes
-            # take: normal blending and no group planes to record into. A clip
-            # goes in as the pixels the loop's per-pixel test would have let
-            # through, from the same row spans. It returns the box it covered,
-            # which is what blend_px's per-pixel paint-window extension adds up to.
-            allowed = self.clip_pixel_mask(ix0, iy0, ix1, iy1) if clip_regions else None
+            # Short flattened strokes take this: normal blending and no group
+            # planes to record into, sampled and blended in one kernel. A clip
+            # goes in as the pixels pixel_in_clip lets through, from the same
+            # row spans. It returns the box it covered, which is what
+            # blend_px's per-pixel paint-window extension adds up to.
             covered_box = stroke_segment_samples(
                 self.pixel_array,
                 0,
@@ -2934,62 +2895,36 @@ class RasterTarget:
                     covered_box[1], covered_box[3], covered_box[0], covered_box[2]
                 )
             return
-        for py in range(iy0, iy1):
-            row = py * width * 4
-            page_y_samples = tuple(
-                crop_y1 - (py + sample_offset) / scale for sample_offset in RASTER_SAMPLE_OFFSETS
-            )
-            for px in range(ix0, ix1):
-                if clip_regions and not pixel_in_clip(px, py):
-                    continue
-                page_x_samples = tuple(
-                    crop_x0 + (px + sample_offset) / scale
-                    for sample_offset in RASTER_SAMPLE_OFFSETS
-                )
-                covered = 0
-                if line_cap in {0, 2}:
-                    cross_limit = half2 * seg_len2
-                    for page_y in page_y_samples:
-                        offset_y = page_y - y0
-                        for page_x in page_x_samples:
-                            offset_x = page_x - x0
-                            projection = offset_x * dx + offset_y * dy
-                            if (
-                                projection < -projection_extension
-                                or projection > seg_len2 + projection_extension
-                            ):
-                                continue
-                            cross = offset_x * dy - offset_y * dx
-                            if cross * cross <= cross_limit:
-                                covered += 1
-                else:
-                    cross_limit = half2 * seg_len2
-                    for page_y in page_y_samples:
-                        offset_y = page_y - y0
-                        for page_x in page_x_samples:
-                            offset_x = page_x - x0
-                            t = (offset_x * dx + offset_y * dy) * inv_seg_len2
-                            if 0.0 <= t <= 1.0:
-                                cross = offset_x * dy - offset_y * dx
-                                if cross * cross <= cross_limit:
-                                    covered += 1
-                            elif t < 0.0:
-                                if offset_x * offset_x + offset_y * offset_y <= half2:
-                                    covered += 1
-                            else:
-                                end_x = page_x - x1
-                                end_y = page_y - y1
-                                if end_x * end_x + end_y * end_y <= half2:
-                                    covered += 1
-                if covered:
-                    self.blend_coverage_pixel(
-                        row + px * 4,
-                        rgba,
-                        covered,
-                        sample_total,
-                        track_shape=track_shape,
-                        blend_resolved_mode=blend_resolved_mode,
-                    )
+        # Any other blend, or a group recording planes: the same sampling
+        # into counts, blended as blend_px blends them.
+        counts = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
+        stroke_segment_samples(
+            self.pixel_array,
+            0,
+            0,
+            ix0,
+            iy0,
+            ix1,
+            iy1,
+            crop_x0,
+            crop_y1,
+            scale,
+            x0,
+            y0,
+            x1,
+            y1,
+            dx,
+            dy,
+            seg_len2,
+            inv_seg_len2,
+            half2,
+            projection_extension,
+            line_cap not in {0, 2},
+            *rgba,
+            allowed,
+            counts,
+        )
+        self.blend_counts(counts, ix0, iy0, None, rgba, blend_mode)
 
     def fill_join(
         self,
@@ -3239,16 +3174,7 @@ class RasterTarget:
                 color_error = error
                 reached = position
                 break
-        revised = True
-        blend_error: Exception | None = None
-        if mode in (BLEND_COLOR_DODGE, BLEND_COLOR_BURN):
-            try:
-                # Only the revised rules send a black backdrop to zero here.
-                revised = (
-                    blend_component(0.0, 1.0, "ColorDodge", context=self.semantic_context) == 0.0
-                )
-            except Exception as error:
-                blend_error = error
+        revised, blend_error = self.blend_rules(mode)
         shape_plane = self.group_source_shape
         window, stopped = shading_blend(
             self.pixel_array,

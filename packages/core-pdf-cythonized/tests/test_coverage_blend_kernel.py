@@ -47,7 +47,7 @@ def test_kernel_reproduces_the_python_loop(index):
     alpha = copy_or_none(case["alpha_before"])
     shape = copy_or_none(case["shape_before"])
     red, green, blue, alpha_value = case["rgba"]
-    touched = blend_coverage_counts(
+    touched, stopped = blend_coverage_counts(
         pixels,
         numpy.ascontiguousarray(case["counts"]),
         0,
@@ -62,6 +62,7 @@ def test_kernel_reproduces_the_python_loop(index):
         case["track_shape"],
         case["shape_alpha"],
     )
+    assert not stopped
     assert numpy.array_equal(pixels, case["pixels_after"])
     for got, want in ((alpha, case["alpha_after"]), (shape, case["shape_after"])):
         assert (got is None) == (want is None)

@@ -31,4 +31,5 @@ def stroke_segment_samples(
     blue: int,
     alpha: int,
     allowed: bytes | bytearray | memoryview | None = ...,
+    counts: numpy.ndarray[Any, numpy.dtype[numpy.uint8]] | None = ...,
 ) -> tuple[int, int, int, int] | None: ...
