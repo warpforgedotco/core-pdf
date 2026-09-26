@@ -26,25 +26,10 @@ from core_pdf_spec.s_07_syntax.xref import (
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_float,
-    parse_float_strict,
     parse_int,
 )
 
 LEXER_POOL_LIMIT = 8
-
-
-def parse_box(value: object) -> tuple[float, float, float, float] | None:
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
-        return None
-    try:
-        return (
-            parse_float_strict(value[0], python_syntax=True),
-            parse_float_strict(value[1], python_syntax=True),
-            parse_float_strict(value[2], python_syntax=True),
-            parse_float_strict(value[3], python_syntax=True),
-        )
-    except ValueError:
-        return None
 
 
 class ObjectResolver(SyntaxResolver):
@@ -168,14 +153,10 @@ class ObjectResolver(SyntaxResolver):
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
         return parse_int(self.resolve(value), default, python_syntax=True)
 
-    def resolve_box(self, value: object) -> tuple[float, float, float, float] | None:
-        resolved = self.deep_resolve(value)
-        if resolved is None:
-            return None
-        box = parse_box(resolved)
-        if box is None:
-            raise ValueError("invalid box value")
-        return box
+    def resolve_box(
+        self, value: object, *, python_syntax: bool = True
+    ) -> tuple[float, float, float, float] | None:
+        return super().resolve_box(value, python_syntax=python_syntax)
 
     def decode_text(self, data: bytes) -> str:
         return decode_pdf_text_string(data, context=self.semantic_context)

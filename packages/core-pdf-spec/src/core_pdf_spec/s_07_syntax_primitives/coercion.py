@@ -191,10 +191,20 @@ def parse_float_strict(
     return parsed
 
 
-def parse_box(value: object) -> tuple[float, float, float, float] | None:
+def parse_box(
+    value: object, *, python_syntax: bool = False
+) -> tuple[float, float, float, float] | None:
+    """Four numbers, or None; `python_syntax` reads each as parse_float_strict does."""
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
     try:
+        if python_syntax:
+            return (
+                parse_float_strict(value[0], python_syntax=True),
+                parse_float_strict(value[1], python_syntax=True),
+                parse_float_strict(value[2], python_syntax=True),
+                parse_float_strict(value[3], python_syntax=True),
+            )
         return (
             require_pdf_number(value[0]),
             require_pdf_number(value[1]),
