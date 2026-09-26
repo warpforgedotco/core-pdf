@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from array import array
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from copy import copy
 from dataclasses import dataclass, replace
@@ -63,6 +63,7 @@ from core_pdf.impl.types import (
 )
 from core_pdf_cythonized import flatten_path_commands
 from core_pdf_spec.exceptions import PdfParseError
+from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES, GraphicsState, PdfPath
 from core_pdf_spec.s_07_content.model import (
     MarkedContentEntry as SemanticMarkedContentEntry,
@@ -269,6 +270,33 @@ class TextLayout:
     run_provenance: tuple[tuple[str, object], ...]
 
 
+# The path operators the content scanner can apply to a state itself, and
+# the handlers it reproduces: it does so only for a state whose table holds
+# exactly these, and whose curve and operand coercion are the tolerant ones.
+NATIVE_PATH_HANDLERS: dict[str, Callable[..., None]] = {
+    "m": ContentInterpreter.op_m,
+    "l": RecoveringTextState.op_l,
+    "c": ContentInterpreter.op_c,
+    "v": RecoveringTextState.op_v,
+    "y": RecoveringTextState.op_y,
+    "re": ContentInterpreter.op_re,
+    "h": ContentInterpreter.op_h,
+}
+
+
+def applies_paths_natively(handlers: Mapping[str, OperationHandler], state: object) -> bool:
+    kind = type(state)
+    if (
+        getattr(kind, "append_cubic_curve", None) is not RecoveringTextState.append_cubic_curve
+        or getattr(kind, "as_floats", None) is not RecoveringTextState.as_floats
+    ):
+        return False
+    for name, function in NATIVE_PATH_HANDLERS.items():
+        if getattr(handlers.get(name), "__func__", None) is not function:
+            return False
+    return True
+
+
 class CaptureStreamExecutor(ContentStreamExecutor):
     state: TextState
     _operator_names: frozenset[bytes] | None = None
@@ -345,6 +373,7 @@ class CaptureStreamExecutor(ContentStreamExecutor):
             frame.lexer,
             recovery=state.recovery,
             is_operator=self.operator_names(handlers).__contains__,
+            path_state=state if applies_paths_natively(handlers, state) else None,
         ):
             handler = handlers.get(name)
             if handler is None:
