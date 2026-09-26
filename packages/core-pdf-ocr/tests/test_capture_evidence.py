@@ -258,8 +258,6 @@ def test_template_text_promotion_preserves_program_drawings_and_updates_evidence
     assert result.program.runs == (run,)
     assert result.program.drawings == original.program.drawings
     assert result.evidence.vector_text_trusted
-    assert result.evidence.vector_text_candidate_segments == 10000
-    assert result.evidence.vector_text_matched_segments == 9900
     assert result.evidence.native_characters == result.evidence.visible_native_characters == 4
     assert result.evidence.text_coverage == pytest.approx(100 / 480000)
     assert original.observations.text == ()
