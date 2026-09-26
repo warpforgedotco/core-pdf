@@ -59,6 +59,7 @@ from core_pdf_cythonized._outline import outline_edges, translated_outline_edges
 from core_pdf_cythonized._paths import flatten_path_commands
 from core_pdf_cythonized._rect import fill_rect_coverage, rect_coverage_plane
 from core_pdf_cythonized._sample_blit import interleave_soft_mask, sample_opaque_pixels
+from core_pdf_cythonized._shading import shading_blend, shading_values
 from core_pdf_cythonized._source_plane import accumulate_source_plane
 from core_pdf_cythonized._stroke_segment import stroke_segment_samples
 from core_pdf_cythonized._supersample import supersampled_coverage_plane
@@ -93,6 +94,8 @@ __all__ = (
     "outline_edges",
     "rect_coverage_plane",
     "sample_opaque_pixels",
+    "shading_blend",
+    "shading_values",
     "signed_area_coverage",
     "stroke_segment_samples",
     "supersampled_coverage_plane",
