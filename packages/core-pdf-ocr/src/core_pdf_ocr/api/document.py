@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from core_pdf import PdfDocument as CorePdfDocument
 from core_pdf import PdfPage as CorePdfPage
 from core_pdf.impl.execution import ExtractionScope
-from core_pdf.impl.output.model import Document, Page
+from core_pdf.impl.output_model import Document, Page
 from core_pdf_ocr.impl.extract.ocr.tesseract import prepare_ocr_signals
 from core_pdf_ocr.impl.extract.pipeline import extract_page
 from core_pdf_ocr.impl.extract.selection import extract_document

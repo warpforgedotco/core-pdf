@@ -16,8 +16,8 @@ import imagecodecs
 import numpy as np
 import pytest
 
-from core_pdf.impl.graphics import icc_profiles
-from core_pdf.impl.graphics.icc_profiles import (
+from core_pdf.impl import graphics_icc_profiles as icc_profiles
+from core_pdf.impl.graphics_icc_profiles import (
     MEMO_ROWS,
     IccProfileError,
     IccTransform,

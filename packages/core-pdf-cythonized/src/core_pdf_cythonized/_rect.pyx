@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Axis-aligned rectangle coverage (core_pdf.impl.render.paths).
+"""Axis-aligned rectangle coverage (core_pdf.impl.render_paths).
 
 The numpy original spent about ten array operations -- two aranges, two
 minimums, two maximums, two clips, an outer product, a rint and a cast -- to

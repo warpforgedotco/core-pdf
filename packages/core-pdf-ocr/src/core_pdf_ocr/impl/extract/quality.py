@@ -7,11 +7,11 @@ from typing import ClassVar, NamedTuple
 
 import numpy
 
-from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.extract.quality import (
+from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_quality import (
     TextAnalysis as TextAnalysis,
 )
-from core_pdf.impl.extract.quality import (
+from core_pdf.impl.extract_quality import (
     analyze_text as analyze_text,
 )
 from core_pdf.impl.types import Record, frozen_setattr

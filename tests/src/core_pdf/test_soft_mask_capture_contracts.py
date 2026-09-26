@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.capture.program import DEFAULT_CAPTURE, EXTRACTION_CAPTURE
-from core_pdf.impl.capture.records import CapturedDrawing
+from core_pdf.impl.capture_program import DEFAULT_CAPTURE, EXTRACTION_CAPTURE
+from core_pdf.impl.capture_records import CapturedDrawing
 
 FIXTURE = Path(__file__).parents[3] / "tests/fixtures/PyMuPDF/tests/resources/test_3450.pdf"
 

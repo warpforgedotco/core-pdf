@@ -1,7 +1,7 @@
 import pytest
 
-from core_pdf.impl.extract import table_cleanup as cleanup
-from core_pdf.impl.output.model import Table, TableAssociatedText, TableCell
+from core_pdf.impl import extract_table_cleanup as cleanup
+from core_pdf.impl.output_model import Table, TableAssociatedText, TableCell
 
 
 def make_table(texts, *, geometry=True, source="stream"):

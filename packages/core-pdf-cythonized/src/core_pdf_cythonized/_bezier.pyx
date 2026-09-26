@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Cubic bezier flattening (core_pdf.impl.fonts.font_program).
+"""Cubic bezier flattening (core_pdf.impl.fonts_font_program).
 
 Mirrors cubic_sample_times, cubic_is_flat and cubic_extrema_times exactly.
 The recursion carries eight doubles instead of four coordinate tuples,

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy
 
-from core_pdf.impl.extract.contracts import bbox_tuple
-from core_pdf.impl.extract.grids import (
+from core_pdf.impl.extract_contracts import bbox_tuple
+from core_pdf.impl.extract_grids import (
     axis_segments,
     grid_components,
     split_grid_component,

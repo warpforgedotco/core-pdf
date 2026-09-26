@@ -67,7 +67,7 @@ def test_kernel_reproduces_golden_vector(index: int) -> None:
 def test_the_run_unions_are_run_geometry_adds(index: int) -> None:
     # RunGeometry.add over each glyph's advance and ink box, in order.
     pytest.importorskip("core_pdf")
-    from core_pdf.impl.capture.glyphs import RunGeometry
+    from core_pdf.impl.capture_glyphs import RunGeometry
 
     kwargs, _ = GOLDEN[index]
     arguments = dict(kwargs)

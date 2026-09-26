@@ -3,8 +3,8 @@
 import numpy
 
 from core_pdf import PdfDocument
-from core_pdf.impl.render.clipping import ClipState
-from core_pdf.impl.render.target import RasterTarget
+from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_target import RasterTarget
 
 BACKDROP_PIXEL = bytes([10, 200, 90, 180])
 

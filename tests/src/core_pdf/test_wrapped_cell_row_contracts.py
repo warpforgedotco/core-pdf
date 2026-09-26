@@ -2,8 +2,8 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl.extract.table_cleanup import merge_wrapped_cell_rows
-from core_pdf.impl.output.model import Table, TableCell
+from core_pdf.impl.extract_table_cleanup import merge_wrapped_cell_rows
+from core_pdf.impl.output_model import Table, TableCell
 
 
 def make_table(tall=30, *, ragged=False, missing_box=False, blank=False):

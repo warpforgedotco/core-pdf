@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Box downsampling of an image to its device size (core_pdf.impl.render.target).
+"""Box downsampling of an image to its device size (core_pdf.impl.render_target).
 
 An image drawn smaller than its pixel size is averaged over rectangular
 blocks before it is blitted. numpy did that with two add.reduceat passes

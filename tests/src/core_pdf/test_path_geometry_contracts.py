@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
-from core_pdf.impl.render import paths
+from core_pdf.impl import render_paths as paths
+from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
 from core_pdf_cythonized import signed_area_coverage
 
 

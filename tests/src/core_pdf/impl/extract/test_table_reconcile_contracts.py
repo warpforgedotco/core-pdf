@@ -1,9 +1,9 @@
-from core_pdf.impl.extract.emit import (
+from core_pdf.impl.extract_emit import (
     TableIndex,
     line_duplicates_table,
     remove_table_duplicate_blocks,
 )
-from core_pdf.impl.output.model import Block, BlockKind, Table, TableCell, TextLine
+from core_pdf.impl.output_model import Block, BlockKind, Table, TableCell, TextLine
 
 
 def make_table(

@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.render import paths
+from core_pdf.impl import render_paths as paths
 
 
 @pytest.mark.parametrize(

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Group compositing on the normal blend mode
-(core_pdf.impl.render.target.composite_nonisolated_group and
-composite_masked_group, and core_pdf.impl.render.blend's
+(core_pdf.impl.render_target.composite_nonisolated_group and
+composite_masked_group, and core_pdf.impl.render_blend's
 composite_normal_group_numpy).
 
 composite_elementary_normal owns the opaque, unmasked elementary case;

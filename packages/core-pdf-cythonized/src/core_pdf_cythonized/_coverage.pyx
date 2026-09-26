@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Signed-area scanline coverage (core_pdf.impl.render.paths).
+"""Signed-area scanline coverage (core_pdf.impl.render_paths).
 
 The numpy original was not slow because the algorithm is heavy. It was slow
 because it ran about thirty array operations to fill a buffer averaging forty

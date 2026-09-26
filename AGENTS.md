@@ -93,10 +93,16 @@ unstructured` for differential runs (the extra belongs to the compat member, so 
 commands cannot select it); ordinary `uv sync`/`uv run` commands may otherwise remove the model.
 
 This is a Python 3.14+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`.
-Inside `src/core_pdf/impl`, each subpackage owns one feature and code shared between them
-lives in modules at the `impl` root. Root modules never import a subpackage; the pure helpers
-(`scalars`, `array_views`, `execution`) import no spec either. A new root module must be added
-to the root import contract in `pyproject.toml`, which `test_impl_root_contracts.py` enforces.
+`src/core_pdf/impl` is flat: it has no subpackages, only `data/` for package data (raster
+fonts and word lists). A feature's modules share its prefix -- `capture_`, `document_`,
+`recovery_` (object recovery beneath document composition), `extract_`, `fonts_`,
+`graphics_`, `layout_`, `output_`, `render_` -- and code shared between features lives in
+the unprefixed modules. Shared modules never import a feature module; the pure helpers
+(`scalars`, `array_views`, `execution`) import no spec either. The import contracts in
+`pyproject.toml` list modules, since import-linter cannot match a prefix, and
+`test_impl_root_contracts.py` keeps them complete: a new shared module joins the root
+contract, and a new feature module joins every contract that names its feature. A new
+feature needs a prefix of its own, registered in that test.
 
 The authored test suite includes facade tests and differential comparisons under
 `packages/core-pdf-compat/tests`, strict spec tests under

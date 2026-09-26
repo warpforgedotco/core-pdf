@@ -2,8 +2,8 @@
 
 import pytest
 
-from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 
 HEADERS = [

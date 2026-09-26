@@ -4,8 +4,8 @@ import random
 
 import pytest
 
-from core_pdf.impl.document.recovery.xref import decode_xref_stream_rows
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.recovery_xref import decode_xref_stream_rows
 from core_pdf_spec.s_07_syntax.xref import XRefTable, decode_xref_row
 
 

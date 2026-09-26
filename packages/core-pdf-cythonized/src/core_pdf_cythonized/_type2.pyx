@@ -4,7 +4,7 @@
 Interpreting a glyph's charstring was 12% of a profiled page extract, spread
 evenly across two halves that could not be compiled apart: the interpreter
 (core_adobe_fonts.cff.charstrings) drove a pen of Python closures
-(core_pdf.impl.fonts.font_program) through one call per operand, one per
+(core_pdf.impl.fonts_font_program) through one call per operand, one per
 outline point and one per curve. Measured over 459 corpus charstrings the
 cost split roughly execute 22%, record_point 18%, curve 15%, push 11%,
 cubic_point 9%, parse_number 8%, min/max/len 18% -- no single piece worth

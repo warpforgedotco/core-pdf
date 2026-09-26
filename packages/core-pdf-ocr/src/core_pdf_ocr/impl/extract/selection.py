@@ -10,13 +10,13 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar
 
 from core_pdf.impl.execution import ExtractionScope
-from core_pdf.impl.extract.contracts import ObservationBatch, bbox_tuple
-from core_pdf.impl.extract.selection import (
+from core_pdf.impl.extract_contracts import ObservationBatch, bbox_tuple
+from core_pdf.impl.extract_selection import (
     assemble_document,
     prepare_document_pages,
 )
 from core_pdf.impl.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
-from core_pdf.impl.output.model import Document
+from core_pdf.impl.output_model import Document
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
@@ -31,8 +31,8 @@ from core_pdf_ocr.impl.extract.ocr.strokes import (
 from core_pdf_ocr.impl.extract.pipeline import PageExtraction
 
 if TYPE_CHECKING:
-    from core_pdf.impl.document.document import PdfDocument
-    from core_pdf.impl.document.page import PdfPage
+    from core_pdf.impl.document_document import PdfDocument
+    from core_pdf.impl.document_page import PdfPage
 
 
 DOCUMENT_FONT_SEED_LIMIT = 4

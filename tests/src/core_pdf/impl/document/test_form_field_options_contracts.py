@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.document.records import RawFormField
+from core_pdf.impl.document_records import RawFormField
 from core_pdf.impl.types import PdfName, PdfString
 
 

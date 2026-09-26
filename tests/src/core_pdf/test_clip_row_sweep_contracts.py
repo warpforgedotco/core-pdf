@@ -5,8 +5,8 @@ import random
 
 import pytest
 
-from core_pdf.impl.render.clipping import ClipState
-from core_pdf.impl.render.paths import fill_path_crossing_spans
+from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_paths import fill_path_crossing_spans
 from tests.src.core_pdf.raster_support import make_target
 
 Edge = tuple[float, float, float, float]

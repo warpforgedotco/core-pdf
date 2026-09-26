@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.capture.recording import TextState
+from core_pdf.impl.capture_recording import TextState
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 

@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from core_pdf.impl.render.clipping import ClipState
+from core_pdf.impl.render_clipping import ClipState
 
 
 def by_formula(clip: ClipState, x0: float, y0: float, x1: float, y1: float) -> object:

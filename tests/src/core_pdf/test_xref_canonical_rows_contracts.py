@@ -2,7 +2,7 @@
 
 import pytest
 
-from core_pdf.impl.document.recovery import xref
+from core_pdf.impl import recovery_xref as xref
 from core_pdf.impl.exceptions import PdfParseError
 
 

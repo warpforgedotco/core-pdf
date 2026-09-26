@@ -1,8 +1,8 @@
 import numpy
 import pytest
 
-from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.render_model import RasterImage
 from core_pdf_ocr.impl.extract import grids
 from core_pdf_ocr.impl.extract.ocr.types import OcrTask
 

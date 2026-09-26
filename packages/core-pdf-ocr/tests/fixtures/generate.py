@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[4]
 HERE = Path(__file__).resolve().parent
-FONT = ROOT / "src/core_pdf/impl/_impl/fonts/data/raster_fonts/LiberationSans-Regular.ttf"
+FONT = ROOT / "src/core_pdf/impl/data/raster_fonts/LiberationSans-Regular.ttf"
 
 
 def write_pdf(image: Image.Image, destination: Path, matrix: str) -> None:

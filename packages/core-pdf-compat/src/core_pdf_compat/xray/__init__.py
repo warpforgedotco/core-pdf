@@ -10,15 +10,15 @@ from typing import Any, ClassVar
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
-from core_pdf.impl.capture.program import PageProgram
+from core_pdf.impl.capture_program import PageProgram
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.geometry import (
     bbox_intersects,
     flip_rect_vertical,
     overlap_ratio_of,
 )
-from core_pdf.impl.render.page import compose_page
+from core_pdf.impl.render_page import compose_page
 from core_pdf.impl.text import collapse_ws
 from core_pdf.impl.types import PdfReference, ReplaceFields, ReprFields
 from core_pdf_spec.s_07_syntax.stream import PdfStream

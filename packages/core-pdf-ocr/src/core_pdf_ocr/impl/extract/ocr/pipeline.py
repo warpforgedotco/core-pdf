@@ -8,7 +8,7 @@ from typing import ClassVar
 import numpy
 
 from core_pdf.impl.execution import ExtractionScope
-from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr.impl.extract.capture import promoted_hidden_observations
 from core_pdf_ocr.impl.extract.contracts import (

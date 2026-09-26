@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.ocr import candidates
 from core_pdf_ocr.impl.extract.quality import Candidate, make_candidate
 

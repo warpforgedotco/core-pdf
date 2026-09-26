@@ -6,7 +6,7 @@ shading_t_golden.pkl.gz holds 6,012 points against axial and radial
 shadings -- random coordinates and points with signed zeros, tiny and huge
 values, infinities and NaNs among them, degenerate axes, concentric and
 tangent circles, and the unit cases the deleted functions were tested
-with -- and the parameter core_pdf.impl.render.patterns.axial_shading_t and
+with -- and the parameter core_pdf.impl.render_patterns.axial_shading_t and
 radial_shading_t gave on the machine that generated them.
 
 The radial root is ``disc**0.5``, which CPython computes with the C

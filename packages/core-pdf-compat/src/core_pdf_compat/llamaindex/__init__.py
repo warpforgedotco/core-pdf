@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from core_pdf import PdfDocument
-from core_pdf.impl.document.recovery.xref import XRefScanner
+from core_pdf.impl.recovery_xref import XRefScanner
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_spec.s_07_content.inline_images import validate_inline_images
 from core_pdf_spec.s_07_filters.errors import FilterParseError

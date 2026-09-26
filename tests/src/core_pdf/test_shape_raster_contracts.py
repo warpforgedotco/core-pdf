@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
-from core_pdf.impl.render import target as render_target
-from core_pdf.impl.render.clipping import ClipState
-from core_pdf.impl.render.target import RasterTarget
+from core_pdf.impl import render_target as render_target
+from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
+from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_target import RasterTarget
 
 
 def make_target(clip_kind):

@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from core_pdf.impl.capture.program import CapturedProgram
-from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
-from core_pdf.impl.render.target import resolve_soft_mask
+from core_pdf.impl.capture_program import CapturedProgram
+from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, CapturedSoftMask
+from core_pdf.impl.render_target import resolve_soft_mask
 from tests.src.core_pdf.raster_support import make_target
 
 if TYPE_CHECKING:
-    from core_pdf.impl.capture.recording import TextState
-    from core_pdf.impl.capture.tolerant_state import RecoveringTextState
+    from core_pdf.impl.capture_recording import TextState
+    from core_pdf.impl.capture_tolerant_state import RecoveringTextState
     from core_pdf_spec.s_11_transparency.soft_masks import SoftMask
 
 
@@ -133,7 +133,7 @@ def state(text_pdf_bytes: bytes) -> Iterator[TextState]:
     document's content and a real mask would only slow them down.
     """
     from core_pdf import PdfDocument
-    from core_pdf.impl.capture.recording import TextState
+    from core_pdf.impl.capture_recording import TextState
 
     with PdfDocument(text_pdf_bytes) as document:
         yield TextState(document)
@@ -142,7 +142,7 @@ def state(text_pdf_bytes: bytes) -> Iterator[TextState]:
 @pytest.fixture
 def parses(monkeypatch: pytest.MonkeyPatch) -> list[object]:
     """Counts reaching the real parse, standing in for its result."""
-    from core_pdf.impl.capture import tolerant_state
+    from core_pdf.impl import capture_tolerant_state as tolerant_state
 
     reached: list[object] = []
     monkeypatch.setattr(
@@ -160,7 +160,7 @@ def test_a_repeated_soft_mask_is_parsed_once_per_distinct_state(
     # carrying a freshly compiled transfer closure, and every cache downstream
     # is keyed by one of those identities, so none of them could ever hit.
     from core_pdf import PdfDocument
-    from core_pdf.impl.capture import tolerant_state
+    from core_pdf.impl import capture_tolerant_state as tolerant_state
 
     calls = 0
     produced: list[int] = []
@@ -224,7 +224,7 @@ def test_the_parse_cache_separates_masks_by_resource_scope(
 def test_the_parse_cache_is_bounded(
     state: TextState, parses: list[object], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from core_pdf.impl.capture import tolerant_state
+    from core_pdf.impl import capture_tolerant_state as tolerant_state
 
     monkeypatch.setattr(tolerant_state, "SOFT_MASK_CACHE_LIMIT", 3)
     for index in range(4):
@@ -259,7 +259,7 @@ def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
     # A resolved plane covers the whole page in float32, so a page using many
     # distinct masks kept far more than it could afford: one corpus page held
     # 1,598 planes totalling 3,208MB, 91% of its peak resident set.
-    from core_pdf.impl.render.target import ByteBudgetCache
+    from core_pdf.impl.render_target import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=10_000_000)
     for index in range(4):
@@ -271,7 +271,7 @@ def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
 
 
 def test_a_plane_larger_than_the_budget_is_not_cached_at_all() -> None:
-    from core_pdf.impl.render.target import ByteBudgetCache
+    from core_pdf.impl.render_target import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=1_000_000)
     store_plane(cache, plane_key(1), make_plane(5))
@@ -284,7 +284,7 @@ def test_a_plane_larger_than_the_budget_is_not_cached_at_all() -> None:
 
 
 def test_restoring_a_key_does_not_double_count_its_bytes() -> None:
-    from core_pdf.impl.render.target import ByteBudgetCache
+    from core_pdf.impl.render_target import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=10_000_000)
     store_plane(cache, plane_key(1), make_plane(2))
@@ -294,7 +294,7 @@ def test_restoring_a_key_does_not_double_count_its_bytes() -> None:
 
 
 def test_a_cached_none_plane_costs_nothing() -> None:
-    from core_pdf.impl.render.target import ByteBudgetCache
+    from core_pdf.impl.render_target import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=1_000)
     store_plane(cache, plane_key(1), None)

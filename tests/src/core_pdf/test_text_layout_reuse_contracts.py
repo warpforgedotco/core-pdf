@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.capture.recording import TextState
+from core_pdf.impl.capture_recording import TextState
 from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 CONTENTS = [

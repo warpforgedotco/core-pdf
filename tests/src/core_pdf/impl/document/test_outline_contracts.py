@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.document.document import PdfDocument
+from core_pdf.impl.document_document import PdfDocument
 from core_pdf.impl.types import PdfName
 
 

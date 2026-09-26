@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Nearest-sample blit of an opaque image (core_pdf.impl.render.target).
+"""Nearest-sample blit of an opaque image (core_pdf.impl.render_target).
 
 An axis-aligned opaque image is drawn by picking, for every device pixel, the
 source sample its centre falls on: a row index per device row, a column index
@@ -90,7 +90,7 @@ def interleave_soft_mask(
 ):
     """raster's first `channels` channels with mask[mask_rows[r], mask_columns[c]] after them.
 
-    core_pdf.impl.graphics.images.apply_soft_mask gathered the soft mask to
+    core_pdf.impl.graphics_images.apply_soft_mask gathered the soft mask to
     the image's size with advanced indexing, then built the RGBA array with
     two strided copies -- three passes over an image that can run to tens of
     megapixels. This writes each output pixel once. It is a byte copy; the

@@ -2,10 +2,10 @@ from collections.abc import Iterable
 
 import pytest
 
-import core_pdf.impl.fonts.decoder as decoder_module
-from core_pdf.impl.fonts.cmap_tokenizer import CMapDecoder
-from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl.fonts.decoder import FontDecoder, single_code_mapping, split_code_bytes
+import core_pdf.impl.fonts_decoder as decoder_module
+from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
+from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts_decoder import FontDecoder, single_code_mapping, split_code_bytes
 
 
 def block(kind, records):

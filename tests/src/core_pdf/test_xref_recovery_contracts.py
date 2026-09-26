@@ -3,8 +3,8 @@ import zlib
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.document.document import object_headers_present
-from core_pdf.impl.document.recovery import xref
+from core_pdf.impl import recovery_xref as xref
+from core_pdf.impl.document_document import object_headers_present
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -262,7 +262,7 @@ def test_object_scan_ignores_fake_headers_inside_valid_stream_payload(generation
 @pytest.mark.parametrize("existing", [False, True])
 @pytest.mark.parametrize("limit", [1, 2, 10])
 def test_recovered_object_stream_entries_preserve_parser_indexes(generation, existing, limit):
-    from core_pdf.impl.document.recovery.objects import PdfObjectStream
+    from core_pdf.impl.recovery_objects import PdfObjectStream
     from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
 
     header = b"20 0 21 3 22 6 "

@@ -14,9 +14,9 @@ import pickle
 
 import pytest
 
-from core_pdf.impl.capture.program import CapturedProgram, PageProgram
-from core_pdf.impl.capture.recording import StrokeLineRows, flatten_path
-from core_pdf.impl.capture.records import (
+from core_pdf.impl.capture_program import CapturedProgram, PageProgram
+from core_pdf.impl.capture_recording import StrokeLineRows, flatten_path
+from core_pdf.impl.capture_records import (
     EMPTY_LINES,
     CapturedLine,
     CapturedLines,

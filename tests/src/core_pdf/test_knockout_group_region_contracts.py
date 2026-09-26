@@ -7,10 +7,10 @@ import numpy
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.render import display
-from core_pdf.impl.render.display import plain_fill_members_box
-from core_pdf.impl.render.model import DisplayItem, DisplayListItem, PathPaintItem, PathPaintKind
-from core_pdf.impl.render.target import RasterTarget
+from core_pdf.impl import render_display as display
+from core_pdf.impl.render_display import plain_fill_members_box
+from core_pdf.impl.render_model import DisplayItem, DisplayListItem, PathPaintItem, PathPaintKind
+from core_pdf.impl.render_target import RasterTarget
 from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 

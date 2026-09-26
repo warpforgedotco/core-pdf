@@ -1,4 +1,4 @@
-from core_pdf.impl.fonts.decoder import DecodedGlyph
+from core_pdf.impl.fonts_decoder import DecodedGlyph
 from core_pdf.impl.glyphs import GlyphCluster
 from core_pdf.impl.types import TextWord
 

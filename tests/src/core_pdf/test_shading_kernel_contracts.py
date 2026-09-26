@@ -15,9 +15,9 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf.impl.graphics.shading import prepare_shading
-from core_pdf.impl.render import target as raster
-from core_pdf.impl.render.target import RasterTarget
+from core_pdf.impl import render_target as raster
+from core_pdf.impl.graphics_shading import prepare_shading
+from core_pdf.impl.render_target import RasterTarget
 from core_pdf_cythonized import shading_t, shading_values
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING

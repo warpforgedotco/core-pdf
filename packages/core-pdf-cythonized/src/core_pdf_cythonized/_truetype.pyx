@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""TrueType glyph outlines from the glyf table (core_pdf.impl.fonts.font_program).
+"""TrueType glyph outlines from the glyf table (core_pdf.impl.fonts_font_program).
 
 A TrueType glyph's contours were fontTools': the whole glyf table split into
 a Glyph per glyph on first use, the glyph expanded, drawn through a

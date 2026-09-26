@@ -7,7 +7,7 @@ import struct
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-WORDLIST_DIR = ROOT / "src/core_pdf/impl/layout/data/wordlists"
+WORDLIST_DIR = ROOT / "src/core_pdf/impl/data/wordlists"
 OUTPUT = WORDLIST_DIR / "english_word_ranks.bin"
 MAGIC = b"CPWRANK1"
 HEADER = struct.Struct("<8sI")

@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.graphics.functions import compile_pdf_function
+from core_pdf.impl.graphics_functions import compile_pdf_function
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream

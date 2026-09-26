@@ -12,14 +12,14 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf.impl.capture.records import CapturedPath
-from core_pdf.impl.render.model import (
+from core_pdf.impl.capture_records import CapturedPath
+from core_pdf.impl.render_model import (
     DisplayListItem,
     PathPaintItem,
     PathPaintKind,
     RasterGroup,
 )
-from core_pdf.impl.render.target import RasterTarget
+from core_pdf.impl.render_target import RasterTarget
 from tests.src.core_pdf.raster_support import make_target as make_real_target
 
 

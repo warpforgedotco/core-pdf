@@ -3,7 +3,7 @@
 import re
 
 from core_pdf import PdfDocument
-from core_pdf.impl.document.recovery.resolver import LEXER_POOL_LIMIT
+from core_pdf.impl.recovery_resolver import LEXER_POOL_LIMIT
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.types import PdfReference
 from tests.src.core_pdf.pdf_bytes import multi_page_pdf

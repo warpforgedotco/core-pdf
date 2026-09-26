@@ -3,7 +3,7 @@
 """Supersampled coverage: agreement with the fill_path loop it replaced.
 
 supersampled_coverage_golden.pkl.gz was generated from the deltas branch of
-core_pdf.impl.render.target.RasterTarget.fill_path before it was deleted. The
+core_pdf.impl.render_target.RasterTarget.fill_path before it was deleted. The
 generator first proved its transcription of that loop against every one of
 the 15,426 calls a corpus sweep sent through the live code, row by row, and
 only then used it. It holds:
@@ -132,6 +132,6 @@ def test_edges_must_have_four_columns():
 
 def test_render_target_uses_the_kernel():
     pytest.importorskip("core_pdf")
-    from core_pdf.impl.render import target
+    from core_pdf.impl import render_target as target
 
     assert target.supersampled_coverage_plane is supersampled_coverage_plane

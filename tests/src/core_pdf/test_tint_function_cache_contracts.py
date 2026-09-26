@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-from core_pdf.impl.graphics import image_samples
-from core_pdf.impl.graphics.image_samples import tint_function, tint_function_key
+from core_pdf.impl import graphics_image_samples as image_samples
+from core_pdf.impl.graphics_image_samples import tint_function, tint_function_key
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.types import PdfName, PdfReference
 

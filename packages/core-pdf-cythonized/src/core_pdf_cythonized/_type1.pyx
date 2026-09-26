@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Type 1 eexec and charstring decryption (core_pdf.impl.fonts.font_program).
+"""Type 1 eexec and charstring decryption (core_pdf.impl.fonts_font_program).
 
 A Type 1 program's private section is eexec-encrypted, and every
 subroutine and charstring in it is encrypted again (Adobe Type 1 Font

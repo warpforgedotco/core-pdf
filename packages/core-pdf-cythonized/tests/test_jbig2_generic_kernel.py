@@ -73,7 +73,7 @@ def test_core_decodes_arithmetic_regions_with_the_kernel():
     # Wire-up needs the consumer installed; the kernel tests above stand alone
     # so cibuildwheel can run them against a bare wheel.
     pytest.importorskip("core_pdf")
-    from core_pdf.impl.graphics import stream_decoding
+    from core_pdf.impl import graphics_stream_decoding as stream_decoding
 
     assert stream_decoding.decode_arithmetic_generic_template0 is (
         decode_arithmetic_generic_template0

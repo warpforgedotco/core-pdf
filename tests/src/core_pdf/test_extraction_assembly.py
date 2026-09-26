@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from core_pdf.impl.execution import ExtractionCancelled, ExtractionScope
-from core_pdf.impl.extract.selection import assemble_document
-from core_pdf.impl.output.model import Diagnostic, Page
+from core_pdf.impl.extract_selection import assemble_document
+from core_pdf.impl.output_model import Diagnostic, Page
 
 
 @pytest.mark.parametrize("numbers", [(), (3, 1, 3)])

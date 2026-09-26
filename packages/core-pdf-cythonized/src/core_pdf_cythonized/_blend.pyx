@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Normal-mode alpha compositing (core_pdf.impl.render.blend).
+"""Normal-mode alpha compositing (core_pdf.impl.render_blend).
 
 The numpy original ran about fifteen array operations over a buffer averaging
 thirty-eight elements, 26,315 times on a corpus page. All of the cost was

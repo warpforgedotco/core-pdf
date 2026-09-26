@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF object syntax, the well-formed part (core_pdf.impl.document.recovery.lexer).
+"""PDF object syntax, the well-formed part (core_pdf.impl.recovery_lexer).
 
 Every indirect object core-pdf reads goes through the reader lexer's
 parse_dictionary and parse_array, and on the benchmark corpus the lexer is a

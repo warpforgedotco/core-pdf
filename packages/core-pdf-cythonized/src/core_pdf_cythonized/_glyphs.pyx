@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Per-glyph layout geometry (core_pdf.impl.capture.glyphs).
+"""Per-glyph layout geometry (core_pdf.impl.capture_glyphs).
 
 capture_glyphs is 38.3% of a profiled page capture, and roughly half of that
 is scalar float arithmetic: an advance box, a baseline, a glyph transform, an

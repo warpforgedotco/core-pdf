@@ -2,9 +2,9 @@
 
 import pytest
 
-from core_pdf.impl.document.recovery.lexer import PdfLexer
-from core_pdf.impl.document.recovery.objects import PdfObjectStream, scan_object_stream_pairs
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.recovery_lexer import PdfLexer
+from core_pdf.impl.recovery_objects import PdfObjectStream, scan_object_stream_pairs
 from core_pdf_spec.s_07_syntax.objects import parse_object_stream_pair
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 

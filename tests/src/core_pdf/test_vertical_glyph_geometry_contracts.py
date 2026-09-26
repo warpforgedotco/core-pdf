@@ -5,7 +5,7 @@ only horizontal runs. These drive it directly, because a vertical run that is
 also clipped is rare enough in the corpus that the clip branch would otherwise
 go unexercised."""
 
-from core_pdf.impl.capture.glyph_geometry import GlyphGeometry, vertical_glyph_geometry
+from core_pdf.impl.capture_glyph_geometry import GlyphGeometry, vertical_glyph_geometry
 from core_pdf.impl.types import Rectangle
 
 BASIS = (100.0, 700.0, 12.0, 0.0, 0.0, 12.0)

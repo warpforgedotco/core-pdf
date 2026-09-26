@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.document.document import PdfDocument
+from core_pdf.impl.document_document import PdfDocument
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 
