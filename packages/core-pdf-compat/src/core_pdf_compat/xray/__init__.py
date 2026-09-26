@@ -379,11 +379,17 @@ class _BoxGrid:
         x0, y0, x1, y1 = box
         if not (isfinite(x0) and isfinite(y0) and isfinite(x1) and isfinite(y1)):
             return None
-        columns = range(floor(x0 / cls.CELL), floor(x1 / cls.CELL) + 1)
-        rows = range(floor(y0 / cls.CELL), floor(y1 / cls.CELL) + 1)
-        if len(columns) * len(rows) > cls.MAX_CELLS:
+        column_start, column_stop = floor(x0 / cls.CELL), floor(x1 / cls.CELL) + 1
+        row_start, row_stop = floor(y0 / cls.CELL), floor(y1 / cls.CELL) + 1
+        # Counted from the bounds, not len(range): a range longer than
+        # sys.maxsize raises OverflowError from len().
+        if max(0, column_stop - column_start) * max(0, row_stop - row_start) > cls.MAX_CELLS:
             return None
-        return [(column, row) for column in columns for row in rows]
+        return [
+            (column, row)
+            for column in range(column_start, column_stop)
+            for row in range(row_start, row_stop)
+        ]
 
     def candidates(self, box: tuple[float, float, float, float]) -> list[int]:
         """The indexes, ascending, of every box that may intersect box."""

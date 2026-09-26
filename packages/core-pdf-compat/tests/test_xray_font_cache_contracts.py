@@ -74,3 +74,14 @@ def test_font_recovery_cache_is_shared_across_glyphs_and_routes(monkeypatch, rec
         ]
     else:
         assert result == []
+
+
+def test_box_grid_falls_back_for_a_box_too_wide_to_count() -> None:
+    # A span wider than sys.maxsize cells would make len(range(...)) raise
+    # OverflowError; the grid counts from the bounds and treats the box as
+    # everywhere instead.
+    huge = (-1e300, -1e300, 1e300, 1e300)
+    grid = xray._BoxGrid([(0.0, 0.0, 1.0, 1.0), huge])
+    assert xray._BoxGrid.span(huge) is None
+    assert grid.candidates(huge) == [0, 1]
+    assert grid.candidates((0.0, 0.0, 1.0, 1.0)) == [0, 1]
