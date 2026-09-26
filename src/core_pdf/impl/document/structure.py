@@ -17,6 +17,7 @@ from core_pdf_spec.s_14_structure.dictionaries import (
     parse_role_map,
 )
 from core_pdf_spec.s_14_structure.roles import StructureRole, resolve_structure_role
+from core_pdf_spec.standards import recognized_version
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.document import PageLookup, PdfDocument
@@ -190,7 +191,7 @@ class StructureElement(StructureNode):
             return cached
         resolver = self.document.resolver
         context = resolver.semantic_context
-        if context is not None and (context.version is None or not context.version.recognized):
+        if recognized_version(context) is None:
             context = None
         try:
             tree = self.document.structure

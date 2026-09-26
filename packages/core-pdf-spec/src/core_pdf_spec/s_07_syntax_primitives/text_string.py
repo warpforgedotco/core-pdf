@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from core_pdf_spec.exceptions import PdfUnsupportedError
-from core_pdf_spec.standards import PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
 
 PDFDOC_ENCODING_OVERRIDES: dict[int, str] = {
     24: "˘",
@@ -57,19 +56,17 @@ PDFDOC_ENCODING_TABLE: list[str] = [
 def decode_pdf_text_string(
     data: bytes | memoryview, *, context: SemanticContext | None = None
 ) -> str:
-    if context is not None and (context.version is None or not context.version.recognized):
-        raise PdfUnsupportedError("text-string semantics require a recognized PDF version")
+    version = require_recognized_version(
+        context, "text-string semantics require a recognized PDF version"
+    )
     if type(data) is memoryview:
         data = data.tobytes()
-    version = context.version if context is not None else None
     if data.startswith(b"\xfe\xff") and (version is None or version >= PdfVersion(1, 2)):
         try:
             return data[2:].decode("utf-16-be")
         except UnicodeDecodeError as exc:
             raise ValueError("invalid UTF-16BE data") from exc
-    if data.startswith(b"\xef\xbb\xbf") and (
-        context is None or context.version == PdfVersion(2, 0)
-    ):
+    if data.startswith(b"\xef\xbb\xbf") and (version is None or version == PdfVersion(2, 0)):
         try:
             return data[3:].decode("utf-8")
         except UnicodeDecodeError as exc:

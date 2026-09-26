@@ -6,7 +6,7 @@ from core_pdf.impl.types import PdfString
 from core_pdf_spec.s_07_syntax_primitives.text_string import (
     decode_pdf_text_string as decode_spec_text_string,
 )
-from core_pdf_spec.standards import PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext, recognized_version
 
 
 def decode_pdf_text_string(
@@ -20,13 +20,10 @@ def decode_pdf_text_string(
         except UnicodeDecodeError as exc:
             raise ValueError("invalid UTF-16LE data") from exc
     if context is not None and (
-        context.version is None
-        or not context.version.recognized
-        or (context.version < PdfVersion(2, 0) and data.startswith(b"\xef\xbb\xbf"))
-        or (context.version < PdfVersion(1, 2) and data.startswith(b"\xfe\xff"))
-        or (
-            context.version < PdfVersion(1, 3) and not data.startswith(b"\xfe\xff") and 0xA0 in data
-        )
+        (version := recognized_version(context)) is None
+        or (version < PdfVersion(2, 0) and data.startswith(b"\xef\xbb\xbf"))
+        or (version < PdfVersion(1, 2) and data.startswith(b"\xfe\xff"))
+        or (version < PdfVersion(1, 3) and not data.startswith(b"\xfe\xff") and 0xA0 in data)
     ):
         context = None
     return decode_spec_text_string(data, context=context)

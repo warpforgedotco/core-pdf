@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import ClassVar, Literal
 
-from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
-from core_pdf_spec.standards import PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
 from core_records import Record, frozen_setattr
 
@@ -222,8 +221,7 @@ def resolve_structure_role(
     decode_text: Callable[[bytes], str] | None = None,
     context: SemanticContext | None = None,
 ) -> StructureRole:
-    if context is not None and (context.version is None or not context.version.recognized):
-        raise PdfUnsupportedError("structure role semantics require a recognized PDF version")
+    require_recognized_version(context, "structure role semantics require a recognized PDF version")
     type_name = resolve_name(resolve(name))
     if type_name is None:
         raise ValueError("structure type must be a PDF name")

@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import ClassVar, TypeAlias
 
-from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -15,8 +14,9 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
     require_pdf_number,
     require_pdf_number_array,
+    require_pdf_number_pairs,
 )
-from core_pdf_spec.standards import PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
 from core_records import Record, frozen_setattr
 
 ColorParams: TypeAlias = Mapping[str, object]
@@ -191,9 +191,9 @@ def parse_device_n_attributes(
     *,
     context: SemanticContext | None = None,
 ) -> DeviceNAttributes:
-    if context is not None and (context.version is None or not context.version.recognized):
-        raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
-    version = context.version if context is not None else None
+    version = require_recognized_version(
+        context, "color-space semantics require a recognized PDF version"
+    )
     names = colorant_names(colorants)
     return parse_device_n_attributes_for(value, names, set(), version)
 
@@ -312,8 +312,7 @@ def array(value: object, size: int, message: str) -> tuple[float, ...]:
 
 
 def parse_component_ranges(value: object, count: int) -> ComponentRanges:
-    values = array(value, 2 * count, "invalid color component Range")
-    ranges = tuple(zip(values[::2], values[1::2], strict=True))
+    ranges = require_pdf_number_pairs(value, "invalid color component Range", count=count)
     if any(low > high for low, high in ranges):
         raise ValueError("invalid color component Range")
     return ranges
@@ -355,9 +354,9 @@ def calibrated_params(kind: str, source: PdfDict) -> ColorParams:
 
 
 def parse_color_space(value: object, *, context: SemanticContext | None = None) -> ColorSpace:
-    if context is not None and (context.version is None or not context.version.recognized):
-        raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
-    version = context.version if context is not None else None
+    version = require_recognized_version(
+        context, "color-space semantics require a recognized PDF version"
+    )
     return parse_color_space_versioned(value, set(), version)
 
 

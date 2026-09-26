@@ -7,7 +7,7 @@ from typing import Any, Literal
 import numpy
 
 from core_pdf_spec.exceptions import PdfUnsupportedError
-from core_pdf_spec.standards import PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
 
 BlendMode = Literal["ColorDodge", "ColorBurn"]
 BlendSamples = numpy.ndarray[Any, numpy.dtype[numpy.float64]]
@@ -16,9 +16,9 @@ BlendSamples = numpy.ndarray[Any, numpy.dtype[numpy.float64]]
 def revised_blending(context: SemanticContext | None) -> bool:
     if context is None:
         return True
-    version = context.version
-    if version is None or not version.recognized:
-        raise PdfUnsupportedError("blend semantics require a recognized PDF version")
+    version = require_recognized_version(
+        context, "blend semantics require a recognized PDF version"
+    )
     if version == PdfVersion(2, 0):
         return True
     return version == PdfVersion(1, 7) and any(
