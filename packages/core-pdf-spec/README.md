@@ -225,7 +225,9 @@ the spec modules keep only the PDF wrappers:
   `JBIG2PageDecoder.finish()` returns T.88 polarity (1 = black); `decode_jbig2` applies the
   ISO 32000-1 7.4.7 inversion through `core_jbig2.bitmap.invert_packed_bitmap`.
 - `s_07_security.ciphers` and `s_07_security.pdf_mac` keep the PDF wrappers over
-  `core_pdf_crypto.ciphers` (public `aes_*`, `rc4_crypt`) and `core_pdf_crypto.pdf_mac`
+  `core_pdf_crypto.ciphers` (the `aes_*_decrypt` functions, which raise
+  `PdfDecryptionError`; `aes_cbc_encrypt` and `rc4_crypt` are used from
+  `core_pdf_crypto.ciphers` directly) and `core_pdf_crypto.pdf_mac`
   (`validate_pdf_mac_token`, `validate_authenticated_data`, `digest*`, `parse_der`).
   Unsupported digest algorithms raise `core_pdf_crypto.errors.UnsupportedAlgorithmError`,
   which the wrapper maps to `PdfUnsupportedError`.

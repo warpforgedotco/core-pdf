@@ -2,19 +2,32 @@
 
 from __future__ import annotations
 
+from types import TracebackType
+
 from core_pdf_crypto import ciphers
 from core_pdf_crypto.errors import DecryptionError
 from core_pdf_spec.exceptions import PdfDecryptionError
 
 
-def aes_cbc_encrypt(
-    key: bytes,
-    initialization_vector: bytes,
-    plaintext: bytes,
-    *,
-    use_padding: bool,
-) -> bytes:
-    return ciphers.aes_cbc_encrypt(key, initialization_vector, plaintext, use_padding=use_padding)
+class DecryptionErrorsAsPdf:
+    """Re-raise core-pdf-crypto's DecryptionError as PdfDecryptionError."""
+
+    __slots__ = ()
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        if isinstance(exc, DecryptionError):
+            raise PdfDecryptionError(str(exc)) from exc
+
+
+DECRYPTION_ERRORS_AS_PDF = DecryptionErrorsAsPdf()
 
 
 def aes_cbc_decrypt(
@@ -24,30 +37,20 @@ def aes_cbc_decrypt(
     *,
     use_padding: bool,
 ) -> bytes:
-    try:
+    with DECRYPTION_ERRORS_AS_PDF:
         return ciphers.aes_cbc_decrypt(
             key, initialization_vector, ciphertext, use_padding=use_padding
         )
-    except DecryptionError as exc:
-        raise PdfDecryptionError(str(exc)) from exc
 
 
 def aes_ecb_decrypt(key: bytes, ciphertext: bytes) -> bytes:
-    try:
+    with DECRYPTION_ERRORS_AS_PDF:
         return ciphers.aes_ecb_decrypt(key, ciphertext)
-    except DecryptionError as exc:
-        raise PdfDecryptionError(str(exc)) from exc
 
 
 def aes_gcm_decrypt(key: bytes, data: bytes) -> bytes:
-    try:
+    with DECRYPTION_ERRORS_AS_PDF:
         return ciphers.aes_gcm_decrypt(key, data)
-    except DecryptionError as exc:
-        raise PdfDecryptionError(str(exc)) from exc
-
-
-def rc4_crypt(key: bytes, data: bytes) -> bytes:
-    return ciphers.rc4_crypt(key, data)
 
 
 __all__ = ()
