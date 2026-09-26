@@ -151,12 +151,16 @@ def image_color_rendering(
     )
 
 
+def has_jpx_filter(dictionary: dict[object, object]) -> bool:
+    filters = dictionary.get("Filter")
+    filters = filters if isinstance(filters, (list, tuple)) else (filters,)
+    return any(decoded_name(value) == "JPXDecode" for value in filters)
+
+
 def image_decode_array_applies(
     dictionary: dict[object, object], *, context: SemanticContext | None = None
 ) -> bool:
-    filters = dictionary.get("Filter")
-    filters = filters if isinstance(filters, (list, tuple)) else (filters,)
-    if not any(decoded_name(value) == "JPXDecode" for value in filters):
+    if not has_jpx_filter(dictionary):
         return True
     if dictionary.get("ImageMask") is True:
         return True
@@ -169,9 +173,7 @@ def image_decode_array_applies(
 
 
 def image_smask_in_data(dictionary: dict[object, object]) -> int:
-    filters = dictionary.get("Filter")
-    filters = filters if isinstance(filters, (list, tuple)) else (filters,)
-    if not any(decoded_name(value) == "JPXDecode" for value in filters):
+    if not has_jpx_filter(dictionary):
         return 0
     selector = require_pdf_integer(dictionary.get("SMaskInData", 0), "invalid image SMaskInData")
     if selector not in {0, 1, 2}:
@@ -180,9 +182,7 @@ def image_smask_in_data(dictionary: dict[object, object]) -> int:
 
 
 def image_bits_per_component(dictionary: dict[object, object]) -> int | None:
-    filters = dictionary.get("Filter")
-    filters = filters if isinstance(filters, (list, tuple)) else (filters,)
-    if any(decoded_name(value) == "JPXDecode" for value in filters):
+    if has_jpx_filter(dictionary):
         return None
     value = dictionary.get("BitsPerComponent")
     if dictionary.get("ImageMask") is True:

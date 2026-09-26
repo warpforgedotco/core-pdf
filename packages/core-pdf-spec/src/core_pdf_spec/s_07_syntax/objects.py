@@ -100,10 +100,8 @@ class PdfObjectStream:
             self.raw_body = b""
 
     def get(self, reference: int | PdfReference, default: Any = None) -> Any:
-        obj_num = reference.object_number if isinstance(reference, PdfReference) else reference
-        if obj_num < 0:
-            raise ValueError("invalid object number")
-        if isinstance(reference, PdfReference) and reference.generation_number != 0:
+        obj_num = stream_object_number(reference)
+        if obj_num is None:
             return default
         with self.lock:
             if obj_num in self.objects:
@@ -127,12 +125,8 @@ class PdfObjectStream:
             return self.get(expected_reference)
 
     def object_bytes(self, reference: int | PdfReference) -> bytes | None:
-        object_number = (
-            reference.object_number if isinstance(reference, PdfReference) else reference
-        )
-        if object_number < 0:
-            raise ValueError("invalid object number")
-        if isinstance(reference, PdfReference) and reference.generation_number != 0:
+        object_number = stream_object_number(reference)
+        if object_number is None:
             return None
         with self.lock:
             offset = self.index.get(object_number)
@@ -155,6 +149,19 @@ class PdfObjectStream:
                 return result
             finally:
                 lexer.close()
+
+
+def stream_object_number(reference: int | PdfReference) -> int | None:
+    """The object number `reference` names, or None for a nonzero generation.
+
+    Objects in an object stream have generation 0 (ISO 32000-2 7.5.7).
+    """
+    object_number = reference.object_number if isinstance(reference, PdfReference) else reference
+    if object_number < 0:
+        raise ValueError("invalid object number")
+    if isinstance(reference, PdfReference) and reference.generation_number != 0:
+        return None
+    return object_number
 
 
 def parse_object_stream_pair(lexer: PdfLexer) -> tuple[int, int]:

@@ -198,6 +198,13 @@ def parse_device_n_attributes(
     return parse_device_n_attributes_for(value, names, set(), version)
 
 
+def is_cmyk_process_space(space: ColorSpace) -> bool:
+    """Whether a DeviceN process space is CMYK, which reserves the CMYK colorant names."""
+    return space.kind == "DeviceCMYK" or (
+        space.kind == "ICCBased" and len(space.component_ranges) == 4
+    )
+
+
 def device_n_process(
     value: object,
     names: tuple[str, ...],
@@ -215,7 +222,7 @@ def device_n_process(
     count = len(space.component_ranges)
     if len(components) != count or len(set(components)) != count:
         raise ValueError("invalid DeviceN process Components")
-    cmyk = space.kind == "DeviceCMYK" or (space.kind == "ICCBased" and count == 4)
+    cmyk = is_cmyk_process_space(space)
     if any(name in {"All", "None"} for name in components) or any(
         name in CMYK_NAMES and (not cmyk or name != CMYK_NAMES[index])
         for index, name in enumerate(components)
@@ -273,10 +280,7 @@ def parse_device_n_attributes_for(
         if subtype == "NChannel" and process is None and any(name in CMYK_NAMES for name in names):
             raise ValueError("NChannel process colorants require a Process dictionary")
         process_names = set(process.components) if process is not None else set()
-        if process is not None and (
-            process.color_space.kind == "DeviceCMYK"
-            or (process.color_space.kind == "ICCBased" and len(process.components) == 4)
-        ):
+        if process is not None and is_cmyk_process_space(process.color_space):
             process_names.update(CMYK_NAMES)
         raw_colorants = source.get("Colorants")
         colorant_spaces: dict[str, ColorSpace] = {}
