@@ -323,15 +323,6 @@ class RecoveringTextState(ContentInterpreter):
         except (TypeError, ValueError) as error:
             return self.reject(error, "integer-operand", None)
 
-    def append_cubic_curve(
-        self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float
-    ) -> None:
-        # Spec rejects a curve with no current point; recovery moves there.
-        if self.current_point is None:
-            self.current_point = (x3, y3)
-            return
-        super().append_cubic_curve(x1, y1, x2, y2, x3, y3)
-
     def recover_color_components(
         self, components: typing.Sequence[object]
     ) -> tuple[float, ...] | None:

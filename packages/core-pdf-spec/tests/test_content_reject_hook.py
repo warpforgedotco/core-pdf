@@ -102,10 +102,13 @@ def test_a_recovering_hook_clamps_line_parameters(
     assert [context for context, _message in state.rejected] == rejected
 
 
-def test_the_default_hook_refuses_unmatched_ex() -> None:
+def test_the_default_hook_refuses_unmatched_ex_and_a_curve_without_a_point() -> None:
     state = make_interpreter()
     with pytest.raises(PdfParseError, match="unmatched EX"):
         state.op_EX((), 0)
+    with pytest.raises(PdfParseError, match="no current point"):
+        state.append_cubic_curve(1, 2, 3, 4, 5, 6)
+    assert state.current_point is None
 
 
 def test_a_recovering_hook_ignores_unmatched_ex() -> None:
@@ -117,3 +120,11 @@ def test_a_recovering_hook_ignores_unmatched_ex() -> None:
     state.op_BX((), 0)
     assert state.compatibility_depth == 1
     assert [context for context, _message in state.rejected] == ["compatibility"]
+
+
+def test_a_recovering_hook_moves_to_the_end_of_a_curve_without_a_point() -> None:
+    state = recovering()
+    state.append_cubic_curve(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+    assert state.current_point == (5.0, 6.0)
+    assert not state.current_path.ops
+    assert [context for context, _message in state.rejected] == ["path"]

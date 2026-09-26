@@ -145,7 +145,10 @@ class ContentInterpreter:
         self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float
     ) -> None:
         if self.current_point is None:
-            raise PdfParseError("curve has no current point")
+            # Recovery moves to the curve's end point, drawing nothing.
+            self.reject(PdfParseError("curve has no current point"), "path", None)
+            self.current_point = (x3, y3)
+            return
         x0, y0 = self.current_point
         self.current_path.cubic_to(
             (x0, y0, x1, y1, x2, y2, x3, y3), self.graphics.ctm, float(self.graphics.flatness)
