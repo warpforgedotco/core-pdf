@@ -100,3 +100,56 @@ def test_a_mismatched_target_is_refused():
     target = numpy.zeros((2, 2, 4), dtype=numpy.uint8)
     with pytest.raises(ValueError, match="target"):
         fill_rect_coverage(0, 3, 0, 3, 0.0, 3.0, 0.0, 3.0, (0, 0, 0, 255), target, None, None, 1.0)
+
+
+@pytest.mark.parametrize("seed", range(24))
+def test_flat_bands_match_the_five_steps(seed):
+    # Large rectangles with fractional edges over a flat backdrop and flat
+    # planes: fully covered rows, the opaque block they write, and runs of
+    # repeated inputs, which the kernel does not recompute.
+    rng = numpy.random.default_rng(seed)
+    width, height = int(rng.integers(3, 60)), int(rng.integers(3, 40))
+    ix0, iy0 = int(rng.integers(0, 5)), int(rng.integers(0, 5))
+    left = ix0 + rng.choice([0.0, 0.25, 0.5, 0.9])
+    right = ix0 + width - rng.choice([0.0, 0.3, 0.75])
+    top = iy0 + rng.choice([0.0, 0.4])
+    bottom = iy0 + height - rng.choice([0.0, 0.6])
+    box = (ix0, ix0 + width, iy0, iy0 + height, left, right, top, bottom)
+    rgba = PAINTS[seed % len(PAINTS)]
+    backdrop = numpy.empty((height + 2, width + 3, 4), dtype=numpy.uint8)
+    backdrop[...] = rng.integers(0, 256, 4, dtype=numpy.uint8)
+    backdrop[0, 0] = 7
+    planes = seed % 4
+    alpha = numpy.full((height + 2, width + 3), 0.25, dtype=numpy.float32)
+    shape = numpy.full((height + 2, width + 3), -0.0, dtype=numpy.float32)
+    shape[1::2] = 0.0
+    results = []
+    for run in (pipeline, fused):
+        for packed in (True, False):
+            if run is pipeline and not packed:
+                continue
+            target = backdrop.copy()
+            if not packed:
+                # Channels apart from each other, so the kernel's generic path runs.
+                spread = numpy.zeros((height + 2, width + 3, 8), dtype=numpy.uint8)
+                spread[..., ::2] = target
+                target = spread[..., ::2]
+            alpha_plane = alpha.copy() if planes & 1 else None
+            shape_plane = shape.copy() if planes & 2 else None
+            window = (slice(1, 1 + height), slice(2, 2 + width))
+            run(
+                box,
+                rgba,
+                target[window],
+                alpha_plane[window] if alpha_plane is not None else None,
+                shape_plane[window] if shape_plane is not None else None,
+                0.37,
+            )
+            results.append(
+                (
+                    numpy.ascontiguousarray(target).tobytes(),
+                    None if alpha_plane is None else alpha_plane.tobytes(),
+                    None if shape_plane is None else shape_plane.tobytes(),
+                )
+            )
+    assert results[0] == results[1] == results[2]
