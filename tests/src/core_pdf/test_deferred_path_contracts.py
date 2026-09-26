@@ -1,5 +1,6 @@
 """A deferred path answers as its built subpaths do, without building them."""
 
+import math
 import random
 
 import numpy
@@ -84,3 +85,39 @@ def test_the_edge_array_is_fill_edges(seed, outline):
 
 def test_a_built_path_has_no_edge_array():
     assert CapturedPath([]).fill_edge_array() is None
+
+
+@pytest.mark.parametrize("seed", range(60))
+@pytest.mark.parametrize("outline", [False, True])
+def test_bounds_come_from_the_columns_as_the_subpaths_give_them(seed, outline):
+    rng = random.Random(seed)
+    values = [0.0, -0.0, 1.5, -2.0, math.inf, -math.inf, math.nan, 3.25]
+    subpaths = [
+        [(rng.choice(values), rng.choice(values)) for _ in range(rng.randint(1, 5))]
+        for _ in range(rng.randint(0, 4))
+    ]
+    flags = [rng.random() < 0.5 for _ in subpaths]
+    lazy = deferred(subpaths, flags, outline=outline, built=False)
+    lazy._summary = None  # as an outline or a coalesced path has it
+    built = deferred(subpaths, flags, outline=outline, built=True)
+    # repr keeps NaN in its place and a zero's sign, which == does not.
+    assert repr(lazy.bbox()) == repr(built.bbox())
+    assert lazy.has_segments() == built.has_segments()
+    assert lazy._deferred is not None
+
+
+def test_coalesced_strokes_keep_their_columns():
+    first = deferred([[(0.0, 0.0), (1.0, 1.0)]], [False], outline=False, built=False)
+    second = deferred(
+        [[(2.0, 2.0)], [(3.0, 3.0), (4.0, -1.0)]], [False, True], outline=False, built=False
+    )
+    merged = first.coalesced_with(second)
+    assert merged is not None
+    assert merged.subpath_count() == 3
+    assert merged.bbox() == (0.0, -1.0, 4.0, 3.0)
+    expected = CapturedPath([*first.subpaths, *second.subpaths])
+    assert [(s.points, s.closed) for s in merged.subpaths] == [
+        (s.points, s.closed) for s in expected.subpaths
+    ]
+    outline = deferred([[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]], [True], outline=True, built=False)
+    assert first.coalesced_with(outline) is None

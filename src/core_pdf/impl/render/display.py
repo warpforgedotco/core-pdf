@@ -412,7 +412,7 @@ class DisplayList:
                 and previous.stroke_pattern is None
                 and previous.graphics_soft_mask is None
                 and type(previous.path) is CapturedPath
-                and len(previous.path.subpaths) + len(path.subpaths)
+                and previous.path.subpath_count() + path.subpath_count()
                 <= MAX_COALESCED_STROKE_SUBPATHS
                 and previous.stroke_color == drawing.stroke_color
                 and previous.stroke_opacity == drawing.stroke_opacity
@@ -426,7 +426,13 @@ class DisplayList:
             ):
                 previous_box = rect_tuple(previous.bbox)
                 drawing_box = rect_tuple(drawing.rect)
-                if previous.coalesced_path:
+                merged = previous.path.coalesced_with(path)
+                if merged is not None:
+                    # Both are flattened paths whose points wait: so does
+                    # the join.
+                    previous.path = merged
+                    previous.coalesced_path = True
+                elif previous.coalesced_path:
                     previous.path.subpaths.extend(path.subpaths)
                 else:
                     previous.path = CapturedPath([*previous.path.subpaths, *path.subpaths])

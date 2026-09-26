@@ -145,6 +145,40 @@ cdef inline double python_min(double left, double right) noexcept:
     return right if right < left else left
 
 
+cdef bint add_subpath_box(
+    const double* px, const double* py, Py_ssize_t start, Py_ssize_t end, bint have_box, double* box
+) noexcept:
+    # points_bbox for one subpath -- NaNs never pass its comparisons -- then
+    # union_bbox into box. Returns whether box now holds one.
+    cdef double sx0 = INF, sy0 = INF, sx1 = -INF, sy1 = -INF
+    cdef double x, y
+    cdef Py_ssize_t i
+    for i in range(start, end):
+        x = px[i]
+        y = py[i]
+        if x < sx0:
+            sx0 = x
+        if x > sx1:
+            sx1 = x
+        if y < sy0:
+            sy0 = y
+        if y > sy1:
+            sy1 = y
+    if sx0 > sx1:
+        return have_box
+    if not have_box:
+        box[0] = sx0
+        box[1] = sy0
+        box[2] = sx1
+        box[3] = sy1
+        return True
+    box[0] = python_min(box[0], sx0)
+    box[1] = python_min(box[1], sy0)
+    box[2] = python_max(box[2], sx1)
+    box[3] = python_max(box[3], sy1)
+    return True
+
+
 cdef int add_curve(PathBuilder path, const double *values, hypot) except -1:
     # values: the start point, two controls and the end point, then the
     # linear part of the curve's CTM (a, b, c, d) and its flatness.
@@ -274,8 +308,7 @@ def flatten_path_commands(
     cdef Py_ssize_t start, end, index, line_count = 0
     cdef bint has_segments = False
     cdef bint have_box = False
-    cdef double box_x0 = 0.0, box_y0 = 0.0, box_x1 = 0.0, box_y1 = 0.0
-    cdef double sx0, sy0, sx1, sy1
+    cdef double box[4]
     for index in range(subpath_count):
         start = starts[index]
         end = starts[index + 1] if index + 1 < subpath_count else count
@@ -285,30 +318,7 @@ def flatten_path_commands(
         for i in range(start + 1, end):
             if fabs(px[i] - px[i - 1]) > 0.01 or fabs(py[i] - py[i - 1]) > 0.01:
                 line_count += 1
-        # points_bbox for the subpath, then union_bbox into the page box.
-        sx0 = sy0 = INF
-        sx1 = sy1 = -INF
-        for i in range(start, end):
-            x = px[i]
-            y = py[i]
-            if x < sx0:
-                sx0 = x
-            if x > sx1:
-                sx1 = x
-            if y < sy0:
-                sy0 = y
-            if y > sy1:
-                sy1 = y
-        if sx0 > sx1:
-            continue
-        if not have_box:
-            box_x0, box_y0, box_x1, box_y1 = sx0, sy0, sx1, sy1
-            have_box = True
-        else:
-            box_x0 = python_min(box_x0, sx0)
-            box_y0 = python_min(box_y0, sy0)
-            box_x1 = python_max(box_x1, sx1)
-            box_y1 = python_max(box_y1, sy1)
+        have_box = add_subpath_box(px, py, start, end, have_box, box)
 
     cdef Py_ssize_t row
     cdef double* out
@@ -328,5 +338,29 @@ def flatten_path_commands(
                     out[4] = line_width
                     out += 5
 
-    bbox = (box_x0, box_y0, box_x1, box_y1) if have_box else None
+    bbox = (box[0], box[1], box[2], box[3]) if have_box else None
     return xs, ys, spans, bbox, has_segments
+
+
+def path_bounds(const double[::1] xs, const double[::1] ys, list spans):
+    """CapturedPath.bbox() and has_segments() of the subpaths `spans` cut from the columns.
+
+    A deferred path answers both without building its subpaths: bbox_union
+    over each subpath's points_bbox, as add_subpath_box computes it for
+    flatten_path_commands, and whether any subpath has two points.
+    """
+    if xs.shape[0] != ys.shape[0]:
+        raise ValueError("xs and ys differ in length")
+    cdef Py_ssize_t start, end
+    cdef bint have_box = False, has_segments = False
+    cdef double box[4]
+    for start, end, _ in spans:
+        if start < 0 or end > xs.shape[0] or end < start:
+            raise ValueError("span runs past the points")
+        if end <= start:
+            continue
+        if end - start > 1:
+            has_segments = True
+        have_box = add_subpath_box(&xs[0], &ys[0], start, end, have_box, box)
+    bbox = (box[0], box[1], box[2], box[3]) if have_box else None
+    return bbox, has_segments

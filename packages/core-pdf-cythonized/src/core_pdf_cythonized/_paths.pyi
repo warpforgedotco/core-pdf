@@ -22,3 +22,6 @@ def flatten_path_commands(
     Rectangle | None,
     bool,
 ]: ...
+def path_bounds(
+    xs: numpy.ndarray[Any, Any], ys: numpy.ndarray[Any, Any], spans: list[tuple[int, int, bool]]
+) -> tuple[Rectangle | None, bool]: ...
