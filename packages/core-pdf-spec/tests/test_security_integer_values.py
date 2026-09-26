@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 
+from typing import Any
+
 import pytest
 
 from core_pdf_spec.exceptions import PdfDecryptionError, PdfUnsupportedError
@@ -35,7 +37,7 @@ def security_dictionary() -> PdfDict:
 def test_security_integer_fields_reject_noninteger_representations(
     field: str, representation: type
 ) -> None:
-    params = security_dictionary()
+    params: Any = security_dictionary()
     target = params["CF"]["StdCF"] if field == "CF/Length" else params
     key = "Length" if field == "CF/Length" else field
     value = target[key]
@@ -51,7 +53,7 @@ def test_security_integer_fields_reject_noninteger_representations(
 
 
 def test_real_integer_security_dictionary_authenticates_and_keeps_defaults() -> None:
-    params = security_dictionary()
+    params: Any = security_dictionary()
     handler = create_standard_security_handler([b"core-pdf-security"], params, "user-aes128")
     assert (handler.config.version, handler.config.revision, handler.config.length_bits) == (
         4,
@@ -72,7 +74,7 @@ def test_real_integer_security_dictionary_authenticates_and_keeps_defaults() -> 
 
 @pytest.mark.parametrize("field", ["V", "R", "P", "Length", "CF/Length"])
 def test_explicit_null_security_integer_is_not_a_default(field: str) -> None:
-    params = security_dictionary()
+    params: Any = security_dictionary()
     target = params["CF"]["StdCF"] if field == "CF/Length" else params
     target["Length" if field == "CF/Length" else field] = None
     with pytest.raises(PdfUnsupportedError, match="^Invalid encryption dictionary$"):

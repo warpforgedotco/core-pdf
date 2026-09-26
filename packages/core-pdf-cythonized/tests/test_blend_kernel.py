@@ -75,3 +75,46 @@ def test_render_target_uses_the_kernel():
 
     assert target.blend_normal_alpha_array_numpy is blend_normal_alpha_array_numpy
     assert not hasattr(blend, "blend_normal_alpha_array_numpy")
+
+
+def reference_pixel(destination, raw, rgba):
+    """blend_one step by step in float32, as the C kernel computes it."""
+    f = numpy.float32
+    zero, one, scale = f(0.0), f(1.0), f(255.0)
+    sa = f(min(raw, int(rgba[3]))) / scale
+    da = f(destination[3]) / scale
+    oa = sa + da * (one - sa)
+    safe = oa if oa > zero else one
+    weight = da * (one - sa)
+    out = []
+    for source, channel in zip(rgba[:3], destination[:3], strict=True):
+        value = numpy.rint((f(source) * sa + f(channel) * weight) / safe)
+        out.append(int(min(max(value, zero), scale)))
+    value = numpy.rint(oa * scale)
+    out.append(int(min(max(value, zero), scale)))
+    return out
+
+
+@pytest.mark.parametrize("cap", [0, 128, 254, 255, 300])
+@pytest.mark.parametrize("colour", [(0, 128, 255), (-5, 300, 17), (3, 200, 255)])
+def test_full_coverage_matches_the_general_arithmetic(cap, colour):
+    # Opaque colour at full coverage takes a shortcut in the kernel; it must
+    # land where blend_one's float arithmetic would, for every destination.
+    rng = numpy.random.default_rng(cap)
+    destination = rng.integers(0, 256, size=(256, 3, 4), dtype=numpy.uint8)
+    destination[:, :, 3] = numpy.arange(256, dtype=numpy.uint8)[:, None]
+    coverage = numpy.zeros((256, 3), dtype=numpy.uint8)
+    coverage[:, 0] = 255
+    coverage[:, 1] = 254
+    rgba = (*colour, cap)
+    expected = destination.copy()
+    for i in range(256):
+        for j in range(3):
+            if coverage[i, j]:
+                expected[i, j] = reference_pixel(destination[i, j], int(coverage[i, j]), rgba)
+    blended = destination.copy()
+    blend_normal_alpha_array_numpy(blended, rgba, coverage)
+    assert numpy.array_equal(blended, expected)
+    row = destination[:, 0].copy()
+    blend_normal_alpha_array_numpy(row, rgba, coverage[:, 0].copy())
+    assert numpy.array_equal(row, expected[:, 0])

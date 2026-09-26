@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
 from functools import cache, lru_cache
 from typing import Any, ClassVar
 
 import imagecodecs
 import numpy
 
+from core_pdf.impl.graphics.codec_backends import env_int
 from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
     ColorRendering,
@@ -90,13 +94,23 @@ class IccTransform(Record):
         return transform(self, samples, rendering)
 
 
-# A colour operand reaches lcms as one sample, and lcms builds a transform from
-# the two profiles on every call: 0.4 to 2.9 ms for a single colour, while the
-# conversion itself is nothing. A page sets the same few colours over and over
-# -- one corpus page 768 times across 6 colours, another 286 across 31 -- so a
-# small sample set is converted once per profile, rendering and value. Images
-# are never cached: each is one call over all its pixels, and rarely repeats.
-SMALL_SAMPLE_ROWS = 16
+# lcms builds a transform from the two profiles on every call: 0.4 to 2.9 ms
+# even for a single colour, while the conversion itself is nothing. A page
+# sets the same few colours over and over -- one corpus page 768 times across
+# 6 colours, another 286 across 31 -- and its small images repeat colours
+# too: 104 of the 176 conversions PyMuPDF test_3806 makes, of spot-colour
+# images through one CMYK profile, hold no colour an earlier one did not. lcms
+# converts each sample row on its own, so every row converted is kept, per
+# profile, colour space, intent and flags, and a call of up to MEMO_ROWS rows
+# converts only the rows not yet kept, in one call. Larger images go to lcms
+# whole, by their distinct colours.
+MEMO_ROWS = 4096
+# Rows kept per transform, and transforms kept, before starting over.
+MEMO_LIMIT = 1 << 16
+MEMO_TRANSFORMS = 32
+
+type RowMemo = dict[bytes, bytes]
+row_memos: dict[tuple[bytes, str, int, int], RowMemo] = {}
 
 
 def transform(
@@ -109,34 +123,72 @@ def transform(
         return numpy.empty((0, 3), dtype=numpy.uint8)
     intent, flags = cms_options(rendering)
     contiguous = numpy.ascontiguousarray(samples)
-    if rows <= SMALL_SAMPLE_ROWS:
-        converted = cached_cms_transform(
-            transform.profile,
-            transform.color_space,
-            intent,
-            flags,
-            contiguous.tobytes(),
-            rows,
-            channels,
+    if rows <= MEMO_ROWS and contiguous.dtype == numpy.uint16:
+        return memoized_cms_transform(
+            transform.profile, transform.color_space, intent, flags, contiguous
         )
-        # A copy, so a caller that writes into the result cannot reach the cache.
-        return numpy.frombuffer(converted, dtype=numpy.uint8).reshape(rows, 3).copy()
+    if rows > DISTINCT_ROWS_MINIMUM and channels <= 4:
+        # lcms converts each pixel on its own, so an image converted by its
+        # distinct colours and scattered back is the same image. A photograph
+        # uses few of the colours it could -- 2.5% of the pixels on one corpus
+        # page -- so this skips most of lcms's work; past a quarter distinct,
+        # the scatter would cost more than it saves.
+        found = distinct_uint16_rows(contiguous, rows // 4)
+        if found is not None:
+            distinct, inverse = found
+            distinct_colors = cms_transform(
+                transform.profile, transform.color_space, intent, flags, distinct
+            )
+            return gather_uint8_rows(numpy.ascontiguousarray(distinct_colors), inverse)
     return cms_transform(transform.profile, transform.color_space, intent, flags, contiguous)
 
 
-@lru_cache(maxsize=4096)
-def cached_cms_transform(
+# Below this many pixels an image goes straight to lcms.
+DISTINCT_ROWS_MINIMUM = 1 << 16
+
+
+def memoized_cms_transform(
     profile: bytes,
     color_space: str,
     intent: int,
     flags: int,
-    samples: bytes,
-    rows: int,
-    channels: int,
-) -> bytes:
-    """cms_transform for a few samples, keyed on everything its output depends on."""
-    values = numpy.frombuffer(samples, dtype=numpy.uint16).reshape(rows, channels)
-    return cms_transform(profile, color_space, intent, flags, values).tobytes()
+    samples: numpy.ndarray[Any, Any],
+) -> ByteSamples:
+    """cms_transform of uint16 `samples`, converting only the rows not converted before.
+
+    Returns a new array the caller may write into. A conversion that fails
+    keeps nothing, so it fails again the next time.
+    """
+    key = (profile, color_space, intent, flags)
+    memo = row_memos.get(key)
+    if memo is None:
+        if len(row_memos) >= MEMO_TRANSFORMS:
+            row_memos.clear()
+        memo = row_memos[key] = {}
+    rows, channels = samples.shape
+    width = channels * 2
+    raw = samples.tobytes()
+    keys = [raw[start : start + width] for start in range(0, rows * width, width)]
+    missing = [index for index, row in enumerate(keys) if row not in memo]
+    if missing:
+        converted = cms_transform(profile, color_space, intent, flags, samples[missing]).tobytes()
+        for position, index in enumerate(missing):
+            memo[keys[index]] = converted[3 * position : 3 * position + 3]
+    result = numpy.frombuffer(bytearray(b"".join(map(memo.__getitem__, keys))), dtype=numpy.uint8)
+    if len(memo) > MEMO_LIMIT:
+        memo.clear()
+    return result.reshape(rows, 3)
+
+
+# lcms converts each sample row on its own and releases the GIL while it
+# does, so a large conversion is split into row blocks converted on threads
+# and joined: the same array. A 3.2-megapixel CMYK image through the 2.7 MB
+# default profile took 593 ms in one call on PyMuPDF test_4466.
+PARALLEL_ROWS = 1 << 18
+
+
+def cms_thread_count() -> int:
+    return min(4, env_int("CORE_PDF_CMS_THREADS", max(1, min(4, os.cpu_count() or 1))))
 
 
 def cms_transform(
@@ -146,10 +198,32 @@ def cms_transform(
     flags: int,
     samples: numpy.ndarray[Any, Any],
 ) -> ByteSamples:
+    rows = samples.shape[0]
+    workers = cms_thread_count() if rows >= PARALLEL_ROWS else 1
+    if workers > 1:
+        blocks = numpy.array_split(samples, workers)
+        with ThreadPoolExecutor(workers) as executor:
+            converted = list(
+                executor.map(
+                    lambda block: cms_transform_block(profile, color_space, intent, flags, block),
+                    blocks,
+                )
+            )
+        return numpy.concatenate(converted)
+    return cms_transform_block(profile, color_space, intent, flags, samples)
+
+
+def cms_transform_block(
+    profile: bytes,
+    color_space: str,
+    intent: int,
+    flags: int,
+    samples: numpy.ndarray[Any, Any],
+) -> ByteSamples:
     rows, channels = samples.shape
     try:
         converted = imagecodecs.cms_transform(
-            samples.reshape(rows, 1, channels),
+            numpy.ascontiguousarray(samples).reshape(rows, 1, channels),
             profile,
             srgb_profile(),
             colorspace=color_space.lower(),

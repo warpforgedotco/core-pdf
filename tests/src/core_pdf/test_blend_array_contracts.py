@@ -136,3 +136,34 @@ def test_coverage_alpha_is_capped_by_source_opacity_and_zero_coverage_preserves_
         target, (204, 85, 34, 128), np.full((1, 2), coverage, dtype=np.uint8)
     )
     np.testing.assert_array_equal(target, expected)
+
+
+@pytest.mark.parametrize(
+    ("color", "opacity"),
+    [
+        ((0.2,), None),
+        ((0.1, 0.5, 0.9), 0.5),
+        ((0.1, 0.2, 0.3, 0.4), 1.0),
+        ((0.1, 0.2, 0.3, 0.4), 0),
+        ((0.3, 0.3, 0.3), False),
+    ],
+)
+def test_cached_colors_convert_as_uncached_ones(color, opacity):
+    blend.COLOR_RGBA_CACHE.clear()
+    first = blend.color_rgba(color, opacity)
+    assert first == blend.convert_color_rgba(color, opacity)
+    assert blend.color_rgba(color, opacity) is first
+
+
+def test_color_cache_keeps_opacity_types_apart():
+    # False and 0 are equal keys, but False is no opacity at all.
+    blend.COLOR_RGBA_CACHE.clear()
+    assert blend.color_rgba((0.5, 0.5, 0.5), False)[3] == 255
+    assert blend.color_rgba((0.5, 0.5, 0.5), 0)[3] == 0
+
+
+def test_colors_that_are_not_float_tuples_are_not_cached():
+    blend.COLOR_RGBA_CACHE.clear()
+    assert blend.color_rgba([0.5, 0.5, 0.5], 1.0) == blend.convert_color_rgba([0.5, 0.5, 0.5], 1.0)
+    assert blend.color_rgba((1, 0, 0), 1.0) == blend.convert_color_rgba((1, 0, 0), 1.0)
+    assert not blend.COLOR_RGBA_CACHE

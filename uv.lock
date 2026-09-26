@@ -416,7 +416,7 @@ source = { editable = "packages/core-adobe-fonts" }
 
 [[package]]
 name = "core-jbig2"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/core-jbig2" }
 dependencies = [
     { name = "numpy" },
@@ -611,7 +611,7 @@ requires-dist = [
 
 [[package]]
 name = "core-pdf-spec"
-version = "0.6.0"
+version = "0.9.0"
 source = { editable = "packages/core-pdf-spec" }
 dependencies = [
     { name = "core-adobe-fonts" },

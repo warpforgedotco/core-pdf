@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from math import isfinite
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl.geometry import rect_tuple, union_bbox
+from core_pdf.impl.glyphs import GlyphStyle
 from core_pdf.impl.graphics.color_spec import describe_color_space
 from core_pdf.impl.graphics.filter_registry import declared_filter_names
 from core_pdf.impl.render.model import (
@@ -100,6 +102,42 @@ def image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
     return None
 
 
+def plain_fill_members_box(
+    items: list[DisplayItem], start: int
+) -> tuple[bool, tuple[float, float, float, float] | None]:
+    """Whether items[start:] are all plain fills, and the union of their bboxes.
+
+    A plain fill -- an edge-array fill with no pattern and a Normal blend,
+    what RasterTarget.knockout_paint_box accepts -- paints inside its bbox as
+    clipped, so a group of nothing else paints inside the union of theirs. A
+    text item, which the rasterizer does not paint, may sit among them, and
+    a group of nothing but those paints nothing: (True, None). Anything else
+    in the group gives (False, None).
+    """
+    box: tuple[float, float, float, float] | None = None
+    for index in range(start, len(items)):
+        item = items[index]
+        if type(item) is DisplayListItem and item.kind == "text":
+            continue
+        if not (
+            type(item) is PathPaintItem
+            and item.paint_kind is PathPaintKind.FILL
+            and item.edge_array is not None
+            and item.bbox is not None
+            and item.fill_pattern is None
+            and item.blend_mode in (None, "Normal")
+        ):
+            return False, None
+        x0, y0, x1, y1 = item.bbox
+        if not (isfinite(x0) and isfinite(y0) and isfinite(x1) and isfinite(y1)):
+            return False, None
+        if box is None:
+            box = (x0, y0, x1, y1)
+        else:
+            box = (min(box[0], x0), min(box[1], y0), max(box[2], x1), max(box[3], y1))
+    return True, box
+
+
 class DisplayList:
     __slots__ = (
         "width",
@@ -108,6 +146,9 @@ class DisplayList:
         "preserve_object_boundaries",
         "shape_tracking_groups",
         "group_scope_floors",
+        "open_group_indexes",
+        "group_member_boxes",
+        "glyph_paint_fields",
     )
 
     width: float
@@ -124,6 +165,9 @@ class DisplayList:
         "preserve_object_boundaries",
         "shape_tracking_groups",
         "group_scope_floors",
+        "open_group_indexes",
+        "group_member_boxes",
+        "glyph_paint_fields",
     )
     __match_args__ = ("width", "height", "items")
 
@@ -141,6 +185,14 @@ class DisplayList:
         self.preserve_object_boundaries = preserve_object_boundaries
         self.shape_tracking_groups = []
         self.group_scope_floors = []
+        self.open_group_indexes: list[int] = []
+        # For a group whose members are all plain fills, keyed by the identity
+        # of its group-begin item: the page box they paint within, or None if
+        # it has none. See plain_fill_members_box.
+        self.group_member_boxes: dict[int, tuple[float, float, float, float] | None] = {}
+        # A glyph style's paint fields, normalized, keyed by the style's
+        # identity and holding the style so that identity stays its own.
+        self.glyph_paint_fields: dict[int, tuple[GlyphStyle, tuple[Any, ...]]] = {}
 
     def __repr__(self) -> str:
         return (
@@ -195,10 +247,63 @@ class DisplayList:
                 self.shape_tracking_groups.append(
                     data.get("group_knockout") is True or data.get("group_track_shape") is True
                 )
+                # The group-begin item is appended next, at this index.
+                self.open_group_indexes.append(len(self.items))
             case "group-end":
                 floor = self.group_scope_floors[-1] if self.group_scope_floors else 0
                 if len(self.shape_tracking_groups) > floor:
                     self.shape_tracking_groups.pop()
+                if self.open_group_indexes:
+                    begin = self.open_group_indexes.pop()
+                    plain, box = plain_fill_members_box(self.items, begin + 1)
+                    if plain and begin < len(self.items):
+                        self.group_member_boxes[id(self.items[begin])] = box
+
+    def append_glyph_paint(
+        self,
+        paint_kind: PathPaintKind,
+        seqno: int,
+        bbox: Any,
+        path: Any,
+        edge_array: Any,
+        style: GlyphStyle,
+    ) -> None:
+        """append() for a glyph's path paint, whose other fields are its style's.
+
+        A page appends one per glyph drawn, and every glyph of a text
+        operation shares one style, so its fields are normalized once, as
+        append normalizes them, and each item is built positionally from them;
+        the keyword calls this replaced were most of the cost. A pattern is
+        never given.
+        """
+        cached = self.glyph_paint_fields.get(id(style))
+        if cached is None or cached[0] is not style:
+            line_width = style.line_width
+            graphics_soft_mask = style.graphics_soft_mask
+            fields: tuple[Any, ...] = (
+                style.fill or None,
+                style.fill_opacity,
+                style.stroke_color,
+                style.stroke_opacity,
+                float(line_width) if is_pdf_number(line_width) else 1.0,
+                int(style.line_cap or 0),
+                int(style.line_join or 0),
+                style.dash_pattern,
+                "nonzero",
+                style.blend_mode,
+                style.soft_mask_alpha,
+                False,
+                None,
+                None,
+                style.alpha_is_shape,
+                graphics_soft_mask if isinstance(graphics_soft_mask, CapturedSoftMask) else None,
+            )
+            self.glyph_paint_fields[id(style)] = (style, fields)
+        else:
+            fields = cached[1]
+        # Both checkers miscount a star argument followed by another positional.
+        item = PathPaintItem(paint_kind, seqno, bbox, path, *fields, edge_array)  # type: ignore[call-arg]  # ty: ignore[too-many-positional-arguments]
+        self.items.append(item)
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
         graphics_mask = data.get("graphics_soft_mask")
@@ -307,7 +412,7 @@ class DisplayList:
                 and previous.stroke_pattern is None
                 and previous.graphics_soft_mask is None
                 and type(previous.path) is CapturedPath
-                and len(previous.path.subpaths) + len(path.subpaths)
+                and previous.path.subpath_count() + path.subpath_count()
                 <= MAX_COALESCED_STROKE_SUBPATHS
                 and previous.stroke_color == drawing.stroke_color
                 and previous.stroke_opacity == drawing.stroke_opacity
@@ -321,7 +426,13 @@ class DisplayList:
             ):
                 previous_box = rect_tuple(previous.bbox)
                 drawing_box = rect_tuple(drawing.rect)
-                if previous.coalesced_path:
+                merged = previous.path.coalesced_with(path)
+                if merged is not None:
+                    # Both are flattened paths whose points wait: so does
+                    # the join.
+                    previous.path = merged
+                    previous.coalesced_path = True
+                elif previous.coalesced_path:
                     previous.path.subpaths.extend(path.subpaths)
                 else:
                     previous.path = CapturedPath([*previous.path.subpaths, *path.subpaths])

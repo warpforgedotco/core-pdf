@@ -91,7 +91,7 @@ def composite_elementary_normal(destination, rendered, source_alpha):
     return effective
 
 
-def composite_masked_normal(destination, rendered, double opacity, mask_alpha):
+def composite_masked_normal(destination, rendered, double opacity, mask_codes, mask_table):
     """Composite an isolated group through a soft mask, normal blend mode.
 
     The numpy original quantized the effective alpha, gathered the visible
@@ -103,20 +103,27 @@ def composite_masked_normal(destination, rendered, double opacity, mask_alpha):
     is the same arithmetic in one pass, in the same float64 and in the same
     order, so every intermediate lands on the same bits.
 
-    ``mask_alpha`` must be float32, as every resolved soft mask plane is. The
-    domain check -- a NaN effective alpha, whose uint8 cast numpy leaves to
-    the platform -- completes before any pixel is written.
+    The mask comes as the soft mask's own bytes, ``mask_codes``, and the
+    float32 value each byte stands for, ``mask_table`` (256 entries): a
+    SoftMaskPlane's alpha and its transfer table, or byte / 255 in float32
+    without one. The float32 window the plane would have built from them
+    holds the same values, one lookup at a time. The domain check -- a NaN
+    effective alpha, whose uint8 cast numpy leaves to the platform --
+    completes before any pixel is written.
 
     Returns the effective alpha plane, quantized exactly as the original did.
     """
-    cdef const float[:, :] mask = mask_alpha
+    cdef const unsigned char[:, :] codes = mask_codes
+    cdef const float[::1] table = mask_table
     cdef unsigned char[:, :, :] dst = destination
     cdef const unsigned char[:, :, :] src = rendered
 
-    cdef Py_ssize_t height = mask.shape[0]
-    cdef Py_ssize_t width = mask.shape[1]
+    if table.shape[0] != 256:
+        raise ValueError("mask_table must hold 256 values")
+    cdef Py_ssize_t height = codes.shape[0]
+    cdef Py_ssize_t width = codes.shape[1]
     if dst.shape[0] != height or dst.shape[1] != width or dst.shape[2] != 4:
-        raise ValueError("destination must be mask_alpha.shape + (4,)")
+        raise ValueError("destination must be mask_codes.shape + (4,)")
     if src.shape[0] != height or src.shape[1] != width or src.shape[2] != 4:
         raise ValueError("rendered and destination must have the same shape")
 
@@ -126,20 +133,32 @@ def composite_masked_normal(destination, rendered, double opacity, mask_alpha):
     cdef Py_ssize_t y, x
     cdef double scaled
     cdef bint any_visible = False
+    # A soft-masked group is mostly flat fills over a flat backdrop -- on
+    # test_3450, 995 pixels in 1,000 have the inputs of the pixel before --
+    # and every result is a function of its pixel's inputs alone, so each
+    # pass keeps the last inputs and what they gave.
+    cdef int last_alpha = -1, last_code = -1, alpha_in, code
+    cdef unsigned char last_out = 0
 
     for y in range(height):
         for x in range(width):
-            # (alpha * opacity) * mask, left to right as numpy evaluated it,
-            # with the float32 mask widened exactly to float64.
-            scaled = rint(<double> src[y, x, 3] * opacity * <double> mask[y, x])
-            if scaled != scaled:
-                raise ValueError("effective alpha is NaN")
-            if scaled < 0.0:
-                scaled = 0.0
-            elif scaled > 255.0:
-                scaled = 255.0
-            out[y, x] = <unsigned char> <int> scaled
-            if out[y, x] > 0:
+            alpha_in = src[y, x, 3]
+            code = codes[y, x]
+            if alpha_in != last_alpha or code != last_code:
+                # (alpha * opacity) * mask, left to right as numpy evaluated
+                # it, with the float32 mask widened exactly to float64.
+                scaled = rint(<double> alpha_in * opacity * <double> table[code])
+                if scaled != scaled:
+                    raise ValueError("effective alpha is NaN")
+                if scaled < 0.0:
+                    scaled = 0.0
+                elif scaled > 255.0:
+                    scaled = 255.0
+                last_out = <unsigned char> <int> scaled
+                last_alpha = alpha_in
+                last_code = code
+            out[y, x] = last_out
+            if last_out > 0:
                 any_visible = True
 
     if not any_visible:
@@ -191,7 +210,11 @@ cdef inline unsigned char clamp_byte(double value) noexcept nogil:
 
 
 def composite_normal_group(
-    destination, rendered, double source_alpha_scale, double target_alpha_scale=1.0
+    destination,
+    rendered,
+    double source_alpha_scale,
+    double target_alpha_scale=1.0,
+    bint effective_plane=False,
 ):
     """Composite an isolated, unmasked group onto its backdrop, normal blend mode.
 
@@ -213,6 +236,12 @@ def composite_normal_group(
     a float-to-byte cast whose result numpy leaves to the platform -- and the
     caller's are clamped to [0, 1]. A row's pixels must be packed, as in every
     plane core-pdf composites.
+
+    With ``effective_plane``, returns the effective alpha of every pixel as a
+    uint8 plane -- numpy's clip(rint(alpha * scales), 0, 255), which
+    composite_group_into computed in five array passes and records as the
+    group's contribution -- read out of the same table during the read pass.
+    Otherwise returns None.
     """
     if not (isfinite(source_alpha_scale) and isfinite(target_alpha_scale)):
         raise ValueError("alpha scales must be finite")
@@ -224,14 +253,35 @@ def composite_normal_group(
         raise ValueError("destination must have four channels")
     if src.shape[0] != height or src.shape[1] != width or src.shape[2] != 4:
         raise ValueError("rendered and destination must have the same shape")
+    plane = None
     if height == 0 or width == 0 or source_alpha_scale <= 0.0:
-        return
+        # A scale of zero or less takes every alpha to zero or below, and
+        # the clip to zero.
+        if effective_plane:
+            plane = numpy.zeros((height, width), dtype=numpy.uint8)
+        return plane
     # Any strides, as the numpy original took: a group's window into the page
     # is strided by row, and a test composites through every other pixel.
     cdef Strides d = Strides(dst.strides[1], dst.strides[2])
     cdef Strides r = Strides(src.strides[1], src.strides[2])
 
+    cdef double effective[256]
+    cdef float general_alpha[256]
+    cdef unsigned char effective_bytes[256]
+    cdef int value
+    for value in range(256):
+        effective[value] = effective_alpha(<unsigned char> value, source_alpha_scale, target_alpha_scale)
+        effective_bytes[value] = <unsigned char> <int> effective[value]
+        general_alpha[value] = general_source_alpha(
+            <unsigned char> value, source_alpha_scale, target_alpha_scale
+        )
+
+    cdef unsigned char[:, ::1] out
+    if effective_plane:
+        plane = numpy.empty((height, width), dtype=numpy.uint8)
+        out = plane
     cdef Py_ssize_t y, x
+    cdef unsigned char alpha
     cdef unsigned char source_or = 0, source_and = 255
     cdef unsigned char backdrop_or = 0, backdrop_and = 255
     cdef const unsigned char *source_row
@@ -241,21 +291,15 @@ def composite_normal_group(
             source_row = &src[y, 0, 0]
             backdrop_row = &dst[y, 0, 0]
             for x in range(width):
-                source_or |= source_row[x * r.pixel + 3 * r.channel]
-                source_and &= source_row[x * r.pixel + 3 * r.channel]
+                alpha = source_row[x * r.pixel + 3 * r.channel]
+                source_or |= alpha
+                source_and &= alpha
                 backdrop_or |= backdrop_row[x * d.pixel + 3 * d.channel]
                 backdrop_and &= backdrop_row[x * d.pixel + 3 * d.channel]
+                if effective_plane:
+                    out[y, x] = effective_bytes[alpha]
     if not source_or:
-        return
-
-    cdef double effective[256]
-    cdef float general_alpha[256]
-    cdef int value
-    for value in range(256):
-        effective[value] = effective_alpha(<unsigned char> value, source_alpha_scale, target_alpha_scale)
-        general_alpha[value] = general_source_alpha(
-            <unsigned char> value, source_alpha_scale, target_alpha_scale
-        )
+        return plane
 
     with nogil:
         if source_alpha_scale == 1.0 and target_alpha_scale == 1.0 and source_and == 255:
@@ -273,6 +317,7 @@ def composite_normal_group(
             empty_backdrop(dst, src, height, width, d, r, effective)
         else:
             general(dst, src, height, width, d, r, general_alpha)
+    return plane
 
 
 cdef double effective_alpha(unsigned char alpha, double source_scale, double target_scale) noexcept nogil:

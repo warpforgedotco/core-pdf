@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Iterator, Sequence
-from itertools import batched
-from typing import Any, ClassVar, Literal, NoReturn, Protocol, Self
+from functools import partial
+from itertools import batched, compress, repeat
+from operator import not_
+from typing import Any, ClassVar, Literal, NamedTuple, NoReturn, Protocol, Self
+
+import numpy
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -22,28 +27,19 @@ from core_pdf_spec.types import PdfByteBuffer
 frozen_setattr = object.__setattr__
 
 
-class PdfXRefEntry:
-    __slots__ = ("offset", "generation", "in_use", "object_stream", "index_in_stream")
+class PdfXRefEntry(NamedTuple):
+    """One cross-reference entry (ISO 32000-2 7.5.4, 7.5.8).
+
+    A tuple, and so immutable: a table of hundreds of thousands of rows is
+    built in C by canonical_table_entries rather than one Python constructor
+    call a row. A repaired entry is replaced, not changed in place.
+    """
 
     offset: int
-    generation: int
-    in_use: bool
-    object_stream: int | None
-    index_in_stream: int | None
-
-    def __init__(
-        self,
-        offset: int,
-        generation: int = 0,
-        in_use: bool = True,
-        object_stream: int | None = None,
-        index_in_stream: int | None = None,
-    ) -> None:
-        self.offset = offset
-        self.generation = generation
-        self.in_use = in_use
-        self.object_stream = object_stream
-        self.index_in_stream = index_in_stream
+    generation: int = 0
+    in_use: bool = True
+    object_stream: int | None = None
+    index_in_stream: int | None = None
 
 
 XRefTable = dict[int, PdfXRefEntry]
@@ -208,6 +204,52 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
     return int(row[:10]), generation, row[17] == 110, pos + 20
 
 
+# A run of rows parse_xref_entry_at accepts, but for the generation range.
+XREF_ROWS = re.compile(rb"(?:[0-9]{10} [0-9]{5} [fn](?: \r| \n|\r\n))*")
+XREF_ROW_SIZE = 20
+
+# PdfXRefEntry from a complete (offset, generation, in_use, object_stream,
+# index_in_stream) tuple, without a Python frame: map() calls it from C.
+new_xref_entry = partial(tuple.__new__, PdfXRefEntry)
+OFFSET_PLACES = 10 ** numpy.arange(9, -1, -1, dtype=numpy.int64)
+GENERATION_PLACES = 10 ** numpy.arange(4, -1, -1, dtype=numpy.int64)
+# Keys are computed in numpy while every object number fits comfortably.
+NUMPY_KEY_LIMIT = 1 << 46
+
+
+def canonical_table_entries(
+    data: PdfByteBuffer, pos: int, start_obj: int, count: int
+) -> XRefTable | None:
+    """The entries of `count` rows at `pos` that XREF_ROWS has matched, keyed.
+
+    Each row is then ten digits, a space, five digits, a space, n or f and
+    a two-byte line end, so its fields sit at fixed columns and are read as
+    columns: the same integers int() makes of the digits, and in_use where
+    the marker is n. None if a generation exceeds 65535, which the per-row
+    parse rejects.
+    """
+    rows = numpy.frombuffer(
+        data, dtype=numpy.uint8, count=XREF_ROW_SIZE * count, offset=pos
+    ).reshape(count, XREF_ROW_SIZE)
+    generations = (rows[:, 11:16].astype(numpy.int64) - 48) @ GENERATION_PLACES
+    if int(generations.max()) > 65535:
+        return None
+    offsets = (rows[:, 0:10].astype(numpy.int64) - 48) @ OFFSET_PLACES
+    in_use = rows[:, 17] == 110
+    generation_list = generations.tolist()
+    if start_obj + count < NUMPY_KEY_LIMIT:
+        keys = (((numpy.arange(count, dtype=numpy.int64) + start_obj) << 16) | generations).tolist()
+    else:
+        keys = [
+            ((start_obj + i) << 16) | generation for i, generation in enumerate(generation_list)
+        ]
+    entries = map(
+        new_xref_entry,
+        zip(offsets.tolist(), generation_list, in_use.tolist(), repeat(None), repeat(None)),
+    )
+    return dict(zip(keys, entries))
+
+
 def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
     offset, generation, in_use, _ = parse_xref_entry_at(line, 0)
     return offset, generation, in_use
@@ -364,6 +406,19 @@ class XRefScanner:
         cls, data: PdfByteBuffer, pos: int, start_obj: int, num_objs: int
     ) -> tuple[XRefTable, int, int]:
         entries: XRefTable = {}
+        end = pos + 20 * num_objs
+        # Rows are fixed at 20 bytes, so a subsection that matches as a whole
+        # is read with one regex; anything else goes row by row and raises
+        # where parse_xref_entry_at does.
+        if (
+            num_objs > 0
+            and start_obj >= 0
+            and end <= len(data)
+            and XREF_ROWS.fullmatch(data, pos, end) is not None
+        ):
+            table = canonical_table_entries(data, pos, start_obj, num_objs)
+            if table is not None:
+                return table, end, start_obj + num_objs - 1
         for i in range(num_objs):
             offset, generation, in_use, pos = parse_xref_entry_at(data, pos)
             entries[key_for(start_obj + i, generation)] = PdfXRefEntry(offset, generation, in_use)
@@ -505,11 +560,63 @@ def decode_xref_rows(data: bytes, w: list[int], index: list[int], size: int) -> 
     return decode_xref_row_table(data, w, index, row_size, row_count)
 
 
+def xref_column(
+    rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], start: int, width: int
+) -> list[int]:
+    values = numpy.zeros(len(rows), dtype=numpy.uint64)
+    for column in range(start, start + width):
+        values = (values << numpy.uint64(8)) | rows[:, column]
+    return values.tolist()
+
+
+def decode_xref_columns(
+    data: bytes, widths: list[int], index: list[int], row_size: int, row_count: int
+) -> XRefTable:
+    """decode_xref_row_table with each field read for every row at once.
+
+    A field of up to eight bytes fits a uint64, so a column of them is one
+    pass rather than an int.from_bytes per row. The one row that
+    decode_xref_row_at rejects -- type 0 or 1 with a generation over 65535
+    -- rejects the whole table, as it did.
+    """
+    rows = numpy.frombuffer(data, dtype=numpy.uint8, count=row_count * row_size).reshape(
+        row_count, row_size
+    )
+    kinds = xref_column(rows, 0, widths[0]) if widths[0] else [1] * row_count
+    values = xref_column(rows, widths[0], widths[1])
+    generations = (
+        xref_column(rows, widths[0] + widths[1], widths[2]) if widths[2] else [0] * row_count
+    )
+    entries: XRefTable = {}
+    row = 0
+    for start, count in batched(index, 2, strict=True):
+        for object_number in range(start, start + count):
+            kind = kinds[row]
+            value = values[row]
+            generation = generations[row]
+            row += 1
+            if kind < 2:
+                if generation > 65535:
+                    raise PdfParseError("invalid xref generation number")
+                entries[key_for(object_number, generation)] = PdfXRefEntry(
+                    value, generation, kind == 1
+                )
+            elif kind == 2:
+                entries[key_for(object_number)] = PdfXRefEntry(
+                    0, 0, True, object_stream=value, index_in_stream=generation
+                )
+            else:
+                entries[key_for(object_number)] = PdfXRefEntry(0, 0, False)
+    return entries
+
+
 def decode_xref_row_table(
     data: bytes, widths: list[int], index: list[int], row_size: int, row_count: int
 ) -> XRefTable:
     if len(data) != row_count * row_size:
         raise PdfParseError("xref stream length mismatch")
+    if max(widths) <= 8:
+        return decode_xref_columns(data, widths, index, row_size, row_count)
     entries: XRefTable = {}
     pos = 0
     for start, count in batched(index, 2, strict=True):
@@ -619,18 +726,26 @@ def overlay_xref_entries(destination: XRefTable, newer: XRefTable) -> None:
 
 
 def merge_xref_sections(sections: Iterable[XRefTable]) -> XRefTable:
+    """Newest first: each section adds the entries whose object numbers no
+    newer section has claimed. The shifts and membership tests run in C,
+    through map() and compress(), not a Python loop per key."""
     merged: XRefTable = {}
     claimed: set[int] = set()
+    object_number = (16).__rrshift__
     for section in sections:
-        for key, entry in section.items():
-            if key >> 16 not in claimed:
-                merged[key] = entry
-        claimed.update(key >> 16 for key in section)
+        if claimed:
+            unclaimed = map(not_, map(claimed.__contains__, map(object_number, section)))
+            merged.update(compress(section.items(), unclaimed))
+        else:
+            merged.update(section)
+        claimed.update(map(object_number, section))
     return merged
 
 
 __all__ = (
     "PdfXRefEntry",
+    "canonical_table_entries",
+    "new_xref_entry",
     "ParsedXRefSection",
     "XRefRevision",
     "XRefScanner",

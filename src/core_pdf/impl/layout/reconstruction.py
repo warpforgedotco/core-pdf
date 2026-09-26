@@ -329,7 +329,9 @@ class GlyphLineBuilder:
         prev_run_text = ""
         prev_last_char = ""
         prev_atom: LayoutLineTextAtom | None = None
-        recent_emitted_runs: list[tuple[tuple[float, float, float, float], str]] = []
+        # (box, text, reach): reach is the largest right edge of this entry and
+        # every one before it, which lets the duplicate check stop early.
+        recent_emitted_runs: list[tuple[tuple[float, float, float, float], str, float]] = []
 
         for index, run in enumerate(self.runs):
             text = self.normalized_text(run, index)
@@ -364,9 +366,17 @@ class GlyphLineBuilder:
             prev_run = run
             prev_run_text = text
             prev_last_char = text[-1:]
-            recent_emitted_runs.append((run.advance_bbox, text))
+            box = run.advance_bbox
+            reach = box[2]
+            if recent_emitted_runs and recent_emitted_runs[-1][2] > reach:
+                reach = recent_emitted_runs[-1][2]
+            recent_emitted_runs.append((box, text, reach))
             if len(recent_emitted_runs) > 256:
                 del recent_emitted_runs[:64]
+                reach = float("-inf")
+                for position, (kept_box, kept_text, _) in enumerate(recent_emitted_runs):
+                    reach = max(reach, kept_box[2])
+                    recent_emitted_runs[position] = (kept_box, kept_text, reach)
 
         combined = "".join(parts)
         if self.suppress_tiny_page_footer and rules.is_tiny_page_footer(combined):
@@ -448,6 +458,15 @@ class GlyphLineBuilder:
                 return ""
         if rules.is_tiny_page_footer(text) and run.font_size <= 5.0:
             return ""
+        # Every branch below needs the run to read "TM", or to be a short run
+        # of digits with nothing to strip (is_short_digit_run, at most four
+        # for the widest of them). Checking that once lets ordinary text leave
+        # here instead of taking four separate probes.
+        stripped = run.stripped_text
+        if stripped != "TM" and not (
+            len(stripped) <= 4 and stripped == run.text and stripped.isdigit()
+        ):
+            return text
         if self.is_trademark_marker_run(run, index):
             return "™"
         if self.is_superscript_like_numeric_run(run, index) or self.is_unit_exponent_run(run):
@@ -660,7 +679,7 @@ class GlyphLineBuilder:
 
     def is_recent_duplicate_overlap(
         self,
-        recent_runs: list[tuple[tuple[float, float, float, float], str]],
+        recent_runs: list[tuple[tuple[float, float, float, float], str, float]],
         run: TextRun,
         text: str,
     ) -> bool:
@@ -671,7 +690,12 @@ class GlyphLineBuilder:
         if box_area <= 0:
             return False
         text_length = len(text)
-        for (px0, py0, px1, py1), prev_text in reversed(recent_runs):
+        for (px0, py0, px1, py1), prev_text, reach in reversed(recent_runs):
+            # Nothing at or before this entry reaches past x0, so none of them
+            # can overlap: each would fail the px1 <= x0 test below. Runs of a
+            # line arrive left to right, so this usually stops at the first.
+            if reach <= x0:
+                break
             if px0 >= x1 or px1 <= x0:
                 continue
             ox = (min(px1, x1)) - (max(px0, x0))

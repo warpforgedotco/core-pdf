@@ -283,6 +283,11 @@ def font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
     return None
 
 
+# FontDecoder.string_glyph_cache: the longest string it keeps, and how many.
+STRING_GLYPH_CACHE_MAX_BYTES = 8
+STRING_GLYPH_CACHE_MAX_ENTRIES = 8192
+
+
 class DecodedGlyph(DecodedFontGlyph, ReplaceFields, ReprFields):
     __slots__ = ("unicode_source", "alternates", "bitmap_code", "split_unicode")
 
@@ -592,6 +597,7 @@ class FontDecoder:
         "glyph_outline_array_cache",
         "glyph_id_cache",
         "unicode_choice_cache",
+        "string_glyph_cache",
     )
 
     font: dict[str, Any]
@@ -635,6 +641,7 @@ class FontDecoder:
     glyph_outline_array_cache: dict[tuple[int, int | None, str], GlyphOutlineArrays | None]
     glyph_id_cache: dict[int, int | None]
     unicode_choice_cache: dict[tuple[bytes, int, int | None], UnicodeChoice]
+    string_glyph_cache: dict[bytes, tuple[DecodedGlyph, ...]]
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "font",
@@ -676,6 +683,7 @@ class FontDecoder:
         "glyph_outline_array_cache",
         "glyph_id_cache",
         "unicode_choice_cache",
+        "string_glyph_cache",
     )
 
     def __init__(
@@ -821,6 +829,14 @@ class FontDecoder:
         # this alongside it.
         self.simple_glyph_cache = {}
         self.cid_glyph_cache = {}
+        # Whole short strings, decoded. A page that places every glyph with its
+        # own Tj decodes the same one- or two-byte strings thousands of times,
+        # and each decode still walked the cmap, and for a CFF font the repair
+        # check, before reaching the per-code caches above. Only short strings
+        # repeat enough to be worth keeping, and the cache is cleared when it
+        # fills, so it cannot grow with the document. Purged with the two
+        # above when a CFF repair changes a mapping.
+        self.string_glyph_cache = {}
 
     @staticmethod
     def cid_system_info_string(value: object) -> str | None:
@@ -943,6 +959,21 @@ class FontDecoder:
     def decode_glyphs(self, data: bytes | bytearray | memoryview) -> tuple[DecodedGlyph, ...]:
         if not data:
             return ()
+        if len(data) > STRING_GLYPH_CACHE_MAX_BYTES:
+            return self.decode_glyphs_uncached(data)
+        key = bytes(data)
+        cache = self.string_glyph_cache
+        glyphs = cache.get(key)
+        if glyphs is None:
+            glyphs = self.decode_glyphs_uncached(key)
+            if len(cache) >= STRING_GLYPH_CACHE_MAX_ENTRIES:
+                cache.clear()
+            cache[key] = glyphs
+        return glyphs
+
+    def decode_glyphs_uncached(
+        self, data: bytes | bytearray | memoryview
+    ) -> tuple[DecodedGlyph, ...]:
         if self.is_cid_font:
             glyphs = self.decode_cid_glyphs(bytes(data))
         else:
@@ -1190,6 +1221,7 @@ class FontDecoder:
                     glyph_cache = self.cid_glyph_cache
                     for glyph_key in [key for key in glyph_cache if key[0] in changed]:
                         del glyph_cache[glyph_key]
+                    self.string_glyph_cache.clear()
                     current.update(repairs)
         decoded_cache = self.cid_glyph_cache
         glyphs: list[DecodedGlyph] = []

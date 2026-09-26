@@ -20,14 +20,21 @@ then used it. It holds:
   CTM, signed zeros in the box, an unknown operator, and the inputs the
   original raised on; and forty random paths.
 
-Every value is compared by its bits. The commands are rebuilt from plain
-tuples with stand-in classes, so this runs without core_pdf_spec installed.
+Every value is compared by its bits. The commands are plain tuples, encoded
+here the way core_pdf_spec's PdfPath stores them -- an operator byte each and
+their numbers in one float array, a curve followed by its CTM's linear part
+and its flatness -- so this runs without core_pdf_spec installed. PdfPath
+cannot hold a command with the wrong number of operands, or operands that are
+not numbers, so the golden inputs that raised for those are not encodable and
+are checked to be exactly the ones that raised; an operator PdfPath does not
+have was ignored, and is left out.
 """
 
 import gzip
 import math
 import pickle
 import struct
+from array import array
 from pathlib import Path
 
 import numpy
@@ -39,34 +46,64 @@ GOLDEN_PATH = Path(__file__).parent / "flatten_path_golden.pkl.gz"
 GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
 
 
-class Ctm:
-    __slots__ = ("a", "b", "c", "d", "e", "f")
-
-    def __init__(self, a, b, c, d, e, f):
-        self.a, self.b, self.c, self.d, self.e, self.f = a, b, c, d, e, f
+ARITY = {"m": 2, "l": 2, "re": 4, "c": 8}
+CODES = {"m": b"m", "l": b"l", "h": b"h", "re": b"r", "c": b"c"}
 
 
-class Command:
-    __slots__ = ("ctm", "flatness", "operands", "operator")
+def encode(commands):
+    """(ops, coords) as PdfPath stores these commands, or None if it cannot."""
+    ops = bytearray()
+    coords = array("d")
+    for operator, operands, ctm, flatness in commands:
+        if operator == "h":
+            ops += CODES["h"]
+            continue
+        if operator not in ARITY:
+            continue
+        if len(operands) != ARITY[operator]:
+            return None
+        try:
+            values = array("d", operands)
+            if operator == "c":
+                flat = float(flatness) if flatness else 0.0
+                values.extend((ctm[0], ctm[1], ctm[2], ctm[3], flat))
+        except TypeError:
+            return None
+        ops += CODES[operator]
+        coords.extend(values)
+    return ops, coords
 
-    def __init__(self, operator, operands, ctm, flatness):
-        self.operator = operator
-        self.operands = operands
-        self.ctm = Ctm(*ctm)
-        self.flatness = flatness
+
+def flatten(commands, matrix, hypot=math.hypot):
+    encoded = encode(commands)
+    assert encoded is not None
+    rows = array("d")
+    flattened = flatten_path_commands(encoded[0], encoded[1], matrix, hypot, rows, 0.0)
+    lines = numpy.frombuffer(rows, dtype=numpy.float64).reshape(-1, 5)[:, :4]
+    return (*flattened, lines)
 
 
-def commands(case):
-    return [Command(*command) for command in case["commands"]]
+def identity(operator, operands):
+    return (operator, operands, (1, 0, 0, 1, 0, 0), 0.0)
 
 
 def run(case):
+    encoded = encode(case["commands"])
+    if encoded is None:
+        return None
+    rows = array("d", [7.0] * 5)
     try:
-        xs, ys, spans, bbox, has_segments, lines = flatten_path_commands(
-            commands(case), case["matrix"], math.hypot
+        xs, ys, spans, bbox, has_segments = flatten_path_commands(
+            encoded[0], encoded[1], case["matrix"], math.hypot, rows, 2.5
         )
     except Exception as error:
         return ("raises", type(error).__name__)
+    # The line table is appended to, never rewritten, and every row carries
+    # the width it was given.
+    assert rows[:5] == array("d", [7.0] * 5)
+    lines = numpy.frombuffer(rows, dtype=numpy.float64).reshape(-1, 5)[1:]
+    assert (lines[:, 4] == 2.5).all()
+    lines = lines[:, :4]
     return (
         xs.tolist(),
         ys.tolist(),
@@ -98,19 +135,29 @@ def test_golden_file_covers_the_cases_it_claims_to():
 @pytest.mark.parametrize("index", range(len(GOLDEN)))
 def test_kernel_reproduces_capture(index):
     case = GOLDEN[index]
-    assert exact(run(case)) == exact(case["expected"])
+    got = run(case)
+    if got is None:
+        assert case["expected"][0] == "raises"
+        pytest.skip("PdfPath cannot hold this input")
+    assert exact(got) == exact(case["expected"])
+
+
+def test_only_inputs_that_raised_are_unencodable():
+    unencodable = [case for case in GOLDEN if encode(case["commands"]) is None]
+    assert unencodable
+    assert all(case["expected"][0] == "raises" for case in unencodable)
 
 
 def test_lines_come_from_consecutive_points_within_a_subpath():
     path = [
-        Command("m", (0.0, 0.0), (1, 0, 0, 1, 0, 0), 0.0),
-        Command("l", (10.0, 0.0), (1, 0, 0, 1, 0, 0), 0.0),
-        Command("l", (10.0, 0.005), (1, 0, 0, 1, 0, 0), 0.0),
-        Command("h", (), (1, 0, 0, 1, 0, 0), 0.0),
-        Command("m", (50.0, 50.0), (1, 0, 0, 1, 0, 0), 0.0),
-        Command("l", (50.0, 60.0), (1, 0, 0, 1, 0, 0), 0.0),
+        identity("m", (0.0, 0.0)),
+        identity("l", (10.0, 0.0)),
+        identity("l", (10.0, 0.005)),
+        identity("h", ()),
+        identity("m", (50.0, 50.0)),
+        identity("l", (50.0, 60.0)),
     ]
-    _, _, spans, bbox, has_segments, lines = flatten_path_commands(path, None, math.hypot)
+    _, _, spans, bbox, has_segments, lines = flatten(path, None)
     # No line across the subpath break, none for the closing edge, none for
     # the 0.005 step.
     assert lines.tolist() == [[0.0, 0.0, 10.0, 0.0], [50.0, 50.0, 50.0, 60.0]]
@@ -121,12 +168,10 @@ def test_lines_come_from_consecutive_points_within_a_subpath():
 
 def test_matrix_applies_to_points_lines_and_box():
     path = [
-        Command("m", (1.0, 2.0), (1, 0, 0, 1, 0, 0), 0.0),
-        Command("l", (3.0, 2.0), (1, 0, 0, 1, 0, 0), 0.0),
+        identity("m", (1.0, 2.0)),
+        identity("l", (3.0, 2.0)),
     ]
-    xs, ys, _, bbox, _, lines = flatten_path_commands(
-        path, (2.0, 0.0, 0.0, -1.0, 10.0, 100.0), math.hypot
-    )
+    xs, ys, _, bbox, _, lines = flatten(path, (2.0, 0.0, 0.0, -1.0, 10.0, 100.0))
     assert xs.tolist() == [12.0, 16.0]
     assert ys.tolist() == [98.0, 98.0]
     assert lines.tolist() == [[12.0, 98.0, 16.0, 98.0]]
@@ -134,7 +179,7 @@ def test_matrix_applies_to_points_lines_and_box():
 
 
 def test_empty_and_pointless_paths():
-    xs, ys, spans, bbox, has_segments, lines = flatten_path_commands([], None, math.hypot)
+    xs, ys, spans, bbox, has_segments, lines = flatten([], None)
     assert (xs.size, ys.size, spans, bbox, has_segments, lines.shape) == (
         0,
         0,
@@ -143,8 +188,8 @@ def test_empty_and_pointless_paths():
         False,
         (0, 4),
     )
-    move = [Command("m", (4.0, 5.0), (1, 0, 0, 1, 0, 0), 0.0)]
-    _, _, spans, bbox, has_segments, lines = flatten_path_commands(move, None, math.hypot)
+    move = [identity("m", (4.0, 5.0))]
+    _, _, spans, bbox, has_segments, lines = flatten(move, None)
     assert spans == [(0, 1, False)]
     assert bbox == (4.0, 5.0, 4.0, 5.0)
     assert not has_segments
@@ -158,16 +203,26 @@ def test_segment_count_goes_through_the_hypot_it_is_given():
         calls.append((x, y))
         return math.hypot(x, y)
 
-    curve = [Command("c", (0.0, 0.0, 1.0, 1.0, 2.0, 1.0, 3.0, 0.0), (1, 0, 0, 1, 0, 0), 0.0)]
-    flatten_path_commands(curve, None, counting_hypot)
+    curve = [identity("c", (0.0, 0.0, 1.0, 1.0, 2.0, 1.0, 3.0, 0.0))]
+    flatten(curve, None, counting_hypot)
     # Two for the CTM's scale, three for the control polygon.
     assert len(calls) == 5
 
 
 def test_arrays_are_float64():
     path = [
-        Command("m", (0.0, 0.0), (1, 0, 0, 1, 0, 0), 0.0),
-        Command("l", (1.0, 1.0), (1, 0, 0, 1, 0, 0), 0.0),
+        identity("m", (0.0, 0.0)),
+        identity("l", (1.0, 1.0)),
     ]
-    xs, ys, _, _, _, lines = flatten_path_commands(path, None, math.hypot)
+    xs, ys, _, _, _, lines = flatten(path, None)
     assert xs.dtype == ys.dtype == lines.dtype == numpy.float64
+
+
+def test_no_line_table_collects_no_lines():
+    encoded = encode([identity("m", (0.0, 0.0)), identity("l", (5.0, 0.0))])
+    assert encoded is not None
+    xs, _, _, _, has_segments = flatten_path_commands(
+        encoded[0], encoded[1], None, math.hypot, None, 1.0
+    )
+    assert xs.tolist() == [0.0, 5.0]
+    assert has_segments

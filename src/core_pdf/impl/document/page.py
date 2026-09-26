@@ -220,7 +220,7 @@ class PdfPage:
         return records
 
     def get_fields(self) -> list[RawFormField]:
-        return list(self.document.fields_by_page().get(self.page_number - 1, ()))
+        return list(self.document.cached_fields_by_page().get(self.page_number - 1, ()))
 
     @property
     def art_box(self) -> tuple[float, float, float, float] | None:

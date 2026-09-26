@@ -1,6 +1,6 @@
 [project]
 name = "core-jbig2"
-version = "0.1.0"
+version = "0.2.0"
 description = "ITU-T T.88 JBIG2 decoder"
 readme = "README.md"
 license = "AGPL-3.0-only"

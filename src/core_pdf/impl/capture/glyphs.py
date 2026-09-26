@@ -11,12 +11,13 @@ from core_pdf.impl.capture.glyph_boxes import (
     transformed_text_line,
 )
 from core_pdf.impl.capture.glyph_geometry import NO_BOX, vertical_glyph_geometry
-from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions
+from core_pdf.impl.capture.program import CaptureOptions
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts.font_program import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.glyphs import (
     GlyphClusterLike,
     GlyphObservation,
+    GlyphStyle,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
     min_optional_confidence,
@@ -89,26 +90,10 @@ class RunGeometry:
         self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
-@dataclass(frozen=True, slots=True)
-class TextGeometry:
-    """The text-state geometry a run of glyphs is laid out under."""
-
-    basis: TextBasis
-    font_size: float
-    font_scale: float
-    font_ascent: float
-    font_descent: float
-    advance_scale: float
-    char_space: float
-    word_space: float
-    horizontal_scale: float
-    rise: float
-    rotation_angle: int
-    effective_font_size: float
-    effective_font_height: float
-
-
-@dataclass(frozen=True, slots=True)
+# Not frozen, like GlyphStyle: one is built per text-showing operation, and a
+# frozen dataclass sets its 16 fields through object.__setattr__ at about
+# five times the cost. Nothing changes one after it is built.
+@dataclass(slots=True)
 class GlyphPaint:
     """The painting state a run of glyphs is drawn with."""
 
@@ -140,20 +125,66 @@ class GlyphCapture:
     geometry: RunGeometry = field(default_factory=RunGeometry)
 
 
+def glyph_style(
+    paint: GlyphPaint,
+    decoder: FontDecoder,
+    font_size: float,
+    rotation_angle: int,
+    effective_font_size: float,
+    effective_font_height: float,
+    provenance: tuple[tuple[str, object], ...],
+    text_object_id: int,
+) -> GlyphStyle:
+    """Everything a show-text operation paints its glyphs with, held once for all of them."""
+    return GlyphStyle(
+        font_size,
+        rotation_angle,
+        paint.fill,
+        decoder,
+        effective_font_size,
+        effective_font_height,
+        provenance,
+        paint.render_mode,
+        paint.fill_opacity,
+        paint.stroke_color,
+        paint.stroke_opacity,
+        paint.line_width,
+        paint.blend_mode,
+        paint.group_alpha,
+        text_object_id,
+        paint.line_cap,
+        paint.line_join,
+        paint.dash_pattern,
+        paint.clip_glyph and not decoder.is_type3,
+        paint.alpha_is_shape,
+        decoder.is_type3,
+        paint.graphics_soft_mask,
+    )
+
+
 def capture_glyphs(
     text: str,
     glyphs: tuple[DecodedGlyph, ...],
     decoder: FontDecoder,
-    *,
-    geometry: TextGeometry,
-    paint: GlyphPaint,
+    text_basis: TextBasis,
+    font_size: float,
+    font_scale: float,
+    font_ascent: float,
+    font_descent: float,
+    advance_scale: float,
+    char_space: float,
+    word_space: float,
+    horizontal_scale: float,
+    rise: float,
+    style: GlyphStyle,
+    clip_bbox: Rectangle | None,
+    page_clip: Rectangle | None,
     visible: bool,
     font_name: str | None,
-    provenance: tuple[tuple[str, object], ...],
     seqno: int,
-    text_object_id: int,
     cluster_start: int,
-    options: CaptureOptions = DEFAULT_CAPTURE,
+    options: CaptureOptions,
+    /,
 ) -> GlyphCapture:
     """Lay out and record one show-text operation's glyphs.
 
@@ -168,18 +199,8 @@ def capture_glyphs(
     result = GlyphCapture()
     if not glyphs:
         return result
-    text_basis = geometry.basis
-    font_size = geometry.font_size
-    font_scale = geometry.font_scale
-    font_ascent = geometry.font_ascent
-    font_descent = geometry.font_descent
-    rise = geometry.rise
-    advance_scale = geometry.advance_scale
     effective_font_name = decoder.font_name or font_name
     is_vertical = decoder.is_vertical
-    char_space = geometry.char_space
-    word_space = geometry.word_space
-    horizontal_scale = geometry.horizontal_scale
     glyph_width = decoder.glyph_width
     glyph_bbox_for_code = decoder.glyph_bbox
     vertical_position = decoder.vertical_glyph_position
@@ -200,6 +221,7 @@ def capture_glyphs(
     positions: list[tuple[float, float]] = []
     offset = 0.0
     cursor = 0
+    any_split = False
     for glyph in glyphs:
         if is_vertical:
             _, advance_y = decoder.glyph_advance_vector(
@@ -241,6 +263,8 @@ def capture_glyphs(
             False if chunk_length == 1 else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
         )
         suspicious_flags.append(suspicious)
+        if glyph.split_unicode and chunk_length != 1 and not suspicious:
+            any_split = True
         want_bitmap.append(
             1 if want_render and (should_capture_glyph_bitmap(chunk_text) or suspicious) else 0
         )
@@ -253,6 +277,7 @@ def capture_glyphs(
 
     # ---- pass two: the geometry kernel ------------------------------------
     if is_vertical:
+        advance_union = ink_union = None
         advance_f, baseline_f, transform_f, ink_f, visible_f, bitmap_f = vertical_glyph_geometry(
             offsets,
             advances,
@@ -263,34 +288,51 @@ def capture_glyphs(
             rise=rise,
             font_scale=font_scale,
             advance_scale=advance_scale,
-            clip_primary=paint.clip_bbox,
-            clip_page=paint.page_clip,
+            clip_primary=clip_bbox,
+            clip_page=page_clip,
             visible=visible,
             want_bitmap=want_bitmap,
             want_transform=want_render,
         )
     else:
-        advance_f, baseline_f, transform_f, ink_f, visible_f, bitmap_f = horizontal_glyph_geometry(
+        # Positional: the kernel's keyword parsing matched each name per call.
+        (
+            advance_f,
+            baseline_f,
+            transform_f,
+            ink_f,
+            visible_f,
+            bitmap_f,
+            advance_union,
+            ink_union,
+        ) = horizontal_glyph_geometry(
             offsets,
             advances,
             glyph_boxes,
-            basis=text_basis,
-            font_ascent=font_ascent,
-            font_descent=font_descent,
-            rise=rise,
-            font_scale=font_scale,
-            advance_scale=advance_scale,
-            font_size=font_size,
-            clip_primary=paint.clip_bbox,
-            clip_page=paint.page_clip,
-            visible=visible,
-            want_bitmap=want_bitmap,
-            want_transform=want_render,
+            text_basis,
+            font_ascent,
+            font_descent,
+            rise,
+            font_scale,
+            advance_scale,
+            font_size,
+            clip_bbox,
+            page_clip,
+            visible,
+            want_bitmap,
+            want_render,
         )
 
     # ---- pass three: the observations -------------------------------------
+    # The kernel accumulated the run's boxes as RunGeometry.add would have,
+    # glyph by glyph; with no glyph split into fragments, whose boxes are cut
+    # here, those are the run's, and only the confidence is gathered below.
+    fused = want_runs and advance_union is not None and not any_split
+    run_confidence: float | None = None
+    styled_observation = GlyphObservation.styled
     add_run_geometry = result.geometry.add
     append_glyph = result.glyphs.append
+    append_cluster = result.clusters.append
     for index, glyph in enumerate(kept):
         chunk_text = chunk_texts[index]
         chunk_length = len(chunk_text)
@@ -311,32 +353,66 @@ def capture_glyphs(
             glyph.alternates,
         )
 
+        if not (glyph.split_unicode and chunk_length != 1 and not suspicious_flags[index]):
+            # The usual glyph: one observation, which is also its own cluster
+            # (glyph_cluster_from_observations returns a lone observation as
+            # is), so the fragment and cluster lists below are skipped.
+            observation = styled_observation(
+                style,
+                chunk_text,
+                rect,
+                advance_bbox,
+                seqno,
+                glyph.code_bytes,
+                glyph.char_code,
+                glyph.cid,
+                glyph.gid,
+                effective_font_name,
+                baseline,
+                observation_visible,
+                observation_confidence,
+                glyph.unicode_source,
+                glyph.alternates,
+                (),
+                bitmap_width,
+                bitmap_height,
+                bitmap_code,
+                outline_transform,
+                True,
+                cluster_provenance_id,
+            )
+            append_glyph(observation)
+            if want_runs:
+                if not fused:
+                    add_run_geometry(advance_bbox, rect, observation_confidence)
+                elif index == 0 or run_confidence is None:
+                    run_confidence = observation_confidence
+                elif observation_confidence is not None:
+                    run_confidence = min(run_confidence, observation_confidence)
+                append_cluster(observation)
+            continue
+
         fragments: list[tuple[str, Rectangle, Rectangle, Rectangle, float]] = []
-        if glyph.split_unicode and chunk_length != 1 and not suspicious_flags[index]:
-            # One code that stands for several characters: re-cut the advance
-            # per character. Rare, and the kernel deliberately does not model it.
-            per_char_advance = advances[index] / chunk_length
-            char_offset = offsets[index]
-            for ch in chunk_text:
-                char_confidence = glyph_unicode_confidence(
-                    ch, glyph.unicode_source, glyph.alternates
-                )
-                char_box, char_baseline_text = glyph_text_space_boxes(
-                    char_offset,
-                    per_char_advance,
-                    is_vertical=is_vertical,
-                    rise=rise,
-                    font_ascent=font_ascent,
-                    font_descent=font_descent,
-                )
-                char_advance_rect = text_basis_rect(*char_box, text_basis)
-                char_baseline = transformed_text_line(*char_baseline_text, text_basis)
-                fragments.append(
-                    (ch, char_advance_rect, char_advance_rect, char_baseline, char_confidence)
-                )
-                char_offset += per_char_advance
-        else:
-            fragments.append((chunk_text, rect, advance_bbox, baseline, observation_confidence))
+        # One code that stands for several characters: re-cut the advance
+        # per character. Rare, and the kernel deliberately does not model it.
+        per_char_advance = advances[index] / chunk_length
+        char_offset = offsets[index]
+        for ch in chunk_text:
+            char_confidence = glyph_unicode_confidence(ch, glyph.unicode_source, glyph.alternates)
+            char_box, char_baseline_text = glyph_text_space_boxes(
+                char_offset,
+                per_char_advance,
+                is_vertical=is_vertical,
+                rise=rise,
+                font_ascent=font_ascent,
+                font_descent=font_descent,
+            )
+            char_advance_rect = text_basis_rect(*char_box, text_basis)
+            char_baseline = transformed_text_line(*char_baseline_text, text_basis)
+            fragments.append(
+                (ch, char_advance_rect, char_advance_rect, char_baseline, char_confidence)
+            )
+            char_offset += per_char_advance
 
         cluster_observations: list[GlyphObservation] = []
         for position, (
@@ -346,7 +422,8 @@ def capture_glyphs(
             fragment_baseline,
             confidence,
         ) in enumerate(fragments):
-            observation = GlyphObservation(
+            observation = styled_observation(
+                style,
                 fragment_text,
                 ink,
                 advance_rect,
@@ -356,10 +433,7 @@ def capture_glyphs(
                 glyph.cid,
                 glyph.gid,
                 effective_font_name,
-                font_size,
                 fragment_baseline,
-                geometry.rotation_angle,
-                paint.fill,
                 observation_visible,
                 confidence,
                 glyph.unicode_source,
@@ -368,28 +442,9 @@ def capture_glyphs(
                 bitmap_width,
                 bitmap_height,
                 bitmap_code,
-                decoder,
-                geometry.effective_font_size,
-                geometry.effective_font_height,
-                provenance,
                 outline_transform,
-                paint.render_mode,
-                paint.fill_opacity,
-                paint.stroke_color,
-                paint.stroke_opacity,
-                paint.line_width,
-                paint.blend_mode,
-                paint.group_alpha,
                 position == 0,
-                text_object_id,
-                paint.line_cap,
-                paint.line_join,
-                paint.dash_pattern,
                 cluster_provenance_id,
-                paint.clip_glyph and not decoder.is_type3,
-                paint.alpha_is_shape,
-                decoder.is_type3,
-                paint.graphics_soft_mask,
             )
             append_glyph(observation)
             if want_runs:
@@ -401,5 +456,11 @@ def capture_glyphs(
             )
             if cluster is not None:
                 result.clusters.append(cluster)
+    if fused and advance_union is not None and ink_union is not None:
+        geometry = result.geometry
+        geometry.started = True
+        geometry.advance = advance_union
+        geometry.ink = ink_union
+        geometry.confidence = run_confidence
     result.cluster_count = len(kept)
     return result

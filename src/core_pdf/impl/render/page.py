@@ -289,6 +289,7 @@ class RenderedPage(ReprFields):
             semantic_context=self.semantic_context,
         )
         rotate = self.rotate % 360
+        raster_target.group_member_boxes = self.display_list.group_member_boxes
         raster_target.paint_items(self.render_items(crop, scale=device_scale))
         while len(raster_target.buffer_stack) > 1:
             raster_target.composite_group(raster_target.pop_group())

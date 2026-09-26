@@ -24,6 +24,7 @@ a count. The box follows points_bbox and union_bbox exactly, including which
 of two equal values survives, which matters only for signed zeros.
 """
 
+from cpython cimport array
 from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
 from libc.math cimport ceil, fabs, isinf, isnan
 
@@ -144,22 +145,57 @@ cdef inline double python_min(double left, double right) noexcept:
     return right if right < left else left
 
 
-cdef int add_curve(PathBuilder path, command, tuple values, hypot) except -1:
-    if len(values) != 8:
-        raise ValueError(f"expected 8 values to unpack, got {len(values)}")
+cdef bint add_subpath_box(
+    const double* px, const double* py, Py_ssize_t start, Py_ssize_t end, bint have_box, double* box
+) noexcept:
+    # points_bbox for one subpath -- NaNs never pass its comparisons -- then
+    # union_bbox into box. Returns whether box now holds one.
+    cdef double sx0 = INF, sy0 = INF, sx1 = -INF, sy1 = -INF
+    cdef double x, y
+    cdef Py_ssize_t i
+    for i in range(start, end):
+        x = px[i]
+        y = py[i]
+        if x < sx0:
+            sx0 = x
+        if x > sx1:
+            sx1 = x
+        if y < sy0:
+            sy0 = y
+        if y > sy1:
+            sy1 = y
+    if sx0 > sx1:
+        return have_box
+    if not have_box:
+        box[0] = sx0
+        box[1] = sy0
+        box[2] = sx1
+        box[3] = sy1
+        return True
+    box[0] = python_min(box[0], sx0)
+    box[1] = python_min(box[1], sy0)
+    box[2] = python_max(box[2], sx1)
+    box[3] = python_max(box[3], sy1)
+    return True
+
+
+cdef int add_curve(PathBuilder path, const double *values, hypot) except -1:
+    # values: the start point, two controls and the end point, then the
+    # linear part of the curve's CTM (a, b, c, d) and its flatness.
     cdef double x0 = values[0], y0 = values[1], x1 = values[2], y1 = values[3]
     cdef double x2 = values[4], y2 = values[5], x3 = values[6], y3 = values[7]
-    matrix = command.ctm
     cdef double scale = python_max(
-        python_max(<double> hypot(matrix.a, matrix.b), <double> hypot(matrix.c, matrix.d)), 1.0
+        python_max(<double> hypot(values[8], values[9]), <double> hypot(values[10], values[11])),
+        1.0,
     )
     cdef double control_len = (
         <double> hypot(x1 - x0, y1 - y0)
         + <double> hypot(x2 - x1, y2 - y1)
         + <double> hypot(x3 - x2, y3 - y2)
     )
-    flatness_value = command.flatness or 0.25
-    cdef double flatness = python_max(0.1, <double> flatness_value)
+    # flatness or 0.25: either zero is falsy, a NaN is not.
+    cdef double flatness_value = values[12] if values[12] != 0.0 else 0.25
+    cdef double flatness = python_max(0.1, flatness_value)
     cdef double steps = ceil(control_len * scale / (flatness * 8.0))
     check_integral(steps)
     # max(4, min(128, steps)), each keeping its first argument on a tie.
@@ -188,41 +224,60 @@ cdef int add_curve(PathBuilder path, command, tuple values, hypot) except -1:
     return 0
 
 
-def flatten_path_commands(commands, matrix, hypot):
+def flatten_path_commands(
+    const unsigned char[::1] ops,
+    const double[::1] coords,
+    matrix,
+    hypot,
+    array.array line_rows,
+    double line_width,
+):
     """Flatten, transform and summarize a path, as capture needs it.
 
-    ``commands`` is a PdfPath's command list; ``matrix`` is the six-number
-    CTM to apply to every point, or None to leave them as flattened; ``hypot``
-    is math.hypot.
+    ``ops`` and ``coords`` are a PdfPath's operator bytes and numbers, laid
+    out as core_pdf_spec's PATH_OPERAND_COUNTS says; ``matrix`` is the
+    six-number CTM to apply to every point, or None to leave them as
+    flattened; ``hypot`` is math.hypot.
 
-    Returns ``(xs, ys, spans, bbox, has_segments, lines)``: float64 point
-    columns, a ``(start, end, closed)`` span per subpath, the bounding box or
-    None, whether any subpath has two points, and an (n, 4) float64 array of
-    the stroke-line endpoints -- every consecutive pair of points within a
-    subpath that moves by more than 0.01 on either axis.
+    Returns ``(xs, ys, spans, bbox, has_segments)``: float64 point columns,
+    a ``(start, end, closed)`` span per subpath, the bounding box or None, and
+    whether any subpath has two points.
+
+    The stroke lines -- every consecutive pair of points within a subpath
+    that moves by more than 0.01 on either axis -- are appended to
+    ``line_rows``, an ``array('d')``, as ``x0, y0, x1, y1, line_width`` rows;
+    it is the page's one line table, so a path adds no array of its own. With
+    ``line_rows`` None they are not collected.
     """
     cdef PathBuilder path = PathBuilder()
-    cdef tuple values
-    cdef str operator
-    for command in commands:
-        operator = command.operator
-        values = command.operands
-        if operator == "m":
-            if len(values) != 2:
-                raise TypeError(f"move_to() takes 2 positional arguments but {len(values)} were given")
-            path.move_to(values[0], values[1])
-        elif operator == "l":
-            if len(values) != 2:
-                raise TypeError(f"line_to() takes 2 positional arguments but {len(values)} were given")
-            path.line_to(values[0], values[1])
-        elif operator == "h":
+    cdef Py_ssize_t op_index, at = 0, available = coords.shape[0]
+    cdef unsigned char op
+    for op_index in range(ops.shape[0]):
+        op = ops[op_index]
+        if op == 109:  # m
+            if at + 2 > available:
+                raise ValueError("path coordinates run short")
+            path.move_to(coords[at], coords[at + 1])
+            at += 2
+        elif op == 108:  # l
+            if at + 2 > available:
+                raise ValueError("path coordinates run short")
+            path.line_to(coords[at], coords[at + 1])
+            at += 2
+        elif op == 104:  # h
             path.close()
-        elif operator == "re":
-            if len(values) != 4:
-                raise TypeError(f"rect() takes 4 positional arguments but {len(values)} were given")
-            path.rect(values[0], values[1], values[2], values[3])
-        elif operator == "c":
-            add_curve(path, command, values, hypot)
+        elif op == 114:  # re
+            if at + 4 > available:
+                raise ValueError("path coordinates run short")
+            path.rect(coords[at], coords[at + 1], coords[at + 2], coords[at + 3])
+            at += 4
+        elif op == 99:  # c
+            if at + 13 > available:
+                raise ValueError("path coordinates run short")
+            add_curve(path, &coords[at], hypot)
+            at += 13
+        else:
+            raise ValueError(f"unknown path operator {op}")
     path.finish_subpath()
 
     cdef Py_ssize_t count = path.points.count
@@ -253,8 +308,7 @@ def flatten_path_commands(commands, matrix, hypot):
     cdef Py_ssize_t start, end, index, line_count = 0
     cdef bint has_segments = False
     cdef bint have_box = False
-    cdef double box_x0 = 0.0, box_y0 = 0.0, box_x1 = 0.0, box_y1 = 0.0
-    cdef double sx0, sy0, sx1, sy1
+    cdef double box[4]
     for index in range(subpath_count):
         start = starts[index]
         end = starts[index + 1] if index + 1 < subpath_count else count
@@ -264,44 +318,49 @@ def flatten_path_commands(commands, matrix, hypot):
         for i in range(start + 1, end):
             if fabs(px[i] - px[i - 1]) > 0.01 or fabs(py[i] - py[i - 1]) > 0.01:
                 line_count += 1
-        # points_bbox for the subpath, then union_bbox into the page box.
-        sx0 = sy0 = INF
-        sx1 = sy1 = -INF
-        for i in range(start, end):
-            x = px[i]
-            y = py[i]
-            if x < sx0:
-                sx0 = x
-            if x > sx1:
-                sx1 = x
-            if y < sy0:
-                sy0 = y
-            if y > sy1:
-                sy1 = y
-        if sx0 > sx1:
+        have_box = add_subpath_box(px, py, start, end, have_box, box)
+
+    cdef Py_ssize_t row
+    cdef double* out
+    if line_rows is not None and line_count:
+        row = len(line_rows)
+        array.resize_smart(line_rows, row + line_count * 5)
+        out = line_rows.data.as_doubles + row
+        for index in range(subpath_count):
+            start = starts[index]
+            end = starts[index + 1] if index + 1 < subpath_count else count
+            for i in range(start + 1, end):
+                if fabs(px[i] - px[i - 1]) > 0.01 or fabs(py[i] - py[i - 1]) > 0.01:
+                    out[0] = px[i - 1]
+                    out[1] = py[i - 1]
+                    out[2] = px[i]
+                    out[3] = py[i]
+                    out[4] = line_width
+                    out += 5
+
+    bbox = (box[0], box[1], box[2], box[3]) if have_box else None
+    return xs, ys, spans, bbox, has_segments
+
+
+def path_bounds(const double[::1] xs, const double[::1] ys, list spans):
+    """CapturedPath.bbox() and has_segments() of the subpaths `spans` cut from the columns.
+
+    A deferred path answers both without building its subpaths: bbox_union
+    over each subpath's points_bbox, as add_subpath_box computes it for
+    flatten_path_commands, and whether any subpath has two points.
+    """
+    if xs.shape[0] != ys.shape[0]:
+        raise ValueError("xs and ys differ in length")
+    cdef Py_ssize_t start, end
+    cdef bint have_box = False, has_segments = False
+    cdef double box[4]
+    for start, end, _ in spans:
+        if start < 0 or end > xs.shape[0] or end < start:
+            raise ValueError("span runs past the points")
+        if end <= start:
             continue
-        if not have_box:
-            box_x0, box_y0, box_x1, box_y1 = sx0, sy0, sx1, sy1
-            have_box = True
-        else:
-            box_x0 = python_min(box_x0, sx0)
-            box_y0 = python_min(box_y0, sy0)
-            box_x1 = python_max(box_x1, sx1)
-            box_y1 = python_max(box_y1, sy1)
-
-    lines = numpy.empty((line_count, 4), dtype=numpy.float64)
-    cdef double[:, ::1] out_lines = lines
-    cdef Py_ssize_t row = 0
-    for index in range(subpath_count):
-        start = starts[index]
-        end = starts[index + 1] if index + 1 < subpath_count else count
-        for i in range(start + 1, end):
-            if fabs(px[i] - px[i - 1]) > 0.01 or fabs(py[i] - py[i - 1]) > 0.01:
-                out_lines[row, 0] = px[i - 1]
-                out_lines[row, 1] = py[i - 1]
-                out_lines[row, 2] = px[i]
-                out_lines[row, 3] = py[i]
-                row += 1
-
-    bbox = (box_x0, box_y0, box_x1, box_y1) if have_box else None
-    return xs, ys, spans, bbox, has_segments, lines
+        if end - start > 1:
+            has_segments = True
+        have_box = add_subpath_box(&xs[0], &ys[0], start, end, have_box, box)
+    bbox = (box[0], box[1], box[2], box[3]) if have_box else None
+    return bbox, has_segments

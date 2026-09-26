@@ -408,3 +408,26 @@ def test_element_page_reuses_explicit_lookup_page_wrapper(document):
     element = StructureElement(document, {"Pg": PdfReference(3, 0)}, page_lookup=lookup)
     assert element.page is lookup.pages[0]
     assert element.page_index == 0
+
+
+def test_elements_of_one_page_structure_share_their_parents(document):
+    parent_props: PdfDict = {"S": PdfName(b"P"), "ActualText": PdfString(b"shared")}
+    first: PdfDict = {"S": PdfName(b"Span"), "P": parent_props}
+    second: PdfDict = {"S": PdfName(b"Span"), "P": parent_props}
+    page_structure = PageStructure(document.pages[0], [first, second])
+    left, right = page_structure[0], page_structure[1]
+    assert left is not None
+    assert right is not None
+    assert left.parent is right.parent
+    fresh = StructureElement(document, parent_props)
+    shared = left.parent
+    assert isinstance(shared, StructureElement)
+    assert shared.actual_text == fresh.actual_text == "shared"
+    assert shared.type == fresh.type
+
+
+def test_a_lone_element_still_builds_its_own_parent(document):
+    parent_props: PdfDict = {"S": PdfName(b"P")}
+    one = StructureElement(document, {"P": parent_props})
+    two = StructureElement(document, {"P": parent_props})
+    assert one.parent is not two.parent

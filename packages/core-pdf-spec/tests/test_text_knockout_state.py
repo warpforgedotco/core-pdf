@@ -228,6 +228,46 @@ def test_invisible_type3_text_emits_no_glyph_boundaries() -> None:
     assert not sink.events
 
 
+def counting_stream(raw_data: bytes) -> tuple[PdfStream, list[bytes]]:
+    decoded: list[bytes] = []
+
+    def decoder(
+        data: bytes | memoryview, dictionary: object, *, parent_dictionary: object = None
+    ) -> bytes:
+        decoded.append(bytes(data))
+        return bytes(data)
+
+    return PdfStream(raw_data=raw_data, decoder=decoder), decoded
+
+
+def test_repeated_type3_glyph_decodes_its_CharProc_once() -> None:
+    state, sink = make_state()
+    state.op_BT((), 0)
+    glyph, decoded = counting_stream(b"0 0 d0 0 0 1 1 re f")
+    state.render_type3_glyphs(b"ABAB", type3_font(glyph))
+    assert decoded == [b"0 0 d0 0 0 1 1 re f"]
+    assert [kind for kind, _, _ in sink.events].count("fill") == 4
+
+
+def test_page_level_streams_are_decoded_on_every_entry() -> None:
+    # Only nested streams are re-entered; the page's own content is not kept.
+    state, _ = make_state()
+    page, decoded = counting_stream(b"0 0 1 1 re f")
+    for _ in range(2):
+        state.stream_executor.consume(page, {}, IDENTITY_MATRIX, 0)
+    assert len(decoded) == 2
+    assert not state.stream_executor.decoded_streams
+
+
+def test_a_failed_decode_is_not_cached() -> None:
+    state, _ = make_state()
+    glyph = PdfStream(spec={"Filter": PdfName.of("Unknown")})
+    for _ in range(2):
+        with pytest.raises(FilterUnsupportedError):
+            state.stream_executor.consume(glyph, {}, IDENTITY_MATRIX, 1)
+    assert not state.stream_executor.decoded_streams
+
+
 def test_pattern_retains_defining_stream_initial_TK_across_nested_and_later_changes() -> None:
     state, sink = make_state()
     pattern = PdfStream(

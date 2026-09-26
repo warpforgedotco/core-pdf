@@ -60,7 +60,32 @@ def test_kernel_reproduces_golden_vector(index: int) -> None:
     glyph_boxes = kwargs.pop("glyph_boxes")
     produced = horizontal_glyph_geometry(offsets, advances, glyph_boxes, **kwargs)
     kwargs["offsets"], kwargs["advances"], kwargs["glyph_boxes"] = offsets, advances, glyph_boxes
-    assert deep_repr(produced) == deep_repr(expected)
+    assert deep_repr(produced[:6]) == deep_repr(expected)
+
+
+@pytest.mark.parametrize("index", range(0, len(GOLDEN), 3))
+def test_the_run_unions_are_run_geometry_adds(index: int) -> None:
+    # RunGeometry.add over each glyph's advance and ink box, in order.
+    pytest.importorskip("core_pdf")
+    from core_pdf.impl.capture.glyphs import RunGeometry
+
+    kwargs, _ = GOLDEN[index]
+    arguments = dict(kwargs)
+    produced = horizontal_glyph_geometry(
+        arguments.pop("offsets"),
+        arguments.pop("advances"),
+        arguments.pop("glyph_boxes"),
+        **arguments,
+    )
+    geometry = RunGeometry()
+    for advance, ink in zip(produced[0], produced[3], strict=True):
+        geometry.add(advance, ink, None)
+    if not produced[0]:
+        assert produced[6] is None
+        assert produced[7] is None
+        return
+    assert repr(produced[6]) == repr(geometry.advance)
+    assert repr(produced[7]) == repr(geometry.ink)
 
 
 def test_kernel_rejects_a_short_glyph_box_array():

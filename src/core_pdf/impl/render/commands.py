@@ -24,11 +24,12 @@ from core_pdf.impl.render.model import (
     DisplayListItem,
     ImagePaintItem,
     PathPaintItem,
+    PathPaintKind,
 )
 from core_pdf.impl.render.paths import translate_rect
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.types import Rectangle
-from core_pdf_cythonized import outline_edges
+from core_pdf_cythonized import translated_outline_edges
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 
@@ -80,13 +81,14 @@ def transformed_outline(
 ) -> tuple[CapturedPath, Rectangle | None, numpy.ndarray[Any, Any] | None] | None:
     a, b, c, d, e, f = transform
     linear_x, linear_y = arrays.linear_columns(a, b, c, d)
-    column_x = linear_x + e
-    column_y = linear_y + f
-    # The kernel takes the numeric half: which spans survive a duplicated
-    # closing point, and every edge of every survivor written into one array.
-    # The point lists stay in Python, because building those tuples in C
-    # measured slower than tolist() + zip() -- CPython's zip is hard to beat.
-    edges, kept, dropped = outline_edges(column_x, column_y, arrays.spans)
+    # The kernel takes the numeric half: the translated columns, which spans
+    # survive a duplicated closing point, every edge of every survivor in one
+    # array, and the columns' bounds as numpy's min and max give them. The
+    # point lists stay in Python, because building those tuples in C measured
+    # slower than tolist() + zip() -- CPython's zip is hard to beat.
+    column_x, column_y, edges, kept, dropped, bounds = translated_outline_edges(
+        linear_x, linear_y, e, f, arrays.spans
+    )
     if edges is None:
         return None
     # The points stay unbuilt until something asks for them. A filled glyph
@@ -95,19 +97,7 @@ def transformed_outline(
     path = CapturedPath.deferred_outline(column_x, column_y, kept)
     if dropped:
         return path, path.bbox(), edges
-    # The columns are already numpy arrays here, so there is no conversion to
-    # pay for: four reductions over a ~130-element ndarray beat four passes
-    # over the Python lists by 3.2x, and float() keeps the result type.
-    return (
-        path,
-        (
-            float(column_x.min()),
-            float(column_y.min()),
-            float(column_x.max()),
-            float(column_y.max()),
-        ),
-        edges,
-    )
+    return path, bounds, edges
 
 
 def append_glyph_paint(
@@ -132,27 +122,14 @@ def append_glyph_paint(
         clipping_subpaths.extend(path.subpaths)
     if not include_paint or mode in NON_PAINTING_RENDER_MODES or glyph.visible is False:
         return True
-    paint_kind = "fill" if mode in {0, 4} else "stroke" if mode in {1, 5} else "fillstroke"
-    display_list.append(
-        paint_kind,
-        glyph.seqno,
-        bbox=bbox,
-        path=path,
-        edge_array=edge_array,
-        fill=glyph.fill,
-        fill_opacity=glyph.fill_opacity,
-        stroke_color=glyph.stroke_color,
-        stroke_opacity=glyph.stroke_opacity,
-        line_width=glyph.line_width,
-        line_cap=glyph.line_cap,
-        line_join=glyph.line_join,
-        dash_pattern=glyph.dash_pattern,
-        fill_rule="nonzero",
-        blend_mode=glyph.blend_mode,
-        soft_mask_alpha=glyph.soft_mask_alpha,
-        graphics_soft_mask=glyph.graphics_soft_mask,
-        alpha_is_shape=glyph.alpha_is_shape,
+    paint_kind = (
+        PathPaintKind.FILL
+        if mode in {0, 4}
+        else PathPaintKind.STROKE
+        if mode in {1, 5}
+        else PathPaintKind.FILL_STROKE
     )
+    display_list.append_glyph_paint(paint_kind, glyph.seqno, bbox, path, edge_array, glyph.style)
     return True
 
 

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left
+from math import ceil, floor
 from typing import Any, ClassVar
+
+import numpy
 
 from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.paths import (
@@ -15,6 +18,9 @@ from core_pdf.impl.types import Record, frozen_setattr
 
 PixelSpan = tuple[int, int]
 RowSpans = tuple[PixelSpan, ...]
+RowSpanArrays = tuple[
+    numpy.ndarray[Any, numpy.dtype[numpy.int64]], numpy.ndarray[Any, numpy.dtype[numpy.int64]]
+]
 EMPTY_CLIP_BOX = (0.0, 0.0, 0.0, 0.0)
 
 
@@ -95,6 +101,10 @@ def intersect_spans(
 class ClipState:
     __slots__ = (
         "regions",
+        "last_box",
+        "last_region",
+        "last_clipped",
+        "span_arrays",
         "crop_x0",
         "crop_y1",
         "scale",
@@ -112,19 +122,58 @@ class ClipState:
         height: int,
     ) -> None:
         self.regions: list[ClipRegion] = []
+        self.last_box: tuple[float, float, float, float] | None = None
+        self.last_region: ClipRegion | None = None
+        self.last_clipped: (
+            tuple[tuple[float, float, float, float], tuple[int, int, int, int]] | None
+        ) = None
         self.crop_x0 = crop_x0
         self.crop_y1 = crop_y1
         self.scale = scale
         self.width = width
         self.height = height
+        # A clip path's rows as the stroke kernel reads them, per region.
+        # Regions are frozen, and the entry keeps its region alive, so the
+        # identity key cannot be reused while it is here.
+        self.span_arrays: dict[int, tuple[ClipRegion, RowSpanArrays]] = {}
+
+    def row_span_arrays(self, region: ClipRegion) -> RowSpanArrays:
+        """region.rows as (offsets, spans): row r's spans are spans[2*offsets[r]:2*offsets[r+1]].
+
+        An empty region, or a rectangular one, has no rows and gives a
+        single zero offset.
+        """
+        cached = self.span_arrays.get(id(region))
+        if cached is not None and cached[0] is region:
+            return cached[1]
+        rows = region.rows or ()
+        offsets = numpy.zeros(len(rows) + 1, dtype=numpy.int64)
+        numpy.cumsum([len(row) for row in rows], out=offsets[1:])
+        spans = numpy.asarray(
+            [value for row in rows for span in row for value in span], dtype=numpy.int64
+        )
+        arrays = (offsets, spans)
+        self.span_arrays[id(region)] = (region, arrays)
+        return arrays
 
     def page_box_to_pixels(
         self, x0: float, y0: float, x1: float, y1: float
     ) -> tuple[int, int, int, int] | None:
-        ix0 = max(0, min(self.width, math.floor((x0 - self.crop_x0) * self.scale)))
-        ix1 = max(0, min(self.width, math.ceil((x1 - self.crop_x0) * self.scale)))
-        iy0 = max(0, min(self.height, math.floor((self.crop_y1 - y1) * self.scale)))
-        iy1 = max(0, min(self.height, math.ceil((self.crop_y1 - y0) * self.scale)))
+        # max(0, min(size, v)) for each edge, as comparisons: every rendered
+        # element asks for its box, over a million times across the corpus.
+        width = self.width
+        height = self.height
+        crop_x0 = self.crop_x0
+        crop_y1 = self.crop_y1
+        scale = self.scale
+        ix0 = floor((x0 - crop_x0) * scale)
+        ix0 = width if ix0 > width else max(ix0, 0)
+        ix1 = ceil((x1 - crop_x0) * scale)
+        ix1 = width if ix1 > width else max(ix1, 0)
+        iy0 = floor((crop_y1 - y1) * scale)
+        iy0 = height if iy0 > height else max(iy0, 0)
+        iy1 = ceil((crop_y1 - y0) * scale)
+        iy1 = height if iy1 > height else max(iy1, 0)
         if ix1 <= ix0 or iy1 <= iy0:
             return None
         return ix0, iy0, ix1, iy1
@@ -176,28 +225,73 @@ class ClipState:
         row = py - region.rows_origin
         return region.rows[row] if 0 <= row < len(region.rows) else ()
 
-    def path_row_spans(
+    def path_rows_spans(
         self,
         edges: tuple[tuple[float, float, float, float], ...],
-        py: int,
+        row_start: int,
+        row_stop: int,
         fill_rule: str,
-    ) -> RowSpans:
-        page_y = self.crop_y1 - (py + 0.5) / self.scale
-        crossings: list[tuple[float, int]] = []
-        for x0, y0, x1, y1 in edges:
-            if y0 == y1:
-                continue
+    ) -> list[RowSpans]:
+        """The path's spans for each row in [row_start, row_stop).
+
+        A row's spans come from the edges its centre line crosses. Testing
+        every edge on every row made a clip push rows x edges -- 1.4 million
+        comparisons for PyMuPDF test_5001's page. Rows go down the page, so
+        the centre line only descends: an edge becomes a candidate once the
+        line drops below its top and stays one until the line drops below its
+        bottom. The candidates are kept in the edges' own order and put
+        through the same crossing test, so each row's crossings are the ones
+        the full scan found, in the order it found them.
+        """
+        crop_y1 = self.crop_y1
+        scale = self.scale
+        # A line that does not descend -- a scale that is not positive --
+        # keeps every edge a candidate on every row.
+        descending = scale > 0
+        tops: list[tuple[float, int]] = []
+        lows: list[float] = []
+        for index, (_, y0, _, y1) in enumerate(edges):
             low = min(y1, y0)
-            high = max(y0, y1)
-            if low <= page_y < high:
-                offset = (page_y - y0) / (y1 - y0)
-                crossings.append((x0 + offset * (x1 - x0), 1 if y1 > y0 else -1))
-        spans: list[PixelSpan] = []
-        for start_x, end_x in fill_path_crossing_spans(crossings, fill_rule):
-            span = self.page_x_to_pixel_span(start_x, end_x)
-            if span is not None:
-                spans.append(span)
-        return tuple(spans)
+            lows.append(low)
+            top = max(y0, y1)
+            # A NaN top is never above the line, so that edge never crosses.
+            if y0 != y1 and (top == top or not descending):
+                tops.append((top, index))
+        if descending:
+            tops.sort(key=lambda top: top[0], reverse=True)
+        next_top = 0
+        candidates: list[int] = []
+        rows: list[RowSpans] = []
+        for py in range(row_start, row_stop):
+            page_y = crop_y1 - (py + 0.5) / scale
+            added = False
+            while next_top < len(tops) and (page_y < tops[next_top][0] or not descending):
+                candidates.append(tops[next_top][1])
+                next_top += 1
+                added = True
+            if added:
+                candidates.sort()
+            crossings: list[tuple[float, int]] = []
+            live: list[int] = []
+            for index in candidates:
+                # Once the line is below an edge's bottom it stays there.
+                if descending and page_y < lows[index]:
+                    continue
+                live.append(index)
+                x0, y0, x1, y1 = edges[index]
+                low = lows[index]
+                high = max(y0, y1)
+                if low <= page_y < high:
+                    offset = (page_y - y0) / (y1 - y0)
+                    crossings.append((x0 + offset * (x1 - x0), 1 if y1 > y0 else -1))
+            candidates = live
+            spans: list[PixelSpan] = []
+            for start_x, end_x in fill_path_crossing_spans(crossings, fill_rule):
+                span = self.page_x_to_pixel_span(start_x, end_x)
+                if span is not None:
+                    spans.append(span)
+            rows.append(tuple(spans))
+        return rows
 
     def push(self, path: CapturedPath, fill_rule: str) -> None:
         parent = self.current_region()
@@ -225,12 +319,17 @@ class ClipState:
         rect_pixel_box = self.page_box_to_pixels(*rect) if rect is not None else None
         edges = tuple(path.fill_edges()) if rect is None else ()
         row_start, row_stop = (0, 0) if pixel_box is None else (pixel_box[1], pixel_box[3])
+        path_rows = (
+            None
+            if rect is not None
+            else self.path_rows_spans(edges, row_start, row_stop, fill_rule)
+        )
         rows: list[RowSpans] = []
         for py in range(row_start, row_stop):
             path_spans = (
                 self.rect_row_spans(rect_pixel_box, py)
-                if rect is not None
-                else self.path_row_spans(edges, py, fill_rule)
+                if path_rows is None
+                else path_rows[py - row_start]
             )
             rows.append(intersect_spans(self.region_row_spans(parent, py), path_spans))
         self.regions.append(ClipRegion(box, pixel_box, False, tuple(rows), row_start))
@@ -247,16 +346,25 @@ class ClipState:
         self, box: tuple[float, float, float, float]
     ) -> tuple[tuple[float, float, float, float], tuple[int, int, int, int]] | None:
         region = self.current_region()
-        if region is not None:
-            if region.empty:
-                return None
-            if region.box is not None:
-                clipped = intersect_box(box, region.box)
-                if clipped is None:
-                    return None
-                box = clipped
-        pixel_box = self.page_box_to_pixels(*box)
-        return None if pixel_box is None else (box, pixel_box)
+        # A painted item asks for its box more than once -- whether it can
+        # skip its knockout group, then again to paint -- and half of all
+        # calls repeat the one before. Regions are frozen and both objects
+        # are held here, so identity is enough to know the answer stands.
+        if box is self.last_box and region is self.last_region:
+            return self.last_clipped
+        self.last_box = box
+        self.last_region = region
+        result = None
+        if region is None or not region.empty:
+            clipped = (
+                box if region is None or region.box is None else intersect_box(box, region.box)
+            )
+            if clipped is not None:
+                pixel_box = self.page_box_to_pixels(*clipped)
+                if pixel_box is not None:
+                    result = (clipped, pixel_box)
+        self.last_clipped = result
+        return result
 
     @staticmethod
     def path_bbox(path: Any) -> tuple[float, float, float, float] | None:

@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterator
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.types import PdfName
-from core_pdf_cythonized import SCAN_NAME, SCAN_OPERATOR, ContentScanner
+from core_pdf_cythonized import ContentScanner
 from core_pdf_spec.s_07_content.inline_images import (
     InlineImage,
     InlineImageDataLengthError,
@@ -108,42 +108,33 @@ def iter_content_operations(
     *,
     recovery: CaptureRecovery | None = None,
     is_operator: Callable[[bytes], bool] | None = None,
+    path_state: object | None = None,
 ) -> Iterator[ContentOperation]:
-    operands: list[ContentOperand] = []
+    """The stream's operations; with `path_state`, all but the path operators
+    the scanner applies to it itself (see ContentScanner.set_path_state)."""
     recovery = recovery if recovery is not None else CaptureRecovery()
-    names: dict[bytes, PdfName] = {}
-    operators: dict[bytes, str] = {}
-    # The kernel scans whitespace, comments, numbers, names and operators and
-    # appends operands as it goes, so the loop below runs once per operation
-    # rather than once per token. It hands back a byte offset for anything it
-    # does not own -- strings, arrays, dictionaries, inline images, the
-    # BI/true/false/null keywords, and anything malformed -- and every one of
-    # those, with all the recovery around them, is still parsed here.
-    scanner = ContentScanner(lexer.raw_data, KEYWORD_TOKENS)
-    append = operands.append
+    # The kernel scans whitespace, comments, numbers, names and operators,
+    # appending operands as it goes and handing back each operation whole, so
+    # the loop below runs once per operation rather than once per token. It
+    # hands back a byte offset for anything it does not own -- strings,
+    # arrays, dictionaries, inline images, the BI/true/false/null keywords,
+    # and anything malformed -- and every one of those, with all the recovery
+    # around them, is still parsed here onto the kernel's operand list.
+    scanner = ContentScanner(lexer.raw_data, KEYWORD_TOKENS, OBJECT_KEYWORDS, PdfName.of)
+    if path_state is not None:
+        scanner.set_path_state(path_state)
+    operands: list[ContentOperand] = scanner.operands
+    scan = scanner.next_operation
     while True:
         # The slow path below owns lexer.pos and moves it in ways the scanner
         # cannot see, so the two cursors meet here once per operation.
         scanner.pos = lexer.pos
-        word, code = scanner.next_operation(operands, names)
-        if code == SCAN_OPERATOR:
+        result = scan()
+        if isinstance(result, tuple):
             lexer.pos = scanner.pos
-            op_name = operators.get(word)
-            if op_name is None:
-                op_name = operators[word] = word.decode("latin-1")
-            operation = (op_name, tuple(operands))
-            operands.clear()
-            if op_name not in OBJECT_KEYWORDS:
-                yield operation
+            yield result
             continue
-        if code == SCAN_NAME:
-            lexer.pos = scanner.pos
-            name = names[word] = PdfName.of(word[1:])
-            if len(operands) < 16:
-                append(name)
-            continue
-        lexer.pos = code
-        cursor = code
+        lexer.pos = cursor = result
         try:
             try:
                 token = parse_content_token(lexer)

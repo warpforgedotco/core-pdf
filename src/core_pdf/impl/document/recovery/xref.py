@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import mmap
+import re
 import zlib
 from collections.abc import Iterator
+from itertools import batched
+from typing import Any
+
+import numpy
 
 from core_pdf.impl.document.recovery.lexer import PdfLexer, matches_keyword_with_one_substitution
 from core_pdf.impl.document.recovery.objects import PdfObjectStream
@@ -19,8 +24,10 @@ from core_pdf_spec.s_07_syntax.xref import (
     ParsedXRefSection,
     PdfXRefEntry,
     XRefTable,
+    canonical_table_entries,
     decode_xref_row,
     key_for,
+    new_xref_entry,
 )
 from core_pdf_spec.s_07_syntax.xref import XRefScanner as SyntaxXRefScanner
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -132,6 +139,33 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
     entry_line, next_pos = XRefScanner.read_line(data, pos)
     offset, generation, in_use = parse_xref_entry_line(entry_line)
     return offset, generation, in_use, next_pos
+
+
+# A run of canonical xref rows: ten digits, five, n or f, and a two-byte
+# end of line (ISO 32000-2 7.5.4). See read_subsection.
+CANONICAL_XREF_ROWS = re.compile(rb"(?:[0-9]{10} [0-9]{5} [fn](?: \r| \n|\r\n))*")
+CANONICAL_XREF_ROW_SIZE = 20
+
+
+def canonical_xref_entries(
+    data: PdfByteBuffer, pos: int, start_obj: int, count: int
+) -> XRefTable | None:
+    """The entries of the first `count` rows at `pos`, if they and the row after start canonically.
+
+    Each such row reads the same in parse_xref_entry_at: it starts where
+    skip_ws leaves it, is not a trailer, and ends 20 bytes on, since the
+    next row starts with a digit and so no line end runs into it. A
+    generation over 65535, which the per-row parse rejects, leaves this to it.
+    """
+    end = pos + CANONICAL_XREF_ROW_SIZE * count
+    if (
+        count <= 0
+        or end >= len(data)
+        or not 48 <= data[end] <= 57
+        or CANONICAL_XREF_ROWS.fullmatch(data, pos, end) is None
+    ):
+        return None
+    return canonical_table_entries(data, pos, start_obj, count)
 
 
 class XRefScanner(SyntaxXRefScanner):
@@ -562,7 +596,14 @@ class XRefScanner(SyntaxXRefScanner):
         entries: XRefTable = {}
         max_object_number = start_obj + num_objs - 1
         actual_count = 0
-        for i in range(num_objs):
+        # All but the last row, whose line end may run into what follows it,
+        # read at once when they are canonical, as they are in most tables.
+        table = canonical_xref_entries(data, pos, start_obj, num_objs - 1)
+        if table is not None:
+            entries = table
+            actual_count = num_objs - 1
+            pos += CANONICAL_XREF_ROW_SIZE * actual_count
+        for i in range(actual_count, num_objs):
             entry_pos = cls.skip_ws(data, pos)
             if data[entry_pos : entry_pos + 7].startswith((b"trailer", b"<<")):
                 pos = entry_pos
@@ -750,6 +791,8 @@ class XRefScanner(SyntaxXRefScanner):
             count = min(count, remaining)
             available_index.extend((start_obj, count))
             remaining -= count
+        if w[1] != 0 and max(w) <= 8:
+            return decode_xref_stream_rows(data, w, available_index, effective_size), dict_obj
         entries: XRefTable = {}
         pos = 0
         for i in range(0, len(available_index), 2):
@@ -770,6 +813,137 @@ class XRefScanner(SyntaxXRefScanner):
                     continue
                 entries[key] = entry
         return entries, dict_obj
+
+
+def xref_stream_column(
+    rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], start: int, width: int
+) -> list[int]:
+    """The big-endian field `width` bytes wide at `start` of every row, as ints."""
+    values = numpy.zeros(len(rows), dtype=numpy.uint64)
+    for column in range(start, start + width):
+        values = (values << numpy.uint64(8)) | rows[:, column]
+    return values.tolist()
+
+
+# Object numbers below this make keys that fit an int64 column.
+XREF_STREAM_KEY_LIMIT = 1 << 46
+
+
+def xref_stream_array(
+    rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], start: int, width: int
+) -> numpy.ndarray[Any, numpy.dtype[numpy.uint64]]:
+    """xref_stream_column, left as a uint64 array."""
+    values = numpy.zeros(len(rows), dtype=numpy.uint64)
+    for column in range(start, start + width):
+        values = (values << numpy.uint64(8)) | rows[:, column]
+    return values
+
+
+def xref_stream_entries(
+    rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    w: list[int],
+    available_index: list[int],
+    effective_size: int,
+) -> XRefTable:
+    """decode_xref_stream_rows's table, built from columns.
+
+    Every row's entry and key are worked out in numpy -- a type-0 or type-1
+    row keeps its offset and generation, a type-2 row its object stream and
+    index, any other kind is free -- the rows the row loop skips are masked
+    out, and the entries are made from the surviving columns in row order,
+    so a later row for the same key replaces an earlier one as it did.
+    """
+    row_count = len(rows)
+    kinds = xref_stream_array(rows, 0, w[0]) if w[0] else numpy.ones(row_count, numpy.uint64)
+    values = xref_stream_array(rows, w[0], w[1])
+    generations = (
+        xref_stream_array(rows, w[0] + w[1], w[2]) if w[2] else numpy.zeros(row_count, numpy.uint64)
+    )
+    object_numbers = numpy.concatenate(
+        [
+            numpy.arange(start, start + count, dtype=numpy.int64)
+            for start, count in batched(available_index, 2, strict=True)
+        ]
+        or [numpy.zeros(0, numpy.int64)]
+    )
+    direct = kinds < 2
+    compressed = kinds == 2
+    # Every object number here is below the key limit, so a larger Size
+    # compares as the limit does, and numpy never sees an int past int64.
+    size = min(effective_size, XREF_STREAM_KEY_LIMIT)
+    keep = (object_numbers < size) & ~(direct & (generations > 65535))
+    direct = direct[keep]
+    compressed = compressed[keep]
+    values = values[keep]
+    generations = generations[keep]
+    keys = (object_numbers[keep] << 16) | numpy.where(direct, generations, 0).astype(numpy.int64)
+    streams = numpy.full(len(keys), None, dtype=object)
+    streams[compressed] = values[compressed].tolist()
+    indexes = numpy.full(len(keys), None, dtype=object)
+    indexes[compressed] = generations[compressed].tolist()
+    entries = map(
+        new_xref_entry,
+        zip(
+            numpy.where(direct, values, 0).tolist(),
+            numpy.where(direct, generations, 0).tolist(),
+            numpy.where(direct, kinds[keep] == 1, compressed).tolist(),
+            streams.tolist(),
+            indexes.tolist(),
+        ),
+    )
+    return dict(zip(keys.tolist(), entries))
+
+
+def decode_xref_stream_rows(
+    data: bytes, w: list[int], available_index: list[int], effective_size: int
+) -> XRefTable:
+    """parse_stream's rows, for a W of fields up to eight bytes and a nonzero middle.
+
+    decode_xref_row read each row's three fields with int.from_bytes, one
+    row at a time: 532,000 rows across a 300-document corpus sample. Fields
+    of up to eight bytes fit a uint64, so each is read for every row at once
+    and the rows then built as decode_xref_row builds them -- a type-0 or
+    type-1 row with a generation over 65535 is skipped, as the error it
+    raised was.
+    """
+    row_size = sum(w)
+    row_count = sum(available_index[1::2])
+    rows = numpy.frombuffer(data, dtype=numpy.uint8, count=row_count * row_size).reshape(
+        row_count, row_size
+    )
+    last_object = max(
+        (start + count for start, count in batched(available_index, 2, strict=True)),
+        default=0,
+    )
+    if last_object < XREF_STREAM_KEY_LIMIT:
+        return xref_stream_entries(rows, w, available_index, effective_size)
+    kinds = xref_stream_column(rows, 0, w[0]) if w[0] else [1] * row_count
+    values = xref_stream_column(rows, w[0], w[1])
+    generations = xref_stream_column(rows, w[0] + w[1], w[2]) if w[2] else [0] * row_count
+    entries: XRefTable = {}
+    row = 0
+    for i in range(0, len(available_index), 2):
+        start, count = available_index[i : i + 2]
+        for object_number in range(start, start + count):
+            kind = kinds[row]
+            value = values[row]
+            generation = generations[row]
+            row += 1
+            if object_number >= effective_size:
+                continue
+            if kind < 2:
+                if generation > 65535:
+                    continue
+                entries[(object_number << 16) | generation] = PdfXRefEntry(
+                    value, generation, kind == 1
+                )
+            elif kind == 2:
+                entries[object_number << 16] = PdfXRefEntry(
+                    0, 0, True, object_stream=value, index_in_stream=generation
+                )
+            else:
+                entries[object_number << 16] = PdfXRefEntry(0, 0, False)
+    return entries
 
 
 def find_eof_marker(data: PdfByteBuffer, *, semantic_context: SemanticContext | None = None) -> int:

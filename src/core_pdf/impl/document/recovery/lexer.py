@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import binascii
 import mmap
+import re
 from collections.abc import Callable
 from copy import replace
 from typing import Any
@@ -54,6 +55,21 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
 
 def reader_lexical_rules(rules: LexicalRules) -> LexicalRules:
     return replace(rules, whitespace=WHITESPACE, canonical_identifiers=False)
+
+
+INDIRECT_HEADER_PATTERNS: dict[LexicalRules, re.Pattern[bytes]] = {}
+
+
+def indirect_header_pattern(rules: LexicalRules) -> re.Pattern[bytes]:
+    """Two digit runs and obj, each ending where scan_word would end it."""
+    pattern = INDIRECT_HEADER_PATTERNS.get(rules)
+    if pattern is None:
+        space = b"[" + re.escape(rules.whitespace) + b"]"
+        separator = b"[" + re.escape(rules.whitespace + rules.delimiters) + b"]"
+        pattern = INDIRECT_HEADER_PATTERNS[rules] = re.compile(
+            b"([0-9]+)" + space + b"+([0-9]+)" + space + b"+obj(?=" + separator + b"|\\Z)"
+        )
+    return pattern
 
 
 READER_RULES: dict[LexicalRules, LexicalRules] = {
@@ -473,6 +489,22 @@ class PdfLexer(SyntaxLexer):
         if key == b"R":
             raise PdfParseError("unexpected indirect reference marker")
         return key.decode("latin-1")
+
+    def read_indirect_header(self) -> tuple[int, int]:
+        # The usual header -- two digit runs and obj, whitespace between them
+        # -- is the three words scan_word would find, so one match reads it;
+        # anything else (a comment in between, a sign, obj run into a word)
+        # goes through the words as before.
+        start = self.skip_ignored_at(self.pos)
+        source = self.source_buffer
+        header = indirect_header_pattern(self.lexical_rules).match(
+            source if type(source) is bytes else self.raw_data, start, self.data_len
+        )
+        if header is None:
+            return super().read_indirect_header()
+        identifier = self.parse_identifier(header[1], header[2])
+        self.pos = header.end()
+        return identifier
 
     def parse_identifier(self, object_token: bytes, generation_token: bytes) -> tuple[int, int]:
         obj_num = parse_integer_token(object_token)

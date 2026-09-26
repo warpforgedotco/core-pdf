@@ -135,10 +135,23 @@ def project_page(
         tuple(annotation.rect) for annotation in page_annotations if annotation.rect is not None
     )
     vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
+    # The glyphs of a text operation share one provenance tuple, and the dict
+    # made from it is only read, so each is made once per page.
+    provenance_dicts: dict[int, tuple[object, dict[str, Any]]] = {}
     for glyph_index, glyph in enumerate(projected_glyphs):
         if not unstructured_mode and pdfminer_embedded_cmap_is_unusable(glyph):
             continue
-        glyph_provenance = dict(glyph.provenance) if glyph.provenance else {}
+        source_provenance = glyph.provenance
+        if source_provenance:
+            known = provenance_dicts.get(id(source_provenance))
+            if known is None or known[0] is not source_provenance:
+                known = provenance_dicts[id(source_provenance)] = (
+                    source_provenance,
+                    dict(source_provenance),
+                )
+            glyph_provenance = known[1]
+        else:
+            glyph_provenance = {}
         if _pdfminer_form_glyph_is_clipped(glyph_provenance):
             continue
         run_index = bisect_right(run_sequences, glyph.seqno) - 1

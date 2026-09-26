@@ -32,61 +32,6 @@ class Jbig2UnsupportedError(Jbig2Error):
 
 GENERIC_TEMPLATE_0_DEFAULT_AT = ((3, -1), (-3, -1), (2, -2), (-2, -2))
 
-MQ_STATES: tuple[tuple[int, int, int, int], ...] = (
-    (0x5601, 1, 1, 1),
-    (0x3401, 2, 6, 0),
-    (0x1801, 3, 9, 0),
-    (0x0AC1, 4, 12, 0),
-    (0x0521, 5, 29, 0),
-    (0x0221, 38, 33, 0),
-    (0x5601, 7, 6, 1),
-    (0x5401, 8, 14, 0),
-    (0x4801, 9, 14, 0),
-    (0x3801, 10, 14, 0),
-    (0x3001, 11, 17, 0),
-    (0x2401, 12, 18, 0),
-    (0x1C01, 13, 20, 0),
-    (0x1601, 29, 21, 0),
-    (0x5601, 15, 14, 1),
-    (0x5401, 16, 14, 0),
-    (0x5101, 17, 15, 0),
-    (0x4801, 18, 16, 0),
-    (0x3801, 19, 17, 0),
-    (0x3401, 20, 18, 0),
-    (0x3001, 21, 19, 0),
-    (0x2801, 22, 19, 0),
-    (0x2401, 23, 20, 0),
-    (0x2201, 24, 21, 0),
-    (0x1C01, 25, 22, 0),
-    (0x1801, 26, 23, 0),
-    (0x1601, 27, 24, 0),
-    (0x1401, 28, 25, 0),
-    (0x1201, 29, 26, 0),
-    (0x1101, 30, 27, 0),
-    (0x0AC1, 31, 28, 0),
-    (0x09C1, 32, 29, 0),
-    (0x08A1, 33, 30, 0),
-    (0x0521, 34, 31, 0),
-    (0x0441, 35, 32, 0),
-    (0x02A1, 36, 33, 0),
-    (0x0221, 37, 34, 0),
-    (0x0141, 38, 35, 0),
-    (0x0111, 39, 36, 0),
-    (0x0085, 40, 37, 0),
-    (0x0049, 41, 38, 0),
-    (0x0025, 42, 39, 0),
-    (0x0015, 43, 40, 0),
-    (0x0009, 44, 41, 0),
-    (0x0005, 45, 42, 0),
-    (0x0001, 45, 43, 0),
-    (0x5601, 46, 46, 0),
-)
-
-MQ_QE = tuple(state[0] for state in MQ_STATES)
-MQ_NMPS = tuple(state[1] for state in MQ_STATES)
-MQ_NLPS = tuple(state[2] for state in MQ_STATES)
-MQ_SWITCH = tuple(state[3] for state in MQ_STATES)
-
 
 class JBIG2Segment:
     __slots__ = ("number", "flags", "retention_flags", "page_association", "data")
@@ -583,48 +528,6 @@ class JBIG2Image:
         self.data[:] = bytes([fill_byte]) * len(self.data)
 
 
-class JBIG2MQDecoder:
-    __slots__ = ("data", "bp", "data_end", "a", "chigh", "clow", "ct")
-
-    def __init__(self, data: bytes) -> None:
-        self.data = data
-        self.bp = 0
-        self.data_end = len(data)
-        self.chigh = data[0] if data else 0xFF
-        self.clow = 0
-        self.ct = 0
-        self.byte_in()
-        self.chigh = ((self.chigh << 7) & 0xFFFF) | ((self.clow >> 9) & 0x7F)
-        self.clow = (self.clow << 7) & 0xFFFF
-        self.ct -= 7
-        self.a = 0x8000
-
-    def byte_in(self) -> None:
-        data = self.data
-        bp = self.bp
-        current = data[bp] if bp < self.data_end else 0xFF
-        following = data[bp + 1] if bp + 1 < self.data_end else 0xFF
-        if current == 0xFF:
-            if following > 0x8F:
-                self.clow += 0xFF00
-                self.ct = 8
-            else:
-                bp += 1
-                value = data[bp] if bp < self.data_end else 0xFF
-                self.clow += value << 9
-                self.ct = 7
-                self.bp = bp
-        else:
-            bp += 1
-            value = data[bp] if bp < self.data_end else 0xFF
-            self.clow += value << 8
-            self.ct = 8
-            self.bp = bp
-        if self.clow > 0xFFFF:
-            self.chigh += self.clow >> 16
-            self.clow &= 0xFFFF
-
-
 def read_be_u32(data: bytes, pos: int) -> int:
     chunk = data[pos : pos + 4]
     if len(chunk) != 4:
@@ -872,19 +775,7 @@ class JBIG2PageDecoder:
     def decode_generic_region(self, header: JBIG2GenericRegionHeader) -> None:
         if header.mmr:
             raise Jbig2UnsupportedError("JBIG2 MMR region decoding is not implemented")
-        region = header.region
-        if region.width <= 0 or region.height <= 0:
-            return
-        bitmap = decode_arithmetic_generic_bitmap(
-            region.raw[header.bitmap_start :],
-            region.width,
-            region.height,
-            header.template,
-            header.prediction,
-            header.adaptive_pixels,
-        )
-        if self.image is not None:
-            compose_packed_bitmap_region(region, bitmap, self.image, self.page_info)
+        raise Jbig2UnsupportedError("JBIG2 arithmetic region decoding is not implemented")
 
     def finish(self) -> bytes:
         if self.image is None:
@@ -904,134 +795,6 @@ def jbig2_page_combination_operator(page_info: JBIG2PageInfo | None) -> int:
 
 def jbig2_page_allows_region_operator(page_info: JBIG2PageInfo | None) -> bool:
     return page_info is not None and bool(page_info.flags & 64)
-
-
-def decode_arithmetic_generic_bitmap(
-    data: bytes,
-    width: int,
-    height: int,
-    template: int,
-    prediction: bool,
-    at: tuple[tuple[int, int], ...],
-) -> bytes | bytearray:
-    if (
-        template != 0
-        or prediction
-        or at != GENERIC_TEMPLATE_0_DEFAULT_AT
-        or width <= 0
-        or height <= 0
-    ):
-        raise Jbig2UnsupportedError("unsupported JBIG2 generic bitmap template")
-    return decode_arithmetic_generic_template0(data, width, height)
-
-
-def decode_arithmetic_generic_template0(data: bytes, width: int, height: int) -> bytearray:
-    decoder = JBIG2MQDecoder(data)
-    contexts = [0] * 65536
-    row_byte_length = (width + 7) // 8
-    bitmap = bytearray(row_byte_length * height)
-    previous_row = bytearray(width + 4)
-    previous_previous_row = bytearray(width + 4)
-    old_pixel_mask = 0x7BF7
-    a = decoder.a
-    chigh = decoder.chigh
-    clow = decoder.clow
-    ct = decoder.ct
-    bp = decoder.bp
-    data_end = decoder.data_end
-    for row_index in range(height):
-        row = bytearray(width + 4)
-        row1 = row if row_index < 1 else previous_row
-        row2 = row if row_index < 2 else previous_previous_row
-        context = (
-            (row2[0] << 13)
-            | (row2[1] << 12)
-            | (row2[2] << 11)
-            | (row1[0] << 7)
-            | (row1[1] << 6)
-            | (row1[2] << 5)
-            | (row1[3] << 4)
-        )
-        for col in range(width):
-            packed = contexts[context]
-            idx = packed >> 1
-            mps = packed & 1
-            qe = MQ_QE[idx]
-            next_a = a - qe
-            if chigh < qe:
-                if next_a < qe:
-                    next_a = qe
-                    pixel = mps
-                    idx = MQ_NMPS[idx]
-                else:
-                    next_a = qe
-                    pixel = 1 ^ mps
-                    if MQ_SWITCH[idx]:
-                        mps = pixel
-                    idx = MQ_NLPS[idx]
-            else:
-                chigh -= qe
-                if next_a & 0x8000:
-                    a = next_a
-                    contexts[context] = (idx << 1) | mps
-                    pixel = mps
-                    row[col] = pixel
-                    if pixel:
-                        bitmap[row_index * row_byte_length + (col >> 3)] |= 0x80 >> (col & 7)
-                    context = (
-                        ((context & old_pixel_mask) << 1)
-                        | (row2[col + 3] << 11)
-                        | (row1[col + 4] << 4)
-                        | pixel
-                    )
-                    continue
-                if next_a < qe:
-                    pixel = 1 ^ mps
-                    if MQ_SWITCH[idx]:
-                        mps = pixel
-                    idx = MQ_NLPS[idx]
-                else:
-                    pixel = mps
-                    idx = MQ_NMPS[idx]
-            while not (next_a & 0x8000):
-                if ct == 0:
-                    current = data[bp] if bp < data_end else 0xFF
-                    following = data[bp + 1] if bp + 1 < data_end else 0xFF
-                    if current == 0xFF:
-                        if following > 0x8F:
-                            clow += 0xFF00
-                            ct = 8
-                        else:
-                            bp += 1
-                            value = data[bp] if bp < data_end else 0xFF
-                            clow += value << 9
-                            ct = 7
-                    else:
-                        bp += 1
-                        value = data[bp] if bp < data_end else 0xFF
-                        clow += value << 8
-                        ct = 8
-                    if clow > 0xFFFF:
-                        chigh += clow >> 16
-                        clow &= 0xFFFF
-                next_a <<= 1
-                chigh = ((chigh << 1) & 0xFFFF) | ((clow >> 15) & 1)
-                clow = (clow << 1) & 0xFFFF
-                ct -= 1
-            a = next_a
-            contexts[context] = (idx << 1) | mps
-            row[col] = pixel
-            if pixel:
-                bitmap[row_index * row_byte_length + (col >> 3)] |= 0x80 >> (col & 7)
-            context = (
-                ((context & old_pixel_mask) << 1)
-                | (row2[col + 3] << 11)
-                | (row1[col + 4] << 4)
-                | pixel
-            )
-        previous_previous_row = previous_row
-        previous_row = row
-    return bitmap
 
 
 def compose_packed_bitmap_region(
@@ -1078,15 +841,10 @@ __all__ = (
     "Jbig2ParseError",
     "Jbig2UnsupportedError",
     "GENERIC_TEMPLATE_0_DEFAULT_AT",
-    "MQ_QE",
-    "MQ_NMPS",
-    "MQ_NLPS",
-    "MQ_SWITCH",
     "JBIG2Segment",
     "JBIG2PageInfo",
     "JBIG2SegmentHeader",
     "JBIG2Image",
-    "JBIG2MQDecoder",
     "read_be_u32",
     "read_be_i32",
     "read_be_i8",
@@ -1101,8 +859,6 @@ __all__ = (
     "jbig2_page_default_pixel",
     "jbig2_page_combination_operator",
     "jbig2_page_allows_region_operator",
-    "decode_arithmetic_generic_bitmap",
-    "decode_arithmetic_generic_template0",
     "compose_packed_bitmap_region",
     "region_operator",
 )

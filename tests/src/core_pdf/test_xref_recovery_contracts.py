@@ -2,6 +2,8 @@ import zlib
 
 import pytest
 
+from core_pdf import PdfDocument
+from core_pdf.impl.document.document import object_headers_present
 from core_pdf.impl.document.recovery import xref
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -301,11 +303,11 @@ def test_object_stream_recovery_skips_unusable_containers(kind):
     entry = PdfXRefEntry(100, 0, True)
     parsed = {key_for(1): (100, stream)}
     if kind == "free":
-        entry.in_use = False
+        entry = entry._replace(in_use=False)
     elif kind == "compressed":
-        entry.object_stream = 9
+        entry = entry._replace(object_stream=9)
     elif kind == "negative":
-        entry.offset = -1
+        entry = entry._replace(offset=-1)
     elif kind == "absent":
         parsed.clear()
     elif kind == "stale":
@@ -368,3 +370,55 @@ def test_header_discovery_rejects_malformed_prefixes_and_keyword_suffixes(data):
 )
 def test_eof_recovery_keeps_raw_fallback_but_prefers_delimited_exact_marker(data, expected):
     assert xref.find_eof_marker(data) == expected
+
+
+@pytest.mark.parametrize("delimiter", [b"<<", b"[", b"(", b"/", b"%", b"{"])
+def test_an_object_header_may_end_in_a_delimiter(delimiter: bytes) -> None:
+    assert object_headers_present(b"12 0 obj" + delimiter, [key_for(12, 0)], [0]) == [True]
+
+
+def test_an_object_header_keyword_is_not_a_prefix_match() -> None:
+    assert object_headers_present(b"12 0 objx", [key_for(12, 0)], [0]) == [False]
+
+
+def pdf_with_headers_ending_in_dictionaries() -> bytes:
+    content = b"BT /F1 12 Tf 20 100 Td (Hello maintenance) Tj ET"
+    objects = (
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
+    )
+    data = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, value in enumerate(objects, 1):
+        offsets.append(len(data))
+        data.extend(f"{number} 0 obj".encode() + value + b"\nendobj\n")
+    xref = len(data)
+    data.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
+    for offset in offsets:
+        data.extend(f"{offset:010d} 00000 n \n".encode())
+    data.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    )
+    return bytes(data)
+
+
+def test_objects_written_without_a_space_after_obj_need_no_offset_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Every entry of such a file used to look stale, which scanned the whole
+    # file for replacement offsets that the scan could not find either.
+    scans: list[int] = []
+
+    def brute_force_xref(self: PdfDocument) -> dict:
+        scans.append(1)
+        return {}
+
+    monkeypatch.setattr(PdfDocument, "brute_force_xref", brute_force_xref)
+    with PdfDocument(pdf_with_headers_ending_in_dictionaries()) as document:
+        assert not document.xref_was_recovered
+        assert "Hello maintenance" in document.pages[0].extract().text
+    assert scans == []

@@ -204,6 +204,30 @@ def build_lines(
     source_minimum = numpy.minimum.reduceat(selected_sources, starts)
     source_maximum = numpy.maximum.reduceat(selected_sources, starts)
     group_sequences = numpy.minimum.reduceat(observations.sequence[selected], starts)
+    # A run's bold and italic follow from its font name alone, and its mark
+    # from its fill colour alone; a page has a handful of each and a
+    # style-per-glyph page asks once per glyph. Other references (OCR words)
+    # keep the general path.
+    run_styles: dict[str | None, tuple[bool, bool]] = {}
+    color_marks: dict[object, bool] = {}
+
+    def reference_style(reference: object) -> tuple[bool, bool]:
+        if type(reference) is not TextRun:
+            return (style_enabled(reference, "is_bold"), style_enabled(reference, "is_italic"))
+        font_name = reference.font_name
+        style = run_styles.get(font_name)
+        if style is None:
+            style = run_styles[font_name] = (reference.is_bold(), reference.is_italic())
+        return style
+
+    def emphasis_mark(color: object) -> bool:
+        if type(color) is not tuple:
+            return color_is_emphasis(color)
+        mark = color_marks.get(color)
+        if mark is None:
+            mark = color_marks[color] = color_is_emphasis(color)
+        return mark
+
     output: list[ParsedLine] = []
     output_boxes: list[numpy.ndarray] = []
     for group_index, (start, stop) in enumerate(
@@ -228,13 +252,7 @@ def build_lines(
             for reference in (observations.references[index] for index in indexes)
             if reference is not None
         ]
-        reference_styles = [
-            (
-                style_enabled(reference, "is_bold"),
-                style_enabled(reference, "is_italic"),
-            )
-            for reference in native_references
-        ]
+        reference_styles = [reference_style(reference) for reference in native_references]
         bold = bool(native_references) and sum(style[0] for style in reference_styles) * 2 >= len(
             native_references
         )
@@ -263,7 +281,7 @@ def build_lines(
                     text=prefix + reference_text,
                     bold=reference_bold,
                     italic=reference_italic,
-                    mark=color_is_emphasis(getattr(reference, "fill_color", None)),
+                    mark=emphasis_mark(getattr(reference, "fill_color", None)),
                 )
             )
             pending_space = reference.text.endswith((" ", "\t", "\n"))

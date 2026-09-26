@@ -199,6 +199,10 @@ PDF12_RULES = LexicalRules(b"\t\n\x0c\r ", True, LEGACY_DELIMITERS, canonical_id
 PDF1X_RULES = LexicalRules(WHITESPACE, True, LEGACY_DELIMITERS, canonical_identifiers=False)
 CURRENT_RULES = LexicalRules(WHITESPACE, name_escapes=True)
 
+PDF_1_2 = PdfVersion(1, 2)
+PDF_1_3 = PdfVersion(1, 3)
+PDF_2_0 = PdfVersion(2, 0)
+
 
 def lexical_rules(context: SemanticContext | None = None) -> LexicalRules:
     if context is None:
@@ -206,11 +210,11 @@ def lexical_rules(context: SemanticContext | None = None) -> LexicalRules:
     version = context.version
     if version is None or not version.recognized:
         raise PdfUnsupportedError("lexical semantics require a recognized PDF version")
-    if version < PdfVersion(1, 2):
+    if version < PDF_1_2:
         return EARLY_RULES
-    if version < PdfVersion(1, 3):
+    if version < PDF_1_3:
         return PDF12_RULES
-    if version < PdfVersion(2, 0):
+    if version < PDF_2_0:
         return PDF1X_RULES
     return CURRENT_RULES
 

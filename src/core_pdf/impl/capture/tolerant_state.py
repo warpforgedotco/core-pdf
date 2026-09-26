@@ -104,6 +104,10 @@ COLOR_CACHE_LIMIT = 4096
 SOFT_MASK_CACHE_LIMIT = COLOR_CACHE_LIMIT
 
 
+# Exactly these: bool subclasses int and must keep failing as it does.
+NUMERIC_TYPES = frozenset((int, float))
+
+
 class RecoveringTextState(ContentInterpreter):
     recovery: CaptureRecovery
     normalized_colors: dict[tuple[ColorSpace, tuple[object, ...]], tuple[float, ...]]
@@ -365,6 +369,27 @@ class RecoveringTextState(ContentInterpreter):
         # that is already a float. Path operators run this per segment, so the
         # already-numeric cases are handled inline and anything else still
         # falls back to the full coercion.
+        # Operands that are exactly the finite floats asked for already form
+        # the tuple the loop below would build, so it is returned as it is.
+        if len(operands) == count and type(operands) is tuple:
+            for value in operands:
+                if type(value) is not float or not isfinite(value):
+                    break
+            else:
+                return operands  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+            # Ints and floats alike -- "0 0 612 792 re", a glyph procedure's
+            # integer curves -- convert in C: float() of each, the value the
+            # loop below appends, then its finiteness. An overflow or a
+            # non-finite value falls through to the loop, which raises as it
+            # always has.
+            if all(map(NUMERIC_TYPES.__contains__, map(type, operands))):
+                try:
+                    converted = tuple(map(float, operands))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                except OverflowError:
+                    pass
+                else:
+                    if all(map(isfinite, converted)):
+                        return converted
         try:
             values: list[float] = []
             append = values.append
@@ -397,8 +422,13 @@ class RecoveringTextState(ContentInterpreter):
         if not operands:
             self.handle_operand_error(PdfParseError("missing numeric operand"), "integer-operand")
             return None
+        value = operands[0]
+        # An int operand is its own answer; as_int's three frames only reach
+        # the same `type(value) is int` test. J and j run this per path.
+        if type(value) is int:
+            return value
         try:
-            return self.as_int(operands[0])
+            return self.as_int(value)
         except (TypeError, ValueError) as error:
             self.handle_operand_error(error, "integer-operand")
             return None

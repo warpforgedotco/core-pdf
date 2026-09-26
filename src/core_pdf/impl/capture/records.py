@@ -10,6 +10,7 @@ import numpy
 
 from core_pdf.impl.geometry import bbox_union, normalize_rect, points_bbox
 from core_pdf.impl.types import Rectangle
+from core_pdf_cythonized import path_bounds
 from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
@@ -206,11 +207,14 @@ DeferredPoints: TypeAlias = tuple[Any, Any, list[tuple[int, int, bool]], bool]
 
 
 class CapturedPath:
-    __slots__ = ("subpaths", "_deferred", "_summary")
+    __slots__ = ("subpaths", "_deferred", "_parts", "_summary")
 
     def __init__(self, subpaths: list[CapturedSubpath] | None = None) -> None:
         self.subpaths = subpaths if subpaths is not None else []
         self._deferred: DeferredPoints | None = None
+        # A coalesced deferred path's flattened parts, in order, joined into
+        # _deferred the first time anything reads the points.
+        self._parts: list[DeferredPoints] | None = None
         # bbox() and has_segments() of a deferred flattened path, known without
         # its points. Read only while _deferred is set: once the subpaths exist
         # they can change, and are asked instead.
@@ -248,6 +252,7 @@ class CapturedPath:
         """
         path = cls.__new__(cls)
         path._deferred = (column_x, column_y, spans, True)
+        path._parts = None
         path._summary = None
         return path
 
@@ -269,14 +274,55 @@ class CapturedPath:
         """
         path = cls.__new__(cls)
         path._deferred = (column_x, column_y, spans, False)
+        path._parts = None
         path._summary = (bbox, has_segments)
         return path
+
+    def coalesced_with(self, other: CapturedPath) -> CapturedPath | None:
+        """This path's subpaths then `other`'s, as one deferred path, or None.
+
+        The display list joins consecutive strokes of the same state into one
+        path. Joining their subpath lists built every point of both; when
+        both are deferred flattened paths, this keeps their columns as parts
+        instead, joined only when something reads them -- and the stroke
+        kernel reads the columns, so a coalesced stroke never builds a
+        subpath at all.
+        """
+        mine = self.flattened_parts()
+        theirs = other.flattened_parts()
+        if mine is None or theirs is None:
+            return None
+        path = CapturedPath.__new__(CapturedPath)
+        path._deferred = None
+        path._parts = [*mine, *theirs]
+        # Its box and whether it has a segment are worked out from the
+        # columns when first asked, as any deferred path's are.
+        path._summary = None
+        return path
+
+    def flattened_parts(self) -> list[DeferredPoints] | None:
+        """The deferred flattened columns this path is made of, or None."""
+        if self._parts is not None:
+            return self._parts
+        deferred = self._deferred
+        if deferred is None or deferred[3]:
+            return None
+        return [deferred]
+
+    def subpath_count(self) -> int:
+        """len(self.subpaths), without building a deferred path's subpaths."""
+        if self._parts is not None:
+            return sum(len(part[2]) for part in self._parts)
+        deferred = self._deferred
+        if deferred is not None:
+            return len(deferred[2])
+        return len(self.subpaths)
 
     def __getattr__(self, name: str) -> Any:
         # Only ever reached for an unset slot, which means a deferred outline
         # whose points nobody had needed until now.
         if name == "subpaths":
-            deferred = self._deferred
+            deferred = self.deferred_columns()
             if deferred is not None:
                 column_x, column_y, spans, outline = deferred
                 xs = column_x.tolist()
@@ -290,6 +336,7 @@ class CapturedPath:
                 ]
                 self.subpaths = subpaths
                 self._deferred = None
+                self._summary = None
                 return subpaths
         raise AttributeError(name)
 
@@ -319,39 +366,33 @@ class CapturedPath:
             self.subpaths[-1].close()
 
     def axis_aligned_rect(self) -> Rectangle | None:
-        deferred = self._deferred
-        if deferred is not None and deferred[3]:
-            # A rectangle is one subpath of exactly four points. The kernel has
-            # already dropped any duplicated closing point, so the span lengths
-            # are final and this settles it without building anything.
-            spans = deferred[2]
-            if len(spans) != 1 or spans[0][1] - spans[0][0] != 4:
+        deferred = self.deferred_columns()
+        if deferred is not None:
+            # Settled from the spans and the last one's points, without
+            # building a subpath: flattened paths reach here several thousand
+            # times a page, and building them all to answer no cost 15us each.
+            column_x, column_y, spans, outline = deferred
+            if not spans:
                 return None
+            start, end, flag = spans[-1]
+            if outline and (len(spans) != 1 or end - start != 4):
+                # A rectangle is one subpath of exactly four points, and the
+                # outline kernel has already dropped a duplicated closing one.
+                return None
+            # The path's only subpath with segments must be its last.
+            if end - start < 2 or any(e - s > 1 for s, e, _ in spans[:-1]):
+                return None
+            if end - start > 5:
+                return None
+            points = list(
+                zip(column_x[start:end].tolist(), column_y[start:end].tolist(), strict=True)
+            )
+            return rect_from_points(points, outline or flag)
         segment_subpaths = [subpath for subpath in self.subpaths if subpath.has_segments()]
         if len(segment_subpaths) != 1 or self.subpaths[-1] is not segment_subpaths[0]:
             return None
         subpath = segment_subpaths[0]
-        points = list(subpath.points)
-        if len(points) >= 2 and points[0] == points[-1]:
-            points.pop()
-        if len(points) != 4:
-            return None
-        if not subpath.closed and subpath.points[0] != subpath.points[-1]:
-            return None
-        xs = {point[0] for point in points}
-        ys = {point[1] for point in points}
-        if len(xs) != 2 or len(ys) != 2:
-            return None
-        x0, x1 = min(xs), max(xs)
-        y0, y1 = min(ys), max(ys)
-        if x1 <= x0 or y1 <= y0:
-            return None
-        if set(points) != {(x0, y0), (x0, y1), (x1, y0), (x1, y1)}:
-            return None
-        for (px0, py0), (px1, py1) in zip(points, points[1:] + points[:1], strict=False):
-            if px0 != px1 and py0 != py1:
-                return None
-        return (x0, y0, x1, y1)
+        return rect_from_points(subpath.points, subpath.closed)
 
     def rect(self, x: float, y: float, w: float, h: float) -> None:
         self.subpaths.append(
@@ -362,14 +403,85 @@ class CapturedPath:
         )
 
     def has_segments(self) -> bool:
-        if self._deferred is not None and self._summary is not None:
-            return self._summary[1]
+        summary = self.deferred_summary()
+        if summary is not None:
+            return summary[1]
         return any(subpath.has_segments() for subpath in self.subpaths)
 
     def bbox(self) -> Rectangle | None:
-        if self._deferred is not None and self._summary is not None:
-            return self._summary[0]
+        summary = self.deferred_summary()
+        if summary is not None:
+            return summary[0]
         return bbox_union(box for subpath in self.subpaths if (box := subpath.bbox()))
+
+    def deferred_summary(self) -> tuple[Rectangle | None, bool] | None:
+        """bbox() and has_segments() of a deferred path, from its columns; None if built.
+
+        path_bounds follows bbox_union over the subpaths' points_bbox, so a
+        glyph outline or a coalesced stroke answers without building them.
+        """
+        if self._summary is not None and (self._deferred is not None or self._parts is not None):
+            return self._summary
+        deferred = self.deferred_columns()
+        if deferred is None:
+            return None
+        self._summary = path_bounds(deferred[0], deferred[1], deferred[2])
+        return self._summary
+
+    def deferred_columns(self) -> DeferredPoints | None:
+        """The point columns and spans a deferred path is built from, or None."""
+        parts = self._parts
+        if parts is not None:
+            spans: list[tuple[int, int, bool]] = []
+            offset = 0
+            for part_x, _, part_spans, _ in parts:
+                spans.extend(
+                    (start + offset, end + offset, flag) for start, end, flag in part_spans
+                )
+                offset += len(part_x)
+            self._deferred = (
+                numpy.concatenate([part[0] for part in parts]),
+                numpy.concatenate([part[1] for part in parts]),
+                spans,
+                False,
+            )
+            self._parts = None
+        return self._deferred
+
+    def fill_edge_array(self) -> numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None:
+        """fill_edges as an (n, 4) array, for a deferred path; None for any other.
+
+        The edges come straight from the point columns, in fill_edges' order:
+        each subpath's consecutive pairs, then its closing edge when its last
+        point differs from its first. No subpath is built.
+        """
+        deferred = self.deferred_columns()
+        if deferred is None:
+            return None
+        column_x, column_y, spans, _ = deferred
+        starts: list[int] = []
+        ends: list[int] = []
+        closing: list[bool] = []
+        for start, end, _flag in spans:
+            if end - start < 2:
+                continue
+            starts.extend(range(start, end - 1))
+            ends.extend(range(start + 1, end))
+            closing.extend([False] * (end - 1 - start))
+            starts.append(end - 1)
+            ends.append(start)
+            closing.append(True)
+        if not starts:
+            return numpy.empty((0, 4), dtype=numpy.float64)
+        first = numpy.asarray(starts, dtype=numpy.intp)
+        second = numpy.asarray(ends, dtype=numpy.intp)
+        x0 = column_x[first]
+        y0 = column_y[first]
+        x1 = column_x[second]
+        y1 = column_y[second]
+        # A closing edge is kept where the points differ, as tuples compare.
+        keep = ~numpy.asarray(closing, dtype=numpy.bool_) | (x0 != x1) | (y0 != y1)
+        return numpy.column_stack((x0, y0, x1, y1))[keep]
 
     def fill_edges(self) -> list[tuple[float, float, float, float]]:
         edges: list[tuple[float, float, float, float]] = []
@@ -544,3 +656,28 @@ __all__ = (
     "ShadingPattern",
     "TilingPattern",
 )
+
+
+def rect_from_points(subpath_points: list[tuple[float, float]], closed: bool) -> Rectangle | None:
+    """The rectangle one subpath's points trace, axis-aligned, or None."""
+    points = list(subpath_points)
+    if len(points) >= 2 and points[0] == points[-1]:
+        points.pop()
+    if len(points) != 4:
+        return None
+    if not closed and subpath_points[0] != subpath_points[-1]:
+        return None
+    xs = {point[0] for point in points}
+    ys = {point[1] for point in points}
+    if len(xs) != 2 or len(ys) != 2:
+        return None
+    x0, x1 = min(xs), max(xs)
+    y0, y1 = min(ys), max(ys)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    if set(points) != {(x0, y0), (x0, y1), (x1, y0), (x1, y1)}:
+        return None
+    for (px0, py0), (px1, py1) in zip(points, points[1:] + points[:1], strict=False):
+        if px0 != px1 and py0 != py1:
+            return None
+    return (x0, y0, x1, y1)

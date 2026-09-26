@@ -7,7 +7,6 @@ def horizontal_glyph_geometry(
     offsets: list[float],
     advances: list[float],
     glyph_boxes: list[float],
-    *,
     basis: Matrix6,
     font_ascent: float,
     font_descent: float,
@@ -27,4 +26,6 @@ def horizontal_glyph_geometry(
     list[Rectangle],
     list[int],
     list[int],
+    Rectangle | None,
+    Rectangle | None,
 ]: ...

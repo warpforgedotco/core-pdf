@@ -370,6 +370,44 @@ class TextRun(ReprFields):
         fn = self.font_name.lower()
         return "italic" in fn or "oblique" in fn or "slanted" in fn
 
+    def with_font_name(self, font_name: str | None) -> TextRun:
+        """This run under another font name: replace(font_name=...) without its cost.
+
+        Capture labels a run with the font's resource name and its glyphs with
+        the font's own name, so extraction relabels nearly every run -- 431k of
+        them on uber_10q. Changing only the name moves no coordinate and no
+        text, so none of replace()'s derived-field resets apply, and passing
+        the fields straight through costs 0.26us against its 1.2us.
+        """
+        return type(self)(
+            self.text,
+            self.x0,
+            self.y0,
+            self.x1,
+            self.y1,
+            self.tx,
+            self.ty,
+            self.font_size,
+            self.space_width,
+            self.order,
+            self.stream_order,
+            self.xobject_depth,
+            font_name,
+            self.is_vertical,
+            self.rotation_angle,
+            self.visible,
+            self.inside_active_clip,
+            self.line_break_before,
+            self.seqno,
+            self.fill_color,
+            self.advance_bbox,
+            self.ink_bbox,
+            self.baseline,
+            self.provenance,
+            self.confidence,
+            self.glyph_clusters,
+        )
+
     def replace(self, **kwargs: Any) -> TextRun:
         coords_changed = any(key in kwargs for key in ("x0", "y0", "x1", "y1"))
         if coords_changed:

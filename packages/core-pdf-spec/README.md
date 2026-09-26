@@ -42,9 +42,9 @@ NumPy float32 rows of actual `(L*, a*, b*)` components and a reference white poi
 Image sample decoding and range enforcement belong to the caller. The existing
 `lab_to_xyz` function retains its normalized input convention as a compatibility wrapper.
 
-The current spec version is `0.6.0`, released independently of core. During `0.x`, breaking
+The current spec version is `0.7.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.6.0,<0.7.0`; changes to that range require core integration and differential validation.
+`>=0.9.0,<0.10.0`; changes to that range require core integration and differential validation.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are
@@ -196,6 +196,13 @@ defined in Adobe PDF 1.3, Table 4.20; parsing does not impose a PDF 1.6 availabi
 `s_08_graphics.color.color_space_paints` identifies Separation `/None` and all-`/None`
 DeviceN spaces that discard output, including through Indexed and uncolored Pattern
 bases. Mixed DeviceN spaces retain every input component for their alternate tint transform.
+
+When migrating to `0.7.0`: `s_07_filters.jbig2.decode_jbig2` raises `FilterUnsupportedError`
+for arithmetic-coded generic regions, which it used to decode, just as it already did for
+MMR-coded ones. It requires `core-jbig2` 0.2, whose MQ decoder moved to the compiled
+`core-pdf-cythonized` distribution so that neither package has to be compiled. To decode
+them, pass a `decoder_type` whose `decode_generic_region` supplies the decoding, as
+`core-pdf` does.
 
 When migrating to `0.6.0`: `s_09_fonts.service.FontProvider` now takes `PdfDict` font and
 resource dictionaries rather than `dict[str, Any]`, so a typed provider should accept

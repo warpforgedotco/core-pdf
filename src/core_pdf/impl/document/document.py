@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import contextlib
 import mmap
-import re
 import struct
 import threading
+from array import array
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import AbstractContextManager
 from functools import partial
+from itertools import compress, repeat
+from operator import and_, is_, itemgetter, not_, truth
 from os import PathLike
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVar
+
+import numpy
 
 from core_pdf.impl.document.fields import collect_field_records
 from core_pdf.impl.document.metadata import MetadataRecord, resolve_metadata
@@ -61,6 +65,7 @@ from core_pdf.impl.types import (
     PdfReference,
     PdfSource,
 )
+from core_pdf_cythonized import object_headers_match
 from core_pdf_spec.s_07_document.document_labels import PageLabelStyle
 from core_pdf_spec.s_07_document.document_labels import (
     format_page_label as format_spec_page_label,
@@ -223,6 +228,13 @@ def check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
                 pending.append((value, False))
 
 
+class NotBuilt:
+    """Marks a document cache whose value may legitimately be None."""
+
+
+NOT_BUILT = NotBuilt()
+
+
 class PdfDocument(Generic[PageT]):
     page_class: type | None = None
 
@@ -247,6 +259,9 @@ class PdfDocument(Generic[PageT]):
         "_standards",
         "standards_complete",
         "font_decoders",
+        "page_cache",
+        "fields_by_page_cache",
+        "structure_cache",
     )
 
     source: PdfSource
@@ -269,6 +284,9 @@ class PdfDocument(Generic[PageT]):
     _standards: DocumentStandards
     standards_complete: bool
     font_decoders: dict[object, object]
+    page_cache: tuple[PageT, ...] | None
+    fields_by_page_cache: dict[int, list[RawFormField]] | None
+    structure_cache: StructureTree | None | NotBuilt
 
     def __init__(
         self,
@@ -297,6 +315,13 @@ class PdfDocument(Generic[PageT]):
         self._standards = DocumentStandards()
         self.standards_complete = False
         self.font_decoders = {}
+        # The document is read-only once open, so its page tree and form fields
+        # are built once. Every page.extract() asks for the fields, and building
+        # them walks every page, so without this a whole-document pass is
+        # quadratic in its page count.
+        self.page_cache = None
+        self.fields_by_page_cache = None
+        self.structure_cache = NOT_BUILT
         try:
             self.raw_data = self.load_data(source)
             self._standards = discover_header_standards(self.raw_data)
@@ -354,6 +379,11 @@ class PdfDocument(Generic[PageT]):
                 self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=selected)
                 self.scan_xref()
                 self.resolver.xref = self.xref
+            # Anything built above belongs to a resolver that may since have
+            # been replaced.
+            self.page_cache = None
+            self.fields_by_page_cache = None
+            self.structure_cache = NOT_BUILT
         except BaseException:
             self.close()
             raise
@@ -425,6 +455,9 @@ class PdfDocument(Generic[PageT]):
             return
         self._closed = True
         self.font_decoders.clear()
+        self.page_cache = None
+        self.fields_by_page_cache = None
+        self.structure_cache = NOT_BUILT
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
@@ -485,8 +518,16 @@ class PdfDocument(Generic[PageT]):
 
     @property
     def structure(self) -> StructureTree | None:
+        # Built once: page.structure asks on every page.extract(), and a tree
+        # walks the whole ParentTree to answer -- 6 ms a page on PDF Reference
+        # 1.7, whose ParentTree has 33,162 entries.
+        cached = self.structure_cache
+        if not isinstance(cached, NotBuilt):
+            return cached
         root = self.catalog_dict("StructTreeRoot")
-        return None if root is None else StructureTree(self, root, page_lookup=PageLookup(self))
+        tree = None if root is None else StructureTree(self, root, page_lookup=PageLookup(self))
+        self.structure_cache = tree
+        return tree
 
     @property
     def recovery_enabled(self) -> bool:
@@ -871,7 +912,10 @@ class PdfDocument(Generic[PageT]):
 
     @property
     def pages(self) -> tuple[PageT, ...]:
-        return self.build_pages(self.iter_recovered_page_nodes())
+        pages = self.page_cache
+        if pages is None:
+            pages = self.page_cache = self.build_pages(self.iter_recovered_page_nodes())
+        return pages
 
     def build_pages(self, nodes: Iterable[PageNode]) -> tuple[PageT, ...]:
         page_class = self.page_class
@@ -1212,7 +1256,22 @@ class PdfDocument(Generic[PageT]):
         self,
         pages: Sequence[PageT] | None = None,
     ) -> dict[int, list[RawFormField]]:
-        page_sequence = self.pages if pages is None else tuple(pages)
+        if pages is not None:
+            return self.group_fields_by_page(tuple(pages))
+        return {
+            page_index: list(fields) for page_index, fields in self.cached_fields_by_page().items()
+        }
+
+    def cached_fields_by_page(self) -> dict[int, list[RawFormField]]:
+        """The whole document's fields by page, shared: callers must not mutate it."""
+        grouped = self.fields_by_page_cache
+        if grouped is None:
+            grouped = self.fields_by_page_cache = self.group_fields_by_page(self.pages)
+        return grouped
+
+    def group_fields_by_page(
+        self, page_sequence: tuple[PageT, ...]
+    ) -> dict[int, list[RawFormField]]:
         page_indexes_by_dict = {
             id(page.page_dict): page.page_number - 1
             for page in page_sequence
@@ -1512,10 +1571,33 @@ class PdfDocument(Generic[PageT]):
         header_offset = self.pdf_header_offset()
         recovered_xref: dict[int, PdfXRefEntry] | None = None
         repaired = False
-        for key, entry in list(self.xref.items()):
-            if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
-                continue
-            if self.xref_entry_matches_header(key, entry):
+        # In use, uncompressed, at a non-negative offset: selected with
+        # map() and compress() over the entry tuples, not a loop per entry.
+        keys = list(self.xref)
+        entries = list(self.xref.values())
+        offsets = list(map(ENTRY_OFFSET, entries))
+        selected = list(
+            map(
+                and_,
+                map(
+                    and_,
+                    map(truth, map(ENTRY_IN_USE, entries)),
+                    map(is_, map(ENTRY_OBJECT_STREAM, entries), repeat(None), strict=False),
+                    strict=True,
+                ),
+                map((0).__le__, offsets),
+                strict=True,
+            )
+        )
+        keys = list(compress(keys, selected))
+        entries = list(compress(entries, selected))
+        # Every entry's check reads only the data and that entry, and an entry
+        # is only changed after its own check, so they are all made up front.
+        matched = object_headers_present(self.raw_data, keys, list(compress(offsets, selected)))
+        for index in compress(range(len(keys)), map(not_, matched)):
+            key = keys[index]
+            entry = entries[index]
+            if self.xref_entry_header_nearby(key, entry):
                 continue
             if header_offset and self.xref_entry_matches_header(
                 key,
@@ -1527,7 +1609,7 @@ class PdfDocument(Generic[PageT]):
                     index_in_stream=entry.index_in_stream,
                 ),
             ):
-                entry.offset += header_offset
+                self.xref[key] = entry._replace(offset=entry.offset + header_offset)
                 repaired = True
                 continue
             if header_offset:
@@ -1536,7 +1618,7 @@ class PdfDocument(Generic[PageT]):
                     entry.offset + header_offset,
                 )
                 if shifted_offset is not None:
-                    entry.offset = shifted_offset
+                    self.xref[key] = entry._replace(offset=shifted_offset)
                     repaired = True
                     continue
             if recovered_xref is None:
@@ -1581,26 +1663,18 @@ class PdfDocument(Generic[PageT]):
         return None
 
     def xref_entry_matches_header(self, key: int, entry: PdfXRefEntry) -> bool:
+        return object_headers_present(self.raw_data, [key], [entry.offset])[
+            0
+        ] or self.xref_entry_header_nearby(key, entry)
+
+    def xref_entry_header_nearby(self, key: int, entry: PdfXRefEntry) -> bool:
+        """xref_entry_matches_header past its exact check: the first header the
+        recovering scan finds within 64 bytes, if it is this entry's, at its offset."""
         data = self.raw_data
         offset = entry.offset
         data_len = len(data)
         if offset < 0 or offset >= data_len:
             return False
-
-        expected_object_number = key >> 16
-        expected_generation_number = key & 0xFFFF
-
-        # One anchored match in C rather than a digit-at-a-time walk in Python.
-        # This runs for every entry of every xref table, so the interpreter
-        # overhead of the old loop dominated repairing stale offsets.
-        header = OBJECT_HEADER_RE.match(data, offset)
-        if (
-            header is not None
-            and int(header[1]) == expected_object_number
-            and int(header[2]) == expected_generation_number
-        ):
-            return True
-
         search_end = min(data_len, offset + 64)
         for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
             data,
@@ -1611,8 +1685,8 @@ class PdfDocument(Generic[PageT]):
         ):
             return (
                 parsed_offset == offset
-                and object_number == expected_object_number
-                and generation_number == expected_generation_number
+                and object_number == key >> 16
+                and generation_number == key & 0xFFFF
             )
         return False
 
@@ -2003,7 +2077,67 @@ def create_recovered_security_handler(
 
 # "N G obj" at an object header, with the inter-token whitespace PDF allows
 # and a trailing separator so a longer keyword cannot match.
-OBJECT_HEADER_RE = re.compile(rb"(\d+)[\0\t\n\f\r ]+(\d+)[\0\t\n\f\r ]+obj(?=[\0\t\n\f\r ]|\Z)")
+# A delimiter may end the keyword as well as whitespace: "12 0 obj<<" is a
+# well-formed header (ISO 32000-2 7.2, delimiter characters), and some writers
+# emit every object that way. Accepting only whitespace sent all of PDF
+# Reference 1.7's 110,755 entries down the slow fallback, and from there into a
+# brute-force scan of the whole file for replacement offsets.
+# Past this an object number does not fit the kernel's 63 bits, and one
+# that fits never compares equal to a header run that does not.
+HUGE_OBJECT_NUMBER = 1 << 63
+
+
+ENTRY_OFFSET = itemgetter(0)
+ENTRY_IN_USE = itemgetter(2)
+ENTRY_OBJECT_STREAM = itemgetter(3)
+
+
+def object_headers_present(data: Any, keys: list[int], offsets: list[int]) -> list[bool]:
+    """For each key and offset, whether the object header for key starts at offset.
+
+    The header is "N G obj" with the maximal digit and whitespace runs and a
+    delimiter or the end of the data after it, and N and G read as integers;
+    object_headers_match checks them all in one pass. Its columns are made
+    in numpy when every key and offset fits an int64, which is every real
+    table; otherwise an entry at a time.
+    """
+    data_len = len(data)
+    try:
+        key_column = numpy.array(keys, dtype=numpy.int64)
+        offset_column = numpy.array(offsets, dtype=numpy.int64)
+    except OverflowError:
+        return object_headers_present_by_entry(data, keys, offsets)
+    numbers = key_column >> 16
+    generations = key_column & 0xFFFF
+    offset_column[(offset_column < 0) | (offset_column >= data_len)] = -1
+    states = object_headers_match(data, numbers, generations, offset_column)
+    return (states == 1).tolist()
+
+
+def object_headers_present_by_entry(data: Any, keys: list[int], offsets: list[int]) -> list[bool]:
+    """object_headers_present for keys or offsets past int64."""
+    data_len = len(data)
+    numbers = array("q")
+    generations = array("q")
+    clamped = array("q")
+    for key, offset in zip(keys, offsets, strict=True):
+        number = key >> 16
+        numbers.append(number if number < HUGE_OBJECT_NUMBER else -2)
+        generations.append(key & 0xFFFF)
+        clamped.append(offset if 0 <= offset < data_len else -1)
+    states = object_headers_match(data, numbers, generations, clamped)
+    present = [state == 1 for state in states.tolist()]
+    for index, state in enumerate(states.tolist()):
+        if state == 2:
+            # The header is there with a run too long for 63 bits, and so is
+            # the number it must equal: compare them as integers.
+            offset = clamped[index]
+            end = offset
+            while end < data_len and 0x30 <= data[end] <= 0x39:
+                end += 1
+            present[index] = int(bytes(data[offset:end])) == keys[index] >> 16
+    return present
+
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
 

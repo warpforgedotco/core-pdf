@@ -27,7 +27,6 @@ from core_adobe_fonts.type1.program import (
     binary_entries,
     decode_charstring,
     decode_eexec_payload,
-    decrypt_type1,
 )
 from core_pdf._vendor.fontTools.cffLib import (
     cffExpertSubsetStrings,
@@ -51,7 +50,7 @@ from core_pdf.impl.fonts.raster_kernel import (
 )
 from core_pdf.impl.geometry import points_bbox, transform_bbox
 from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
-from core_pdf_cythonized import type2_glyph_geometry
+from core_pdf_cythonized import decrypt_type1, truetype_contours, type2_glyph_geometry
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.font_program_truetype import (
     is_unicode_scalar,
@@ -688,6 +687,8 @@ class CFFUnicodeRepairIndex:
         "make_font",
         "label_names",
         "repairable_gids",
+        "feature_cache",
+        "candidate_arrays_cache",
     )
 
     def __init__(
@@ -707,6 +708,12 @@ class CFFUnicodeRepairIndex:
                 code_to_gid[code_bytes] = gid
 
         self.make_font = font
+        # A decoder asks again for every string it decodes, and each request
+        # compares against the same candidate glyphs. Features depend only on
+        # the glyph's outline, so they are computed once per glyph, and the
+        # candidates' arrays once per index.
+        self.feature_cache: dict[int, CFFGlyphFeature] = {}
+        self.candidate_arrays_cache: FeatureArrays | None = None
         self.label_names = labels
         self.code_to_gid_map = code_to_gid
         self.repairable_gids = frozenset(
@@ -740,8 +747,14 @@ class CFFUnicodeRepairIndex:
         }
 
     def repairs_for_gids(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
-        feature_gids = dict.fromkeys((*self.resolve_candidate_gids, *requested_gids))
-        features = {gid: self.make_font.glyph_feature(gid) for gid in feature_gids}
+        feature_cache = self.feature_cache
+        glyph_feature = self.make_font.glyph_feature
+        features: dict[int, CFFGlyphFeature] = {}
+        for gid in dict.fromkeys((*self.resolve_candidate_gids, *requested_gids)):
+            feature = feature_cache.get(gid)
+            if feature is None:
+                feature = feature_cache[gid] = glyph_feature(gid)
+            features[gid] = feature
 
         candidate_gids = tuple(gid for gid in self.resolve_candidate_gids if features[gid].cells)
         target_gids = tuple(gid for gid in requested_gids if features[gid].cells)
@@ -753,12 +766,14 @@ class CFFUnicodeRepairIndex:
         ):
             target_features = [features[gid] for gid in target_gids]
             candidate_features = [features[gid] for gid in candidate_gids]
-            candidate_arrays = feature_arrays(
-                [feature.cells for feature in candidate_features],
-                [feature.bitmap for feature in candidate_features],
-                [feature.aspect for feature in candidate_features],
-                [feature.contours for feature in candidate_features],
-            )
+            candidate_arrays = self.candidate_arrays_cache
+            if candidate_arrays is None:
+                candidate_arrays = self.candidate_arrays_cache = feature_arrays(
+                    [feature.cells for feature in candidate_features],
+                    [feature.bitmap for feature in candidate_features],
+                    [feature.aspect for feature in candidate_features],
+                    [feature.contours for feature in candidate_features],
+                )
             distance_matrix = feature_distance_matrix(
                 [feature.cells for feature in target_features],
                 [feature.bitmap for feature in target_features],
@@ -1033,13 +1048,33 @@ def parse_truetype_program(data: bytes) -> TTFont:
     return font
 
 
+def glyph_set_of(font: Any) -> Any:
+    """font.getGlyphSet(), built once per font and thread.
+
+    Each call built a fresh glyph set -- reading fvar, hmtx and the glyf
+    table's mapping -- to draw one glyph: 57 ms of a 240 ms profiled page
+    render on PyMuPDF test_3357, 166 glyphs. The set is equivalent every
+    time, but drawing tracks composite depth and variation location on it,
+    so one is kept per thread. It lives on the font, whose lifetime it
+    shares; a thread id reused after its thread ended takes over that set.
+    """
+    sets = font.__dict__.get("_core_pdf_glyph_sets")
+    if sets is None:
+        sets = font.__dict__["_core_pdf_glyph_sets"] = {}
+    thread = threading.get_ident()
+    glyph_set = sets.get(thread)
+    if glyph_set is None:
+        glyph_set = sets[thread] = font.getGlyphSet()
+    return glyph_set
+
+
 def fonttools_bbox(
     font: Any,
     glyph_id: int,
     scale: float,
 ) -> tuple[float, float, float, float] | None:
     glyph_name = font.getGlyphName(glyph_id)
-    glyph_set = font.getGlyphSet()
+    glyph_set = glyph_set_of(font)
     bounds_pen = BoundsPen(glyph_set)
     glyph_set[glyph_name].draw(TransformPen(bounds_pen, (scale, 0.0, 0.0, scale, 0.0, 0.0)))
     if bounds_pen.bounds is None:
@@ -1095,7 +1130,7 @@ FONT_PROGRAM_ERRORS = Exception
 
 def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
     glyph_name = font.getGlyphName(glyph_id)
-    glyph_set = font.getGlyphSet()
+    glyph_set = glyph_set_of(font)
     pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
     glyph_set[glyph_name].draw(pen)
     return tuple(tuple(contour) for contour in recording_to_contours(pen.value))
@@ -1130,8 +1165,59 @@ class BitmapFromOutlines:
         return self.outlines.glyph_bitmap_for_gid(glyph_id, width=width, height=height)
 
 
+TrueTypeTables = tuple[bytes, numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], int]
+
+
+def truetype_tables(font: TTFont) -> TrueTypeTables | None:
+    """What truetype_contours reads, when it can stand in for fontTools' drawing.
+
+    That is a font fontTools draws from glyf -- one without a CFF table,
+    which getGlyphSet would prefer, and not a variable font -- whose glyph
+    set fontTools can build without decompiling glyf here: every glyph's loca
+    slice lies within the table, as the decompile's length check demands,
+    and hmtx, and vmtx if there is one, hold every glyph. Its glyph names
+    must be unique, since fontTools finds glyphs by name. None otherwise,
+    and fontTools draws every glyph.
+    """
+    try:
+        keys = set(font.keys())
+        if (
+            "CFF " in keys
+            or "CFF2" in keys
+            or "fvar" in keys
+            or not {"glyf", "loca", "hmtx"} <= keys
+        ):
+            # A glyph set reads fvar's axes, and fails when it has none; a
+            # variable font is left to fontTools altogether.
+            return None
+        reader = font.reader
+        if reader is None:
+            return None
+        glyf = bytes(reader["glyf"])
+        loca = numpy.asarray(font["loca"].locations, dtype=numpy.int64)
+        order = font.getGlyphOrder()
+        if len(set(order)) != len(order):
+            return None
+        metrics = font["hmtx"].metrics
+        lsb = numpy.asarray([int(metrics[name][1]) for name in order], dtype=numpy.int64)
+        if "vmtx" in keys:
+            # The glyph set reads vmtx too, and each glyph drawn its entry.
+            vertical = font["vmtx"].metrics
+            if not all(name in vertical for name in order):
+                return None
+    except FONT_PROGRAM_ERRORS:
+        return None
+    if len(loca):
+        starts = loca[:-1]
+        ends = loca[1:]
+        # data[pos:next] must be next - pos bytes long.
+        if bool(((ends < starts) | ((ends > len(glyf)) & (ends != starts))).any()):
+            return None
+    return glyf, loca, lsb, len(order)
+
+
 class FontToolsOutlineAccess(BitmapFromContours):
-    __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale")
+    __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale", "truetype", "truetype_read")
 
     def __init__(self, font: TTFont) -> None:
         self.font = font
@@ -1139,6 +1225,9 @@ class FontToolsOutlineAccess(BitmapFromContours):
         self.reverse_glyph_map = font.getReverseGlyphMap()
         units_per_em = float(getattr(font["head"], "unitsPerEm", 1000) or 1000)
         self.scale = 1000.0 / units_per_em if units_per_em else 1.0
+        # Read on the first glyph drawn; None if truetype_contours cannot be used.
+        self.truetype: TrueTypeTables | None = None
+        self.truetype_read = False
 
     def glyph_id_for_name(self, glyph_name: str) -> int | None:
         return self.reverse_glyph_map.get(glyph_name)
@@ -1147,6 +1236,15 @@ class FontToolsOutlineAccess(BitmapFromContours):
         return 0 <= glyph_id < self.glyph_count
 
     def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+        if not self.truetype_read:
+            self.truetype = truetype_tables(self.font)
+            self.truetype_read = True
+        tables = self.truetype
+        if tables is not None:
+            glyf, loca, lsb, glyph_count = tables
+            drawn = truetype_contours(glyf, loca, lsb, glyph_count, glyph_id, self.scale)
+            if drawn is not None:
+                return drawn
         try:
             contours = fonttools_contours(self.font, glyph_id)
             return contours if self.scale == 1.0 else scale_contours(contours, self.scale)

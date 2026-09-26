@@ -212,16 +212,22 @@ def apply_structure_actual_text(
         return runs
     replacements: dict[int, TextRun] = {}
     output: list[TextRun] = []
+    # The owner is a walk up from the MCID's element, and a page's runs share
+    # few MCIDs, so each is walked once.
+    owners: dict[int, tuple[int, str] | None] = {}
     for run in runs:
         mcid = run_mcid(run)
         if mcid is None:
             output.append(run)
             continue
-        try:
-            element = structure[mcid] if 0 <= mcid < len(structure) else None
-        except IndexError, TypeError, ValueError:
-            element = None
-        owner = structure_actual_text_owner(element)
+        if mcid in owners:
+            owner = owners[mcid]
+        else:
+            try:
+                element = structure[mcid] if 0 <= mcid < len(structure) else None
+            except IndexError, TypeError, ValueError:
+                element = None
+            owner = owners[mcid] = structure_actual_text_owner(element)
         if owner is None:
             output.append(run)
             continue
@@ -449,7 +455,7 @@ def capture_runs(
         if majority is None or majority == run.font_name:
             enriched_runs.append(run)
         else:
-            enriched_runs.append(run.replace(font_name=majority))
+            enriched_runs.append(run.with_font_name(majority))
     structured_runs = apply_structure_actual_text(page, tuple(enriched_runs), structure)
     return extractable_runs(structured_runs)
 

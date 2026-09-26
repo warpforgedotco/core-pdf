@@ -209,6 +209,37 @@ def test_unicode_index_scalar_and_matrix_matching_preserve_code_identity(count: 
     }
 
 
+class CountingFeatureFont(FeatureFont):
+    def __init__(self, data: bytes | None) -> None:
+        super().__init__(data)
+        self.feature_requests: list[int] = []
+
+    def glyph_feature(self, glyph_id: int) -> CFFGlyphFeature:
+        self.feature_requests.append(glyph_id)
+        return super().glyph_feature(glyph_id)
+
+
+@pytest.mark.parametrize("count", [2, 33])
+def test_unicode_index_computes_each_glyph_feature_once(count: int) -> None:
+    # A decoder asks once per string it decodes, so the same index answers
+    # many overlapping requests; each must match what a fresh index returns.
+    font = CountingFeatureFont(None)
+    font.charstrings = [b"\x0e"] * (count + 1)
+    font.cid_to_gid = {gid: gid for gid in range(count + 1)}
+    items = tuple((bytes([gid]), gid, "S" if gid == 1 else "5") for gid in range(1, count + 1))
+    index = CFFUnicodeRepairIndex(font, items)
+    codes = [code for code, _, _ in items]
+    requests = [codes[:1], codes[1:2], codes[::-1], codes[1:2], codes]
+    for request in requests:
+        reference_font = FeatureFont(None)
+        reference_font.charstrings = font.charstrings
+        reference_font.cid_to_gid = font.cid_to_gid
+        fresh = CFFUnicodeRepairIndex(reference_font, items)
+        assert index.repairs_for_codes(request) == fresh.repairs_for_codes(request)
+    assert sorted(font.feature_requests) == sorted(set(font.feature_requests))
+    assert set(font.feature_requests) == set(range(1, count + 1))
+
+
 def test_unicode_index_with_no_glyphs_has_no_repairs() -> None:
     index = CFFUnicodeRepairIndex(CFFFont(None), ((b"a", 0, "£"),))
     assert index.repairs_for_codes([b"a"]) == {}

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# A stroked segment's 4x4 sampling and normal blend, for the stroke kernel.
+
+cdef bint segment_samples(
+    unsigned char* pixels,
+    Py_ssize_t row_stride,
+    Py_ssize_t ix0,
+    Py_ssize_t iy0,
+    Py_ssize_t ix1,
+    Py_ssize_t iy1,
+    double crop_x0,
+    double crop_y1,
+    double scale,
+    double x0,
+    double y0,
+    double x1,
+    double y1,
+    double dx,
+    double dy,
+    double seg_len2,
+    double inv_seg_len2,
+    double half2,
+    double projection_extension,
+    bint round_cap,
+    int red,
+    int green,
+    int blue,
+    int alpha,
+    const unsigned char* allowed,
+    unsigned char* counts,
+    Py_ssize_t* covered_box,
+) noexcept nogil

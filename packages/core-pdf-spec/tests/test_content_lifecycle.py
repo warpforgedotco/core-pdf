@@ -93,11 +93,9 @@ def test_path_paints_before_installing_clip_and_retains_geometry(
         state.execute_operation(name, operands, 0)
     expected = [] if kind is None else [(kind, fill_rule, path)]
     assert sink.paths == [*expected, ("clip", clip_rule, path)]
-    assert [command.operator for command in path.commands] == ["m", "l", "l"] + (
-        ["h"] if closed else []
-    )
+    assert path.operators() == ["m", "l", "l"] + (["h"] if closed else [])
     assert state.current_path is not path
-    assert not state.current_path.commands
+    assert not state.current_path
     assert state.current_point is state.subpath_start is None
     for name, operands in iter_content_operations(PdfLexer(b"0 0 1 1 re f")):
         state.execute_operation(name, operands, 0)
@@ -134,7 +132,8 @@ def test_flatness_defaults_fractions_and_graphics_restore(flatness: float) -> No
     state.execute_operation("i", (flatness,), 0)
     for name, operands in iter_content_operations(PdfLexer(b"0 0 m 0 10 10 10 10 0 c")):
         state.execute_operation(name, operands, 0)
-    assert state.current_path.commands[-1].flatness == flatness
+    assert state.current_path.operators()[-1] == "c"
+    assert state.current_path.coords[-1] == flatness
     state.execute_operation("Q", (), 0)
     assert state.graphics.flatness == 1.0
 

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from dataclasses import dataclass, fields, replace
 from enum import StrEnum
-from typing import Any, ClassVar, Self, TypeAlias
+from operator import attrgetter
+from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
 
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.types import Rectangle
@@ -68,6 +70,49 @@ class GlyphUnicodeSemantics(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
+# Not frozen: a frozen dataclass sets each field through object.__setattr__,
+# 1.1us for these 22 against 0.18us, and a page that shows one glyph per
+# operation builds one of these per glyph. It is never changed in place --
+# GlyphObservation's setters replace it -- because every glyph of the
+# operation shares it.
+@dataclass(slots=True)
+class GlyphStyle:
+    """What one text-showing operation paints every one of its glyphs with.
+
+    Font, size, paint and provenance belong to the operation, not the glyph,
+    so they are held once and shared rather than copied into every glyph's
+    observation. Kept alive until its page is done, a 43-slot observation
+    costs about three times what a 22-slot one does to build and hold, most of
+    it allocation and the cycle collector walking every slot.
+    """
+
+    font_size: float
+    rotation_angle: int
+    fill: tuple[float, ...] | None
+    font_decoder: object | None
+    effective_font_size: float
+    effective_font_height: float
+    provenance: tuple[tuple[str, object], ...]
+    text_render_mode: int
+    fill_opacity: float | None
+    stroke_color: tuple[float, ...] | None
+    stroke_opacity: float | None
+    line_width: float
+    blend_mode: str | None
+    soft_mask_alpha: float | None
+    text_object_id: int
+    line_cap: int
+    line_join: int
+    dash_pattern: tuple[list[float], float] | None
+    clip_glyph: bool
+    alpha_is_shape: bool
+    paint_from_program: bool
+    graphics_soft_mask: object | None
+
+
+STYLE_FIELDS: tuple[str, ...] = tuple(field.name for field in fields(GlyphStyle))
+
+
 class GlyphObservation:
     __slots__ = (
         "text",
@@ -79,10 +124,7 @@ class GlyphObservation:
         "cid",
         "gid",
         "font_name",
-        "font_size",
         "baseline",
-        "rotation_angle",
-        "fill",
         "visible",
         "confidence",
         "unicode_source",
@@ -91,28 +133,10 @@ class GlyphObservation:
         "bitmap_width",
         "bitmap_height",
         "bitmap_code",
-        "font_decoder",
-        "effective_font_size",
-        "effective_font_height",
-        "provenance",
         "glyph_transform",
-        "text_render_mode",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_opacity",
-        "line_width",
-        "blend_mode",
-        "soft_mask_alpha",
         "paint_glyph",
-        "text_object_id",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
         "cluster_key",
-        "clip_glyph",
-        "alpha_is_shape",
-        "paint_from_program",
-        "graphics_soft_mask",
+        "style",
     )
 
     text: str
@@ -124,10 +148,7 @@ class GlyphObservation:
     cid: int | None
     gid: int | None
     font_name: str | None
-    font_size: float
     baseline: Rectangle | None
-    rotation_angle: int
-    fill: tuple[float, ...] | None
     visible: bool
     confidence: float | None
     unicode_source: str
@@ -136,28 +157,37 @@ class GlyphObservation:
     bitmap_width: int
     bitmap_height: int
     bitmap_code: int | None
-    font_decoder: object | None
-    effective_font_size: float
-    effective_font_height: float
-    provenance: tuple[tuple[str, object], ...]
     glyph_transform: Matrix6 | None
-    text_render_mode: int
-    fill_opacity: float | None
-    stroke_color: tuple[float, ...] | None
-    stroke_opacity: float | None
-    line_width: float
-    blend_mode: str | None
-    soft_mask_alpha: float | None
     paint_glyph: bool
-    text_object_id: int
-    line_cap: int
-    line_join: int
-    dash_pattern: tuple[list[float], float] | None
     cluster_key: tuple[int, int] | None
-    clip_glyph: bool
-    alpha_is_shape: bool
-    paint_from_program: bool
-    graphics_soft_mask: object | None
+    style: GlyphStyle
+
+    # The fields shared by every glyph one text-showing operation paints. They
+    # live once on `style` and are read and written through the properties
+    # installed below the class; declared here for type checkers.
+    if TYPE_CHECKING:
+        font_size: float
+        rotation_angle: int
+        fill: tuple[float, ...] | None
+        font_decoder: object | None
+        effective_font_size: float
+        effective_font_height: float
+        provenance: tuple[tuple[str, object], ...]
+        text_render_mode: int
+        fill_opacity: float | None
+        stroke_color: tuple[float, ...] | None
+        stroke_opacity: float | None
+        line_width: float
+        blend_mode: str | None
+        soft_mask_alpha: float | None
+        text_object_id: int
+        line_cap: int
+        line_join: int
+        dash_pattern: tuple[list[float], float] | None
+        clip_glyph: bool
+        alpha_is_shape: bool
+        paint_from_program: bool
+        graphics_soft_mask: object | None
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "text",
@@ -203,6 +233,7 @@ class GlyphObservation:
         "alpha_is_shape",
         "paint_from_program",
         "graphics_soft_mask",
+        "style",
     )
     __match_args__ = (
         "text",
@@ -305,10 +336,7 @@ class GlyphObservation:
         self.cid = cid
         self.gid = gid
         self.font_name = font_name
-        self.font_size = font_size
         self.baseline = baseline
-        self.rotation_angle = rotation_angle
-        self.fill = fill
         self.visible = visible
         self.confidence = confidence
         self.unicode_source = unicode_source
@@ -317,28 +345,33 @@ class GlyphObservation:
         self.bitmap_width = bitmap_width
         self.bitmap_height = bitmap_height
         self.bitmap_code = bitmap_code
-        self.font_decoder = font_decoder
-        self.effective_font_size = effective_font_size
-        self.effective_font_height = effective_font_height
-        self.provenance = provenance
         self.glyph_transform = glyph_transform
-        self.text_render_mode = text_render_mode
-        self.fill_opacity = fill_opacity
-        self.stroke_color = stroke_color
-        self.stroke_opacity = stroke_opacity
-        self.line_width = line_width
-        self.blend_mode = blend_mode
-        self.soft_mask_alpha = soft_mask_alpha
         self.paint_glyph = paint_glyph
-        self.text_object_id = text_object_id
-        self.line_cap = line_cap
-        self.line_join = line_join
-        self.dash_pattern = dash_pattern
         self.cluster_key = cluster_key
-        self.clip_glyph = clip_glyph
-        self.alpha_is_shape = alpha_is_shape
-        self.paint_from_program = paint_from_program
-        self.graphics_soft_mask = graphics_soft_mask
+        self.style = GlyphStyle(
+            font_size,
+            rotation_angle,
+            fill,
+            font_decoder,
+            effective_font_size,
+            effective_font_height,
+            provenance,
+            text_render_mode,
+            fill_opacity,
+            stroke_color,
+            stroke_opacity,
+            line_width,
+            blend_mode,
+            soft_mask_alpha,
+            text_object_id,
+            line_cap,
+            line_join,
+            dash_pattern,
+            clip_glyph,
+            alpha_is_shape,
+            paint_from_program,
+            graphics_soft_mask,
+        )
 
     def __repr__(self) -> str:
         return (
@@ -399,10 +432,7 @@ class GlyphObservation:
         cid = changes.pop("cid", self.cid)
         gid = changes.pop("gid", self.gid)
         font_name = changes.pop("font_name", self.font_name)
-        font_size = changes.pop("font_size", self.font_size)
         baseline = changes.pop("baseline", self.baseline)
-        rotation_angle = changes.pop("rotation_angle", self.rotation_angle)
-        fill = changes.pop("fill", self.fill)
         visible = changes.pop("visible", self.visible)
         confidence = changes.pop("confidence", self.confidence)
         unicode_source = changes.pop("unicode_source", self.unicode_source)
@@ -411,31 +441,17 @@ class GlyphObservation:
         bitmap_width = changes.pop("bitmap_width", self.bitmap_width)
         bitmap_height = changes.pop("bitmap_height", self.bitmap_height)
         bitmap_code = changes.pop("bitmap_code", self.bitmap_code)
-        font_decoder = changes.pop("font_decoder", self.font_decoder)
-        effective_font_size = changes.pop("effective_font_size", self.effective_font_size)
-        effective_font_height = changes.pop("effective_font_height", self.effective_font_height)
-        provenance = changes.pop("provenance", self.provenance)
         glyph_transform = changes.pop("glyph_transform", self.glyph_transform)
-        text_render_mode = changes.pop("text_render_mode", self.text_render_mode)
-        fill_opacity = changes.pop("fill_opacity", self.fill_opacity)
-        stroke_color = changes.pop("stroke_color", self.stroke_color)
-        stroke_opacity = changes.pop("stroke_opacity", self.stroke_opacity)
-        line_width = changes.pop("line_width", self.line_width)
-        blend_mode = changes.pop("blend_mode", self.blend_mode)
-        soft_mask_alpha = changes.pop("soft_mask_alpha", self.soft_mask_alpha)
         paint_glyph = changes.pop("paint_glyph", self.paint_glyph)
-        text_object_id = changes.pop("text_object_id", self.text_object_id)
-        line_cap = changes.pop("line_cap", self.line_cap)
-        line_join = changes.pop("line_join", self.line_join)
-        dash_pattern = changes.pop("dash_pattern", self.dash_pattern)
         cluster_key = changes.pop("cluster_key", self.cluster_key)
-        clip_glyph = changes.pop("clip_glyph", self.clip_glyph)
-        alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
-        paint_from_program = changes.pop("paint_from_program", self.paint_from_program)
-        graphics_soft_mask = changes.pop("graphics_soft_mask", self.graphics_soft_mask)
+        style = changes.pop("style", self.style)
+        style_changes = {name: changes.pop(name) for name in STYLE_FIELDS if name in changes}
         if changes:
             raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
+        if style_changes:
+            style = replace(style, **style_changes)
+        return self.styled(
+            style,
             text,
             ink_bbox,
             advance_bbox,
@@ -445,10 +461,7 @@ class GlyphObservation:
             cid,
             gid,
             font_name,
-            font_size,
             baseline,
-            rotation_angle,
-            fill,
             visible,
             confidence,
             unicode_source,
@@ -457,29 +470,66 @@ class GlyphObservation:
             bitmap_width,
             bitmap_height,
             bitmap_code,
-            font_decoder,
-            effective_font_size,
-            effective_font_height,
-            provenance,
             glyph_transform,
-            text_render_mode,
-            fill_opacity,
-            stroke_color,
-            stroke_opacity,
-            line_width,
-            blend_mode,
-            soft_mask_alpha,
             paint_glyph,
-            text_object_id,
-            line_cap,
-            line_join,
-            dash_pattern,
             cluster_key,
-            clip_glyph,
-            alpha_is_shape,
-            paint_from_program,
-            graphics_soft_mask,
         )
+
+    @classmethod
+    def styled(
+        cls,
+        style: GlyphStyle,
+        text: str,
+        ink_bbox: Rectangle,
+        advance_bbox: Rectangle,
+        seqno: int,
+        code_bytes: bytes,
+        char_code: int | None,
+        cid: int | None,
+        gid: int | None,
+        font_name: str | None,
+        baseline: Rectangle | None,
+        visible: bool,
+        confidence: float | None,
+        unicode_source: str,
+        alternates: tuple[str, ...],
+        bitmap: tuple[int, ...],
+        bitmap_width: int,
+        bitmap_height: int,
+        bitmap_code: int | None,
+        glyph_transform: Matrix6 | None,
+        paint_glyph: bool,
+        cluster_key: tuple[int, int] | None,
+    ) -> Self:
+        """Build an observation around a style shared with its operation's other glyphs.
+
+        What capture uses: the style is built once per text-showing operation,
+        and each glyph then sets only its own fields.
+        """
+        observation = cls.__new__(cls)
+        observation.text = text
+        observation.ink_bbox = ink_bbox
+        observation.advance_bbox = advance_bbox
+        observation.seqno = seqno
+        observation.code_bytes = code_bytes
+        observation.char_code = char_code
+        observation.cid = cid
+        observation.gid = gid
+        observation.font_name = font_name
+        observation.baseline = baseline
+        observation.visible = visible
+        observation.confidence = confidence
+        observation.unicode_source = unicode_source
+        observation.alternates = alternates
+        observation.bitmap = bitmap
+        observation.bitmap_width = bitmap_width
+        observation.bitmap_height = bitmap_height
+        observation.bitmap_code = bitmap_code
+        observation.glyph_transform = glyph_transform
+        observation.paint_glyph = paint_glyph
+        observation.cluster_key = cluster_key
+        observation.style = style
+        return observation
 
     @property
     def has_paint(self) -> bool:
@@ -527,6 +577,18 @@ class GlyphObservation:
     @property
     def glyphs(self) -> tuple[GlyphObservation, ...]:
         return (self,)
+
+
+def style_field_property(name: str) -> property:
+    def set_style_field(observation: GlyphObservation, value: Any) -> None:
+        # Copy on write: the style is shared with the operation's other glyphs.
+        observation.style = replace(observation.style, **{name: value})
+
+    return property(attrgetter(f"style.{name}"), set_style_field)
+
+
+for style_field in STYLE_FIELDS:
+    setattr(GlyphObservation, style_field, style_field_property(style_field))
 
 
 class GlyphCluster:
@@ -621,6 +683,7 @@ class GlyphCluster:
 
 CONFIDENCE_CACHE: dict[tuple[str, str, tuple[str, ...]], float] = {}
 CONFIDENCE_CACHE_LIMIT = 8192
+SEMANTICS_CACHE: dict[tuple[str, str], GlyphUnicodeSemantics] = {}
 
 
 def min_optional_confidence(left: float | None, right: float | None) -> float | None:
@@ -672,6 +735,17 @@ def compute_glyph_unicode_confidence(
 
 
 def glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSemantics:
+    # Read for every glyph of a page by its evidence, over few distinct pairs.
+    key = (text, unicode_source)
+    semantics = SEMANTICS_CACHE.get(key)
+    if semantics is None:
+        if len(SEMANTICS_CACHE) >= CONFIDENCE_CACHE_LIMIT:
+            SEMANTICS_CACHE.clear()
+        semantics = SEMANTICS_CACHE[key] = compute_glyph_unicode_semantics(text, unicode_source)
+    return semantics
+
+
+def compute_glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSemantics:
     if not text or glyph_text_has_unsupported_codepoint(text):
         return GlyphUnicodeSemantics.UNSUPPORTED
     if unicode_source in AUTHORITATIVE_UNICODE_SOURCES:

@@ -47,7 +47,6 @@ def horizontal_glyph_geometry(
     list offsets,
     list advances,
     list glyph_boxes,
-    *,
     tuple basis,
     double font_ascent,
     double font_descent,
@@ -65,7 +64,9 @@ def horizontal_glyph_geometry(
 
     ``glyph_boxes`` is four floats per glyph, NaN where the font gave none.
     Returns per-glyph lists of advance boxes, baselines, glyph transforms and
-    ink boxes as tuples, plus flat visibility flags and bitmap dimensions.
+    ink boxes as tuples, plus flat visibility flags and bitmap dimensions,
+    and the union of the advance boxes and of the ink boxes as
+    RunGeometry.add accumulates them glyph by glyph (None for no glyphs).
 
     ``want_transform`` is False when the caller will not rasterize glyph
     outlines. The transform is six floats per glyph and nothing but the
@@ -157,6 +158,10 @@ def horizontal_glyph_geometry(
     cdef double fb_w, fb_h, r_w, r_h, width, height, size, scaled, ratio
     cdef bint have_box
     cdef int vis, bw, bh
+    # RunGeometry.add over the glyphs in order: the first boxes, then each
+    # edge kept unless the next is strictly beyond it.
+    cdef double ua0 = 0.0, ua1 = 0.0, ua2 = 0.0, ua3 = 0.0
+    cdef double ui0 = 0.0, ui1 = 0.0, ui2 = 0.0, ui3 = 0.0
 
     try:
         for i in range(n):
@@ -307,6 +312,24 @@ def horizontal_glyph_geometry(
                     iny1 = ry1
 
             out_ink[i] = (inx0, iny0, inx1, iny1)
+            if i == 0:
+                ua0 = abx0
+                ua1 = aby0
+                ua2 = abx1
+                ua3 = aby1
+                ui0 = inx0
+                ui1 = iny0
+                ui2 = inx1
+                ui3 = iny1
+            else:
+                ua0 = ua0 if ua0 < abx0 else abx0
+                ua1 = ua1 if ua1 < aby0 else aby0
+                ua2 = ua2 if ua2 > abx1 else abx1
+                ua3 = ua3 if ua3 > aby1 else aby1
+                ui0 = ui0 if ui0 < inx0 else inx0
+                ui1 = ui1 if ui1 < iny0 else iny0
+                ui2 = ui2 if ui2 > inx1 else inx1
+                ui3 = ui3 if ui3 > iny1 else iny1
 
             if bmp[i]:
                 bw = 24
@@ -345,4 +368,15 @@ def horizontal_glyph_geometry(
         free(box)
         free(bmp)
 
-    return out_advance, out_baseline, out_transform, out_ink, out_visible, out_bitmap
+    advance_union = (ua0, ua1, ua2, ua3) if n else None
+    ink_union = (ui0, ui1, ui2, ui3) if n else None
+    return (
+        out_advance,
+        out_baseline,
+        out_transform,
+        out_ink,
+        out_visible,
+        out_bitmap,
+        advance_union,
+        ink_union,
+    )

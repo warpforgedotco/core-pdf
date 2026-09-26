@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+def decrypt_type1(data: bytes | bytearray | memoryview, key: int) -> bytes: ...

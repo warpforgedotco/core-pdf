@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from functools import lru_cache
+from math import copysign
 from typing import Any
 
 import imagecodecs
@@ -26,8 +27,14 @@ from core_pdf.impl.graphics.icc_profiles import (
     srgb_profile,
 )
 from core_pdf.impl.scalars import parse_float
+from core_pdf_cythonized import (
+    code_presence,
+    distinct_uint16_rows,
+    gather_uint8_rows,
+)
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
+from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color_kernels import (
     color_key_alpha,
     decode_sample_values,
@@ -44,6 +51,7 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
     use_black_point_compensation,
 )
 from core_pdf_spec.s_11_transparency.images import unblend_matte_components
+from core_pdf_spec.types import PdfName
 
 
 def quantize(values: numpy.ndarray[Any, Any], maximum: int = 255) -> numpy.ndarray:
@@ -88,6 +96,91 @@ def distinct_component_rows(
         distinct, inverse = numpy.unique(values[:, 0], return_inverse=True)
         return distinct.reshape(-1, 1), inverse
     return numpy.unique(values, axis=0, return_inverse=True)
+
+
+type TintFunction = Callable[..., tuple[float, ...]]
+
+# Keyed by tint_function_key, or failing that by id(tint_fn), whose entry
+# then holds the function object so the id cannot be reused while cached.
+TINT_FUNCTION_CACHE: dict[object, tuple[object, TintFunction]] = {}
+TINT_FUNCTION_CACHE_LIMIT = 64
+TINT_OUTPUT_CACHE_LIMIT = 4096
+
+
+def plain_function_value(value: object) -> bool:
+    kind = type(value)
+    if kind is int or kind is float or kind is PdfName:
+        return True
+    return (kind is list or kind is tuple) and all(
+        type(item) is int or type(item) is float
+        for item in value  # type: ignore[attr-defined]  # ty: ignore[not-iterable]
+    )
+
+
+def tint_function_key(tint_fn: object) -> object | None:
+    """What compile_pdf_function reads of a stream function, if it can be a key.
+
+    It reads the dictionary and the decoded data, nothing else; the source
+    object differs per image, since deep_resolve rebuilds a stream whose
+    dictionary held a reference. Only a dictionary of numbers, names and
+    number arrays -- whose reprs say exactly what they hold -- is keyed by
+    content, and a stream that does not decode is left to the compiler.
+    """
+    if type(tint_fn) is not PdfStream:
+        return None
+    items: list[tuple[str, str]] = []
+    for key, value in tint_fn.dictionary.items():
+        if not plain_function_value(value):
+            return None
+        items.append((repr(key), repr(value)))
+    try:
+        data = tint_fn.data
+    except Exception:  # noqa: BLE001 -- the compiler raises it, uncached
+        return None
+    return tuple(sorted(items)), bytes(data)
+
+
+def tint_function(tint_fn: object) -> TintFunction:
+    """`tint_fn` compiled, remembering its output for each input it is given.
+
+    Every image in a Separation or DeviceN space compiled its tint transform
+    again -- decoding a calculator's stream and parsing its program -- and
+    evaluated it once per distinct colour. Images on one page share their
+    functions and, at 8 bits, their input levels: PyMuPDF test_3806 renders
+    176 images through 8,430 function runs, 14 distinct functions among them.
+    A PDF function is a pure function of its inputs, so the compiled function
+    and the outputs it has produced are kept, and an input seen before costs a
+    lookup. Exceptions are not remembered; the next call raises again.
+    """
+    key = tint_function_key(tint_fn)
+    if key is None:
+        key = id(tint_fn)
+        cached = TINT_FUNCTION_CACHE.get(key)
+        if cached is not None and cached[0] is tint_fn:
+            return cached[1]
+    else:
+        cached = TINT_FUNCTION_CACHE.get(key)
+        if cached is not None:
+            return cached[1]
+    compiled = compile_pdf_function(tint_fn)
+    outputs: dict[tuple[float, ...], tuple[float, ...]] = {}
+
+    def remembered(*inputs: float) -> tuple[float, ...]:
+        # -0.0 equals 0.0 as a key, but a program can tell them apart.
+        if 0.0 in inputs and any(copysign(1.0, value) < 0.0 for value in inputs):
+            return compiled(*inputs)
+        output = outputs.get(inputs)
+        if output is None:
+            output = compiled(*inputs)
+            if len(outputs) >= TINT_OUTPUT_CACHE_LIMIT:
+                outputs.clear()
+            outputs[inputs] = output
+        return output
+
+    if len(TINT_FUNCTION_CACHE) >= TINT_FUNCTION_CACHE_LIMIT:
+        TINT_FUNCTION_CACHE.clear()
+    TINT_FUNCTION_CACHE[key] = (tint_fn, remembered)
+    return remembered
 
 
 def convert_components(
@@ -157,7 +250,7 @@ def convert_components(
         try:
             if space.alternate is None:
                 raise ValueError("missing tint alternate")
-            function = compile_pdf_function(space.tint_fn)
+            function = tint_function(space.tint_fn)
             distinct, inverse = distinct_component_rows(values)
             tinted = numpy.asarray(
                 [function(*(float(component) for component in row)) for row in distinct],
@@ -197,6 +290,68 @@ def convert_components(
     raise ValueError("unsupported image color space")
 
 
+def convert_distinct_codes(
+    codes: numpy.ndarray[Any, Any],
+    space: ColorSpace,
+    pairs: tuple[tuple[float, float], ...],
+    maximum: int,
+    rendering: ColorRendering,
+) -> numpy.ndarray:
+    """Convert a one-component image by the sample codes it uses, not by pixel.
+
+    Without a matte every output pixel depends only on its own sample, so
+    converting each code the image uses once and scattering the results is
+    the same image. Finding those codes from a table of at most 65,536 entries
+    replaces the sort distinct_component_rows would otherwise run over the
+    decoded floats: 0.7s on a 9.9-megapixel page in PyMuPDF test_3806.
+    """
+    # Sized by the codes present rather than by `maximum`: damaged data can
+    # hold samples above it, which decode the same way here as elsewhere.
+    codes = numpy.ascontiguousarray(codes, dtype=numpy.uint16)
+    present, largest = code_presence(codes)
+    size = max(maximum, largest) + 1
+    used = numpy.flatnonzero(present[:size])
+    values = decode_sample_values(used.reshape(-1, 1), pairs, maximum)
+    converted = convert_components(values, space, rendering=rendering)
+    # A table indexed by the code itself, so the scatter is one gather with
+    # no per-pixel array of positions.
+    table = numpy.zeros((size, *converted.shape[1:]), dtype=converted.dtype)
+    table[used] = converted
+    if table.dtype != numpy.uint8 or table.ndim != 2:
+        return numpy.take(table, codes, axis=0)
+    return gather_uint8_rows(table, codes)
+
+
+# Below this many pixels a multi-component image converts pixel by pixel.
+DISTINCT_SAMPLES_MINIMUM = 1 << 16
+
+
+def convert_distinct_samples(
+    integers: numpy.ndarray[Any, Any],
+    space: ColorSpace,
+    pairs: tuple[tuple[float, float], ...],
+    maximum: int,
+    rendering: ColorRendering,
+) -> numpy.ndarray | None:
+    """Convert a two- to four-component image by its distinct sample rows.
+
+    Without a matte every output pixel depends only on its own samples, so
+    converting each distinct row once and scattering the results is the same
+    image -- the decode to float64, the clip and the colour transform all run
+    per row. Rows are found by a hash table on the raw integers; past a
+    quarter of the pixels distinct this gives up and returns None.
+    """
+    found = distinct_uint16_rows(numpy.ascontiguousarray(integers), len(integers) // 4)
+    if found is None:
+        return None
+    distinct, inverse = found
+    values = decode_sample_values(distinct, pairs, maximum)
+    converted = convert_components(values, space, rendering=rendering)
+    if converted.dtype != numpy.uint8 or converted.ndim != 2:
+        return numpy.take(converted, inverse, axis=0)
+    return gather_uint8_rows(numpy.ascontiguousarray(converted), inverse)
+
+
 def convert_integer_samples(
     samples: numpy.ndarray,
     dictionary: dict[Any, Any],
@@ -220,8 +375,14 @@ def convert_integer_samples(
         if numbers.shape != (count * 2,) or not numpy.isfinite(numbers).all():
             raise ValueError("invalid image Decode array")
         pairs = tuple((float(low), float(high)) for low, high in numbers.reshape(-1, 2))
-    values = decode_sample_values(integers, pairs, maximum)
-    output = convert_components(values, space, matte=matte, alpha=alpha, rendering=rendering)
+    output = None
+    if matte is None and count == 1 and len(integers) > maximum + 1:
+        output = convert_distinct_codes(integers[:, 0], space, pairs, maximum, rendering)
+    elif matte is None and 1 < count <= 4 and len(integers) > DISTINCT_SAMPLES_MINIMUM:
+        output = convert_distinct_samples(integers, space, pairs, maximum, rendering)
+    if output is None:
+        values = decode_sample_values(integers, pairs, maximum)
+        output = convert_components(values, space, matte=matte, alpha=alpha, rendering=rendering)
     mask = dictionary.get("Mask")
     if isinstance(mask, (list, tuple)) and dictionary.get("SMask") is None:
         output = numpy.column_stack((output, color_key_alpha(integers, tuple(mask), maximum)))

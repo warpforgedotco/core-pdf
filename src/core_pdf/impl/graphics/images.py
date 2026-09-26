@@ -38,6 +38,7 @@ from core_pdf.impl.graphics.stream_decoding import (
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.scalars import parse_int
 from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf_cythonized import interleave_soft_mask
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_08_graphics.color_kernels import (
     decode_sample_values,
@@ -291,11 +292,16 @@ def apply_soft_mask(raster: ImageRaster, mask: ImageRaster) -> ImageRaster:
         mask.width - 1,
         (numpy.arange(raster.width) * mask.width) // raster.width,
     )
-    alpha = mask_array[y[:, None], x[None, :]]
     channels = raster.channels - int(raster.has_alpha)
-    array = numpy.empty((raster.height, raster.width, channels + 1), dtype=numpy.uint8)
-    array[:, :, :channels] = raster.array[:, :, :channels]
-    array[:, :, channels] = alpha
+    # The mask sampled at those rows and columns, after the raster's colour
+    # channels, written in one pass.
+    array = interleave_soft_mask(
+        raster.array,
+        channels,
+        mask_array,
+        numpy.ascontiguousarray(y, dtype=numpy.intp),
+        numpy.ascontiguousarray(x, dtype=numpy.intp),
+    )
     return ImageRaster(array, raster.color_model)
 
 
@@ -406,11 +412,13 @@ def decode_image_samples(
     height = parse_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
         return None
-    native = decode_stream_image_data(raw, dictionary)
+    native, declined = decode_stream_image_data(raw, dictionary)
     if native is not None and native.width == width and native.height == height:
         return native
     bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
     if bits_per_component == 16:
+        if declined is not None:
+            return declined
         try:
             return decode_stream_data(raw, dictionary)
         except Exception:
@@ -428,7 +436,7 @@ def decode_image_samples(
     ):
         return raw
     try:
-        decoded = decode_stream_data(raw, dictionary)
+        decoded = declined if declined is not None else decode_stream_data(raw, dictionary)
     except Exception:
         return None
     if len(decoded) in {expected_gray, expected_rgb, expected_source}:
@@ -709,7 +717,17 @@ def prepare_native_image(dictionary: object) -> NativeImagePlan | None:
 def decode_stream_image_data(
     data: bytes | memoryview,
     dictionary: object,
-) -> DecodedImage | None:
+) -> tuple[DecodedImage | None, bytes | None]:
+    """The image natively decoded, or None; and the filter chain's output, when known.
+
+    A JPX image that decodes to eight bits a sample in a color space given
+    as an array or dictionary is declined here, and the caller then runs the
+    whole filter chain, whose JPXDecode step decodes the same codestream to
+    the same array -- preserve_precision only keeps a sixteen-bit one -- and
+    takes its bytes. Those bytes are returned with the result, so a large
+    image is not decoded twice.
+    """
+    declined: bytes | None = None
 
     stream_spec = normalize_stream_decode_spec(dictionary)
     if stream_spec.steps and stream_spec.steps[-1].name == "JPXDecode":
@@ -726,12 +744,13 @@ def decode_stream_image_data(
             array = decode_jpx_image(compressed, preserve_precision=True)
             color_space = dictionary.get("ColorSpace") if isinstance(dictionary, dict) else None
             if array.dtype == numpy.uint16 or not isinstance(color_space, (list, tuple, dict)):
-                return DecodedImage(array, "jpx")
+                return DecodedImage(array, "jpx"), None
+            declined = array.tobytes()
         except Exception:
-            return None
+            return None, None
     plan = prepare_native_image(dictionary)
     if plan is None:
-        return None
+        return None, declined
     decoder = plan.decoder
     params = plan.params
     output_shape = plan.output_shape
@@ -739,10 +758,12 @@ def decode_stream_image_data(
     try:
         array_decoder = NATIVE_ARRAY_DECODERS.get(decoder)
         if decoder == "jpx":
-            return DecodedImage(decode_jpx_image(source, preserve_precision=True), decoder)
+            return DecodedImage(
+                decode_jpx_image(source, preserve_precision=True), decoder
+            ), declined
         if array_decoder is not None:
             output = numpy.empty(output_shape, dtype=numpy.uint8) if output_shape else None
-            return DecodedImage(array_decoder(source, out=output), decoder)
+            return DecodedImage(array_decoder(source, out=output), decoder), declined
         if decoder == "ccitt":
             filter_params = (
                 params if type(params) is FilterParams else FilterParams.from_parms(params)
@@ -755,19 +776,19 @@ def decode_stream_image_data(
             return DecodedImage(
                 decode_ccitt_fax_image(source, filter_params, out=output),
                 "ccitt",
-            )
+            ), declined
         if decoder in {"flate", "lzw"}:
             if output_shape is None:
-                return None
+                return None, declined
             decoded = decode_stream_data(data, dictionary)
             expected_size = int(numpy.prod(output_shape, dtype=numpy.int64))
             if len(decoded) != expected_size:
-                return None
+                return None, declined
             array = numpy.frombuffer(decoded, dtype=numpy.uint8).reshape(output_shape)
-            return DecodedImage(array, decoder)
+            return DecodedImage(array, decoder), declined
     except Exception:
-        return None
-    return None
+        return None, declined
+    return None, declined
 
 
 def image_decode_is_identity(dictionary: object) -> bool:

@@ -33,6 +33,15 @@ GOLDEN_PATH = Path(__file__).parent / "masked_composite_golden.pkl.gz"
 GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
 
 
+def coded(mask):
+    """A float32 plane as the bytes and table a soft mask holds; every golden mask fits."""
+    values, codes = numpy.unique(mask, return_inverse=True)
+    assert len(values) <= 256
+    table = numpy.zeros(256, dtype=numpy.float32)
+    table[: len(values)] = values
+    return codes.reshape(mask.shape).astype(numpy.uint8), table
+
+
 def test_golden_file_covers_the_cases_it_claims_to():
     assert len(GOLDEN) == 381
     sources = {case["source"] for case in GOLDEN}
@@ -52,7 +61,7 @@ def test_kernel_reproduces_the_numpy_branch_bitwise(index):
     case = GOLDEN[index]
     destination = case["destination"].copy()
     effective = composite_masked_normal(
-        destination, case["rendered"], case["opacity"], case["mask_alpha"]
+        destination, case["rendered"], case["opacity"], *coded(case["mask_alpha"])
     )
     assert numpy.array_equal(destination, case["after"])
     assert numpy.array_equal(effective, case["effective_alpha"])
@@ -66,7 +75,7 @@ def test_writes_through_a_strided_view():
     page[3 : 3 + height, 4 : 4 + width] = case["destination"]
     view = page[3 : 3 + height, 4 : 4 + width]
     assert not view.flags["C_CONTIGUOUS"]
-    composite_masked_normal(view, case["rendered"], case["opacity"], case["mask_alpha"])
+    composite_masked_normal(view, case["rendered"], case["opacity"], *coded(case["mask_alpha"]))
     assert numpy.array_equal(page[3 : 3 + height, 4 : 4 + width], case["after"])
     # Nothing outside the window moved.
     assert not page[:3].any()
@@ -77,12 +86,13 @@ def test_reads_a_strided_mask():
     # The mask is a window into a page-sized plane at the call site.
     case = next(case for case in GOLDEN if case["source"] == "corpus-window-dmixed-mfrac")
     height, width = case["mask_alpha"].shape
-    plane = numpy.zeros((height + 5, width + 7), dtype=numpy.float32)
-    plane[2 : 2 + height, 3 : 3 + width] = case["mask_alpha"]
+    codes, table = coded(case["mask_alpha"])
+    plane = numpy.zeros((height + 5, width + 7), dtype=numpy.uint8)
+    plane[2 : 2 + height, 3 : 3 + width] = codes
     mask = plane[2 : 2 + height, 3 : 3 + width]
     assert not mask.flags["C_CONTIGUOUS"]
     destination = case["destination"].copy()
-    composite_masked_normal(destination, case["rendered"], case["opacity"], mask)
+    composite_masked_normal(destination, case["rendered"], case["opacity"], mask, table)
     assert numpy.array_equal(destination, case["after"])
 
 
@@ -90,7 +100,7 @@ def test_zero_mask_leaves_the_destination_alone():
     destination = numpy.full((2, 3, 4), 7, dtype=numpy.uint8)
     rendered = numpy.full((2, 3, 4), 200, dtype=numpy.uint8)
     mask = numpy.zeros((2, 3), dtype=numpy.float32)
-    effective = composite_masked_normal(destination, rendered, 1.0, mask)
+    effective = composite_masked_normal(destination, rendered, 1.0, *coded(mask))
     assert not effective.any()
     assert (destination == 7).all()
 
@@ -99,7 +109,7 @@ def test_opaque_source_through_a_unit_mask_replaces_the_pixel():
     destination = numpy.full((1, 2, 4), 7, dtype=numpy.uint8)
     rendered = numpy.array([[[10, 20, 30, 255], [40, 50, 60, 0]]], dtype=numpy.uint8)
     mask = numpy.ones((1, 2), dtype=numpy.float32)
-    effective = composite_masked_normal(destination, rendered, 1.0, mask)
+    effective = composite_masked_normal(destination, rendered, 1.0, *coded(mask))
     assert effective.tolist() == [[255, 0]]
     assert destination[0, 0].tolist() == [10, 20, 30, 255]
     assert destination[0, 1].tolist() == [7, 7, 7, 7]
@@ -108,34 +118,43 @@ def test_opaque_source_through_a_unit_mask_replaces_the_pixel():
 def test_nan_effective_alpha_is_rejected_before_any_write():
     destination = numpy.zeros((1, 2, 4), dtype=numpy.uint8)
     rendered = numpy.full((1, 2, 4), 200, dtype=numpy.uint8)
-    mask = numpy.array([[1.0, numpy.nan]], dtype=numpy.float32)
+    table = numpy.ones(256, dtype=numpy.float32)
+    table[1] = numpy.nan
     with pytest.raises(ValueError, match="NaN"):
-        composite_masked_normal(destination, rendered, 1.0, mask)
+        composite_masked_normal(
+            destination, rendered, 1.0, numpy.array([[0, 1]], dtype=numpy.uint8), table
+        )
     assert not destination.any()
 
 
-def test_mask_must_be_float32():
+def test_mask_must_be_bytes_and_a_float32_table_of_256():
     destination = numpy.zeros((1, 2, 4), dtype=numpy.uint8)
     rendered = numpy.zeros((1, 2, 4), dtype=numpy.uint8)
+    codes = numpy.zeros((1, 2), dtype=numpy.uint8)
+    table = numpy.ones(256, dtype=numpy.float32)
     with pytest.raises(ValueError):
-        composite_masked_normal(destination, rendered, 1.0, numpy.ones((1, 2)))
+        composite_masked_normal(destination, rendered, 1.0, numpy.ones((1, 2)), table)
+    with pytest.raises(ValueError):
+        composite_masked_normal(destination, rendered, 1.0, codes, table.astype(numpy.float64))
+    with pytest.raises(ValueError):
+        composite_masked_normal(destination, rendered, 1.0, codes, table[:255])
 
 
 def test_mismatched_shapes_are_rejected():
-    mask = numpy.zeros((2, 3), dtype=numpy.float32)
+    mask = numpy.zeros((2, 3), dtype=numpy.uint8), numpy.ones(256, dtype=numpy.float32)
     with pytest.raises(ValueError):
         composite_masked_normal(
             numpy.zeros((2, 3, 3), dtype=numpy.uint8),
             numpy.zeros((2, 3, 3), dtype=numpy.uint8),
             1.0,
-            mask,
+            *mask,
         )
     with pytest.raises(ValueError):
         composite_masked_normal(
             numpy.zeros((2, 3, 4), dtype=numpy.uint8),
             numpy.zeros((2, 4, 4), dtype=numpy.uint8),
             1.0,
-            mask,
+            *mask,
         )
 
 
@@ -144,3 +163,14 @@ def test_render_target_uses_the_kernel():
     from core_pdf.impl.render import target
 
     assert target.composite_masked_normal is composite_masked_normal
+
+
+def test_a_plane_without_transfer_reads_as_its_float32_window():
+    pytest.importorskip("core_pdf")
+    from core_pdf.impl.render.model import SoftMaskPlane
+
+    alpha = numpy.arange(256, dtype=numpy.uint8).reshape(16, 16)
+    for table in (None, numpy.linspace(1, 0, 256, dtype=numpy.float32)):
+        plane = SoftMaskPlane(alpha, table)
+        window = (slice(2, 9), slice(3, 14))
+        assert plane.values()[alpha[window]].tobytes() == plane[window].tobytes()

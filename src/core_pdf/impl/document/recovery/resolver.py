@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.document.recovery.objects import PdfObjectStream
 from core_pdf.impl.document.recovery.text_strings import decode_pdf_text_string
@@ -13,6 +15,7 @@ from core_pdf.impl.scalars import parse_box, parse_float, parse_int
 from core_pdf.impl.types import PdfReference, PdfString
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data as decode_spec_stream_data
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
+from core_pdf_spec.s_07_syntax.objects import PdfObjectStream as SyntaxObjectStream
 from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver as SyntaxResolver
 from core_pdf_spec.s_07_syntax.resources import resolve_resource_dict as resolve_spec_resources
@@ -23,9 +26,21 @@ from core_pdf_spec.s_07_syntax.xref import (
     key_for,
 )
 
+LEXER_POOL_LIMIT = 8
+
 
 class ObjectResolver(SyntaxResolver):
-    __slots__ = ()
+    __slots__ = ("lexer_pool",)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Lexers over the whole file, idle between objects. Reading an object
+        # built one and closed it again -- 32,000 times on PDF Reference 1.7's
+        # first page, as much time as the parsing. A lexer over the same data
+        # is the same lexer once rewound, so they are reused; one that a
+        # nested reference needs while another is mid-object comes out of the
+        # pool separately.
+        self.lexer_pool: list[PdfLexer] = []
+        super().__init__(*args, **kwargs)
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
         entry = super().xref_entry(ref)
@@ -63,12 +78,38 @@ class ObjectResolver(SyntaxResolver):
         )
 
     def get_lexer(self) -> PdfLexer:
-        return PdfLexer(
-            self.data,
-            reference_resolver=self.resolve,
-            decipher=self.decipher,
-            semantic_context=self.semantic_context,
-        )
+        pool = self.lexer_pool
+        with self.lock:
+            lexer = pool.pop() if pool else None
+        if lexer is None:
+            return PdfLexer(
+                self.data,
+                reference_resolver=self.resolve,
+                decipher=self.decipher,
+                semantic_context=self.semantic_context,
+            )
+        # What a new lexer would take from the resolver now, in case it moved.
+        lexer.reference_resolver = self.resolve
+        lexer.decipher = self.decipher
+        if lexer.semantic_context is not self.semantic_context:
+            lexer.semantic_context = self.semantic_context
+        return lexer
+
+    def release_lexer(self, lexer: SyntaxLexer) -> None:
+        if type(lexer) is PdfLexer and lexer.raw_data.obj is self.data.obj:
+            with self.lock:
+                if len(self.lexer_pool) < LEXER_POOL_LIMIT:
+                    self.lexer_pool.append(lexer)
+                    return
+        lexer.close()
+
+    def detach_parsed_caches(self) -> tuple[SyntaxObjectStream, ...]:
+        with self.lock:
+            lexers, self.lexer_pool[:] = list(self.lexer_pool), []
+        # A lexer holds an export of the data, which close() then releases.
+        for lexer in lexers:
+            lexer.close()
+        return super().detach_parsed_caches()
 
     def recover_indirect_object(self, lexer: SyntaxLexer, offset: int) -> object:
         data = lexer.raw_data
