@@ -139,28 +139,23 @@ def test_ascii85_mixed_zero_shorthand_full_tuple_and_tail():
     assert codecs.apply_ascii85(base64.a85encode(payload) + b"~>", None) == payload
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "EarlyChange",
-        "Predictor",
-        "Columns",
-        "Colors",
-        "BitsPerComponent",
-        "K",
-        "Rows",
-        "DamagedRowsBeforeError",
-    ],
+INTEGER_PARAMETERS = (
+    "EarlyChange",
+    "Predictor",
+    "Columns",
+    "Colors",
+    "BitsPerComponent",
+    "K",
+    "Rows",
+    "DamagedRowsBeforeError",
 )
-@pytest.mark.parametrize("value", [True, 1.5, "1", b"1"])
-def test_decode_parameter_integers_do_not_coerce_other_object_types(name, value):
-    with pytest.raises(ValueError, match=name):
-        FilterParams.from_parms({name: value})
 
 
 @pytest.mark.parametrize(
     ("name", "value"),
     [
+        # Integers do not coerce other object types.
+        *((name, value) for name in INTEGER_PARAMETERS for value in (True, 1.5, "1", b"1")),
         ("EarlyChange", -1),
         ("EarlyChange", 2),
         ("Predictor", 0),
@@ -175,7 +170,7 @@ def test_decode_parameter_integers_do_not_coerce_other_object_types(name, value)
         ("EncodedByteAlign", "true"),
     ],
 )
-def test_decode_parameter_ranges_and_booleans_are_strict(name, value):
+def test_decode_parameter_types_ranges_and_booleans_are_strict(name, value):
     with pytest.raises(ValueError, match=name):
         FilterParams.from_parms({name: value})
 

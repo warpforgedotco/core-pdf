@@ -20,7 +20,17 @@ from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 
 @pytest.mark.parametrize(
-    "data", [b"<6z1>", b"/A#XX", b"<<bad /Type /Page>>", b"<< /Bad ] /Type /Page >>"]
+    "data",
+    [
+        b"<6z1>",
+        b"/A#XX",
+        b"<<bad /Type /Page>>",
+        b"<< /Bad ] /Type /Page >>",
+        # Numeric arrays reject number spellings PDF does not have.
+        b"[1_000 2]",
+        b"[1.2e3 4]",
+        b"[1_000 % ignored\n2]",
+    ],
 )
 def test_lexer_rejects_malformed_values(data: bytes) -> None:
     lexer = PdfLexer(data)
@@ -54,16 +64,6 @@ def test_pdf_string_defaults_and_odd_hex_padding() -> None:
     lexer = PdfLexer(b"[(a\\q) (a\n\rb) <6 1 2>]")
     try:
         assert [value.data for value in lexer.parse_object()] == [b"aq", b"a\n\nb", b"a "]
-    finally:
-        lexer.close()
-
-
-@pytest.mark.parametrize("data", [b"[1_000 2]", b"[1.2e3 4]", b"[1_000 % ignored\n2]"])
-def test_numeric_arrays_reject_non_pdf_number_spellings(data: bytes) -> None:
-    lexer = PdfLexer(data)
-    try:
-        with pytest.raises(PdfParseError):
-            lexer.parse_object()
     finally:
         lexer.close()
 
