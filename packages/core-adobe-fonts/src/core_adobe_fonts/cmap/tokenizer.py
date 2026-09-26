@@ -199,11 +199,6 @@ class CMapProgram(Record):
             raise ValueError("unterminated CMap mapping block")
 
 
-def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.Iterator[bytes]:
-    for block in CMapProgram.parse(data).blocks(begin, end):
-        yield block.data
-
-
 def scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, bool]:
     end = pos + 1
     depth = 1
@@ -421,7 +416,6 @@ __all__ = [
     "CMapToken",
     "CMapBlock",
     "CMapProgram",
-    "iter_blocks",
     "scope_cmap_tokens",
     "iter_cmap_tokens",
     "cmap_tokens",
