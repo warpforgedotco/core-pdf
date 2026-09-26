@@ -19,6 +19,8 @@ from ._pages import (
     pdfminer_resolvable_pages,
 )
 from ._projection import (
+    PDFMINER_POLICY,
+    ProjectionPolicy,
     project_page,
 )
 
@@ -30,7 +32,6 @@ def extract_pages(
     maxpages: int = 0,
     caching: bool = True,
     laparams: LAParams | None = None,
-    _unstructured_mode: bool = False,
 ) -> Iterator[LTPage]:
     del caching
     params = laparams or LAParams()
@@ -41,9 +42,7 @@ def extract_pages(
         recovery_scan_all_revisions=False,
     )
     try:
-        yield from extract_document_pages(
-            document, params, selected, maxpages, unstructured_mode=_unstructured_mode
-        )
+        yield from extract_document_pages(document, params, selected, maxpages)
     finally:
         document.close()
 
@@ -54,11 +53,11 @@ def extract_document_pages(
     selected: set[int] | None = None,
     maxpages: int = 0,
     *,
-    unstructured_mode: bool = False,
+    policy: ProjectionPolicy = PDFMINER_POLICY,
 ) -> Iterator[LTPage]:
     yielded = 0
     page_source: Iterable[tuple[int, PdfPage]]
-    if unstructured_mode:
+    if policy.tolerant_pages:
         try:
             page_source = tuple(pdfminer_resolvable_pages(document))
         except PdfError:
@@ -70,7 +69,7 @@ def extract_document_pages(
             continue
         if maxpages and yielded >= maxpages:
             break
-        yield project_page(page, params, unstructured_mode=unstructured_mode)
+        yield project_page(page, params, policy=policy)
         yielded += 1
 
 

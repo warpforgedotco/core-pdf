@@ -159,6 +159,24 @@ def _font_value(font: object, name: str) -> object | None:
     return _font_projection(font).values.get(name)
 
 
+# A simple font's base encoding table by name; any other name reads StandardEncoding.
+BASE_ENCODING_TABLES = {
+    "MacRomanEncoding": MAC_ROMAN_ENCODING,
+    "WinAnsiEncoding": WIN_ANSI_ENCODING,
+}
+# The codes pdfminer reads as no text in each base encoding.
+WIN_ANSI_BLANK_CODES = frozenset({127, 129, 141, 143, 144, 157})
+MAC_ROMAN_BLANK_CODES = frozenset(
+    {173, 176, 178, 179, 182, 183, 184, 185, 186, 189, 195, 197, 198, 215}
+)
+
+
+def base_encoding_table(base_encoding: object) -> tuple[str, ...]:
+    return BASE_ENCODING_TABLES.get(
+        base_encoding if isinstance(base_encoding, str) else "", STANDARD_ENCODING
+    )
+
+
 def _pdfminer_base_encoding_text(
     decoder: Any,
     char_code: int,
@@ -166,31 +184,13 @@ def _pdfminer_base_encoding_text(
 ) -> str:
     if base_encoding is None:
         base_encoding = getattr(decoder, "base_encoding", None)
-    table = {
-        "MacRomanEncoding": MAC_ROMAN_ENCODING,
-        "WinAnsiEncoding": WIN_ANSI_ENCODING,
-    }.get(base_encoding if isinstance(base_encoding, str) else "", STANDARD_ENCODING)
+    table = base_encoding_table(base_encoding)
     if base_encoding == "WinAnsiEncoding":
         if char_code == 173:
             return " "
-        if char_code in {127, 129, 141, 143, 144, 157}:
+        if char_code in WIN_ANSI_BLANK_CODES:
             return ""
-    if base_encoding == "MacRomanEncoding" and char_code in {
-        173,
-        176,
-        178,
-        179,
-        182,
-        183,
-        184,
-        185,
-        186,
-        189,
-        195,
-        197,
-        198,
-        215,
-    }:
+    if base_encoding == "MacRomanEncoding" and char_code in MAC_ROMAN_BLANK_CODES:
         return ""
     return table[char_code]
 
@@ -297,6 +297,16 @@ def pdfminer_glyph_text(glyph: Any) -> str:
 # not kept, so it raises every time as it did.
 EMBEDDED_CMAP_UNUSABLE: dict[int, tuple[object, bool]] = {}
 EMBEDDED_CMAP_UNUSABLE_LIMIT = 256
+# Whether each predefined CMap name resolves, which parses the whole CMap:
+# the resources do not change, so each name is parsed once.
+PREDEFINED_CMAP_RESOLVES: dict[str, bool] = {}
+
+
+def predefined_cmap_resolves(name: str) -> bool:
+    resolves = PREDEFINED_CMAP_RESOLVES.get(name)
+    if resolves is None:
+        resolves = PREDEFINED_CMAP_RESOLVES[name] = resolve_cmap_decoder(name) is not None
+    return resolves
 
 
 def pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
@@ -323,10 +333,10 @@ def embedded_cmap_is_unusable(decoder: Any) -> bool:
     except AttributeError, TypeError, ValueError:
         return False
     cmap_name_match = re.search(rb"/CMapName\s*/([^\s<>\[\]()/%]+)", data)
-    if cmap_name_match is not None:
-        cmap_name = cmap_name_match.group(1).decode("latin-1")
-        if resolve_cmap_decoder(cmap_name) is not None:
-            return False
+    if cmap_name_match is not None and predefined_cmap_resolves(
+        cmap_name_match.group(1).decode("latin-1")
+    ):
+        return False
     return re.search(rb"/[!-~]+\s+usecmap\b", data) is None
 
 
@@ -391,11 +401,7 @@ def pdfminer_ligature_overrides(
                 overrides[id(glyph)] = (glyph_name_text, box, glyph.baseline)
                 skipped.update(id(item) for item in difference_cluster[1:])
                 continue
-        base_encoding = getattr(decoder, "base_encoding", None)
-        base_table = {
-            "MacRomanEncoding": MAC_ROMAN_ENCODING,
-            "WinAnsiEncoding": WIN_ANSI_ENCODING,
-        }.get(base_encoding if isinstance(base_encoding, str) else "", STANDARD_ENCODING)
+        base_table = base_encoding_table(getattr(decoder, "base_encoding", None))
         encoded_ligature = (
             base_table[glyph.char_code] if 0 <= glyph.char_code < len(base_table) else ""
         )
@@ -444,9 +450,14 @@ def pdfminer_ligature_overrides(
     return overrides, skipped
 
 
-def _pdfminer_builtin_width(glyph: Any) -> float | None:
+def _pdfminer_builtin_width(glyph: Any, projected_text: str | None = None) -> float | None:
+    """The width pdfminer's own metrics give glyph, or None to keep the font's.
+
+    projected_text is pdfminer_glyph_text(glyph), passed when the caller has it.
+    """
     decoder = glyph.font_decoder
-    projected_text = pdfminer_glyph_text(glyph)
+    if projected_text is None:
+        projected_text = pdfminer_glyph_text(glyph)
     font = decoder.font
     projection = _font_projection(font) if isinstance(font, dict) else None
     values = projection.values if projection is not None else {}
@@ -489,7 +500,7 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
 
 
-def pdfminer_normalized_width(glyph: Any) -> float:
+def pdfminer_normalized_width(glyph: Any, projected_text: str | None = None) -> float:
     width_code = (
         glyph.cid
         if getattr(glyph.font_decoder, "is_cid_font", False)
@@ -516,7 +527,7 @@ def pdfminer_normalized_width(glyph: Any) -> float:
                     return 0.0
             return 0.0
     width = float(width_lookup(width_code)) * width_scale
-    builtin_width = _pdfminer_builtin_width(glyph)
+    builtin_width = _pdfminer_builtin_width(glyph, projected_text)
     if builtin_width is not None:
         width = builtin_width * 0.001
     base_font = recover_pdf_name(_font_value(glyph.font_decoder.font, "BaseFont"))
