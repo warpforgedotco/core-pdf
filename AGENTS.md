@@ -26,8 +26,9 @@ specification family: `core-postscript` (the PLRM calculator subset), `core-jbig
 (ITU-T T.88), `core-pdf-crypto` (ciphers, RFC 5652 CMS, ISO/TS 32003 and 32004), and
 `core-adobe-fonts` (CFF, Type 2, Type 1, CMaps, the Adobe Glyph List, and Core 14 metrics,
 with the CMap data). Each lives at `packages/<name>/src/<name>/` and imports nothing from
-core, spec, OCR, or validate, including type-only imports; the floor packages are also
-independent of each other. The PNG and TIFF predictor kernels are the exception to the
+core, spec, OCR, or validate, including type-only imports. A floor package may import
+another floor package, declared as a dependency, rather than carry a copy of its code:
+`uint8_view` lives in `core_jbig2.bitmap` alone, and spec and core import it. The PNG and TIFF predictor kernels are the exception to the
 one-package-per-standard rule: at ~180 lines, with spec as their only consumer, they live
 in `core_pdf_spec.s_07_filters.predictors` beside the wrappers that call them, and the
 sample helper both they and image decoding share is `core_pdf_spec.samples`. PDF glue (DecodeParms, PDF objects, spec exceptions, T.88 polarity

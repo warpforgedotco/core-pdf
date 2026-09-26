@@ -4,7 +4,7 @@
 import numpy
 import pytest
 
-from core_pdf_spec.s_07_filters.predictors import uint8_view
+from core_jbig2.bitmap import uint8_view
 
 
 @pytest.mark.parametrize(("offset", "count"), [(-1, -1), (4, -1), (0, 4), (2, 2)])
