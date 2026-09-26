@@ -18,11 +18,11 @@ send every small fill and stroke segment their other kernels do not take
 through it, so neither keeps a per-pixel loop.
 """
 
+from core_pdf_cythonized._byte_clamp cimport round_to_byte
 from core_pdf_cythonized._pixel_blend cimport (
     MODE_NORMAL,
     blend_mode_pixel,
     blend_normal_pixel,
-    clamp_byte,
     coverage_alpha,
     plane_accumulate,
 )
@@ -94,7 +94,7 @@ def blend_coverage_counts(
                 x = left + c
                 sa = coverage_alpha(alpha, covered)
                 if has_shape:
-                    shape = clamp_byte(<double> (255 * covered) / 16.0) if track_shape else 255
+                    shape = round_to_byte(<double> (255 * covered) / 16.0) if track_shape else 255
                     source_shape[y, x] = plane_accumulate(
                         source_shape[y, x], (shape / 255.0) * shape_alpha
                     )

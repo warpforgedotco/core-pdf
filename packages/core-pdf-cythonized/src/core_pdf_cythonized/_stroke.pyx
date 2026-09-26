@@ -53,11 +53,13 @@ length is ``**0.5`` in Python, libm's pow, so it is pow here with the
 exponent passed in rather than written, which clang would turn into sqrt.
 """
 
-from libc.math cimport ceil, fabs, floor, isinf, isnan, pow, rint, rintf
+from libc.math cimport ceil, fabs, floor, isinf, isnan, pow, rintf
 from libc.stdlib cimport free, malloc
 from libc.string cimport memcpy
 
+from core_pdf_cythonized._byte_clamp cimport float_to_byte
 from core_pdf_cythonized._pixel_blend cimport blend_normal_pixel, coverage_alpha
+from core_pdf_cythonized._pymath cimport py_max, py_min, raise_not_integral
 from core_pdf_cythonized._rect cimport fill_rect_pixels
 from core_pdf_cythonized._stroke_segment cimport segment_samples
 
@@ -97,15 +99,6 @@ cdef struct Paint:
     bint painted
     Py_ssize_t window[4]
     int error
-
-
-cdef inline double py_max(double a, double b) noexcept nogil:
-    # Python's max(a, b): a unless b is greater.
-    return b if b > a else a
-
-
-cdef inline double py_min(double a, double b) noexcept nogil:
-    return b if b < a else a
 
 
 cdef inline void extend(Paint* p, Py_ssize_t y0, Py_ssize_t y1, Py_ssize_t x0, Py_ssize_t x1) noexcept nogil:
@@ -221,23 +214,7 @@ cdef inline void blend_pixel(Paint* p, Py_ssize_t py, Py_ssize_t px) noexcept no
     extend(p, py, py + 1, px, px + 1)
     if p.alpha <= 0:
         return
-    cdef unsigned char* pixel = p.pixels + py * p.row_stride + px * 4
-    if p.alpha >= 255:
-        pixel[0] = <unsigned char> p.red
-        pixel[1] = <unsigned char> p.green
-        pixel[2] = <unsigned char> p.blue
-        pixel[3] = 255
-        return
-    blend_normal_pixel(pixel, p.red, p.green, p.blue, p.alpha)
-
-
-cdef inline unsigned char clip_float(float value) noexcept nogil:
-    # numpy.clip(v, 0, 255).astype(uint8) on a rounded float32.
-    if value < 0.0:
-        return 0
-    if value > 255.0:
-        return 255
-    return <unsigned char> value
+    blend_normal_pixel(p.pixels + py * p.row_stride + px * 4, p.red, p.green, p.blue, p.alpha)
 
 
 cdef void solid_blend(Paint* p, Py_ssize_t ix0, Py_ssize_t iy0, Py_ssize_t ix1, Py_ssize_t iy1) noexcept nogil:
@@ -294,7 +271,7 @@ cdef void solid_blend(Paint* p, Py_ssize_t ix0, Py_ssize_t iy0, Py_ssize_t ix1, 
                 pixel = p.pixels + y * p.row_stride + x * 4
                 for c in range(3):
                     value = rintf(scaled[c] + <float> pixel[c] * inverse)
-                    pixel[c] = clip_float(value)
+                    pixel[c] = float_to_byte(value)
         return
     for y in range(iy0, iy1):
         for x in range(ix0, ix1):
@@ -303,8 +280,8 @@ cdef void solid_blend(Paint* p, Py_ssize_t ix0, Py_ssize_t iy0, Py_ssize_t ix1, 
             output_alpha = source_float + destination_alpha * inverse
             for c in range(3):
                 value = (scaled[c] + <float> pixel[c] * destination_alpha * inverse) / output_alpha
-                pixel[c] = clip_float(rintf(value))
-            pixel[3] = clip_float(rintf(rintf(output_alpha * SCALE)))
+                pixel[c] = float_to_byte(rintf(value))
+            pixel[3] = float_to_byte(rintf(rintf(output_alpha * SCALE)))
 
 
 cdef int fill_rect(Paint* p, double x0, double y0, double x1, double y1) noexcept nogil:
@@ -532,13 +509,13 @@ cdef int line_raster(
                 output_alpha = source_fraction + destination_alpha * remaining
                 safe = output_alpha if output_alpha > 0.0 else ONE
                 for c in range(3):
-                    pixel[c] = clip_float(
+                    pixel[c] = float_to_byte(
                         rintf(
                             (colour[c] * source_fraction + <float> pixel[c] * destination_alpha * remaining)
                             / safe
                         )
                     )
-                pixel[3] = clip_float(rintf(output_alpha * SCALE))
+                pixel[3] = float_to_byte(rintf(output_alpha * SCALE))
     free(covered)
     free(x_offset)
     return 0
@@ -643,10 +620,8 @@ cdef int flush(Paint* p, Callbacks calls) except -1:
 
 cdef int failed(Paint* p, Callbacks calls) except -1:
     flush(p, calls)
-    if p.error == FAILED_NAN:
-        raise ValueError("cannot convert float NaN to integer")
-    if p.error == FAILED_INFINITY:
-        raise OverflowError("cannot convert float infinity to integer")
+    if p.error == FAILED_NAN or p.error == FAILED_INFINITY:
+        return raise_not_integral(p.error == FAILED_NAN)
     raise MemoryError
 
 

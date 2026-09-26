@@ -26,8 +26,10 @@ could produce one.
 """
 
 from cpython.mem cimport PyMem_Free, PyMem_Malloc
-from libc.math cimport ceil, isinf, isnan
+from libc.math cimport ceil
 from libc.stdlib cimport qsort
+
+from core_pdf_cythonized._pymath cimport check_integral
 
 import numpy
 
@@ -44,15 +46,6 @@ cdef int compare_crossings(const void *left, const void *right) noexcept nogil:
     cdef double a = (<const Crossing *> left).x
     cdef double b = (<const Crossing *> right).x
     return (a > b) - (a < b)
-
-
-cdef int check_integral(double value) except -1:
-    # What math.ceil raises converting the value to an int.
-    if isnan(value):
-        raise ValueError("cannot convert float NaN to integer")
-    if isinf(value):
-        raise OverflowError("cannot convert float infinity to integer")
-    return 0
 
 
 cdef int add_span(
