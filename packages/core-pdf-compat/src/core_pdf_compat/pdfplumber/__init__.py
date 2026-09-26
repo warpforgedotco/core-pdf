@@ -5,6 +5,7 @@ import math
 import re
 import struct
 import zlib
+from bisect import bisect_left
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
 from copy import copy
 from io import BytesIO
@@ -172,6 +173,7 @@ class EnginePageAdapter:
     def __init__(self, page: Any, unicode_norm: str | None = None) -> None:
         self.page = page
         self.unicode_norm = unicode_norm
+        self._program: Any | None = None
         width: int | float = page.width
         height: int | float = page.height
         media_left: int | float = 0
@@ -232,6 +234,11 @@ class EnginePageAdapter:
         except ValueError:
             raise
         except Exception:
+            # A box that is missing or malformed fails the page (ValueError);
+            # one the resolver cannot read at all keeps the engine page's own
+            # size. The resolver's failures are not one family of errors, so
+            # this stays broad. Core's page.media_box is not used: it reads a
+            # malformed box as no box, where pdfplumber fails the page.
             pass
         self.info = SimpleNamespace(
             index=page.page_number - 1,
@@ -305,7 +312,11 @@ class EnginePageAdapter:
                     else:
                         descent = pdfminer_descent(glyph) * glyph.font_size
                         descent += float(provenance.get("text_rise", 0.0))
-                        advance = pdfminer_normalized_width(glyph) * glyph.font_size * scaling
+                        advance = (
+                            pdfminer_normalized_width(glyph, None if ligature else text)
+                            * glyph.font_size
+                            * scaling
+                        )
                         horizontal = (0.0, advance)
                         vertical = (descent, descent + glyph.font_size)
                     corners = [
@@ -353,7 +364,15 @@ class EnginePageAdapter:
             )
 
     def page_program(self) -> Any:
-        return self.page.get_page_program()
+        # The page's drawings and images come from its full program, while
+        # its characters come from pdfminer's own text walk; the full one is
+        # interpreted once and kept until the page's caches are flushed.
+        if self._program is None:
+            self._program = self.page.get_page_program()
+        return self._program
+
+    def flush_program(self) -> None:
+        self._program = None
 
     def drawings(self, program: Any | None = None) -> tuple[DrawingRecord, ...]:
         if program is None:
@@ -573,6 +592,7 @@ class Page:
             )
         self.bbox: BBox = (0, 0, self.width, self.height)
         self._objects: dict[str, list[ObjectDict]] | None = None
+        self._edges: list[ObjectDict] | None = None
         self._structured_page: Any | None = None
         self._layout: Any | None = None
         self.is_original = True
@@ -586,8 +606,10 @@ class Page:
 
     def close(self) -> None:
         self._objects = None
+        self._edges = None
         self._structured_page = None
         self._layout = None
+        self._adapter.flush_program()
 
     def flush_cache(self, *_: Any) -> None:
         self.close()
@@ -823,28 +845,41 @@ class Page:
     def layout(self) -> Any:
         if self._layout is None:
             from ..pdfminer import LAParams, extract_pages
+            from ..pdfminer._projection import project_page
 
             laparams = self.pdf.laparams
             if isinstance(laparams, Mapping):
                 laparams = LAParams(**laparams)
 
-            self._layout = next(
-                (
-                    item
-                    for item in extract_pages(
-                        self._document_source(),
-                        page_numbers=(self.page_number - 1,),
-                        laparams=laparams,
-                    )
-                    if item.pageid == self.page_number
-                ),
-                None,
-            )
+            if self.pdf._opened_as_pdfminer:
+                # The open document is the one extract_pages would open, and
+                # this page is the one it would pick out of the same walk.
+                engine_page = self._adapter.page
+                self._layout = (
+                    project_page(engine_page, laparams or LAParams())
+                    if engine_page.page_number == self.page_number
+                    else None
+                )
+            else:
+                self._layout = next(
+                    (
+                        item
+                        for item in extract_pages(
+                            self._document_source(),
+                            page_numbers=(self.page_number - 1,),
+                            laparams=laparams,
+                        )
+                        if item.pageid == self.page_number
+                    ),
+                    None,
+                )
         return self._layout
 
     @property
     def edges(self) -> list[ObjectDict]:
-        return _edges_for(self.lines + self.rects + self.curves)
+        if self._edges is None:
+            self._edges = _edges_for(self.lines + self.rects + self.curves)
+        return self._edges
 
     @property
     def horizontal_edges(self) -> list[ObjectDict]:
@@ -974,11 +1009,16 @@ class Page:
                 and len(getattr(settings, f"explicit_{axis}_lines") or []) < 2
             ):
                 raise ValueError(f"explicit {axis} strategy requires at least two lines")
-        result = self.pdf._document.extract(pages=(self.page_number,))
-        page = result.pages[0]
-        tables: tuple[StructuredTable | _CompatNativeTable, ...] = page.tables
+        tables: tuple[StructuredTable | _CompatNativeTable, ...] = self._structured().tables
+        # The constants below reshape core's tables into the ones pdfplumber's
+        # edge-based finder reports on the reference corpus; they are matched
+        # to that corpus, not derived from the PDF specification.
         if tables:
             if len(tables) == 1:
+                # A lone table under 5% of the page tall is a ruled header
+                # strip: pdfplumber's lines run on and frame the whole body,
+                # so on a text-dense page (over 500 characters above the
+                # 45pt footer band) the table spans the body instead.
                 table_box = tables[0].bbox
                 if table_box is not None and table_box[3] - table_box[1] < self.height * 0.05:
                     body = [char for char in self.chars if char["bottom"] < self.height - 45]
@@ -991,6 +1031,8 @@ class Page:
                         )
                         tables = (_CompatNativeTable(body_box, list(tables[0].rows)),)
             if len(tables) > 1:
+                # Tables whose left and right edges agree within 2pt share one
+                # ruled grid in pdfplumber, which reports them as one table.
                 first = tables[0]
                 first_box = first.bbox
                 boxes = [box for table in tables if (box := table.bbox) is not None]
@@ -1029,17 +1071,41 @@ class Page:
         return self._fallback_tables(settings)
 
     def _fallback_tables(self, settings: TableSettings) -> list[Table]:
+        chars = self.chars
+        # Each character's vertical center, sorted, so a cell reads only the
+        # band of characters between its top and bottom; a NaN center is in
+        # no cell and would break the sort.
+        middles = sorted(
+            (middle, index)
+            for index, char in enumerate(chars)
+            if char.get("object_type") == "char"
+            and (middle := (char["top"] + char["bottom"]) / 2) == middle
+        )
+        middle_tops = [middle for middle, _index in middles]
+
         def cell_text(bbox: BBox) -> str:
+            # The text of the characters centered in bbox, in page order.
             left, top, right, bottom = bbox
-            selected = self.filter(
-                lambda obj: (
-                    obj.get("object_type") == "char"
-                    and left <= (obj["x0"] + obj["x1"]) / 2 < right
-                    and top <= (obj["top"] + obj["bottom"]) / 2 < bottom
-                )
-            )
+            band = middles[bisect_left(middle_tops, top) : bisect_left(middle_tops, bottom)]
+            selected = self.filter(lambda _obj: True)
+            selected._objects = {
+                "char": [
+                    chars[index]
+                    for index in sorted(
+                        index
+                        for _middle, index in band
+                        if left <= (chars[index]["x0"] + chars[index]["x1"]) / 2 < right
+                    )
+                ]
+            }
             return selected.extract_text(**settings.text_settings)
 
+        # With no core table, the text strategy reads the first line of words
+        # as a header row: words within 5pt of a line's top share the line,
+        # the table stops at the first gap over 20pt between line tops,
+        # columns split halfway between header words, and each row runs from
+        # 2pt above its line to 2pt above the next (the last row as tall as
+        # the one before it, or 16pt when it is the only one).
         words = self.extract_words(return_chars=False, **settings.text_settings)
         if words and settings.vertical_strategy == settings.horizontal_strategy == "text":
             lines: list[list[ObjectDict]] = []
@@ -1292,6 +1358,7 @@ class CroppedPage(Page):
         self._filter_bbox = target
         self._crop_mode = mode
         self._objects = None
+        self._edges = None
 
     @property
     def objects(self) -> dict[str, list[ObjectDict]]:
@@ -1316,6 +1383,7 @@ class FilteredPage(Page):
         self.is_original = False
         self._test = test
         self._objects = None
+        self._edges = None
 
     @property
     def objects(self) -> dict[str, list[ObjectDict]]:
@@ -1824,10 +1892,14 @@ class PDF(ClosingMixin):
     ) -> None:
         self._unicode_norm = unicode_norm
         # PDF(source) opens the source; PDF(document, source) wraps an open one.
+        opened_here = source is None
         if source is None:
             source = cast(PdfInput, document)
             document = _source(source)
         self._document = cast(PdfDocument, document)
+        # A document opened from source with no password, which is how
+        # pdfminer's extract_pages opens it, lays pages out itself.
+        self._opened_as_pdfminer = opened_here
         self.doc = self._document
         self.source: PdfInput = source
         self.stream = source
@@ -1838,6 +1910,7 @@ class PDF(ClosingMixin):
         self.laparams = laparams
         self._page_selection = tuple(pages) if pages is not None else None
         self._pages: list[Page] | None = None
+        self._objects: dict[str, list[ObjectDict]] | None = None
         self._rect_edges: list[ObjectDict] | None = None
         self._curve_edges: list[ObjectDict] | None = None
 
@@ -1851,7 +1924,9 @@ class PDF(ClosingMixin):
         laparams: Any = None,
         **_: Any,
     ) -> PDF:
-        return cls(_source(source, password), source, pages, laparams, unicode_norm)
+        pdf = cls(_source(source, password), source, pages, laparams, unicode_norm)
+        pdf._opened_as_pdfminer = password == ""
+        return pdf
 
     @property
     def pages(self) -> list[Page]:
@@ -1877,11 +1952,13 @@ class PDF(ClosingMixin):
 
     @property
     def objects(self) -> dict[str, list[ObjectDict]]:
-        result: dict[str, list[ObjectDict]] = {}
-        for page in self.pages:
-            for kind, values in page.objects.items():
-                result.setdefault(kind, []).extend(values)
-        return result
+        if self._objects is None:
+            result: dict[str, list[ObjectDict]] = {}
+            for page in self.pages:
+                for kind, values in page.objects.items():
+                    result.setdefault(kind, []).extend(values)
+            self._objects = result
+        return self._objects
 
     chars = property(lambda self: self.objects.get("char", []))
     lines = property(lambda self: self.objects.get("line", []))
@@ -1969,6 +2046,7 @@ class PDF(ClosingMixin):
         self._document.close()
 
     def flush_cache(self, *_: Any) -> None:
+        self._objects = None
         self._rect_edges = None
         self._curve_edges = None
         for page in self._pages or ():
