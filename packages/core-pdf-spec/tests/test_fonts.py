@@ -107,12 +107,3 @@ def test_cid_widths_reject_nonfinite_numbers_in_compact_array() -> None:
 
     with pytest.raises(ValueError, match="CID width"):
         parse_cid_widths([0, [float("nan")]])
-
-
-def type2_operands(*values: float) -> bytes:
-    return b"".join(
-        b"\x1c" + int(value).to_bytes(2, "big", signed=True)
-        if value == int(value)
-        else b"\xff" + int(value * 65536).to_bytes(4, "big", signed=True)
-        for value in values
-    )
