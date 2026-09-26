@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from copy import replace
+from functools import cached_property
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from core_pdf.impl.document_page_links import resolve_destination_value
@@ -16,6 +17,7 @@ from core_pdf.impl.extract_contracts import (
     PageAnalysis,
     ParsedBlock,
     ReadingOrderEvidence,
+    ReadingOrderPolicy,
 )
 from core_pdf.impl.extract_emit import (
     assemble_page,
@@ -162,33 +164,31 @@ class PageExtraction:
         layout: Layout = layout_blocks_with_evidence,
     ) -> PageProducts:
         capture = self.capture
+        policy = self.reading_order
         table_obstacles = tuple(table.bbox for table in tables if table.bbox is not None)
-        image_obstacles = tuple(
-            box
-            for box in capture.evidence.image_boxes
-            if 0.01 <= ((box[2] - box[0]) * (box[3] - box[1])) / capture.evidence.page_area < 0.65
-        )
-        use_xy_cut = not (
-            capture.evidence.image_count >= 8 and 0.05 <= capture.evidence.image_area_ratio < 0.65
-        )
         blocks, order_evidence = layout(
             observations,
-            obstacles=(*table_obstacles, *image_obstacles),
-            use_xy_cut=use_xy_cut,
+            obstacles=(*table_obstacles, *policy.image_obstacles),
+            use_xy_cut=policy.use_xy_cut,
             rotation=capture.rotation,
             page_width=capture.width,
             page_height=capture.height,
         )
         return PageProducts(tables, blocks, order_evidence)
 
+    @cached_property
+    def reading_order(self) -> ReadingOrderPolicy:
+        return ReadingOrderPolicy.from_evidence(self.capture.evidence)
+
     def assembled_page(self, context: ExtractionScope) -> Page:
         capture = self.capture
+        policy = self.reading_order
         products = self.run(context)
         blocks = products.blocks
         order_evidence = products.order_evidence
         figures = (
             ()
-            if capture.evidence.full_page_image
+            if policy.full_page_image
             else tuple(
                 Figure(order=index, bbox=box, kind="image", metadata={"source": "capture"})
                 for index, box in enumerate(capture.evidence.image_boxes)
@@ -204,7 +204,7 @@ class PageExtraction:
             tables=products.tables,
             figures=figures,
             diagnostics=(("reading-order-ambiguous",) if order_evidence.ambiguous else ()),
-            full_page_image=capture.evidence.full_page_image,
+            reading_order=policy,
             drawings=capture.program.drawings,
         )
         resolver = self.page.document.resolver
