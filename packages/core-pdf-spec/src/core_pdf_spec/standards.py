@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
+from functools import total_ordering
 from typing import ClassVar
 
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_records import Record, frozen_setattr
 
 
+@total_ordering
 class PdfVersion(Record):
     __slots__ = ("major", "minor")
 
@@ -37,21 +39,6 @@ class PdfVersion(Record):
         if other.__class__ is not self.__class__:
             return NotImplemented
         return (self.major, self.minor) < (other.major, other.minor)
-
-    def __le__(self, other: object) -> bool:
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (self.major, self.minor) <= (other.major, other.minor)
-
-    def __gt__(self, other: object) -> bool:
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (self.major, self.minor) > (other.major, other.minor)
-
-    def __ge__(self, other: object) -> bool:
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (self.major, self.minor) >= (other.major, other.minor)
 
     def _post_init(self) -> None:
         if type(self.major) is not int or type(self.minor) is not int:
