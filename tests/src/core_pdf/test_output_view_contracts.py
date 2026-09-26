@@ -48,6 +48,23 @@ def test_word_projection_stamps_ownership_without_mutating_shared_lines() -> Non
     assert document.blocks == (block, tail) * 2
 
 
+def test_derived_views_are_built_once_and_never_carried_into_copies() -> None:
+    line = TextLine("alpha", words=(TextWord("alpha"),), source="native")
+    page = Page(1, blocks=(Block(0, BlockKind.PARAGRAPH, (line,)),))
+    document = Document((page,))
+    for name in ("words", "lines", "blocks", "nodes"):
+        assert getattr(document, name) is getattr(document, name)
+    assert page.text_view is page.text_view
+    assert page.words is page.text_view.words
+    renumbered = replace(page, page_number=5)
+    assert [word.page_number for word in renumbered.words] == [5]
+    assert [word.page_number for word in page.words] == [1]
+    assert replace(document, pages=(renumbered,)).words == renumbered.words
+    assert document == Document((page,))
+    assert hash(page) == hash(Page(1, blocks=page.blocks))
+    assert "_views" not in repr(document)
+
+
 def test_document_nodes_keep_order_payload_identity_and_page_ownership() -> None:
     block = Block(3, BlockKind.PARAGRAPH, (TextLine("hello"),), provenance=("native",))
     table = Table(2, metadata={"source": "ocr"}, bbox=(1, 2, 3, 4))
