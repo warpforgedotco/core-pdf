@@ -160,56 +160,44 @@ def png_predict_codec(
     bits_per_component: int,
 ) -> bytes | None:
     try:
-        return png_predict_imagecodecs(
-            data, columns=columns, colors=colors, bits_per_component=bits_per_component
+        color_type = PNG_COLOR_TYPES.get(colors)
+        if color_type is None:
+            return None
+        if bits_per_component not in (8, 16) and (
+            color_type != 0 or (columns * bits_per_component) % 8
+        ):
+            return None
+        if not 1 <= columns <= PNG_MAX_DIMENSION:
+            return None
+        row_length = max(1, (colors * columns * bits_per_component + 7) // 8)
+        rows = len(data) // (row_length + 1)
+        if not 1 <= rows <= PNG_MAX_DIMENSION:
+            return None
+        body = memoryview(data)[: rows * (row_length + 1)]
+        header = struct.pack(">IIBBBBB", columns, rows, bits_per_component, color_type, 0, 0, 0)
+        png = b"".join(
+            (
+                PNG_SIGNATURE,
+                png_chunk(b"IHDR", header),
+                png_chunk(b"IDAT", zlib.compress(body, 0)),
+                png_chunk(b"IEND", b""),
+            )
         )
+        decoded = numpy.asarray(imagecodecs.png_decode(png))
+        if bits_per_component == 16:
+            return decoded.astype(">u2", copy=False).tobytes()
+        if bits_per_component == 8:
+            return decoded.tobytes()
+        bits = bits_per_component
+        samples = decoded.reshape(rows, columns) // (255 // ((1 << bits) - 1))
+        per_byte = 8 // bits
+        grouped = samples.reshape(rows, -1, per_byte)
+        packed = numpy.zeros(grouped.shape[:2], dtype=numpy.uint8)
+        for sample_index in range(per_byte):
+            packed |= grouped[:, :, sample_index] << (bits * (per_byte - 1 - sample_index))
+        return packed.tobytes()
     except Exception:
         return None
-
-
-def png_predict_imagecodecs(
-    data: bytes | memoryview,
-    *,
-    columns: int,
-    colors: int,
-    bits_per_component: int,
-) -> bytes | None:
-    color_type = PNG_COLOR_TYPES.get(colors)
-    if color_type is None:
-        return None
-    if bits_per_component not in (8, 16) and (
-        color_type != 0 or (columns * bits_per_component) % 8
-    ):
-        return None
-    if not 1 <= columns <= PNG_MAX_DIMENSION:
-        return None
-    row_length = max(1, (colors * columns * bits_per_component + 7) // 8)
-    rows = len(data) // (row_length + 1)
-    if not 1 <= rows <= PNG_MAX_DIMENSION:
-        return None
-    body = memoryview(data)[: rows * (row_length + 1)]
-    header = struct.pack(">IIBBBBB", columns, rows, bits_per_component, color_type, 0, 0, 0)
-    png = b"".join(
-        (
-            PNG_SIGNATURE,
-            png_chunk(b"IHDR", header),
-            png_chunk(b"IDAT", zlib.compress(body, 0)),
-            png_chunk(b"IEND", b""),
-        )
-    )
-    decoded = numpy.asarray(imagecodecs.png_decode(png))
-    if bits_per_component == 16:
-        return decoded.astype(">u2", copy=False).tobytes()
-    if bits_per_component == 8:
-        return decoded.tobytes()
-    bits = bits_per_component
-    samples = decoded.reshape(rows, columns) // (255 // ((1 << bits) - 1))
-    per_byte = 8 // bits
-    grouped = samples.reshape(rows, -1, per_byte)
-    packed = numpy.zeros(grouped.shape[:2], dtype=numpy.uint8)
-    for sample_index in range(per_byte):
-        packed |= grouped[:, :, sample_index] << (bits * (per_byte - 1 - sample_index))
-    return packed.tobytes()
 
 
 def tiff_predict_words_codec(
