@@ -13,8 +13,9 @@ from core_pdf_spec.s_08_graphics.color_spec import DEVICE_RGB, ColorSpace
 class RecordingState(TextState):
     errors: list[str]
 
-    def handle_operand_error(self, error, context):
+    def reject(self, error, context, fallback):
         self.errors.append(context)
+        return fallback
 
 
 @pytest.fixture
