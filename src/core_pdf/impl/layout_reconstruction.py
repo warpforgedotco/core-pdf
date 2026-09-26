@@ -188,7 +188,7 @@ def render_single_run_text(run: TextRun) -> str:
         text = rules.strip_private_use_chars(text)
         if not text:
             return ""
-    if rules.is_tiny_page_footer(text) and run.font_size <= 5.0:
+    if run.font_size <= 5.0 and rules.is_tiny_page_footer(text):
         return ""
     return rules.collapse_repeated_spaces(text)
 
@@ -448,7 +448,7 @@ class GlyphLineBuilder:
             text = rules.strip_private_use_chars(text)
             if not text:
                 return ""
-        if rules.is_tiny_page_footer(text) and run.font_size <= 5.0:
+        if run.font_size <= 5.0 and rules.is_tiny_page_footer(text):
             return ""
         # Every branch below needs the run to read "TM", or to be a short run
         # of digits with nothing to strip (is_short_digit_run, at most four
