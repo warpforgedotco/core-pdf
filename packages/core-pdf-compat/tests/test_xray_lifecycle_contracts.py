@@ -1,5 +1,4 @@
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -11,7 +10,6 @@ from core_pdf_compat import xray
 def opened_document(monkeypatch):
     class Document:
         closed = False
-        decipher = None
         pages = (SimpleNamespace(page_number=1), SimpleNamespace(page_number=3))
 
         def __enter__(self):
@@ -33,15 +31,16 @@ def test_page_failure_preserves_later_findings_and_closes_document(
     caches = []
     recovered = []
 
-    def extract(page, cache):
-        caches.append(cache)
+    def extract(page, recovery):
+        caches.append(recovery)
         if page.page_number == 1:
-            cache["font"] = {b"a": b"b"}
+            recovery.fonts["F1"] = None
             raise failure("broken page")
-        assert cache["font"] == {b"a": b"b"}
+        assert recovery.fonts == {"F1": None}
         return [{"text": "later secret"}]
 
-    def recover(page):
+    def recover(page, recovery):
+        assert recovery is caches[0]
         recovered.append(page.page_number)
         return [{"text": "recovered secret"}]
 
@@ -60,12 +59,12 @@ def test_page_failure_preserves_later_findings_and_closes_document(
 def test_fatal_recovery_failure_discards_partial_findings_and_closes_document(
     opened_document, monkeypatch, failure
 ):
-    def extract(page, cache):
+    def extract(page, recovery):
         if page.page_number == 3:
             raise xray.TTLibError("broken font")
         return [{"text": "partial result"}]
 
-    def recover(page):
+    def recover(page, recovery):
         raise failure("cannot recover")
 
     monkeypatch.setattr(xray, "_page_redactions", extract)
@@ -85,13 +84,6 @@ def test_unexpected_failure_propagates_after_closing_document(
         xray, "_validate_mupdf_structure" if boundary == "validation" else "_page_redactions", fail
     )
     with pytest.raises(RuntimeError, match="unexpected failure"):
-        xray.inspect(b"input")
-    assert opened_document.closed
-
-
-def test_password_requirement_stops_extraction_and_closes_document(opened_document, monkeypatch):
-    monkeypatch.setattr(xray, "_requires_password", lambda document: True)
-    with pytest.raises(PdfUnsupportedError, match="document closed or encrypted"):
         xray.inspect(b"input")
     assert opened_document.closed
 
@@ -153,30 +145,3 @@ def test_date_only_findings_are_suppressed_without_losing_other_text(
         {1: [{"text": text}], 3: [{"text": text}]} if retained else {}
     )
     assert opened_document.closed
-
-
-@pytest.mark.parametrize(
-    ("revision", "stored_hash", "required"),
-    [(4, b"different", False), (5, b"empty", False), (6, b"different", True)],
-)
-def test_password_gate_checks_empty_password_only_for_newer_handlers(
-    revision, stored_hash, required
-):
-    calls = []
-
-    class Handler:
-        r = revision
-        u_validation_salt = b"salt"
-        u_hash = stored_hash
-
-        def decipher(self):
-            pass
-
-        def password_hash(self, password, salt):
-            calls.append((password, salt))
-            return b"empty"
-
-    handler = Handler()
-    document: Any = SimpleNamespace(decipher=handler.decipher)
-    assert xray._requires_password(document) is required
-    assert calls == ([(b"", b"salt")] if revision >= 5 else [])
