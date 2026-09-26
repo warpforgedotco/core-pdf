@@ -450,7 +450,6 @@ class TextQualityStats(Record):
 class GlyphEvidence(Record):
     __slots__ = (
         "glyph_count",
-        "semantic_characters",
         "authoritative_glyphs",
         "heuristic_glyphs",
         "unknown_glyphs",
@@ -460,7 +459,6 @@ class GlyphEvidence(Record):
     )
 
     glyph_count: int
-    semantic_characters: int
     authoritative_glyphs: int
     heuristic_glyphs: int
     unknown_glyphs: int
@@ -470,7 +468,6 @@ class GlyphEvidence(Record):
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "glyph_count",
-        "semantic_characters",
         "authoritative_glyphs",
         "heuristic_glyphs",
         "unknown_glyphs",
@@ -480,7 +477,6 @@ class GlyphEvidence(Record):
     )
     __match_args__ = (
         "glyph_count",
-        "semantic_characters",
         "authoritative_glyphs",
         "heuristic_glyphs",
         "unknown_glyphs",
@@ -492,7 +488,6 @@ class GlyphEvidence(Record):
     def __init__(
         self,
         glyph_count: int = 0,
-        semantic_characters: int = 0,
         authoritative_glyphs: int = 0,
         heuristic_glyphs: int = 0,
         unknown_glyphs: int = 0,
@@ -501,7 +496,6 @@ class GlyphEvidence(Record):
         actual_text_characters: int = 0,
     ) -> None:
         frozen_setattr(self, "glyph_count", glyph_count)
-        frozen_setattr(self, "semantic_characters", semantic_characters)
         frozen_setattr(self, "authoritative_glyphs", authoritative_glyphs)
         frozen_setattr(self, "heuristic_glyphs", heuristic_glyphs)
         frozen_setattr(self, "unknown_glyphs", unknown_glyphs)
@@ -516,7 +510,6 @@ class GlyphEvidence(Record):
             return NotImplemented
         return (
             self.glyph_count == other.glyph_count
-            and self.semantic_characters == other.semantic_characters
             and self.authoritative_glyphs == other.authoritative_glyphs
             and self.heuristic_glyphs == other.heuristic_glyphs
             and self.unknown_glyphs == other.unknown_glyphs
@@ -529,7 +522,6 @@ class GlyphEvidence(Record):
         return hash(
             (
                 self.glyph_count,
-                self.semantic_characters,
                 self.authoritative_glyphs,
                 self.heuristic_glyphs,
                 self.unknown_glyphs,

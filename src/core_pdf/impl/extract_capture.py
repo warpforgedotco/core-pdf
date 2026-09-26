@@ -275,24 +275,16 @@ def glyph_evidence_fields(
     unknown = 0
     unsupported = 0
     low_confidence = 0
-    semantic_characters = 0
     glyph_count = 0
     for glyph_text, unicode_source, confidence in glyph_fields:
         if not glyph_text or glyph_text.isspace():
             continue
         glyph_count += 1
-        text = glyph_text
         semantics = glyph_unicode_semantics(glyph_text, unicode_source)
         if semantics is GlyphUnicodeSemantics.AUTHORITATIVE:
             authoritative += 1
-            semantic_characters += (
-                1 if len(text) == 1 else sum(not character.isspace() for character in text)
-            )
         elif semantics is GlyphUnicodeSemantics.HEURISTIC:
             heuristic += 1
-            semantic_characters += (
-                1 if len(text) == 1 else sum(not character.isspace() for character in text)
-            )
         elif semantics is GlyphUnicodeSemantics.UNSUPPORTED:
             unsupported += 1
         else:
@@ -306,7 +298,6 @@ def glyph_evidence_fields(
     )
     return GlyphEvidence(
         glyph_count=glyph_count,
-        semantic_characters=semantic_characters,
         authoritative_glyphs=authoritative,
         heuristic_glyphs=heuristic,
         unknown_glyphs=unknown,
