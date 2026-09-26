@@ -480,6 +480,8 @@ def index_code_space_ranges(
 
 
 __all__ = [
+    "MAX_CID",
+    "MIN_CID",
     "CodeRangeT",
     "CMapDecoder",
     "CMapResourceResolver",
