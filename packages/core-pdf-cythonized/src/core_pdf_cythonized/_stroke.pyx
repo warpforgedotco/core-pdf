@@ -1,41 +1,52 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """A stroked path, painted whole (core_pdf.impl.render.target.stroke_path).
 
-stroke_path walks each subpath in Python and paints it as primitives: a
-fill_line per segment, a fill_join per interior point, caps at the ends.
-Each primitive is a Python call that clips its box, picks a branch and
-calls a kernel or numpy. A circuit schematic strokes 49,000 paths that way,
-100,000 of them joins, and paint_stroke_once strokes every path of a group
-the same way into scratch.
+stroke_path walked each subpath in Python and painted it as primitives: a
+fill_line per segment, a fill_join per interior point, caps at the ends. A
+circuit schematic strokes 49,000 paths that way, 100,000 of them joins, and
+paint_stroke_once strokes every path of a group the same way into scratch.
 
-This is that walk and those primitives for the case most strokes take:
-normal blending, no group planes, and no clip or a rectangular one, over a
-deferred path's point columns. Each primitive keeps the branch its Python
-takes, in the Python's arithmetic and order:
+The walk is here now, and only here: which primitives a subpath takes, in
+what order, is decided by stroke_polylines for every stroke. Under normal
+blending with no group planes -- nearly every stroke, and every one
+paint_stroke_once makes -- the primitives are painted here too. Each keeps
+the branch its Python takes, in the Python's arithmetic and order:
 
-- fill_line: an axis-aligned or degenerate segment is a fill_rect; a box
-  of more than 64 pixels is rasterize_unclipped_line_normal, its 4x4
-  sample tests on the outer-sum bases and its float32 partial blend; a
-  smaller one is stroke_segment_samples (``segment_samples``).
-- fill_rect: a box whose edges are not pixel-aligned is
-  fill_rect_coverage (``fill_rect_pixels``); an aligned opaque one is
-  written; an aligned translucent one is blend_normal_solid_array_numpy,
-  whose three regimes -- empty backdrop, opaque backdrop, general -- are
-  chosen by scanning the box as numpy's any() and all() did.
-- fill_circle: opaque, above 16 pixels its numpy inside test, below its
-  loop; translucent, its blend_px loop.
+- fill_line: an axis-aligned or degenerate segment is a fill_rect; under no
+  clip or a rectangular one, a box of more than 64 pixels is
+  rasterize_unclipped_line_normal, its 4x4 sample tests on the outer-sum
+  bases and its float32 partial blend; otherwise stroke_segment_samples
+  (``segment_samples``), masked by the clip's rows as clip_pixel_mask made
+  the mask, a bisect into each row's spans.
+- fill_rect: under no clip or a rectangular one, a box whose edges are not
+  pixel-aligned is fill_rect_coverage (``fill_rect_pixels``), an aligned
+  opaque one is written, an aligned translucent one is
+  blend_normal_solid_array_numpy, whose three regimes -- empty backdrop,
+  opaque backdrop, general -- are chosen by scanning the box as numpy's any()
+  and all() did. Under a clip path, the box's whole pixels in each row's
+  spans: a span of 32 or more through blend_normal_solid_array_numpy, a
+  shorter one pixel by pixel through blend_px.
+- fill_circle: opaque under no clip or a rectangular one, above 16 pixels
+  its numpy inside test and below its loop; otherwise its blend_px loop
+  over the rows' spans.
 
 A rectangular clip region's row spans are its pixel box, which holds every
-box clipped to the region, so the clip masks the Python built for small
-segments were all ones and are not needed. The paint window is a union of
-boxes, so the kernel returns the union of the boxes each primitive would
-have extended it by. Python's math.floor and ceil raise on a NaN or
-infinite box edge; the kernel stops there with the same error for the
-caller to raise, after the pixels and window of everything before it.
+box clipped to the region, so there the masks and spans are the box itself.
+Under any other blend mode or with group planes, each primitive is the
+Python one, called back with the same arguments.
 
-A two-point subpath whose points coincide, under a round cap, is a
-fill_path of a circle in Python: the kernel stops before it and says
-where, and the caller paints it and resumes after it.
+The paint window is a union of boxes, so the kernel gathers the boxes each
+primitive would have extended it by and hands the union to ``extend``
+before anything that could raise, and at the end. Python's math.floor and
+ceil raise on a NaN or infinite box edge; the kernel raises the same error
+at the same point. A coincident two-point subpath under a round cap is a
+fill_path of a circle, called back as ``dot``.
+
+A built path's subpaths come as columns, with whether each one's ends
+differ and, for two points, whether they coincide, worked out as Python's
+tuple comparison worked them out -- which, for a float object that appears
+twice, is identity first. A deferred path's points are fresh floats, so
+there the kernel compares values.
 
 setup.py builds with -ffp-contract=off. The square root of a segment's
 length is ``**0.5`` in Python, libm's pow, so it is pow here with the
@@ -57,6 +68,11 @@ cdef enum:
     FAILED_INFINITY = 2
     FAILED_MEMORY = 3
 
+cdef enum:
+    CLIP_NONE = 0
+    CLIP_RECT = 1
+    CLIP_ROWS = 2
+
 
 cdef struct Paint:
     unsigned char* pixels
@@ -66,8 +82,13 @@ cdef struct Paint:
     double crop_x0
     double crop_y1
     double scale
-    bint clipped
+    int clip_mode
+    bint clip_empty
     double clip[4]
+    Py_ssize_t rows_origin
+    Py_ssize_t rows_count
+    const long long* row_offsets
+    const long long* row_spans
     int red
     int green
     int blue
@@ -152,7 +173,7 @@ cdef int page_box_to_pixels(
 
 cdef int clip_box(Paint* p, double* box) noexcept nogil:
     # intersect_box(box, region.box) in place: 0 when it is empty, else 1.
-    if not p.clipped:
+    if p.clip_mode == CLIP_NONE:
         return 1
     box[0] = py_max(box[0], p.clip[0])
     box[1] = py_max(box[1], p.clip[1])
@@ -163,13 +184,79 @@ cdef int clip_box(Paint* p, double* box) noexcept nogil:
     return 1
 
 
+cdef int clipped_pixel_box(Paint* p, double* box, Py_ssize_t* pixel_box) noexcept nogil:
+    # ClipState.clipped_pixel_box: 1 with both boxes, 0 for None, -1 on error.
+    if p.clip_mode != CLIP_NONE and p.clip_empty:
+        return 0
+    if not clip_box(p, box):
+        return 0
+    return page_box_to_pixels(p, box[0], box[1], box[2], box[3], pixel_box)
+
+
+cdef inline Py_ssize_t row_spans(Paint* p, Py_ssize_t py, const long long** spans) noexcept nogil:
+    # clip_row_visible_spans for a clip path: the row's (start, end) pairs.
+    if py < 0 or py >= p.height:
+        return 0
+    cdef Py_ssize_t row = py - p.rows_origin
+    if row < 0 or row >= p.rows_count:
+        return 0
+    spans[0] = p.row_spans + 2 * p.row_offsets[row]
+    return <Py_ssize_t> (p.row_offsets[row + 1] - p.row_offsets[row])
+
+
+cdef inline bint pixel_in_row(const long long* spans, Py_ssize_t count, Py_ssize_t px) noexcept nogil:
+    # clip_pixel_mask's test: bisect_left(spans, (px + 1, -1)), then the span before.
+    cdef Py_ssize_t low = 0, high = count, middle
+    while low < high:
+        middle = (low + high) // 2
+        if spans[2 * middle] < px + 1 or (spans[2 * middle] == px + 1 and spans[2 * middle + 1] < -1):
+            low = middle + 1
+        else:
+            high = middle
+    return low > 0 and spans[2 * (low - 1)] <= px < spans[2 * (low - 1) + 1]
+
+
+cdef inline void blend_pixel(Paint* p, Py_ssize_t py, Py_ssize_t px) noexcept nogil:
+    # blend_px in normal mode with no planes: the window, then the paint.
+    extend(p, py, py + 1, px, px + 1)
+    if p.alpha <= 0:
+        return
+    cdef unsigned char* pixel = p.pixels + py * p.row_stride + px * 4
+    if p.alpha >= 255:
+        pixel[0] = <unsigned char> p.red
+        pixel[1] = <unsigned char> p.green
+        pixel[2] = <unsigned char> p.blue
+        pixel[3] = 255
+        return
+    blend_normal_pixel(pixel, p.red, p.green, p.blue, p.alpha)
+
+
+cdef inline unsigned char clip_float(float value) noexcept nogil:
+    # numpy.clip(v, 0, 255).astype(uint8) on a rounded float32.
+    if value < 0.0:
+        return 0
+    if value > 255.0:
+        return 255
+    return <unsigned char> value
+
+
 cdef void solid_blend(Paint* p, Py_ssize_t ix0, Py_ssize_t iy0, Py_ssize_t ix1, Py_ssize_t iy1) noexcept nogil:
-    # blend_normal_solid_array_numpy for 0 < alpha < 255.
+    # blend_normal_solid_array_numpy over the box.
     cdef int sa = p.alpha
-    if sa <= 0:
+    if sa <= 0 or ix1 <= ix0 or iy1 <= iy0:
         return
     cdef Py_ssize_t y, x, c
     cdef unsigned char* pixel
+    cdef unsigned char opaque[4]
+    if sa >= 255:
+        opaque[0] = <unsigned char> p.red
+        opaque[1] = <unsigned char> p.green
+        opaque[2] = <unsigned char> p.blue
+        opaque[3] = <unsigned char> sa
+        for y in range(iy0, iy1):
+            for x in range(ix0, ix1):
+                memcpy(p.pixels + y * p.row_stride + x * 4, opaque, 4)
+        return
     cdef bint any_alpha = False, all_opaque = True
     for y in range(iy0, iy1):
         for x in range(ix0, ix1):
@@ -220,15 +307,6 @@ cdef void solid_blend(Paint* p, Py_ssize_t ix0, Py_ssize_t iy0, Py_ssize_t ix1, 
             pixel[3] = clip_float(rintf(rintf(output_alpha * SCALE)))
 
 
-cdef inline unsigned char clip_float(float value) noexcept nogil:
-    # numpy.clip(v, 0, 255).astype(uint8) on a rounded float32.
-    if value < 0.0:
-        return 0
-    if value > 255.0:
-        return 255
-    return <unsigned char> value
-
-
 cdef int fill_rect(Paint* p, double x0, double y0, double x1, double y1) noexcept nogil:
     # RasterTarget.fill_rect, normal blend and no planes. -1 on error.
     cdef double box[4]
@@ -236,19 +314,37 @@ cdef int fill_rect(Paint* p, double x0, double y0, double x1, double y1) noexcep
     box[1] = y0
     box[2] = x1
     box[3] = y1
-    if not clip_box(p, box):
-        return 0
     cdef Py_ssize_t pixel_box[4]
-    cdef int found = page_box_to_pixels(p, box[0], box[1], box[2], box[3], pixel_box)
+    cdef int found = clipped_pixel_box(p, box, pixel_box)
     if found <= 0:
         return found
     cdef Py_ssize_t ix0 = pixel_box[0], iy0 = pixel_box[1], ix1 = pixel_box[2], iy1 = pixel_box[3]
+    cdef Py_ssize_t y, x, k, count, start, end
+    cdef const long long* spans
+    if p.clip_mode == CLIP_ROWS:
+        # Not rectangular: whole pixels, row by row, span by span.
+        for y in range(iy0, iy1):
+            count = row_spans(p, y, &spans)
+            for k in range(count):
+                start = <Py_ssize_t> spans[2 * k]
+                end = <Py_ssize_t> spans[2 * k + 1]
+                if start < ix0:
+                    start = ix0
+                if end > ix1:
+                    end = ix1
+                if end <= start:
+                    continue
+                if end - start >= 32:
+                    solid_blend(p, start, y, end, y + 1)
+                    extend(p, y, y + 1, start, end)
+                else:
+                    for x in range(start, end):
+                        blend_pixel(p, y, x)
+        return 0
     cdef double left = (box[0] - p.crop_x0) * p.scale
     cdef double right = (box[2] - p.crop_x0) * p.scale
     cdef double top = (p.crop_y1 - box[3]) * p.scale
     cdef double bottom = (p.crop_y1 - box[1]) * p.scale
-    cdef Py_ssize_t y, x
-    cdef unsigned char opaque[4]
     if not (
         left <= ix0 + 1e-9
         and right >= ix1 - 1e-9
@@ -261,14 +357,6 @@ cdef int fill_rect(Paint* p, double x0, double y0, double x1, double y1) noexcep
         ) < 0:
             p.error = FAILED_MEMORY
             return -1
-    elif p.alpha == 255:
-        opaque[0] = <unsigned char> p.red
-        opaque[1] = <unsigned char> p.green
-        opaque[2] = <unsigned char> p.blue
-        opaque[3] = 255
-        for y in range(iy0, iy1):
-            for x in range(ix0, ix1):
-                memcpy(p.pixels + y * p.row_stride + x * 4, opaque, 4)
     else:
         solid_blend(p, ix0, iy0, ix1, iy1)
     extend(p, iy0, iy1, ix0, ix1)
@@ -290,14 +378,33 @@ cdef int fill_circle(Paint* p, double cx, double cy, double radius) noexcept nog
         return found
     cdef Py_ssize_t ix0 = pixel_box[0], iy0 = pixel_box[1], ix1 = pixel_box[2], iy1 = pixel_box[3]
     cdef double radius2 = radius * radius
-    cdef Py_ssize_t px, py
+    cdef Py_ssize_t px, py, k, count, start, end
+    cdef const long long* spans
     cdef double page_x, page_y, dx, dy
-    cdef unsigned char* pixel
     cdef unsigned char opaque[4]
     opaque[0] = <unsigned char> p.red
     opaque[1] = <unsigned char> p.green
     opaque[2] = <unsigned char> p.blue
     opaque[3] = 255
+    if p.clip_mode == CLIP_ROWS:
+        for py in range(iy0, iy1):
+            page_y = p.crop_y1 - (<double> py + 0.5) / p.scale
+            count = row_spans(p, py, &spans)
+            for k in range(count):
+                start = <Py_ssize_t> spans[2 * k]
+                end = <Py_ssize_t> spans[2 * k + 1]
+                if start < ix0:
+                    start = ix0
+                if end > ix1:
+                    end = ix1
+                for px in range(start, end):
+                    page_x = p.crop_x0 + (<double> px + 0.5) / p.scale
+                    dx = page_x - cx
+                    dy = page_y - cy
+                    if dx * dx + dy * dy > radius2:
+                        continue
+                    blend_pixel(p, py, px)
+        return 0
     if p.alpha >= 255 and (ix1 - ix0) * (iy1 - iy0) > 16:
         # The numpy inside test: (xs - cx) ** 2 + (ys - cy) ** 2 <= r2.
         for py in range(iy0, iy1):
@@ -318,12 +425,7 @@ cdef int fill_circle(Paint* p, double cx, double cy, double radius) noexcept nog
             dy = page_y - cy
             if dx * dx + dy * dy > radius2:
                 continue
-            extend(p, py, py + 1, px, px + 1)
-            pixel = p.pixels + py * p.row_stride + px * 4
-            if p.alpha >= 255:
-                memcpy(pixel, opaque, 4)
-            elif p.alpha > 0:
-                blend_normal_pixel(pixel, p.red, p.green, p.blue, p.alpha)
+            blend_pixel(p, py, px)
     return 0
 
 
@@ -465,29 +567,40 @@ cdef int fill_line(Paint* p, double x0, double y0, double x1, double y1, double 
     box[1] = py_min(y0, y1) - half - fabs(uy) * cap_extension
     box[2] = py_max(x0, x1) + half + fabs(ux) * cap_extension
     box[3] = py_max(y0, y1) + half + fabs(uy) * cap_extension
-    if not clip_box(p, box):
-        return 0
     cdef Py_ssize_t pixel_box[4]
-    cdef int found = page_box_to_pixels(p, box[0], box[1], box[2], box[3], pixel_box)
+    cdef int found = clipped_pixel_box(p, box, pixel_box)
     if found <= 0:
         return found
     cdef Py_ssize_t ix0 = pixel_box[0], iy0 = pixel_box[1], ix1 = pixel_box[2], iy1 = pixel_box[3]
     cdef double half2 = half * half
     cdef double inv_seg_len2 = 1.0 / seg_len2
     cdef double projection_extension = cap_extension * seg_len
-    if (ix1 - ix0) * (iy1 - iy0) > 64:
+    if p.clip_mode != CLIP_ROWS and (ix1 - ix0) * (iy1 - iy0) > 64:
         if line_raster(p, x0, y0, x1, y1, line_width, ix0, iy0, ix1, iy1) < 0:
             return -1
         extend(p, iy0, iy1, ix0, ix1)
         return 0
+    cdef unsigned char* allowed = NULL
+    cdef Py_ssize_t box_width = ix1 - ix0, py, px, count
+    cdef const long long* spans
+    if p.clip_mode == CLIP_ROWS:
+        allowed = <unsigned char*> malloc(box_width * (iy1 - iy0))
+        if allowed == NULL:
+            p.error = FAILED_MEMORY
+            return -1
+        for py in range(iy0, iy1):
+            count = row_spans(p, py, &spans)
+            for px in range(ix0, ix1):
+                allowed[(py - iy0) * box_width + (px - ix0)] = pixel_in_row(spans, count, px)
     cdef Py_ssize_t covered_box[4]
     if segment_samples(
         p.pixels + iy0 * p.row_stride + ix0 * 4, p.row_stride, ix0, iy0, ix1, iy1,
         p.crop_x0, p.crop_y1, p.scale, x0, y0, x1, y1, dx, dy, seg_len2, inv_seg_len2,
         half2, projection_extension, False, p.red, p.green, p.blue, p.alpha,
-        NULL, NULL, covered_box,
+        allowed, NULL, covered_box,
     ):
         extend(p, covered_box[1], covered_box[3], covered_box[0], covered_box[2])
+    free(allowed)
     return 0
 
 
@@ -498,10 +611,128 @@ cdef int fill_terminal(Paint* p, double x, double y, double line_width, bint rou
     return fill_rect(p, x - radius, y - radius, x + radius, y + radius)
 
 
-cdef int fill_cap(Paint* p, double x, double y, double line_width, long line_cap) noexcept nogil:
-    if line_cap == 0:
+cdef struct Walk:
+    const double* xs
+    const double* ys
+    const long long* bounds
+    const unsigned char* ends_differ
+    const unsigned char* coincident
+    Py_ssize_t count
+    double line_width
+    bint native
+    bint cap_nonzero
+    bint cap_butt
+    bint cap_round
+    bint join_round
+
+
+cdef class Callbacks:
+    cdef object line
+    cdef object join
+    cdef object cap
+    cdef object dot
+    cdef object extend
+
+
+cdef int flush(Paint* p, Callbacks calls) except -1:
+    # Hand the gathered paint-window boxes to the target.
+    if p.painted:
+        p.painted = False
+        calls.extend(p.window[0], p.window[1], p.window[2], p.window[3])
+    return 0
+
+
+cdef int failed(Paint* p, Callbacks calls) except -1:
+    flush(p, calls)
+    if p.error == FAILED_NAN:
+        raise ValueError("cannot convert float NaN to integer")
+    if p.error == FAILED_INFINITY:
+        raise OverflowError("cannot convert float infinity to integer")
+    raise MemoryError
+
+
+cdef int line(Paint* p, Walk* w, Callbacks calls, double x0, double y0, double x1, double y1) except -1 nogil:
+    if w.native:
+        if fill_line(p, x0, y0, x1, y1, w.line_width) < 0:
+            with gil:
+                failed(p, calls)
         return 0
-    return fill_terminal(p, x, y, line_width, line_cap == 1)
+    with gil:
+        calls.line(x0, y0, x1, y1)
+    return 0
+
+
+cdef int join(Paint* p, Walk* w, Callbacks calls, double x, double y) except -1 nogil:
+    if w.native:
+        if fill_terminal(p, x, y, w.line_width, w.join_round) < 0:
+            with gil:
+                failed(p, calls)
+        return 0
+    with gil:
+        calls.join(x, y)
+    return 0
+
+
+cdef int cap(Paint* p, Walk* w, Callbacks calls, double x, double y) except -1 nogil:
+    if w.native:
+        if w.cap_butt:
+            return 0
+        if fill_terminal(p, x, y, w.line_width, w.cap_round) < 0:
+            with gil:
+                failed(p, calls)
+        return 0
+    with gil:
+        calls.cap(x, y)
+    return 0
+
+
+cdef int walk(Paint* p, Walk* w, Callbacks calls) except -1 nogil:
+    # stroke_path's loop over the subpaths.
+    cdef Py_ssize_t k, start, n, index
+    cdef bint closed, same
+    cdef double x0, y0, x1, y1
+    for k in range(w.count):
+        start = w.bounds[3 * k]
+        n = w.bounds[3 * k + 1] - start
+        closed = w.bounds[3 * k + 2]
+        if n < 2:
+            continue
+        x0 = w.xs[start]
+        y0 = w.ys[start]
+        x1 = w.xs[start + n - 1]
+        y1 = w.ys[start + n - 1]
+        if n == 2 and not closed:
+            if w.coincident != NULL:
+                same = w.coincident[k] != 0
+            else:
+                same = x0 == x1 and y0 == y1
+            if same:
+                if w.cap_round:
+                    with gil:
+                        flush(p, calls)
+                        calls.dot(x0, y0)
+                continue
+            line(p, w, calls, x0, y0, x1, y1)
+            if w.cap_nonzero:
+                cap(p, w, calls, x0, y0)
+                cap(p, w, calls, x1, y1)
+            continue
+        for index in range(start, start + n - 1):
+            line(p, w, calls, w.xs[index], w.ys[index], w.xs[index + 1], w.ys[index + 1])
+        if w.ends_differ != NULL:
+            same = not w.ends_differ[k]
+        else:
+            same = not (x0 != x1 or y0 != y1)
+        if closed and not same:
+            line(p, w, calls, x1, y1, x0, y0)
+        for index in range(start + 1, start + n - 1):
+            join(p, w, calls, w.xs[index], w.ys[index])
+        if closed:
+            join(p, w, calls, x0, y0)
+        elif w.cap_nonzero:
+            cap(p, w, calls, x0, y0)
+            cap(p, w, calls, x1, y1)
+    return 0
 
 
 def stroke_polylines(
@@ -510,38 +741,73 @@ def stroke_polylines(
     const double[::1] ys,
     list spans,
     bint outline,
+    const unsigned char[::1] ends_differ,
+    const unsigned char[::1] coincident,
     double crop_x0,
     double crop_y1,
     double scale,
-    clip,
+    int clip_mode,
+    clip_box,
+    bint clip_empty,
+    Py_ssize_t rows_origin,
+    const long long[::1] row_offsets,
+    const long long[::1] row_spans,
     double line_width,
     int red,
     int green,
     int blue,
     int alpha,
-    long line_cap,
-    long line_join,
-    Py_ssize_t first,
+    bint native,
+    bint cap_nonzero,
+    bint cap_butt,
+    bint cap_round,
+    bint join_round,
     double exponent,
+    on_line,
+    on_join,
+    on_cap,
+    on_dot,
+    on_extend,
 ):
-    """Stroke the subpaths spans[first:] as stroke_path does, into `pixels`.
+    """Stroke the subpaths `spans` cut from the columns, as stroke_path does.
 
-    ``clip`` is the rectangular clip region's page box, or None. Returns
-    (window, stopped, error): the (y0, y1, x0, x1) union of the paint-window
-    boxes, or None; the index of a coincident two-point subpath under a
-    round cap, left for the caller, or len(spans); and 0, or the error the
-    Python would have raised there -- 1 a NaN and 2 an infinity reaching
-    floor or ceil, 3 out of memory.
+    ``ends_differ`` and ``coincident``, one byte per span or None, answer a
+    built path's point comparisons; None compares the columns. ``clip_mode``
+    is 0 for no clip, 1 for a rectangular region and 2 for a clip path, with
+    the region's page box, whether it is empty, and for a clip path its rows
+    from ``rows_origin``: row r's spans are the pairs row_spans[2 *
+    row_offsets[r]:2 * row_offsets[r + 1]]. With ``native``, normal blending
+    and no group planes, the primitives are painted here; otherwise each is
+    ``on_line(x0, y0, x1, y1)``, ``on_join(x, y)`` or ``on_cap(x, y)``.
+    ``on_dot(x, y)`` paints a coincident two-point subpath under a round cap,
+    and ``on_extend(y0, y1, x0, x1)`` takes the paint window's boxes.
     """
     if pixels.shape[2] != 4:
         raise ValueError("pixels must be RGBA")
     if xs.shape[0] != ys.shape[0]:
         raise ValueError("xs and ys differ in length")
     cdef Py_ssize_t count = len(spans)
-    cdef Py_ssize_t* bounds = <Py_ssize_t*> malloc((3 * count + 1) * sizeof(Py_ssize_t))
+    if ends_differ is not None and ends_differ.shape[0] != count:
+        raise ValueError("ends_differ must hold one byte per span")
+    if coincident is not None and coincident.shape[0] != count:
+        raise ValueError("coincident must hold one byte per span")
+    if clip_mode == CLIP_ROWS:
+        if row_offsets is None or row_spans is None or row_offsets.shape[0] < 1:
+            raise ValueError("a clip path needs its rows")
+        if row_offsets[row_offsets.shape[0] - 1] * 2 > row_spans.shape[0]:
+            raise ValueError("row offsets run past the spans")
+    cdef long long* bounds = <long long*> malloc((3 * count + 1) * sizeof(long long))
     if bounds == NULL:
         raise MemoryError
     cdef Py_ssize_t k, start, end
+    cdef Paint p
+    cdef Walk w
+    cdef Callbacks calls = Callbacks.__new__(Callbacks)
+    calls.line = on_line
+    calls.join = on_join
+    calls.cap = on_cap
+    calls.dot = on_dot
+    calls.extend = on_extend
     try:
         for k in range(count):
             start, end, flag = spans[k]
@@ -550,106 +816,50 @@ def stroke_polylines(
             bounds[3 * k] = start
             bounds[3 * k + 1] = end
             bounds[3 * k + 2] = 1 if (outline or flag) else 0
-        return run(pixels, xs, ys, bounds, count, crop_x0, crop_y1, scale, clip, line_width,
-                   red, green, blue, alpha, line_cap, line_join, first, exponent)
+        p.pixels = &pixels[0, 0, 0] if pixels.shape[0] and pixels.shape[1] else NULL
+        p.row_stride = pixels.strides[0]
+        p.width = pixels.shape[1]
+        p.height = pixels.shape[0]
+        p.crop_x0 = crop_x0
+        p.crop_y1 = crop_y1
+        p.scale = scale
+        p.clip_mode = clip_mode
+        p.clip_empty = clip_empty
+        if clip_mode != CLIP_NONE:
+            p.clip[0] = clip_box[0]
+            p.clip[1] = clip_box[1]
+            p.clip[2] = clip_box[2]
+            p.clip[3] = clip_box[3]
+        p.rows_origin = rows_origin
+        if clip_mode == CLIP_ROWS:
+            p.rows_count = row_offsets.shape[0] - 1
+            p.row_offsets = &row_offsets[0]
+            p.row_spans = &row_spans[0] if row_spans.shape[0] else NULL
+        else:
+            p.rows_count = 0
+            p.row_offsets = NULL
+            p.row_spans = NULL
+        p.red = red
+        p.green = green
+        p.blue = blue
+        p.alpha = alpha
+        p.exponent = exponent
+        p.painted = False
+        p.error = 0
+        w.xs = &xs[0] if xs.shape[0] else NULL
+        w.ys = &ys[0] if ys.shape[0] else NULL
+        w.bounds = bounds
+        w.ends_differ = &ends_differ[0] if ends_differ is not None and count else NULL
+        w.coincident = &coincident[0] if coincident is not None and count else NULL
+        w.count = count
+        w.line_width = line_width
+        w.native = native
+        w.cap_nonzero = cap_nonzero
+        w.cap_butt = cap_butt
+        w.cap_round = cap_round
+        w.join_round = join_round
+        with nogil:
+            walk(&p, &w, calls)
+        flush(&p, calls)
     finally:
         free(bounds)
-
-
-cdef run(
-    unsigned char[:, :, ::1] pixels,
-    const double[::1] xs,
-    const double[::1] ys,
-    Py_ssize_t* bounds,
-    Py_ssize_t count,
-    double crop_x0,
-    double crop_y1,
-    double scale,
-    clip,
-    double line_width,
-    int red,
-    int green,
-    int blue,
-    int alpha,
-    long line_cap,
-    long line_join,
-    Py_ssize_t first,
-    double exponent,
-):
-    cdef Paint p
-    p.pixels = &pixels[0, 0, 0] if pixels.shape[0] and pixels.shape[1] else NULL
-    p.row_stride = pixels.strides[0]
-    p.width = pixels.shape[1]
-    p.height = pixels.shape[0]
-    p.crop_x0 = crop_x0
-    p.crop_y1 = crop_y1
-    p.scale = scale
-    p.clipped = clip is not None
-    if p.clipped:
-        p.clip[0] = clip[0]
-        p.clip[1] = clip[1]
-        p.clip[2] = clip[2]
-        p.clip[3] = clip[3]
-    p.red = red
-    p.green = green
-    p.blue = blue
-    p.alpha = alpha
-    p.exponent = exponent
-    p.painted = False
-    p.error = 0
-    cdef Py_ssize_t k, start, n, index
-    cdef bint closed
-    cdef Py_ssize_t stopped = count
-    cdef double x0, y0, x1, y1
-    with nogil:
-        for k in range(first, count):
-            start = bounds[3 * k]
-            n = bounds[3 * k + 1] - start
-            closed = bounds[3 * k + 2]
-            if n < 2:
-                continue
-            if n == 2 and not closed:
-                x0 = xs[start]
-                y0 = ys[start]
-                x1 = xs[start + 1]
-                y1 = ys[start + 1]
-                if x0 == x1 and y0 == y1:
-                    if line_cap == 1:
-                        stopped = k
-                        break
-                    continue
-                if fill_line(&p, x0, y0, x1, y1, line_width) < 0:
-                    break
-                if line_cap != 0:
-                    if fill_cap(&p, x0, y0, line_width, line_cap) < 0:
-                        break
-                    if fill_cap(&p, x1, y1, line_width, line_cap) < 0:
-                        break
-                continue
-            for index in range(start, start + n - 1):
-                if fill_line(&p, xs[index], ys[index], xs[index + 1], ys[index + 1], line_width) < 0:
-                    break
-            if p.error:
-                break
-            x0 = xs[start]
-            y0 = ys[start]
-            x1 = xs[start + n - 1]
-            y1 = ys[start + n - 1]
-            if closed and (x0 != x1 or y0 != y1):
-                if fill_line(&p, x1, y1, x0, y0, line_width) < 0:
-                    break
-            for index in range(start + 1, start + n - 1):
-                if fill_terminal(&p, xs[index], ys[index], line_width, line_join == 1) < 0:
-                    break
-            if p.error:
-                break
-            if closed:
-                if fill_terminal(&p, x0, y0, line_width, line_join == 1) < 0:
-                    break
-            elif line_cap != 0:
-                if fill_cap(&p, x0, y0, line_width, line_cap) < 0:
-                    break
-                if fill_cap(&p, x1, y1, line_width, line_cap) < 0:
-                    break
-    window = (p.window[0], p.window[1], p.window[2], p.window[3]) if p.painted else None
-    return window, stopped, p.error

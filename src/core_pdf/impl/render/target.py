@@ -5,7 +5,7 @@ from __future__ import annotations
 import heapq
 import math
 from bisect import bisect_left
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from copy import replace
 from typing import Any
@@ -21,6 +21,7 @@ from core_pdf.impl.array_views import (
 from core_pdf.impl.capture.records import (
     CapturedPath,
     CapturedSoftMask,
+    CapturedSubpath,
     ShadingPattern,
     TilingPattern,
 )
@@ -112,14 +113,6 @@ def shading_rgba(
     rgba = shading_color_rgba(color_model, components, fill_opacity, rendering)
     return rgba if shading_alpha is None else scale_rgba_alpha(rgba, shading_alpha)
 
-
-# What math.floor and math.ceil raise where stroke_polylines stopped, by its
-# error code.
-STROKE_ERRORS: dict[int, Callable[[], Exception]] = {
-    1: lambda: ValueError("cannot convert float NaN to integer"),
-    2: lambda: OverflowError("cannot convert float infinity to integer"),
-    3: MemoryError,
-}
 
 # blend_px's modes, as shading_blend numbers them; any other composites as normal.
 BLEND_COLOR_DODGE = 3
@@ -216,6 +209,49 @@ def edge_tuples(
     if edge_array is None:
         return []
     return [(x0, y0, x1, y1) for x0, y0, x1, y1 in edge_array.tolist()]
+
+
+def subpath_columns(
+    subpaths: list[CapturedSubpath],
+) -> tuple[
+    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    list[tuple[int, int, bool]],
+    bytes,
+    bytes,
+]:
+    """A built path's points as stroke_polylines takes them.
+
+    With each subpath's two comparisons made here, as the Python walk made
+    them on the point tuples: whether its last point differs from its first,
+    and for two points whether they coincide. A float object can be shared
+    between points, and tuple comparison tries identity first.
+    """
+    xs: list[float] = []
+    ys: list[float] = []
+    spans: list[tuple[int, int, bool]] = []
+    ends_differ = bytearray()
+    coincident = bytearray()
+    for subpath in subpaths:
+        points = subpath.points
+        start = len(xs)
+        for x, y in points:
+            xs.append(x)
+            ys.append(y)
+        spans.append((start, len(xs), bool(subpath.closed)))
+        ends_differ.append(1 if len(points) >= 2 and points[0] != points[-1] else 0)
+        same = False
+        if len(points) == 2:
+            (x0, y0), (x1, y1) = points
+            same = (x0, y0) == (x1, y1)
+        coincident.append(1 if same else 0)
+    return (
+        numpy.asarray(xs, dtype=numpy.float64),
+        numpy.asarray(ys, dtype=numpy.float64),
+        spans,
+        bytes(ends_differ),
+        bytes(coincident),
+    )
 
 
 def paint_stroke_once(
@@ -2758,7 +2794,6 @@ class RasterTarget:
     ) -> None:
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
-        blend_resolved_mode = self.resolved_blend(blend_mode)
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         crop_x0 = self.crop_x0
@@ -2876,48 +2911,9 @@ class RasterTarget:
                 self.extend_paint_window(slice(iy0, iy1), slice(ix0, ix1))
             return
         allowed = self.clip_pixel_mask(ix0, iy0, ix1, iy1) if clip_regions else None
-        if (
-            blend_resolved_mode is None
-            and self.group_source_alpha is None
-            and self.group_source_shape is None
-        ):
-            # Short flattened strokes take this: normal blending and no group
-            # planes to record into, sampled and blended in one kernel. A clip
-            # goes in as the pixels pixel_in_clip lets through, from the same
-            # row spans. It returns the box it covered, which is what
-            # blend_px's per-pixel paint-window extension adds up to.
-            covered_box = stroke_segment_samples(
-                self.pixel_array,
-                0,
-                0,
-                ix0,
-                iy0,
-                ix1,
-                iy1,
-                crop_x0,
-                crop_y1,
-                scale,
-                x0,
-                y0,
-                x1,
-                y1,
-                dx,
-                dy,
-                seg_len2,
-                inv_seg_len2,
-                half2,
-                projection_extension,
-                line_cap not in {0, 2},
-                *rgba,
-                allowed,
-            )
-            if covered_box is not None and self.paint_window is not None:
-                self.extend_paint_box(
-                    covered_box[1], covered_box[3], covered_box[0], covered_box[2]
-                )
-            return
-        # Any other blend, or a group recording planes: the same sampling
-        # into counts, blended as blend_px blends them.
+        # stroke_polylines paints normal blending with no group planes, so
+        # what reaches here is any other blend, or a group recording planes:
+        # the segment's samples as counts, blended as blend_px blends them.
         counts = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
         stroke_segment_samples(
             self.pixel_array,
@@ -3014,12 +3010,8 @@ class RasterTarget:
                 )
                 if intersect_box(stroke_box, clip_box) is None:
                     return
-        if self.stroke_natively(
-            path, line_width, rgba, dash_pattern, blend_mode, line_cap, line_join
-        ):
-            return
-        for subpath in path.subpaths:
-            if dash_pattern and dash_pattern[0]:
+        if dash_pattern and dash_pattern[0]:
+            for subpath in path.subpaths:
                 self.stroke_path(
                     CapturedPath(dash_subpath(subpath, dash_pattern)),
                     line_width,
@@ -3029,152 +3021,76 @@ class RasterTarget:
                     line_cap,
                     line_join,
                 )
-                continue
-            points = subpath.points
-            if len(points) < 2:
-                continue
-            if len(points) == 2 and not subpath.closed:
-                (x0, y0), (x1, y1) = points
-                if (x0, y0) == (x1, y1):
-                    if line_cap == LineCap.ROUND:
-                        radius = line_width * 0.5 if line_width > 0.0 else 0.5 / scale
-                        self.fill_path(circle_path(x0, y0, radius), rgba, blend_mode)
-                    continue
-                self.fill_line(
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    line_width,
-                    rgba,
-                    blend_mode,
-                    0,
-                )
-                if line_cap != 0:
-                    self.fill_cap(x0, y0, line_width, rgba, line_cap, blend_mode)
-                    self.fill_cap(x1, y1, line_width, rgba, line_cap, blend_mode)
-                continue
-            for index in range(len(points) - 1):
-                x0, y0 = points[index]
-                x1, y1 = points[index + 1]
-                self.fill_line(
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    line_width,
-                    rgba,
-                    blend_mode,
-                    0,
-                )
-            if subpath.closed and points[0] != points[-1]:
-                x0, y0 = points[-1]
-                x1, y1 = points[0]
-                self.fill_line(
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    line_width,
-                    rgba,
-                    blend_mode,
-                    0,
-                )
-            for x, y in points[1:-1]:
-                self.fill_join(x, y, line_width, rgba, line_join, blend_mode)
-            if subpath.closed:
-                x, y = points[0]
-                self.fill_join(x, y, line_width, rgba, line_join, blend_mode)
-            elif line_cap != 0:
-                self.fill_cap(
-                    points[0][0],
-                    points[0][1],
-                    line_width,
-                    rgba,
-                    line_cap,
-                    blend_mode,
-                )
-                self.fill_cap(
-                    points[-1][0],
-                    points[-1][1],
-                    line_width,
-                    rgba,
-                    line_cap,
-                    blend_mode,
-                )
-
-    def stroke_natively(
-        self,
-        path: CapturedPath,
-        line_width: float,
-        rgba: tuple[int, int, int, int],
-        dash_pattern: tuple[list[float], float] | None,
-        blend_mode: str | None,
-        line_cap: int,
-        line_join: int,
-    ) -> bool:
-        """Stroke `path` with stroke_polylines, if it is a stroke the kernel takes.
-
-        That is a deferred path, undashed, blended normally with no group
-        planes, under no clip or a rectangular one: every stroke into
-        paint_stroke_once's scratch, and most on a page. The kernel paints
-        each subpath's segments, joins and caps as the loop below would;
-        what it leaves to Python is the coincident two-point subpath under a
-        round cap, which the loop fills as a circle path. False, with
-        nothing painted, for any other stroke.
-        """
+            return
         deferred = path.deferred_columns()
-        if (
-            deferred is None
-            or (dash_pattern and dash_pattern[0])
-            or blend_mode is not None
-            or self.group_source_alpha is not None
-            or self.group_source_shape is not None
-            or type(line_cap) is not int
-            or type(line_join) is not int
-            or type(line_width) not in {int, float}
-            or not all(type(channel) is int for channel in rgba)
-        ):
-            return False
+        if deferred is not None:
+            xs, ys, spans, outline = deferred
+            ends_differ: bytes | None = None
+            coincident: bytes | None = None
+        else:
+            xs, ys, spans, ends_differ, coincident = subpath_columns(path.subpaths)
+            outline = False
+        # Normal blending with no group planes is painted in the kernel;
+        # anything else is the Python primitives, called back from its walk.
+        native = (
+            blend_mode is None
+            and self.group_source_alpha is None
+            and self.group_source_shape is None
+            and type(line_width) in {int, float}
+            and all(type(channel) is int for channel in rgba)
+        )
         region = self.clip.current_region()
-        if region is not None and (not region.rectangular or region.empty or region.box is None):
-            return False
-        xs, ys, spans, outline = deferred
-        scale = self.scale
-        width = float(line_width)
-        first = 0
-        while True:
-            window, stopped, error = stroke_polylines(
-                self.pixel_array,
-                xs,
-                ys,
-                spans,
-                outline,
-                self.crop_x0,
-                self.crop_y1,
-                scale,
-                None if region is None else region.box,
-                width,
-                *rgba,
-                line_cap,
-                line_join,
-                first,
-                0.5,
-            )
-            if window is not None:
-                self.extend_paint_box(*window)
-            if error:
-                raise STROKE_ERRORS[error]()
-            if stopped >= len(spans):
-                return True
-            # A coincident two-point subpath under a round cap: a dot, which
-            # the loop fills as a circle path.
-            start = spans[stopped][0]
+        clip_mode = 0 if region is None else 1 if region.rectangular else 2
+        row_offsets, row_spans = (
+            self.clip.row_span_arrays(region)
+            if region is not None and clip_mode == 2
+            else (None, None)
+        )
+
+        def line(x0: float, y0: float, x1: float, y1: float) -> None:
+            self.fill_line(x0, y0, x1, y1, line_width, rgba, blend_mode, 0)
+
+        def join(x: float, y: float) -> None:
+            self.fill_join(x, y, line_width, rgba, line_join, blend_mode)
+
+        def cap(x: float, y: float) -> None:
+            self.fill_cap(x, y, line_width, rgba, line_cap, blend_mode)
+
+        def dot(x: float, y: float) -> None:
             radius = line_width * 0.5 if line_width > 0.0 else 0.5 / scale
-            self.fill_path(
-                circle_path(float(xs[start]), float(ys[start]), radius), rgba, blend_mode
-            )
-            first = stopped + 1
+            self.fill_path(circle_path(x, y, radius), rgba, blend_mode)
+
+        stroke_polylines(
+            self.pixel_array,
+            xs,
+            ys,
+            spans,
+            outline,
+            ends_differ,
+            coincident,
+            self.crop_x0,
+            self.crop_y1,
+            scale,
+            clip_mode,
+            None if region is None else region.box,
+            region is not None and region.empty,
+            0 if region is None else region.rows_origin,
+            row_offsets,
+            row_spans,
+            float(line_width) if native else 0.0,
+            *(rgba if native else (0, 0, 0, 0)),
+            native,
+            bool(line_cap != 0),
+            bool(line_cap == LineCap.BUTT),
+            bool(line_cap == LineCap.ROUND),
+            bool(line_join == LineJoin.ROUND),
+            0.5,
+            line,
+            join,
+            cap,
+            dot,
+            self.extend_paint_box,
+        )
 
     def shading_box(
         self,

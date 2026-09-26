@@ -7,6 +7,8 @@ from bisect import bisect_left
 from math import ceil, floor
 from typing import Any, ClassVar
 
+import numpy
+
 from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.paths import (
     fill_path_crossing_spans,
@@ -16,6 +18,9 @@ from core_pdf.impl.types import Record, frozen_setattr
 
 PixelSpan = tuple[int, int]
 RowSpans = tuple[PixelSpan, ...]
+RowSpanArrays = tuple[
+    numpy.ndarray[Any, numpy.dtype[numpy.int64]], numpy.ndarray[Any, numpy.dtype[numpy.int64]]
+]
 EMPTY_CLIP_BOX = (0.0, 0.0, 0.0, 0.0)
 
 
@@ -99,6 +104,7 @@ class ClipState:
         "last_box",
         "last_region",
         "last_clipped",
+        "span_arrays",
         "crop_x0",
         "crop_y1",
         "scale",
@@ -126,6 +132,29 @@ class ClipState:
         self.scale = scale
         self.width = width
         self.height = height
+        # A clip path's rows as the stroke kernel reads them, per region.
+        # Regions are frozen, and the entry keeps its region alive, so the
+        # identity key cannot be reused while it is here.
+        self.span_arrays: dict[int, tuple[ClipRegion, RowSpanArrays]] = {}
+
+    def row_span_arrays(self, region: ClipRegion) -> RowSpanArrays:
+        """region.rows as (offsets, spans): row r's spans are spans[2*offsets[r]:2*offsets[r+1]].
+
+        An empty region, or a rectangular one, has no rows and gives a
+        single zero offset.
+        """
+        cached = self.span_arrays.get(id(region))
+        if cached is not None and cached[0] is region:
+            return cached[1]
+        rows = region.rows or ()
+        offsets = numpy.zeros(len(rows) + 1, dtype=numpy.int64)
+        numpy.cumsum([len(row) for row in rows], out=offsets[1:])
+        spans = numpy.asarray(
+            [value for row in rows for span in row for value in span], dtype=numpy.int64
+        )
+        arrays = (offsets, spans)
+        self.span_arrays[id(region)] = (region, arrays)
+        return arrays
 
     def page_box_to_pixels(
         self, x0: float, y0: float, x1: float, y1: float
