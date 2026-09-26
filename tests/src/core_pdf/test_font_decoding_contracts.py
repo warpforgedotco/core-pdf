@@ -3,9 +3,11 @@ from collections.abc import Iterable
 import pytest
 
 import core_pdf.impl.fonts_decoder as decoder_module
+from core_pdf import PdfDocument
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder, single_code_mapping, split_code_bytes
+from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 
 def block(kind, records):
@@ -126,14 +128,42 @@ def test_text_advance_equals_ordered_sum_of_glyph_advances(
         )
         for glyph in glyphs
     ]
-    expected = tuple(sum(axis) for axis in zip(*advances, strict=True))
-    assert font.text_advance_vector(data, **parameters) == pytest.approx(
-        expected, rel=1e-14, abs=1e-14
-    )
-    assert font.text_advance_vector(memoryview(data), glyphs=glyphs, **parameters) == pytest.approx(
-        expected, rel=1e-14, abs=1e-14
-    )
+    # text_advance_vector inlines spec's glyph_advance_vector for speed; the
+    # running total must match the helper's bit for bit. (Not sum(), whose
+    # compensated float summation rounds differently.)
+    expected = (0.0, 0.0)
+    for advance in advances:
+        expected = (expected[0] + advance[0], expected[1] + advance[1])
+    assert font.text_advance_vector(data, **parameters) == expected
+    assert font.text_advance_vector(memoryview(data), glyphs=glyphs, **parameters) == expected
     assert font.text_advance_vector(b"", **parameters) == (0, 0)
+
+
+@pytest.mark.parametrize("operators", [b"", b"2 Tc 3 Tw 80 Tz", b"-1.25 Tc 7.5 Tw 133 Tz"])
+def test_captured_advances_match_spec_glyph_advances_exactly(operators):
+    # capture_glyphs inlines spec's glyph_advance_vector on its hot path; each
+    # glyph's advance box must still start and end where the helper puts it.
+    content = b"BT /F1 12 Tf " + operators + b" 0 0 Td (A B  C) Tj ET"
+    with PdfDocument(one_page_pdf(content)) as document:
+        glyphs = document.pages[0].get_page_program().glyphs
+    state = dict(zip((b"Tc", b"Tw", b"Tz"), (0.0, 0.0, 100.0), strict=True))
+    tokens = operators.split()
+    for value, name in zip(tokens[::2], tokens[1::2], strict=True):
+        state[name] = float(value)
+    decoder = glyphs[0].font_decoder
+    assert isinstance(decoder, FontDecoder)
+    x = 0.0
+    for glyph, code in zip(glyphs, b"A B  C", strict=True):
+        advance, _ = decoder.glyph_advance_vector(
+            code,
+            font_size=12.0,
+            char_space=state[b"Tc"],
+            word_space=state[b"Tw"],
+            horizontal_scale=state[b"Tz"],
+            encoded_space=code == 32,
+        )
+        assert (glyph.advance_bbox[0], glyph.advance_bbox[2]) == (x, x + advance)
+        x += advance
 
 
 @pytest.mark.parametrize(

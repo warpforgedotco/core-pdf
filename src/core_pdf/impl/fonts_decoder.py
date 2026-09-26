@@ -1407,6 +1407,8 @@ class FontDecoder:
         if glyphs is None:
             glyphs = self.decode_glyphs(bytes(data))
 
+        # The sum of glyph_advance_vector over the glyphs, with the helper's
+        # arithmetic inlined per glyph; test_font_decoding_contracts pins them.
         if self.is_vertical:
             total_y = 0.0
             vertical_glyph_metric = self.vertical_glyph_metric

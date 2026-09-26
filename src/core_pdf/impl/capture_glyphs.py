@@ -236,6 +236,9 @@ def capture_glyphs(
             )
             advance = -advance_y
         else:
+            # Spec's glyph_advance_vector, inlined: the keyword call costs
+            # about as much again per glyph. test_font_decoding_contracts pins
+            # the two to the same bits.
             spacing = char_space + (word_space if glyph.code_bytes == b" " else 0.0)
             displacement = glyph_width(glyph.width_code) * font_size / 1000.0 + spacing
             advance = displacement * horizontal_scale / 100.0
