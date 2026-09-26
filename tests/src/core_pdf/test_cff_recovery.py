@@ -255,6 +255,32 @@ def test_unicode_index_computes_each_glyph_feature_once(count: int) -> None:
     assert set(font.feature_requests) == set(range(1, count + 1))
 
 
+class CountingRepairIndex(CFFUnicodeRepairIndex):
+    __slots__ = ("decided",)
+
+    decided: list[int]
+
+    def decide_repairs(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
+        self.decided.extend(requested_gids)
+        return super().decide_repairs(requested_gids)
+
+
+@pytest.mark.parametrize("count", [2, 33])
+def test_unicode_index_decides_each_glyph_once_whatever_the_request(count: int) -> None:
+    font = blank_cff_font(FeatureFont)
+    font.charstrings = [b"\x0e"] * (count + 1)
+    font.cid_to_gid = {gid: gid for gid in range(count + 1)}
+    items = tuple((bytes([gid]), gid, "S" if gid == 1 else "5") for gid in range(1, count + 1))
+    index = CountingRepairIndex(font, items)
+    index.decided = []
+    codes = [code for code, _, _ in items]
+    for request in [codes[1:2], codes[::-1], codes, codes[1:2]]:
+        assert index.repairs_for_codes(request) == CFFUnicodeRepairIndex(
+            font, items
+        ).repairs_for_codes(request)
+    assert sorted(index.decided) == sorted(index.repairable_gids)
+
+
 def test_unicode_index_with_no_glyphs_has_no_repairs() -> None:
     index = CFFUnicodeRepairIndex(blank_cff_font(CFFFont), ((b"a", 0, "£"),))
     assert index.repairs_for_codes([b"a"]) == {}

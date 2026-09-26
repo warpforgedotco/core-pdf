@@ -667,6 +667,7 @@ class CFFUnicodeRepairIndex:
         "repairable_gids",
         "feature_cache",
         "candidate_arrays_cache",
+        "decisions",
     )
 
     def __init__(
@@ -692,6 +693,11 @@ class CFFUnicodeRepairIndex:
         # candidates' arrays once per index.
         self.feature_cache: dict[int, CFFGlyphFeature] = {}
         self.candidate_arrays_cache: FeatureArrays | None = None
+        # Each glyph's repair, or None, once decided. A glyph's decision reads
+        # only its own feature and the fixed candidates': the distance matrix
+        # sums integer-valued cells, so its row is exact whichever other
+        # glyphs share the request.
+        self.decisions: dict[int, str | None] = {}
         self.label_names = labels
         self.code_to_gid_map = code_to_gid
         self.repairable_gids = frozenset(
@@ -725,6 +731,19 @@ class CFFUnicodeRepairIndex:
         }
 
     def repairs_for_gids(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
+        decisions = self.decisions
+        pending = tuple(gid for gid in requested_gids if gid not in decisions)
+        if pending:
+            decided = self.decide_repairs(pending)
+            for gid in pending:
+                decisions[gid] = decided.get(gid)
+        return {
+            gid: replacement
+            for gid in requested_gids
+            if (replacement := decisions[gid]) is not None
+        }
+
+    def decide_repairs(self, requested_gids: tuple[int, ...]) -> dict[int, str]:
         feature_cache = self.feature_cache
         glyph_feature = self.make_font.glyph_feature
         features: dict[int, CFFGlyphFeature] = {}
