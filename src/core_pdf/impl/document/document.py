@@ -151,7 +151,6 @@ class PageLookup[LookupPageT: PdfPage]:
         "indexes",
         "struct_parents_indexes",
         "signature_indexes",
-        "_pages",
         "names",
     )
 
@@ -161,7 +160,6 @@ class PageLookup[LookupPageT: PdfPage]:
         self.indexes: dict[int, int] = {}
         self.struct_parents_indexes: dict[object, int] | None = None
         self.signature_indexes: dict[object, int] | None = None
-        self._pages: tuple[LookupPageT, ...] | None = None
         self.names: dict[str, RawNamedDestination] | None = None
 
     @property
@@ -177,9 +175,7 @@ class PageLookup[LookupPageT: PdfPage]:
 
     @property
     def pages(self) -> tuple[LookupPageT, ...]:
-        if self._pages is None:
-            self._pages = self.document.build_pages(self.nodes)
-        return self._pages
+        return self.document.pages
 
     def page_index_for(self, page_obj: object) -> int | None:
         if isinstance(page_obj, PdfPage):

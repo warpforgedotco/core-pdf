@@ -229,8 +229,7 @@ class StructureElement(StructureNode):
         page_index = self.page_index
         if page_index is None:
             return None
-        pages = self.document.pages if self.page_lookup is None else self.page_lookup.pages
-        return pages[page_index]
+        return self.document.pages[page_index]
 
     @property
     def title(self) -> str | None:

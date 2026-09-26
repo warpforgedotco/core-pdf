@@ -410,6 +410,16 @@ def test_element_page_reuses_explicit_lookup_page_wrapper(document):
     assert element.page_index == 0
 
 
+@pytest.mark.parametrize("with_lookup", [False, True])
+def test_element_page_is_the_documents_own_page(document, with_lookup):
+    lookup = PageLookup(document) if with_lookup else None
+    element = StructureElement(document, {"Pg": PdfReference(3, 0)}, page_lookup=lookup)
+    assert element.page is document.pages[0]
+    if lookup is not None:
+        assert lookup.pages is document.pages
+    assert document.page_lookup.pages is document.pages
+
+
 def test_elements_of_one_page_structure_share_their_parents(document):
     parent_props: PdfDict = {"S": PdfName(b"P"), "ActualText": PdfString(b"shared")}
     first: PdfDict = {"S": PdfName(b"Span"), "P": parent_props}
