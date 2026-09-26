@@ -39,8 +39,11 @@ class CIDRange(Record):
     def __hash__(self) -> int:
         return hash((self.start, self.end, self.first_cid))
 
-    def contains(self, code: bytes) -> bool:
-        return code_in_range(code, self.start, self.end)
+    def cid_for(self, code: bytes) -> int:
+        """The CID of a code inside the range: first_cid plus its offset from start."""
+        return self.first_cid + range_offset(
+            code, self.start, self.end, validate_range=False, validate_code=False
+        )
 
 
 class NotdefRange(Record):
@@ -68,8 +71,9 @@ class NotdefRange(Record):
     def __hash__(self) -> int:
         return hash((self.start, self.end, self.cid))
 
-    def contains(self, code: bytes) -> bool:
-        return code_in_range(code, self.start, self.end)
+    def cid_for(self, code: bytes) -> int:  # noqa: ARG002 -- CIDRange.cid_for's signature
+        """Every code in a notdef range maps to the one CID."""
+        return self.cid
 
 
 def code_in_range(code: bytes, start: bytes, end: bytes) -> bool:
