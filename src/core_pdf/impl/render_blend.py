@@ -267,6 +267,14 @@ def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
 
 
 def convert_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
+    """A captured colour as RGBA, by its component count alone.
+
+    Not render_patterns.shading_color_rgba: here exactly four components are
+    CMYK, converted under the default rendering, a component that is not a
+    number makes CMYK black, and anything that is not a non-empty sequence
+    is black. The two have drifted and are kept apart so neither changes
+    what it paints.
+    """
     alpha = 255
     if type(opacity) in {int, float}:
         alpha = color_component(opacity, 255)
