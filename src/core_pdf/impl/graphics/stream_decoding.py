@@ -33,7 +33,6 @@ from core_pdf.impl.graphics.filter_registry import (
     FILTER_DESCRIPTORS,
     PREDICTOR_FILTERS,
 )
-from core_pdf.impl.pdf_values import is_pdf_null
 from core_pdf_cythonized import decode_arithmetic_generic_template0
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
@@ -51,6 +50,7 @@ from core_pdf_spec.s_07_filters.predictors import (
 from core_pdf_spec.s_07_filters.predictors import (
     apply_predictor as strict_apply_predictor,
 )
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_null
 from core_pdf_spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
     full_source_bytes,
