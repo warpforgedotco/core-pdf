@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import heapq
 import math
-from bisect import bisect_left
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from copy import replace
@@ -1699,7 +1698,6 @@ class RasterTarget:
         blit_opaque_sampled_tiles = self.blit_opaque_sampled_tiles
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
-        clip_row_visible_spans = clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
         current_clip = clip.current_clip
@@ -1862,6 +1860,13 @@ class RasterTarget:
             height_px, width_px, comps
         )
         target_pixels = self.pixel_array
+        clip_mask = (
+            numpy.frombuffer(self.clip_pixel_mask(ix0, iy0, ix1, iy1), dtype=numpy.bool_).reshape(
+                iy1 - iy0, ix1 - ix0
+            )
+            if clip_regions and not rectangular_clip
+            else None
+        )
         tile_columns = min(ix1 - ix0, max(1, AFFINE_BLIT_SCRATCH_BYTES // 160))
         tile_rows = max(1, AFFINE_BLIT_SCRATCH_BYTES // (160 * tile_columns))
         for row_start in range(iy0, iy1, tile_rows):
@@ -1877,14 +1882,10 @@ class RasterTarget:
                 visible = (
                     (source_u >= 0.0) & (source_u <= 1.0) & (source_v >= 0.0) & (source_v <= 1.0)
                 )
-                if clip_regions and not rectangular_clip:
-                    allowed = numpy.zeros(visible.shape, dtype=numpy.bool_)
-                    for local_y, py in enumerate(range(row_start, row_end)):
-                        for start, end in clip_row_visible_spans(py):
-                            start, end = max(start, column_start), min(end, column_end)
-                            if end > start:
-                                allowed[local_y, start - column_start : end - column_start] = True
-                    visible &= allowed
+                if clip_mask is not None:
+                    visible &= clip_mask[
+                        row_start - iy0 : row_end - iy0, column_start - ix0 : column_end - ix0
+                    ]
                 if not numpy.any(visible):
                     continue
                 sample_x = numpy.clip((source_u * width_px).astype(numpy.intp), 0, width_px - 1)
@@ -2772,14 +2773,17 @@ class RasterTarget:
         """
         box_width = ix1 - ix0
         allowed = bytearray(box_width * (iy1 - iy0))
+        ones = b"\x01" * box_width
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         for py in range(iy0, iy1):
-            spans = clip_row_visible_spans(py)
             row_start = (py - iy0) * box_width - ix0
-            for px in range(ix0, ix1):
-                index = bisect_left(spans, (px + 1, -1))
-                if index > 0 and spans[index - 1][0] <= px < spans[index - 1][1]:
-                    allowed[row_start + px] = 1
+            # A row's spans are sorted and do not overlap, so the pixels
+            # pixel_in_clip's bisect finds are exactly the spans' own.
+            for span_start, span_end in clip_row_visible_spans(py):
+                start = max(ix0, span_start)
+                end = min(ix1, span_end)
+                if end > start:
+                    allowed[row_start + start : row_start + end] = ones[: end - start]
         return allowed
 
     def fill_line(
@@ -3113,14 +3117,9 @@ class RasterTarget:
         shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
         mode = BLEND_MODE_CODES.get(self.resolved_blend(blend_mode), 0)
         domain = shading.domain
-        allowed = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
-        clip_row_visible_spans = self.clip.clip_row_visible_spans
-        for py in range(iy0, iy1):
-            for span_start, span_end in clip_row_visible_spans(py):
-                start = max(ix0, span_start)
-                end = min(ix1, span_end)
-                if end > start:
-                    allowed[py - iy0, start - ix0 : end - ix0] = 1
+        allowed = numpy.frombuffer(
+            self.clip_pixel_mask(ix0, iy0, ix1, iy1), dtype=numpy.uint8
+        ).reshape(iy1 - iy0, ix1 - ix0)
         values, painted = shading_values(
             shading.shading_type,
             shading.coords,
