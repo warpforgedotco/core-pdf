@@ -483,16 +483,13 @@ test = [
     { name = "pytest-xdist" },
 ]
 vendor-test = [
-    { name = "charset-normalizer" },
     { name = "llama-index-core" },
     { name = "llama-index-readers-file" },
-    { name = "pandas" },
     { name = "pdfminer-six" },
     { name = "pdfplumber" },
     { name = "pikepdf" },
     { name = "pymupdf" },
     { name = "pypdf" },
-    { name = "pypdfium2" },
     { name = "unstructured", extra = ["pdf"] },
 ]
 
@@ -536,16 +533,13 @@ test = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
 ]
 vendor-test = [
-    { name = "charset-normalizer", specifier = ">=2.0.0" },
     { name = "llama-index-core", specifier = ">=0.14.23" },
     { name = "llama-index-readers-file", specifier = ">=0.6.0" },
-    { name = "pandas", specifier = ">=2.3.3" },
     { name = "pdfminer-six", specifier = ">=20260107" },
     { name = "pdfplumber", specifier = ">=0.11.10" },
     { name = "pikepdf", specifier = ">=10.11.0" },
     { name = "pymupdf", specifier = ">=1.28.2" },
     { name = "pypdf", specifier = ">=6.15.0" },
-    { name = "pypdfium2", specifier = ">=5.9.0" },
     { name = "unstructured", extras = ["pdf"], specifier = ">=0.25.2" },
 ]
 
