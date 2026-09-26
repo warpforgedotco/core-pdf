@@ -320,7 +320,7 @@ cdef int fill_rect(Paint* p, double x0, double y0, double x1, double y1) noexcep
         return found
     cdef Py_ssize_t ix0 = pixel_box[0], iy0 = pixel_box[1], ix1 = pixel_box[2], iy1 = pixel_box[3]
     cdef Py_ssize_t y, x, k, count, start, end
-    cdef const long long* spans
+    cdef const long long* spans = NULL
     if p.clip_mode == CLIP_ROWS:
         # Not rectangular: whole pixels, row by row, span by span.
         for y in range(iy0, iy1):
@@ -379,7 +379,7 @@ cdef int fill_circle(Paint* p, double cx, double cy, double radius) noexcept nog
     cdef Py_ssize_t ix0 = pixel_box[0], iy0 = pixel_box[1], ix1 = pixel_box[2], iy1 = pixel_box[3]
     cdef double radius2 = radius * radius
     cdef Py_ssize_t px, py, k, count, start, end
-    cdef const long long* spans
+    cdef const long long* spans = NULL
     cdef double page_x, page_y, dx, dy
     cdef unsigned char opaque[4]
     opaque[0] = <unsigned char> p.red
@@ -582,7 +582,7 @@ cdef int fill_line(Paint* p, double x0, double y0, double x1, double y1, double 
         return 0
     cdef unsigned char* allowed = NULL
     cdef Py_ssize_t box_width = ix1 - ix0, py, px, count
-    cdef const long long* spans
+    cdef const long long* spans = NULL
     if p.clip_mode == CLIP_ROWS:
         allowed = <unsigned char*> malloc(box_width * (iy1 - iy0))
         if allowed == NULL:

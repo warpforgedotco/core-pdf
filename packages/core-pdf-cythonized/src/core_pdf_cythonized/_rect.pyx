@@ -141,7 +141,10 @@ cdef int fill_rect_pixels(
     # pixel, and each result depends on its own pixel's inputs alone.
     cdef unsigned int backdrop, last_backdrop = 0
     cdef int last_raw = -1
+    # Set before its first read (last_raw starts where no raw matches it),
+    # which GCC cannot see.
     cdef unsigned char blended[4]
+    blended[0] = blended[1] = blended[2] = blended[3] = 0
     for j in range(width):
         columns[j] = axis_coverage(<double> (ix0 + j), left, right)
         full_raw[j] = <unsigned char> rint(columns[j] * alpha)
@@ -282,6 +285,7 @@ def fill_rect_coverage(
     cdef unsigned int backdrop, last_backdrop = 0
     cdef int last_raw = -1
     cdef unsigned char blended[4]
+    blended[0] = blended[1] = blended[2] = blended[3] = 0
     cdef float previous, last_alpha_out = 0.0, last_shape_out = 0.0
     cdef unsigned int previous_bits, last_alpha_in = 0, last_shape_in = 0
     cdef int last_alpha_raw = -1, last_shape = -1
