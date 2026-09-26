@@ -95,6 +95,10 @@ def structure_key_name(key: Any) -> str:
     return recover_pdf_name(key) or str(key)
 
 
+def structure_attributes(attrs: PdfDict) -> StructureAttributes:
+    return {structure_key_name(key): coerce_value(val) for key, val in attrs.items()}
+
+
 class StructureNode:
     __slots__ = ("document", "page_lookup", "kids_value", "props")
 
@@ -124,6 +128,12 @@ class StructureNode:
                 )
             )
         yield from self.kids_value
+
+    def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
+        return find_all([item for item in self if isinstance(item, StructureElement)], matcher)
+
+    def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
+        return next(self.find_all(matcher), None)
 
 
 class StructureElement(StructureNode):
@@ -212,14 +222,7 @@ class StructureElement(StructureNode):
 
     @property
     def page_index(self) -> int | None:
-        page_ref = self.props.get("Pg")
-        if page_ref is None:
-            return None
-        page_obj = self.document.resolver.resolve(page_ref)
-        page_index = (self.page_lookup or self.document).page_index_for(page_obj)
-        if page_index is None:
-            raise ValueError("invalid structure page reference")
-        return page_index
+        return get_kid_page_index(self.document, None, self.props, self.page_lookup)
 
     @property
     def page(self) -> PdfPage | None:
@@ -263,9 +266,7 @@ class StructureElement(StructureNode):
             return self.attributes_value
         attrs = self.props.get("A")
         if isinstance(attrs, dict):
-            self.attributes_value = {
-                structure_key_name(key): coerce_value(val) for key, val in attrs.items()
-            }
+            self.attributes_value = structure_attributes(attrs)
             return self.attributes_value
         if isinstance(attrs, list):
             if len(attrs) % 2 != 0:
@@ -283,9 +284,7 @@ class StructureElement(StructureNode):
                     raise ValueError("invalid structure attribute revision")
                 attrdict, revision = entry.value, entry.revision
                 if latest is None or revision > latest_revision:
-                    latest = {
-                        structure_key_name(key): coerce_value(val) for key, val in attrdict.items()
-                    }
+                    latest = structure_attributes(attrdict)
                     latest_revision = revision
             self.attributes_value = latest
             return latest
@@ -339,14 +338,6 @@ class StructureElement(StructureNode):
 
     def kids_page(self) -> PdfPage | None:
         return self.page
-
-    def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
-        elements: list[StructureChild] = list(self)
-        filtered = [el for el in elements if isinstance(el, StructureElement)]
-        return find_all(filtered, matcher)
-
-    def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
-        return next(self.find_all(matcher), None)
 
 
 class StructureTree(StructureNode):
@@ -419,15 +410,9 @@ class StructureTree(StructureNode):
         self.parent_tree_value = results
         return results
 
-    def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
-        return find_all([item for item in self if isinstance(item, StructureElement)], matcher)
-
-    def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
-        return next(self.find_all(matcher), None)
-
     def page_structure(self, page: PdfPage) -> PageStructure:
         key = self.document.resolver.resolve_int(page.page_dict.get("StructParents"))
-        if type(key) is not int:
+        if key is None:
             raise ValueError("invalid page StructParents value")
         parent_tree = self.parent_tree
         if key not in parent_tree:
@@ -479,30 +464,19 @@ class PageStructure(Sequence[StructureElement | None]):
             return None
         if isinstance(obj, StructureElement):
             return obj
-        if isinstance(obj, dict):
-            marker = id(obj)
-            if marker not in self.elements:
-                self.elements[marker] = StructureElement(
-                    self.page.document,
-                    obj,
-                    page_lookup=self.page_lookup,
-                    element_cache=self.elements,
-                )
-            return self.elements[marker]
         if isinstance(obj, PdfReference):
-            resolved = self.page.document.resolver.resolve(obj)
-            if isinstance(resolved, dict):
-                marker = id(resolved)
-                if marker not in self.elements:
-                    self.elements[marker] = StructureElement(
-                        self.page.document,
-                        resolved,
-                        page_lookup=self.page_lookup,
-                        element_cache=self.elements,
-                    )
-                return self.elements[marker]
+            obj = self.page.document.resolver.resolve(obj)
+        if not isinstance(obj, dict):
             raise ValueError("invalid page structure parent entry")
-        raise ValueError("invalid page structure parent entry")
+        marker = id(obj)
+        if marker not in self.elements:
+            self.elements[marker] = StructureElement(
+                self.page.document,
+                obj,
+                page_lookup=self.page_lookup,
+                element_cache=self.elements,
+            )
+        return self.elements[marker]
 
     def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
         seen: set[int] = set()
