@@ -27,7 +27,6 @@ from core_adobe_fonts.type1.program import (
     binary_entries,
     decode_charstring,
     decode_eexec_payload,
-    decrypt_type1,
 )
 from core_pdf._vendor.fontTools.cffLib import (
     cffExpertSubsetStrings,
@@ -51,7 +50,7 @@ from core_pdf.impl.fonts.raster_kernel import (
 )
 from core_pdf.impl.geometry import points_bbox, transform_bbox
 from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
-from core_pdf_cythonized import type2_glyph_geometry
+from core_pdf_cythonized import decrypt_type1, type2_glyph_geometry
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.font_program_truetype import (
     is_unicode_scalar,

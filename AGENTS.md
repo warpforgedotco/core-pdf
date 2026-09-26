@@ -56,7 +56,10 @@ deleted, for the parse_dictionary and parse_array of core's reader lexer, and de
 anything outside the well-formed grammar so the Python parses it. Its golden vectors pin
 what it declines as well as what it returns, and
 `tests/src/core_pdf/test_object_scanner_contracts.py` compares the composed reader with
-the Python alone; change either lexer and both must still pass. The build
+the Python alone; change either lexer and both must still pass. `decrypt_type1` is
+another mirror: `core-adobe-fonts` keeps its pure-Python Type 1 cipher for its own
+readers, core's Type 1 programs decrypt with the kernel, and its test compares the two
+over random payloads and keys. The build
 disables float contraction -- `-ffp-contract=off` on GCC/Clang, `/fp:precise` on MSVC,
 chosen per compiler in `setup.py` because passing the wrong spelling would build with
 semantics the golden vectors do not describe. The kernels must reproduce CPython float

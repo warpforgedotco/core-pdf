@@ -63,6 +63,7 @@ from core_pdf_cythonized._shading import shading_blend, shading_values
 from core_pdf_cythonized._source_plane import accumulate_source_plane
 from core_pdf_cythonized._stroke_segment import stroke_segment_samples
 from core_pdf_cythonized._supersample import supersampled_coverage_plane
+from core_pdf_cythonized._type1 import decrypt_type1
 from core_pdf_cythonized._type2 import type2_glyph_geometry
 from core_pdf_cythonized._xref_headers import object_headers_match
 
@@ -81,6 +82,7 @@ __all__ = (
     "composite_normal_group",
     "cubic_sample_times",
     "decode_arithmetic_generic_template0",
+    "decrypt_type1",
     "distinct_uint16_rows",
     "fill_glyph_coverage",
     "fill_glyph_knockout",
