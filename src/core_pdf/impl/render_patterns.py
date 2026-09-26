@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
+from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_records import (
     CapturedPath,
     TilingPattern,
@@ -21,15 +22,16 @@ from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING,
 if TYPE_CHECKING:
     from core_pdf.impl.render_target import RasterTarget
 
-TilingCellCache = dict[tuple[int, bool], tuple[TilingPattern, DisplayList, CapturedPath]]
+TilingCellCache = IdentityCache[tuple[DisplayList, CapturedPath]]
+TILING_CELL_CACHE_LIMIT = 4096
 
 
 def tiling_cell(target: RasterTarget, pattern: TilingPattern) -> tuple[DisplayList, CapturedPath]:
     preserve_object_boundaries = target.group_source_shape is not None
-    key = (id(pattern), preserve_object_boundaries)
-    cached = target.tiling_cell_cache.get(key)
-    if cached is not None and cached[0] is pattern:
-        return cached[1], cached[2]
+    cache = target.tiling_cell_cache
+    cached = cache.get(pattern, preserve_object_boundaries)
+    if cached is not None:
+        return cached
     cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
     display = DisplayList(
         target.width,
@@ -39,8 +41,7 @@ def tiling_cell(target: RasterTarget, pattern: TilingPattern) -> tuple[DisplayLi
     cell_clip = CapturedPath()
     cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
     append_captured_program(display, pattern.program, include_text=True)
-    target.tiling_cell_cache[key] = (pattern, display, cell_clip)
-    return display, cell_clip
+    return cache.put(pattern, (display, cell_clip), preserve_object_boundaries)
 
 
 NON_PAINTING_KINDS = frozenset(

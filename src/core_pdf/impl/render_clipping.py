@@ -10,6 +10,7 @@ from typing import Any, ClassVar
 
 import numpy
 
+from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_records import CapturedPath
 from core_pdf.impl.render_paths import (
     fill_path_crossing_spans,
@@ -133,21 +134,19 @@ class ClipState:
         self.scale = scale
         self.width = width
         self.height = height
-        self.span_arrays: dict[int, tuple[ClipRegion, RowSpanArrays]] = {}
+        self.span_arrays: IdentityCache[RowSpanArrays] = IdentityCache()
 
     def row_span_arrays(self, region: ClipRegion) -> RowSpanArrays:
-        cached = self.span_arrays.get(id(region))
-        if cached is not None and cached[0] is region:
-            return cached[1]
+        cached = self.span_arrays.get(region)
+        if cached is not None:
+            return cached
         rows = region.rows or ()
         offsets = numpy.zeros(len(rows) + 1, dtype=numpy.int64)
         numpy.cumsum([len(row) for row in rows], out=offsets[1:])
         spans = numpy.asarray(
             [value for row in rows for span in row for value in span], dtype=numpy.int64
         )
-        arrays = (offsets, spans)
-        self.span_arrays[id(region)] = (region, arrays)
-        return arrays
+        return self.span_arrays.put(region, (offsets, spans))
 
     def page_box_to_pixels(
         self, x0: float, y0: float, x1: float, y1: float
@@ -197,9 +196,9 @@ class ClipState:
                 self.forget_span_arrays((region,))
 
     def forget_span_arrays(self, regions: Iterable[ClipRegion]) -> None:
-        span_arrays = self.span_arrays
+        discard = self.span_arrays.discard
         for region in regions:
-            span_arrays.pop(id(region), None)
+            discard(region)
 
     def current_region(self) -> ClipRegion | None:
         return self.regions[-1] if self.regions else None

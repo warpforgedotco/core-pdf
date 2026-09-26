@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.graphics_device_profiles import cmyk_floats_to_srgb, component_byte
 from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
@@ -241,8 +242,10 @@ def blend_visible_pixels(
     destination[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(numpy.uint8)
 
 
-COLOR_RGBA_CACHE: dict[tuple[tuple[float, ...], object, type], tuple[int, int, int, int]] = {}
 COLOR_RGBA_CACHE_LIMIT = 4096
+COLOR_RGBA_CACHE: BoundedDict[tuple[tuple[float, ...], object, type], tuple[int, int, int, int]] = (
+    BoundedDict(COLOR_RGBA_CACHE_LIMIT)
+)
 
 
 def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
@@ -255,10 +258,7 @@ def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
         pass
     except TypeError:
         return convert_color_rgba(color, opacity)
-    if len(COLOR_RGBA_CACHE) >= COLOR_RGBA_CACHE_LIMIT:
-        COLOR_RGBA_CACHE.clear()
-    rgba = COLOR_RGBA_CACHE[key] = convert_color_rgba(color, opacity)
-    return rgba
+    return COLOR_RGBA_CACHE.put(key, convert_color_rgba(color, opacity))
 
 
 def convert_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:

@@ -10,6 +10,7 @@ from typing import Any
 import imagecodecs
 import numpy
 
+from core_pdf.impl.caches import BoundedDict, IdentityCache
 from core_pdf.impl.graphics_color_spec import (
     ColorSpace,
     cs_param_floats,
@@ -71,10 +72,12 @@ def distinct_component_rows(
 
 type TintFunction = Callable[..., tuple[float, ...]]
 
-TINT_FUNCTION_CACHE: dict[object, tuple[object, TintFunction]] = {}
 TINT_FUNCTION_CACHE_LIMIT = 64
-TINT_FUNCTION_OBJECTS: dict[int, tuple[object, TintFunction]] = {}
+TINT_FUNCTION_CACHE: BoundedDict[object, tuple[object, TintFunction]] = BoundedDict(
+    TINT_FUNCTION_CACHE_LIMIT
+)
 TINT_FUNCTION_OBJECTS_LIMIT = 256
+TINT_FUNCTION_OBJECTS: IdentityCache[TintFunction] = IdentityCache(TINT_FUNCTION_OBJECTS_LIMIT)
 TINT_OUTPUT_CACHE_LIMIT = 4096
 
 
@@ -104,14 +107,10 @@ def tint_function_key(tint_fn: object) -> object | None:
 
 
 def tint_function(tint_fn: object) -> TintFunction:
-    seen = TINT_FUNCTION_OBJECTS.get(id(tint_fn))
-    if seen is not None and seen[0] is tint_fn:
-        return seen[1]
-    function = compiled_tint_function(tint_fn)
-    if len(TINT_FUNCTION_OBJECTS) >= TINT_FUNCTION_OBJECTS_LIMIT:
-        TINT_FUNCTION_OBJECTS.clear()
-    TINT_FUNCTION_OBJECTS[id(tint_fn)] = (tint_fn, function)
-    return function
+    seen = TINT_FUNCTION_OBJECTS.get(tint_fn)
+    if seen is not None:
+        return seen
+    return TINT_FUNCTION_OBJECTS.put(tint_fn, compiled_tint_function(tint_fn))
 
 
 def compiled_tint_function(tint_fn: object) -> TintFunction:
@@ -126,22 +125,19 @@ def compiled_tint_function(tint_fn: object) -> TintFunction:
         if cached is not None:
             return cached[1]
     compiled = compile_pdf_function(tint_fn)
-    outputs: dict[tuple[float, ...], tuple[float, ...]] = {}
+    outputs: BoundedDict[tuple[float, ...], tuple[float, ...]] = BoundedDict(
+        TINT_OUTPUT_CACHE_LIMIT
+    )
 
     def remembered(*inputs: float) -> tuple[float, ...]:
         if 0.0 in inputs and any(copysign(1.0, value) < 0.0 for value in inputs):
             return compiled(*inputs)
         output = outputs.get(inputs)
         if output is None:
-            output = compiled(*inputs)
-            if len(outputs) >= TINT_OUTPUT_CACHE_LIMIT:
-                outputs.clear()
-            outputs[inputs] = output
+            output = outputs.put(inputs, compiled(*inputs))
         return output
 
-    if len(TINT_FUNCTION_CACHE) >= TINT_FUNCTION_CACHE_LIMIT:
-        TINT_FUNCTION_CACHE.clear()
-    TINT_FUNCTION_CACHE[key] = (tint_fn, remembered)
+    TINT_FUNCTION_CACHE.put(key, (tint_fn, remembered))
     return remembered
 
 

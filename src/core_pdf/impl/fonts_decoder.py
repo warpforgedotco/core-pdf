@@ -18,6 +18,7 @@ from core_adobe_fonts.cmap.ranges import (
     iter_codespace_range,
 )
 from core_pdf._vendor.fontTools.ttLib import TTFont
+from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_cmap_resources import (
     CID_COLLECTION_UNICODE_OVERRIDES,
@@ -486,10 +487,10 @@ class GlyphOutlineArrays:
         self.xs = xs
         self.ys = ys
         self.spans = spans
-        self.linear: dict[
+        self.linear: BoundedDict[
             tuple[float, float, float, float],
             tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]],
-        ] = {}
+        ] = BoundedDict(LINEAR_CACHE_LIMIT)
 
     def linear_columns(
         self, a: float, b: float, c: float, d: float
@@ -497,11 +498,9 @@ class GlyphOutlineArrays:
         key = (a, b, c, d)
         columns = self.linear.get(key)
         if columns is None:
-            if len(self.linear) >= LINEAR_CACHE_LIMIT:
-                self.linear.clear()
             xs = self.xs
             ys = self.ys
-            columns = self.linear[key] = (xs * a + ys * c, xs * b + ys * d)
+            columns = self.linear.put(key, (xs * a + ys * c, xs * b + ys * d))
         return columns
 
 
@@ -610,7 +609,7 @@ class FontDecoder:
     glyph_outline_array_cache: dict[tuple[int, int | None, str], GlyphOutlineArrays | None]
     glyph_id_cache: dict[int, int | None]
     unicode_choice_cache: dict[tuple[bytes, int, int | None], UnicodeChoice]
-    string_glyph_cache: dict[bytes, tuple[DecodedGlyph, ...]]
+    string_glyph_cache: BoundedDict[bytes, tuple[DecodedGlyph, ...]]
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "font",
@@ -774,7 +773,7 @@ class FontDecoder:
         self.cff_unicode_repairs = {}
         self.simple_glyph_cache = {}
         self.cid_glyph_cache = {}
-        self.string_glyph_cache = {}
+        self.string_glyph_cache = BoundedDict(STRING_GLYPH_CACHE_MAX_ENTRIES)
 
     @staticmethod
     def cid_system_info_string(value: object) -> str | None:
@@ -903,10 +902,7 @@ class FontDecoder:
         cache = self.string_glyph_cache
         glyphs = cache.get(key)
         if glyphs is None:
-            glyphs = self.decode_glyphs_uncached(key)
-            if len(cache) >= STRING_GLYPH_CACHE_MAX_ENTRIES:
-                cache.clear()
-            cache[key] = glyphs
+            glyphs = cache.put(key, self.decode_glyphs_uncached(key))
         return glyphs
 
     def decode_glyphs_uncached(

@@ -40,6 +40,7 @@ from core_pdf._vendor.fontTools.pens.recordingPen import (
 )
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
+from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.fonts_raster_kernel import (
     Point,
     rasterize_contours,
@@ -1359,17 +1360,17 @@ program_cache = threading.local()
 def cached_truetype_program(
     data: bytes, cid_to_gid: bytes | None = None, *, use_cmap: bool = False
 ) -> TrueTypeFontProgram:
-    programs: dict[object, TrueTypeFontProgram] | None = getattr(program_cache, "programs", None)
+    programs: BoundedDict[object, TrueTypeFontProgram] | None = getattr(
+        program_cache, "programs", None
+    )
     if programs is None:
-        programs = program_cache.programs = {}
+        programs = program_cache.programs = BoundedDict(PROGRAM_CACHE_LIMIT)
     key: object = (data, cid_to_gid, use_cmap)
     program = programs.get(key)
     if program is None:
         base = programs.get(data)
         if base is None:
-            if len(programs) >= PROGRAM_CACHE_LIMIT:
-                programs.clear()
-            base = programs[data] = TrueTypeFontProgram(data)
+            base = programs.put(data, TrueTypeFontProgram(data))
         program = (
             base
             if cid_to_gid is None and not use_cmap

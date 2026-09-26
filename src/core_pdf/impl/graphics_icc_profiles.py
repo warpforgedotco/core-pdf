@@ -9,6 +9,7 @@ from typing import Any, ClassVar
 import imagecodecs
 import numpy
 
+from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.graphics_codec_backends import thread_count
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
@@ -98,7 +99,7 @@ MEMO_LIMIT = 1 << 16
 MEMO_TRANSFORMS = 32
 
 type RowMemo = dict[bytes, bytes]
-row_memos: dict[tuple[bytes, str, int, int], RowMemo] = {}
+row_memos: BoundedDict[tuple[bytes, str, int, int], RowMemo] = BoundedDict(MEMO_TRANSFORMS)
 
 
 def transform(
@@ -139,9 +140,7 @@ def memoized_cms_transform(
     key = (profile, color_space, intent, flags)
     memo = row_memos.get(key)
     if memo is None:
-        if len(row_memos) >= MEMO_TRANSFORMS:
-            row_memos.clear()
-        memo = row_memos[key] = {}
+        memo = row_memos.put(key, {})
     rows, channels = samples.shape
     width = channels * 2
     raw = samples.tobytes()

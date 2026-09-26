@@ -234,7 +234,7 @@ def store_plane(cache, key, plane) -> None:
 
 
 def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
-    from core_pdf.impl.render_target import ByteBudgetCache
+    from core_pdf.impl.caches import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=10_000_000)
     for index in range(4):
@@ -245,7 +245,7 @@ def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
 
 
 def test_a_plane_larger_than_the_budget_is_not_cached_at_all() -> None:
-    from core_pdf.impl.render_target import ByteBudgetCache
+    from core_pdf.impl.caches import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=1_000_000)
     store_plane(cache, plane_key(1), make_plane(5))
@@ -254,7 +254,7 @@ def test_a_plane_larger_than_the_budget_is_not_cached_at_all() -> None:
 
 
 def test_restoring_a_key_does_not_double_count_its_bytes() -> None:
-    from core_pdf.impl.render_target import ByteBudgetCache
+    from core_pdf.impl.caches import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=10_000_000)
     store_plane(cache, plane_key(1), make_plane(2))
@@ -264,7 +264,7 @@ def test_restoring_a_key_does_not_double_count_its_bytes() -> None:
 
 
 def test_a_cached_none_plane_costs_nothing() -> None:
-    from core_pdf.impl.render_target import ByteBudgetCache
+    from core_pdf.impl.caches import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=1_000)
     store_plane(cache, plane_key(1), None)

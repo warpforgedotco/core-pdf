@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_recording import TextState
 from core_pdf.impl.capture_tolerant_state import (
     FontCompanionsCache,
@@ -47,17 +48,17 @@ def test_companion_groups_ignore_subset_tags_and_sort_indirect_identities(docume
         ("first", PdfReference(1)),
     ]
     fonts: dict[str, object] = dict(reversed(entries) if reverse else entries)
-    cache: FontCompanionsCache = {}
+    cache: FontCompanionsCache = IdentityCache()
     grouped = font_companions(fonts, document.resolve, cache)
     assert grouped == {"Helvetica": ((1, 0), (2, 0), (3, 4))}
-    assert cache[id(fonts)][0] is fonts
+    assert cache.get(fonts) is grouped
     assert font_companions(fonts, document.resolve, cache) is grouped
 
 
 @pytest.mark.parametrize("font", [None, {}, {"BaseFont": None}, {"BaseFont": ""}])
 def test_unresolved_or_unnamed_siblings_do_not_create_companion_groups(document, font):
     document.resolver.objects[key_for(7)] = font
-    assert font_companions({"F": PdfReference(7)}, document.resolve, {}) == {}
+    assert font_companions({"F": PdfReference(7)}, document.resolve, IdentityCache()) == {}
 
 
 @pytest.mark.parametrize(
@@ -72,11 +73,15 @@ def test_unresolved_or_unnamed_siblings_do_not_create_companion_groups(document,
     ],
 )
 def test_nonindirect_or_malformed_resources_disable_document_sharing(document, resources, font):
-    assert font_signature(PdfReference(1), font, resources, document.resolve, {}) is None
+    assert (
+        font_signature(PdfReference(1), font, resources, document.resolve, IdentityCache()) is None
+    )
 
 
 def test_unnamed_font_signature_retains_reference_without_companions(document):
-    signature = font_signature(PdfReference(8, 2), {}, {"Font": {}}, document.resolve, {})
+    signature = font_signature(
+        PdfReference(8, 2), {}, {"Font": {}}, document.resolve, IdentityCache()
+    )
     assert signature == (8, 2, ())
 
 

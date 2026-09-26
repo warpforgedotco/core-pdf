@@ -6,6 +6,7 @@ from enum import StrEnum
 from operator import attrgetter
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
 
+from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.types import Rectangle
 
@@ -649,9 +650,13 @@ class GlyphCluster:
         )
 
 
-CONFIDENCE_CACHE: dict[tuple[str, str, tuple[str, ...]], float] = {}
 CONFIDENCE_CACHE_LIMIT = 8192
-SEMANTICS_CACHE: dict[tuple[str, str], GlyphUnicodeSemantics] = {}
+CONFIDENCE_CACHE: BoundedDict[tuple[str, str, tuple[str, ...]], float] = BoundedDict(
+    CONFIDENCE_CACHE_LIMIT
+)
+SEMANTICS_CACHE: BoundedDict[tuple[str, str], GlyphUnicodeSemantics] = BoundedDict(
+    CONFIDENCE_CACHE_LIMIT
+)
 
 
 def min_optional_confidence(left: float | None, right: float | None) -> float | None:
@@ -674,12 +679,9 @@ def glyph_unicode_confidence(
         pass
     except TypeError:
         return compute_glyph_unicode_confidence(text, unicode_source, alternates)
-    if len(CONFIDENCE_CACHE) >= CONFIDENCE_CACHE_LIMIT:
-        CONFIDENCE_CACHE.clear()
-    confidence = CONFIDENCE_CACHE[key] = compute_glyph_unicode_confidence(
-        text, unicode_source, alternates
+    return CONFIDENCE_CACHE.put(
+        key, compute_glyph_unicode_confidence(text, unicode_source, alternates)
     )
-    return confidence
 
 
 def compute_glyph_unicode_confidence(
@@ -705,9 +707,7 @@ def glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSeman
     key = (text, unicode_source)
     semantics = SEMANTICS_CACHE.get(key)
     if semantics is None:
-        if len(SEMANTICS_CACHE) >= CONFIDENCE_CACHE_LIMIT:
-            SEMANTICS_CACHE.clear()
-        semantics = SEMANTICS_CACHE[key] = compute_glyph_unicode_semantics(text, unicode_source)
+        semantics = SEMANTICS_CACHE.put(key, compute_glyph_unicode_semantics(text, unicode_source))
     return semantics
 
 

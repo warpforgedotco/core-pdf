@@ -17,6 +17,7 @@ from core_pdf.impl.array_views import (
     uint8_image_view,
     uint8_view,
 )
+from core_pdf.impl.caches import MISSING, ByteBudgetCache, IdentityCache
 from core_pdf.impl.capture_records import (
     CapturedPath,
     CapturedSoftMask,
@@ -67,6 +68,7 @@ from core_pdf.impl.render_paths import (
     rasterize_unclipped_line_normal,
 )
 from core_pdf.impl.render_patterns import (
+    TILING_CELL_CACHE_LIMIT,
     TilingCellCache,
     cell_paints_nothing,
     shading_color_rgba,
@@ -148,33 +150,8 @@ def prepared_image_bytes(prepared: PreparedImage | None) -> int:
     return prepared.raster.array.nbytes + (0 if soft_mask is None else soft_mask.array.nbytes)
 
 
-class ByteBudgetCache[K, V]:
-    __slots__ = ("budget", "entries", "size")
-
-    def __init__(self, budget: int) -> None:
-        self.budget = budget
-        self.entries: dict[K, tuple[V, int]] = {}
-        self.size = 0
-
-    def get(self, key: K) -> V | None:
-        entry = self.entries.get(key)
-        return None if entry is None else entry[0]
-
-    def store(self, key: K, value: V, size: int) -> None:
-        entries = self.entries
-        previous = entries.pop(key, None)
-        if previous is not None:
-            self.size -= previous[1]
-        if size > self.budget:
-            return
-        while entries and self.size + size > self.budget:
-            self.size -= entries.pop(next(iter(entries)))[1]
-        entries[key] = (value, size)
-        self.size += size
-
-
 type PreparedImageCache = ByteBudgetCache[int, tuple[ImageSource, PreparedImage | None]]
-type PreparedShadingCache = dict[tuple[int, ColorRendering], tuple[object, PreparedShading | None]]
+type PreparedShadingCache = IdentityCache[PreparedShading | None]
 SHADING_CACHE_LIMIT = 4096
 
 
@@ -564,9 +541,9 @@ class RasterTarget:
         self.scope_stack: list[tuple[int, list[int], int, int, int]] = []
         self.soft_mask_cache: SoftMaskCache = ByteBudgetCache(SOFT_MASK_CACHE_BYTES)
         self.prepared_image_cache: PreparedImageCache = ByteBudgetCache(PREPARED_IMAGE_CACHE_BYTES)
-        self.tiling_cell_cache: TilingCellCache = {}
-        self.prepared_shading_cache: PreparedShadingCache = {}
-        self.shading_evaluator_cache: ShadingEvaluatorCache = {}
+        self.tiling_cell_cache: TilingCellCache = IdentityCache(TILING_CELL_CACHE_LIMIT)
+        self.prepared_shading_cache: PreparedShadingCache = IdentityCache(SHADING_CACHE_LIMIT)
+        self.shading_evaluator_cache: ShadingEvaluatorCache = IdentityCache(SHADING_CACHE_LIMIT)
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, ElementaryScratch] = {}
         self.group_member_boxes: dict[int, tuple[float, float, float, float] | None] | None = None
@@ -2839,19 +2816,14 @@ class RasterTarget:
     def prepared_shading(
         self, dictionary: object, rendering: ColorRendering
     ) -> PreparedShading | None:
-        key = (id(dictionary), rendering)
         cache = self.prepared_shading_cache
-        cached = cache.get(key)
-        if cached is not None and cached[0] is dictionary:
-            return cached[1]
-        evaluators = self.shading_evaluator_cache
-        if len(evaluators) >= SHADING_CACHE_LIMIT:
-            evaluators.clear()
-        shading = prepare_shading(dictionary, rendering=rendering, evaluators=evaluators)
-        if len(cache) >= SHADING_CACHE_LIMIT:
-            cache.clear()
-        cache[key] = (dictionary, shading)
-        return shading
+        cached = cache.get(dictionary, rendering, default=MISSING)
+        if cached is not MISSING:
+            return cached
+        shading = prepare_shading(
+            dictionary, rendering=rendering, evaluators=self.shading_evaluator_cache
+        )
+        return cache.put(dictionary, shading, rendering)
 
     def paint_shading(self, data: dict[str, Any], blend_mode: str | None) -> None:
         shading = self.prepared_shading(

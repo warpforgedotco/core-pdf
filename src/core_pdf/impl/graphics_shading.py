@@ -6,6 +6,7 @@ from collections.abc import Callable
 from functools import lru_cache
 from typing import ClassVar
 
+from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.graphics_color import color_operands_to_srgb
 from core_pdf.impl.graphics_color_spec import parse_color_space, raw_color_space_paints
 from core_pdf.impl.graphics_functions import (
@@ -122,10 +123,8 @@ class PreparedShading(Record):
         )
 
 
-type ShadingEvaluatorKey = tuple[int, int, ColorRendering]
-type ShadingEvaluatorCache = dict[
-    ShadingEvaluatorKey,
-    tuple[object, object, PdfFunctionEvaluator, Callable[[float], tuple[float, ...]], str],
+type ShadingEvaluatorCache = IdentityCache[
+    tuple[PdfFunctionEvaluator, Callable[[float], tuple[float, ...]], str]
 ]
 
 
@@ -170,15 +169,15 @@ def prepare_shading(
         normalized["BBox"] = bbox
     function = normalized.get("Function")
     color_space = normalized["ColorSpace"]
-    key = (id(function), id(color_space), rendering)
-    cached = evaluators.get(key) if evaluators is not None else None
-    if cached is not None and cached[0] is function and cached[1] is color_space:
-        compiled = cached[2]
+    cached = (
+        evaluators.get(function, rendering, pins=(color_space,)) if evaluators is not None else None
+    )
+    if cached is not None:
+        compiled, evaluator, color_model = cached
         try:
             spec = parse_shading(normalized, compile_function=lambda _function: compiled)
         except ValueError:
             return None
-        evaluator, color_model = cached[3], cached[4]
     else:
         try:
             spec = parse_shading(normalized, compile_function=compile_pdf_function)
@@ -187,7 +186,9 @@ def prepare_shading(
             return None
         evaluator, color_model = shading_color_evaluator(spec.evaluator, space, rendering)
         if evaluators is not None:
-            evaluators[key] = (function, color_space, spec.evaluator, evaluator, color_model)
+            evaluators.put(
+                function, (spec.evaluator, evaluator, color_model), rendering, pins=(color_space,)
+            )
     return PreparedShading(
         spec.shading_type,
         coords,

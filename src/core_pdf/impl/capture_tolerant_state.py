@@ -5,6 +5,7 @@ from __future__ import annotations
 import typing
 from collections.abc import Mapping
 
+from core_pdf.impl.caches import MISSING, BoundedDict, IdentityCache
 from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.graphics_color_spec import parse_color_space
@@ -25,7 +26,7 @@ from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.types import PdfReference, PdfString
 
 FontCompanions = dict[str, tuple[tuple[int, int], ...]]
-FontCompanionsCache = dict[int, tuple[dict[str, object], FontCompanions]]
+FontCompanionsCache = IdentityCache[FontCompanions]
 
 
 def font_companions(
@@ -33,9 +34,9 @@ def font_companions(
     resolve: typing.Callable[[object], object],
     cache: FontCompanionsCache,
 ) -> FontCompanions:
-    entry = cache.get(id(fonts))
-    if entry is not None and entry[0] is fonts:
-        return entry[1]
+    entry = cache.get(fonts)
+    if entry is not None:
+        return entry
     grouped: dict[str, list[tuple[int, int]]] = {}
     for reference in fonts.values():
         if type(reference) is not PdfReference:
@@ -48,9 +49,7 @@ def font_companions(
             grouped.setdefault(name, []).append(
                 (reference.object_number, reference.generation_number)
             )
-    companions = {name: tuple(sorted(refs)) for name, refs in grouped.items()}
-    cache[id(fonts)] = (fonts, companions)
-    return companions
+    return cache.put(fonts, {name: tuple(sorted(refs)) for name, refs in grouped.items()})
 
 
 def font_signature(
@@ -79,29 +78,29 @@ COLOR_CACHE_LIMIT = 4096
 SOFT_MASK_CACHE_LIMIT = COLOR_CACHE_LIMIT
 
 
+def soft_mask_cache_limit() -> int:
+    return SOFT_MASK_CACHE_LIMIT
+
+
 class RecoveringTextState(ContentInterpreter):
     recovery: CaptureRecovery
-    normalized_colors: dict[tuple[ColorSpace, tuple[object, ...]], tuple[float, ...]]
-    parsed_soft_masks: dict[tuple[int, Matrix, int], tuple[object, object, SoftMask | None]]
+    normalized_colors: BoundedDict[tuple[ColorSpace, tuple[object, ...]], tuple[float, ...]]
+    parsed_soft_masks: IdentityCache[SoftMask | None]
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
         cache = self.parsed_soft_masks
-        resources = self.resources
+        pins = (self.resources,)
         ctm = self.graphics.ctm
-        key = (id(value), ctm, id(resources))
-        cached = cache.get(key)
-        if cached is not None and cached[0] is value and cached[1] is resources:
-            return cached[2]
+        cached = cache.get(value, ctm, pins=pins, default=MISSING)
+        if cached is not MISSING:
+            return cached
         mask = parse_soft_mask(
             value,
             self.resolver,
             ctm=ctm,
             compile_function=compile_pdf_function,
         )
-        if len(cache) >= SOFT_MASK_CACHE_LIMIT:
-            cache.clear()
-        cache[key] = (value, resources, mask)
-        return mask
+        return cache.put(value, mask, ctm, pins=pins)
 
     def operation_table(self) -> Mapping[str, OperationHandler]:
         overrides = self.operator_overrides
@@ -211,9 +210,7 @@ class RecoveringTextState(ContentInterpreter):
             return cached
         normalized = super().normalize_color_components(spec, components)
         if cacheable and normalized is not None:
-            if len(self.normalized_colors) >= COLOR_CACHE_LIMIT:
-                self.normalized_colors.clear()
-            self.normalized_colors[cache_key] = normalized
+            self.normalized_colors.put(cache_key, normalized)
         return normalized
 
     def reject[T](self, error: Exception, context: str, fallback: T) -> T:
