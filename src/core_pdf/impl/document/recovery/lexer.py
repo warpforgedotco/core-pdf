@@ -180,28 +180,25 @@ class PdfLexer(SyntaxLexer):
             self.scanner_rules = rules
         return scanner
 
+    def scanner_args(self) -> tuple[int] | tuple[int, Decipher, int, int]:
+        """The scanner's arguments at this position: with the decipher and
+        object identity when strings are to be decrypted."""
+        if self.decipher is not None and self.current_obj_num is not None:
+            return (self.pos, self.decipher, self.current_obj_num, self.current_gen_num or 0)
+        return (self.pos,)
+
     def parse_dictionary(self) -> PdfDict:
         # The scanner owns well-formed syntax and declines the rest, which the
         # Python below then parses from the same position -- including every
         # recovery hook this class overrides.
-        if self.decipher is not None and self.current_obj_num is not None:
-            parsed = self.object_scanner().parse_dictionary(
-                self.pos, self.decipher, self.current_obj_num, self.current_gen_num or 0
-            )
-        else:
-            parsed = self.object_scanner().parse_dictionary(self.pos)
+        parsed = self.object_scanner().parse_dictionary(*self.scanner_args())
         if parsed is None:
             return super().parse_dictionary()
         dictionary, self.pos = parsed
         return dictionary
 
     def parse_array(self) -> list[Any]:
-        if self.decipher is not None and self.current_obj_num is not None:
-            parsed = self.object_scanner().parse_array(
-                self.pos, self.decipher, self.current_obj_num, self.current_gen_num or 0
-            )
-        else:
-            parsed = self.object_scanner().parse_array(self.pos)
+        parsed = self.object_scanner().parse_array(*self.scanner_args())
         if parsed is None:
             return super().parse_array()
         values, self.pos = parsed
@@ -532,30 +529,18 @@ class PdfLexer(SyntaxLexer):
             self.pos + 6 <= self.data_len
             and matches_keyword_with_one_substitution(self.raw_data, self.pos, b"stream")
         ):
-            next_pos = self.pos + 6
-            if next_pos < self.data_len:
-                next_byte = self.raw_data[next_pos]
-                if next_byte not in (10, 13):
-                    if next_byte in (0, 9, 12, 32):
-                        separator_end = next_pos + 1
-                        while separator_end < self.data_len and self.raw_data[separator_end] in (
-                            0,
-                            9,
-                            12,
-                            32,
-                        ):
-                            separator_end += 1
-                        self.pos = (
-                            separator_end
-                            if separator_end < self.data_len
-                            and self.raw_data[separator_end] in (10, 13)
-                            else next_pos + 1
-                        )
-                        return self.parse_stream(dictionary)
-                    if next_byte != 37:
-                        self.pos = next_pos
-                        return self.parse_stream(dictionary)
-            self.pos = next_pos
+            # After the keyword, a run of spaces is skipped up to the end of
+            # line it leads to; without one, only the first space.
+            self.pos += 6
+            data = self.raw_data
+            if self.pos < self.data_len and data[self.pos] in (0, 9, 12, 32):
+                separator_end = self.pos + 1
+                while separator_end < self.data_len and data[separator_end] in (0, 9, 12, 32):
+                    separator_end += 1
+                if separator_end < self.data_len and data[separator_end] in (10, 13):
+                    self.pos = separator_end
+                else:
+                    self.pos += 1
             return self.parse_stream(dictionary)
         return dictionary
 

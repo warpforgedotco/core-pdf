@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import mmap
-import re
 import zlib
 from collections.abc import Iterator
 from itertools import batched
-from typing import Any
+from typing import Any, cast
 
 import numpy
 
@@ -21,6 +20,8 @@ from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import (
+    XREF_ROW_SIZE,
+    XREF_ROWS,
     ParsedXRefSection,
     PdfXRefEntry,
     XRefTable,
@@ -28,7 +29,6 @@ from core_pdf_spec.s_07_syntax.xref import (
     decode_xref_row,
     key_for,
     new_xref_entry,
-    xref_column,
 )
 from core_pdf_spec.s_07_syntax.xref import XRefScanner as SyntaxXRefScanner
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -118,9 +118,8 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
             else:
                 validate_xref_numbers(offset, generation)
                 next_pos = pos + 18
-                if next_pos < n:
-                    while next_pos < n and data[next_pos] in (9, 32):
-                        next_pos += 1
+                while next_pos < n and data[next_pos] in (9, 32):
+                    next_pos += 1
                 if next_pos < n:
                     byte = data[next_pos]
                     if byte == 13:
@@ -140,12 +139,6 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
     return offset, generation, in_use, next_pos
 
 
-# A run of canonical xref rows: ten digits, five, n or f, and a two-byte
-# end of line (ISO 32000-2 7.5.4). See read_subsection.
-CANONICAL_XREF_ROWS = re.compile(rb"(?:[0-9]{10} [0-9]{5} [fn](?: \r| \n|\r\n))*")
-CANONICAL_XREF_ROW_SIZE = 20
-
-
 def canonical_xref_entries(
     data: PdfByteBuffer, pos: int, start_obj: int, count: int
 ) -> XRefTable | None:
@@ -156,12 +149,12 @@ def canonical_xref_entries(
     next row starts with a digit and so no line end runs into it. A
     generation over 65535, which the per-row parse rejects, leaves this to it.
     """
-    end = pos + CANONICAL_XREF_ROW_SIZE * count
+    end = pos + XREF_ROW_SIZE * count
     if (
         count <= 0
         or end >= len(data)
         or not 48 <= data[end] <= 57
-        or CANONICAL_XREF_ROWS.fullmatch(data, pos, end) is None
+        or XREF_ROWS.fullmatch(data, pos, end) is None
     ):
         return None
     return canonical_table_entries(data, pos, start_obj, count)
@@ -251,26 +244,18 @@ class XRefScanner(SyntaxXRefScanner):
     def find_startxref(
         data: PdfByteBuffer, *, semantic_context: SemanticContext | None = None
     ) -> int | None:
+        # With no %%EOF, the number must run to the end of the data instead.
         eof_pos = find_eof_marker(data)
-        has_eof = eof_pos >= 0
-        if not has_eof:
+        search_end = eof_pos + 1 if eof_pos >= 0 else len(data)
+        if eof_pos < 0:
             eof_pos = len(data)
-
-        search_end = eof_pos + 1 if has_eof else len(data)
-        while True:
-            marker = data.rfind(b"startxref", 0, search_end)
-            if marker < 0:
-                break
+        # rfind keeps each marker's nine bytes before search_end, and so
+        # within the data and before eof_pos.
+        while (marker := data.rfind(b"startxref", 0, search_end)) >= 0:
             search_end = marker
-            if marker < 0 or marker + 9 > len(data):
-                continue
-
             if marker > 0 and not WS_TABLE[data[marker - 1]]:
                 continue
             if marker + 9 >= len(data) or not WS_TABLE[data[marker + 9]]:
-                continue
-
-            if marker > eof_pos:
                 continue
 
             pos = XRefScanner.skip_ws(data, marker + 9, semantic_context=semantic_context)
@@ -278,7 +263,6 @@ class XRefScanner(SyntaxXRefScanner):
             if not startxref_number_bytes or 11 in startxref_number_bytes:
                 continue
 
-            number_end = pos + len(startxref_number_bytes)
             number_parts = startxref_number_bytes.strip().split(None, 1)
             if not number_parts:
                 continue
@@ -287,15 +271,9 @@ class XRefScanner(SyntaxXRefScanner):
                 number_bytes = number_bytes.split(b"%", 1)[0]
             number_end = pos + startxref_number_bytes.find(number_bytes) + len(number_bytes)
             next_pos = XRefScanner.skip_ignored(
-                data,
-                number_end,
-                stop=eof_pos if has_eof else None,
-                semantic_context=semantic_context,
+                data, number_end, stop=eof_pos, semantic_context=semantic_context
             )
-            if has_eof:
-                if next_pos != eof_pos:
-                    continue
-            elif next_pos != len(data):
+            if next_pos != eof_pos:
                 continue
 
             try:
@@ -438,10 +416,8 @@ class XRefScanner(SyntaxXRefScanner):
         is at header_marker, read without its object's endobj."""
         lexer.pos = header_marker + 3
         lexer.skip_ignored()
-        dict_start = lexer.pos
-        if data[dict_start : dict_start + 2] != b"<<":
+        if data[lexer.pos : lexer.pos + 2] != b"<<":
             return None
-        lexer.pos = dict_start
         try:
             dict_obj = lexer.parse_dictionary()
         except PdfParseError:
@@ -456,7 +432,7 @@ class XRefScanner(SyntaxXRefScanner):
         after_stream = stream_pos + 6
         if after_stream >= len(data) or not WS_TABLE[data[after_stream]]:
             return None
-        if after_stream < len(data) and data[after_stream] not in (10, 13):
+        if data[after_stream] not in (10, 13):
             while after_stream < len(data) and data[after_stream] in (0, 9, 12, 32):
                 after_stream += 1
         lexer.pos = after_stream
@@ -548,30 +524,16 @@ class XRefScanner(SyntaxXRefScanner):
             try:
                 obj = lexer.parse_indirect_object()
             except Exception:
-                if stop_at_first_trailer:
-                    stream_marker = data.find(b"stream", offset, scan_end)
-                    next_object_marker = data.find(b"obj", marker + 3, scan_end)
-                    if stream_marker >= 0 and (
-                        next_object_marker < 0 or stream_marker < next_object_marker
-                    ):
-                        prefix = data[marker + 3 : stream_marker]
-                        uncommented = b"\n".join(
-                            line.split(b"%", 1)[0] for line in prefix.splitlines()
-                        )
-                        if not uncommented.strip():
-                            break
+                if (
+                    stop_at_first_trailer
+                    and bare_stream_marker(data, offset, marker, scan_end) >= 0
+                ):
+                    break
                 continue
             if stop_at_first_trailer and not isinstance(obj, PdfStream):
-                stream_marker = data.find(b"stream", offset, scan_end)
-                next_object_marker = data.find(b"obj", marker + 3, scan_end)
-                if stream_marker >= 0 and (
-                    next_object_marker < 0 or stream_marker < next_object_marker
-                ):
-                    prefix = data[marker + 3 : stream_marker]
-                    uncommented = b"\n".join(line.split(b"%", 1)[0] for line in prefix.splitlines())
-                    endstream = data.find(b"endstream", stream_marker + 6, scan_end)
-                    if not uncommented.strip() and endstream < 0:
-                        break
+                stream_marker = bare_stream_marker(data, offset, marker, scan_end)
+                if stream_marker >= 0 and data.find(b"endstream", stream_marker + 6, scan_end) < 0:
+                    break
             early_stream_end = (
                 isinstance(obj, PdfStream)
                 and data.find(b"endstream", offset, max(offset, lexer.pos - 9)) >= 0
@@ -606,7 +568,7 @@ class XRefScanner(SyntaxXRefScanner):
         if table is not None:
             entries = table
             actual_count = num_objs - 1
-            pos += CANONICAL_XREF_ROW_SIZE * actual_count
+            pos += XREF_ROW_SIZE * actual_count
         for i in range(actual_count, num_objs):
             entry_pos = cls.skip_ws(data, pos)
             if data[entry_pos : entry_pos + 7].startswith((b"trailer", b"<<")):
@@ -682,8 +644,6 @@ class XRefScanner(SyntaxXRefScanner):
                 if start_obj < 0 or num_objs < 0:
                     raise PdfParseError("invalid xref table subsection")
                 pos = next_pos
-                if num_objs > 0:
-                    max_object_number = max(max_object_number, start_obj + num_objs - 1)
                 subsection, pos, maximum = cls.read_subsection(data, pos, start_obj, num_objs)
                 entries.update(subsection)
                 max_object_number = max(max_object_number, maximum)
@@ -747,8 +707,7 @@ class XRefScanner(SyntaxXRefScanner):
     @staticmethod
     def parse_stream(stream: PdfStream) -> tuple[XRefTable, PdfDict]:
         dict_obj = stream.dictionary
-        type_value = dict_obj.get("Type")
-        type_name = recover_pdf_name(type_value)
+        type_name = recover_pdf_name(dict_obj.get("Type"))
         if type_name is not None and type_name != "XRef":
             raise PdfParseError("invalid xref stream type")
         size = dict_obj.get("Size")
@@ -760,7 +719,8 @@ class XRefScanner(SyntaxXRefScanner):
             raise PdfParseError("invalid xref stream W")
         if not all(type(x) is int for x in w_raw):
             raise PdfParseError("invalid xref stream W")
-        w = [x for x in w_raw[:3] if type(x) is int]
+        # Every entry is an int, checked above.
+        w = cast("list[int]", list(w_raw[:3]))
         if any(width < 0 for width in w):
             raise PdfParseError("invalid xref stream W")
 
@@ -770,7 +730,7 @@ class XRefScanner(SyntaxXRefScanner):
         elif not isinstance(index_raw, (list, tuple)) or not all(type(x) is int for x in index_raw):
             raise PdfParseError("invalid xref stream Index")
         else:
-            index = [x for x in index_raw if type(x) is int]
+            index = cast("list[int]", list(index_raw))
             if len(index) % 2 != 0:
                 index = index[:-1]
         effective_size = size
@@ -826,7 +786,7 @@ XREF_STREAM_KEY_LIMIT = 1 << 46
 def xref_stream_array(
     rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], start: int, width: int
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint64]]:
-    """xref_column, left as a uint64 array."""
+    """A W field of every row, read big-endian into a uint64 column."""
     values = numpy.zeros(len(rows), dtype=numpy.uint64)
     for column in range(start, start + width):
         values = (values << numpy.uint64(8)) | rows[:, column]
@@ -911,9 +871,9 @@ def decode_xref_stream_rows(
     )
     if last_object < XREF_STREAM_KEY_LIMIT:
         return xref_stream_entries(rows, w, available_index, effective_size)
-    kinds = xref_column(rows, 0, w[0]) if w[0] else [1] * row_count
-    values = xref_column(rows, w[0], w[1])
-    generations = xref_column(rows, w[0] + w[1], w[2]) if w[2] else [0] * row_count
+    kinds = xref_stream_array(rows, 0, w[0]).tolist() if w[0] else [1] * row_count
+    values = xref_stream_array(rows, w[0], w[1]).tolist()
+    generations = xref_stream_array(rows, w[0] + w[1], w[2]).tolist() if w[2] else [0] * row_count
     entries: XRefTable = {}
     row = 0
     for i in range(0, len(available_index), 2):
@@ -938,6 +898,18 @@ def decode_xref_stream_rows(
             else:
                 entries[object_number << 16] = PdfXRefEntry(0, 0, False)
     return entries
+
+
+def bare_stream_marker(data: PdfByteBuffer, offset: int, marker: int, scan_end: int) -> int:
+    """Where a stream keyword follows the obj keyword at marker, before any
+    later obj, with only whitespace and comments between them; -1 if none."""
+    stream_marker = data.find(b"stream", offset, scan_end)
+    next_object_marker = data.find(b"obj", marker + 3, scan_end)
+    if stream_marker < 0 or 0 <= next_object_marker <= stream_marker:
+        return -1
+    prefix = data[marker + 3 : stream_marker]
+    uncommented = b"\n".join(line.split(b"%", 1)[0] for line in prefix.splitlines())
+    return -1 if uncommented.strip() else stream_marker
 
 
 def find_eof_marker(data: PdfByteBuffer) -> int:
