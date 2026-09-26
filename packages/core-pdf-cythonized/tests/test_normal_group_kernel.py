@@ -97,3 +97,22 @@ def test_render_target_uses_the_kernel():
     from core_pdf.impl.render import target
 
     assert target.composite_normal_group is composite_normal_group
+
+
+@pytest.mark.parametrize("index", range(0, len(GOLDEN), 7))
+@pytest.mark.parametrize("scale", [1.0, 0.6, 1.4, 0.0, -0.5, 2e-3])
+def test_the_effective_plane_is_composite_group_intos(index, scale):
+    # composite_group_into's numpy expression, which the plane replaced.
+    case = GOLDEN[index]
+    source = case["source"]
+    expected = numpy.clip(
+        numpy.rint(source[..., 3].astype(numpy.float64) * scale), 0.0, 255.0
+    ).astype(numpy.uint8)
+    destination = case["destination"].copy()
+    plane = composite_normal_group(destination, source, scale, 1.0, True)
+    assert plane is not None
+    assert plane.dtype == numpy.uint8
+    assert numpy.array_equal(plane, expected)
+    alone = case["destination"].copy()
+    assert composite_normal_group(alone, source, scale) is None
+    assert numpy.array_equal(alone, destination)

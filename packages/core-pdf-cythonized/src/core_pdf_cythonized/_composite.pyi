@@ -21,4 +21,5 @@ def composite_normal_group(
     rendered: numpy.ndarray[Any, Any],
     source_alpha_scale: float,
     target_alpha_scale: float = ...,
-) -> None: ...
+    effective_plane: bool = ...,
+) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]] | None: ...

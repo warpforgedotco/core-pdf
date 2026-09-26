@@ -1524,12 +1524,15 @@ class RasterTarget:
                 group_blend_mode,
                 semantic_context=self.semantic_context,
             )
+        if normalized_blend_mode in {None, "normal"} and len(group.pixels) >= 4_096:
+            # The kernel reads the effective alpha out of its own table as it
+            # scans the group, rather than numpy making it in five passes.
+            plane = composite_normal_group(destination, child, source_scale, 1.0, True)
+            assert plane is not None
+            return plane
         effective_alpha = numpy.clip(
             numpy.rint(child[..., 3].astype(numpy.float64) * source_scale), 0.0, 255.0
         ).astype(numpy.uint8)
-        if normalized_blend_mode in {None, "normal"} and len(group.pixels) >= 4_096:
-            composite_normal_group(destination, child, source_scale)
-            return effective_alpha
         composite_blended_group_numpy(
             destination,
             child,
