@@ -238,23 +238,22 @@ def unique_attribute(
     return matches[0]["values"][0]
 
 
+DIGEST_ALGORITHMS: dict[str, type[hashes.HashAlgorithm]] = {
+    SHA256_OID: hashes.SHA256,
+    SHA384_OID: hashes.SHA384,
+    SHA512_OID: hashes.SHA512,
+    SHA3_256_OID: hashes.SHA3_256,
+    SHA3_384_OID: hashes.SHA3_384,
+    SHA3_512_OID: hashes.SHA3_512,
+}
+
+
 def digest_algorithm(identifier: Any) -> hashes.HashAlgorithm:
     oid = require_algorithm(identifier, None, require_absent_parameters=False)
-    match oid:
-        case value if value == SHA256_OID:
-            algorithm: hashes.HashAlgorithm = hashes.SHA256()
-        case value if value == SHA384_OID:
-            algorithm = hashes.SHA384()
-        case value if value == SHA512_OID:
-            algorithm = hashes.SHA512()
-        case value if value == SHA3_256_OID:
-            algorithm = hashes.SHA3_256()
-        case value if value == SHA3_384_OID:
-            algorithm = hashes.SHA3_384()
-        case value if value == SHA3_512_OID:
-            algorithm = hashes.SHA3_512()
-        case _:
-            raise UnsupportedAlgorithmError(f"Unsupported PDF MAC digest algorithm: {oid}")
+    algorithm_type = DIGEST_ALGORITHMS.get(oid)
+    if algorithm_type is None:
+        raise UnsupportedAlgorithmError(f"Unsupported PDF MAC digest algorithm: {oid}")
+    algorithm = algorithm_type()
     parameters = identifier["parameters"]
     if oid in {SHA3_256_OID, SHA3_384_OID, SHA3_512_OID}:
         valid_parameters = isinstance(parameters, core.Void)
