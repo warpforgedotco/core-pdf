@@ -65,7 +65,13 @@ def decode_charstring(encrypted: bytes, len_iv: int) -> bytes:
 TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+put\b")
 
 
-def parse_type1_font_program_encoding(font_program: bytes | memoryview) -> dict[int, str]:
+def parse_type1_font_program_encoding(
+    font_program: bytes | memoryview, *, skip_out_of_range: bool = False
+) -> dict[int, str]:
+    """The `dup code /name put` entries before eexec.
+
+    A code above 255 raises, or with `skip_out_of_range` is left out.
+    """
     data = bytes(font_program)
     eexec_pos = data.find(b"currentfile eexec")
     if eexec_pos >= 0:
@@ -75,6 +81,8 @@ def parse_type1_font_program_encoding(font_program: bytes | memoryview) -> dict[
     for match in TYPE1_ENCODING_ENTRY_RE.finditer(data):
         code = int(match.group(1))
         if code > 255:
+            if skip_out_of_range:
+                continue
             raise ValueError("Type 1 encoding code outside byte range")
         differences[code] = match.group(2).decode("latin-1")
     return differences

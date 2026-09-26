@@ -28,6 +28,7 @@ from core_adobe_fonts.type1.program import (
     decode_charstring,
     decode_eexec_payload,
 )
+from core_adobe_fonts.type1.program import parse_type1_font_program_encoding as parse_encoding
 from core_pdf._vendor.fontTools.cffLib import (
     cffExpertSubsetStrings,
     cffIExpertStrings,
@@ -1876,21 +1877,8 @@ class Type1FontProgram(Type1FontProgramBase, BitmapFromContours):
             return ()
 
 
-TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+put\b")
-
-
 def parse_type1_font_program_encoding(font_program: bytes | memoryview) -> dict[int, str]:
-    data = bytes(font_program)
-    eexec_pos = data.find(b"currentfile eexec")
-    if eexec_pos >= 0:
-        data = data[:eexec_pos]
-
-    differences: dict[int, str] = {}
-    for match in TYPE1_ENCODING_ENTRY_RE.finditer(data):
-        code = int(match.group(1))
-        if 0 <= code <= 255:
-            differences[code] = match.group(2).decode("latin-1")
-    return differences
+    return parse_encoding(font_program, skip_out_of_range=True)
 
 
 __all__ = (
