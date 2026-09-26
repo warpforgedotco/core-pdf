@@ -5,10 +5,11 @@ from __future__ import annotations
 import typing
 from collections.abc import Callable
 from copy import copy
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import (
+    NON_PAINTING_RENDER_MODES,
     ContentSink,
     GraphicsState,
     MarkedContentEntry,
@@ -58,9 +59,6 @@ from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontProvider, Fon
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
-
-if TYPE_CHECKING:
-    pass
 
 
 def moved_to(matrix: Matrix, e: float, f: float) -> Matrix:
@@ -365,13 +363,7 @@ class ContentInterpreter:
             horizontal_scale=self.graphics.horizontal_scale,
             glyphs=glyphs,
         )
-        te, tf = self.text_matrix.e, self.text_matrix.f
-        ta, tb, tc, td = (
-            self.text_matrix.a,
-            self.text_matrix.b,
-            self.text_matrix.c,
-            self.text_matrix.d,
-        )
+        ta, tb, tc, td, te, tf = self.text_matrix
         if text:
             self.sink.show_text(self, text, data, glyphs, decoder, adv_x, adv_y)
         self.text_matrix = moved_to(
@@ -380,7 +372,7 @@ class ContentInterpreter:
         self.sink.text_boundary(self, "shown")
 
     def render_type3_glyphs(self, data: bytes | memoryview, decoder: FontService) -> None:
-        if self.graphics.render_mode in {3, 7}:
+        if self.graphics.render_mode in NON_PAINTING_RENDER_MODES:
             return
         font = decoder.font
         char_procs = font.get("CharProcs")
@@ -443,20 +435,10 @@ class ContentInterpreter:
             return
         pending_bytes = bytearray()
 
-        decoder = (
-            self.graphics.current_decoder
-            if self.graphics.current_decoder is not None
-            else self.get_decoder()
-        )
+        decoder = self.get_decoder()
         is_vert = decoder.is_vertical
 
-        te, tf = self.text_matrix.e, self.text_matrix.f
-        ta, tb, tc, td = (
-            self.text_matrix.a,
-            self.text_matrix.b,
-            self.text_matrix.c,
-            self.text_matrix.d,
-        )
+        ta, tb, tc, td, te, tf = self.text_matrix
         for item in array:
             t = type(item)
             if t is PdfString:
@@ -813,14 +795,28 @@ class ContentInterpreter:
         normalized = self.normalize_color_components(space, operands[:count])
         if normalized is None:
             return
+        self.set_paint(space, normalized, None, stroke=stroke)
+
+    def set_paint(
+        self,
+        space: ColorSpace | None,
+        color: tuple[float, ...] | None,
+        pattern: PatternPaint | None,
+        *,
+        stroke: bool,
+    ) -> None:
+        """Set the stroking or nonstroking color and pattern, and the space unless None."""
+        graphics = self.graphics
         if stroke:
-            self.graphics.stroke_space = space
-            self.graphics.stroke_color = normalized
-            self.graphics.stroke_pattern = None
+            if space is not None:
+                graphics.stroke_space = space
+            graphics.stroke_color = color
+            graphics.stroke_pattern = pattern
         else:
-            self.graphics.fill_space = space
-            self.graphics.fill_color = normalized
-            self.graphics.fill_pattern = None
+            if space is not None:
+                graphics.fill_space = space
+            graphics.fill_color = color
+            graphics.fill_pattern = pattern
 
     def resolve_color_space(self, name_obj: Any) -> ColorSpace:
         name = self.resolver.resolve_name(name_obj)
@@ -860,14 +856,7 @@ class ContentInterpreter:
         if operands:
             space = self.resolve_color_space(operands[0])
             color = self.initial_color_components(space, stroke=stroke)
-            if stroke:
-                self.graphics.stroke_space = space
-                self.graphics.stroke_color = color
-                self.graphics.stroke_pattern = None
-            else:
-                self.graphics.fill_space = space
-                self.graphics.fill_color = color
-                self.graphics.fill_pattern = None
+            self.set_paint(space, color, None, stroke=stroke)
 
     def op_CS(self, operands: ContentOperands, depth: int) -> None:
         self.set_color_space(operands, stroke=True)
@@ -890,18 +879,9 @@ class ContentInterpreter:
                 operands[-1], space=space, base_components=normalized
             )
             color = pattern.base_color if isinstance(pattern, TilingPattern) else None
-            if stroke:
-                self.graphics.stroke_pattern = pattern
-                self.graphics.stroke_color = color
-            else:
-                self.graphics.fill_pattern = pattern
-                self.graphics.fill_color = color
-        elif stroke:
-            self.graphics.stroke_color = normalized
-            self.graphics.stroke_pattern = None
+            self.set_paint(None, color, pattern, stroke=stroke)
         else:
-            self.graphics.fill_color = normalized
-            self.graphics.fill_pattern = None
+            self.set_paint(None, normalized, None, stroke=stroke)
 
     def op_SCN(self, operands: ContentOperands, depth: int) -> None:
         self.set_color(operands, stroke=True, allow_pattern=True)
@@ -972,12 +952,15 @@ class ContentInterpreter:
     def op_d1(self, operands: ContentOperands, depth: int) -> None:
         self.type3_uncolored = True
 
-    def op_sh(self, operands: ContentOperands, depth: int) -> None:
-        if not operands:
-            raise PdfParseError("resource operator requires a name")
-        name = self.resolver.resolve_name(operands[0])
+    def resource_operand_name(self, operands: ContentOperands) -> str:
+        """The resource name a resource operator (sh, gs) takes as its operand."""
+        name = self.resolver.resolve_name(operands[0]) if operands else None
         if not name:
             raise PdfParseError("resource operator requires a name")
+        return name
+
+    def op_sh(self, operands: ContentOperands, depth: int) -> None:
+        name = self.resource_operand_name(operands)
         shading = self.resolver.resolve_dict(self.lookup_page_resource("Shading", name))
         if not isinstance(shading, dict):
             raise PdfParseError("missing shading resource")
@@ -1056,11 +1039,7 @@ class ContentInterpreter:
         self.set_device_color(operands, DEVICE_CMYK, stroke=False)
 
     def op_gs(self, operands: ContentOperands, depth: int) -> None:
-        if not operands:
-            raise PdfParseError("resource operator requires a name")
-        name = self.resolver.resolve_name(operands[0])
-        if not name:
-            raise PdfParseError("resource operator requires a name")
+        name = self.resource_operand_name(operands)
         extgstate = self.resolve_extgstate(name)
         if extgstate is None:
             raise PdfParseError("missing ExtGState resource")
