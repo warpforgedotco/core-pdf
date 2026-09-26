@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import pytest
@@ -8,7 +9,7 @@ from _content_support import make_interpreter
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY
+from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, DEVICE_RGB, ColorSpace
 from core_pdf_spec.types import PdfName
 
 
@@ -181,3 +182,45 @@ def test_as_int_operand_accepts_only_an_integer(operands: Any, expected: int | N
     if expected is None:
         with pytest.raises(PdfParseError, match="numeric operand|integer operand"):
             make_interpreter().as_int_operand(operands)
+
+
+UNSUPPORTED_SPACE = ColorSpace("Unsupported", ())
+
+
+def test_the_default_hook_refuses_bad_colors_and_resources() -> None:
+    state = make_interpreter()
+    with pytest.raises(PdfParseError, match="color component") as caught:
+        state.normalize_color_components(DEVICE_RGB, (0.5, "x", 0.5))
+    assert isinstance(caught.value.__cause__, ValueError)
+    with pytest.raises(PdfParseError, match="unsupported color space"):
+        state.initial_color_components(UNSUPPORTED_SPACE, stroke=False)
+    with pytest.raises(PdfParseError, match="resource value"):
+        state.resolve_resources(3)
+
+
+class GuessingInterpreter(RecoveringInterpreter):
+    def recover_color_components(self, components: Sequence[object]) -> tuple[float, ...] | None:
+        return (0.25,) * len(components)
+
+
+def test_a_recovering_hook_proceeds_with_color_and_resource_fallbacks() -> None:
+    state = make_interpreter(interpreter_class=GuessingInterpreter)
+    assert isinstance(state, GuessingInterpreter)
+    state.rejected = []
+    assert state.normalize_color_components(DEVICE_RGB, (0.5, "x", 0.5)) == (0.25, 0.25, 0.25)
+    indexed = ColorSpace("Indexed", ((0.0, 3.0),), base=DEVICE_RGB, hival=3)
+    assert state.normalize_color_components(indexed, ("x",)) is None
+    state.graphics.fill_color = (0.5,)
+    assert state.initial_color_components(UNSUPPORTED_SPACE, stroke=False) == (0.5,)
+    assert state.resolve_resources(3) is None
+    assert [context for context, _message in state.rejected] == [
+        "color-components",
+        "color-components",
+        "color-space",
+        "resources",
+    ]
+
+
+def test_the_base_recovery_has_no_color_guess() -> None:
+    state = recovering()
+    assert state.normalize_color_components(DEVICE_RGB, (0.5, "x", 0.5)) is None

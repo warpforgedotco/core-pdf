@@ -258,7 +258,11 @@ class ContentInterpreter:
         return entries.get(name) if entries is not None else None
 
     def resolve_resources(self, value: object) -> PdfDict | None:
-        return resolve_resource_dict(value, self.resolver)
+        """The resource dictionary `value` names; a malformed one is rejected ("resources")."""
+        try:
+            return resolve_resource_dict(value, self.resolver)
+        except PdfParseError as error:
+            return self.reject(error, "resources", None)
 
     def matrix_operand(self, value: object, context: str) -> Matrix:
         value = self.resolver.deep_resolve(value)
@@ -892,21 +896,48 @@ class ContentInterpreter:
         except (ValueError, TypeError) as error:
             return self.reject(parse_error_from(error), "color-space", ColorSpace(name, ()))
 
+    def color_component_values(
+        self, components: typing.Sequence[object]
+    ) -> typing.Sequence[object]:
+        """The operands normalize_color_components reads as numbers; here, as given."""
+        return components
+
+    def recover_color_components(
+        self, components: typing.Sequence[object]
+    ) -> tuple[float, ...] | None:
+        """The colour a recovering reader uses for components the space refuses; none here."""
+        return None
+
     def normalize_color_components(
         self, spec: ColorSpace, components: typing.Sequence[object]
     ) -> tuple[float, ...] | None:
+        """The colour `components` select in `spec`; refused components are rejected.
+
+        The rejection (context "color-components") falls back to
+        recover_color_components, except in an Indexed or Lab space, where no
+        guess stands in for the components and the colour is left unchanged.
+        """
         try:
-            return normalize_color_components(spec, components)
-        except ValueError as error:
-            raise PdfParseError(str(error)) from error
+            return normalize_color_components(spec, self.color_component_values(components))
+        except (TypeError, ValueError, PdfParseError) as error:
+            failure = parse_error_from(error) if isinstance(error, ValueError) else error
+            fallback = (
+                None
+                if spec.kind in {"Indexed", "Lab"}
+                else self.recover_color_components(components)
+            )
+            return self.reject(failure, "color-components", fallback)
 
     def initial_color_components(
         self, spec: ColorSpace, *, stroke: bool
     ) -> tuple[float, ...] | None:
+        """The initial colour of `spec`; an unsupported space is rejected ("color-space"),
+        and recovery keeps the current colour."""
         try:
             return initial_color_components(spec)
         except ValueError as error:
-            raise PdfParseError(str(error)) from error
+            current = self.graphics.stroke_color if stroke else self.graphics.fill_color
+            return self.reject(parse_error_from(error), "color-space", current)
 
     def set_color_space(self, operands: ContentOperands, *, stroke: bool) -> None:
         if self.type3_uncolored:

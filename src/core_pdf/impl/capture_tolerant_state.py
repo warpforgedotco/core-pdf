@@ -10,9 +10,6 @@ from core_pdf.impl.fonts_helpers import strip_subset_tag
 from core_pdf.impl.graphics_color_spec import parse_color_space
 from core_pdf.impl.graphics_functions import compile_pdf_function
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.recovery_resolver import (
-    resolve_resource_dict as recover_resources,
-)
 from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -248,6 +245,9 @@ class RecoveringTextState(ContentInterpreter):
             base = value[0] if isinstance(value, (list, tuple)) and value else value
             return self.reject(error, "color-space", ColorSpace(recover_pdf_name(base) or name, ()))
 
+    def color_component_values(self, components: typing.Sequence[object]) -> tuple[float, ...]:
+        return tuple(self.as_float(value) for value in components)
+
     def recover_color_components(
         self, components: typing.Sequence[object]
     ) -> tuple[float, ...] | None:
@@ -273,34 +273,13 @@ class RecoveringTextState(ContentInterpreter):
             cacheable = False
         if cached is not None:
             return cached
-        try:
-            values = tuple(self.as_float(value) for value in components)
-            normalized = super().normalize_color_components(spec, values)
-            if cacheable and normalized is not None:
-                if len(self.normalized_colors) >= COLOR_CACHE_LIMIT:
-                    self.normalized_colors.clear()
-                self.normalized_colors[cache_key] = normalized
-            return normalized
-        except (PdfParseError, TypeError, ValueError) as error:
-            if spec.kind in {"Indexed", "Lab"}:
-                return self.reject(error, "color-components", None)
-            recovered = self.recover_color_components(components)
-            return self.reject(error, "color-components", recovered)
-
-    def initial_color_components(
-        self, spec: ColorSpace, *, stroke: bool
-    ) -> tuple[float, ...] | None:
-        try:
-            return super().initial_color_components(spec, stroke=stroke)
-        except PdfParseError as error:
-            return self.reject(
-                error,
-                "color-space",
-                self.graphics.stroke_color if stroke else self.graphics.fill_color,
-            )
-
-    def resolve_resources(self, value: object) -> PdfDict | None:
-        return recover_resources(value, self.resolver)
+        normalized = super().normalize_color_components(spec, components)
+        # A recovered colour is cached too: it is a function of the same key.
+        if cacheable and normalized is not None:
+            if len(self.normalized_colors) >= COLOR_CACHE_LIMIT:
+                self.normalized_colors.clear()
+            self.normalized_colors[cache_key] = normalized
+        return normalized
 
     def reject[T](self, error: Exception, context: str, fallback: T) -> T:
         # Recovery proceeds with the reader's fallback wherever the spec
