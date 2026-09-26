@@ -48,7 +48,6 @@ from core_pdf_cythonized._coverage_blend import blend_coverage_counts
 from core_pdf_cythonized._distinct_rows import (
     code_presence,
     distinct_uint16_rows,
-    gather_uint8_codes,
     gather_uint8_rows,
 )
 from core_pdf_cythonized._downsample import box_downsample_blocks
@@ -101,7 +100,6 @@ __all__ = (
     "fill_glyph_knockout",
     "fill_rect_coverage",
     "flatten_path_commands",
-    "gather_uint8_codes",
     "gather_uint8_rows",
     "glyph_coverage_plane",
     "horizontal_glyph_geometry",

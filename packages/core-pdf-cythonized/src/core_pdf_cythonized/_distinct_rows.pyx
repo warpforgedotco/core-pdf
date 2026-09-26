@@ -15,7 +15,7 @@ rows, when converting everything directly is cheaper than the scatter.
 gather_uint8_rows is the scatter, taking the uint32 indices directly rather
 than having numpy widen them to intp first.
 
-code_presence and gather_uint8_codes are the same two steps for a
+code_presence and gather_uint8_rows over uint16 codes are the same two steps for a
 one-component image (core_pdf.impl.graphics.image_samples.
 convert_distinct_codes), whose samples are already codes into a table of at
 most 65,536 entries: which codes occur, and the converted row of each pixel's
@@ -32,7 +32,7 @@ from libc.string cimport memcpy
 
 import numpy
 
-__all__ = ("code_presence", "distinct_uint16_rows", "gather_uint8_codes", "gather_uint8_rows")
+__all__ = ("code_presence", "distinct_uint16_rows", "gather_uint8_rows")
 
 cdef uint64_t MULTIPLIER = 0x9E3779B97F4A7C15ULL
 
@@ -150,25 +150,43 @@ cdef void unpack_keys(uint16_t[:, ::1] out, const uint64_t *keys, Py_ssize_t cou
             key >>= 16
 
 
-def gather_uint8_rows(const unsigned char[:, ::1] table, const uint32_t[::1] indices):
-    """table[indices], row by row, into a new (len(indices), columns) uint8 array."""
+ctypedef fused row_index:
+    uint16_t
+    uint32_t
+
+
+def gather_uint8_rows(const unsigned char[:, ::1] table, const row_index[::1] indices):
+    """table[indices], row by row, into a new (len(indices), columns) uint8 array.
+
+    One specialization per index width: uint32 inverse indices from
+    distinct_uint16_rows, and a one-component image's uint16 codes, which
+    index their table directly.
+    """
     cdef Py_ssize_t count = indices.shape[0]
     cdef Py_ssize_t columns = table.shape[1]
     cdef Py_ssize_t available = table.shape[0]
     output = numpy.empty((count, columns), dtype=numpy.uint8)
     cdef unsigned char[:, ::1] out = output
-    cdef Py_ssize_t i
-    cdef uint32_t row
+    cdef Py_ssize_t i, k, row
     cdef bint out_of_range = False
     if count == 0 or columns == 0:
         return output
+    cdef const unsigned char *source = &table[0, 0]
+    cdef unsigned char *target = &out[0, 0]
     with nogil:
         for i in range(count):
             row = indices[i]
             if row >= available:
                 out_of_range = True
                 break
-            memcpy(&out[i, 0], &table[row, 0], columns)
+            if columns == 3:
+                target[3 * i] = source[3 * row]
+                target[3 * i + 1] = source[3 * row + 1]
+                target[3 * i + 2] = source[3 * row + 2]
+            elif columns == 1:
+                target[i] = source[row]
+            else:
+                memcpy(target + columns * i, source + columns * row, columns)
     if out_of_range:
         raise IndexError("row index out of range")
     return output
@@ -188,37 +206,3 @@ def code_presence(const uint16_t[::1] codes):
             if code > largest:
                 largest = code
     return present, largest
-
-
-def gather_uint8_codes(const unsigned char[:, ::1] table, const uint16_t[::1] codes):
-    """table[codes], row by row, into a new (len(codes), columns) uint8 array."""
-    cdef Py_ssize_t count = codes.shape[0]
-    cdef Py_ssize_t columns = table.shape[1]
-    cdef Py_ssize_t available = table.shape[0]
-    output = numpy.empty((count, columns), dtype=numpy.uint8)
-    cdef unsigned char[:, ::1] out = output
-    cdef Py_ssize_t i, k
-    cdef uint16_t row
-    cdef bint out_of_range = False
-    if count == 0 or columns == 0:
-        return output
-    cdef const unsigned char *source = &table[0, 0]
-    cdef unsigned char *target = &out[0, 0]
-    with nogil:
-        for i in range(count):
-            row = codes[i]
-            if row >= available:
-                out_of_range = True
-                break
-            if columns == 3:
-                target[3 * i] = source[3 * row]
-                target[3 * i + 1] = source[3 * row + 1]
-                target[3 * i + 2] = source[3 * row + 2]
-            elif columns == 1:
-                target[i] = source[row]
-            else:
-                for k in range(columns):
-                    target[columns * i + k] = source[columns * row + k]
-    if out_of_range:
-        raise IndexError("code out of range")
-    return output

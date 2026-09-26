@@ -10,7 +10,7 @@ expressions, so they are the reference here directly.
 import numpy
 import pytest
 
-from core_pdf_cythonized import code_presence, gather_uint8_codes
+from core_pdf_cythonized import code_presence, gather_uint8_rows
 
 
 @pytest.mark.parametrize("seed", range(10))
@@ -37,10 +37,10 @@ def test_the_gather_is_take(columns):
     rng = numpy.random.default_rng(columns)
     table = rng.integers(0, 256, size=(300, columns), dtype=numpy.uint8)
     codes = rng.integers(0, 300, size=2000, dtype=numpy.uint16)
-    assert numpy.array_equal(gather_uint8_codes(table, codes), numpy.take(table, codes, axis=0))
+    assert numpy.array_equal(gather_uint8_rows(table, codes), numpy.take(table, codes, axis=0))
 
 
 def test_a_code_past_the_table_is_refused():
     table = numpy.zeros((4, 3), dtype=numpy.uint8)
     with pytest.raises(IndexError):
-        gather_uint8_codes(table, numpy.array([1, 4], dtype=numpy.uint16))
+        gather_uint8_rows(table, numpy.array([1, 4], dtype=numpy.uint16))

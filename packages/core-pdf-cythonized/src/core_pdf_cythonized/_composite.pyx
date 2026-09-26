@@ -165,54 +165,6 @@ def composite_masked_normal(destination, rendered, double opacity, mask_codes, m
         return effective
 
     cdef double src_a, one_minus_src_a, dst_a, out_a
-    cdef unsigned int source_key, backdrop_key
-    cdef unsigned int last_source = 0, last_backdrop = 0
-    cdef int last_visible = -1, visible
-    cdef unsigned char result[4]
-    with nogil:
-        for y in range(height):
-            for x in range(width):
-                visible = out[y, x]
-                if visible == 0:
-                    continue
-                source_key = (
-                    <unsigned int> src[y, x, 0]
-                    | (<unsigned int> src[y, x, 1] << 8)
-                    | (<unsigned int> src[y, x, 2] << 16)
-                )
-                backdrop_key = (
-                    <unsigned int> dst[y, x, 0]
-                    | (<unsigned int> dst[y, x, 1] << 8)
-                    | (<unsigned int> dst[y, x, 2] << 16)
-                    | (<unsigned int> dst[y, x, 3] << 24)
-                )
-                if (
-                    visible != last_visible
-                    or source_key != last_source
-                    or backdrop_key != last_backdrop
-                ):
-                    src_a = <double> visible / 255.0
-                    one_minus_src_a = 1.0 - src_a
-                    dst_a = <double> dst[y, x, 3] / 255.0
-                    # src_a is positive here, so out_a is too: the original's
-                    # guard against a zero divisor and its transparent-pixel
-                    # override can never fire on a visible pixel.
-                    out_a = src_a + dst_a * one_minus_src_a
-                    result[0] = normal_channel(src[y, x, 0], dst[y, x, 0], src_a, dst_a, one_minus_src_a, out_a)
-                    result[1] = normal_channel(src[y, x, 1], dst[y, x, 1], src_a, dst_a, one_minus_src_a, out_a)
-                    result[2] = normal_channel(src[y, x, 2], dst[y, x, 2], src_a, dst_a, one_minus_src_a, out_a)
-                    result[3] = clamp_byte(rint(out_a * 255.0))
-                    last_visible = visible
-                    last_source = source_key
-                    last_backdrop = backdrop_key
-                dst[y, x, 0] = result[0]
-                dst[y, x, 1] = result[1]
-                dst[y, x, 2] = result[2]
-                dst[y, x, 3] = result[3]
-
-    return effective
-
-    cdef double src_a, one_minus_src_a, dst_a, out_a
     with nogil:
         for y in range(height):
             for x in range(width):

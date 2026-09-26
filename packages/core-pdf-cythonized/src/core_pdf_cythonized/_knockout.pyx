@@ -75,7 +75,7 @@ def composite_knockout_element(
         channels == 0
         or backdrop.shape != color.shape
         or element.shape != color.shape
-        or complete.shape != color.shape[:-1]
+        or complete.shape != color.shape[: color.ndim - 1]
         or any(
             values.shape != complete.shape
             for values in (initial, element_complete, coverage, accumulated, element_accumulated)

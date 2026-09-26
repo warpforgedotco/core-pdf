@@ -30,7 +30,6 @@ from core_pdf.impl.scalars import parse_float
 from core_pdf_cythonized import (
     code_presence,
     distinct_uint16_rows,
-    gather_uint8_codes,
     gather_uint8_rows,
 )
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
@@ -320,7 +319,7 @@ def convert_distinct_codes(
     table[used] = converted
     if table.dtype != numpy.uint8 or table.ndim != 2:
         return numpy.take(table, codes, axis=0)
-    return gather_uint8_codes(table, codes)
+    return gather_uint8_rows(table, codes)
 
 
 # Below this many pixels a multi-component image converts pixel by pixel.
