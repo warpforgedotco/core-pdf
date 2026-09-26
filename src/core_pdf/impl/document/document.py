@@ -236,34 +236,37 @@ def legacy_name_context(context: SemanticContext | None) -> bool:
 def check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
     pending: list[tuple[dict, bool]] = [(trailer, True)]
     seen: set[int] = set()
-    while pending:
-        dictionary, top = pending.pop()
-        if id(dictionary) in seen:
-            continue
-        seen.add(id(dictionary))
-        names: set[bytes] = set()
-        for key, value in dictionary.items():
-            raw_name = key.value if isinstance(key, PdfName) else key
-            lexer = PdfLexer(b"/" + raw_name.encode("latin-1"))
-            try:
-                name = bytes(lexer.read_name())
-            finally:
-                lexer.close()
-            if top and name not in {b"Encrypt", b"AuthCode", b"ID"}:
+    security_resolver: ObjectResolver | None = None
+    try:
+        while pending:
+            dictionary, top = pending.pop()
+            if id(dictionary) in seen:
                 continue
-            if name in names:
-                raise PdfUnsupportedError("Ambiguous security dictionary name aliases")
-            names.add(name)
-            if top and name in {b"Encrypt", b"AuthCode"}:
-                security_resolver = ObjectResolver(
-                    resolver.data, resolver.xref, semantic_context=resolver.semantic_context
-                )
+            seen.add(id(dictionary))
+            names: set[bytes] = set()
+            for key, value in dictionary.items():
+                raw_name = key.value if isinstance(key, PdfName) else key
+                lexer = PdfLexer(b"/" + raw_name.encode("latin-1"))
                 try:
-                    value = security_resolver.resolve(value)
+                    name = bytes(lexer.read_name())
                 finally:
-                    security_resolver.close()
-            if isinstance(value, dict):
-                pending.append((value, False))
+                    lexer.close()
+                if top and name not in {b"Encrypt", b"AuthCode", b"ID"}:
+                    continue
+                if name in names:
+                    raise PdfUnsupportedError("Ambiguous security dictionary name aliases")
+                names.add(name)
+                if top and name in {b"Encrypt", b"AuthCode"}:
+                    if security_resolver is None:
+                        security_resolver = ObjectResolver(
+                            resolver.data, resolver.xref, semantic_context=resolver.semantic_context
+                        )
+                    value = security_resolver.resolve(value)
+                if isinstance(value, dict):
+                    pending.append((value, False))
+    finally:
+        if security_resolver is not None:
+            security_resolver.close()
 
 
 class NotBuilt:
@@ -679,10 +682,11 @@ class PdfDocument(Generic[PageT]):
             if marker in seen_objects:
                 continue
             seen_objects.add(marker)
-            pages_score = self.pages_candidate_score(obj)
+            node_type = resolve_page_tree_node_type(self.resolver, obj)
+            pages_score = self.pages_candidate_score(obj, node_type)
             if pages_score > 0:
                 pages_nodes.append((pages_score, entry.offset, key >> 16, obj))
-            score = self.page_candidate_score(obj)
+            score = self.page_candidate_score(obj, node_type)
             if score > 0:
                 candidates.append((score, entry.offset, key >> 16, obj))
 
@@ -700,8 +704,7 @@ class PdfDocument(Generic[PageT]):
                 self.recovered_page_values(page_dict, inherited_sources),
             )
 
-    def page_candidate_score(self, obj: PdfDict) -> int:
-        node_type = resolve_page_tree_node_type(self.resolver, obj)
+    def page_candidate_score(self, obj: PdfDict, node_type: str | None) -> int:
         if node_type == "Pages" or node_type not in (None, "Page"):
             return -100
 
@@ -724,8 +727,8 @@ class PdfDocument(Generic[PageT]):
             score += 1
         return score if score >= 16 else -100
 
-    def pages_candidate_score(self, obj: PdfDict) -> int:
-        if resolve_page_tree_node_type(self.resolver, obj) != "Pages":
+    def pages_candidate_score(self, obj: PdfDict, node_type: str | None) -> int:
+        if node_type != "Pages":
             return -100
         score = 20
         try:
@@ -1601,6 +1604,16 @@ class PdfDocument(Generic[PageT]):
         if start is not None and start < 0:
             raise PdfParseError("invalid xref section")
 
+        # The scan reads only the data and the context, neither of which
+        # changes here, so it is made at most once.
+        brute_forced: dict[int, PdfXRefEntry] | None = None
+
+        def brute_force() -> dict[int, PdfXRefEntry]:
+            nonlocal brute_forced
+            if brute_forced is None:
+                brute_forced = self.brute_force_xref()
+            return brute_forced
+
         recovery_reason = None
         if start is not None:
             try:
@@ -1612,11 +1625,11 @@ class PdfDocument(Generic[PageT]):
                 revisions = list(iter_xref_revisions(start, read_section))
                 self.xref = merge_xref_sections(revision.entries for revision in revisions)
                 self.trailer_dict = revisions[0].trailer
-                self.repair_stale_xref_offsets()
+                self.repair_stale_xref_offsets(brute_force)
                 self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
                 root_ref = self.trailer_dict.get("Root")
                 if root_ref is None or not self.is_valid_catalog_root(root_ref):
-                    self.xref.update(self.brute_force_xref())
+                    self.xref.update(brute_force())
                     self.xref_was_recovered = True
                     catalog_ref = self.infer_catalog_root()
                     if catalog_ref is not None:
@@ -1628,7 +1641,7 @@ class PdfDocument(Generic[PageT]):
             else:
                 return
 
-        self.xref = self.brute_force_xref()
+        self.xref = brute_force()
         self.xref_was_recovered = True
         if recovery_reason is not None:
             self.xref_recovery_reason = recovery_reason
@@ -1639,7 +1652,9 @@ class PdfDocument(Generic[PageT]):
         self.trailer_dict = {"Root": catalog_ref} if catalog_ref is not None else {}
         self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
 
-    def repair_stale_xref_offsets(self) -> None:
+    def repair_stale_xref_offsets(
+        self, brute_force: Callable[[], dict[int, PdfXRefEntry]] | None = None
+    ) -> None:
         header_offset = self.pdf_header_offset()
         recovered_xref: dict[int, PdfXRefEntry] | None = None
         repaired = False
@@ -1694,7 +1709,7 @@ class PdfDocument(Generic[PageT]):
                     repaired = True
                     continue
             if recovered_xref is None:
-                recovered_xref = self.brute_force_xref()
+                recovered_xref = self.brute_force_xref() if brute_force is None else brute_force()
             replacement = recovered_xref.get(key)
             if (
                 replacement is None
