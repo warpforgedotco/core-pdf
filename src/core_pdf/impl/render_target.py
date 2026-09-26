@@ -2402,6 +2402,10 @@ class RasterTarget:
         edge_count = len(edge_segments)
         pending_order = sorted(range(edge_count), key=lambda i: -edge_segments[i][5])
         pending_index = 0
+        # Keyed on the negated low edge, so the top of the heap is the edge
+        # the descending scan line leaves first: every edge wholly above the
+        # line is dropped, not only those under the lowest one. Crossing order
+        # does not matter, as fill_path_crossing_spans orders them by x.
         active_heap: list[tuple[float, int]] = []
         for py in range(iy0, iy1):
             visible_spans = clip_row_visible_spans(py)
@@ -2413,9 +2417,9 @@ class RasterTarget:
                 and edge_segments[pending_order[pending_index]][5] > page_y
             ):
                 edge_index = pending_order[pending_index]
-                heapq.heappush(active_heap, (edge_segments[edge_index][4], edge_index))
+                heapq.heappush(active_heap, (-edge_segments[edge_index][4], edge_index))
                 pending_index += 1
-            while active_heap and active_heap[0][0] > page_y:
+            while active_heap and -active_heap[0][0] > page_y:
                 heapq.heappop(active_heap)
             crossings: list[tuple[float, int]] = []
             for _low, edge_index in active_heap:
