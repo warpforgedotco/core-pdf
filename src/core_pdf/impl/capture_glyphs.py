@@ -38,6 +38,8 @@ def should_capture_glyph_bitmap(text: str) -> bool:
         return True
     if text in SUSPICIOUS_GLYPH_BITMAP_TEXT:
         return True
+    # capture_text_runs.is_garbage_text for one character, inline: this runs
+    # per glyph, and its generator costs three times the comparison.
     code = ord(text)
     return 0xE000 <= code <= 0xF8FF or code < 32
 
@@ -392,13 +394,13 @@ def capture_glyphs(
                 append_cluster(observation)
             continue
 
-        fragments: list[tuple[str, Rectangle, Rectangle, Rectangle, float]] = []
         # One code that stands for several characters: re-cut the advance
         # per character. Rare, and the kernel deliberately does not model it.
         per_char_advance = advances[index] / chunk_length
         char_offset = offsets[index]
-        for ch in chunk_text:
-            char_confidence = glyph_unicode_confidence(ch, glyph.unicode_source, glyph.alternates)
+        cluster_observations: list[GlyphObservation] = []
+        for position, ch in enumerate(chunk_text):
+            confidence = glyph_unicode_confidence(ch, glyph.unicode_source, glyph.alternates)
             char_box, char_baseline_text = glyph_text_space_boxes(
                 char_offset,
                 per_char_advance,
@@ -407,25 +409,12 @@ def capture_glyphs(
                 font_ascent=font_ascent,
                 font_descent=font_descent,
             )
-            char_advance_rect = text_basis_rect(*char_box, text_basis)
-            char_baseline = transformed_text_line(*char_baseline_text, text_basis)
-            fragments.append(
-                (ch, char_advance_rect, char_advance_rect, char_baseline, char_confidence)
-            )
-            char_offset += per_char_advance
-
-        cluster_observations: list[GlyphObservation] = []
-        for position, (
-            fragment_text,
-            ink,
-            advance_rect,
-            fragment_baseline,
-            confidence,
-        ) in enumerate(fragments):
+            # A re-cut character has no ink of its own: its box is its advance.
+            advance_rect = text_basis_rect(*char_box, text_basis)
             observation = styled_observation(
                 style,
-                fragment_text,
-                ink,
+                ch,
+                advance_rect,
                 advance_rect,
                 seqno,
                 glyph.code_bytes,
@@ -433,7 +422,7 @@ def capture_glyphs(
                 glyph.cid,
                 glyph.gid,
                 effective_font_name,
-                fragment_baseline,
+                transformed_text_line(*char_baseline_text, text_basis),
                 observation_visible,
                 confidence,
                 glyph.unicode_source,
@@ -446,10 +435,11 @@ def capture_glyphs(
                 position == 0,
                 cluster_provenance_id,
             )
+            char_offset += per_char_advance
             append_glyph(observation)
             if want_runs:
                 cluster_observations.append(observation)
-                add_run_geometry(advance_rect, ink, confidence)
+                add_run_geometry(advance_rect, advance_rect, confidence)
         if want_runs:
             cluster = glyph_cluster_from_observations(
                 cluster_id, chunk_text, tuple(cluster_observations)
