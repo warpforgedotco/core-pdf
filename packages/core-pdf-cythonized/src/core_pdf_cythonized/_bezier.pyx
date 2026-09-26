@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Cubic bezier flattening (core_pdf.impl.fonts_font_program).
+"""Cubic bezier flattening for Type 2 charstring outlines (_type2.pyx).
 
-Mirrors cubic_sample_times, cubic_is_flat and cubic_extrema_times exactly.
-The recursion carries eight doubles instead of four coordinate tuples,
-which is the whole point: no Python object touches the inner loop.
+_type2 flattens each curve through sample_times_c; cubic_sample_times returns
+the same times as a tuple. The extrema match
+core_adobe_fonts.cff.charstrings.cubic_extrema_times exactly. The recursion
+carries eight doubles instead of four coordinate tuples, which is the whole
+point: no Python object touches the inner loop.
 """
 
 from libc.math cimport sqrt, fabs
 
 cdef double CUBIC_FLATNESS = 0.25
 cdef int CUBIC_MAX_DEPTH = 12
-# rec() appends one time per leaf. Depth is capped, so leaves <= 2**12,
-# plus 1.0 and up to four extrema.
-cdef int CUBIC_SAMPLE_CAPACITY = 4101
 
 cdef inline bint flat(double x0, double y0, double x1, double y1,
                       double x2, double y2, double x3, double y3) noexcept nogil:
@@ -117,7 +116,7 @@ cdef int sample_times_c(double x0, double y0, double x1, double y1,
 def cubic_sample_times(tuple p0, tuple p1, tuple p2, tuple p3):
     cdef double x0=p0[0], y0=p0[1], x1=p1[0], y1=p1[1]
     cdef double x2=p2[0], y2=p2[1], x3=p3[0], y3=p3[1]
-    cdef double buf[4101]
+    cdef double buf[CUBIC_SAMPLE_CAPACITY]
     cdef int count = sample_times_c(x0,y0,x1,y1,x2,y2,x3,y3, buf)
     cdef int i
     return tuple([buf[i] for i in range(count)])

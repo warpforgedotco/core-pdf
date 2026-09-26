@@ -41,7 +41,7 @@ and the two disagree in the last place; the golden vectors are what says so.
 from libc.math cimport fabs, isfinite, pow, sqrt
 from libc.stdlib cimport free, malloc, realloc
 
-from core_pdf_cythonized._bezier cimport extrema, sample_times_c
+from core_pdf_cythonized._bezier cimport CUBIC_SAMPLE_CAPACITY, extrema, sample_times_c
 
 cdef int MAX_STACK = 48
 cdef int TRANSIENT_SIZE = 32
@@ -220,7 +220,7 @@ cdef int do_curve(Ctx *c, double dx1, double dy1, double dx2, double dy2,
     cdef double x1 = x0 + dx1, y1 = y0 + dy1
     cdef double x2 = x1 + dx2, y2 = y1 + dy2
     cdef double x3 = x2 + dx3, y3 = y2 + dy3
-    cdef double buf[4101]
+    cdef double buf[CUBIC_SAMPLE_CAPACITY]
     cdef double ex[2]
     cdef double pt[2]
     cdef int count, n = 0, i

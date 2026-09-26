@@ -21,9 +21,8 @@ FMAs and shift the results.
 """
 
 from cpython.mem cimport PyMem_Free, PyMem_Malloc
-from libc.math cimport rint
 
-from core_pdf_cythonized._byte_clamp cimport unit_to_byte
+from core_pdf_cythonized._byte_clamp cimport unit_to_byte, unit_to_byte_checked
 from core_pdf_cythonized._knockout_math cimport knockout_component
 
 import numpy
@@ -237,7 +236,7 @@ def composite_elementary_knockout(
     if quantized == NULL:
         raise MemoryError
     cdef Py_ssize_t i, j, k
-    cdef double scaled, eff, sh, remaining, rga, ra, complete, initial, ec
+    cdef double eff, sh, remaining, rga, ra, complete, initial, ec
     cdef double colour[3]
     cdef const unsigned char* element
     cdef float ONE = 1.0
@@ -247,10 +246,7 @@ def composite_elementary_knockout(
         # before it copied a pixel.
         for i in range(rows):
             for j in range(cols):
-                scaled = rint(<double> source_alpha[i, j] * 255.0)
-                if scaled < 0.0 or scaled > 255.0:
-                    raise ValueError("source_alpha must lie in [0, 1]")
-                quantized[i * cols + j] = <unsigned char> <int> scaled
+                quantized[i * cols + j] = <unsigned char> unit_to_byte_checked(<double> source_alpha[i, j])
         with nogil:
             for i in range(rows):
                 for j in range(cols):

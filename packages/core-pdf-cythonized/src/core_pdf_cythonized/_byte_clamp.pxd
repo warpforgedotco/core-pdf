@@ -47,3 +47,12 @@ cdef inline double unit_to_byte(double value) noexcept nogil:
     if value > 255.0:
         return 255.0
     return value
+
+
+cdef inline int unit_to_byte_checked(double value) except -1:
+    # rint(v * 255) for a unit fraction, refusing one that lands outside
+    # 0..255 rather than clipping it, as composite_elementary_normal did.
+    cdef double scaled = rint(value * 255.0)
+    if scaled < 0.0 or scaled > 255.0:
+        raise ValueError("source_alpha must lie in [0, 1]")
+    return <int> scaled
