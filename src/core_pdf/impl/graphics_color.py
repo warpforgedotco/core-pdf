@@ -71,7 +71,11 @@ def convert_image_data(
         except TypeError, ValueError:
             dictionary.pop("Decode")
     return convert_integer_image(
-        memoryview(raw).cast("B"), dictionary, bits_per_component=bits, rendering=rendering
+        memoryview(raw).cast("B"),
+        dictionary,
+        bits_per_component=bits,
+        rendering=rendering,
+        space=spec,
     ).reshape(-1)
 
 

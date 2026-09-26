@@ -379,8 +379,11 @@ def convert_integer_samples(
     matte: tuple[float, ...] | None = None,
     alpha: numpy.ndarray[Any, Any] | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    space: ColorSpace | None = None,
 ) -> numpy.ndarray:
-    space = parse_color_space(dictionary.get("ColorSpace"))
+    """`samples` in the dictionary's colour space, which `space` gives if already parsed."""
+    if space is None:
+        space = parse_color_space(dictionary.get("ColorSpace"))
     count = len(space.component_ranges)
     if count <= 0:
         raise ValueError("invalid image color space")
@@ -416,8 +419,10 @@ def convert_integer_image(
     matte: tuple[float, ...] | None = None,
     alpha: numpy.ndarray[Any, Any] | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    space: ColorSpace | None = None,
 ) -> numpy.ndarray:
-    space = parse_color_space(dictionary.get("ColorSpace"))
+    if space is None:
+        space = parse_color_space(dictionary.get("ColorSpace"))
     samples = unpack_image_samples(
         data,
         bits_per_component,
@@ -432,6 +437,7 @@ def convert_integer_image(
         matte=matte,
         alpha=alpha,
         rendering=rendering,
+        space=space,
     )
 
 
