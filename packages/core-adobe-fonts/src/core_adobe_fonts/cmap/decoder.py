@@ -393,7 +393,7 @@ class CMapDecoder:
             for length in decode_lengths:
                 if length <= 0 or pos + length > n:
                     continue
-                chunk = bytes((data[pos],)) if length == 1 else data[pos : pos + length]
+                chunk = data[pos : pos + length]
                 length_ranges = ranges.get(length)
                 if ranges and not length_ranges:
                     continue
