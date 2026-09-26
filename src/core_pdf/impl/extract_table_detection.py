@@ -375,11 +375,11 @@ def aligned_column_clusters(
             means.append(x)
     candidates = []
     for cluster in clusters:
-        row_support = {row_index for row_index, index_value in cluster}
-        widths = [all_widths[index] for row_index_value, index in cluster]
+        row_support = {row_index for row_index, _ in cluster}
+        widths = [all_widths[index] for _, index in cluster]
         alphanumeric = sum(
             any(character.isalnum() for character in observations.text[index])
-            for row_index_value, index in cluster
+            for _, index in cluster
         )
         if (
             len(row_support) >= minimum_rows
@@ -431,8 +431,7 @@ def stream_table(
     columns = [
         column
         for column in columns
-        if len({row_index for row_index, index_value in column}.intersection(support_set))
-        >= minimum_rows
+        if len({row_index for row_index, _ in column}.intersection(support_set)) >= minimum_rows
     ]
     if len(columns) < 2:
         return None
@@ -445,7 +444,7 @@ def stream_table(
         [
             finite_median(
                 numpy.asarray(
-                    [all_x0[index] for row_index_value, index in column],
+                    [all_x0[index] for _, index in column],
                     dtype=numpy.float32,
                 )
             )
@@ -486,8 +485,8 @@ def stream_table(
     populated = 0
     numeric_by_column = [0] * column_count
     text_lengths = 0
-    for _row_index, row in enumerate(selected):
-        cells: list[list[int]] = [[] for make_column in columns]
+    for row in selected:
+        cells: list[list[int]] = [[] for _ in columns]
         for index in row:
             x0 = all_x0[index]
             x1 = all_x1[index]
@@ -689,7 +688,7 @@ def stream_tables(
             [
                 column
                 for column in candidate_columns
-                if len({row_index for row_index, index_value in column}) >= minimum_rows
+                if len({row_index for row_index, _ in column}) >= minimum_rows
             ]
             if minimum_rows > 2
             else candidate_columns
@@ -698,7 +697,7 @@ def stream_tables(
             continue
         row_columns: dict[int, set[int]] = defaultdict(set)
         for column_index, column in enumerate(columns):
-            for row_index, _index_value in column:
+            for row_index, _ in column:
                 row_columns[row_index].add(column_index)
         pair_counts: Counter[tuple[int, int]] = Counter()
         for present in row_columns.values():
