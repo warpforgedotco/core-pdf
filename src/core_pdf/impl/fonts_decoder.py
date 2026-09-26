@@ -1346,7 +1346,12 @@ class FontDecoder:
         try:
             return cache[key]
         except KeyError:
-            arrays = cache[key] = outline_arrays(self.glyph_outline(code, gid, text))
+            # The contours are only the arrays' input here, so they are not
+            # cached as well; glyph_outline caches them for its own callers.
+            contours = self.glyph_outline_cache.get(key)
+            if contours is None:
+                contours = self.glyph_outline_uncached(code, gid, text)
+            arrays = cache[key] = outline_arrays(contours)
             return arrays
 
     def glyph_outline_uncached(
