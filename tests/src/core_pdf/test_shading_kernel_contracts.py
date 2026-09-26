@@ -67,7 +67,7 @@ def reference_paint_shading(
                 if rgba is None:
                     rgba = cache[value] = raster.shading_rgba(
                         shading.color_model,
-                        shading.evaluate(value),
+                        shading.evaluator(value),
                         fill_opacity,
                         shading.color_rendering,
                         shading_alpha,

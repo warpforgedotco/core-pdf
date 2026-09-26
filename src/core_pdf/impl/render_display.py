@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from math import isfinite
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, CapturedSoftMask
-from core_pdf.impl.geometry import rect_tuple, union_bbox
+from core_pdf.impl.geometry import finite_rect, rect_tuple, union_bbox
 from core_pdf.impl.glyphs import GlyphStyle
 from core_pdf.impl.graphics_color_spec import describe_color_space
 from core_pdf.impl.graphics_filter_registry import declared_filter_names
@@ -16,6 +15,7 @@ from core_pdf.impl.render_model import (
     ImagePaintItem,
     PathPaintItem,
     PathPaintKind,
+    is_plain_fill,
     path_paint_fields,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number, parse_int
@@ -121,22 +121,12 @@ def plain_fill_members_box(
         item = items[index]
         if type(item) is DisplayListItem and item.kind == "text":
             continue
-        if not (
-            type(item) is PathPaintItem
-            and item.paint_kind is PathPaintKind.FILL
-            and item.edge_array is not None
-            and item.bbox is not None
-            and item.fill_pattern is None
-            and item.blend_mode in (None, "Normal")
-        ):
+        if not is_plain_fill(item):
             return False, None
-        x0, y0, x1, y1 = item.bbox
-        if not (isfinite(x0) and isfinite(y0) and isfinite(x1) and isfinite(y1)):
+        item_box = finite_rect(item.bbox, require_positive=False)
+        if item_box is None:
             return False, None
-        if box is None:
-            box = (x0, y0, x1, y1)
-        else:
-            box = (min(box[0], x0), min(box[1], y0), max(box[2], x1), max(box[3], y1))
+        box = union_bbox(box, item_box)
     return True, box
 
 

@@ -119,9 +119,6 @@ class PreparedShading(Record):
             )
         )
 
-    def evaluate(self, value: float) -> tuple[float, ...]:
-        return self.evaluator(value)
-
 
 def prepare_shading(
     dictionary: object, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING

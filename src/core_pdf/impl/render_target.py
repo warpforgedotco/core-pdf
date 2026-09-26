@@ -52,6 +52,7 @@ from core_pdf.impl.render_model import (
     PathPaintKind,
     RasterGroup,
     SoftMaskPlane,
+    is_plain_fill,
 )
 from core_pdf.impl.render_paths import (
     RASTER_CIRCLE_MIN_PIXEL_AREA,
@@ -812,14 +813,7 @@ class RasterTarget:
         Anything else composites through a group, and composite_group records
         what that group actually painted, so nothing else needs predicting.
         """
-        if not (
-            isinstance(item, PathPaintItem)
-            and item.paint_kind is PathPaintKind.FILL
-            and item.edge_array is not None
-            and item.bbox is not None
-            and item.fill_pattern is None
-            and item.blend_mode in (None, "Normal")
-        ):
+        if not is_plain_fill(item):
             return None
         clipped = self.clip.clipped_pixel_box(item.bbox)
         if clipped is None:
@@ -3079,21 +3073,20 @@ class RasterTarget:
             self.extend_paint_box,
         )
 
+    def raster_page_box(self) -> tuple[float, float, float, float]:
+        """The page area the raster covers, the box of a paint that gives none."""
+        return (self.crop_x0, self.crop_y0, self.crop_x0 + self.width / self.scale, self.crop_y1)
+
     def shading_box(
         self,
         data: dict[str, Any],
         shading: PreparedShading,
     ) -> tuple[float, float, float, float]:
-        crop_x0 = self.crop_x0
-        crop_y0 = self.crop_y0
-        crop_y1 = self.crop_y1
-        scale = self.scale
-        width = self.width
         box = shading.bbox
         if box is None:
             box = rect_tuple(data.get("bbox"))
         if box is None:
-            box = (crop_x0, crop_y0, crop_x0 + width / scale, crop_y1)
+            box = self.raster_page_box()
         return normalize_rect(box)
 
     def prepared_shading(
@@ -3171,7 +3164,7 @@ class RasterTarget:
         reached = len(ordered)
         color_error: Exception | None = None
         color_model = shading.color_model
-        evaluate = shading.evaluate
+        evaluate = shading.evaluator
         rendering = shading.color_rendering
         for unique_index in by_first.tolist():
             position = int(first[unique_index])
@@ -3218,11 +3211,7 @@ class RasterTarget:
         target_data: PathPaintItem,
         blend_mode: str | None,
     ) -> bool:
-        crop_x0 = self.crop_x0
-        crop_y0 = self.crop_y0
-        crop_y1 = self.crop_y1
         scale = self.scale
-        width = self.width
         cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
         x_step = abs(pattern.x_step)
         y_step = abs(pattern.y_step)
@@ -3238,21 +3227,13 @@ class RasterTarget:
             # they would have composited stays empty, so nothing is pushed.
             return True
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)
-        if type(target_box) is list or type(target_box) is tuple:
-            if len(target_box) == 4:
-                try:
-                    x0, y0, x1, y1 = (float(value) for value in target_box)
-                except TypeError, ValueError:
-                    return False
-            else:
-                x0, y0, x1, y1 = (
-                    crop_x0,
-                    crop_y0,
-                    crop_x0 + width / scale,
-                    crop_y1,
-                )
+        if (type(target_box) is list or type(target_box) is tuple) and len(target_box) == 4:
+            box = rect_tuple(target_box)
+            if box is None:
+                return False
         else:
-            x0, y0, x1, y1 = crop_x0, crop_y0, crop_x0 + width / scale, crop_y1
+            box = self.raster_page_box()
+        x0, y0, x1, y1 = box
         clip_box = self.clip.current_clip()
         if clip_box is not None:
             clipped = intersect_box((x0, y0, x1, y1), clip_box)
