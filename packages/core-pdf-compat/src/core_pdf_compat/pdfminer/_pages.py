@@ -9,16 +9,60 @@ from core_pdf import PdfDocument, PdfPage
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.types import PdfByteBuffer, PdfReference
 from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, key_for, merge_xref_sections
 
 from .._shared import parse_indirect_object_at
+
+OBJECT_HEADER = re.compile(rb"(\d+)\s+(\d+)\s+obj\b")
+LINE_START_OBJECT_HEADER = re.compile(rb"(?m)^(\d+)\s+(\d+)\s+obj\b")
+# The first object header at or after an offset, not one inside a larger number.
+UNANCHORED_OBJECT_HEADER = re.compile(rb"(?<!\d)(\d+)\s+(\d+)\s+obj\b")
+# What bytes.lstrip() strips, so its end is where the stripped data starts.
+LEADING_WHITESPACE = re.compile(rb"\s*")
+
+
+def line_bounds(data: PdfByteBuffer, position: int) -> tuple[int, int]:
+    """The start and end of the line holding position, as bytes.splitlines() splits it.
+
+    A line ends at CR or LF; a CR LF pair only adds an empty line between.
+    """
+    newline = data.rfind(b"\n", 0, position)
+    start = max(newline, data.rfind(b"\r", newline + 1, position)) + 1
+    end = data.find(b"\n", position)
+    if end < 0:
+        end = len(data)
+    carriage_return = data.find(b"\r", position, end)
+    return start, carriage_return if carriage_return >= 0 else end
+
+
+def last_startxref_offset(data: PdfByteBuffer) -> int | None:
+    """The offset on the first non-blank line after the last `startxref` line.
+
+    It reads what walking data.splitlines() backwards from the end reads:
+    lines are stripped, the last one equal to `startxref` is the keyword, and
+    the nearest non-blank line after it must be all digits and below 2**31.
+    Only the lines holding a `startxref` are looked at, so the file is not
+    split into lines.
+    """
+    keyword = data.rfind(b"startxref")
+    while keyword >= 0:
+        start, end = line_bounds(data, keyword)
+        if data[start:end].strip() == b"startxref":
+            following = next(
+                (line for raw in data[end:].splitlines() if (line := raw.strip())), b""
+            )
+            if following.isdigit() and int(following) < 2**31:
+                return int(following)
+            return None
+        keyword = data.rfind(b"startxref", 0, keyword)
+    return None
 
 
 def pdfminer_resolvable_pages(  # noqa: C901
     document: PdfDocument,
 ) -> Iterator[tuple[int, PdfPage]]:
-    data = bytes(document.raw_data)
+    data = document.raw_data
 
     def fallback_pages(object_keys: Iterable[tuple[int, int]]) -> Iterator[tuple[int, PdfPage]]:
         found = 0
@@ -71,7 +115,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
             raise PdfError("No /Root object")
         malformed_root = re.search(rb"/Root\s+\d+\s+\d+\s+R\b", trailer_data) is None
         recovered: dict[int, tuple[int, int]] = {}
-        for match in re.finditer(rb"(?m)^(\d+)\s+(\d+)\s+obj\b", data[: trailer_match.start()]):
+        for match in LINE_START_OBJECT_HEADER.finditer(data, 0, trailer_match.start()):
             object_number = int(match.group(1))
             generation_number = int(match.group(2))
             if generation_number <= 65535:
@@ -156,11 +200,11 @@ def pdfminer_resolvable_pages(  # noqa: C901
 
         found = 0
         for object_number, (generation_number, offset) in recovered.items():
-            header_end = re.match(rb"\d+\s+\d+\s+obj\b", data[offset:])
+            header_end = OBJECT_HEADER.match(data, offset)
             if header_end is None:
                 continue
-            value_start = offset + header_end.end()
-            value_start += len(data[value_start:]) - len(data[value_start:].lstrip())
+            whitespace = LEADING_WHITESPACE.match(data, header_end.end())
+            value_start = whitespace.end() if whitespace is not None else header_end.end()
             if data[value_start : value_start + 2] != b"<<" and not malformed_root:
                 continue
             try:
@@ -191,18 +235,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
             yield found, page
             found += 1
 
-    previous_line = b""
-    start: int | None = None
-    for raw_line in reversed(data.splitlines()):
-        line = raw_line.strip()
-        if line == b"startxref":
-            if previous_line.isdigit():
-                candidate = int(previous_line)
-                if candidate < 2**31:
-                    start = candidate
-            break
-        if line:
-            previous_line = line
+    start = last_startxref_offset(data)
     if start is None:
         yield from fallback_projection()
         return
@@ -210,7 +243,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
     section_start: int = start
     section_pos = XRefScanner.skip_ws(data, section_start)
     section_is_direct = data[section_pos : section_pos + 4] == b"xref"
-    section_is_stream = re.match(rb"\d+\s+\d+\s+obj\b", data[section_pos:]) is not None
+    section_is_stream = OBJECT_HEADER.match(data, section_pos) is not None
     if not section_is_direct and not section_is_stream:
         preceding = data[max(0, section_pos - 3) : section_pos + 4]
         relative = preceding.find(b"xref")
@@ -273,10 +306,20 @@ def pdfminer_resolvable_pages(  # noqa: C901
             if expected_header.match(data, info_entry.offset):
                 parse_indirect_object_at(data, info_entry.offset, recover_malformed_objects=False)
 
+    # A reference's answer depends only on its number and generation, and the
+    # page tree walk asks again for every page that shares a parent.
+    resolvable_keys: dict[int, bool] = {}
+
     def reference_is_resolvable(value: object) -> bool:
         if not isinstance(value, PdfReference):
             return True
         key = key_for(value.object_number, value.generation_number)
+        known = resolvable_keys.get(key)
+        if known is None:
+            known = resolvable_keys[key] = reference_key_is_resolvable(value, key)
+        return known
+
+    def reference_key_is_resolvable(value: PdfReference, key: int) -> bool:
         candidates = [section[key] for section in xref_sections if key in section]
         if not candidates:
             return False
@@ -286,8 +329,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
             if entry.object_stream is not None:
                 return True
             search_end = min(len(data), entry.offset + 1_048_576)
-            header_pattern = re.compile(rb"(?<!\d)(\d+)\s+(\d+)\s+obj\b")
-            first_header = header_pattern.search(data, entry.offset, search_end)
+            first_header = UNANCHORED_OBJECT_HEADER.search(data, entry.offset, search_end)
             expected_pattern = re.compile(
                 rb"(?<!\d)"
                 + str(value.object_number).encode("ascii")
@@ -319,7 +361,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
             root_entry = strict_xref.get(root_key)
             if root_entry is not None and root_entry.object_stream is None:
                 offset = XRefScanner.skip_ws(data, root_entry.offset)
-                header = re.match(rb"(\d+)\s+(\d+)\s+obj\b", data[offset:])
+                header = OBJECT_HEADER.match(data, offset)
                 if header is not None:
                     hard_mismatch = (int(header.group(1)), int(header.group(2))) != (
                         root_reference.object_number,
