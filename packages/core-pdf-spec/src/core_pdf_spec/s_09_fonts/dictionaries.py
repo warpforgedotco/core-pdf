@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
-
-frozen_setattr = object.__setattr__
+from core_records import Record, frozen_setattr
 
 
 def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
@@ -21,7 +20,7 @@ def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
     return descendant_fonts[0]
 
 
-class FontProgramInputs:
+class FontProgramInputs(Record):
     __slots__ = (
         "subtype",
         "original_subtype",
@@ -71,18 +70,6 @@ class FontProgramInputs:
         frozen_setattr(self, "font_file2", font_file2)
         frozen_setattr(self, "font_file3", font_file3)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"subtype={self.subtype!r}, "
-            f"original_subtype={self.original_subtype!r}, "
-            f"descendant={self.descendant!r}, "
-            f"font_file={self.font_file!r}, "
-            f"font_file2={self.font_file2!r}, "
-            f"font_file3={self.font_file3!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -107,37 +94,6 @@ class FontProgramInputs:
                 self.font_file2,
                 self.font_file3,
             )
-        )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        subtype = changes.pop("subtype", self.subtype)
-        original_subtype = changes.pop("original_subtype", self.original_subtype)
-        descendant = changes.pop("descendant", self.descendant)
-        font_file = changes.pop("font_file", self.font_file)
-        font_file2 = changes.pop("font_file2", self.font_file2)
-        font_file3 = changes.pop("font_file3", self.font_file3)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            subtype,
-            original_subtype,
-            descendant,
-            font_file,
-            font_file2,
-            font_file3,
         )
 
 

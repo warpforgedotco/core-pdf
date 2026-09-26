@@ -16,10 +16,7 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.contracts import (
     PageEvidence as NativePageEvidence,
 )
-from core_pdf.impl.types import Record
-
-frozen_setattr = object.__setattr__
-
+from core_pdf.impl.types import Record, frozen_setattr
 
 PSM_AUTO = 3
 PSM_SPARSE_TEXT = 11

@@ -11,7 +11,7 @@ from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
-from core_pdf.impl.types import Record
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     OCR_PREFLIGHT_PIXELS,
@@ -60,9 +60,6 @@ from core_pdf_ocr.impl.extract.ocr.vector import (
     stroked_vector_text_raster,
 )
 from core_pdf_ocr.impl.extract.quality import Candidate
-
-frozen_setattr = object.__setattr__
-
 
 PageBox = tuple[float, float, float, float]
 

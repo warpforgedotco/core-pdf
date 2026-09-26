@@ -17,7 +17,7 @@ from core_pdf.impl.extract.selection import (
 )
 from core_pdf.impl.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.output.model import Document
-from core_pdf.impl.types import Record
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
     capture_from_program,
@@ -33,8 +33,6 @@ from core_pdf_ocr.impl.extract.pipeline import PageExtraction
 if TYPE_CHECKING:
     from core_pdf.impl.document.document import PdfDocument
     from core_pdf.impl.document.page import PdfPage
-
-frozen_setattr = object.__setattr__
 
 
 DOCUMENT_FONT_SEED_LIMIT = 4

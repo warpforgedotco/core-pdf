@@ -8,7 +8,7 @@ from typing import Any, ClassVar
 import numpy
 
 from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.types import Record
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_RESCUE_DENSE_MIN_CHARACTERS,
     OCR_RESCUE_DENSE_MIN_CONFIDENCE,
@@ -23,8 +23,6 @@ from core_pdf_ocr.impl.extract.ocr.raster import raster_ink_grid
 from core_pdf_ocr.impl.extract.ocr.region_tasks import weak_region_grid_shape
 from core_pdf_ocr.impl.extract.ocr.types import OcrTask, Raster
 from core_pdf_ocr.impl.extract.quality import Candidate, text_utility_stats
-
-frozen_setattr = object.__setattr__
 
 
 def observation_coverage_grid(

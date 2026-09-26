@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Any, ClassVar, NoReturn, Self, TypeAlias
+from typing import ClassVar, TypeAlias
 
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -17,15 +17,13 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_number_array,
 )
 from core_pdf_spec.standards import PdfVersion, SemanticContext
-
-frozen_setattr = object.__setattr__
-
+from core_records import Record, frozen_setattr
 
 ColorParams: TypeAlias = Mapping[str, object]
 ComponentRanges: TypeAlias = tuple[tuple[float, float], ...]
 
 
-class ColorSpace:
+class ColorSpace(Record):
     __slots__ = (
         "kind",
         "component_ranges",
@@ -63,6 +61,18 @@ class ColorSpace:
         "lookup",
         "tint_fn",
         "icc_profile",
+        "devicen_attributes",
+    )
+    __repr_fields__: ClassVar[tuple[str, ...]] = (
+        "kind",
+        "component_ranges",
+        "params",
+        "base",
+        "alternate",
+        "colorants",
+        "hival",
+        "lookup",
+        "tint_fn",
         "devicen_attributes",
     )
     __match_args__ = (
@@ -107,65 +117,8 @@ class ColorSpace:
         frozen_setattr(self, "icc_profile", icc_profile)
         frozen_setattr(self, "devicen_attributes", devicen_attributes)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"kind={self.kind!r}, "
-            f"component_ranges={self.component_ranges!r}, "
-            f"params={self.params!r}, "
-            f"base={self.base!r}, "
-            f"alternate={self.alternate!r}, "
-            f"colorants={self.colorants!r}, "
-            f"hival={self.hival!r}, "
-            f"lookup={self.lookup!r}, "
-            f"tint_fn={self.tint_fn!r}, "
-            f"devicen_attributes={self.devicen_attributes!r}"
-            ")"
-        )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        kind = changes.pop("kind", self.kind)
-        component_ranges = changes.pop("component_ranges", self.component_ranges)
-        params = changes.pop("params", self.params)
-        base = changes.pop("base", self.base)
-        alternate = changes.pop("alternate", self.alternate)
-        colorants = changes.pop("colorants", self.colorants)
-        hival = changes.pop("hival", self.hival)
-        lookup = changes.pop("lookup", self.lookup)
-        tint_fn = changes.pop("tint_fn", self.tint_fn)
-        icc_profile = changes.pop("icc_profile", self.icc_profile)
-        devicen_attributes = changes.pop("devicen_attributes", self.devicen_attributes)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            kind,
-            component_ranges,
-            params,
-            base,
-            alternate,
-            colorants,
-            hival,
-            lookup,
-            tint_fn,
-            icc_profile,
-            devicen_attributes,
-        )
-
-
-class DeviceNProcess:
+class DeviceNProcess(Record):
     __slots__ = ("color_space", "components", "component_indices")
 
     color_space: ColorSpace
@@ -185,38 +138,8 @@ class DeviceNProcess:
         frozen_setattr(self, "components", components)
         frozen_setattr(self, "component_indices", component_indices)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"color_space={self.color_space!r}, "
-            f"components={self.components!r}, "
-            f"component_indices={self.component_indices!r}"
-            ")"
-        )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        color_space = changes.pop("color_space", self.color_space)
-        components = changes.pop("components", self.components)
-        component_indices = changes.pop("component_indices", self.component_indices)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(color_space, components, component_indices)
-
-
-class DeviceNAttributes:
+class DeviceNAttributes(Record):
     __slots__ = ("subtype", "process", "colorants")
 
     subtype: str
@@ -235,36 +158,6 @@ class DeviceNAttributes:
         frozen_setattr(self, "subtype", subtype)
         frozen_setattr(self, "process", process)
         frozen_setattr(self, "colorants", colorants)
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"subtype={self.subtype!r}, "
-            f"process={self.process!r}, "
-            f"colorants={self.colorants!r}"
-            ")"
-        )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        subtype = changes.pop("subtype", self.subtype)
-        process = changes.pop("process", self.process)
-        colorants = changes.pop("colorants", self.colorants)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(subtype, process, colorants)
 
 
 DEVICE_GRAY = ColorSpace("DeviceGray", ((0.0, 1.0),))

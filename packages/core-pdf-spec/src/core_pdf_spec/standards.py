@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar, NoReturn, Self
+from typing import ClassVar
 
-frozen_setattr = object.__setattr__
+from core_records import Record, frozen_setattr
 
 
-class PdfVersion:
+class PdfVersion(Record):
     __slots__ = ("major", "minor")
 
     major: int
@@ -21,9 +21,6 @@ class PdfVersion:
         frozen_setattr(self, "major", major)
         frozen_setattr(self, "minor", minor)
         self._post_init()
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(major={self.major!r}, minor={self.minor!r})"
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -55,26 +52,6 @@ class PdfVersion:
             return NotImplemented
         return (self.major, self.minor) >= (other.major, other.minor)
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        major = changes.pop("major", self.major)
-        minor = changes.pop("minor", self.minor)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(major, minor)
-
     def _post_init(self) -> None:
         if type(self.major) is not int or type(self.minor) is not int:
             raise ValueError("PDF version components must be integers")
@@ -95,7 +72,7 @@ class PdfVersion:
         return f"{self.major}.{self.minor}"
 
 
-class SpecificationBaseline:
+class SpecificationBaseline(Record):
     __slots__ = ("edition", "reference_url", "errata_revision", "errata_url")
 
     edition: str
@@ -123,16 +100,6 @@ class SpecificationBaseline:
         frozen_setattr(self, "errata_revision", errata_revision)
         frozen_setattr(self, "errata_url", errata_url)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"edition={self.edition!r}, "
-            f"reference_url={self.reference_url!r}, "
-            f"errata_revision={self.errata_revision!r}, "
-            f"errata_url={self.errata_url!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -148,28 +115,6 @@ class SpecificationBaseline:
     def __hash__(self) -> int:
         return hash((self.edition, self.reference_url, self.errata_revision, self.errata_url))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        edition = changes.pop("edition", self.edition)
-        reference_url = changes.pop("reference_url", self.reference_url)
-        errata_revision = changes.pop("errata_revision", self.errata_revision)
-        errata_url = changes.pop("errata_url", self.errata_url)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(edition, reference_url, errata_revision, errata_url)
-
 
 PDF_2_0_BASELINE = SpecificationBaseline(
     edition="ISO 32000-2:2020",
@@ -182,7 +127,7 @@ PDF_2_0_BASELINE = SpecificationBaseline(
 )
 
 
-class PdfExtension:
+class PdfExtension(Record):
     __slots__ = ("prefix", "base_version", "extension_level", "url", "extension_revision")
 
     prefix: str
@@ -214,17 +159,6 @@ class PdfExtension:
         frozen_setattr(self, "url", url)
         frozen_setattr(self, "extension_revision", extension_revision)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"prefix={self.prefix!r}, "
-            f"base_version={self.base_version!r}, "
-            f"extension_level={self.extension_level!r}, "
-            f"url={self.url!r}, "
-            f"extension_revision={self.extension_revision!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -249,31 +183,8 @@ class PdfExtension:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        prefix = changes.pop("prefix", self.prefix)
-        base_version = changes.pop("base_version", self.base_version)
-        extension_level = changes.pop("extension_level", self.extension_level)
-        url = changes.pop("url", self.url)
-        extension_revision = changes.pop("extension_revision", self.extension_revision)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(prefix, base_version, extension_level, url, extension_revision)
-
-
-class ProfileClaim:
+class ProfileClaim(Record):
     __slots__ = ("identifier", "family", "source", "properties")
 
     identifier: str | None
@@ -296,16 +207,6 @@ class ProfileClaim:
         frozen_setattr(self, "source", source)
         frozen_setattr(self, "properties", properties)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"identifier={self.identifier!r}, "
-            f"family={self.family!r}, "
-            f"source={self.source!r}, "
-            f"properties={self.properties!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -321,30 +222,8 @@ class ProfileClaim:
     def __hash__(self) -> int:
         return hash((self.identifier, self.family, self.source, self.properties))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        identifier = changes.pop("identifier", self.identifier)
-        family = changes.pop("family", self.family)
-        source = changes.pop("source", self.source)
-        properties = changes.pop("properties", self.properties)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(identifier, family, source, properties)
-
-
-class StandardsDiagnostic:
+class StandardsDiagnostic(Record):
     __slots__ = ("code", "message", "source")
 
     code: str
@@ -358,15 +237,6 @@ class StandardsDiagnostic:
         frozen_setattr(self, "code", code)
         frozen_setattr(self, "message", message)
         frozen_setattr(self, "source", source)
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"code={self.code!r}, "
-            f"message={self.message!r}, "
-            f"source={self.source!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -382,29 +252,8 @@ class StandardsDiagnostic:
     def __hash__(self) -> int:
         return hash((self.code, self.message, self.source))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        code = changes.pop("code", self.code)
-        message = changes.pop("message", self.message)
-        source = changes.pop("source", self.source)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(code, message, source)
-
-
-class SemanticContext:
+class SemanticContext(Record):
     __slots__ = ("version", "extensions", "baseline")
 
     version: PdfVersion | None
@@ -424,15 +273,6 @@ class SemanticContext:
         frozen_setattr(self, "extensions", extensions)
         frozen_setattr(self, "baseline", baseline)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"version={self.version!r}, "
-            f"extensions={self.extensions!r}, "
-            f"baseline={self.baseline!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -447,29 +287,8 @@ class SemanticContext:
     def __hash__(self) -> int:
         return hash((self.version, self.extensions, self.baseline))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        version = changes.pop("version", self.version)
-        extensions = changes.pop("extensions", self.extensions)
-        baseline = changes.pop("baseline", self.baseline)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(version, extensions, baseline)
-
-
-class DocumentStandards:
+class DocumentStandards(Record):
     __slots__ = (
         "header_version",
         "catalog_version",
@@ -531,20 +350,6 @@ class DocumentStandards:
         frozen_setattr(self, "profile_claims", profile_claims)
         frozen_setattr(self, "diagnostics", diagnostics)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"header_version={self.header_version!r}, "
-            f"catalog_version={self.catalog_version!r}, "
-            f"effective_version={self.effective_version!r}, "
-            f"header_declaration={self.header_declaration!r}, "
-            f"catalog_declaration={self.catalog_declaration!r}, "
-            f"extensions={self.extensions!r}, "
-            f"profile_claims={self.profile_claims!r}, "
-            f"diagnostics={self.diagnostics!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -575,47 +380,12 @@ class DocumentStandards:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        header_version = changes.pop("header_version", self.header_version)
-        catalog_version = changes.pop("catalog_version", self.catalog_version)
-        effective_version = changes.pop("effective_version", self.effective_version)
-        header_declaration = changes.pop("header_declaration", self.header_declaration)
-        catalog_declaration = changes.pop("catalog_declaration", self.catalog_declaration)
-        extensions = changes.pop("extensions", self.extensions)
-        profile_claims = changes.pop("profile_claims", self.profile_claims)
-        diagnostics = changes.pop("diagnostics", self.diagnostics)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            header_version,
-            catalog_version,
-            effective_version,
-            header_declaration,
-            catalog_declaration,
-            extensions,
-            profile_claims,
-            diagnostics,
-        )
-
     @property
     def context(self) -> SemanticContext:
         return SemanticContext(self.effective_version, self.extensions)
 
 
-class StandardProfile:
+class StandardProfile(Record):
     __slots__ = ("identifier", "family", "edition", "base_version", "reference_url")
 
     identifier: str
@@ -647,17 +417,6 @@ class StandardProfile:
         frozen_setattr(self, "base_version", base_version)
         frozen_setattr(self, "reference_url", reference_url)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"identifier={self.identifier!r}, "
-            f"family={self.family!r}, "
-            f"edition={self.edition!r}, "
-            f"base_version={self.base_version!r}, "
-            f"reference_url={self.reference_url!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -681,29 +440,6 @@ class StandardProfile:
                 self.reference_url,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        identifier = changes.pop("identifier", self.identifier)
-        family = changes.pop("family", self.family)
-        edition = changes.pop("edition", self.edition)
-        base_version = changes.pop("base_version", self.base_version)
-        reference_url = changes.pop("reference_url", self.reference_url)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(identifier, family, edition, base_version, reference_url)
 
 
 STANDARD_PROFILES: tuple[StandardProfile, ...] = (
@@ -820,7 +556,7 @@ def get_standard_profile(identifier: str) -> StandardProfile | None:
     )
 
 
-class ExtensionCoverage:
+class ExtensionCoverage(Record):
     __slots__ = (
         "prefix",
         "base_version",
@@ -870,18 +606,6 @@ class ExtensionCoverage:
         frozen_setattr(self, "features", features)
         frozen_setattr(self, "reference_url", reference_url)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"prefix={self.prefix!r}, "
-            f"base_version={self.base_version!r}, "
-            f"extension_level={self.extension_level!r}, "
-            f"extension_revision={self.extension_revision!r}, "
-            f"features={self.features!r}, "
-            f"reference_url={self.reference_url!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -906,37 +630,6 @@ class ExtensionCoverage:
                 self.features,
                 self.reference_url,
             )
-        )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        prefix = changes.pop("prefix", self.prefix)
-        base_version = changes.pop("base_version", self.base_version)
-        extension_level = changes.pop("extension_level", self.extension_level)
-        extension_revision = changes.pop("extension_revision", self.extension_revision)
-        features = changes.pop("features", self.features)
-        reference_url = changes.pop("reference_url", self.reference_url)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            prefix,
-            base_version,
-            extension_level,
-            extension_revision,
-            features,
-            reference_url,
         )
 
 

@@ -29,13 +29,11 @@ from core_pdf.impl.types import (
     PdfReference,
     ReplaceFields,
     ReprFields,
+    frozen_setattr,
 )
 
 from .._shared import ClosingMixin, PdfInput, encode_png
 from .exceptions import PdfminerException
-
-frozen_setattr = object.__setattr__
-
 
 BBox: TypeAlias = tuple[float, float, float, float]
 ObjectDict: TypeAlias = dict[str, Any]

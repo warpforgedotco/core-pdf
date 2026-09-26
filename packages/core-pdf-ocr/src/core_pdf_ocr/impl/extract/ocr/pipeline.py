@@ -9,7 +9,7 @@ import numpy
 
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.types import Record
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr.impl.extract.capture import promoted_hidden_observations
 from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,
@@ -56,8 +56,6 @@ from core_pdf_ocr.impl.extract.ocr.vector import (
     stroked_vector_text_raster,
 )
 from core_pdf_ocr.impl.extract.quality import Candidate
-
-frozen_setattr = object.__setattr__
 
 
 class OcrPassState(Record):

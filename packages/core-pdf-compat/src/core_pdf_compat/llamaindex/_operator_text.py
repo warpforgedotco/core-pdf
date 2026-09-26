@@ -10,7 +10,7 @@ from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts.decoder import FontDecoder
 from core_pdf.impl.fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import PdfName, PdfString, Record
+from core_pdf.impl.types import PdfName, PdfString, Record, frozen_setattr
 from core_pdf_compat._text_state import (
     PREDEFINED_ENCODING_CODECS,
     append_directional_text,
@@ -25,9 +25,6 @@ from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     STANDARD_ENCODING,
 )
-
-frozen_setattr = object.__setattr__
-
 
 WIN_ANSI_ENCODING = tuple(legacy_base_table("WinAnsiEncoding"))
 MAC_ROMAN_ENCODING = tuple(legacy_base_table("MacRomanEncoding"))

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.resolver import STREAM_DECODE_KEYS
@@ -15,9 +15,7 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
     parse_rendering_intent,
 )
 from core_pdf_spec.standards import PdfVersion, SemanticContext
-
-frozen_setattr = object.__setattr__
-
+from core_records import Record, ReprFields, frozen_setattr
 
 IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
     "Width",
@@ -33,7 +31,7 @@ IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
 }
 
 
-class SoftMask:
+class SoftMask(Record):
     __slots__ = ("raw", "dictionary")
 
     raw: bytes | memoryview
@@ -46,9 +44,6 @@ class SoftMask:
         frozen_setattr(self, "raw", raw)
         frozen_setattr(self, "dictionary", dictionary)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(raw={self.raw!r}, dictionary={self.dictionary!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -59,28 +54,8 @@ class SoftMask:
     def __hash__(self) -> int:
         return hash((self.raw, self.dictionary))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        raw = changes.pop("raw", self.raw)
-        dictionary = changes.pop("dictionary", self.dictionary)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(raw, dictionary)
-
-
-class ImageSource:
+class ImageSource(ReprFields):
     __slots__ = ("raw", "dictionary", "soft_mask", "semantic_context", "color_rendering")
 
     raw: bytes | memoryview
@@ -112,17 +87,6 @@ class ImageSource:
         self.soft_mask = soft_mask
         self.semantic_context = semantic_context
         self.color_rendering = color_rendering
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"raw={self.raw!r}, "
-            f"dictionary={self.dictionary!r}, "
-            f"soft_mask={self.soft_mask!r}, "
-            f"semantic_context={self.semantic_context!r}, "
-            f"color_rendering={self.color_rendering!r}"
-            ")"
-        )
 
     def __replace__(self, /, **changes: Any) -> Self:
         raw = changes.pop("raw", self.raw)

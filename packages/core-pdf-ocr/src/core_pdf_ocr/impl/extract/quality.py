@@ -14,9 +14,7 @@ from core_pdf.impl.extract.quality import (
 from core_pdf.impl.extract.quality import (
     analyze_text as analyze_text,
 )
-from core_pdf.impl.types import Record
-
-frozen_setattr = object.__setattr__
+from core_pdf.impl.types import Record, frozen_setattr
 
 
 class CandidateMetrics(Record):

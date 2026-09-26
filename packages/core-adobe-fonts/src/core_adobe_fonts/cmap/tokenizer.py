@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import binascii
 import typing
-from typing import Any, ClassVar, NoReturn, Self
+from typing import ClassVar
 
 from core_adobe_fonts.cmap.lexical import (
     SEPARATOR_TABLE,
@@ -12,8 +12,7 @@ from core_adobe_fonts.cmap.lexical import (
     WS_TABLE,
     read_literal_string,
 )
-
-frozen_setattr = object.__setattr__
+from core_records import Record, frozen_setattr
 
 
 def decode_literal_string(data: bytes | bytearray | memoryview) -> bytes:
@@ -31,7 +30,7 @@ def decode_literal_string(data: bytes | bytearray | memoryview) -> bytes:
 CMapTokenKind = typing.Literal["array", "delimiter", "hex", "literal", "procedure", "word"]
 
 
-class CMapToken:
+class CMapToken(Record):
     __slots__ = ("value", "start", "end", "kind")
 
     value: bytes
@@ -48,16 +47,6 @@ class CMapToken:
         frozen_setattr(self, "end", end)
         frozen_setattr(self, "kind", kind)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"value={self.value!r}, "
-            f"start={self.start!r}, "
-            f"end={self.end!r}, "
-            f"kind={self.kind!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -73,30 +62,8 @@ class CMapToken:
     def __hash__(self) -> int:
         return hash((self.value, self.start, self.end, self.kind))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        value = changes.pop("value", self.value)
-        start = changes.pop("start", self.start)
-        end = changes.pop("end", self.end)
-        kind = changes.pop("kind", self.kind)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(value, start, end, kind)
-
-
-class CMapBlock:
+class CMapBlock(Record):
     __slots__ = ("data", "tokens")
 
     data: bytes
@@ -109,9 +76,6 @@ class CMapBlock:
         frozen_setattr(self, "data", data)
         frozen_setattr(self, "tokens", tokens)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(data={self.data!r}, tokens={self.tokens!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -121,26 +85,6 @@ class CMapBlock:
 
     def __hash__(self) -> int:
         return hash((self.data, self.tokens))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        data = changes.pop("data", self.data)
-        tokens = changes.pop("tokens", self.tokens)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(data, tokens)
 
     def token_values(
         self, *, include_arrays: bool = False, include_words: bool = False
@@ -150,7 +94,7 @@ class CMapBlock:
         )
 
 
-class CMapProgram:
+class CMapProgram(Record):
     __slots__ = ("data", "tokens")
 
     data: bytes
@@ -163,9 +107,6 @@ class CMapProgram:
         frozen_setattr(self, "data", data)
         frozen_setattr(self, "tokens", tokens)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(data={self.data!r}, tokens={self.tokens!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -175,26 +116,6 @@ class CMapProgram:
 
     def __hash__(self) -> int:
         return hash((self.data, self.tokens))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        data = changes.pop("data", self.data)
-        tokens = changes.pop("tokens", self.tokens)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(data, tokens)
 
     @classmethod
     def parse(cls, data: bytes | bytearray | memoryview) -> CMapProgram:

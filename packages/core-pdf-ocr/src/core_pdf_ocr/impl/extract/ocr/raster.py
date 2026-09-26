@@ -17,13 +17,10 @@ from core_pdf.impl.extract.contracts import FULL_PAGE_IMAGE_COVERAGE
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.graphics.images import decode_image, decode_pdf_image
 from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.types import Record
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_bilinear, resample_nearest
 from core_pdf_ocr.impl.extract.ocr.types import Raster
-
-frozen_setattr = object.__setattr__
-
 
 DIRECT_OCR_TARGET_RESOLUTION = 400
 

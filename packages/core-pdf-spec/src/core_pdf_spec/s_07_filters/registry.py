@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal, NoReturn, Self, TypeAlias
+from typing import ClassVar, Literal, TypeAlias
 
-frozen_setattr = object.__setattr__
-
+from core_records import Record, frozen_setattr
 
 FilterDecoder: TypeAlias = Literal[
     "ascii85",
@@ -21,7 +20,7 @@ FilterDecoder: TypeAlias = Literal[
 ]
 
 
-class FilterDescriptor:
+class FilterDescriptor(Record):
     __slots__ = ("name", "decoder", "predictor", "ccitt", "wants_image_dictionary")
 
     name: str
@@ -53,17 +52,6 @@ class FilterDescriptor:
         frozen_setattr(self, "ccitt", ccitt)
         frozen_setattr(self, "wants_image_dictionary", wants_image_dictionary)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"name={self.name!r}, "
-            f"decoder={self.decoder!r}, "
-            f"predictor={self.predictor!r}, "
-            f"ccitt={self.ccitt!r}, "
-            f"wants_image_dictionary={self.wants_image_dictionary!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -87,29 +75,6 @@ class FilterDescriptor:
                 self.wants_image_dictionary,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        name = changes.pop("name", self.name)
-        decoder = changes.pop("decoder", self.decoder)
-        predictor = changes.pop("predictor", self.predictor)
-        ccitt = changes.pop("ccitt", self.ccitt)
-        wants_image_dictionary = changes.pop("wants_image_dictionary", self.wants_image_dictionary)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(name, decoder, predictor, ccitt, wants_image_dictionary)
 
 
 FILTER_DESCRIPTORS = (

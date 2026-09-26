@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from core_pdf.impl.types import Record
-
-frozen_setattr = object.__setattr__
+from core_pdf.impl.types import Record, frozen_setattr
 
 
 class ElementMetadata(dict[str, Any]):

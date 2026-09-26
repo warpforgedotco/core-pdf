@@ -6,7 +6,7 @@ from typing import Any, ClassVar
 import numpy
 
 from core_pdf.impl.geometry import flip_rect_vertical, interval_overlap
-from core_pdf.impl.types import Record
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTTextBox
 
 from ._classification import (
@@ -17,8 +17,6 @@ from ._elements import (
     Element,
     ListItem,
 )
-
-frozen_setattr = object.__setattr__
 
 
 class TextRegion(Record):

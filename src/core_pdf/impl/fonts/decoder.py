@@ -67,8 +67,6 @@ from core_pdf.impl.types import (
     PdfString,
     Record,
     Rectangle,
-    ReplaceFields,
-    ReprFields,
     frozen_setattr,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -288,7 +286,7 @@ STRING_GLYPH_CACHE_MAX_BYTES = 8
 STRING_GLYPH_CACHE_MAX_ENTRIES = 8192
 
 
-class DecodedGlyph(DecodedFontGlyph, ReplaceFields, ReprFields):
+class DecodedGlyph(DecodedFontGlyph):
     __slots__ = ("unicode_source", "alternates", "bitmap_code", "split_unicode")
 
     unicode_source: str

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from array import array
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Protocol, Self, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self, TypeAlias
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -17,14 +17,13 @@ from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf_spec.types import Rectangle
+from core_records import FrozenFields, PickleFields, ReplaceFields, ReprFields, frozen_setattr
 
 if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.inline_images import InlineImage
     from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
     from core_pdf_spec.s_07_content.streams import ContentStreamFrame
     from core_pdf_spec.s_11_transparency.soft_masks import SoftMask
-
-frozen_setattr = object.__setattr__
 
 
 NON_PAINTING_RENDER_MODES = frozenset({3, 7})
@@ -41,7 +40,7 @@ PATH_CURVE = ord("c")
 PATH_OPERAND_COUNTS = {PATH_MOVE: 2, PATH_LINE: 2, PATH_CLOSE: 0, PATH_RECT: 4, PATH_CURVE: 13}
 
 
-class PdfPath:
+class PdfPath(ReplaceFields):
     """A path under construction, as flat storage rather than an object per operator.
 
     ``ops`` holds one byte per operator and ``coords`` its numbers, in order,
@@ -78,13 +77,6 @@ class PdfPath:
     def __bool__(self) -> bool:
         return bool(self.ops)
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        ops = changes.pop("ops", self.ops)
-        coords = changes.pop("coords", self.coords)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(ops, coords)
-
     def move_to(self, x: float, y: float) -> None:
         self.ops.append(PATH_MOVE)
         self.coords.append(x)
@@ -115,7 +107,7 @@ class PdfPath:
         return ["re" if op == PATH_RECT else chr(op) for op in self.ops]
 
 
-class ShadingPattern:
+class ShadingPattern(FrozenFields, PickleFields, ReprFields):
     __slots__ = ("dictionary", "extgstate")
 
     dictionary: PdfDict
@@ -128,14 +120,6 @@ class ShadingPattern:
         frozen_setattr(self, "dictionary", dictionary)
         frozen_setattr(self, "extgstate", extgstate)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"dictionary={self.dictionary!r}, "
-            f"extgstate={self.extgstate!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -146,19 +130,6 @@ class ShadingPattern:
     def __hash__(self) -> int:
         return hash((self.dictionary, self.extgstate))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         dictionary = changes.pop("dictionary", self.dictionary)
         extgstate = changes.pop("extgstate", self.extgstate)
@@ -167,7 +138,7 @@ class ShadingPattern:
         return self.__class__(dictionary, extgstate=extgstate)
 
 
-class TilingPattern:
+class TilingPattern(FrozenFields, PickleFields, ReprFields):
     __slots__ = (
         "bbox",
         "x_step",
@@ -245,23 +216,6 @@ class TilingPattern:
         frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
         frozen_setattr(self, "text_knockout", text_knockout)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"bbox={self.bbox!r}, "
-            f"x_step={self.x_step!r}, "
-            f"y_step={self.y_step!r}, "
-            f"stream={self.stream!r}, "
-            f"resources={self.resources!r}, "
-            f"matrix={self.matrix!r}, "
-            f"paint_type={self.paint_type!r}, "
-            f"base_color={self.base_color!r}, "
-            f"base_color_spec={self.base_color_spec!r}, "
-            f"alpha_is_shape={self.alpha_is_shape!r}, "
-            f"text_knockout={self.text_knockout!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -298,19 +252,6 @@ class TilingPattern:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         bbox = changes.pop("bbox", self.bbox)
         x_step = changes.pop("x_step", self.x_step)
@@ -343,7 +284,7 @@ class TilingPattern:
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern
 
 
-class MarkedContentEntry:
+class MarkedContentEntry(ReprFields, ReplaceFields):
     __slots__ = ("layer", "actual_text", "mcid")
 
     layer: str | None
@@ -363,15 +304,6 @@ class MarkedContentEntry:
         self.actual_text = actual_text
         self.mcid = mcid
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"layer={self.layer!r}, "
-            f"actual_text={self.actual_text!r}, "
-            f"mcid={self.mcid!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -385,16 +317,8 @@ class MarkedContentEntry:
 
     __hash__ = None  # type: ignore[assignment]
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        layer = changes.pop("layer", self.layer)
-        actual_text = changes.pop("actual_text", self.actual_text)
-        mcid = changes.pop("mcid", self.mcid)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(layer, actual_text, mcid)
 
-
-class GraphicsState:
+class GraphicsState(ReprFields):
     __slots__ = (
         "ctm",
         "fill_color",
@@ -591,43 +515,6 @@ class GraphicsState:
         self.alpha_is_shape = alpha_is_shape
         self.text_knockout = text_knockout
         self.soft_mask = soft_mask
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"ctm={self.ctm!r}, "
-            f"fill_color={self.fill_color!r}, "
-            f"fill_pattern={self.fill_pattern!r}, "
-            f"fill_opacity={self.fill_opacity!r}, "
-            f"stroke_color={self.stroke_color!r}, "
-            f"stroke_pattern={self.stroke_pattern!r}, "
-            f"stroke_opacity={self.stroke_opacity!r}, "
-            f"fill_space={self.fill_space!r}, "
-            f"stroke_space={self.stroke_space!r}, "
-            f"blend_mode={self.blend_mode!r}, "
-            f"flatness={self.flatness!r}, "
-            f"render_intent={self.render_intent!r}, "
-            f"black_point_compensation={self.black_point_compensation!r}, "
-            f"line_width={self.line_width!r}, "
-            f"line_cap={self.line_cap!r}, "
-            f"line_join={self.line_join!r}, "
-            f"miter_limit={self.miter_limit!r}, "
-            f"dash_pattern={self.dash_pattern!r}, "
-            f"font_size={self.font_size!r}, "
-            f"horizontal_scale={self.horizontal_scale!r}, "
-            f"char_space={self.char_space!r}, "
-            f"word_space={self.word_space!r}, "
-            f"rise={self.rise!r}, "
-            f"leading={self.leading!r}, "
-            f"render_mode={self.render_mode!r}, "
-            f"current_font={self.current_font!r}, "
-            f"current_decoder={self.current_decoder!r}, "
-            f"decoder_resources={self.decoder_resources!r}, "
-            f"alpha_is_shape={self.alpha_is_shape!r}, "
-            f"text_knockout={self.text_knockout!r}, "
-            f"soft_mask={self.soft_mask!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:

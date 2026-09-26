@@ -16,10 +16,7 @@ from core_pdf.impl.geometry import (
     points_bbox,
     rect_tuple,
 )
-from core_pdf.impl.types import Record, Rectangle
-
-frozen_setattr = object.__setattr__
-
+from core_pdf.impl.types import Record, Rectangle, frozen_setattr
 
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]
 GlyphTopology: TypeAlias = tuple[tuple[tuple[bool, int], ...], ...]

@@ -5,9 +5,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from core_pdf.impl.render.model import RasterImage
-from core_pdf.impl.types import Record
-
-frozen_setattr = object.__setattr__
+from core_pdf.impl.types import Record, frozen_setattr
 
 
 class Raster(Record):

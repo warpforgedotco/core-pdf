@@ -8,14 +8,12 @@ from typing import Any, ClassVar
 
 from core_pdf import PdfDocument
 from core_pdf.impl.document.recovery.xref import XRefScanner
-from core_pdf.impl.types import Record
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_spec.s_07_content.inline_images import validate_inline_images
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 
 from ..pypdf import validate_pypdf_page_tree
 from ._operator_text import OperatorTextProjection
-
-frozen_setattr = object.__setattr__
 
 
 class MetadataMode(StrEnum):
