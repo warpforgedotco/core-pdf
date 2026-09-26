@@ -11,13 +11,11 @@ from core_pdf.impl.capture_records import (
 )
 from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.graphics_device_profiles import cmyk_floats_to_srgb
-from core_pdf.impl.render_blend import (
-    clamp01,
-    color_component,
-)
+from core_pdf.impl.render_blend import color_component
 from core_pdf.impl.render_commands import append_captured_program
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import DisplayItem, ImagePaintItem, PathPaintItem
+from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 if TYPE_CHECKING:

@@ -38,7 +38,6 @@ from core_pdf.impl.render_blend import (
     blend_normal_solid_array_numpy,
     blend_solid_array_numpy,
     blend_visible_pixels,
-    clamp01,
     color_rgba,
     composite_blended_group_numpy,
     resolve_constant_alpha,
@@ -74,6 +73,7 @@ from core_pdf.impl.render_patterns import (
     tiling_cell,
     tiling_pattern_uses_normal_blends,
 )
+from core_pdf.impl.scalars import clamp01
 from core_pdf_cythonized import (
     accumulate_source_plane,
     alpha_channel,

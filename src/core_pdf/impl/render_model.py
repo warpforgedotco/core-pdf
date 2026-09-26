@@ -10,7 +10,7 @@ import numpy
 
 from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.capture_records import CapturedSoftMask, PatternPaint
-from core_pdf.impl.render_blend import clamp01
+from core_pdf.impl.scalars import clamp01
 from core_pdf.impl.types import Record, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
