@@ -3007,11 +3007,12 @@ class RasterTarget:
             outline = False
         # Normal blending with no group planes is painted in the kernel;
         # anything else is the Python primitives, called back from its walk.
+        width_type = type(line_width)
         native = (
             blend_mode is None
             and self.group_source_alpha is None
             and self.group_source_shape is None
-            and type(line_width) in {int, float}
+            and (width_type is float or width_type is int)
             and all(type(channel) is int for channel in rgba)
         )
         region = self.clip.current_region()
