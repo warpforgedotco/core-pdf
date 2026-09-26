@@ -192,6 +192,8 @@ def parse_cidrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) ->
 class ToUnicodeCMap(PdfToUnicodeCMap):
     __slots__ = ()
 
+    max_inheritance_depth = 16
+
     @staticmethod
     def parse_program(data: bytes) -> ParsedToUnicodeCMap:
         return parse_to_unicode_cmap(data)
@@ -199,32 +201,8 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
     def validate_mappings(self) -> None:
         pass
 
-    def __init__(
-        self,
-        data: bytes | bytearray | memoryview,
-        *,
-        usecmap_resolver: Callable[[str], bytes | None] | None = None,
-        inheritance_depth: int = 0,
-        ancestor_names: tuple[str, ...] = (),
-    ) -> None:
-        if inheritance_depth > 16:
-            raise ValueError("ToUnicode CMap UseCMap recursion limit exceeded")
-        super().__init__(
-            data,
-            usecmap_resolver=usecmap_resolver,
-            inheritance_depth=inheritance_depth,
-            ancestor_names=ancestor_names,
-        )
-
-    def resolve_parent(
-        self,
-        name: str,
-        resolver: Callable[[str], bytes | None] | None,
-        depth: int,
-        ancestor_names: tuple[str, ...] = (),
-    ) -> PdfToUnicodeCMap | None:
-        data = resolver(name) if resolver is not None else None
-        return self.load_parent(data, resolver, depth) if data is not None else None
+    def reject_parent(self, reason: str) -> PdfToUnicodeCMap | None:  # noqa: ARG002
+        return None
 
     def load_parent(
         self,
@@ -234,7 +212,7 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
         ancestor_names: tuple[str, ...] = (),
     ) -> PdfToUnicodeCMap | None:
         try:
-            return type(self)(data, usecmap_resolver=resolver, inheritance_depth=depth)
+            return super().load_parent(data, resolver, depth, ancestor_names)
         except ValueError:
             return None
 

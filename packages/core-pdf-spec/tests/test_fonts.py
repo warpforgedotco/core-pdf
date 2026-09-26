@@ -28,6 +28,37 @@ def test_cmap_rejects_unresolved_and_cyclic_parent(
         reader(data, usecmap_resolver=lambda name: data)
 
 
+class ParentlessToUnicodeCMap(ToUnicodeCMap):
+    __slots__ = ()
+
+    max_inheritance_depth = 1
+
+    def reject_parent(self, reason: str) -> ToUnicodeCMap | None:  # noqa: ARG002
+        return None
+
+    def validate_mappings(self) -> None:
+        pass
+
+
+def test_tounicode_parent_hooks_keep_strict_defaults() -> None:
+    local = CODESPACE + b"1 beginbfchar <01> <0041> endbfchar"
+    data = b"/Loop usecmap 1 beginbfchar <01> <0041> endbfchar"
+    with pytest.raises(ValueError, match="unresolved"):
+        ToUnicodeCMap(data)
+    assert ParentlessToUnicodeCMap(data).lookup(b"\x01") == "A"
+    calls: list[str] = []
+
+    def resolve(name: str) -> bytes:
+        calls.append(name)
+        return data
+
+    assert ParentlessToUnicodeCMap(data, usecmap_resolver=resolve).lookup(b"\x01") == "A"
+    assert calls == ["Loop"]
+    assert ToUnicodeCMap(local, inheritance_depth=99).lookup(b"\x01") == "A"
+    with pytest.raises(ValueError, match="nesting too deep"):
+        ParentlessToUnicodeCMap(local, inheritance_depth=2)
+
+
 def test_tounicode_uses_utf16be_and_local_mapping_overrides_parent() -> None:
     parent = CODESPACE + b"1 beginbfchar <01> <0041> endbfchar"
     child = b"/Parent usecmap 1 beginbfchar <01> <D83DDE00> endbfchar"

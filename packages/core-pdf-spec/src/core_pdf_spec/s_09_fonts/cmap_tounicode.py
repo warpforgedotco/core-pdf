@@ -196,6 +196,8 @@ class ToUnicodeCMap:
     mappings: dict[bytes, str]
     decode_lengths: tuple[int, ...]
     __slots__ = ("code_space_ranges", "mappings", "decode_lengths")
+    # The deepest usecmap chain a subclass accepts; None leaves it unbounded.
+    max_inheritance_depth: ClassVar[int | None] = None
 
     def __init__(
         self,
@@ -205,6 +207,9 @@ class ToUnicodeCMap:
         inheritance_depth: int = 0,
         ancestor_names: tuple[str, ...] = (),
     ) -> None:
+        limit = self.max_inheritance_depth
+        if limit is not None and inheritance_depth > limit:
+            raise ValueError("ToUnicode CMap usecmap nesting too deep")
         source = data if type(data) is bytes else bytes(data)
         parsed = self.parse_program(source)
         parent: ToUnicodeCMap | None = None
@@ -246,11 +251,15 @@ class ToUnicodeCMap:
         ancestor_names: tuple[str, ...] = (),
     ) -> ToUnicodeCMap | None:
         if name in ancestor_names:
-            raise ValueError("cyclic ToUnicode CMap usecmap")
+            return self.reject_parent("cyclic ToUnicode CMap usecmap")
         data = resolver(name) if resolver is not None else None
         if data is None:
-            raise ValueError(f"unresolved ToUnicode CMap usecmap: {name}")
+            return self.reject_parent(f"unresolved ToUnicode CMap usecmap: {name}")
         return self.load_parent(data, resolver, depth, (*ancestor_names, name))
+
+    def reject_parent(self, reason: str) -> ToUnicodeCMap | None:
+        """Refuse a cyclic or unresolved usecmap; returning None inherits nothing."""
+        raise ValueError(reason)
 
     def load_parent(
         self,
