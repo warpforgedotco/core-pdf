@@ -59,7 +59,12 @@ what it declines as well as what it returns, and
 the Python alone; change either lexer and both must still pass. `decrypt_type1` is
 another mirror: `core-adobe-fonts` keeps its pure-Python Type 1 cipher for its own
 readers, core's Type 1 programs decrypt with the kernel, and its test compares the two
-over random payloads and keys. The build
+over random payloads and keys. `truetype_contours` mirrors the vendored fontTools
+drawing of a TrueType glyph for `FontToolsOutlineAccess`: it declines, and fontTools
+draws, whatever fontTools would treat otherwise (malformed data, point-matched
+components, cubic flags, variable fonts), and
+`tests/src/core_pdf/test_truetype_kernel_contracts.py` compares the two glyph for glyph
+over fixture fonts. The build
 disables float contraction -- `-ffp-contract=off` on GCC/Clang, `/fp:precise` on MSVC,
 chosen per compiler in `setup.py` because passing the wrong spelling would build with
 semantics the golden vectors do not describe. The kernels must reproduce CPython float

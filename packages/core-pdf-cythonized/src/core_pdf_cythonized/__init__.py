@@ -73,6 +73,7 @@ from core_pdf_cythonized._source_plane import accumulate_source_plane
 from core_pdf_cythonized._stroke import stroke_polylines
 from core_pdf_cythonized._stroke_segment import stroke_segment_samples
 from core_pdf_cythonized._supersample import supersampled_coverage_plane
+from core_pdf_cythonized._truetype import truetype_contours
 from core_pdf_cythonized._type1 import decrypt_type1
 from core_pdf_cythonized._type2 import type2_glyph_geometry
 from core_pdf_cythonized._xref_headers import object_headers_match
@@ -118,5 +119,6 @@ __all__ = (
     "stroke_segment_samples",
     "supersampled_coverage_plane",
     "translated_outline_edges",
+    "truetype_contours",
     "type2_glyph_geometry",
 )

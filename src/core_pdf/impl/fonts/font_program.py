@@ -50,7 +50,7 @@ from core_pdf.impl.fonts.raster_kernel import (
 )
 from core_pdf.impl.geometry import points_bbox, transform_bbox
 from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
-from core_pdf_cythonized import decrypt_type1, type2_glyph_geometry
+from core_pdf_cythonized import decrypt_type1, truetype_contours, type2_glyph_geometry
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.font_program_truetype import (
     is_unicode_scalar,
@@ -1165,8 +1165,59 @@ class BitmapFromOutlines:
         return self.outlines.glyph_bitmap_for_gid(glyph_id, width=width, height=height)
 
 
+TrueTypeTables = tuple[bytes, numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], int]
+
+
+def truetype_tables(font: TTFont) -> TrueTypeTables | None:
+    """What truetype_contours reads, when it can stand in for fontTools' drawing.
+
+    That is a font fontTools draws from glyf -- one without a CFF table,
+    which getGlyphSet would prefer, and not a variable font -- whose glyph
+    set fontTools can build without decompiling glyf here: every glyph's loca
+    slice lies within the table, as the decompile's length check demands,
+    and hmtx, and vmtx if there is one, hold every glyph. Its glyph names
+    must be unique, since fontTools finds glyphs by name. None otherwise,
+    and fontTools draws every glyph.
+    """
+    try:
+        keys = set(font.keys())
+        if (
+            "CFF " in keys
+            or "CFF2" in keys
+            or "fvar" in keys
+            or not {"glyf", "loca", "hmtx"} <= keys
+        ):
+            # A glyph set reads fvar's axes, and fails when it has none; a
+            # variable font is left to fontTools altogether.
+            return None
+        reader = font.reader
+        if reader is None:
+            return None
+        glyf = bytes(reader["glyf"])
+        loca = numpy.asarray(font["loca"].locations, dtype=numpy.int64)
+        order = font.getGlyphOrder()
+        if len(set(order)) != len(order):
+            return None
+        metrics = font["hmtx"].metrics
+        lsb = numpy.asarray([int(metrics[name][1]) for name in order], dtype=numpy.int64)
+        if "vmtx" in keys:
+            # The glyph set reads vmtx too, and each glyph drawn its entry.
+            vertical = font["vmtx"].metrics
+            if not all(name in vertical for name in order):
+                return None
+    except FONT_PROGRAM_ERRORS:
+        return None
+    if len(loca):
+        starts = loca[:-1]
+        ends = loca[1:]
+        # data[pos:next] must be next - pos bytes long.
+        if bool(((ends < starts) | ((ends > len(glyf)) & (ends != starts))).any()):
+            return None
+    return glyf, loca, lsb, len(order)
+
+
 class FontToolsOutlineAccess(BitmapFromContours):
-    __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale")
+    __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale", "truetype", "truetype_read")
 
     def __init__(self, font: TTFont) -> None:
         self.font = font
@@ -1174,6 +1225,9 @@ class FontToolsOutlineAccess(BitmapFromContours):
         self.reverse_glyph_map = font.getReverseGlyphMap()
         units_per_em = float(getattr(font["head"], "unitsPerEm", 1000) or 1000)
         self.scale = 1000.0 / units_per_em if units_per_em else 1.0
+        # Read on the first glyph drawn; None if truetype_contours cannot be used.
+        self.truetype: TrueTypeTables | None = None
+        self.truetype_read = False
 
     def glyph_id_for_name(self, glyph_name: str) -> int | None:
         return self.reverse_glyph_map.get(glyph_name)
@@ -1182,6 +1236,15 @@ class FontToolsOutlineAccess(BitmapFromContours):
         return 0 <= glyph_id < self.glyph_count
 
     def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+        if not self.truetype_read:
+            self.truetype = truetype_tables(self.font)
+            self.truetype_read = True
+        tables = self.truetype
+        if tables is not None:
+            glyf, loca, lsb, glyph_count = tables
+            drawn = truetype_contours(glyf, loca, lsb, glyph_count, glyph_id, self.scale)
+            if drawn is not None:
+                return drawn
         try:
             contours = fonttools_contours(self.font, glyph_id)
             return contours if self.scale == 1.0 else scale_contours(contours, self.scale)
