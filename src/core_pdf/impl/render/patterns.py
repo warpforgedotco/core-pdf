@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
@@ -102,43 +101,6 @@ def cell_paints_nothing(
         ):
             return False
     return True
-
-
-def axial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:
-    x0, y0, x1, y1 = coords[:4]
-    dx = x1 - x0
-    dy = y1 - y0
-    denom = dx * dx + dy * dy
-    if denom <= 1e-12:
-        return None
-    return ((px - x0) * dx + (py - y0) * dy) / denom
-
-
-def radial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:
-    x0, y0, r0, x1, y1, r1 = coords[:6]
-    dx = x1 - x0
-    dy = y1 - y0
-    dr = r1 - r0
-    qx = px - x0
-    qy = py - y0
-    a = dx * dx + dy * dy - dr * dr
-    b = -2.0 * (qx * dx + qy * dy + r0 * dr)
-    c = qx * qx + qy * qy - r0 * r0
-    if abs(a) <= 1e-12:
-        if abs(b) <= 1e-12:
-            return None
-        return -c / b
-    disc = b * b - 4.0 * a * c
-    if disc < 0.0:
-        return None
-    root = disc**0.5
-    t0 = (-b - root) / (2.0 * a)
-    t1 = (-b + root) / (2.0 * a)
-    valid = [t for t in (t0, t1) if math.isfinite(t)]
-    if not valid:
-        return None
-    in_range = [t for t in valid if 0.0 <= t <= 1.0]
-    return max(in_range) if in_range else min(valid, key=lambda t: abs(t - 0.5))
 
 
 def shading_color_rgba(

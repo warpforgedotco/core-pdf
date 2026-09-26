@@ -1,4 +1,12 @@
-"""Axial and radial shadings painted by the kernels paint what paint_shading's loop did."""
+"""Shadings painted by the kernels paint what paint_shading's per-pixel loop did.
+
+The reference below is that loop as it was, with the parameter taken from
+shading_t -- pinned to the deleted Python functions by golden vectors -- and
+blending by blend_px, which the rest of the rasterizer still uses. Pages
+cover axial and radial shadings, extends, clips, opacity, every blend mode
+blend_px treats apart, and knockout and non-isolated groups that record
+source alpha and shape; failures part way are checked on a target directly.
+"""
 
 import math
 import random
@@ -8,23 +16,67 @@ import numpy
 import pytest
 
 from core_pdf import PdfDocument
+from core_pdf.impl.graphics.shading import prepare_shading
 from core_pdf.impl.render import target as raster
-from core_pdf.impl.render.patterns import axial_shading_t, radial_shading_t
-from core_pdf_cythonized import shading_values
+from core_pdf.impl.render.target import RasterTarget
+from core_pdf_cythonized import shading_t, shading_values
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING
 
 
-def loop_values(
-    kind: int,
-    coords: tuple[float, ...],
-    box: tuple[int, int, int, int],
-    allowed: numpy.ndarray,
-    extend: tuple[bool, bool],
-    domain: tuple[float, float],
-    view: tuple[float, float, float],
-) -> tuple[list[float], numpy.ndarray]:
+def reference_paint_shading(
+    self: RasterTarget, data: dict[str, Any], blend_mode: str | None
+) -> None:
+    shading = prepare_shading(
+        data.get("dictionary"), rendering=data.get("color_rendering", DEFAULT_COLOR_RENDERING)
+    )
+    if shading is None:
+        return
+    clipped_box = self.clip.clipped_pixel_box(self.shading_box(data, shading))
+    if clipped_box is None:
+        return
+    ix0, iy0, ix1, iy1 = clipped_box[1]
+    soft_mask_alpha = data.get("soft_mask_alpha")
+    fill_opacity = data.get("fill_opacity")
+    shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
+    domain = shading.domain
+    domain_span = domain[1] - domain[0]
+    mode = self.resolved_blend(blend_mode)
+    kind = shading.shading_type
+    cache: dict[float, tuple[int, int, int, int]] = {}
+    for py in range(iy0, iy1):
+        page_y = self.crop_y1 - (py + 0.5) / self.scale
+        row = py * self.width * 4
+        for span_start, span_end in self.clip.clip_row_visible_spans(py):
+            for px in range(max(ix0, span_start), min(ix1, span_end)):
+                page_x = self.crop_x0 + (px + 0.5) / self.scale
+                unit_t = shading_t(kind, shading.coords, page_x, page_y, 0.5)
+                if unit_t is None:
+                    continue
+                if unit_t < 0.0:
+                    if not shading.extend_start:
+                        continue
+                    unit_t = 0.0
+                elif unit_t > 1.0:
+                    if not shading.extend_end:
+                        continue
+                    unit_t = 1.0
+                value = domain[0] + unit_t * domain_span
+                rgba = cache.get(value)
+                if rgba is None:
+                    rgba = cache[value] = raster.shading_rgba(
+                        shading.color_model,
+                        shading.evaluate(value),
+                        fill_opacity,
+                        shading.color_rendering,
+                        shading_alpha,
+                    )
+                self.blend_px(row + px * 4, rgba, mode)
+
+
+def loop_values(kind, coords, box, allowed, extend, domain, view):
     crop_x0, crop_y1, scale = view
     ix0, iy0, ix1, iy1 = box
-    shading_t = axial_shading_t if kind == 2 else radial_shading_t
     painted = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
     values: list[float] = []
     for py in range(iy0, iy1):
@@ -32,7 +84,7 @@ def loop_values(
         for px in range(ix0, ix1):
             if not allowed[py - iy0, px - ix0]:
                 continue
-            unit_t = shading_t(coords, crop_x0 + (px + 0.5) / scale, page_y)
+            unit_t = shading_t(kind, coords, crop_x0 + (px + 0.5) / scale, page_y, 0.5)
             if unit_t is None:
                 continue
             if unit_t < 0.0:
@@ -95,25 +147,35 @@ def test_values_are_the_loops(seed: int) -> None:
     assert same(values[painted.view(numpy.bool_)].tolist(), expected)
 
 
-def one_page_pdf(shading: bytes, content: bytes) -> bytes:
+def one_page_pdf(shading: bytes, content: bytes, form: bytes) -> bytes:
+    resources = b"/Shading << /S 5 0 R >> /ExtGState << /G 6 0 R /M 8 0 R /K 9 0 R >>"
     objects = {
         1: b"<< /Type /Catalog /Pages 2 0 R >>",
         2: b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        3: b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 120 90] "
-        b"/Resources << /Shading << /S 5 0 R >> /ExtGState << /G 6 0 R >> >> /Contents 4 0 R >>",
+        3: b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 120 90] /Resources << "
+        + resources
+        + b" /XObject << /X 7 0 R >> >> /Contents 4 0 R >>",
         4: b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream",
         5: shading,
         6: b"<< /Type /ExtGState /ca 0.6 /BM /Normal >>",
+        7: b"<< /Type /XObject /Subtype /Form /BBox [0 0 120 90] /Group << /S /Transparency "
+        b"/I false /K true >> /Resources << "
+        + resources
+        + b" >> /Length %d >>\nstream\n" % len(form)
+        + form
+        + b"\nendstream",
+        8: b"<< /Type /ExtGState /ca 0.8 /BM /Multiply >>",
+        9: b"<< /Type /ExtGState /ca 0.7 /BM /ColorDodge >>",
     }
-    data = bytearray(b"%PDF-1.4\n")
+    data = bytearray(b"%PDF-1.7\n")
     offsets = {}
     for number, body in objects.items():
         offsets[number] = len(data)
         data += b"%d 0 obj\n" % number + body + b"\nendobj\n"
     xref = len(data)
-    data += b"xref\n0 7\n0000000000 65535 f \n"
-    data += b"".join(b"%010d 00000 n \n" % offsets[number] for number in range(1, 7))
-    data += b"trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % xref
+    data += b"xref\n0 10\n0000000000 65535 f \n"
+    data += b"".join(b"%010d 00000 n \n" % offsets[number] for number in range(1, 10))
+    data += b"trailer\n<< /Size 10 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % xref
     return bytes(data)
 
 
@@ -140,12 +202,17 @@ SHADINGS = [
         id="radial-cone",
     ),
 ]
+BACKDROP = b"0.2 0.4 0.6 rg 0 0 120 90 re f 0.9 0.8 0.1 rg 30 20 50 40 re f "
 CONTENTS = [
-    pytest.param(b"/S sh", id="page"),
-    pytest.param(b"q 20 15 70 50 re W n /S sh Q", id="clipped"),
-    pytest.param(b"q /G gs 20 15 70 50 re W n /S sh Q", id="translucent"),
-    pytest.param(b"q 1 0 0 1 0 0 cm 5 5 m 110 20 l 60 85 l h W n /G gs /S sh Q", id="path-clip"),
-    pytest.param(b"q /G gs /S sh Q 0 0 1 rg 30 30 20 20 re f", id="then-fill"),
+    pytest.param(b"/S sh", b"", id="page"),
+    pytest.param(b"q 20 15 70 50 re W n /S sh Q", b"", id="clipped"),
+    pytest.param(b"q /G gs 20 15 70 50 re W n /S sh Q", b"", id="translucent"),
+    pytest.param(BACKDROP + b"q /M gs /S sh Q", b"", id="multiply"),
+    pytest.param(BACKDROP + b"q /K gs /S sh Q", b"", id="color-dodge"),
+    pytest.param(BACKDROP + b"/X Do", b"/G gs /S sh", id="knockout-group"),
+    pytest.param(
+        BACKDROP + b"/X Do", b"q 10 10 60 60 re W n /M gs /S sh Q /S sh", id="group-modes"
+    ),
 ]
 
 
@@ -155,22 +222,116 @@ def rendered(data: bytes) -> bytes:
 
 
 @pytest.mark.parametrize("shading", SHADINGS)
-@pytest.mark.parametrize("content", CONTENTS)
+@pytest.mark.parametrize(("content", "form"), CONTENTS)
 def test_kernel_paint_is_the_loops(
-    shading: bytes, content: bytes, monkeypatch: pytest.MonkeyPatch
+    shading: bytes, content: bytes, form: bytes, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    data = one_page_pdf(shading, content)
-    taken: list[bool] = []
-    original = raster.RasterTarget.paint_shading_compiled
-
-    def recorded(self: raster.RasterTarget, *args: Any) -> bool:
-        result = original(self, *args)
-        taken.append(result)
-        return result
-
-    monkeypatch.setattr(raster.RasterTarget, "paint_shading_compiled", recorded)
+    data = one_page_pdf(shading, content, form)
     compiled = rendered(data)
-    assert taken
-    assert all(taken)
-    monkeypatch.setattr(raster.RasterTarget, "paint_shading_compiled", lambda *_: False)
+    monkeypatch.setattr(RasterTarget, "paint_shading", reference_paint_shading)
     assert rendered(data) == compiled
+
+
+def make_target(width: int, height: int, *, planes: bool) -> RasterTarget:
+    pixels = bytearray(bytes([10, 200, 90, 180]) * (width * height))
+    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(height, width, 4)
+    clip = raster.ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
+    target = RasterTarget(
+        pixels,
+        None,
+        clip=clip,
+        width=width,
+        height=height,
+        scale=1,
+        crop_x0=0,
+        crop_y0=0,
+        crop_y1=height,
+        page_view=view,
+    )
+    if planes:
+        target.group_source_alpha = numpy.full((height, width), 0.25, dtype=numpy.float32)
+        target.group_source_shape = numpy.full((height, width), 0.5, dtype=numpy.float32)
+        target.paint_window = []
+    return target
+
+
+def plane_bytes(plane: numpy.ndarray | None) -> bytes | None:
+    return None if plane is None else plane.tobytes()
+
+
+SHADING = {
+    "ShadingType": 2,
+    "ColorSpace": "DeviceRGB",
+    "Coords": [0, 0, 12, 0],
+    "Extend": [True, True],
+    "Function": {"FunctionType": 2, "Domain": [0, 1], "C0": [0, 0, 0], "C1": [1, 1, 1], "N": 1},
+}
+
+
+@pytest.mark.parametrize("planes", [False, True])
+@pytest.mark.parametrize("opacity", [None, 0.0, 0.5])
+def test_a_colour_failing_part_way_paints_what_the_loop_painted(
+    planes: bool, opacity: float | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from core_pdf.impl.types import PdfName
+
+    shading = {PdfName.of(k.encode()): v for k, v in SHADING.items()}
+    original = raster.shading_rgba
+    seen: list[object] = []
+
+    def failing(model: str, components: Any, *rest: Any) -> Any:
+        seen.append(components)
+        if len(seen) == 5:
+            raise ArithmeticError("no colour")
+        return original(model, components, *rest)
+
+    monkeypatch.setattr(raster, "shading_rgba", failing)
+    outcomes = []
+    for paint in (RasterTarget.paint_shading, reference_paint_shading):
+        seen.clear()
+        target = make_target(12, 3, planes=planes)
+        with pytest.raises(ArithmeticError, match="no colour"):
+            paint(target, {"dictionary": shading, "fill_opacity": opacity}, "Multiply")
+        outcomes.append(
+            (
+                bytes(target.pixels),
+                plane_bytes(target.group_source_alpha),
+                plane_bytes(target.group_source_shape),
+                list(target.paint_window) if target.paint_window is not None else None,
+            )
+        )
+    assert outcomes[0] == outcomes[1]
+
+
+@pytest.mark.parametrize("planes", [False, True])
+@pytest.mark.parametrize("mode", ["ColorDodge", "ColorBurn", "Screen"])
+@pytest.mark.parametrize("version", [None, (1, 4), (2, 0)])
+def test_blending_rules_follow_the_documents_version(
+    planes: bool, mode: str, version: tuple[int, int] | None
+) -> None:
+    from core_pdf.impl.types import PdfName
+    from core_pdf_spec.standards import PdfVersion, SemanticContext
+
+    shading = {PdfName.of(k.encode()): v for k, v in SHADING.items()}
+    context = SemanticContext(None if version is None else PdfVersion(*version))
+    outcomes = []
+    for paint in (RasterTarget.paint_shading, reference_paint_shading):
+        target = make_target(12, 3, planes=planes)
+        target.semantic_context = context
+        try:
+            paint(target, {"dictionary": shading, "fill_opacity": 0.8}, mode)
+            raised = None
+        except Exception as error:  # noqa: BLE001 -- the comparison covers failures too
+            raised = (type(error), str(error))
+        outcomes.append(
+            (
+                raised,
+                bytes(target.pixels),
+                plane_bytes(target.group_source_alpha),
+                plane_bytes(target.group_source_shape),
+                list(target.paint_window) if target.paint_window is not None else None,
+            )
+        )
+    assert outcomes[0] == outcomes[1]
+    if version is None and mode != "Screen":
+        assert outcomes[0][0] is not None

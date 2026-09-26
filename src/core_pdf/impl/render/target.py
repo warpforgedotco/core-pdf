@@ -5,7 +5,7 @@ from __future__ import annotations
 import heapq
 import math
 from bisect import bisect_left
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from copy import replace
 from typing import Any
@@ -67,9 +67,7 @@ from core_pdf.impl.render.paths import (
 )
 from core_pdf.impl.render.patterns import (
     TilingCellCache,
-    axial_shading_t,
     cell_paints_nothing,
-    radial_shading_t,
     shading_color_rgba,
     tiling_cell,
     tiling_pattern_uses_normal_blends,
@@ -116,11 +114,15 @@ def shading_rgba(
     return rgba if shading_alpha is None else scale_rgba_alpha(rgba, shading_alpha)
 
 
-# A coordinate or domain value the shading kernels compute with as Python
-# does: any float, and an int small enough that its products with others --
-# which Python keeps exact -- are exact in a double too.
-def double_exact(value: object) -> bool:
-    return type(value) is float or (type(value) is int and -(1 << 25) < value < 1 << 25)
+# blend_px's modes, as shading_blend numbers them; any other composites as normal.
+BLEND_COLOR_DODGE = 3
+BLEND_COLOR_BURN = 4
+BLEND_MODE_CODES: dict[str | None, int] = {
+    "multiply": 1,
+    "screen": 2,
+    "colordodge": BLEND_COLOR_DODGE,
+    "colorburn": BLEND_COLOR_BURN,
+}
 
 
 class ElementaryScratch:
@@ -3159,114 +3161,33 @@ class RasterTarget:
         return normalize_rect(box)
 
     def paint_shading(self, data: dict[str, Any], blend_mode: str | None) -> None:
-        clipped_pixel_box = self.clip.clipped_pixel_box
-        blend_px = self.blend_px
-        blend_resolved_mode = self.resolved_blend(blend_mode)
-        clip_row_visible_spans = self.clip.clip_row_visible_spans
-        crop_x0 = self.crop_x0
-        crop_y1 = self.crop_y1
-        scale = self.scale
-        shading_box = self.shading_box
-        width = self.width
+        """Paint an axial or radial shading over the clip, in two kernels.
+
+        shading_values gives each pixel's value where the shading paints it,
+        as the per-pixel loop this replaced computed it; each distinct
+        value's colour comes from the shading's function once, for the
+        value's first pixel in that loop's order, so a zero keeps the sign
+        that pixel gave it; shading_blend blends and records them as
+        blend_px did. Where the loop would have raised part way -- a colour
+        that cannot be made, or blending rules that cannot be told -- the
+        pixels before that point are painted and recorded, the one it
+        raised at recorded as blend_px recorded it, and the same error
+        raised.
+        """
         shading = prepare_shading(
             data.get("dictionary"), rendering=data.get("color_rendering", DEFAULT_COLOR_RENDERING)
         )
         if shading is None:
             return
-        shading_type = shading.shading_type
-        coords = shading.coords
-        domain = shading.domain
-        extend0 = shading.extend_start
-        extend1 = shading.extend_end
-        clipped_box = clipped_pixel_box(shading_box(data, shading))
+        clipped_box = self.clip.clipped_pixel_box(self.shading_box(data, shading))
         if clipped_box is None:
             return
         ix0, iy0, ix1, iy1 = clipped_box[1]
         soft_mask_alpha = data.get("soft_mask_alpha")
         fill_opacity = data.get("fill_opacity")
         shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
-        domain_span = domain[1] - domain[0]
-        color_model = shading.color_model
-        evaluate = shading.evaluate
-        color_rendering = shading.color_rendering
-        if (
-            blend_resolved_mode in (None, "normal")
-            and self.group_source_shape is None
-            and all(map(double_exact, (*coords[: 4 if shading_type == 2 else 6], *domain)))
-            and self.paint_shading_compiled(
-                shading_type,
-                coords,
-                (ix0, iy0, ix1, iy1),
-                bool(extend0),
-                bool(extend1),
-                domain,
-                lambda value: shading_rgba(
-                    color_model, evaluate(value), fill_opacity, color_rendering, shading_alpha
-                ),
-            )
-        ):
-            return
-        page_x_values = [crop_x0 + (px + 0.5) / scale for px in range(ix0, ix1)]
-        shading_t = axial_shading_t if shading_type == 2 else radial_shading_t
-        # Every input to the colour is loop-invariant except `value`, and `value` repeats
-        # heavily across a gradient -- exactly so in the clamped extend regions. Memoising
-        # on the exact key keeps the result bit-identical to evaluating per pixel.
-        rgba_cache: dict[float, tuple[int, int, int, int]] = {}
-        for py in range(iy0, iy1):
-            page_y = crop_y1 - (py + 0.5) / scale
-            row = py * width * 4
-            visible_spans = clip_row_visible_spans(py)
-            if not visible_spans:
-                continue
-            for span_start, span_end in visible_spans:
-                for px in range(max(ix0, span_start), min(ix1, span_end)):
-                    page_x = page_x_values[px - ix0]
-                    unit_t = shading_t(coords, page_x, page_y)
-                    if unit_t is None:
-                        continue
-                    if unit_t < 0.0:
-                        if not extend0:
-                            continue
-                        unit_t = 0.0
-                    elif unit_t > 1.0:
-                        if not extend1:
-                            continue
-                        unit_t = 1.0
-                    value = domain[0] + unit_t * domain_span
-                    rgba = rgba_cache.get(value)
-                    if rgba is None:
-                        rgba = shading_color_rgba(
-                            color_model,
-                            evaluate(value),
-                            fill_opacity,
-                            color_rendering,
-                        )
-                        if shading_alpha is not None:
-                            rgba = scale_rgba_alpha(rgba, shading_alpha)
-                        rgba_cache[value] = rgba
-                    blend_px(row + px * 4, rgba, blend_resolved_mode)
-
-    def paint_shading_compiled(
-        self,
-        shading_type: int,
-        coords: Sequence[float],
-        box: PixelBox,
-        extend0: bool,
-        extend1: bool,
-        domain: Sequence[float],
-        color: Callable[[float], tuple[int, int, int, int]],
-    ) -> bool:
-        """paint_shading's loop in two kernels, for normal blending with no shape plane.
-
-        shading_values gives each pixel's value where the shading paints it;
-        each distinct value's colour comes from `color` once, as the loop's
-        memo gave it, for the value's first pixel in the loop's order, so a
-        zero keeps the sign that pixel gave it; shading_blend blends them.
-        Every colour is made before any pixel is written, so if one fails
-        this returns False having painted nothing, and the loop runs as it
-        did, failing where it failed.
-        """
-        ix0, iy0, ix1, iy1 = box
+        mode = BLEND_MODE_CODES.get(self.resolved_blend(blend_mode), 0)
+        domain = shading.domain
         allowed = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         for py in range(iy0, iy1):
@@ -3276,8 +3197,8 @@ class RasterTarget:
                 if end > start:
                     allowed[py - iy0, start - ix0 : end - ix0] = 1
         values, painted = shading_values(
-            shading_type,
-            coords,
+            shading.shading_type,
+            shading.coords,
             self.crop_x0,
             self.crop_y1,
             self.scale,
@@ -3286,35 +3207,71 @@ class RasterTarget:
             ix1,
             iy1,
             allowed,
-            extend0,
-            extend1,
+            bool(shading.extend_start),
+            bool(shading.extend_end),
             domain[0],
             domain[1] - domain[0],
             0.5,
         )
         ordered = values[painted.view(numpy.bool_)]
         if not len(ordered):
-            return True
+            return
         _, first, inverse = numpy.unique(ordered, return_index=True, return_inverse=True)
-        try:
-            colors = numpy.array(
-                [color(value) for value in ordered[first].tolist()], dtype=numpy.int32
-            ).reshape(-1, 4)
-        except Exception:
-            return False
-        window = shading_blend(
+        # Colours in the order the loop first needed them, until one fails.
+        by_first = numpy.argsort(first, kind="stable")
+        colors = numpy.zeros((len(first), 4), dtype=numpy.int32)
+        reached = len(ordered)
+        color_error: Exception | None = None
+        color_model = shading.color_model
+        evaluate = shading.evaluate
+        rendering = shading.color_rendering
+        for unique_index in by_first.tolist():
+            position = int(first[unique_index])
+            try:
+                colors[unique_index] = shading_rgba(
+                    color_model,
+                    evaluate(float(ordered[position])),
+                    fill_opacity,
+                    rendering,
+                    shading_alpha,
+                )
+            except Exception as error:
+                color_error = error
+                reached = position
+                break
+        revised = True
+        blend_error: Exception | None = None
+        if mode in (BLEND_COLOR_DODGE, BLEND_COLOR_BURN):
+            try:
+                # Only the revised rules send a black backdrop to zero here.
+                revised = (
+                    blend_component(0.0, 1.0, "ColorDodge", context=self.semantic_context) == 0.0
+                )
+            except Exception as error:
+                blend_error = error
+        shape_plane = self.group_source_shape
+        window, stopped = shading_blend(
             self.pixel_array,
             ix0,
             iy0,
             painted,
-            numpy.ascontiguousarray(inverse.reshape(-1), dtype=numpy.int64),
+            numpy.ascontiguousarray(inverse.reshape(-1)[:reached], dtype=numpy.int64),
             colors,
+            mode,
+            revised,
             self.group_source_alpha,
+            shape_plane,
+            255 / 255.0 * self.shape_alpha if shape_plane is not None else 0.0,
+            blend_error is not None,
         )
         if window is not None and self.paint_window is not None:
             x0, y0, x1, y1 = window
             self.extend_paint_box(y0, y1, x0, x1)
-        return True
+        if stopped:
+            assert blend_error is not None
+            raise blend_error
+        if color_error is not None:
+            raise color_error
 
     def paint_tiling_pattern(
         self,

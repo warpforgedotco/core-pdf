@@ -21,6 +21,7 @@ def shading_values(
     domain_span: float,
     half: float,
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]: ...
+def shading_t(kind: int, coords: Any, px: float, py: float, half: float) -> float | None: ...
 def shading_blend(
     pixels: numpy.ndarray[Any, Any],
     ix0: int,
@@ -28,5 +29,10 @@ def shading_blend(
     painted: numpy.ndarray[Any, Any],
     color_index: numpy.ndarray[Any, Any],
     colors: numpy.ndarray[Any, Any],
-    alpha_plane: numpy.ndarray[Any, Any] | None = ...,
-) -> tuple[int, int, int, int] | None: ...
+    mode: int,
+    revised: bool,
+    alpha_plane: numpy.ndarray[Any, Any] | None,
+    shape_plane: numpy.ndarray[Any, Any] | None,
+    shape_source: float,
+    stop_at_visible: bool,
+) -> tuple[tuple[int, int, int, int] | None, bool]: ...

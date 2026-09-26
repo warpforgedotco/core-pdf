@@ -7,6 +7,7 @@ from core_pdf.impl.render import patterns
 from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.model import DisplayListItem, PathPaintItem, PathPaintKind
 from core_pdf.impl.render.target import RasterTarget
+from core_pdf_cythonized import shading_t
 
 
 def make_target(width=4, height=1):
@@ -38,7 +39,7 @@ def make_target(width=4, height=1):
     ],
 )
 def test_axial_projection_handles_degenerate_and_extended_axis(coords, point, expected):
-    value = patterns.axial_shading_t(coords, *point)
+    value = shading_t(2, coords, point[0], point[1], 0.5)
     assert value is None if expected is None else value == pytest.approx(expected)
 
 
@@ -55,7 +56,7 @@ def test_axial_projection_handles_degenerate_and_extended_axis(coords, point, ex
     ],
 )
 def test_radial_projection_selects_valid_circle_solution(coords, point, expected):
-    value = patterns.radial_shading_t(coords, *point)
+    value = shading_t(3, coords, point[0], point[1], 0.5)
     assert value is None if expected is None else value == pytest.approx(expected)
 
 
