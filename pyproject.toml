@@ -16,9 +16,9 @@ dependencies = [
     "numpy>=2.5.1",
     "imagecodecs>=2026.6.26",
     "defusedxml>=0.7.1",
-    "core-pdf-spec>=0.9.1,<0.10.0",
-    "core-jbig2>=0.2.0,<0.3.0",
-    "core-adobe-fonts>=0.1.0,<0.2.0",
+    "core-pdf-spec>=0.10.0,<0.11.0",
+    "core-jbig2>=0.3.0,<0.4.0",
+    "core-adobe-fonts>=0.2.0,<0.3.0",
     "core-pdf-cythonized>=0.1.0,<0.2.0",
     "core-records>=0.1.0,<0.2.0",
 ]
@@ -44,11 +44,11 @@ members = [
 ]
 
 [tool.uv.sources]
-core-adobe-fonts = { workspace = true }
 core-pdf-cythonized = { workspace = true }
-core-jbig2 = { workspace = true }
 core-records = { workspace = true }
 core-pdf-spec = { workspace = true }
+core-jbig2 = { workspace = true }
+core-adobe-fonts = { workspace = true }
 
 [project.urls]
 Repository = "https://github.com/core-experiments/core-pdf"
