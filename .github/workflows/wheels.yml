@@ -33,6 +33,8 @@ jobs:
   wheels:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    # Each runner builds its native architecture only, so no job needs QEMU.
+    # CIBW_ARCHS is the one place the architectures are named.
     strategy:
       fail-fast: false
       matrix:
@@ -43,7 +45,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v4.2.1
@@ -65,10 +67,12 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.17"
 
       - name: Build sdist
         run: uv build --sdist --package core-pdf-cythonized --out-dir dist
@@ -83,7 +87,10 @@ jobs:
           tar xzf dist/*.tar.gz -C /tmp/unpacked
           uv venv --python 3.14 /tmp/sdist-check
           uv pip install --python /tmp/sdist-check/bin/python --no-binary :all: dist/*.tar.gz
-          uv pip install --python /tmp/sdist-check/bin/python pytest "numpy>=2.5.1"
+          uv export --locked --only-group test --no-emit-project --no-emit-workspace \
+            --output-file /tmp/test-requirements.txt
+          uv pip install --python /tmp/sdist-check/bin/python -r /tmp/test-requirements.txt
+          uv pip install --python /tmp/sdist-check/bin/python "numpy>=2.5.1"
           cd /tmp/unpacked/core_pdf_cythonized-* && /tmp/sdist-check/bin/python -m pytest -q tests
 
       - name: Upload sdist
