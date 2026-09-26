@@ -41,9 +41,9 @@ For Lab color conversion, `s_08_graphics.color_math.lab_components_to_xyz` accep
 NumPy float32 rows of actual `(L*, a*, b*)` components and a reference white point.
 Image sample decoding and range enforcement belong to the caller.
 
-The current spec version is `0.13.0`, released independently of core. During `0.x`, breaking
+The current spec version is `0.13.1`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.13.0,<0.14.0`; changes to that range require core integration and differential validation.
+`>=0.13.1,<0.14.0`; changes to that range require core integration and differential validation.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are
@@ -220,6 +220,9 @@ skips nulls by testing `node is None` in its callback. `require_tree_node`, `tre
 `tree_entry`, and `s_07_syntax.types.PdfNumber` are removed. The standard security handler
 raises `PdfPasswordError`, a `PdfUnsupportedError` with the same message, for a password
 that opens the document as neither user nor owner, so existing handlers still catch it.
+
+`0.13.1` reports a tree key whose decoder raises `ValueError` to `on_malformed_entry`, as its
+docstring already said, rather than letting it end the walk; the strict default still raises.
 
 When migrating to `0.10.0`, stop using these exports, which nothing in the workspace called:
 
