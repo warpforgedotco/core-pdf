@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
+
 from core_pdf.impl.graphics_filter_registry import (
     CCITT_FILTERS,
     FILTER_NAME_ALIASES,
+    PREDICTOR_FILTERS,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfReference
@@ -68,6 +71,11 @@ class FilterParams(PdfFilterParams):
         return super().from_parms(normalized)
 
 
+def filter_params(parms: object) -> FilterParams:
+    """DecodeParms as FilterParams: read here, or already read by normalize_stream_decode_spec."""
+    return parms if type(parms) is FilterParams else FilterParams.from_parms(parms)
+
+
 def with_ccitt_image_rows(parms: object, dictionary: object) -> object:
     if type(parms) is FilterParams:
         return parms
@@ -83,6 +91,10 @@ def with_ccitt_image_rows(parms: object, dictionary: object) -> object:
     updated = dict(parms)
     updated["Rows"] = height
     return updated
+
+
+# The filters whose decoders read their DecodeParms as FilterParams.
+PARAMETERIZED_FILTERS = PREDICTOR_FILTERS | CCITT_FILTERS | {"JBIG2Decode"}
 
 
 def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
@@ -157,5 +169,11 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
             parms = None
         if filter_name in CCITT_FILTERS:
             parms = with_ccitt_image_rows(parms, dictionary)
+        if filter_name in PARAMETERIZED_FILTERS and type(parms) is not FilterParams:
+            # Read once here for the filters that read them. DecodeParms
+            # that do not read stay as given, so the step that reads them
+            # raises where it always did -- or never, if it is not reached.
+            with suppress(Exception):
+                parms = FilterParams.from_parms(parms)
         steps.append(FilterStep(filter_name, parms))
     return StreamDecodeSpec(tuple(steps))
