@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import unicodedata
+from functools import partial
 
 import numpy
 
 from core_pdf.impl.extract import block_layout as native_layout
-from core_pdf.impl.extract.contracts import (
-    ObservationBatch,
-    ParsedBlock,
-    ReadingOrderEvidence,
-)
-from core_pdf.impl.types import TextWord
+from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.contracts import ObservationSource
 
 SOURCE_LABELS = {
@@ -53,60 +49,9 @@ def group_order(observations: ObservationBatch, indexes: numpy.ndarray) -> numpy
     return indexes[order]
 
 
-def group_text_and_words(
-    observations: ObservationBatch,
-    indexes: numpy.ndarray,
-    *,
-    may_contain_ocr: bool = True,
-) -> tuple[str, tuple[TextWord, ...]]:
-    if may_contain_ocr:
-        indexes = group_order(observations, indexes)
-    return native_layout.group_text_and_words(observations, indexes)
-
-
-def build_lines(observations: ObservationBatch) -> native_layout.BuiltLines:
-    return native_layout.build_lines(
-        observations, source_labels=SOURCE_LABELS, group_order=group_order
-    )
-
-
-def layout_blocks(
-    observations: ObservationBatch,
-    *,
-    obstacles: tuple[tuple[float, float, float, float], ...] = (),
-    use_xy_cut: bool = True,
-    rotation: int = 0,
-    page_width: float = 0.0,
-    page_height: float = 0.0,
-) -> tuple[ParsedBlock, ...]:
-    return native_layout.layout_blocks(
-        observations,
-        obstacles=obstacles,
-        use_xy_cut=use_xy_cut,
-        rotation=rotation,
-        page_width=page_width,
-        page_height=page_height,
-        source_labels=SOURCE_LABELS,
-        group_order=group_order,
-    )
-
-
-def layout_blocks_with_evidence(
-    observations: ObservationBatch,
-    *,
-    obstacles: tuple[tuple[float, float, float, float], ...] = (),
-    use_xy_cut: bool = True,
-    rotation: int = 0,
-    page_width: float = 0.0,
-    page_height: float = 0.0,
-) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
-    return native_layout.layout_blocks_with_evidence(
-        observations,
-        obstacles=obstacles,
-        use_xy_cut=use_xy_cut,
-        rotation=rotation,
-        page_width=page_width,
-        page_height=page_height,
-        source_labels=SOURCE_LABELS,
-        group_order=group_order,
-    )
+# The native layout with OCR observations labelled and ordered as OCR reads them.
+layout_blocks_with_evidence = partial(
+    native_layout.layout_blocks_with_evidence,
+    source_labels=SOURCE_LABELS,
+    group_order=group_order,
+)

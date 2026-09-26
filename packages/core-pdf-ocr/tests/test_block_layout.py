@@ -1,6 +1,7 @@
 import numpy
 import pytest
 
+from core_pdf.impl.extract import block_layout as native_layout
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract import block_layout
 
@@ -43,33 +44,25 @@ def test_equal_positions_keep_input_order() -> None:
     assert block_layout.group_order(observations, numpy.array([1, 0])).tolist() == [1, 0]
 
 
-@pytest.mark.parametrize("may_contain_ocr", [False, True])
-def test_group_text_words_use_requested_ocr_order(may_contain_ocr) -> None:
+def test_ocr_group_order_orders_group_text_and_words() -> None:
     observations = ObservationBatch.from_columns(
         ("left", "right"), ((0, 0, 20, 10), (30, 0, 60, 10)), source=1
     )
-    text, words = block_layout.group_text_and_words(
-        observations, numpy.array([1, 0]), may_contain_ocr=may_contain_ocr
-    )
-    assert text == ("left right" if may_contain_ocr else "right left")
-    assert tuple(word.text for word in words) == (
-        ("left", "right") if may_contain_ocr else ("right", "left")
-    )
+    indexes = block_layout.group_order(observations, numpy.array([1, 0]))
+    text, words = native_layout.group_text_and_words(observations, indexes)
+    assert text == "left right"
+    assert tuple(word.text for word in words) == ("left", "right")
 
 
-def test_layout_wrappers_preserve_ocr_source_labels_and_evidence() -> None:
+def test_layout_preserves_ocr_source_labels_and_evidence() -> None:
     observations = ObservationBatch.from_columns(
         ("Hello", "world"), ((10, 10, 35, 20), (40, 10, 70, 20)), source=1, confidence=(99, 99)
     )
-    lines = block_layout.build_lines(observations)
-    assert len(lines.lines) == 1
-    assert lines.lines[0].line.source == "ocr"
-    plain = block_layout.layout_blocks(observations, page_width=100, page_height=100)
-    enriched, evidence = block_layout.layout_blocks_with_evidence(
+    blocks, evidence = block_layout.layout_blocks_with_evidence(
         observations, page_width=100, page_height=100
     )
-    assert plain == enriched
-    assert len(plain) == 1
-    assert plain[0].lines[0].line.text == "Hello world"
+    assert len(blocks) == 1
+    assert blocks[0].lines[0].line.source == "ocr"
+    assert blocks[0].lines[0].line.text == "Hello world"
     assert evidence.line_count == 1
     assert not evidence.ambiguous

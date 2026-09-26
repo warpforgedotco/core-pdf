@@ -315,10 +315,6 @@ class PageEvidence(NativePageEvidence):
             )
         )
 
-    @property
-    def vector_text_segment_coverage(self) -> float:
-        return self.vector_text_matched_segments / max(1, self.vector_text_candidate_segments)
-
 
 class PageAnalysis(NativePageAnalysis):
     """Core's page analysis, carrying the OCR evidence.
