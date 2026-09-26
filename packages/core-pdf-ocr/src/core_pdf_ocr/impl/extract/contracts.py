@@ -300,11 +300,6 @@ class PageEvidence(NativePageEvidence):
 
 
 class PageAnalysis(NativePageAnalysis):
-    """Core's page analysis, carrying the OCR evidence.
-
-    Its fields, constructor, equality, hash, repr and replace are core's.
-    """
-
     __slots__ = ()
 
     evidence: PageEvidence

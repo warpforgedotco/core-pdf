@@ -248,7 +248,6 @@ def test_repeated_type3_glyph_decodes_its_CharProc_once() -> None:
 
 
 def test_page_level_streams_are_decoded_on_every_entry() -> None:
-    # Only nested streams are re-entered; the page's own content is not kept.
     state, _ = make_state()
     page, decoded = counting_stream(b"0 0 1 1 re f")
     for _ in range(2):

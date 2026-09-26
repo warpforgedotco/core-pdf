@@ -1,18 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Outline edges: bitwise agreement with the numpy construction it replaced.
-
-outline_golden.pkl.gz holds transformed glyph outlines captured from three
-corpus pages, with the edge array the original produced -- a column_stack per
-span, a separate 1x4 array per closing edge, and a concatenate over the lot.
-
-The synthetic cases cover span shapes real glyphs do not produce: a ring whose
-final point duplicates the first (dropped, no closing edge), an open ring (kept,
-closing edge added), a bare two-point span, and spans too short to survive. The
-drop happens before the length check, so a two-point span whose ends coincide
-collapses to one point and is dropped rather than kept -- that ordering is the
-easiest thing to get wrong in a port.
-"""
 
 import gzip
 import pickle
@@ -53,8 +40,6 @@ def test_synthetic_span_shapes(index):
         assert not kept
         assert dropped
         return
-    # Every kept span contributes one edge per segment, plus a closing edge
-    # only when its endpoints differ after the duplicate-point drop.
     expected = sum((end - start - 1) + (1 if closes else 0) for start, end, closes in kept)
     assert edges.shape == (expected, 4)
     for start, end, closes in kept:
@@ -73,7 +58,6 @@ def test_a_two_point_span_with_equal_ends_is_dropped_not_kept():
 
 @pytest.mark.parametrize("span", [(0, 3), (-1, 2)])
 def test_a_span_outside_the_columns_is_refused(span):
-    # The kernels build without bounds checks, so this is checked up front.
     xs = numpy.array([0.0, 1.0])
     ys = numpy.array([0.0, 1.0])
     with pytest.raises(IndexError):
@@ -83,8 +67,6 @@ def test_a_span_outside_the_columns_is_refused(span):
 
 
 def test_render_commands_use_the_kernel():
-    # Through translated_outline_edges, which runs outline_edges on the
-    # translated columns.
     pytest.importorskip("core_pdf")
     from core_pdf.impl import render_commands as commands
 

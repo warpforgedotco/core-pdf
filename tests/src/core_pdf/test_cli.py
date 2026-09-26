@@ -71,8 +71,6 @@ def test_cli_discovery_and_failure_status(
 
 
 def test_module_entry_point_exits_with_the_run_status(tmp_path: Path) -> None:
-    # python -m core_pdf must report failure through its exit status, as the
-    # core-pdf script does, rather than exit 0 whatever run() returned.
     result = subprocess.run(
         [sys.executable, "-m", "core_pdf", str(tmp_path / "missing.pdf")],
         capture_output=True,

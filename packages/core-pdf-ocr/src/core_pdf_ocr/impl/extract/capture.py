@@ -381,12 +381,6 @@ def glyph_evidence_fields(
     runs: tuple[TextRun, ...],
     replacements: Mapping[int, str],
 ) -> GlyphEvidence:
-    """Core's glyph evidence, with each learned character in place of its glyph's.
-
-    A glyph's replacement is the character a document's OCR taught its code,
-    counted as a confident heuristic mapping, or "" for a glyph whose cluster
-    another glyph now speaks for, which is not counted at all.
-    """
     return native_glyph_evidence_fields(
         (
             (glyph.text, glyph.unicode_source, glyph.confidence)
@@ -504,10 +498,6 @@ def capture_page(
             hidden_layers=hidden_layers,
             fields=fields,
             annotations=annotations,
-            # OCR rasterizes the page it just captured -- OcrSession hands this
-            # very program to compose_page -- so it defaults to keeping the
-            # per-glyph payload that core's own extraction skips. A caller that
-            # overrides this gets PageProgram.commands' error, not a blank render.
             options=options,
         )
     )

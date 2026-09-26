@@ -5,6 +5,7 @@ from __future__ import annotations
 import typing
 from collections.abc import Callable
 from copy import copy
+from math import isfinite
 from typing import Any, ClassVar
 
 from core_pdf_spec.exceptions import PdfParseError
@@ -60,28 +61,20 @@ from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
+NUMERIC_TYPES = frozenset((int, float))
+
 
 def moved_to(matrix: Matrix, e: float, f: float) -> Matrix:
-    """`matrix` with its translation replaced.
-
-    Matrix._replace(e=e, f=f) without its keyword handling and _make: the
-    text operators move the text and line matrices several times per string
-    shown, and this is a third of the cost.
-    """
     return tuple.__new__(Matrix, (matrix[0], matrix[1], matrix[2], matrix[3], e, f))
 
 
 def parse_error_from(error: Exception) -> PdfParseError:
-    """`error` restated as a PdfParseError, chained as `raise ... from error` chains it."""
     failure = PdfParseError(str(error))
     failure.__cause__ = error
     return failure
 
 
 class ContentInterpreter:
-    # The executor a subclass wants built for it. Overriding the attribute is
-    # what keeps __init__ from constructing a base executor that the subclass
-    # would only replace and discard.
     stream_executor_type: ClassVar[type[ContentStreamExecutor]] = ContentStreamExecutor
 
     def __init__(
@@ -132,20 +125,15 @@ class ContentInterpreter:
         return lexer
 
     def reject[T](self, error: Exception, context: str, fallback: T) -> T:
-        """Refuse content ISO 32000 does not permit, or recover from it.
-
-        This interpreter raises `error`. A tolerant subclass may return
-        instead: the caller then proceeds with `fallback`, the value a reader
-        recovering from the failure uses, while `context` names the kind of
-        failure. Callers that can continue past a failure ignore the return.
-        """
         raise error
 
     def append_cubic_curve(
         self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float
     ) -> None:
         if self.current_point is None:
-            raise PdfParseError("curve has no current point")
+            self.reject(PdfParseError("curve has no current point"), "path", None)
+            self.current_point = (x3, y3)
+            return
         x0, y0 = self.current_point
         self.current_path.cubic_to(
             (x0, y0, x1, y1, x2, y2, x3, y3), self.graphics.ctm, float(self.graphics.flatness)
@@ -197,12 +185,8 @@ class ContentInterpreter:
         if handler is None:
             raise PdfParseError(f"unsupported content operator: {name}")
         validate_content_operands(name, operands)
-        if name == "BX":
-            self.compatibility_depth += 1
-        elif name == "EX":
-            if not self.compatibility_depth:
-                raise PdfParseError("unmatched EX operator")
-            self.compatibility_depth -= 1
+        if override is not None and name in {"BX", "EX"}:
+            self.default_handlers[name](operands, depth)
         if name in {"l", "c", "v", "y"} and self.current_point is None:
             raise PdfParseError("path operator has no current point")
         if name == "EMC" and not self.marked_content_stack:
@@ -253,28 +237,60 @@ class ContentInterpreter:
         return entries.get(name) if entries is not None else None
 
     def resolve_resources(self, value: object) -> PdfDict | None:
-        return resolve_resource_dict(value, self.resolver)
+        try:
+            return resolve_resource_dict(value, self.resolver)
+        except PdfParseError as error:
+            return self.reject(error, "resources", None)
 
     def matrix_operand(self, value: object, context: str) -> Matrix:
         value = self.resolver.deep_resolve(value)
         if value is None:
             return IDENTITY_MATRIX
-        return Matrix.from_operand(value)
+        try:
+            return Matrix.from_operand(value)
+        except ValueError as error:
+            fallback = self.matrix_fallback(value, context)
+            if fallback is None:
+                raise
+            return self.reject(error, context, fallback)
+
+    def matrix_fallback(self, value: object, context: str) -> Matrix | None:
+        return None
 
     def get_decoder(self) -> FontService:
         if self.graphics.current_decoder is not None:
             return self.graphics.current_decoder
-        if self.graphics.current_font is None:
-            raise PdfParseError("text operation has no selected font")
-        font_reference = self.lookup_page_resource("Font", self.graphics.current_font)
-        font = self.resolver.resolve(font_reference)
-        if not isinstance(font, dict):
-            raise PdfParseError("font resource must be a dictionary")
-        resolved_font = self.resolver.resolve_font_dict(font)
-        decoder = self.font_provider(resolved_font, self.resources)
+        font_name = self.graphics.current_font
+        if not font_name:
+            self.reject(PdfParseError("text operation has no selected font"), "font", None)
+            return self.font_provider({}, self.resources)
+        try:
+            font_reference = self.lookup_page_resource("Font", font_name)
+        except PdfParseError as error:
+            self.reject(error, "font-resource", None)
+            return self.font_provider({}, self.resources)
+        if font_reference is None:
+            self.reject(PdfParseError("font resource must be a dictionary"), "font-resource", None)
+            return self.font_provider({}, self.resources)
+        try:
+            font = self.resolver.resolve(font_reference)
+        except PdfParseError as error:
+            font = self.reject(error, "font-resolution", None)
+        else:
+            if isinstance(font, PdfStream) or not isinstance(font, dict):
+                fallback = font.dictionary if isinstance(font, PdfStream) else font
+                font = self.reject(
+                    PdfParseError("font resource must be a dictionary"), "font-resource", fallback
+                )
+        resources = self.resources
+        decoder = self.decoder_for(font_reference, font, resources)
         self.graphics.current_decoder = decoder
-        self.graphics.decoder_resources = self.resources
+        self.graphics.decoder_resources = resources
         return decoder
+
+    def decoder_for(self, font_reference: object, font: object, resources: PdfDict) -> FontService:
+        resolved_font = self.resolver.resolve_font_dict(font) if isinstance(font, dict) else {}
+        return self.font_provider(resolved_font, resources)
 
     def op_Do(self, operands: ContentOperands, depth: int) -> ContentStreamFrame | None:
         if not operands:
@@ -296,7 +312,6 @@ class ContentInterpreter:
             return self.reject(PdfParseError("XObject resource must be a stream"), "xobject", None)
         xobj_dict = xobj.dictionary
         subtype = self.resolver.resolve_name(xobj_dict.get("Subtype"))
-        # 7.5.7: an object stream holds objects; it is never content to paint.
         if self.resolver.resolve_name(xobj_dict.get("Type")) == "ObjStm":
             return self.reject(
                 PdfParseError("XObject resource is an object stream"), "xobject", None
@@ -687,8 +702,8 @@ class ContentInterpreter:
     def op_w(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
             if values[0] < 0:
-                raise PdfParseError("line width must not be negative")
-            self.graphics.line_width = values[0]
+                self.reject(PdfParseError("line width must not be negative"), "line-width", None)
+            self.graphics.line_width = max(0.0, values[0])
 
     def op_J(self, operands: ContentOperands, depth: int) -> None:
         if (value := self.as_int_operand(operands)) is not None:
@@ -701,8 +716,8 @@ class ContentInterpreter:
     def op_M(self, operands: ContentOperands, depth: int) -> None:
         if (values := self.as_floats(operands, 1)) is not None:
             if values[0] < 1:
-                raise PdfParseError("miter limit must be at least one")
-            self.graphics.miter_limit = values[0]
+                self.reject(PdfParseError("miter limit must be at least one"), "miter-limit", None)
+            self.graphics.miter_limit = max(1.0, values[0])
 
     def op_d(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) != 2:
@@ -832,7 +847,6 @@ class ContentInterpreter:
     def set_device_color(
         self, operands: ContentOperands, space: ColorSpace, *, stroke: bool
     ) -> None:
-        # The count comes from the space so the two cannot disagree.
         count = len(space.component_ranges)
         if self.type3_uncolored or len(operands) < count:
             return
@@ -849,7 +863,6 @@ class ContentInterpreter:
         *,
         stroke: bool,
     ) -> None:
-        """Set the stroking or nonstroking color and pattern, and the space unless None."""
         graphics = self.graphics
         if stroke:
             if space is not None:
@@ -878,19 +891,34 @@ class ContentInterpreter:
         return self.parse_named_color_space(value, name)
 
     def parse_named_color_space(self, value: object, name: str) -> ColorSpace:
-        """The color space `value`, the family or resource the operand `name` selects."""
         try:
             return parse_color_space(value)
         except (ValueError, TypeError) as error:
             return self.reject(parse_error_from(error), "color-space", ColorSpace(name, ()))
 
+    def color_component_values(
+        self, components: typing.Sequence[object]
+    ) -> typing.Sequence[object]:
+        return components
+
+    def recover_color_components(
+        self, components: typing.Sequence[object]
+    ) -> tuple[float, ...] | None:
+        return None
+
     def normalize_color_components(
         self, spec: ColorSpace, components: typing.Sequence[object]
     ) -> tuple[float, ...] | None:
         try:
-            return normalize_color_components(spec, components)
-        except ValueError as error:
-            raise PdfParseError(str(error)) from error
+            return normalize_color_components(spec, self.color_component_values(components))
+        except (TypeError, ValueError, PdfParseError) as error:
+            failure = parse_error_from(error) if isinstance(error, ValueError) else error
+            fallback = (
+                None
+                if spec.kind in {"Indexed", "Lab"}
+                else self.recover_color_components(components)
+            )
+            return self.reject(failure, "color-components", fallback)
 
     def initial_color_components(
         self, spec: ColorSpace, *, stroke: bool
@@ -898,7 +926,8 @@ class ContentInterpreter:
         try:
             return initial_color_components(spec)
         except ValueError as error:
-            raise PdfParseError(str(error)) from error
+            current = self.graphics.stroke_color if stroke else self.graphics.fill_color
+            return self.reject(parse_error_from(error), "color-space", current)
 
     def set_color_space(self, operands: ContentOperands, *, stroke: bool) -> None:
         if self.type3_uncolored:
@@ -991,10 +1020,13 @@ class ContentInterpreter:
         return self.named_value(value, allow_text=True)
 
     def op_BX(self, operands: ContentOperands, depth: int) -> None:
-        pass
+        self.compatibility_depth += 1
 
     def op_EX(self, operands: ContentOperands, depth: int) -> None:
-        pass
+        if not self.compatibility_depth:
+            self.reject(PdfParseError("unmatched EX operator"), "compatibility", None)
+            return
+        self.compatibility_depth -= 1
 
     def op_d0(self, operands: ContentOperands, depth: int) -> None:
         self.type3_uncolored = False
@@ -1003,7 +1035,6 @@ class ContentInterpreter:
         self.type3_uncolored = True
 
     def resource_operand_name(self, operands: ContentOperands) -> str | None:
-        """The resource name a resource operator (sh, gs) takes as its operand."""
         name = self.resolver.resolve_name(operands[0]) if operands else None
         if not name:
             return self.reject(PdfParseError("resource operator requires a name"), "resource", None)
@@ -1029,8 +1060,39 @@ class ContentInterpreter:
 
     def as_floats(self, operands: ContentOperands, count: int) -> tuple[float, ...] | None:
         if len(operands) < count:
-            raise PdfParseError("missing numeric operand")
-        return tuple(self.as_float(operand) for operand in operands[:count])
+            return self.reject(PdfParseError("missing numeric operand"), "numeric-operands", None)
+        if len(operands) == count and type(operands) is tuple:
+            for value in operands:
+                if type(value) is not float or not isfinite(value):
+                    break
+            else:
+                return operands  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+            if all(map(NUMERIC_TYPES.__contains__, map(type, operands))):
+                try:
+                    converted = tuple(map(float, operands))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                except OverflowError:
+                    pass
+                else:
+                    if all(map(isfinite, converted)):
+                        return converted
+        try:
+            values: list[float] = []
+            append = values.append
+            for index in range(count):
+                value = operands[index]
+                kind = type(value)
+                if kind is float and isfinite(value):  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                    append(value)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                elif kind is int:
+                    try:
+                        append(float(value))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                    except OverflowError:
+                        append(self.as_float(value))
+                else:
+                    append(self.as_float(value))
+            return tuple(values)
+        except (TypeError, ValueError, PdfParseError) as error:
+            return self.reject(error, "numeric-operands", None)
 
     @staticmethod
     def as_int(value: Any) -> int:
@@ -1040,8 +1102,14 @@ class ContentInterpreter:
 
     def as_int_operand(self, operands: ContentOperands) -> int | None:
         if not operands:
-            raise PdfParseError("missing numeric operand")
-        return self.as_int(operands[0])
+            return self.reject(PdfParseError("missing numeric operand"), "integer-operand", None)
+        value = operands[0]
+        if type(value) is int:
+            return value
+        try:
+            return self.as_int(value)
+        except (TypeError, ValueError, PdfParseError) as error:
+            return self.reject(error, "integer-operand", None)
 
     def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
         extgstate = self.resolver.resolve(self.lookup_page_resource("ExtGState", name))
@@ -1182,7 +1250,6 @@ class ContentInterpreter:
             return self.reject(PdfParseError(invalid), "pattern", None)
         paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"))
         if paint_type is None:
-            # Recovery reads a missing or malformed PaintType as colored.
             paint_type = self.reject(PdfParseError(invalid), "pattern", 1)
         if paint_type not in {1, 2}:
             return self.reject(PdfParseError(invalid), "pattern", None)

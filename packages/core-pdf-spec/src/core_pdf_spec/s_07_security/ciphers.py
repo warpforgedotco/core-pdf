@@ -10,8 +10,6 @@ from core_pdf_spec.exceptions import PdfDecryptionError
 
 
 class DecryptionErrorsAsPdf:
-    """Re-raise core-pdf-crypto's DecryptionError as PdfDecryptionError."""
-
     __slots__ = ()
 
     def __enter__(self) -> None:

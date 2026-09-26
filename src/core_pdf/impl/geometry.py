@@ -17,9 +17,6 @@ def float_value(value: object) -> float:
 
 
 def rect_tuple(value: object) -> Rectangle | None:
-    # Almost every rectangle is already a tuple of four floats, which the
-    # conversion below would copy value for value; float() of a float is
-    # that float, and a tuple cannot change, so it serves as it is.
     if (
         type(value) is tuple
         and len(value) == 4
@@ -70,7 +67,6 @@ def bbox_intersection_area(left: Sequence[float], right: Sequence[float]) -> flo
 
 def finite_rect(box: object, *, require_positive: bool = True) -> Rectangle | None:
     try:
-        # Anything indexable by 0..3 will do; the except clause is the check.
         rect: Any = box
         x0, y0, x1, y1 = (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3]))
     except IndexError, KeyError, TypeError, ValueError:
@@ -104,7 +100,6 @@ def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | N
 
 
 def extend_baseline(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
-    """Join two baselines end to end, keeping the left's start and the right's end."""
     if left is None:
         return right
     if right is None:

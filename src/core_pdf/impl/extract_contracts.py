@@ -450,7 +450,6 @@ class TextQualityStats(Record):
 class GlyphEvidence(Record):
     __slots__ = (
         "glyph_count",
-        "semantic_characters",
         "authoritative_glyphs",
         "heuristic_glyphs",
         "unknown_glyphs",
@@ -460,7 +459,6 @@ class GlyphEvidence(Record):
     )
 
     glyph_count: int
-    semantic_characters: int
     authoritative_glyphs: int
     heuristic_glyphs: int
     unknown_glyphs: int
@@ -470,7 +468,6 @@ class GlyphEvidence(Record):
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "glyph_count",
-        "semantic_characters",
         "authoritative_glyphs",
         "heuristic_glyphs",
         "unknown_glyphs",
@@ -480,7 +477,6 @@ class GlyphEvidence(Record):
     )
     __match_args__ = (
         "glyph_count",
-        "semantic_characters",
         "authoritative_glyphs",
         "heuristic_glyphs",
         "unknown_glyphs",
@@ -492,7 +488,6 @@ class GlyphEvidence(Record):
     def __init__(
         self,
         glyph_count: int = 0,
-        semantic_characters: int = 0,
         authoritative_glyphs: int = 0,
         heuristic_glyphs: int = 0,
         unknown_glyphs: int = 0,
@@ -501,7 +496,6 @@ class GlyphEvidence(Record):
         actual_text_characters: int = 0,
     ) -> None:
         frozen_setattr(self, "glyph_count", glyph_count)
-        frozen_setattr(self, "semantic_characters", semantic_characters)
         frozen_setattr(self, "authoritative_glyphs", authoritative_glyphs)
         frozen_setattr(self, "heuristic_glyphs", heuristic_glyphs)
         frozen_setattr(self, "unknown_glyphs", unknown_glyphs)
@@ -516,7 +510,6 @@ class GlyphEvidence(Record):
             return NotImplemented
         return (
             self.glyph_count == other.glyph_count
-            and self.semantic_characters == other.semantic_characters
             and self.authoritative_glyphs == other.authoritative_glyphs
             and self.heuristic_glyphs == other.heuristic_glyphs
             and self.unknown_glyphs == other.unknown_glyphs
@@ -529,7 +522,6 @@ class GlyphEvidence(Record):
         return hash(
             (
                 self.glyph_count,
-                self.semantic_characters,
                 self.authoritative_glyphs,
                 self.heuristic_glyphs,
                 self.unknown_glyphs,
@@ -731,37 +723,27 @@ class PageEvidence(Record):
         return self.native_characters >= 100 and painted < self.native_characters * 0.20
 
 
-# A page tiled with this many images covering this share of it -- a photo grid,
-# a scanned mosaic -- is read in row order: the XY-cut would take the gaps
-# between the tiles for columns.
 TILED_PAGE_MIN_IMAGES = 8
 TILED_PAGE_MIN_IMAGE_AREA = 0.05
-# An image covering this share of the page is a block text flows around;
-# a larger one is a background the text sits on.
 IMAGE_OBSTACLE_MIN_AREA = 0.01
 IMAGE_MAX_AREA = 0.65
 
 
 class ReadingOrderPolicy(Record):
-    """How a page's content is put in reading order, decided once from its evidence."""
-
-    __slots__ = ("use_xy_cut", "full_page_image", "image_obstacles")
+    __slots__ = ("use_xy_cut", "image_obstacles")
 
     use_xy_cut: bool
-    full_page_image: bool
     image_obstacles: tuple[tuple[float, float, float, float], ...]
 
-    __fields__: ClassVar[tuple[str, ...]] = ("use_xy_cut", "full_page_image", "image_obstacles")
-    __match_args__ = ("use_xy_cut", "full_page_image", "image_obstacles")
+    __fields__: ClassVar[tuple[str, ...]] = ("use_xy_cut", "image_obstacles")
+    __match_args__ = ("use_xy_cut", "image_obstacles")
 
     def __init__(
         self,
         use_xy_cut: bool = True,
-        full_page_image: bool = False,
         image_obstacles: tuple[tuple[float, float, float, float], ...] = (),
     ) -> None:
         frozen_setattr(self, "use_xy_cut", use_xy_cut)
-        frozen_setattr(self, "full_page_image", full_page_image)
         frozen_setattr(self, "image_obstacles", image_obstacles)
 
     def __eq__(self, other: object) -> bool:
@@ -769,14 +751,10 @@ class ReadingOrderPolicy(Record):
             return True
         if other.__class__ is not self.__class__:
             return NotImplemented
-        return (
-            self.use_xy_cut == other.use_xy_cut
-            and self.full_page_image == other.full_page_image
-            and self.image_obstacles == other.image_obstacles
-        )
+        return self.use_xy_cut == other.use_xy_cut and self.image_obstacles == other.image_obstacles
 
     def __hash__(self) -> int:
-        return hash((self.use_xy_cut, self.full_page_image, self.image_obstacles))
+        return hash((self.use_xy_cut, self.image_obstacles))
 
     @classmethod
     def from_evidence(cls, evidence: PageEvidence) -> ReadingOrderPolicy:
@@ -785,7 +763,6 @@ class ReadingOrderPolicy(Record):
                 evidence.image_count >= TILED_PAGE_MIN_IMAGES
                 and TILED_PAGE_MIN_IMAGE_AREA <= evidence.image_area_ratio < IMAGE_MAX_AREA
             ),
-            full_page_image=evidence.full_page_image,
             image_obstacles=tuple(
                 box
                 for box in evidence.image_boxes
@@ -982,104 +959,3 @@ class ParsedBlock(Record):
 
     def __hash__(self) -> int:
         return hash((self.lines, self.bbox, self.column_index, self.kind, self.level))
-
-
-class ReadingOrderEvidence(Record):
-    __slots__ = (
-        "line_count",
-        "source_inversions",
-        "source_inversion_ratio",
-        "column_count",
-        "rotation_count",
-        "repaired",
-        "ambiguous",
-        "confidence",
-        "strategy",
-    )
-
-    line_count: int
-    source_inversions: int
-    source_inversion_ratio: float
-    column_count: int
-    rotation_count: int
-    repaired: bool
-    ambiguous: bool
-    confidence: float
-    strategy: str
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "line_count",
-        "source_inversions",
-        "source_inversion_ratio",
-        "column_count",
-        "rotation_count",
-        "repaired",
-        "ambiguous",
-        "confidence",
-        "strategy",
-    )
-    __match_args__ = (
-        "line_count",
-        "source_inversions",
-        "source_inversion_ratio",
-        "column_count",
-        "rotation_count",
-        "repaired",
-        "ambiguous",
-        "confidence",
-        "strategy",
-    )
-
-    def __init__(
-        self,
-        line_count: int,
-        source_inversions: int,
-        source_inversion_ratio: float,
-        column_count: int,
-        rotation_count: int,
-        repaired: bool,
-        ambiguous: bool,
-        confidence: float,
-        strategy: str,
-    ) -> None:
-        frozen_setattr(self, "line_count", line_count)
-        frozen_setattr(self, "source_inversions", source_inversions)
-        frozen_setattr(self, "source_inversion_ratio", source_inversion_ratio)
-        frozen_setattr(self, "column_count", column_count)
-        frozen_setattr(self, "rotation_count", rotation_count)
-        frozen_setattr(self, "repaired", repaired)
-        frozen_setattr(self, "ambiguous", ambiguous)
-        frozen_setattr(self, "confidence", confidence)
-        frozen_setattr(self, "strategy", strategy)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.line_count == other.line_count
-            and self.source_inversions == other.source_inversions
-            and self.source_inversion_ratio == other.source_inversion_ratio
-            and self.column_count == other.column_count
-            and self.rotation_count == other.rotation_count
-            and self.repaired == other.repaired
-            and self.ambiguous == other.ambiguous
-            and self.confidence == other.confidence
-            and self.strategy == other.strategy
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.line_count,
-                self.source_inversions,
-                self.source_inversion_ratio,
-                self.column_count,
-                self.rotation_count,
-                self.repaired,
-                self.ambiguous,
-                self.confidence,
-                self.strategy,
-            )
-        )

@@ -1,22 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""The fused rectangle fill: what fill_rect's five steps made, in one pass.
-
-fill_rect built a rectangle coverage plane at the paint's alpha, blended it
-with blend_normal_alpha_array_numpy, recorded it with accumulate_source_plane,
-and built and recorded the plane again at 255 for a group's shape.
-
-rect_coverage_golden.pkl.gz holds 1,200 coverage planes captured from the
-numpy original while rasterizing four corpus pages, plus 209 synthetic ones
-covering branches real pages do not reach: empty spans, fully covered planes,
-sub-pixel slivers, zero-area and inverted bounds, negative origins, and a zero
-scale. The plane is separable -- the outer product of a row profile and a
-column profile -- and numpy formed the row/column product before applying the
-scale; scaling each profile instead would round differently. The fused kernel
-is pinned to those planes directly, through the alpha plane it records, and
-the reference pipeline here rebuilds them with the numpy original, itself
-pinned to the same planes.
-"""
 
 import gzip
 import pickle
@@ -33,14 +16,11 @@ from core_pdf_cythonized import (
 
 GOLDEN_PATH = Path(__file__).parent / "rect_coverage_golden.pkl.gz"
 GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
-# Every eighth rectangle keeps the run short; each is tried at five paints
-# and four plane combinations.
 CASES = GOLDEN[::8]
 PAINTS = ((0, 0, 0, 255), (200, 30, 90, 255), (10, 250, 40, 128), (255, 255, 255, 1), (3, 4, 5, 0))
 
 
 def rect_coverage_plane(ix0, ix1, iy0, iy1, left, right, top, bottom, scale):
-    # The numpy original the kernel replaced.
     xs = numpy.arange(ix0, ix1, dtype=numpy.float64)
     ys = numpy.arange(iy0, iy1, dtype=numpy.float64)
     columns = numpy.clip(numpy.minimum(xs + 1, right) - numpy.maximum(xs, left), 0, 1)
@@ -50,8 +30,8 @@ def rect_coverage_plane(ix0, ix1, iy0, iy1, left, right, top, bottom, scale):
 
 def test_golden_file_covers_the_cases_it_claims_to():
     assert len(GOLDEN) == 1409
-    assert any(case["args"][0] == case["args"][1] for case in GOLDEN)  # empty span
-    assert any(case["args"][8] == 0 for case in GOLDEN)  # zero scale
+    assert any(case["args"][0] == case["args"][1] for case in GOLDEN)
+    assert any(case["args"][8] == 0 for case in GOLDEN)
 
 
 @pytest.mark.parametrize("index", range(len(GOLDEN)))
@@ -64,8 +44,6 @@ def test_reference_reproduces_the_golden_planes(index):
 
 @pytest.mark.parametrize("index", range(len(GOLDEN)))
 def test_kernel_coverage_reproduces_the_golden_planes(index):
-    # The recorded alpha plane of a fill over a zero plane is the coverage
-    # byte over 255 as a float32, which rounds back to the byte exactly.
     case = GOLDEN[index]
     ix0, ix1, iy0, iy1, left, right, top, bottom, scale = case["args"]
     height, width = case["expected"].shape
@@ -152,9 +130,6 @@ def test_a_mismatched_target_is_refused():
 
 @pytest.mark.parametrize("seed", range(24))
 def test_flat_bands_match_the_five_steps(seed):
-    # Large rectangles with fractional edges over a flat backdrop and flat
-    # planes: fully covered rows, the opaque block they write, and runs of
-    # repeated inputs, which the kernel does not recompute.
     rng = numpy.random.default_rng(seed)
     width, height = int(rng.integers(3, 60)), int(rng.integers(3, 40))
     ix0, iy0 = int(rng.integers(0, 5)), int(rng.integers(0, 5))
@@ -178,7 +153,6 @@ def test_flat_bands_match_the_five_steps(seed):
                 continue
             target = backdrop.copy()
             if not packed:
-                # Channels apart from each other, so the kernel's generic path runs.
                 spread = numpy.zeros((height + 2, width + 3, 8), dtype=numpy.uint8)
                 spread[..., ::2] = target
                 target = spread[..., ::2]
@@ -204,9 +178,6 @@ def test_flat_bands_match_the_five_steps(seed):
 
 
 def test_render_target_uses_the_kernel():
-    # These wire-up assertions need the consumer installed. The kernel tests
-    # otherwise stand alone, so cibuildwheel can run the golden vectors
-    # against a freshly built wheel with nothing else present.
     pytest.importorskip("core_pdf")
     from core_pdf.impl import render_target as target
 

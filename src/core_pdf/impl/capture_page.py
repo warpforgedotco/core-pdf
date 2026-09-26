@@ -189,7 +189,6 @@ def capture_page_program(
     try:
         page.consume_contents(state)
         state.run_accumulator.flush()
-        # Snapshot before the appearances run: they append to the same state.
         body = state.captured_program()
         return PageProgram(
             body=body,

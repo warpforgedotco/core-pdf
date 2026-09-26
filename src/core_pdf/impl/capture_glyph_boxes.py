@@ -1,10 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Text-space to device-space box helpers shared by the geometry passes.
-
-These are what the split-unicode fallback in capture_glyphs still needs;
-the ink box its sibling used to compute is the compiled kernel's job now.
-"""
 
 from __future__ import annotations
 

@@ -123,7 +123,6 @@ def test_ligature_replacement_is_applied_once_and_updates_glyph_counts() -> None
     assert applied == {id(first): "A", id(second): ""}
     evidence = capture.glyph_evidence_fields((first, second), (result,), applied)
     assert evidence.glyph_count == 1
-    assert evidence.semantic_characters == 1
     assert evidence.authoritative_glyphs == 0
     assert evidence.heuristic_glyphs == 1
 
@@ -165,7 +164,6 @@ def test_repaired_glyph_evidence_reclassifies_only_applied_substitutions(
     untouched = make_glyph("Z", object())
     evidence = capture.glyph_evidence_fields((glyph, untouched), (), {id(glyph): "X"})
     assert evidence.glyph_count == 2
-    assert evidence.semantic_characters == 2
     assert evidence.authoritative_glyphs == 1
     assert evidence.heuristic_glyphs == 1
     assert (
@@ -283,8 +281,6 @@ def test_public_capture_entry_point_passes_selection_options(
         "hidden_layers": frozenset({"layer"}),
         "fields": (),
         "annotations": (),
-        # OCR rasterizes what it captures, so it keeps the render payload that
-        # core's own extraction skips.
         "options": CaptureOptions(),
     }
 

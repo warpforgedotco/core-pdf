@@ -10,7 +10,7 @@ import numpy
 
 from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.capture_records import CapturedSoftMask, PatternPaint
-from core_pdf.impl.render_blend import clamp01
+from core_pdf.impl.scalars import clamp01
 from core_pdf.impl.types import Record, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
@@ -135,23 +135,12 @@ class LineJoin(IntEnum):
 PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
 
 
-# byte / 255 in float32, which is what a plane without a transfer converts
-# each byte to: the same division, one element at a time.
 UNIT_MASK_TABLE = numpy.arange(256, dtype=numpy.float32) / 255.0
 UNIT_MASK_TABLE.setflags(write=False)
 
 
 @final
 class SoftMaskPlane:
-    """A resolved soft mask: its luminosity or alpha as a page of float32, by the window.
-
-    The plane is the mask group's rendered alpha divided by 255, or put
-    through the mask's transfer table. A masked group reads it only over the
-    window it painted, so the page-sized float32 array was a conversion of
-    every pixel to use a band of them; indexing converts just the window,
-    to the same values. `nbytes` is what the plane holds, for the cache.
-    """
-
     __slots__ = ("alpha", "table")
 
     def __init__(
@@ -167,7 +156,6 @@ class SoftMaskPlane:
         return self.table[window]
 
     def values(self) -> numpy.ndarray[Any, numpy.dtype[numpy.float32]]:
-        """The float32 each alpha byte stands for: indexing a window gives table[alpha]."""
         return UNIT_MASK_TABLE if self.table is None else self.table
 
     @property
@@ -175,7 +163,6 @@ class SoftMaskPlane:
         return self.alpha.nbytes
 
 
-# The paint state a captured drawing hands to its path item, in to_data order.
 PATH_PAINT_FIELDS = (
     "fill",
     "fill_opacity",
@@ -350,12 +337,6 @@ class PathPaintItem(ReplaceFields, ReprFields):
 
 
 def is_plain_fill(item: object) -> TypeIs[PathPaintItem]:
-    """An edge-array fill with a bbox, no pattern and a Normal blend.
-
-    fill_path provably paints such a fill inside its bbox as clipped, which
-    knockout groups rely on to set up only the pixels their members touch.
-    PathPaintItem is final, so its type is checked by identity.
-    """
     return (
         type(item) is PathPaintItem
         and item.paint_kind is PathPaintKind.FILL
@@ -542,8 +523,6 @@ class RasterGroup(Record):
     )
 
     pixels: bytearray
-    # pixels as a (height, width, 4) array, built once with the group. Derived,
-    # so it takes no part in equality or hashing.
     view: UInt8Array
     composite_alpha: float | None
     blend_mode: str | None
@@ -554,9 +533,6 @@ class RasterGroup(Record):
     alpha_is_shape: bool
     mask_alpha: SoftMaskPlane | None
     paint_window: list[int]
-    # Pixel boxes already painted into this group, when it knocks out.
-    # An element that misses all of them sees an accumulated result equal
-    # to the initial backdrop, so it does not need an elementary group.
     painted_boxes: list[tuple[int, int, int, int]] | None
 
     __fields__: ClassVar[tuple[str, ...]] = (

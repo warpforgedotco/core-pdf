@@ -1,17 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Nearest-sample blit of an opaque image (core_pdf.impl.render_target).
-
-An axis-aligned opaque image is drawn by picking, for every device pixel, the
-source sample its centre falls on: a row index per device row, a column index
-per device column. numpy did that with an advanced-indexing gather into a
-scratch tile, then a copy into the page, tile by tile to bound the scratch --
-about 5 ns a pixel, 0.15 s of PyMuPDF test_5001's render.
-
-This copies each sampled pixel straight into the target. It is a byte copy:
-the first three channels of the sample, or its one grey channel into all
-three, and 255 for alpha, only where both the row and the column are valid.
-The indices come in already clamped to the image, as numpy needed them.
-"""
 
 import numpy
 
@@ -27,7 +14,6 @@ def sample_opaque_pixels(
     const unsigned char[::1] valid_columns,
     bint transposed,
 ):
-    """target[r, c] = source[source_y[r], source_x[c]] (or [source_y[c], source_x[r]])."""
     cdef Py_ssize_t rows = target.shape[0]
     cdef Py_ssize_t columns = target.shape[1]
     cdef Py_ssize_t channels = source.shape[2]
@@ -88,15 +74,6 @@ def interleave_soft_mask(
     const Py_ssize_t[::1] mask_rows,
     const Py_ssize_t[::1] mask_columns,
 ):
-    """raster's first `channels` channels with mask[mask_rows[r], mask_columns[c]] after them.
-
-    core_pdf.impl.graphics_images.apply_soft_mask gathered the soft mask to
-    the image's size with advanced indexing, then built the RGBA array with
-    two strided copies -- three passes over an image that can run to tens of
-    megapixels. This writes each output pixel once. It is a byte copy; the
-    nearest-sample indices come in already clamped to the mask, as numpy
-    computed them.
-    """
     cdef Py_ssize_t rows = raster.shape[0], cols = raster.shape[1]
     if channels < 0 or channels > raster.shape[2]:
         raise ValueError("channels exceeds the raster's")
@@ -123,15 +100,6 @@ def interleave_soft_mask(
 
 
 def alpha_channel(const unsigned char[:, :, ::1] pixels, bint presence):
-    """The alpha channel of RGBA `pixels` as a contiguous plane, and which bytes it holds.
-
-    resolve_soft_mask kept a soft mask as a copy of its group's alpha and,
-    for a mask with a transfer function, marked the values present with
-    ``present[alpha] = True`` -- a fancy-indexed scatter over the page, 0.6
-    ms each for 799 masks on test_3450. Both are one pass over the same
-    bytes here. Returns (alpha, present), ``present`` a 256-entry bool array,
-    or None without `presence`.
-    """
     if pixels.shape[2] != 4:
         raise ValueError("pixels must be RGBA")
     cdef Py_ssize_t height = pixels.shape[0], width = pixels.shape[1]

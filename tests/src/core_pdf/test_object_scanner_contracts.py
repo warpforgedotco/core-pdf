@@ -1,19 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""The reader lexer with its compiled object scanner is the reader lexer.
-
-PdfLexer.parse_dictionary and parse_array ask core_pdf_cythonized's
-ObjectScanner first and fall back to the Python parse when it declines. The
-contract is that nobody can tell: for any input, at any position, the result,
-the end position and any exception are those of the Python alone. Reference
-below is the reader lexer with the scanner taken out, and every test compares
-against it.
-
-The kernel's own golden vectors pin the scanner in isolation; these pin the
-composition -- the fallback, the deciphering hand-off, the scanner's
-lifetime -- and run the comparison over corpus documents when the fixture
-submodules are present.
-"""
 
 import re
 import struct
@@ -127,9 +113,6 @@ def test_every_container_parses_as_the_python_alone_would(data, context, deciphe
 
 
 def test_signature_contents_stays_undeciphered():
-    # The reader defers a hex /Contents until it can see the dictionary is a
-    # signature, and then leaves it alone; the scanner must not get there
-    # first.
     data = b"<< /Type /Sig /Contents <616263> >>"
     lexer = PdfLexer(data)
     lexer.decipher = xor_decipher
@@ -158,8 +141,6 @@ def test_scanned_names_are_the_interned_instances():
 def test_close_releases_the_buffer():
     lexer = PdfLexer(bytearray(b"<< /A 1 >>"))
     lexer.parse_dictionary()
-    # A live export would make the memoryview refuse to release; close
-    # suppresses only ValueError, so a BufferError would escape here.
     lexer.close()
     assert lexer.scanner is None
     assert lexer.data_len == 0
@@ -180,9 +161,6 @@ def test_corpus_containers_parse_as_the_python_alone_would(path):
         pytest.skip(f"fixture not present, needs a submodule checkout: {path}")
     data = file.read_bytes()
     offsets = [match.start() for match in re.finditer(rb"<<|\[", data)]
-    # An even spread. From an offset inside a compressed stream the Python
-    # reference can copy and split megabytes looking for a ']', so a full
-    # sweep belongs to a profiling run, not the unit suite.
     step = max(1, len(offsets) // 60)
     for position in offsets[::step]:
         assert_same_outcome(data, position)

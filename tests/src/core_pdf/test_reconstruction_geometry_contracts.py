@@ -214,8 +214,6 @@ def recent(*entries: tuple[tuple[float, float, float, float], str]) -> list:
 
 
 def test_duplicate_overlap_is_found_behind_an_entry_further_left() -> None:
-    # The early stop may only skip entries that cannot reach the run: here the
-    # newest entry ends left of it, but an older one still overlaps.
     run = make_run("a", x=12)
     entries = recent(((10.0, 0.0, 20.0, 10.0), "a"), ((0.0, 0.0, 5.0, 10.0), "b"))
     assert GlyphLineBuilder([run]).is_recent_duplicate_overlap(entries, run, "a")

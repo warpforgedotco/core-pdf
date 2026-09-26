@@ -188,7 +188,6 @@ class Template(Record):
         frozen_setattr(self, "centroid_x", centroid_x)
         frozen_setattr(self, "centroid_y", centroid_y)
 
-    # Holds arrays, which compare element-wise: equality is identity.
     __hash__ = None  # type: ignore[assignment]
 
 
@@ -212,7 +211,6 @@ class TemplateSet(Record):
         frozen_setattr(self, "robust", robust)
         frozen_setattr(self, "by_first_delta", by_first_delta)
 
-    # Holds templates, which compare by identity, and an unhashable dict.
     __hash__ = None  # type: ignore[assignment]
 
 
@@ -286,7 +284,6 @@ class Transform(Record):
         frozen_setattr(self, "scale", scale)
         frozen_setattr(self, "x_scale", x_scale)
 
-    # Holds arrays, which compare element-wise: equality is identity.
     __hash__ = None  # type: ignore[assignment]
 
 
@@ -330,13 +327,11 @@ class Match(Record):
         frozen_setattr(self, "translation", translation)
         frozen_setattr(self, "error", error)
 
-    # Holds arrays, which compare element-wise: equality is identity.
     __hash__ = None  # type: ignore[assignment]
 
 
 @cache
 def make_templates() -> TemplateSet:
-    """The Newstroke glyph templates, built once: every caller only reads them."""
     templates: list[Template] = []
     by_first_delta: dict[tuple[int, int], list[Template]] = {}
     encoded_glyphs = (

@@ -1,14 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""A colour converted once per profile, rendering and value.
-
-transform keeps every sample row it converts in a call of up to MEMO_ROWS
-rows, and converts only the rows it has not kept, because lcms rebuilds its
-transform on every call and a page repeats the same few colours hundreds of
-times. These pin that the memo is invisible: the same bytes as a direct
-conversion, arrays a caller can write into without reaching it, failures
-raised every time, and large images never kept.
-"""
 
 from typing import Any
 
@@ -43,7 +34,6 @@ def rgb() -> IccTransform:
 
 @pytest.fixture
 def lcms_rows(monkeypatch: pytest.MonkeyPatch) -> list[int]:
-    """The row count of every call that reaches lcms."""
     counted: list[int] = []
     original = icc_profiles.imagecodecs.cms_transform
 
@@ -89,8 +79,6 @@ def test_only_new_rows_reach_lcms(rgb: IccTransform, lcms_rows: list[int]) -> No
     np.testing.assert_array_equal(
         rgb.apply_uint16(mixed), direct(rgb, mixed, DEFAULT_COLOR_RENDERING)
     )
-    # The five new rows, and the repeat of two of them within the call,
-    # go in one call; the forty kept ones do not.
     assert lcms_rows[0] == 7
 
 

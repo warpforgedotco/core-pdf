@@ -1,5 +1,3 @@
-"""TextRun.with_font_name is replace(font_name=...) and nothing else."""
-
 from copy import copy
 
 from core_pdf.impl.runs import TextRun

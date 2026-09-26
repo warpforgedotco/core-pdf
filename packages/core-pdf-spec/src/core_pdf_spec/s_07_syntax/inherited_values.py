@@ -29,7 +29,6 @@ def add_inherited_values(
     keys: tuple[str, ...],
     resolve: Callable[[object], object],
 ) -> None:
-    """Add to `values` each of `keys` that `node` sets and `values` lacks."""
     for key in keys:
         if key in values:
             continue

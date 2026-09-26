@@ -1,17 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Signed-area scanline coverage (core_pdf.impl.render_paths).
-
-The numpy original was not slow because the algorithm is heavy. It was slow
-because it ran about thirty array operations to fill a buffer averaging forty
-pixels, several thousand times per page: pure per-call overhead.
-
-Bit-exactness rests on one detail. The original accumulated with
-numpy.bincount over a concatenation of two index blocks, and bincount is
-defined as a sequential out[idx[i]] += w[i]. So every left-hand weight is
-added before any right-hand weight, and reproducing that split -- rather than
-adding both weights per piece as you go -- is what keeps the float rounding
-identical. The two accumulate loops at the bottom are that split.
-"""
 
 from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
 from libc.math cimport ceil, fabs, floor, rint
@@ -19,21 +6,12 @@ from libc.math cimport ceil, fabs, floor, rint
 from core_pdf_cythonized._alpha_blend cimport accumulate_plane, blend_one, opaque_channel
 from core_pdf_cythonized._byte_clamp cimport unit_to_byte
 from core_pdf_cythonized._knockout_math cimport knockout_component
-# The original's min(a, b) and max(a, b) were written a if a < b else b and
-# a if a > b else b: Python's min and max with the arguments swapped, which
-# is why every call below names its second operand first. The swap decides
-# which operand a tie or a NaN returns.
 from core_pdf_cythonized._pymath cimport py_max, py_min
 
 import numpy
 
 
 cdef object _coverage_from_device(const double* e, Py_ssize_t count, int width, int height):
-    """Accumulate device-space edges into a coverage plane.
-
-    ``e`` points at ``count`` rows of four doubles: x0, y0, x1, y1, already in
-    pixel coordinates relative to the plane's top-left corner.
-    """
     cdef Py_ssize_t stride = width + 2
     result = numpy.zeros((height, width), numpy.float64)
     cdef double[:, ::1] out = result
@@ -66,11 +44,6 @@ cdef double* _zeroed_cells(Py_ssize_t cells) except NULL:
 cdef int _accumulate_device(
     const double* e, Py_ssize_t count, int width, int height, double* acc
 ) except -1:
-    """Add each edge's signed area into ``acc``, height rows of width + 2 cells.
-
-    A pixel's coverage is the running sum along its row, clamped to [0, 1];
-    the finishers above and below read it that way.
-    """
     cdef Py_ssize_t stride = width + 2
 
     cdef Py_ssize_t capacity = 1024, pieces = 0
@@ -157,7 +130,6 @@ cdef int _accumulate_device(
                     right_w[pieces] = signed_height * offset_in_cell
                     pieces += 1
 
-        # bincount order: every left weight, then every right weight.
         with nogil:
             for i in range(pieces):
                 acc[idx[i]] += left_w[i]
@@ -186,18 +158,6 @@ def glyph_coverage_plane(
     int width,
     int height,
 ):
-    """Transform page-space edges to device space and accumulate coverage.
-
-    The numpy original spent about twelve array operations flattening a
-    hundred-odd edges into a device-space copy, to fill a plane averaging
-    forty pixels. The transform is four independent affine expressions per
-    edge, so it fuses into the accumulation loop's own read of each edge and
-    the intermediate array disappears.
-
-    Returns ``None`` when no edge has distinct endpoints in y, which is the
-    early return the caller used to get from ``sloped.any()``. A plane of that
-    shape would be entirely zero.
-    """
     cdef double[:, ::1] view = numpy.ascontiguousarray(edges, dtype=numpy.float64)
     cdef Py_ssize_t kept = _sloped_edge_count(view)
     if kept == 0:
@@ -228,15 +188,11 @@ cdef double* _device_edges(
     double ix0,
     double iy0,
 ) except NULL:
-    """The sloped edges moved to the plane's pixel coordinates, to be freed."""
     cdef double* device = <double*> PyMem_Malloc(kept * 4 * sizeof(double))
     if device == NULL:
         raise MemoryError
     cdef Py_ssize_t i, out = 0
     cdef double sy, ey
-    # Each expression matches the numpy original term for term, and the
-    # build disables float contraction so the compiler cannot fold any of
-    # them into an FMA and shift the result by an ULP.
     for i in range(view.shape[0]):
         sy = view[i, 1]
         ey = view[i, 3]
@@ -265,21 +221,6 @@ def fill_glyph_coverage(
     float[:, :] source_shape,
     double shape_scale,
 ):
-    """A glyph fill, fused: coverage, its alpha, the blend and both plane records.
-
-    fill_path took glyph_coverage_plane's float64 plane, quantized it with
-    numpy.rint(coverage * alpha).astype(uint8) (and again at 255 for the
-    shape), blended it with blend_normal_alpha_array_numpy and recorded it
-    with accumulate_source_plane once per group plane: four kernel calls
-    behind Python wrappers that slice and check, and two numpy passes, per
-    glyph -- and in a text knockout group every glyph is one. This makes the
-    same bytes and floats in one pass: the coverage glyph_coverage_plane
-    stores, rint's half-to-even quantization as numpy.rint's, blend_one's
-    compositing into ``target`` and accumulate_plane's update of each plane
-    that is given, the shape one at ``shape_scale``.
-
-    Returns None where glyph_coverage_plane does, else True.
-    """
     cdef double[:, ::1] view = numpy.ascontiguousarray(edges, dtype=numpy.float64)
     cdef Py_ssize_t kept = _sloped_edge_count(view)
     if kept == 0:
@@ -359,24 +300,6 @@ def fill_glyph_knockout(
     float[:, :] parent_shape,
     double shape_scale,
 ):
-    """A glyph fill knocked straight into its knockout parent, fused.
-
-    core's knockout_glyph_fill copied the parent's backdrop window, zeroed
-    two float32 planes, ran fill_glyph_coverage into them, and then
-    composite_elementary_knockout carried the result into the parent: three
-    scratch arrays and two passes per glyph of a text knockout group. The
-    scratch values are per pixel -- each depends on nothing but that pixel's
-    coverage and backdrop -- so this computes them where they are consumed:
-    the rendered pixel from the backdrop pixel as blend_one or the opaque
-    fill writes it, both plane values as accumulate_plane makes them from
-    zero, and the composite with composite_elementary_knockout's
-    quantization and arithmetic. ``destination``, ``backdrop``,
-    ``group_alpha`` and ``parent_shape`` are the parent's windows over the
-    fill's box, which is ``height`` rows by ``width`` columns.
-
-    Returns None where fill_glyph_coverage does, and paints nothing then;
-    else True.
-    """
     cdef double[:, ::1] view = numpy.ascontiguousarray(edges, dtype=numpy.float64)
     cdef Py_ssize_t kept = _sloped_edge_count(view)
     if kept == 0:
@@ -422,15 +345,10 @@ def fill_glyph_knockout(
                 for c in range(width):
                     running += acc[r * stride + c]
                     coverage = py_min(1.0, fabs(running))
-                    # fill_glyph_coverage into a copy of the backdrop and two
-                    # zeroed planes.
                     raw = <unsigned char> rint(coverage * alpha)
                     source_alpha = accumulate_plane(ZERO, raw, 1.0)
                     shape_byte = <unsigned char> rint(coverage * 255.0)
                     source_shape = accumulate_plane(ZERO, shape_byte, shape_scale)
-                    # composite_elementary_knockout's quantization. The plane
-                    # holds raw / 255 as a float32, so this is always in range
-                    # and always non-zero where raw is.
                     scaled = rint(<double> source_alpha * 255.0)
                     quantized = <unsigned char> <int> scaled
                     if quantized > 0:

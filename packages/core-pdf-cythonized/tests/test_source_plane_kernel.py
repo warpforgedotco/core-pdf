@@ -1,15 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Source-plane accumulation: bitwise agreement with RasterTarget.record_plane.
-
-source_plane_golden.pkl.gz holds 1,500 calls sampled from the 78,244 that
-rendering three pages each of five corpus documents made, with the plane
-window numpy produced; 400 synthetic windows over random, degenerate and
-out-of-range plane values and scales other than 1; and every coverage byte
-against eight awkward plane values. Each case is the numpy result of
-plane + (1 - plane) * (coverage / 255.0 * scale), so the float32/float64
-promotion it goes through is pinned, not just the formula.
-"""
 
 import gzip
 import pickle

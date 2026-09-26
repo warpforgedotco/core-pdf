@@ -11,7 +11,7 @@ from core_pdf.impl.capture_recovery import iter_content_operations
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_glyphs import TEX_GLYPH_ALIASES
-from core_pdf.impl.fonts_helpers import strip_subset_tag
+from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.fonts_metrics import LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.fonts_widths import parse_font_widths
 from core_pdf.impl.pdf_names import recover_pdf_name
@@ -214,14 +214,6 @@ class LegacyFont(ReprFields, ReplaceFields):
 
 
 class LegacyTextCaches:
-    """What a document's pages share when their text is extracted.
-
-    fonts holds each font dictionary's LegacyFont, and forms each top-level
-    form XObject's text; both are keyed by the object's identity and hold
-    the object, so the identity stays its own. Neither depends on the page
-    that shows it.
-    """
-
     __slots__ = ("fonts", "forms")
 
     def __init__(self) -> None:
@@ -259,7 +251,6 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
                 continue
             known = font_cache.get(id(font))
             if known is None or known[0] is not font:
-                # A font that fails raises before it is kept, and so every time.
                 known = font_cache[id(font)] = (font, self.legacy_font(font))
             if known[1] is not None:
                 fonts[str(resource_name)] = known[1]
@@ -296,7 +287,6 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         raw_encoding = self.document.resolver.resolve(font.get("Encoding"))
         width_uses_source_code = decoder.is_cid_font and isinstance(raw_encoding, PdfStream)
         encoding_is_mapping = self.encoding_is_mapping(font)
-        # A CID font's space codes come from its CMap, so it has no one code.
         space_code = (
             32
             if decoder.is_cid_font
@@ -392,8 +382,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
             return True
         if encoding is not None:
             return False
-        # A standard 14 font with no /Encoding reads its built-in one.
-        base_font = strip_subset_tag(recover_pdf_name(font.get("BaseFont") or "") or "")
+        base_font = recover_strip_subset_tag(recover_pdf_name(font.get("BaseFont") or "") or "")
         return base_font in CORE14_FONT_DATA
 
     def legacy_encoding(
@@ -497,10 +486,6 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         cmap: ToUnicodeCMap | None,
         space_code: int,
     ) -> tuple[Mapping[int, float], float, float]:
-        """The font's widths, default width and space width.
-
-        space_code is resolve_space_code's answer; a CID font's is not read.
-        """
         subtype = recover_pdf_name(font.get("Subtype") or "")
         widths = decoder.widths
         if decoder.is_type3:
@@ -618,8 +603,6 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
                             self.show(bytes(data))
                         case PdfName(value=name):
                             self.add_text(f"/{name}")
-                        # a number only matters when it kerns wide enough to read
-                        # as a space, and only between visible text
                         case int() | float() if (
                             abs(float(item)) >= threshold
                             and self.text
@@ -701,5 +684,4 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
 
 
 def extract_legacy_text(page: Any, caches: LegacyTextCaches | None = None) -> str:
-    """page's text as pypdf extracts it; caches carries fonts and form text across pages."""
     return LegacyTextExtractor(page, caches=caches).extract()

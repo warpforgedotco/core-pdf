@@ -1,13 +1,3 @@
-"""Shadings painted by the kernels paint what paint_shading's per-pixel loop did.
-
-The reference below is that loop as it was, with the parameter taken from
-shading_t -- pinned to the deleted Python functions by golden vectors -- and
-blending by blend_px, which the rest of the rasterizer still uses. Pages
-cover axial and radial shadings, extends, clips, opacity, every blend mode
-blend_px treats apart, and knockout and non-isolated groups that record
-source alpha and shape; failures part way are checked on a target directly.
-"""
-
 import math
 import random
 from typing import Any
@@ -285,7 +275,7 @@ def test_blending_rules_follow_the_documents_version(
         try:
             paint(target, {"dictionary": shading, "fill_opacity": 0.8}, mode)
             raised = None
-        except Exception as error:  # noqa: BLE001 -- the comparison covers failures too
+        except Exception as error:  # noqa: BLE001
             raised = (type(error), str(error))
         outcomes.append(
             (
@@ -334,3 +324,34 @@ def test_a_shading_painted_again_is_captured_once() -> None:
     dictionaries = [drawing.dictionary for drawing in program.drawings if drawing.kind == "shading"]
     assert len(dictionaries) == 2
     assert dictionaries[0] is dictionaries[1]
+
+
+@pytest.mark.parametrize("color_space", ["DeviceRGB", ["CalRGB", {"WhitePoint": [0.95, 1, 1.09]}]])
+def test_tiled_copies_of_a_shading_share_one_compiled_evaluator(
+    monkeypatch: pytest.MonkeyPatch, color_space: object
+) -> None:
+    from core_pdf.impl import graphics_shading
+
+    shading = {**SHADING, "ColorSpace": color_space}
+    compiled: list[object] = []
+    original = graphics_shading.compile_pdf_function
+
+    def counting(function: object) -> Any:
+        compiled.append(function)
+        return original(function)
+
+    monkeypatch.setattr(graphics_shading, "compile_pdf_function", counting)
+    target = make_backdrop_target(12, 3, planes=False)
+    fresh = make_backdrop_target(12, 3, planes=False)
+    tiles = [{**shading, "Coords": [offset, 0, 12 + offset, 0]} for offset in range(3)]
+    for tile in tiles:
+        target.paint_shading({"dictionary": tile}, None)
+    prepared = [target.prepared_shading(tile, DEFAULT_COLOR_RENDERING) for tile in tiles]
+    assert len(compiled) == 1
+    assert len({id(shading.evaluator) for shading in prepared if shading is not None}) == 1
+    for tile in tiles:
+        fresh.prepared_shading_cache.clear()
+        fresh.shading_evaluator_cache.clear()
+        fresh.paint_shading({"dictionary": tile}, None)
+    assert len(compiled) == 4
+    assert target.pixel_array.tobytes() == fresh.pixel_array.tobytes()

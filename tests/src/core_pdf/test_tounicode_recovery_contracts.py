@@ -143,7 +143,6 @@ def test_usecmap_cycles_terminate_and_keep_local_mappings():
 
     cmap = ToUnicodeCMap(source, usecmap_resolver=resolve)
     assert cmap.decode(b"\1") == "A"
-    # The parent's own usecmap names an ancestor, so the chain stops there.
     assert calls == ["Loop"]
 
 

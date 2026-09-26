@@ -188,7 +188,7 @@ def render_single_run_text(run: TextRun) -> str:
         text = rules.strip_private_use_chars(text)
         if not text:
             return ""
-    if rules.is_tiny_page_footer(text) and run.font_size <= 5.0:
+    if run.font_size <= 5.0 and rules.is_tiny_page_footer(text):
         return ""
     return rules.collapse_repeated_spaces(text)
 
@@ -329,8 +329,6 @@ class GlyphLineBuilder:
         prev_run_text = ""
         prev_last_char = ""
         prev_atom: LayoutLineTextAtom | None = None
-        # (box, text, reach): reach is the largest right edge of this entry and
-        # every one before it, which lets the duplicate check stop early.
         recent_emitted_runs: list[tuple[tuple[float, float, float, float], str, float]] = []
 
         for index, run in enumerate(self.runs):
@@ -392,7 +390,6 @@ class GlyphLineBuilder:
         text: str,
     ) -> tuple[LayoutLineTextAtom, ...]:
         clusters = run.glyph_clusters
-        # Text with spaces stays whole: its clusters would lose the gaps.
         if (
             clusters
             and text == run.text
@@ -448,12 +445,8 @@ class GlyphLineBuilder:
             text = rules.strip_private_use_chars(text)
             if not text:
                 return ""
-        if rules.is_tiny_page_footer(text) and run.font_size <= 5.0:
+        if run.font_size <= 5.0 and rules.is_tiny_page_footer(text):
             return ""
-        # Every branch below needs the run to read "TM", or to be a short run
-        # of digits with nothing to strip (is_short_digit_run, at most four
-        # for the widest of them). Checking that once lets ordinary text leave
-        # here instead of taking four separate probes.
         stripped = run.stripped_text
         if stripped != "TM" and not (
             len(stripped) <= 4 and stripped == run.text and stripped.isdigit()
@@ -677,18 +670,12 @@ class GlyphLineBuilder:
     ) -> bool:
         if not recent_runs:
             return False
-        # geometry.bbox_area and bbox_intersection_area, inline: this runs for
-        # every run against the recent ones, and their calls and float()
-        # coercions would cost more than the arithmetic.
         x0, y0, x1, y1 = run.advance_bbox
         box_area = (y1 - y0) * (x1 - x0)
         if box_area <= 0:
             return False
         text_length = len(text)
         for (px0, py0, px1, py1), prev_text, reach in reversed(recent_runs):
-            # Nothing at or before this entry reaches past x0, so none of them
-            # can overlap: each would fail the px1 <= x0 test below. Runs of a
-            # line arrive left to right, so this usually stops at the first.
             if reach <= x0:
                 break
             if px0 >= x1 or px1 <= x0:

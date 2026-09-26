@@ -1,5 +1,3 @@
-"""A run of PNG Up rows decodes as each row added to the one above (ISO 32000-2 7.4.4.4)."""
-
 import random
 
 import pytest

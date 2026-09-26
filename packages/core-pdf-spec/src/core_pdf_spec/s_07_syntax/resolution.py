@@ -24,8 +24,6 @@ def resolve_reference_chain(value: object, resolve: Callable[[object], object]) 
 
 
 class ResolutionNode:
-    """resolve_object_graph's scratch state for one container."""
-
     __slots__ = ("original", "values", "keys", "parents", "changed")
 
     def __init__(self, original: object) -> None:

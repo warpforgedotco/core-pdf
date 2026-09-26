@@ -1,16 +1,3 @@
-"""TrueType outlines from truetype_contours are fontTools' outlines, glyph for glyph.
-
-The fonts are the TrueType programs embedded in fixture pages chosen for
-what their glyphs use: composites with offsets, one scale, x and y scales
-and two-by-two matrices, composites nested in composites, and simple
-glyphs whose left side bearing differs from their xMin. Every glyph is
-drawn both ways -- the kernel, and fontTools' glyph set through
-DecomposingRecordingPen and recording_to_contours, as fonttools_contours
-drew it -- and compared by repr, which keeps each float exactly. Glyphs
-the kernel declines are left to fontTools; the hand-built ones below pin
-which those are.
-"""
-
 import struct
 from typing import Any
 
@@ -53,7 +40,7 @@ def embedded_programs(path: str, monkeypatch: pytest.MonkeyPatch) -> list[bytes]
 def fonttools_drawn(font: Any, gid: int, scale: float) -> Any:
     try:
         contours = font_program.fonttools_contours(font, gid)
-    except Exception:  # noqa: BLE001 -- normalized_glyph_contours draws nothing then
+    except Exception:  # noqa: BLE001
         return ()
     return contours if scale == 1.0 else scale_contours(contours, scale)
 
@@ -84,7 +71,6 @@ def test_every_glyph_is_drawn_as_fonttools_draws_it(
 
 
 def simple_glyph(points: list[tuple[int, int, bool]], *, flags_or: int = 0) -> bytes:
-    """One contour, long coordinates, no instructions."""
     xs = [x for x, _, _ in points]
     ys = [y for _, y, _ in points]
     data = struct.pack(">hhhhh", 1, min(xs), min(ys), max(xs), max(ys))
@@ -160,8 +146,6 @@ def test_what_fonttools_treats_otherwise_is_declined(glyphs: list[bytes]) -> Non
 
 
 def test_a_scaled_component_takes_the_2_14_scale_and_an_unscaled_offset() -> None:
-    # getComponentInfo gives (0.5, 0, 0, 0.5, 10, 0), and TransformPen adds
-    # the offset after scaling, whatever the scaled-offset flags say.
     half = struct.pack(">h", 8192)
     composite = (
         struct.pack(">hhhhh", -1, 0, 0, 50, 50) + struct.pack(">HHhh", 0x000B, 0, 10, 0) + half

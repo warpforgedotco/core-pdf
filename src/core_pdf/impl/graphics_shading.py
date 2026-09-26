@@ -15,6 +15,8 @@ from core_pdf.impl.graphics_functions import (
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
+from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
+from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
 from core_pdf_spec.s_08_graphics.shading import parse_shading
 
 
@@ -120,8 +122,18 @@ class PreparedShading(Record):
         )
 
 
+type ShadingEvaluatorKey = tuple[int, int, ColorRendering]
+type ShadingEvaluatorCache = dict[
+    ShadingEvaluatorKey,
+    tuple[object, object, PdfFunctionEvaluator, Callable[[float], tuple[float, ...]], str],
+]
+
+
 def prepare_shading(
-    dictionary: object, *, rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+    dictionary: object,
+    *,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    evaluators: ShadingEvaluatorCache | None = None,
 ) -> PreparedShading | None:
     if not isinstance(dictionary, dict):
         return None
@@ -156,22 +168,26 @@ def prepare_shading(
         normalized.pop("BBox", None)
     else:
         normalized["BBox"] = bbox
-    try:
-        spec = parse_shading(normalized, compile_function=compile_pdf_function)
-        space = parse_color_space(spec.color_space)
-    except ValueError:
-        return None
-    evaluator = spec.evaluator
-    color_model = space.kind
-    if space.kind not in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
-        color_model = "DeviceRGB"
-
-        @lru_cache(maxsize=8192)
-        def convert(value: float) -> tuple[float, ...]:
-            components = spec.evaluator(value)
-            return color_operands_to_srgb(space, components, rendering=rendering) or components
-
-        evaluator = convert
+    function = normalized.get("Function")
+    color_space = normalized["ColorSpace"]
+    key = (id(function), id(color_space), rendering)
+    cached = evaluators.get(key) if evaluators is not None else None
+    if cached is not None and cached[0] is function and cached[1] is color_space:
+        compiled = cached[2]
+        try:
+            spec = parse_shading(normalized, compile_function=lambda _function: compiled)
+        except ValueError:
+            return None
+        evaluator, color_model = cached[3], cached[4]
+    else:
+        try:
+            spec = parse_shading(normalized, compile_function=compile_pdf_function)
+            space = parse_color_space(spec.color_space)
+        except ValueError:
+            return None
+        evaluator, color_model = shading_color_evaluator(spec.evaluator, space, rendering)
+        if evaluators is not None:
+            evaluators[key] = (function, color_space, spec.evaluator, evaluator, color_model)
     return PreparedShading(
         spec.shading_type,
         coords,
@@ -185,4 +201,22 @@ def prepare_shading(
     )
 
 
-__all__ = ("PreparedShading", "prepare_shading")
+def shading_color_evaluator(
+    function: PdfFunctionEvaluator, space: ColorSpace, rendering: ColorRendering
+) -> tuple[Callable[[float], tuple[float, ...]], str]:
+    if space.kind in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
+        return function, space.kind
+
+    @lru_cache(maxsize=8192)
+    def convert(value: float) -> tuple[float, ...]:
+        components = function(value)
+        return color_operands_to_srgb(space, components, rendering=rendering) or components
+
+    return convert, "DeviceRGB"
+
+
+__all__ = (
+    "PreparedShading",
+    "ShadingEvaluatorCache",
+    "prepare_shading",
+)

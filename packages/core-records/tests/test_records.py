@@ -1,5 +1,3 @@
-"""Each mixin does what the hand-written method it replaced did, from __fields__."""
-
 import copy
 import pickle
 from typing import ClassVar
@@ -57,9 +55,9 @@ def test_the_mixins_add_no_instance_dict() -> None:
 def test_assignment_and_deletion_are_refused() -> None:
     point = Point(1, 2)
     with pytest.raises(AttributeError, match="cannot assign to field 'x'"):
-        setattr(point, "x", 3)  # noqa: B010 -- a literal assignment is a type error
+        setattr(point, "x", 3)  # noqa: B010
     with pytest.raises(AttributeError, match="cannot delete field 'y'"):
-        delattr(point, "y")  # noqa: B043 -- as is a literal deletion
+        delattr(point, "y")  # noqa: B043
 
 
 def test_repr_names_every_field_by_qualname() -> None:

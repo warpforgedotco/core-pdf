@@ -133,18 +133,9 @@ class ClipState:
         self.scale = scale
         self.width = width
         self.height = height
-        # A clip path's rows as the stroke kernel reads them, per region on
-        # the stack. Regions are frozen, and the entry keeps its region
-        # alive, so the identity key cannot be reused while it is here; a
-        # region's entry goes when the region leaves the stack.
         self.span_arrays: dict[int, tuple[ClipRegion, RowSpanArrays]] = {}
 
     def row_span_arrays(self, region: ClipRegion) -> RowSpanArrays:
-        """region.rows as (offsets, spans): row r's spans are spans[2*offsets[r]:2*offsets[r+1]].
-
-        An empty region, or a rectangular one, has no rows and gives a
-        single zero offset.
-        """
         cached = self.span_arrays.get(id(region))
         if cached is not None and cached[0] is region:
             return cached[1]
@@ -161,8 +152,6 @@ class ClipState:
     def page_box_to_pixels(
         self, x0: float, y0: float, x1: float, y1: float
     ) -> tuple[int, int, int, int] | None:
-        # max(0, min(size, v)) for each edge, as comparisons: every rendered
-        # element asks for its box, over a million times across the corpus.
         width = self.width
         height = self.height
         crop_x0 = self.crop_x0
@@ -244,21 +233,8 @@ class ClipState:
         row_stop: int,
         fill_rule: str,
     ) -> list[RowSpans]:
-        """The path's spans for each row in [row_start, row_stop).
-
-        A row's spans come from the edges its centre line crosses. Testing
-        every edge on every row made a clip push rows x edges -- 1.4 million
-        comparisons for PyMuPDF test_5001's page. Rows go down the page, so
-        the centre line only descends: an edge becomes a candidate once the
-        line drops below its top and stays one until the line drops below its
-        bottom. The candidates are kept in the edges' own order and put
-        through the same crossing test, so each row's crossings are the ones
-        the full scan found, in the order it found them.
-        """
         crop_y1 = self.crop_y1
         scale = self.scale
-        # A line that does not descend -- a scale that is not positive --
-        # keeps every edge a candidate on every row.
         descending = scale > 0
         tops: list[tuple[float, int]] = []
         lows: list[float] = []
@@ -266,7 +242,6 @@ class ClipState:
             low = min(y1, y0)
             lows.append(low)
             top = max(y0, y1)
-            # A NaN top is never above the line, so that edge never crosses.
             if y0 != y1 and (top == top or not descending):
                 tops.append((top, index))
         if descending:
@@ -286,7 +261,6 @@ class ClipState:
             crossings: list[tuple[float, int]] = []
             live: list[int] = []
             for index in candidates:
-                # Once the line is below an edge's bottom it stays there.
                 if descending and page_y < lows[index]:
                     continue
                 live.append(index)
@@ -358,10 +332,6 @@ class ClipState:
         self, box: tuple[float, float, float, float]
     ) -> tuple[tuple[float, float, float, float], tuple[int, int, int, int]] | None:
         region = self.current_region()
-        # A painted item asks for its box more than once -- whether it can
-        # skip its knockout group, then again to paint -- and half of all
-        # calls repeat the one before. Regions are frozen and both objects
-        # are held here, so identity is enough to know the answer stands.
         if box is self.last_box and region is self.last_region:
             return self.last_clipped
         self.last_box = box

@@ -61,7 +61,6 @@ INDIRECT_HEADER_PATTERNS: dict[LexicalRules, re.Pattern[bytes]] = {}
 
 
 def indirect_header_pattern(rules: LexicalRules) -> re.Pattern[bytes]:
-    """Two digit runs and obj, each ending where scan_word would end it."""
     pattern = INDIRECT_HEADER_PATTERNS.get(rules)
     if pattern is None:
         space = b"[" + re.escape(rules.whitespace) + b"]"
@@ -84,10 +83,6 @@ READER_RULES: dict[LexicalRules, LexicalRules] = {
 }
 
 
-# The names the object scanner has produced, so a repeated one is a dict hit in
-# C rather than a call into PdfName.of. It is filled only through PdfName.of,
-# so every entry is the instance that returned, and bounded like spec's own
-# table.
 SCANNED_NAMES: dict[bytes, PdfName] = {}
 SCANNED_NAME_LIMIT = 1 << 16
 
@@ -109,7 +104,6 @@ def reader_eol_pair(first: int, second: int) -> bool:
 
 
 def reader_rules_for(context: SemanticContext | None) -> LexicalRules:
-    """The lexical rules a reader lexer in context reads with."""
     if recognized_version(context) is None:
         context = None
     rules = lexical_rules(context)
@@ -151,8 +145,6 @@ class PdfLexer(SyntaxLexer):
         self.recover_dictionary_structure = recover_dictionary_structure
 
     def close(self) -> None:
-        # The scanner holds an export of raw_data, and a memoryview with a
-        # live export refuses to release.
         if self.scanner is not None:
             self.scanner.release()
             self.scanner = None
@@ -160,8 +152,6 @@ class PdfLexer(SyntaxLexer):
         super().close()
 
     def search_buffer(self) -> bytes | FindableSizedBuffer:
-        """The data as a buffer with find and rfind: the source buffer, or a
-        copy of the data made once for a lexer that has none."""
         source_buffer = self.source_buffer
         if source_buffer is not None:
             return source_buffer
@@ -171,7 +161,6 @@ class PdfLexer(SyntaxLexer):
         return copied
 
     def object_scanner(self) -> ObjectScanner:
-        """The compiled scanner for this lexer's data and rules."""
         rules = self.lexical_rules
         scanner = self.scanner
         if scanner is None or self.scanner_rules is not rules:
@@ -190,16 +179,11 @@ class PdfLexer(SyntaxLexer):
         return scanner
 
     def scanner_args(self) -> tuple[int] | tuple[int, Decipher, int, int]:
-        """The scanner's arguments at this position: with the decipher and
-        object identity when strings are to be decrypted."""
         if self.decipher is not None and self.current_obj_num is not None:
             return (self.pos, self.decipher, self.current_obj_num, self.current_gen_num or 0)
         return (self.pos,)
 
     def parse_dictionary(self) -> PdfDict:
-        # The scanner owns well-formed syntax and declines the rest, which the
-        # Python below then parses from the same position -- including every
-        # recovery hook this class overrides.
         parsed = self.object_scanner().parse_dictionary(*self.scanner_args())
         if parsed is None:
             return super().parse_dictionary()
@@ -506,10 +490,6 @@ class PdfLexer(SyntaxLexer):
         return key.decode("latin-1")
 
     def read_indirect_header(self) -> tuple[int, int]:
-        # The usual header -- two digit runs and obj, whitespace between them
-        # -- is the three words scan_word would find, so one match reads it;
-        # anything else (a comment in between, a sign, obj run into a word)
-        # goes through the words as before.
         start = self.skip_ignored_at(self.pos)
         source = self.source_buffer
         header = indirect_header_pattern(self.lexical_rules).match(
@@ -529,9 +509,6 @@ class PdfLexer(SyntaxLexer):
         return obj_num, gen_num
 
     def stream_data_start(self) -> int | None:
-        # The keyword may carry one wrong byte. After it, a run of spaces is
-        # skipped up to the end of line it leads to; without one, only the
-        # first space.
         data = self.raw_data
         pos = self.pos
         if data[pos : pos + 6] != b"stream" and not (

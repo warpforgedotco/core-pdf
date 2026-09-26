@@ -111,8 +111,6 @@ def decode_one_filter(
             result = coerce_decoder_bytes(inflated)
         else:
             result = coerce_decoder_bytes(fn(data, decoder_context))
-        # An unfiltered content stream mislabelled as the only filter's
-        # FlateDecode is taken as it is, with no predictor after it.
         if filter_name in PREDICTOR_FILTERS and not (
             passed_through and allow_content_stream_passthrough
         ):
@@ -152,8 +150,6 @@ def decode_stream_data(
 
 
 class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
-    # The page and its immediate regions; anything else is skipped rather
-    # than failing the image.
     supported_segment_types = frozenset(
         {
             JBIG2_PAGE_INFO,
@@ -197,8 +193,6 @@ class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
                     self.page_info,
                 )
             return
-        # core_jbig2 declines arithmetic regions; the decoder lives in
-        # core_pdf_cythonized, which implements template 0 only.
         if (
             header.template != 0
             or header.prediction
@@ -322,8 +316,6 @@ def tiff_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -
 
 
 def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
-    # Row framing, the truncation rules and the error mapping live in spec;
-    # core supplies only the kernels that recover damaged rows.
     params = filter_params(parms)
     return strict_apply_predictor(
         data, params, png=png_predictor_tolerant, tiff=tiff_predictor_tolerant
@@ -346,8 +338,6 @@ def apply_ascii_hex(data: bytes, parms: object) -> bytes:
 
 
 def apply_run_length(data: bytes, parms: object) -> bytes:
-    # The strict decoder carries its partial output on the error, so recovery
-    # is "keep what decoded" rather than a second copy of the loop.
     try:
         return strict.apply_run_length(data, parms)
     except strict.IncompleteRunLengthError as exc:
@@ -381,11 +371,6 @@ def apply_flate(data: bytes, parms: object) -> bytes:
 
 
 def inflate(data: bytes) -> tuple[bytes, bool]:
-    """FlateDecode's output, and whether it is the input passed through.
-
-    Data that no zlib, gzip or raw deflate reading recovers, and that reads
-    as a content stream, is taken to be an unfiltered one and passed through.
-    """
     if not data:
         return b"", False
     candidates: tuple[int, ...]

@@ -425,7 +425,6 @@ def parse_generic_region_header(region: JBIG2Region) -> JBIG2GenericRegionHeader
 
 
 def read_uint(data: bytes, pos: int, width: int) -> tuple[int, int]:
-    """The big-endian unsigned integer of `width` bytes at `pos`, and the position after it."""
     end = pos + width
     if end > len(data):
         raise Jbig2ParseError("truncated JBIG2 data")
@@ -507,9 +506,6 @@ def parse_embedded_segments(data: bytes) -> list[JBIG2Segment]:
 
 
 class JBIG2PageDecoder:
-    # The segment types decode_segment reads; any other is skipped without
-    # being looked at. None, the default, reads every segment, so a type
-    # this decoder does not support raises.
     supported_segment_types: ClassVar[frozenset[int] | None] = None
 
     def __init__(self) -> None:

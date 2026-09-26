@@ -9,11 +9,6 @@ from core_pdf_spec.types import MISSING, MissingObject
 if TYPE_CHECKING:
     from core_pdf_spec.s_07_syntax.types import PdfDict
 
-# Forward references rather than imports: PdfDict names PdfObject, which names
-# PdfStream, so the module defining the object types has to import this one.
-# Only the runtime import is circular -- a stream dictionary is an ordinary PDF
-# dictionary, and saying so keeps every reader of stream.dictionary typed.
-# Both aliases appear only in annotations, which are not evaluated at runtime.
 PdfStreamDictionary: TypeAlias = "PdfDict"
 PdfStreamDecodeSpec: TypeAlias = "stream_decode_spec.StreamDecodeSpec | PdfDict | None"
 

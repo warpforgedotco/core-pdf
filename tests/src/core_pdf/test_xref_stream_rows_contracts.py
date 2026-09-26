@@ -1,5 +1,3 @@
-"""Xref stream rows decoded a column at a time read as decode_xref_row reads them."""
-
 import random
 
 import pytest
@@ -42,7 +40,6 @@ def test_columns_read_as_rows(seed: int) -> None:
     index: list[int] = []
     start = 0
     for _ in range(rng.randint(1, 4)):
-        # Subsections may overlap, so a later row can replace an earlier key.
         start = max(0, start + rng.randint(-8, 5))
         count = rng.randint(0, 20)
         index += [start, count]

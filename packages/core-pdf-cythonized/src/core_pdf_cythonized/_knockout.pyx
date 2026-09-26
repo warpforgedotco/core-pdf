@@ -1,24 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Knockout transparency group compositing (ISO 32000-2 11.4.x).
-
-Moved here from core_pdf_spec.s_11_transparency.groups. It is the one kernel
-in this package that owns a PDF-defined algorithm rather than mirroring a
-helper, which is why the spec conformance tests moved with it.
-
-Two entry points share one inner routine:
-
-* ``composite_knockout_element`` is the function spec exported, signature and
-  validation unchanged, operating on compacted sample arrays.
-* ``composite_knockout_group`` is the caller core used to wrap it. Sixty
-  percent of that wrapper's cost was marshalling -- building a mask, three
-  boolean fancy-index copies, then a scatter back -- purely to hand compacted
-  arrays to a Python callee. Fusing the mask, the gather, the arithmetic and
-  the scatter into one pass is the entire point of compiling this.
-
-All arithmetic is float64, matching the numpy original, and setup.py builds
-with -ffp-contract=off so the compiler does not fold these expressions into
-FMAs and shift the results.
-"""
 
 from cpython.mem cimport PyMem_Free, PyMem_Malloc
 
@@ -63,11 +43,6 @@ def composite_knockout_element(
     coverage = numpy.asarray(shape, dtype=numpy.float64)
     accumulated = numpy.asarray(group_alpha, dtype=numpy.float64)
     element_accumulated = numpy.asarray(element_group_alpha, dtype=numpy.float64)
-    # NB: the build sets wraparound=False, which disables negative-index
-    # wrapping for Python sequences as well as memoryviews. color.shape[-1]
-    # there does not read the last dimension -- it reads out of range, and the
-    # garbage propagates into the loop bounds below as a segfault. Index the
-    # shape tuple positively.
     if color.ndim < 1:
         raise ValueError("invalid knockout group samples")
     cdef Py_ssize_t channels = color.shape[color.ndim - 1]
@@ -102,8 +77,6 @@ def composite_knockout_element(
 
     cdef Py_ssize_t rows = color.size // channels
 
-    # Contiguity is needed only for the typed memoryviews below, and is
-    # applied after validation for the reason noted above.
     flat_color = numpy.ascontiguousarray(color).reshape(rows, channels)
     flat_backdrop = numpy.ascontiguousarray(backdrop).reshape(rows, channels)
     flat_element = numpy.ascontiguousarray(element).reshape(rows, channels)
@@ -203,19 +176,6 @@ def composite_elementary_knockout(
     const float[:, :] shape,
     float[:, :] parent_shape,
 ):
-    """An opaque normal elementary group composited into its knockout parent.
-
-    composite_group made the element as a copy of the parent's initial
-    backdrop, composite_elementary_normal copied the rendered pixels over it
-    where the group's quantized alpha is non-zero, composite_knockout_group
-    knocked the element into the parent, and numpy recorded the shape as
-    parent_shape += (1.0 - parent_shape) * shape, all in float32. A text
-    object's knockout group does this for every glyph that touches another.
-    This is those steps per pixel in one pass: the same quantization, with
-    every value checked before anything is written as the original checked
-    it, the same knockout arithmetic in float64, the same float32 shape
-    update when the parent records shape.
-    """
     cdef Py_ssize_t rows = source_alpha.shape[0], cols = source_alpha.shape[1]
     if destination.shape[0] != rows or destination.shape[1] != cols or destination.shape[2] != 4:
         raise ValueError("destination must be source_alpha.shape + (4,)")
@@ -242,16 +202,12 @@ def composite_elementary_knockout(
     cdef float ONE = 1.0
     cdef float previous, cover
     try:
-        # composite_elementary_normal quantized, and rejected, every value
-        # before it copied a pixel.
         for i in range(rows):
             for j in range(cols):
                 quantized[i * cols + j] = <unsigned char> unit_to_byte_checked(<double> source_alpha[i, j])
         with nogil:
             for i in range(rows):
                 for j in range(cols):
-                    # The element: the rendered pixel where the group shows,
-                    # the initial backdrop elsewhere.
                     if quantized[i * cols + j] > 0:
                         element = &rendered[i, j, 0]
                     else:

@@ -1,11 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""A one-component image's codes: which occur, and each pixel's converted row.
-
-convert_distinct_codes marked the codes with ``present[codes] = True`` and
-scattered with ``numpy.take(table, codes, axis=0)``; both are numpy
-expressions, so they are the reference here directly.
-"""
 
 import numpy
 import pytest

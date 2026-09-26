@@ -29,9 +29,6 @@ if TYPE_CHECKING:
 NON_PAINTING_RENDER_MODES = frozenset({3, 7})
 
 
-# One byte per path construction operator, and how many numbers each keeps in
-# PdfPath.coords: a curve keeps its start point, its three points, the linear
-# part of the CTM it was drawn under (a, b, c, d) and the flatness.
 PATH_MOVE = ord("m")
 PATH_LINE = ord("l")
 PATH_CLOSE = ord("h")
@@ -41,14 +38,6 @@ PATH_OPERAND_COUNTS = {PATH_MOVE: 2, PATH_LINE: 2, PATH_CLOSE: 0, PATH_RECT: 4, 
 
 
 class PdfPath(ReplaceFields):
-    """A path under construction, as flat storage rather than an object per operator.
-
-    ``ops`` holds one byte per operator and ``coords`` its numbers, in order,
-    as PATH_OPERAND_COUNTS lays them out: content streams build paths of
-    thousands of segments, and a command object with an operand tuple for
-    each was most of what building one cost.
-    """
-
     __slots__ = ("ops", "coords")
 
     ops: bytearray
@@ -95,7 +84,6 @@ class PdfPath(ReplaceFields):
         self.coords.extend((x, y, w, h))
 
     def cubic_to(self, points: tuple[float, ...], ctm: Matrix, flatness: float) -> None:
-        """A curve from its eight numbers: start point, two controls, end point."""
         if len(points) != 8:
             raise ValueError(f"expected 8 values to unpack, got {len(points)}")
         self.ops.append(PATH_CURVE)
@@ -103,7 +91,6 @@ class PdfPath(ReplaceFields):
         self.coords.extend((ctm.a, ctm.b, ctm.c, ctm.d, flatness))
 
     def operators(self) -> list[str]:
-        """The operators in order, as content-stream names (re for a rectangle)."""
         return ["re" if op == PATH_RECT else chr(op) for op in self.ops]
 
 
@@ -632,8 +619,6 @@ class GraphicsState(ReprFields):
         return color_rendering(self.render_intent, self.black_point_compensation)
 
     def __copy__(self) -> GraphicsState:
-        # Every q copies the state, so the fields are assigned one by one
-        # rather than looped over by name: six times faster.
         new = object.__new__(GraphicsState)
         new.ctm = self.ctm
         new.fill_color = self.fill_color

@@ -18,11 +18,6 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_null, parse_int
 
 
 class FilterParams(PdfFilterParams):
-    """Spec's FilterParams, with DecodeParms read as the renderer tolerates them.
-
-    Its fields, constructor, equality, hash, repr and replace are spec's.
-    """
-
     __slots__ = ()
 
     @classmethod
@@ -72,7 +67,6 @@ class FilterParams(PdfFilterParams):
 
 
 def filter_params(parms: object) -> FilterParams:
-    """DecodeParms as FilterParams: read here, or already read by normalize_stream_decode_spec."""
     return parms if type(parms) is FilterParams else FilterParams.from_parms(parms)
 
 
@@ -93,7 +87,6 @@ def with_ccitt_image_rows(parms: object, dictionary: object) -> object:
     return updated
 
 
-# The filters whose decoders read their DecodeParms as FilterParams.
 PARAMETERIZED_FILTERS = PREDICTOR_FILTERS | CCITT_FILTERS | {"JBIG2Decode"}
 
 
@@ -153,26 +146,12 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     if isinstance(parms_raw, (list, tuple)) and len(decode_parms) > len(names):
         decode_parms = decode_parms[: len(names)]
 
-    if len(decode_parms) not in {0, 1, len(names)}:
-        raise FilterParseError("invalid stream decode parameters")
-
-    if len(decode_parms) == 1 and len(names) > 1:
-        raise FilterParseError("invalid stream decode parameters")
-
     steps: list[FilterStep] = []
     for index, filter_name in enumerate(names):
-        if len(decode_parms) == 1:
-            parms = decode_parms[0]
-        elif len(decode_parms) == len(names):
-            parms = decode_parms[index]
-        else:
-            parms = None
+        parms = decode_parms[index] if decode_parms else None
         if filter_name in CCITT_FILTERS:
             parms = with_ccitt_image_rows(parms, dictionary)
         if filter_name in PARAMETERIZED_FILTERS and type(parms) is not FilterParams:
-            # Read once here for the filters that read them. DecodeParms
-            # that do not read stay as given, so the step that reads them
-            # raises where it always did -- or never, if it is not reached.
             with suppress(Exception):
                 parms = FilterParams.from_parms(parms)
         steps.append(FilterStep(filter_name, parms))

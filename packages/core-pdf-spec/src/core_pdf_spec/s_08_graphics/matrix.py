@@ -34,9 +34,6 @@ class Matrix(NamedTuple):
 IDENTITY_MATRIX: Final = Matrix(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
 
-# int | float rather than float: PDF distinguishes integers from reals, and
-# these operands keep whichever they arrived as. Writing float alone invites
-# a compiler to read the numeric tower literally and coerce.
 def multiply_affine(left: Sequence[int | float], right: Sequence[int | float]) -> Matrix:
     return Matrix(
         left[0] * right[0] + left[1] * right[2],

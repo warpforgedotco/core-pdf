@@ -41,7 +41,6 @@ def field_value_text(resolver: FieldResolver, value: object) -> str:
                 pass
             case PdfString() | bytes() | str():
                 item_text = (parse_text_string(current) or "").strip()
-            # bool is an int, and "true"/"false" are not field text
             case int() | float() if type(current) is not bool:
                 item_text = str(current)
             case _:

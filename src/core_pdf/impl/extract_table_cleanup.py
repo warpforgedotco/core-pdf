@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from copy import replace
 from functools import cached_property
 from statistics import fmean
@@ -91,9 +91,13 @@ def table_column_alignment(left: Table, right: Table) -> float:
     return fmean(overlaps)
 
 
+def row_texts(row: Iterable[TableCell]) -> tuple[str, ...]:
+    return tuple(cell.text.strip().casefold() for cell in row if cell.text.strip())
+
+
 def same_semantic_header(left: tuple[TableCell, ...], right: tuple[TableCell, ...]) -> bool:
-    left_text = tuple(cell.text.strip().casefold() for cell in left if cell.text.strip())
-    right_text = tuple(cell.text.strip().casefold() for cell in right if cell.text.strip())
+    left_text = row_texts(left)
+    right_text = row_texts(right)
     return (
         len(left_text) >= 2
         and left_text == right_text
@@ -295,11 +299,6 @@ def stream_table_reads_like_prose(table: Table) -> bool:
 
 
 def clean_stream_table(table: Table) -> Table | None:
-    """A stream-detected table with its text columns and wrapped rows merged.
-
-    None when the merged table reads as prose. The merges assume cells cut from
-    text rows and columns, so they apply to stream detection's tables alone.
-    """
     merged = merge_wrapped_stream_rows(merge_stream_text_columns(table))
     if stream_table_reads_like_prose(merged):
         return None
@@ -520,17 +519,14 @@ def table_with_bands(table: Table) -> Table:
             index
             for index, row in enumerate(table.rows)
             if any(cell.text.strip() for cell in row)
-            and not any(
-                value in associated.values()
-                for value in (cell.text.strip().casefold() for cell in row if cell.text.strip())
-            )
+            and not any(value in associated.values() for value in row_texts(row))
         ),
         None,
     )
     row_bands: list[TableRowBand] = []
     for index, row in enumerate(table.rows):
         boxes = [cell.bbox for cell in row if cell.bbox is not None]
-        texts = tuple(cell.text.strip().casefold() for cell in row if cell.text.strip())
+        texts = row_texts(row)
         kind = "blank"
         if texts:
             if any(value in associated.values() for value in texts):

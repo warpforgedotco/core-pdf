@@ -161,9 +161,6 @@ def merge_candidate_batches(
             dtype=numpy.float32,
             count=len(combined),
         )
-        # The overlap tests read Python floats: indexing a float32 row per pair
-        # costs more than the comparison. float32 widens exactly, so they
-        # agree with the rows, which overlap_ratio_min still takes.
         bbox_list = combined.bbox.tolist()
         deduplicated: list[int] = []
         accepted_positions: dict[int, int] = {}

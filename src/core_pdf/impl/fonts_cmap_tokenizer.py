@@ -24,7 +24,6 @@ LEGACY_EOL_PAIR = re.compile(rb"\r\n|\n\r")
 
 
 def collect_cmap_tokens(data: bytes, *, group_arrays: bool) -> tuple[CMapToken, ...]:
-    """Tokenise as far as the source allows; a malformed tail yields what came before."""
     tokens: list[CMapToken] = []
     try:
         for token in iter_cmap_tokens(data, group_arrays=group_arrays):
@@ -55,8 +54,6 @@ def decode_cmap_token(token: bytes) -> bytes:
 
 
 class CMapProgram(PdfCMapProgram):
-    """A CMap read as far as it goes: no program, count, or operand rules apply."""
-
     __slots__ = ()
 
     @classmethod

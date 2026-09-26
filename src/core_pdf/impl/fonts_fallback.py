@@ -8,7 +8,7 @@ from importlib.resources import files
 from typing import Any, ClassVar, Protocol
 
 from core_pdf.impl.fonts_font_program import TrueTypeFontProgram
-from core_pdf.impl.fonts_helpers import strip_subset_tag
+from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.types import Record, frozen_setattr
 
 
@@ -154,14 +154,13 @@ def provider_face(
 ) -> PdfRasterFontFace | None:
     if provider is None:
         return None
-    # A provider object or a bare callable; the protocol cannot express "either".
     resolve: Any = getattr(provider, "resolve_raster_font", None) or provider
     face: PdfRasterFontFace | None = resolve(request)
     return face
 
 
 def builtin_face_names(font_name: str | None) -> tuple[str, ...]:
-    name = strip_subset_tag(font_name or "").lower()
+    name = recover_strip_subset_tag(font_name or "").lower()
     if "zapfdingbats" in name:
         return ("NotoSansSymbols2-Regular.ttf",)
     if "symbol" in name:

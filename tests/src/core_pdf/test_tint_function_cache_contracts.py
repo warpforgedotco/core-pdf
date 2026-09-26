@@ -1,5 +1,3 @@
-"""A tint transform is compiled once per content and remembers its outputs."""
-
 import math
 
 import pytest
@@ -61,7 +59,6 @@ def test_a_repeated_input_is_not_evaluated_again(monkeypatch: pytest.MonkeyPatch
 
 
 def test_negative_zero_is_not_answered_for_zero() -> None:
-    # The two zeros are equal keys, and an identity program returns each as is.
     identity = tint_function(calculator(b"{ }", Domain=[-1, 1]))
     assert math.copysign(1.0, identity(0.0)[0]) == 1.0
     assert math.copysign(1.0, identity(-0.0)[0]) == -1.0

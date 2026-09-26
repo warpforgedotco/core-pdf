@@ -10,8 +10,6 @@ from core_pdf.impl.glyphs import GlyphClusterLike
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.text import word_gap_threshold
 
-# The three run edges a merge can advance. try_append picks one per
-# direction; nothing else is reachable.
 WidenEdge: TypeAlias = Literal["x0", "x1", "y1"]
 
 NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
@@ -46,7 +44,7 @@ class PendingRun:
     def __init__(self, run: TextRun) -> None:
         self.run = run
         self.parts: deque[str] = deque((run.text,))
-        self.clusters: list[tuple[GlyphClusterLike, ...]] = [run.glyph_clusters]
+        self.clusters: deque[tuple[GlyphClusterLike, ...]] = deque((run.glyph_clusters,))
         self.head = run.text[:1]
         self.tail = run.text[-1:]
 
@@ -71,6 +69,7 @@ class PendingRun:
             separator = gap_separator(new_run.text, self.head, gap, self.run)
             added = new_run.text + separator
             self.parts.appendleft(added)
+            self.clusters.appendleft(new_run.glyph_clusters)
             if added:
                 self.head = added[:1]
             if not self.tail:
@@ -79,17 +78,13 @@ class PendingRun:
             separator = gap_separator(self.tail, new_run.text, gap, self.run)
             added = separator + new_run.text
             self.parts.append(added)
+            self.clusters.append(new_run.glyph_clusters)
             if not self.head:
                 self.head = added[:1]
             if added:
                 self.tail = added[-1:]
-        self.clusters.append(new_run.glyph_clusters)
         run = self.run
         run.union_ink_bbox(new_run.ink_bbox)
-        # Stretch the pending run over the one just absorbed, along whichever
-        # edge the merge direction advanced. A low edge keeps the smaller
-        # value and a high edge the larger, which is what the old
-        # widen.endswith("0") test decided by spelling.
         if widen == "x1":
             run.x1 = max(new_run.x1, run.x1)
         elif widen == "x0":

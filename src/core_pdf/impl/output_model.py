@@ -18,14 +18,6 @@ JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dic
 
 
 class FrozenDict(dict[Any, Any]):
-    """A dict that refuses mutation, hashes by content, and pickles.
-
-    The mapping fields of frozen output records hold these, so a Document, a
-    Page or a Figure hashes and pickles like the rest of its fields; a
-    mappingproxy did neither. It is still a dict, so equality with a plain
-    dict and JSON encoding are unchanged.
-    """
-
     __slots__ = ()
 
     def __hash__(self) -> int:  # type: ignore[override]
@@ -52,13 +44,6 @@ def freeze(value: Any) -> Any:
 
 
 class ViewCache:
-    """Views derived from a record's fields, each built on first use.
-
-    Not a field: equality, hashing, repr, pickling and replace all ignore it,
-    and a copy starts empty. The views are tuples of frozen records, so every
-    caller can share one.
-    """
-
     __slots__ = ("_views",)
 
     _views: dict[str, Any]

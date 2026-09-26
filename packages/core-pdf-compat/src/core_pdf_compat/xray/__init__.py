@@ -273,15 +273,6 @@ def _parse_object_at(document: Any, offset: int) -> object | None:
         return None
 
 
-# _recover_font, _operand_overrides and _raw_highlight_redactions read the raw
-# file, not the capture: the font is the one the last `/<name> n g R` in the
-# file names, found at the first `n g obj` header rather than through the
-# xref or the page's resources, and a Tj given several hex strings is read
-# from its text. That is how the reference sees the damaged files x-ray's
-# corpus holds, and the capture's resolved fonts and operands have not been
-# shown to give the same findings on it, so the scans stay.
-
-
 def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
     document = page.document
     raw_data = bytes(document.raw_data)
@@ -326,12 +317,6 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
 
 
 class _DocumentRecovery:
-    """What x-ray recovers from a document's raw bytes, found once for all pages.
-
-    _recover_font reads only the document, so a font name recovers the same
-    font on every page.
-    """
-
     __slots__ = ("document", "fonts", "overrides")
 
     def __init__(self, document: PdfDocument) -> None:
@@ -351,14 +336,6 @@ class _DocumentRecovery:
 
 
 class _BoxGrid:
-    """Boxes bucketed by grid cell, so a box finds the ones it may intersect.
-
-    A box intersects another only where both have positive overlap on each
-    axis, and two such boxes always share a cell. A box that is not finite,
-    or spans too many cells, is a candidate for every query instead; so is
-    every box when the query itself is one of those.
-    """
-
     CELL = 64.0
     MAX_CELLS = 1024
 
@@ -381,13 +358,9 @@ class _BoxGrid:
             return None
         column_start, column_stop = floor(x0 / cls.CELL), floor(x1 / cls.CELL) + 1
         row_start, row_stop = floor(y0 / cls.CELL), floor(y1 / cls.CELL) + 1
-        # Counted from the bounds, not len(range): a range longer than
-        # sys.maxsize raises OverflowError from len().
         columns = max(0, column_stop - column_start)
         rows = max(0, row_stop - row_start)
         if not columns or not rows:
-            # An inverted box covers no cell; returning before the
-            # comprehension spares walking every column of a huge empty span.
             return []
         if columns * rows > cls.MAX_CELLS:
             return None
@@ -398,7 +371,6 @@ class _BoxGrid:
         ]
 
     def candidates(self, box: tuple[float, float, float, float]) -> list[int]:
-        """The indexes, ascending, of every box that may intersect box."""
         span = self.span(box)
         if span is None:
             return list(range(self.count))
@@ -447,7 +419,6 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
         return recovery.font(page, font_name)
 
     def occluded(character: _Character, candidates: list[_Rectangle], grid: _BoxGrid) -> bool:
-        # Only rectangles the character's box meets can occlude it.
         return any(
             _occluded(character, candidates[index], 0.8)
             for index in grid.candidates(character.bbox)
@@ -516,8 +487,6 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
             characters.append(character)
 
     redactions: list[dict[str, object]] = []
-    # Each rectangle, latest first, takes the characters it meets that no
-    # later rectangle took, in their order.
     character_grid = _BoxGrid([character.bbox for character in characters])
     taken = [False] * len(characters)
     for rectangle in sorted(rectangles, key=lambda item: item.seqno, reverse=True):

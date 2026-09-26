@@ -1,12 +1,9 @@
-"""Packaged CMaps resolve through a directory list found once, as the walk found them."""
-
 from importlib import resources
 
 from core_adobe_fonts.cmap import resources as cmap_resources
 
 
 def walked(name: str) -> bytes | None:
-    # The per-lookup walk this replaced, kept as the reference.
     root = resources.files(cmap_resources.RESOURCE_PACKAGE).joinpath("cmaps")
     if not root.is_dir():
         return None

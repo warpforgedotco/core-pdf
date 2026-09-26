@@ -1,15 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""The fused glyph fill: what fill_path's four steps made, in one pass.
-
-fill_path quantized glyph_coverage_plane's plane with
-numpy.rint(coverage * alpha).astype(uint8) -- and at 255 for the shape --
-blended the first with blend_normal_alpha_array_numpy and recorded each into
-its group plane with accumulate_source_plane. The reference here is that
-pipeline, each step pinned by its own golden vectors, over the glyph coverage
-golden cases, at opaque and translucent paints, with and without planes, into
-a window of a larger buffer whose surroundings must come through untouched.
-"""
 
 import gzip
 import pickle

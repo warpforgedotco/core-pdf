@@ -1,22 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""The shading parameter: agreement with the Python it replaced, on this platform.
-
-shading_t_golden.pkl.gz holds 6,012 points against axial and radial
-shadings -- random coordinates and points with signed zeros, tiny and huge
-values, infinities and NaNs among them, degenerate axes, concentric and
-tangent circles, and the unit cases the deleted functions were tested
-with -- and the parameter core_pdf.impl.render_patterns.axial_shading_t and
-radial_shading_t gave on the machine that generated them.
-
-The radial root is ``disc**0.5``, which CPython computes with the C
-library's pow, and the kernel calls the same pow. pow is not correctly
-rounded everywhere: macOS's differs from glibc's by an ulp on some inputs,
-so a value recorded on one platform does not pin another. The deleted
-functions are therefore kept here, verbatim, and the kernel is compared
-with them on the platform the test runs on; the recorded values are
-checked where the generating platform's pow agreed with this one's.
-"""
 
 import gzip
 import math
@@ -94,9 +77,6 @@ def test_every_point_is_the_pythons() -> None:
 
 
 def test_the_recorded_values_are_the_reference_bar_pow() -> None:
-    # Every recorded value is the reference's here, except where the
-    # radial root came out of a pow that rounds differently on this
-    # platform than on the one that recorded it -- an ulp at most.
     differing = [case for case in GOLDEN if exact(reference(case)) != exact(case["expected"])]
     assert len(differing) <= 3
     for case in differing:

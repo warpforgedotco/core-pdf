@@ -1,5 +1,3 @@
-"""A program captured for extraction records no soft masks; one captured for drawing does."""
-
 import re
 from copy import replace
 from pathlib import Path
@@ -26,9 +24,6 @@ def test_extraction_skips_the_soft_masks_drawing_captures() -> None:
     assert masked
     assert all(d.graphics_soft_mask is None for d in extracted.drawings)
 
-    # Everything else about the drawings is what the drawing capture made.
-    # Paths and image sources compare by identity, so each capture's own
-    # objects are compared by points and by repr, addresses masked.
     def plain(drawing: CapturedDrawing) -> tuple[object, ...]:
         path = drawing.path
         points = None if path is None else [s.points for s in path.subpaths]

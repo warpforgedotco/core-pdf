@@ -337,7 +337,6 @@ class TextRun(ReprFields):
         self.glyph_clusters = glyph_clusters
 
     def absorb_extent(self, other: TextRun) -> None:
-        """Grow the box, advance box, baseline and confidence to cover `other`."""
         self.x0 = min(self.x0, other.x0)
         self.y0 = min(self.y0, other.y0)
         self.x1 = max(self.x1, other.x1)
@@ -362,14 +361,6 @@ class TextRun(ReprFields):
         return "italic" in fn or "oblique" in fn or "slanted" in fn
 
     def with_font_name(self, font_name: str | None) -> TextRun:
-        """This run under another font name: replace(font_name=...) without its cost.
-
-        Capture labels a run with the font's resource name and its glyphs with
-        the font's own name, so extraction relabels nearly every run -- 431k of
-        them on uber_10q. Changing only the name moves no coordinate and no
-        text, so none of replace()'s derived-field resets apply, and passing
-        the fields straight through costs 0.26us against its 1.2us.
-        """
         return type(self)(
             self.text,
             self.x0,

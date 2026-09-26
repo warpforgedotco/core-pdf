@@ -117,12 +117,6 @@ class ObjectResolver:
         self.data = memoryview(b"")
 
     def resolve(self, ref: object) -> PdfObject:
-        # This is where an unknown becomes a PDF object: the parser hands in
-        # whatever the file contained, and everything downstream is entitled
-        # to treat the result as an object of the model.
-        # The two returns on the hot path assert the type in a comment rather
-        # than through typing.cast, which would be a call per resolve, and this
-        # is the most frequently called method in the corpus profile.
         if type(ref) is not PdfReference:
             return ref  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 

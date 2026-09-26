@@ -24,11 +24,6 @@ class ClosingMixin:
 def parse_indirect_object_at(
     data: bytes | bytearray | memoryview | mmap.mmap, offset: int, **lexer_options: Any
 ) -> Any:
-    """The indirect object whose header starts at offset, parsed by a fresh lexer.
-
-    Whatever the parse raises reaches the caller, and the lexer is closed
-    either way.
-    """
     lexer = PdfLexer(data, **lexer_options)
     try:
         lexer.rewind(offset)

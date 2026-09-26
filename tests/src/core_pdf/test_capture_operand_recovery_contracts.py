@@ -39,20 +39,20 @@ def test_invalid_numeric_operands_leave_graphics_state_unchanged(
 
 
 @pytest.mark.parametrize(
-    ("operator", "field", "value", "expected"),
+    ("operator", "field", "value", "expected", "rejected"),
     [
-        ("w", "line_width", -5, 0),
-        ("w", "line_width", 2.5, 2.5),
-        ("M", "miter_limit", -5, 1),
-        ("M", "miter_limit", 2.5, 2.5),
+        ("w", "line_width", -5, 0, [(PdfParseError, "line-width")]),
+        ("w", "line_width", 2.5, 2.5, []),
+        ("M", "miter_limit", -5, 1, [(PdfParseError, "miter-limit")]),
+        ("M", "miter_limit", 2.5, 2.5, []),
     ],
 )
 def test_numeric_recovery_clamps_only_prescribed_reader_bounds(
-    state, operator, field, value, expected
+    state, operator, field, value, expected, rejected
 ):
     state.execute_operation(operator, (value, 99), 0)
     assert getattr(state.graphics, field) == expected
-    assert state.errors == []
+    assert state.errors == rejected
 
 
 @pytest.mark.parametrize("operands", [(), (True,), ("bad",), (None,)])
@@ -82,7 +82,6 @@ def test_dash_recovery_retains_previous_pattern_on_invalid_numbers(state, operan
     state.graphics.dash_pattern = ((2, 3), 4)
     state.op_d(operands, 0)
     assert state.graphics.dash_pattern == expected
-    # A well-formed operation is the only one recovery does not report.
     assert bool(state.errors) is (operands != ([1, 2], 3))
 
 
@@ -143,9 +142,6 @@ def test_valid_native_numeric_encodings_remain_accepted(state, value):
 
 
 def test_both_dispatch_routes_read_one_operation_table(text_pdf_bytes: bytes) -> None:
-    # execute_operation and the stream executor used to resolve overrides each
-    # in their own way; an override for an operator the defaults do not know
-    # has to be recognised by the executor's lexer as well as called.
     from core_pdf import PdfDocument
     from core_pdf_spec.s_07_syntax.stream import PdfStream
 

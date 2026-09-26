@@ -1,12 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Cubic bezier flattening for Type 2 charstring outlines (_type2.pyx).
-
-_type2 flattens each curve through sample_times_c; cubic_sample_times returns
-the same times as a tuple. The extrema match
-core_adobe_fonts.cff.charstrings.cubic_extrema_times exactly. The recursion
-carries eight doubles instead of four coordinate tuples, which is the whole
-point: no Python object touches the inner loop.
-"""
 
 from libc.math cimport sqrt, fabs
 
@@ -58,9 +50,6 @@ cdef void extrema(double p0, double p1, double p2, double p3,
 cdef void rec(double x0, double y0, double x1, double y1, double x2, double y2,
               double x3, double y3, double t0, double t1, int depth,
               double* buf, int* count, int capacity) noexcept nogil:
-    # Depth is capped, so leaves <= 2**CUBIC_MAX_DEPTH and the buffer is
-    # provably large enough. The guard is still here because this runs with
-    # boundscheck off: a miscount would corrupt memory, not raise.
     if count[0] >= capacity:
         return
     if depth >= CUBIC_MAX_DEPTH or flat(x0,y0,x1,y1,x2,y2,x3,y3):
@@ -79,13 +68,6 @@ cdef void rec(double x0, double y0, double x1, double y1, double x2, double y2,
 cdef int sample_times_c(double x0, double y0, double x1, double y1,
                         double x2, double y2, double x3, double y3,
                         double* out) noexcept nogil:
-    """Fill `out` with the sorted, de-duplicated sample times. Returns the count.
-
-    `out` must hold CUBIC_SAMPLE_CAPACITY doubles. This is what
-    cubic_sample_times returns as a tuple, and what _type2 consumes directly;
-    the sort-then-drop-neighbours is the C spelling of sorted(set(...)), which
-    agrees for these values because none of them can be NaN.
-    """
     cdef double ex[2]
     cdef int count = 0, n = 0, i, j
     cdef double key
@@ -97,8 +79,6 @@ cdef int sample_times_c(double x0, double y0, double x1, double y1,
     for i in range(n):
         out[count] = ex[i]; count += 1
     rec(x0,y0,x1,y1,x2,y2,x3,y3, 0.0, 1.0, 0, out, &count, CUBIC_SAMPLE_CAPACITY)
-    # Insertion sort: the count is a handful for a typical glyph curve, and it
-    # avoids a qsort callback in the inner loop.
     for i in range(1, count):
         key = out[i]
         j = i - 1

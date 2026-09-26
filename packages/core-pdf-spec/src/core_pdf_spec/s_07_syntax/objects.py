@@ -152,10 +152,6 @@ class PdfObjectStream:
 
 
 def stream_object_number(reference: int | PdfReference) -> int | None:
-    """The object number `reference` names, or None for a nonzero generation.
-
-    Objects in an object stream have generation 0 (ISO 32000-2 7.5.7).
-    """
     object_number = reference.object_number if isinstance(reference, PdfReference) else reference
     if object_number < 0:
         raise ValueError("invalid object number")

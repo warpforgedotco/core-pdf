@@ -545,8 +545,6 @@ class ImageRecord(DrawingRecord):
         assert isinstance(other, ImageRecord)
         return self.data == other.data and self.image_metadata == other.image_metadata
 
-    # The whole tuple rather than the drawing's hash extended: hash values stay
-    # what they were.
     def __hash__(self) -> int:
         return hash(
             (

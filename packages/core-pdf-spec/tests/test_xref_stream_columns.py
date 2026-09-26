@@ -1,5 +1,3 @@
-"""Xref stream fields read a column at a time decode as row by row (ISO 32000-2 7.5.8.3)."""
-
 import random
 
 import pytest

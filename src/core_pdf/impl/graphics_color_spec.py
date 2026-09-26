@@ -101,8 +101,6 @@ def raw_color_space_paints(value: object) -> bool:
         seen.add(marker)
         kind = recover_pdf_name(value[0])
         names: tuple[str, ...]
-        # the tag is decoded rather than literal, so it stays in the guard; the
-        # pattern carries the arity each family requires
         match value:
             case [_, base, _, _] if kind == "Indexed":
                 value = base

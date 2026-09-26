@@ -17,8 +17,8 @@ def decrypt_type1(data: bytes, key: int) -> bytes:
     return bytes(output)
 
 
-def decode_eexec_payload(data: bytes, length1: int | None) -> bytes:
-    if length1 is not None:
+def eexec_ciphertext(data: bytes, length1: int | None, *, tolerant: bool = False) -> bytes:
+    if length1 is not None and (not tolerant or 0 < length1 < len(data)):
         if not 0 < length1 < len(data):
             raise ValueError("invalid Type 1 Length1")
         encrypted = data[length1:]
@@ -27,27 +27,37 @@ def decode_eexec_payload(data: bytes, length1: int | None) -> bytes:
         if marker < 0:
             raise ValueError("Type 1 eexec section is missing")
         encrypted = data[marker + len(b"currentfile eexec") :].lstrip()
-    sample = encrypted[:4]
+    sample = encrypted[: 512 if tolerant else 4]
     if sample and all(byte in HEX_BYTES for byte in sample):
         compact = bytes(byte for byte in encrypted if byte not in b" \t\r\n")
         if len(compact) % 2:
-            raise ValueError("odd Type 1 hexadecimal eexec payload")
+            if not tolerant:
+                raise ValueError("odd Type 1 hexadecimal eexec payload")
+            compact = compact[:-1]
         try:
             encrypted = bytes.fromhex(compact.decode("ascii"))
         except ValueError as exc:
             raise ValueError("invalid hexadecimal Type 1 eexec section") from exc
-    decrypted = decrypt_type1(encrypted, 55665)
+    return encrypted
+
+
+def decode_eexec_payload(data: bytes, length1: int | None) -> bytes:
+    decrypted = decrypt_type1(eexec_ciphertext(data, length1), 55665)
     if len(decrypted) < 4:
         raise ValueError("truncated Type 1 eexec section")
     return decrypted[4:]
 
 
-def binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> Iterator[tuple[bytes, bytes]]:
+def binary_entries(
+    data: bytes, pattern: re.Pattern[bytes], *, skip_truncated: bool = False
+) -> Iterator[tuple[bytes, bytes]]:
     for match in pattern.finditer(data):
         length = int(match.group(2))
         start = match.end()
         end = start + length
         if length < 0 or end > len(data):
+            if skip_truncated:
+                continue
             raise ValueError("truncated Type 1 binary entry")
         yield match.group(1), data[start:end]
 
@@ -68,10 +78,6 @@ TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+
 def parse_type1_font_program_encoding(
     font_program: bytes | memoryview, *, skip_out_of_range: bool = False
 ) -> dict[int, str]:
-    """The `dup code /name put` entries before eexec.
-
-    A code above 255 raises, or with `skip_out_of_range` is left out.
-    """
     data = bytes(font_program)
     eexec_pos = data.find(b"currentfile eexec")
     if eexec_pos >= 0:
@@ -91,6 +97,7 @@ def parse_type1_font_program_encoding(
 __all__ = [
     "decrypt_type1",
     "decode_eexec_payload",
+    "eexec_ciphertext",
     "binary_entries",
     "decode_charstring",
     "TYPE1_ENCODING_ENTRY_RE",

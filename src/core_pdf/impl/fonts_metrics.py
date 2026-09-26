@@ -9,7 +9,7 @@ from typing import Any
 from core_adobe_fonts.afm.core14 import FONT_DATA as PDF_FONT_DATA
 from core_adobe_fonts.afm.core14 import Core14FontMetrics
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
-from core_pdf.impl.fonts_widths import get_descendant
+from core_pdf.impl.fonts_widths import recover_descendant
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, require_pdf_number
 from core_pdf_spec.s_09_fonts.metrics import standard_14_widths as pdf_standard_14_widths
 
@@ -44,7 +44,7 @@ def parse_font_metrics(
                 bbox_ascent = parse_float_strict(font_bbox[3], "invalid Type3 FontBBox")
                 descent, ascent = bbox_descent, bbox_ascent
     if subtype == "Type0":
-        descendant = get_descendant(font_dict)
+        descendant = recover_descendant(font_dict)
         if isinstance(descendant, dict):
             desc_descriptor = descendant.get("FontDescriptor")
             descriptor = desc_descriptor or descriptor

@@ -46,7 +46,6 @@ class CMapDecoder:
     code_space_ranges_by_length: dict[int, tuple[tuple[bytes, bytes], ...]]
     default_to_identity: bool
     wmode: int
-    # The deepest usecmap chain a subclass accepts; None leaves it unbounded.
     max_inheritance_depth: ClassVar[int | None] = None
 
     __slots__ = (
@@ -248,7 +247,6 @@ class CMapDecoder:
                     )
 
     def reject_mapping(self, reason: str, cause: BaseException | None = None) -> None:
-        """Refuse one malformed mapping; returning instead skips it (or its odd operands)."""
         raise ValueError(reason) from cause
 
     def parse_char_block(
@@ -446,11 +444,6 @@ def mapped_code(
     ranges_by_lead_byte: dict[int, dict[int, tuple[CIDRange, ...]]]
     | dict[int, dict[int, tuple[NotdefRange, ...]]],
 ) -> int | None:
-    """The CID a single code or a range maps code to, or None.
-
-    decode_entries calls this directly rather than through mapped_cid and
-    mapped_notdef, which would add a call per code to its loop.
-    """
     cid = mappings.get(code)
     if cid is not None:
         return cid
@@ -459,8 +452,6 @@ def mapped_code(
     by_lead_byte = ranges_by_lead_byte.get(len(code))
     if by_lead_byte is None:
         return None
-    # code_in_range, not code_range.contains: one call per range scanned
-    # rather than two, which pays for cid_for's call on the one that matches.
     for code_range in by_lead_byte.get(code[0], ()):
         if code_in_range(code, code_range.start, code_range.end):
             return code_range.cid_for(code)

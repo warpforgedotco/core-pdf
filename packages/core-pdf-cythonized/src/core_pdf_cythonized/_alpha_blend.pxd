@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Normal-mode compositing of a quantized coverage into RGBA (see _blend.pyx
-# for why it is float32 throughout) and a group plane's per-element update
-# (see _source_plane.pyx for numpy's promotion it follows). Shared so the
-# fused glyph fill in _coverage.pyx is these same expressions, not a copy.
 
 from libc.math cimport rintf
 
@@ -10,7 +6,6 @@ from core_pdf_cythonized._byte_clamp cimport float_to_byte
 
 
 cdef inline unsigned char opaque_channel(float value) noexcept nogil:
-    # blend_one's result for a channel when sa == 1: rintf((v * 1 + d * 0) / 1).
     return float_to_byte(rintf(value))
 
 
@@ -44,7 +39,6 @@ cdef inline void blend_one(
 
 
 cdef inline float accumulate_plane(float previous, unsigned char coverage, double scale) noexcept nogil:
-    # plane = plane + (1 - plane) * (coverage / 255.0 * scale), as numpy does it.
     cdef float ONE = 1.0
     cdef double SCALE = 255.0
     cdef float remaining = ONE - previous

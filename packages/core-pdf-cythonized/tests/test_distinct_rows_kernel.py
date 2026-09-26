@@ -1,11 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Distinct uint16 rows and the uint8 scatter back.
-
-No golden vectors here: nothing is computed on colour values. The contract
-is structural -- the distinct rows, indexed by the returned inverse, are the
-input exactly, in first-seen order -- and is checked directly.
-"""
 
 import numpy
 import pytest

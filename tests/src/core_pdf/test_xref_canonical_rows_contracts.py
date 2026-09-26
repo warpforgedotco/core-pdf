@@ -1,5 +1,3 @@
-"""Canonical xref rows read at once read as the per-row parse reads them."""
-
 import pytest
 
 from core_pdf.impl import recovery_xref as xref

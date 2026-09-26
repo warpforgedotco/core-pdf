@@ -7,6 +7,7 @@ import re
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from collections.abc import Iterable
+from itertools import chain
 from typing import Any
 
 import numpy
@@ -29,6 +30,7 @@ from core_pdf.impl.geometry import (
     rect_tuple,
 )
 from core_pdf.impl.glyphs import (
+    GlyphClusterLike,
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
@@ -83,8 +85,6 @@ def discard_duplicate_layer_runs(
     primary_geometry = numpy.asarray(
         [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs], dtype=numpy.float64
     )
-    # Primaries sorted by left edge: only a prefix of them can start left of a
-    # candidate's right edge, so each candidate is tested against that prefix.
     by_left = numpy.argsort(primary_geometry[:, 0], kind="stable")
     sorted_geometry = primary_geometry[by_left]
     sorted_left = sorted_geometry[:, 0]
@@ -109,7 +109,6 @@ def discard_duplicate_layer_runs(
                 & (prefix[:, 1] < run.y1)
                 & (prefix[:, 3] > run.y0)
             )
-            # Back in primary order, as the text below is joined in it.
             nearby = numpy.sort(by_left[: len(prefix)][intersects])
             local_text = " ".join(primary_text[int(position)] for position in nearby)
             candidate_text = collapse_ws(run.text)
@@ -218,9 +217,8 @@ def apply_structure_actual_text(
     if structure is None:
         return runs
     replacements: dict[int, TextRun] = {}
+    replacement_clusters: dict[int, list[tuple[GlyphClusterLike, ...]]] = {}
     output: list[TextRun] = []
-    # The owner is a walk up from the MCID's element, and a page's runs share
-    # few MCIDs, so each is walked once.
     owners: dict[int, tuple[int, str] | None] = {}
     for run in runs:
         mcid = run_mcid(run)
@@ -247,13 +245,17 @@ def apply_structure_actual_text(
                 glyph_clusters=run.glyph_clusters,
             )
             replacements[marker] = replacement
+            replacement_clusters[marker] = [run.glyph_clusters]
             output.append(replacement)
             continue
         replacement.absorb_extent(run)
         replacement.union_ink_bbox(run.ink_bbox)
-        replacement.glyph_clusters += run.glyph_clusters
+        replacement_clusters[marker].append(run.glyph_clusters)
         replacement.visible = replacement.visible or run.visible
         replacement.inside_active_clip = replacement.inside_active_clip or run.inside_active_clip
+    for marker, clusters in replacement_clusters.items():
+        if len(clusters) > 1:
+            replacements[marker].glyph_clusters = tuple(chain.from_iterable(clusters))
     return tuple(output)
 
 
@@ -266,24 +268,16 @@ def glyph_evidence_fields(
     unknown = 0
     unsupported = 0
     low_confidence = 0
-    semantic_characters = 0
     glyph_count = 0
     for glyph_text, unicode_source, confidence in glyph_fields:
         if not glyph_text or glyph_text.isspace():
             continue
         glyph_count += 1
-        text = glyph_text
         semantics = glyph_unicode_semantics(glyph_text, unicode_source)
         if semantics is GlyphUnicodeSemantics.AUTHORITATIVE:
             authoritative += 1
-            semantic_characters += (
-                1 if len(text) == 1 else sum(not character.isspace() for character in text)
-            )
         elif semantics is GlyphUnicodeSemantics.HEURISTIC:
             heuristic += 1
-            semantic_characters += (
-                1 if len(text) == 1 else sum(not character.isspace() for character in text)
-            )
         elif semantics is GlyphUnicodeSemantics.UNSUPPORTED:
             unsupported += 1
         else:
@@ -297,7 +291,6 @@ def glyph_evidence_fields(
     )
     return GlyphEvidence(
         glyph_count=glyph_count,
-        semantic_characters=semantic_characters,
         authoritative_glyphs=authoritative,
         heuristic_glyphs=heuristic,
         unknown_glyphs=unknown,
@@ -615,8 +608,6 @@ def capture_page(
     annotations: tuple[Any, ...] | None = None,
     options: CaptureOptions = EXTRACTION_CAPTURE,
 ) -> PageAnalysis:
-    # Extraction never rasterizes, so it defaults to EXTRACTION_CAPTURE. OCR
-    # asks for the render payload back, because it renders the page it extracted.
     capture_options: dict[str, object] = {"options": options}
     if hidden_layers is not None:
         capture_options["hidden_layers"] = hidden_layers

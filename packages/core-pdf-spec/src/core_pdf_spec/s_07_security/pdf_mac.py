@@ -97,8 +97,6 @@ def extract_standalone_token(
         raise ValueError("invalid PDF MAC ByteRange")
     if any(type(value) is not int or value < 0 for value in raw_byte_range):
         raise ValueError("invalid PDF MAC ByteRange")
-    # The loop above has already rejected anything that is not a non-negative
-    # int, so the annotation records what was checked rather than asserting it.
     byte_range: tuple[int, int, int, int] = tuple(raw_byte_range)  # type: ignore[assignment]
     first_start, first_length, second_start, second_length = byte_range
 

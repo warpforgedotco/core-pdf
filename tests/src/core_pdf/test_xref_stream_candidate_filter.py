@@ -29,10 +29,6 @@ def padded_xref_dictionary(entries: int) -> bytes:
 
 @pytest.mark.parametrize("entries", [0, 700])
 def test_xref_stream_survives_a_dictionary_longer_than_any_fixed_window(entries):
-    # Nothing bounds how much dictionary may precede Type /XRef: a long Index
-    # array pushes it arbitrarily deep into the object. A candidate filter that
-    # only inspected a fixed prefix would skip the stream and lose the trailer
-    # metadata it carries.
     dictionary = padded_xref_dictionary(entries)
     data, xref_offset = build_document(dictionary)
     with PdfDocument(data) as document:
@@ -48,8 +44,6 @@ def test_object_without_any_marker_is_ruled_out_without_parsing():
 
 
 def test_hex_escaped_name_falls_through_to_parsing():
-    # A name written with a # escape would not match the plain literals, so a
-    # span carrying one must be parsed rather than ruled out.
     data, xref_offset = build_document(
         b"<< /Type /XRe#66 /W [1 2 1] /Size 4 /Root 1 0 R /Length 0 >>"
     )

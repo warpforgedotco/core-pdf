@@ -31,7 +31,6 @@ def expected_coverage(clipped: bool) -> np.ndarray:
 def test_line_routes_preserve_pixels_alpha_and_shape(
     monkeypatch: pytest.MonkeyPatch, alpha: int, clipped: bool, reverse: bool
 ) -> None:
-    # fill_line is butt-capped: a stroke's caps are fill_cap's.
     results = []
     coverage = expected_coverage(clipped)
     for route in ("scalar", "vector", "blend"):

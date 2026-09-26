@@ -1,5 +1,3 @@
-"""A clip's row spans, swept, are the spans of testing every edge on every row."""
-
 import math
 import random
 
@@ -32,8 +30,6 @@ def every_edge_row(
 
 
 def polygon_edges(rng: random.Random, count: int) -> list[Edge]:
-    # Coordinates on a coarse grid, so rows land on vertices and edges share
-    # tops, and horizontal edges turn up.
     points = [(rng.randint(0, 16) * 2.5, rng.randint(0, 16) * 2.5) for _ in range(count)]
     return [(*points[i], *points[(i + 1) % count]) for i in range(count)]
 

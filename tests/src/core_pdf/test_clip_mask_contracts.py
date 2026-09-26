@@ -1,5 +1,3 @@
-"""A clip's pixel mask marks exactly pixel_in_clip's pixels, and its row caches are released."""
-
 import math
 import random
 

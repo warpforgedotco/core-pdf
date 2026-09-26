@@ -900,11 +900,6 @@ def decode_from_samples(
     samples: tuple[SeedSample, ...],
     primary_mapping: Mapping[GlyphSignature, str] | None = None,
 ) -> StrokedTextDecode:
-    """Decode the profile with the alphabet the seed samples agree on.
-
-    A primary mapping, learned from the trusted seeds alone, wins over what
-    the samples as a whole voted for the same signature.
-    """
     if not samples:
         return StrokedTextDecode()
     mapping = consensus_mapping(samples)

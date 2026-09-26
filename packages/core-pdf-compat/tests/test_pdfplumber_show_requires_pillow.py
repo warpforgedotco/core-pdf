@@ -8,7 +8,6 @@ from core_pdf_compat import pdfplumber as compat
 
 @pytest.fixture
 def pillow_absent(monkeypatch):
-    """Make ``from PIL import Image`` raise, as it would without the extra installed."""
     monkeypatch.setitem(sys.modules, "PIL", None)
     monkeypatch.delitem(sys.modules, "PIL.Image", raising=False)
 

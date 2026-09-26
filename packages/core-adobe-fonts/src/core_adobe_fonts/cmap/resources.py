@@ -13,11 +13,6 @@ RESOURCE_PACKAGE = "core_adobe_fonts.cmap.data"
 
 @lru_cache(maxsize=64)
 def resolve_cmap_resource(name: str) -> bytes | None:
-    """The packaged CMap called name, or None.
-
-    Cached: a CID font's CMap and every CMap it names with usecmap are read
-    again for each font that uses them, and the packaged bytes never change.
-    """
     if not name or name in {".", ".."} or "/" in name or "\\" in name:
         return None
     deprecated: Traversable | None = None
@@ -32,14 +27,6 @@ def resolve_cmap_resource(name: str) -> bytes | None:
 
 @cache
 def cmap_directories() -> tuple[Traversable, ...]:
-    """Every directory named CMap under the packaged cmaps, in search order.
-
-    The walk listed the whole resource tree on every lookup -- 1.5 ms each,
-    and a CID font looks up several. The packaged tree does not change, so
-    the directories are found once, in the order the walk visited them: a
-    name resolves to the first non-deprecated file among them, else to the
-    last deprecated one.
-    """
     root = resources.files(RESOURCE_PACKAGE).joinpath("cmaps")
     if not root.is_dir():
         return ()

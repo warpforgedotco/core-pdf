@@ -1,18 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Elementary compositing: agreement with the numpy branch it replaced.
-
-elementary_composite_golden.pkl.gz holds every argument of the opaque-normal
-branch on three corpus pages -- the destination before the call, the rendered
-group, the coverage plane -- with the destination afterwards and the effective
-alpha the original returned.
-
-The destination at the real call site is a row slice of the page buffer and so
-is not contiguous. That is the one thing a port here can get wrong silently:
-reshaping or ravelling such an array gives back a copy, the kernel writes into
-the copy, and the page comes out unchanged. test_writes_through_a_strided_view
-is the guard.
-"""
 
 import gzip
 import pickle
@@ -53,7 +40,6 @@ def test_writes_through_a_strided_view():
     assert not view.flags["C_CONTIGUOUS"]
     composite_elementary_normal(view, case["rendered"], case["source_alpha"])
     assert numpy.array_equal(page[3 : 3 + height, 4 : 4 + width], case["after"])
-    # Nothing outside the window moved.
     assert not page[:3].any()
     assert not page[:, :4].any()
 
@@ -72,7 +58,6 @@ def test_partial_coverage_copies_only_the_covered_pixels():
     rendered = numpy.full((1, 3, 4), 200, dtype=numpy.uint8)
     alpha = numpy.array([[0.0, 0.5, 1.0]], dtype=numpy.float32)
     effective = composite_elementary_normal(destination, rendered, alpha)
-    # 0.5 * 255 is 127.5, and rint rounds halves to even.
     assert effective.tolist() == [[0, 128, 255]]
     assert destination[0, 0].tolist() == [7, 7, 7, 7]
     assert destination[0, 1].tolist() == [200, 200, 200, 200]
@@ -85,7 +70,6 @@ def test_coverage_outside_the_unit_interval_is_rejected():
         alpha = numpy.array([[0.5, bad]], dtype=numpy.float32)
         with pytest.raises(ValueError, match=r"\[0, 1\]"):
             composite_elementary_normal(destination, rendered, alpha)
-        # The domain check runs to completion before any pixel is written.
         assert not destination.any()
 
 

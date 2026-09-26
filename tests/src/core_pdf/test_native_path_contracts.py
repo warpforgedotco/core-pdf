@@ -1,5 +1,3 @@
-"""Path operators the content scanner applies itself capture what their handlers did."""
-
 import re
 from copy import replace
 from typing import Any

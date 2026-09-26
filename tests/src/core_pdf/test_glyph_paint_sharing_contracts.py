@@ -1,5 +1,3 @@
-"""Text shown with nothing its paint reads changed in between shares one paint."""
-
 import re
 from typing import Any
 
@@ -38,8 +36,6 @@ def test_a_paint_is_built_again_only_when_its_inputs_may_have_changed(
     monkeypatch.setattr(TextState, "glyph_paint", counted)
     glyphs = captured_glyphs()
     assert len(glyphs) == 18
-    # The first TJ, the Td, Tc and Tj after it share; rg drops the paint, and
-    # so do q, w and Q -- even though Q restores what the first paint read.
     assert [(paint.fill, paint.line_width) for paint in built] == [
         ((1.0, 0.0, 0.0), 2.0),
         ((0.0, 1.0, 0.0), 2.0),

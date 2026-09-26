@@ -44,8 +44,6 @@ def test_default_page_pixels_and_harmless_segments(flags: int, expected: bytes) 
 
 
 def test_arithmetic_regions_are_unsupported_not_blank() -> None:
-    # The MQ decoder lives in core-pdf-cythonized, which spec cannot depend on
-    # and stay pure Python; core decodes these through its decoder_type.
     encoded = page_info() + generic_region(False, bytes.fromhex("ff ac")) + segment(3, 49, b"")
     with pytest.raises(FilterUnsupportedError, match="arithmetic region") as error:
         decode_jbig2(encoded, None)

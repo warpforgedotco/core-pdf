@@ -12,6 +12,7 @@ from core_pdf.impl.array_views import readonly
 from core_pdf.impl.graphics_color import (
     convert_cmyk,
     convert_image_data,
+    image_dimension,
 )
 from core_pdf.impl.graphics_color_spec import parse_color_space, raw_color_space_paints
 from core_pdf.impl.graphics_decode_compat import (
@@ -207,8 +208,8 @@ class PreparedImage(Record):
 
 
 def decode_mask(source: ImageSource) -> DecodedRaster | None:
-    width = parse_int(source.dictionary.get("Width"), 0, python_syntax=True)
-    height = parse_int(source.dictionary.get("Height"), 0, python_syntax=True)
+    width = image_dimension(source.dictionary, "Width")
+    height = image_dimension(source.dictionary, "Height")
     if width <= 0 or height <= 0:
         return None
     try:
@@ -251,11 +252,11 @@ def decode_matte(
     source: ImageSource, soft_mask: SoftMask
 ) -> tuple[tuple[float, ...], numpy.ndarray[Any, Any]]:
     dictionary = soft_mask.dictionary
-    width = parse_int(dictionary.get("Width"), 0, python_syntax=True)
-    height = parse_int(dictionary.get("Height"), 0, python_syntax=True)
+    width = image_dimension(dictionary, "Width")
+    height = image_dimension(dictionary, "Height")
     if (width, height) != (
-        parse_int(source.dictionary.get("Width"), 0, python_syntax=True),
-        parse_int(source.dictionary.get("Height"), 0, python_syntax=True),
+        image_dimension(source.dictionary, "Width"),
+        image_dimension(source.dictionary, "Height"),
     ):
         raise ValueError("image matte requires matching soft mask dimensions")
     decoded = decode_image_samples(soft_mask.raw, dictionary, size=(width, height))
@@ -294,8 +295,6 @@ def apply_soft_mask(raster: ImageRaster, mask: ImageRaster) -> ImageRaster:
         (numpy.arange(raster.width) * mask.width) // raster.width,
     )
     channels = raster.channels - int(raster.has_alpha)
-    # The mask sampled at those rows and columns, after the raster's colour
-    # channels, written in one pass.
     array = interleave_soft_mask(
         raster.array,
         channels,
@@ -406,16 +405,6 @@ def canonical_image_array(
 
 
 class FilterChainOutput:
-    """An image stream's filter chain output, decoded at most once.
-
-    The native paths and the fallbacks after them all may want the chain's
-    bytes. A JPX image the native path declines has already decoded the
-    codestream the chain's JPXDecode step would decode to the same array,
-    so it leaves its bytes here instead of the chain decoding it again; a
-    flate image whose size the native path rejects leaves its bytes too. A
-    decode that raises is not remembered, and raises again when asked.
-    """
-
     __slots__ = ("raw", "spec", "output")
 
     def __init__(self, raw: bytes | memoryview, spec: StreamDecodeSpec) -> None:
@@ -436,10 +425,9 @@ def decode_image_samples(
     *,
     size: tuple[int, int] | None = None,
 ) -> bytes | memoryview | DecodedImage | None:
-    """The image's samples; `size` is its (Width, Height) if the caller has read them."""
     if size is None:
-        width = parse_int(dictionary.get("Width"), 0, python_syntax=True)
-        height = parse_int(dictionary.get("Height"), 0, python_syntax=True)
+        width = image_dimension(dictionary, "Width")
+        height = image_dimension(dictionary, "Height")
     else:
         width, height = size
     if width <= 0 or height <= 0:
@@ -492,8 +480,8 @@ def decode_pdf_image(
         return None
     with suppress(ValueError):
         rendering = image_color_rendering(dictionary, rendering)
-    width = parse_int(dictionary.get("Width"), 0, python_syntax=True)
-    height = parse_int(dictionary.get("Height"), 0, python_syntax=True)
+    width = image_dimension(dictionary, "Width")
+    height = image_dimension(dictionary, "Height")
     if width <= 0 or height <= 0:
         return None
     samples = decode_image_samples(raw, dictionary, size=(width, height))
@@ -754,15 +742,6 @@ def decode_stream_image_data(
     dictionary: object,
     chain: FilterChainOutput,
 ) -> DecodedImage | None:
-    """The image natively decoded, or None.
-
-    A JPX image that decodes to eight bits a sample in a color space given
-    as an array or dictionary is declined here, and the caller then takes
-    the whole filter chain's output, whose JPXDecode step decodes the same
-    codestream to the same array -- preserve_precision only keeps a
-    sixteen-bit one. Its bytes go to `chain`, so a large image is not
-    decoded twice.
-    """
     stream_spec = chain.spec
     if stream_spec.steps and stream_spec.steps[-1].name == "JPXDecode":
         try:

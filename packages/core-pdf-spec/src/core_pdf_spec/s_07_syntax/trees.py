@@ -15,13 +15,6 @@ TreeKeyT = TypeVar("TreeKeyT")
 
 
 class MalformedTreeNode(str):
-    """The message for a tree node that is not a dictionary, and the node.
-
-    A str, so every on_malformed callback takes it as the message it raises
-    or skips; one that wants to treat some nodes differently -- a reader
-    that reads a null kid as an empty subtree -- looks at `node`.
-    """
-
     node: object
 
     def __new__(cls, message: str, node: object) -> MalformedTreeNode:
@@ -34,7 +27,6 @@ MalformedFn = Callable[[str], None]
 
 
 def raise_malformed(message: str) -> None:
-    """The strict response to a malformed tree: ValueError(message)."""
     raise ValueError(str(message))
 
 
@@ -51,17 +43,6 @@ def iter_tree_items[TreeKeyT](
     on_malformed: MalformedFn = raise_malformed,
     on_malformed_entry: MalformedFn | None = None,
 ) -> Iterator[tuple[TreeKeyT, object]]:
-    """The key and value of each entry of the tree at node, in key order.
-
-    A malformed node -- a cycle, a non-dictionary, a Nums, Names or Kids
-    entry that is not an array, or one past max_depth -- is reported to
-    on_malformed, and a malformed entry -- an odd-length array or an
-    undecodable key -- to on_malformed_entry, which defaults to it. The
-    default raises ValueError; a reader's callback that returns instead has
-    the node skipped, the entry skipped, or the odd array's last key
-    dropped. A null root is an empty tree; any other null node is malformed,
-    reported as a MalformedTreeNode whose node is None.
-    """
     entry_malformed = on_malformed if on_malformed_entry is None else on_malformed_entry
     seen: dict[int, PdfDict] = {}
     references: set[tuple[int, int]] = set()

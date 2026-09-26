@@ -34,15 +34,6 @@ from ._layout import (
 
 
 class ProjectionPolicy(Record):
-    """How strictly a page is laid out: as pdfminer does, or as Unstructured calls it.
-
-    strict_resources fails a page whose resources pdfminer rejects, and
-    skips the glyphs of a Type0 font whose embedded CMap it cannot use.
-    Unstructured's fast strategy reads such pages anyway, and when the page
-    tree walk pdfminer takes fails it falls back to the document's pages;
-    tolerant_pages says so.
-    """
-
     __slots__ = ("strict_resources", "tolerant_pages")
 
     strict_resources: bool
@@ -176,8 +167,6 @@ def project_page(
         tuple(annotation.rect) for annotation in page_annotations if annotation.rect is not None
     )
     vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
-    # The glyphs of a text operation share one provenance tuple, and the dict
-    # made from it is only read, so each is made once per page.
     provenance_dicts: dict[int, tuple[object, dict[str, Any]]] = {}
     for glyph_index, glyph in enumerate(projected_glyphs):
         if policy.strict_resources and pdfminer_embedded_cmap_is_unusable(glyph):

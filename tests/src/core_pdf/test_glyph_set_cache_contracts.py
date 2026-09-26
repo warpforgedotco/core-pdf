@@ -1,5 +1,3 @@
-"""A font's glyph set is built once per thread, not once per glyph drawn."""
-
 import threading
 
 from core_pdf.impl.fonts_font_program import glyph_set_of
@@ -9,7 +7,7 @@ class CountingFont:
     def __init__(self) -> None:
         self.built: list[object] = []
 
-    def getGlyphSet(self) -> object:  # noqa: N802 -- the fontTools name
+    def getGlyphSet(self) -> object:  # noqa: N802
         glyph_set = object()
         self.built.append(glyph_set)
         return glyph_set
@@ -22,7 +20,6 @@ def test_a_thread_reuses_its_glyph_set() -> None:
 
 
 def test_another_thread_gets_its_own() -> None:
-    # Drawing tracks composite depth on the set, so threads must not share one.
     font = CountingFont()
     here = glyph_set_of(font)
     there: list[object] = []

@@ -1,41 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Normal-mode alpha compositing (core_pdf.impl.render_blend).
-
-The numpy original ran about fifteen array operations over a buffer averaging
-thirty-eight elements, 26,315 times on a corpus page. All of the cost was
-per-call overhead rather than arithmetic.
-
-Two things keep this bit-exact with the original:
-
-* The arithmetic is float32, not double. numpy promoted the uint8 buffers to
-  float32 and did every step there, so this uses C float and never widens.
-  The constants below are typed rather than written inline for that reason: a
-  bare 1.0 is a double in C, which would promote each expression to double,
-  compute there and narrow on assignment -- different results. Cython has no
-  float-literal suffix, so named float constants are how this is expressed.
-  Building with -ffp-contract=off (see setup.py) stops the compiler folding
-  `sa + da * (1 - sa)` into an FMA, which would round differently too.
-* Channel three is written last. The original assigns the three colour
-  channels into its float scratch before overwriting alpha, so every channel
-  is computed from the original destination alpha.
-
-Pixels where alpha is zero are left untouched, matching the `where=alpha > 0`
-mask on the original's final copyto.
-
-A pixel painted at full coverage with an opaque colour takes a shortcut: there
-sa is exactly 1, the destination's weight is exactly 0 and the output alpha
-exactly 1, so blend_one can only produce the clamped source colour and 255.
-Those bytes are worked out once, by the same rintf and clamp, and stored. The
-interior of a filled rectangle is all such pixels, and the four divisions per
-pixel were most of the cost once callers passed whole rectangles (70,000
-pixels on average on test_3450) rather than the short spans this was built
-for.
-
-Both ranks are handled separately rather than reshaped to one flat loop.
-Every caller passes a slice of a larger raster -- a row, or a rectangle --
-so the buffers are not contiguous, and reshaping one would silently copy and
-throw the in-place write away.
-"""
 
 from core_pdf_cythonized._alpha_blend cimport blend_one, opaque_channel
 
@@ -55,7 +18,6 @@ def blend_normal_alpha_array_numpy(target, rgba, alpha):
     cdef unsigned char[:] row_alpha
     cdef Py_ssize_t i, j, rows, cols
     cdef int raw
-    # Coverage at or above this is opaque; 256 when the colour itself is not.
     cdef int opaque_from = 255 if cap >= 255 else 256
     cdef unsigned char opaque_red = opaque_channel(red)
     cdef unsigned char opaque_green = opaque_channel(green)

@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Stroke lines as arrays, and flattened paths whose points wait.
-
-A painted path's stroke lines are rows of a CapturedLines table rather than
-CapturedLine objects, and its point lists are built only when something reads
-them. These pin what the rest of the code relies on: the table still reads as
-a sequence of CapturedLine, programs cut and merge it correctly, and a deferred
-path answers exactly as the path built eagerly would.
-"""
 
 import math
 import pickle
@@ -47,7 +39,6 @@ def path_of(*commands: tuple[str, tuple[float, ...]]) -> PdfPath:
 
 
 def eager(path: CapturedPath) -> CapturedPath:
-    """The same path with its subpaths built, and the deferral gone."""
     return CapturedPath([CapturedSubpath(list(s.points), closed=s.closed) for s in path.subpaths])
 
 
@@ -81,7 +72,6 @@ def test_lines_compare_and_hash_by_value_and_survive_pickling() -> None:
 def test_programs_accept_lines_built_by_hand_and_merge_them() -> None:
     body = CapturedProgram(lines=CapturedLines([CapturedLine(0, 0, 1, 1)]))
     assert type(body.lines) is CapturedLines
-    # A plain list, as a hand-built program may pass; it is converted.
     by_hand = CapturedProgram(
         lines=[CapturedLine(2, 2, 3, 3)]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     )
@@ -119,7 +109,6 @@ def test_flattened_path_answers_box_and_segments_without_building_points() -> No
     lines = rows.since(0).array[:, :4]
     assert path.bbox() == (0.0, -3.0, 20.0, 5.0)
     assert path.has_segments()
-    # Neither answer built the subpaths: the slot is still unset.
     assert path._deferred is not None
     assert lines.tolist() == [[0.0, 0.0, 10.0, 5.0]]
     assert [(s.points, s.closed) for s in path.subpaths] == [
@@ -131,9 +120,6 @@ def test_flattened_path_answers_box_and_segments_without_building_points() -> No
 
 
 def test_a_rectangle_with_a_closing_point_is_still_a_rectangle() -> None:
-    # Glyph outlines arrive with the closing duplicate dropped, and their
-    # deferred check relies on that; a flattened path does not, so the check
-    # must not apply to it.
     source = path_of(
         ("m", (0.0, 0.0)),
         ("l", (10.0, 0.0)),

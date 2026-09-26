@@ -500,20 +500,11 @@ def test_cff_top_and_font_dictionary_matrix_defaults_and_composition(
 
 
 def test_cubic_extrema_times_returns_interior_turning_points_only() -> None:
-    """These were exercised through core's glyph pen until that pen was
-    compiled. They are published API of this package, so they are tested here
-    directly rather than incidentally through a consumer."""
-    # Monotonic in either direction: the curve never turns, so there is nothing
-    # between the endpoints to report.
     assert cubic_extrema_times(0.0, 1.0, 2.0, 3.0) == ()
     assert cubic_extrema_times(3.0, 2.0, 1.0, 0.0) == ()
-    # Symmetric hump: the cubic term cancels (-0 + 3 - 3 + 0), so this takes
-    # the linear branch, and the turning point is the middle.
     assert cubic_extrema_times(0.0, 1.0, 1.0, 0.0) == (0.5,)
-    # A genuine quadratic, one root inside the segment and one outside.
     assert cubic_extrema_times(0.0, 2.0, 0.0, -2.0) == (0.2928932188134524,)
     assert cubic_extrema_times(0.0, 5.0, 6.0, 1.0) == (0.5495097567963922,)
-    # Whatever comes back is interior and de-duplicated.
     for control in ((0.0, 2.0, 0.0, -2.0), (0.0, 5.0, 6.0, 1.0), (1.0, -4.0, 4.0, -1.0)):
         times = cubic_extrema_times(*control)
         assert all(0.0 < t < 1.0 for t in times)
@@ -526,6 +517,5 @@ def test_cubic_point_interpolates_and_hits_both_endpoints() -> None:
     assert cubic_point(p0, p1, p2, p3, 1.0) == p3
     midpoint = cubic_point(p0, p1, p2, p3, 0.5)
     assert midpoint == (5.0, 7.5)
-    # Strictly increasing in x across the sweep.
     xs = [cubic_point(p0, p1, p2, p3, t / 8)[0] for t in range(9)]
     assert xs == sorted(xs)

@@ -1,19 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Contracts for the hand-written value classes across the workspace.
-
-Every class that declares ``__fields__`` writes its own ``__init__``, ``__repr__``,
-``__eq__``, ``__hash__``, ``__replace__``, frozen guards and pickle state instead of
-having them generated. These tests exercise that boilerplate uniformly, so a mistake
-in one class cannot hide behind the classes its own package happens to exercise.
-
-Dataclasses are deliberately out of scope, which is why the discovery below keys on
-``__fields__`` rather than on being a value object. There is no hand-written
-boilerplate in one for a mistake to hide in, and checking that ``@dataclass`` emits a
-working ``__eq__`` is testing CPython. A class converted to a dataclass therefore
-leaves this suite, and that is the conversion working rather than coverage going
-missing.
-"""
 
 from __future__ import annotations
 
@@ -29,8 +15,6 @@ import pytest
 
 
 class ValueClass(Protocol):
-    """The surface every hand-written value class declares."""
-
     __fields__: ClassVar[tuple[str, ...]]
 
     def __replace__(self, /, **changes: Any) -> ValueClass: ...
@@ -72,12 +56,11 @@ EMPTY_CONTAINERS: dict[str, object] = {
 
 
 def modules() -> list[ModuleType]:
-    """Import every first-party module that can be imported in this environment."""
     modules: list[ModuleType] = []
     for root in PACKAGE_ROOTS:
         try:
             package = importlib.import_module(root)
-        except Exception:  # noqa: BLE001 - an optional extra may be absent
+        except Exception:  # noqa: BLE001
             continue
         modules.append(package)
         for info in pkgutil.walk_packages(package.__path__, f"{root}."):
@@ -85,7 +68,7 @@ def modules() -> list[ModuleType]:
                 continue
             try:
                 modules.append(importlib.import_module(info.name))
-            except Exception:  # noqa: BLE001 - an optional extra may be absent
+            except Exception:  # noqa: BLE001
                 continue
     return modules
 
@@ -122,7 +105,6 @@ def split_arguments(text: str) -> list[str]:
 
 
 def synthesize(annotation: object) -> object:
-    """Build a placeholder value for an annotation, good enough to construct with."""
     text = (annotation if isinstance(annotation, str) else str(annotation)).strip()
     if any(part.strip() == "None" for part in text.split("|")):
         return None
@@ -142,7 +124,6 @@ def synthesize(annotation: object) -> object:
 
 
 def build(cls: type[ValueClass]) -> ValueClass:
-    """Construct ``cls`` from placeholder values, leaving every default in place."""
     signature = inspect.signature(cls.__init__)
     annotations = cls.__init__.__annotations__
     args: list[object] = []
@@ -163,7 +144,7 @@ def buildable() -> dict[str, type[ValueClass]]:
     for name, cls in value_classes().items():
         try:
             build(cls)
-        except Exception:  # noqa: BLE001 - domain validation rejects placeholders
+        except Exception:  # noqa: BLE001
             continue
         buildable[name] = cls
     return buildable
@@ -182,20 +163,16 @@ def defines_eq(cls: type[ValueClass]) -> bool:
 
 
 def equal(left: object, right: object) -> bool | None:
-    """``left == right``, or ``None`` when a field does not compare to a plain bool."""
     if left is right:
         return True
     try:
         verdict = left == right
     except ValueError:
-        return None  # an array-valued field compares elementwise
+        return None
     return verdict if isinstance(verdict, bool) else None
 
 
 def test_value_classes_are_discovered() -> None:
-    # A floor against discovery quietly finding nothing, not a census: a
-    # subclass that inherits its fields and boilerplate leaves the suite, as
-    # core's FilterParams and OCR's PageAnalysis did.
     assert len(VALUE_CLASSES) > 150
 
 
@@ -220,7 +197,7 @@ def test_fields_are_readable_and_match_slots(name: str) -> None:
 def test_repr_names_the_class(name: str) -> None:
     cls = BUILDABLE[name]
     if not any("__repr__" in base.__dict__ for base in cls.__mro__[:-1]):
-        return  # the class opted out of a generated repr
+        return
     instance = build(cls)
     rendered = repr(instance)
     assert rendered.startswith(f"{type(instance).__qualname__}(")
@@ -231,7 +208,7 @@ def test_repr_names_the_class(name: str) -> None:
 def test_equality_compares_by_value_and_rejects_other_types(name: str) -> None:
     cls = BUILDABLE[name]
     instance = build(cls)
-    assert instance == instance  # noqa: PLR0124 - the identity fast path is the contract
+    assert instance == instance  # noqa: PLR0124
     if not defines_eq(cls):
         return
     twin = build(cls)
@@ -240,8 +217,6 @@ def test_equality_compares_by_value_and_rejects_other_types(name: str) -> None:
         for field in cls.__fields__
     )
     if fields_agree:
-        # Field-for-field identical instances must compare equal; when a field type
-        # compares by identity instead, the twin legitimately differs.
         assert equal(instance, twin) is not False
     assert instance.__eq__(object()) is NotImplemented
     assert instance != object()
@@ -261,7 +236,7 @@ def test_hashability_follows_mutability(name: str) -> None:
     try:
         digest = hash(instance)
     except TypeError:
-        return  # a placeholder field value is itself unhashable
+        return
     assert digest == hash(build(cls))
 
 
@@ -300,12 +275,12 @@ def test_frozen_slotted_classes_survive_pickling(name: str) -> None:
     if not is_frozen(cls) or "__getstate__" not in dir(cls):
         return
     if any(base.__dict__.get("__slots__") is None for base in cls.__mro__[:-1]):
-        return  # an unslotted base pickles through __dict__ instead
+        return
     instance = build(cls)
     try:
         restored = pickle.loads(pickle.dumps(instance))
     except pickle.PicklingError, AttributeError, TypeError:
-        return  # a placeholder field value is itself unpicklable
+        return
     assert type(restored) is cls
     for field in cls.__fields__:
         assert hasattr(restored, field) == hasattr(instance, field)

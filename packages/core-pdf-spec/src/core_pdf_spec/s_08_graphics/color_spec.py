@@ -197,7 +197,6 @@ def parse_device_n_attributes(
 
 
 def is_cmyk_process_space(space: ColorSpace) -> bool:
-    """Whether a DeviceN process space is CMYK, which reserves the CMYK colorant names."""
     return space.kind == "DeviceCMYK" or (
         space.kind == "ICCBased" and len(space.component_ranges) == 4
     )
@@ -417,9 +416,6 @@ def parse_color_space_versioned(
             return ColorSpace(kind, ranges, params)
         if kind == "ICCBased" and len(value) == 2 and isinstance(value[1], PdfStream):
             stream = value[1]
-            # Named apart from the calibrated branch's dictionary above: a
-            # stream dictionary is typed more loosely than a PdfDict, because
-            # PdfStream sits below the object types it would otherwise name.
             stream_dictionary = stream.dictionary
             count = require_pdf_integer(
                 stream_dictionary.get("N"), "invalid ICCBased channel count"

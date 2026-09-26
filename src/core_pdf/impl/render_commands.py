@@ -81,19 +81,11 @@ def transformed_outline(
 ) -> tuple[CapturedPath, Rectangle | None, numpy.ndarray[Any, Any] | None] | None:
     a, b, c, d, e, f = transform
     linear_x, linear_y = arrays.linear_columns(a, b, c, d)
-    # The kernel takes the numeric half: the translated columns, which spans
-    # survive a duplicated closing point, every edge of every survivor in one
-    # array, and the columns' bounds as numpy's min and max give them. The
-    # point lists stay in Python, because building those tuples in C measured
-    # slower than tolist() + zip() -- CPython's zip is hard to beat.
     column_x, column_y, edges, kept, dropped, bounds = translated_outline_edges(
         linear_x, linear_y, e, f, arrays.spans
     )
     if edges is None:
         return None
-    # The points stay unbuilt until something asks for them. A filled glyph
-    # never does: it needs the edges and the bounding box, both of which are
-    # already here.
     path = CapturedPath.deferred_outline(column_x, column_y, kept)
     if dropped:
         return path, path.bbox(), edges

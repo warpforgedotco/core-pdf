@@ -1,5 +1,3 @@
-"""The resolver reuses its file lexers between objects, one per reader at a time."""
-
 import re
 
 from core_pdf import PdfDocument
@@ -50,7 +48,7 @@ def test_the_pool_is_bounded_and_emptied_with_the_caches() -> None:
         for lexer in lexers:
             resolver.release_lexer(lexer)
         assert len(resolver.lexer_pool) == LEXER_POOL_LIMIT
-        assert lexers[-1].data_len == 0  # closed, not pooled
+        assert lexers[-1].data_len == 0
         resolver.detach_parsed_caches()
         assert resolver.lexer_pool == []
         assert lexers[0].data_len == 0

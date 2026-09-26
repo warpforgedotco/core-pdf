@@ -1,13 +1,4 @@
-# SPDX-FileCopyrightText: 2010 Vladimir Uryvaev <vovanius@bk.ru>
-# SPDX-FileCopyrightText: 1992-2019 KiCad Developers
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""ASCII glyph data from KiCad's generated Newstroke font table.
-
-Sources:
-- https://gitlab.com/kicad/code/kicad/-/blob/7.0.7/common/newstroke_font.cpp
-- https://gitlab.com/kicad/code/kicad/-/blob/master/common/newstroke_font.cpp
-The table is generated from the KiCad Newstroke font and retains its original license.
-"""
 
 from __future__ import annotations
 
@@ -110,9 +101,6 @@ NEWSTROKE_ASCII = (
     "F^K[KFYFY[K[",
 )
 
-# KiCad's development font reordered disconnected strokes for these glyphs
-# after the 9.0 series. Geometry is unchanged, but PDF segment order is part of
-# the deterministic matcher, so retain both encodings.
 NEWSTROKE_ASCII_ALTERNATES = {
     "#": "H]LM[M RRDL_ RS_YD RYVJV",
     "*": "JZMIRKWI ROORKUO RRFRK",

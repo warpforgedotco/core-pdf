@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""The fused glyph knockout: what a glyph's scratch group made, in one pass.
-
-core's knockout_glyph_fill copied the parent's backdrop window, zeroed two
-float32 planes, filled the glyph into them with fill_glyph_coverage and
-carried the result into the parent with composite_elementary_knockout. Both
-kernels stay in this package, each pinned by its own vectors, so the
-reference here is that composition, run over the glyph coverage golden cases
-at opaque, translucent and invisible paints, into windows of larger parent
-buffers whose surroundings must come through untouched, with and without a
-parent shape plane.
-"""
 
 import gzip
 import pickle

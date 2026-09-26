@@ -1,5 +1,3 @@
-"""A deferred path answers as its built subpaths do, without building them."""
-
 import math
 import random
 
@@ -40,7 +38,7 @@ def deferred(subpaths, flags, *, outline, built):
     else:
         path = CapturedPath.deferred_flattened(*columns, spans, None, bool(spans))
     if built:
-        path.subpaths  # noqa: B018 -- reading it builds the subpaths
+        path.subpaths  # noqa: B018
     return path
 
 
@@ -53,11 +51,9 @@ def test_deferred_and_built_agree(shape, outline, seed):
     lazy = deferred(subpaths, flags, outline=outline, built=False)
     expected = deferred(subpaths, flags, outline=outline, built=True).axis_aligned_rect()
     if outline and (len(subpaths) != 1 or len(subpaths[0]) != 4):
-        # An outline's spans are final, so anything but one of four points
-        # is no rectangle, whatever its built points would say.
         expected = None
     assert lazy.axis_aligned_rect() == expected
-    assert lazy._deferred is not None  # answered without building the subpaths
+    assert lazy._deferred is not None
 
 
 @pytest.mark.parametrize("seed", range(40))
@@ -98,9 +94,8 @@ def test_bounds_come_from_the_columns_as_the_subpaths_give_them(seed, outline):
     ]
     flags = [rng.random() < 0.5 for _ in subpaths]
     lazy = deferred(subpaths, flags, outline=outline, built=False)
-    lazy._summary = None  # as an outline or a coalesced path has it
+    lazy._summary = None
     built = deferred(subpaths, flags, outline=outline, built=True)
-    # repr keeps NaN in its place and a zero's sign, which == does not.
     assert repr(lazy.bbox()) == repr(built.bbox())
     assert lazy.has_segments() == built.has_segments()
     assert lazy._deferred is not None

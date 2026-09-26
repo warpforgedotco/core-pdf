@@ -36,10 +36,6 @@ PREDEFINED_ENCODING_CODECS = {
 
 
 def predefined_encoding_codec(name: str) -> str | None:
-    """The Python codec that decodes a predefined CMap's codes as text, if any.
-
-    Every UCS-2 CMap reads as UTF-16BE.
-    """
     codec = PREDEFINED_ENCODING_CODECS.get(name)
     if codec is None and "-UCS2-" in name:
         return "utf-16-be"
@@ -145,11 +141,6 @@ def embedded_font_program_count(descriptor: Mapping[object, object]) -> int:
 
 
 def type1_encoding_entries(segment: bytes) -> Iterator[tuple[int, str]]:
-    """The code and glyph name of each `dup <code> /<name> put` line, in order.
-
-    segment is the clear text of a Type 1 program after its /Encoding key;
-    lines that are not such an entry, and codes outside a byte, are skipped.
-    """
     for line in segment.replace(b"\r", b"\n").split(b"\n"):
         if not line.startswith(b"dup"):
             continue
@@ -165,14 +156,6 @@ def type1_encoding_entries(segment: bytes) -> Iterator[tuple[int, str]]:
 
 
 class TextMachine[FontT]:
-    """The text and graphics state the legacy text extractors share.
-
-    It holds what pypdf's and LlamaIndex's operator walks keep alike, and
-    runs the operators they treat alike: BT, ET, q, Q, cm and TL. Each facade
-    keeps its own font selection, positioning and showing operators, which
-    differ between them down to the float arithmetic of T*.
-    """
-
     def __init__(self, fonts: Mapping[str, FontT]) -> None:
         self.fonts = fonts
         self.font: FontT | None = None
@@ -212,7 +195,6 @@ class TextMachine[FontT]:
         self.previous_cm = self.cm.copy()
 
     def apply_state_operator(self, operator: str, operands: Sequence[object]) -> bool:
-        """Run operator if it is one both extractors treat alike; say whether it was."""
         match operator:
             case "BT":
                 self.tm = list(IDENTITY_MATRIX)

@@ -70,22 +70,8 @@ class GlyphUnicodeSemantics(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
-# Not frozen: a frozen dataclass sets each field through object.__setattr__,
-# 1.1us for these 22 against 0.18us, and a page that shows one glyph per
-# operation builds one of these per glyph. It is never changed in place --
-# GlyphObservation's setters replace it -- because every glyph of the
-# operation shares it.
 @dataclass(slots=True)
 class GlyphStyle:
-    """What one text-showing operation paints every one of its glyphs with.
-
-    Font, size, paint and provenance belong to the operation, not the glyph,
-    so they are held once and shared rather than copied into every glyph's
-    observation. Kept alive until its page is done, a 43-slot observation
-    costs about three times what a 22-slot one does to build and hold, most of
-    it allocation and the cycle collector walking every slot.
-    """
-
     font_size: float
     rotation_angle: int
     fill: tuple[float, ...] | None
@@ -162,9 +148,6 @@ class GlyphObservation:
     cluster_key: tuple[int, int] | None
     style: GlyphStyle
 
-    # The fields shared by every glyph one text-showing operation paints. They
-    # live once on `style` and are read and written through the properties
-    # installed below the class; declared here for type checkers.
     if TYPE_CHECKING:
         font_size: float
         rotation_angle: int
@@ -501,11 +484,6 @@ class GlyphObservation:
         paint_glyph: bool,
         cluster_key: tuple[int, int] | None,
     ) -> Self:
-        """Build an observation around a style shared with its operation's other glyphs.
-
-        What capture uses: the style is built once per text-showing operation,
-        and each glyph then sets only its own fields.
-        """
         observation = cls.__new__(cls)
         observation.text = text
         observation.ink_bbox = ink_bbox
@@ -562,15 +540,6 @@ class GlyphObservation:
 
     @property
     def cluster_id(self) -> int:
-        """This observation's cluster identity, when it is its own cluster.
-
-        99.91% of clusters over the corpus hold exactly one glyph, so building
-        a separate seven-slot GlyphCluster for each of them allocated one
-        object per glyph on the page to duplicate four fields -- the same
-        tuple objects -- off the observation it wrapped. A single-glyph cluster
-        is now the observation itself, and these two properties are the only
-        part of the cluster interface it did not already have.
-        """
         key = self.cluster_key
         return key[1] if key is not None else 0
 
@@ -581,7 +550,6 @@ class GlyphObservation:
 
 def style_field_property(name: str) -> property:
     def set_style_field(observation: GlyphObservation, value: Any) -> None:
-        # Copy on write: the style is shared with the operation's other glyphs.
         observation.style = replace(observation.style, **{name: value})
 
     return property(attrgetter(f"style.{name}"), set_style_field)
@@ -687,7 +655,6 @@ SEMANTICS_CACHE: dict[tuple[str, str], GlyphUnicodeSemantics] = {}
 
 
 def min_optional_confidence(left: float | None, right: float | None) -> float | None:
-    """The lower of two confidences, treating an absent one as no evidence."""
     if left is None:
         return right
     if right is None:
@@ -735,7 +702,6 @@ def compute_glyph_unicode_confidence(
 
 
 def glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSemantics:
-    # Read for every glyph of a page by its evidence, over few distinct pairs.
     key = (text, unicode_source)
     semantics = SEMANTICS_CACHE.get(key)
     if semantics is None:
@@ -773,9 +739,6 @@ def glyph_text_has_unsupported_codepoint(text: str) -> bool:
     return False
 
 
-# A cluster of glyphs, or the single observation that stands in for one. The
-# two are interchangeable to every reader: GlyphObservation carries the whole
-# cluster interface, and 99.91% of clusters hold exactly one glyph.
 GlyphClusterLike: TypeAlias = GlyphCluster | GlyphObservation
 
 
@@ -788,10 +751,6 @@ def glyph_cluster_from_observations(
         return None
     first = glyphs[0]
     if len(glyphs) == 1:
-        # The observation already carries every field a one-glyph cluster has,
-        # with the same tuple objects, so it is returned as its own cluster
-        # rather than copied into a new one. Callers see the cluster interface
-        # either way; see GlyphObservation.cluster_id.
         return first
     advance_bbox = bbox_union(tuple(glyph.advance_bbox for glyph in glyphs))
     ink_bbox = bbox_union(tuple(glyph.ink_bbox for glyph in glyphs))

@@ -1,19 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Signed-area coverage: the kernel must reproduce the numpy original exactly.
-
-coverage_golden.pkl.gz was produced by the numpy implementation that this
-kernel replaced, before that code was deleted. The cases are real edge arrays
-captured while rasterizing three corpus pages, plus synthetic ones covering
-branches real glyphs do not reach: empty input, purely horizontal edges (no
-slope at all), purely vertical ones, spans clipped on both axes.
-
-Equality here is bitwise, and that is not incidental. The original accumulated
-through numpy.bincount over two concatenated index blocks, so every left-hand
-weight landed before any right-hand weight. The kernel splits its accumulation
-the same way; adding both weights per piece instead would still be a correct
-rasterizer, and would round differently.
-"""
 
 import gzip
 import pickle
@@ -58,9 +44,6 @@ def test_coverage_is_bounded_to_unit_range():
 
 
 def test_render_target_uses_the_kernel():
-    # These wire-up assertions need the consumer installed. The kernel tests
-    # otherwise stand alone, so cibuildwheel can run the golden vectors
-    # against a freshly built wheel with nothing else present.
     pytest.importorskip("core_pdf")
     from core_pdf.impl import render_target as target
 

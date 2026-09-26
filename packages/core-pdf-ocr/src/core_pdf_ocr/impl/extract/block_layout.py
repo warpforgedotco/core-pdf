@@ -49,7 +49,6 @@ def group_order(observations: ObservationBatch, indexes: numpy.ndarray) -> numpy
     return indexes[order]
 
 
-# The native layout with OCR observations labelled and ordered as OCR reads them.
 layout_blocks_with_evidence = partial(
     native_layout.layout_blocks_with_evidence,
     source_labels=SOURCE_LABELS,

@@ -38,8 +38,6 @@ def should_capture_glyph_bitmap(text: str) -> bool:
         return True
     if text in SUSPICIOUS_GLYPH_BITMAP_TEXT:
         return True
-    # capture_text_runs.is_garbage_text for one character, inline: this runs
-    # per glyph, and its generator costs three times the comparison.
     code = ord(text)
     return 0xE000 <= code <= 0xF8FF or code < 32
 
@@ -92,13 +90,8 @@ class RunGeometry:
         self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
-# Not frozen, like GlyphStyle: one is built per text-showing operation, and a
-# frozen dataclass sets its 16 fields through object.__setattr__ at about
-# five times the cost. Nothing changes one after it is built.
 @dataclass(slots=True)
 class GlyphPaint:
-    """The painting state a run of glyphs is drawn with."""
-
     clip_bbox: Rectangle | None
     page_clip: Rectangle | None
     fill: tuple[float, ...] | None
@@ -119,8 +112,6 @@ class GlyphPaint:
 
 @dataclass(slots=True)
 class GlyphCapture:
-    """What one run of glyphs contributed, accumulated as it is captured."""
-
     glyphs: list[GlyphObservation] = field(default_factory=list)
     clusters: list[GlyphClusterLike] = field(default_factory=list)
     cluster_count: int = 0
@@ -137,7 +128,6 @@ def glyph_style(
     provenance: tuple[tuple[str, object], ...],
     text_object_id: int,
 ) -> GlyphStyle:
-    """Everything a show-text operation paints its glyphs with, held once for all of them."""
     return GlyphStyle(
         font_size,
         rotation_angle,
@@ -188,16 +178,6 @@ def capture_glyphs(
     options: CaptureOptions,
     /,
 ) -> GlyphCapture:
-    """Lay out and record one show-text operation's glyphs.
-
-    Three passes. The first walks the glyphs for everything that needs the
-    decoder or the source text; the second is pure float arithmetic over flat
-    arrays and is the compiled kernel; the third builds the observations. The
-    split exists so the middle pass touches no Python object, which is the only
-    shape a compiled kernel beats the interpreter at -- a fused loop that
-    interleaved the arithmetic with building a forty-field observation would
-    not qualify.
-    """
     result = GlyphCapture()
     if not glyphs:
         return result
@@ -207,19 +187,16 @@ def capture_glyphs(
     glyph_bbox_for_code = decoder.glyph_bbox
     vertical_position = decoder.vertical_glyph_position
     want_ink = options.ink_bounds and not is_vertical
-    # The glyph transform and the bitmap request exist for the rasterizer.
-    # A caller that only wants text says so, and neither is computed.
     want_render = options.render_details
     want_runs = options.text_runs
 
-    # ---- pass one: the decoder and the source text ------------------------
     kept: list[DecodedGlyph] = []
     chunk_texts: list[str] = []
     offsets: list[float] = []
     advances: list[float] = []
     glyph_boxes: list[float] = []
     want_bitmap: list[int] = []
-    suspicious_flags: list[bool] = []
+    split_flags: list[bool] = []
     positions: list[tuple[float, float]] = []
     offset = 0.0
     cursor = 0
@@ -236,9 +213,6 @@ def capture_glyphs(
             )
             advance = -advance_y
         else:
-            # Spec's glyph_advance_vector, inlined: the keyword call costs
-            # about as much again per glyph. test_font_decoding_contracts pins
-            # the two to the same bits.
             spacing = char_space + (word_space if glyph.code_bytes == b" " else 0.0)
             displacement = glyph_width(glyph.width_code) * font_size / 1000.0 + spacing
             advance = displacement * horizontal_scale / 100.0
@@ -260,16 +234,12 @@ def capture_glyphs(
             glyph_boxes.extend((NO_BOX, NO_BOX, NO_BOX, NO_BOX))
         else:
             glyph_boxes.extend(box)
-        # Computed whichever mode this is: suspicious feeds split_flags below,
-        # so gating it on render details would split a multi-character glyph
-        # like "A/B" into three observations for a text-only capture and leave
-        # it as one otherwise. Only the bitmap request is a render concern.
         suspicious = (
             False if chunk_length == 1 else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
         )
-        suspicious_flags.append(suspicious)
-        if glyph.split_unicode and chunk_length != 1 and not suspicious:
-            any_split = True
+        split = glyph.split_unicode and chunk_length != 1 and not suspicious
+        split_flags.append(split)
+        any_split = any_split or split
         want_bitmap.append(
             1 if want_render and (should_capture_glyph_bitmap(chunk_text) or suspicious) else 0
         )
@@ -280,7 +250,6 @@ def capture_glyphs(
     if not kept:
         return result
 
-    # ---- pass two: the geometry kernel ------------------------------------
     if is_vertical:
         advance_union = ink_union = None
         advance_f, baseline_f, transform_f, ink_f, visible_f, bitmap_f = vertical_glyph_geometry(
@@ -300,7 +269,6 @@ def capture_glyphs(
             want_transform=want_render,
         )
     else:
-        # Positional: the kernel's keyword parsing matched each name per call.
         (
             advance_f,
             baseline_f,
@@ -328,10 +296,6 @@ def capture_glyphs(
             want_render,
         )
 
-    # ---- pass three: the observations -------------------------------------
-    # The kernel accumulated the run's boxes as RunGeometry.add would have,
-    # glyph by glyph; with no glyph split into fragments, whose boxes are cut
-    # here, those are the run's, and only the confidence is gathered below.
     fused = want_runs and advance_union is not None and not any_split
     run_confidence: float | None = None
     styled_observation = GlyphObservation.styled
@@ -358,10 +322,7 @@ def capture_glyphs(
             glyph.alternates,
         )
 
-        if not (glyph.split_unicode and chunk_length != 1 and not suspicious_flags[index]):
-            # The usual glyph: one observation, which is also its own cluster
-            # (glyph_cluster_from_observations returns a lone observation as
-            # is), so the fragment and cluster lists below are skipped.
+        if not split_flags[index]:
             observation = styled_observation(
                 style,
                 chunk_text,
@@ -390,15 +351,13 @@ def capture_glyphs(
             if want_runs:
                 if not fused:
                     add_run_geometry(advance_bbox, rect, observation_confidence)
-                elif index == 0 or run_confidence is None:
+                elif run_confidence is None:
                     run_confidence = observation_confidence
                 elif observation_confidence is not None:
                     run_confidence = min(run_confidence, observation_confidence)
                 append_cluster(observation)
             continue
 
-        # One code that stands for several characters: re-cut the advance
-        # per character. Rare, and the kernel deliberately does not model it.
         per_char_advance = advances[index] / chunk_length
         char_offset = offsets[index]
         cluster_observations: list[GlyphObservation] = []
@@ -412,7 +371,6 @@ def capture_glyphs(
                 font_ascent=font_ascent,
                 font_descent=font_descent,
             )
-            # A re-cut character has no ink of its own: its box is its advance.
             advance_rect = text_basis_rect(*char_box, text_basis)
             observation = styled_observation(
                 style,

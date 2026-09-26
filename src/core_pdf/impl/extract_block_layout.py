@@ -18,7 +18,6 @@ from core_pdf.impl.extract_contracts import (
     ObservationSource,
     ParsedBlock,
     ParsedLine,
-    ReadingOrderEvidence,
     bbox_tuple,
 )
 from core_pdf.impl.geometry import horizontal_overlap_ratio, interval_overlap
@@ -204,10 +203,6 @@ def build_lines(
     source_minimum = numpy.minimum.reduceat(selected_sources, starts)
     source_maximum = numpy.maximum.reduceat(selected_sources, starts)
     group_sequences = numpy.minimum.reduceat(observations.sequence[selected], starts)
-    # A run's bold and italic follow from its font name alone, and its mark
-    # from its fill colour alone; a page has a handful of each and a
-    # style-per-glyph page asks once per glyph. Other references (OCR words)
-    # keep the general path.
     run_styles: dict[str | None, tuple[bool, bool]] = {}
     color_marks: dict[object, bool] = {}
 
@@ -457,11 +452,11 @@ def layout_blocks_with_evidence(
     page_height: float = 0.0,
     source_labels: Mapping[int, str] | None = None,
     group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
-) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
+) -> tuple[tuple[ParsedBlock, ...], bool]:
     built_lines = build_lines(observations, source_labels=source_labels, group_order=group_order)
     lines = built_lines.lines
     if not lines:
-        return (), reading_order_evidence(())
+        return (), False
     boxes = display_boxes(
         built_lines.boxes,
         rotation,
@@ -492,7 +487,7 @@ def layout_blocks_with_evidence(
     classified = tuple(
         classify_blocks(assign_columns(blocks), body_font_size=semantic_body_font_size(lines))
     )
-    return classified, reading_order_evidence(classified)
+    return classified, has_mixed_rotation_block(classified)
 
 
 def xy_cut_blocks(
@@ -500,7 +495,6 @@ def xy_cut_blocks(
     boxes: numpy.ndarray,
     obstacles: tuple[tuple[float, float, float, float], ...],
 ) -> list[ParsedBlock]:
-    """The lines grouped into blocks by recursive XY-cut, in reading order."""
     lines = built_lines.lines
     heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
     median_height = max(1.0, finite_median(heights))
@@ -567,53 +561,8 @@ def block_bbox(lines: tuple[ParsedLine, ...]) -> tuple[float, float, float, floa
     )
 
 
-def inversion_count(values: tuple[int, ...]) -> int:
-    if len(values) < 2:
-        return 0
-    ranks = {value: rank + 1 for rank, value in enumerate(sorted(values))}
-    tree = [0] * (len(values) + 1)
-    inversions = 0
-    for seen, value in enumerate(values):
-        rank = ranks[value]
-        prefix = 0
-        index = rank
-        while index:
-            prefix += tree[index]
-            index -= index & -index
-        inversions += seen - prefix
-        index = rank
-        while index < len(tree):
-            tree[index] += 1
-            index += index & -index
-    return inversions
-
-
-def reading_order_evidence(
-    blocks: tuple[ParsedBlock, ...],
-) -> ReadingOrderEvidence:
-    lines = tuple(line for block in blocks for line in block.lines)
-    sequences = tuple(line.sequence for line in lines)
-    inversions = inversion_count(sequences)
-    maximum = len(lines) * (len(lines) - 1) // 2
-    rotations = {line.rotation % 360 for line in lines}
-    mixed_rotation_block = any(
-        len({line.rotation % 360 for line in block.lines}) > 1 for block in blocks
-    )
-    columns = {block.column_index for block in blocks if block.column_index is not None}
-    repaired = inversions > 0
-    ambiguous = mixed_rotation_block
-    confidence = 0.5 if ambiguous else (0.85 if len(rotations) > 1 else 1.0)
-    return ReadingOrderEvidence(
-        line_count=len(lines),
-        source_inversions=inversions,
-        source_inversion_ratio=inversions / maximum if maximum else 0.0,
-        column_count=max(1, len(columns)) if lines else 0,
-        rotation_count=len(rotations),
-        repaired=repaired,
-        ambiguous=ambiguous,
-        confidence=confidence,
-        strategy="geometric-repair" if repaired else "source-stable",
-    )
+def has_mixed_rotation_block(blocks: tuple[ParsedBlock, ...]) -> bool:
+    return any(len({line.rotation % 360 for line in block.lines}) > 1 for block in blocks)
 
 
 def interval_overlap_pairs(starts: numpy.ndarray, ends: numpy.ndarray) -> set[tuple[int, int]]:
@@ -746,13 +695,6 @@ def column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         if len(block.lines) < 80:
             output.append(block)
             continue
-        alphabetic = 0
-        total = 0
-        for line in block.lines:
-            for character in line.line.text:
-                is_alpha = character.isalpha()
-                alphabetic += is_alpha
-                total += is_alpha or character.isdigit()
         line_starts = numpy.fromiter(
             (line_bbox(line)[0] for line in block.lines), dtype=numpy.float64
         )
@@ -761,7 +703,17 @@ def column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         for start in starts:
             if not clusters or start - clusters[-1] > 40.0:
                 clusters.append(float(start))
-        if len(clusters) < 3 or alphabetic / max(1, total) < 0.45:
+        if len(clusters) < 3:
+            output.append(block)
+            continue
+        alphabetic = 0
+        total = 0
+        for line in block.lines:
+            for character in line.line.text:
+                is_alpha = character.isalpha()
+                alphabetic += is_alpha
+                total += is_alpha or character.isdigit()
+        if alphabetic / max(1, total) < 0.45:
             output.append(block)
             continue
         cluster_values = numpy.asarray(clusters, dtype=numpy.float64)
@@ -794,15 +746,18 @@ def transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[ParsedBloc
         if len(block.lines) < 300:
             output.append(block)
             continue
-        text = " ".join(line.line.text for line in block.lines)
-        numeric = sum(character.isdigit() for character in text)
-        alphanumeric = sum(character.isalnum() for character in text)
         starts = sorted(line_bbox(line)[0] for line in block.lines)
         columns: list[float] = []
         for start in starts:
             if not columns or start - columns[-1] > 8.0:
                 columns.append(start)
-        if numeric / max(1, alphanumeric) < 0.25 or len(columns) < 20:
+        if len(columns) < 20:
+            output.append(block)
+            continue
+        text = " ".join(line.line.text for line in block.lines)
+        numeric = sum(character.isdigit() for character in text)
+        alphanumeric = sum(character.isalnum() for character in text)
+        if numeric / max(1, alphanumeric) < 0.25:
             output.append(block)
             continue
         boxes = numpy.asarray(tuple(line_bbox(line) for line in block.lines))
@@ -1030,8 +985,6 @@ def gutter_tolerating_contained_boxes(
     if not runs:
         return None
 
-    # A gutter spans from one run's low edge to a later run's high edge; the
-    # box tests against each edge are made once per run rather than per pair.
     starts = region_boxes[:, 0]
     ends = region_boxes[:, 2]
     starts_before = [starts < low for low, _high in runs]
@@ -1040,7 +993,6 @@ def gutter_tolerating_contained_boxes(
     ends_within = [ends <= high for _low, high in runs]
 
     def fits(first: int, last: int) -> bool:
-        """No box crosses the span, and at most `allowed` boxes sit inside it."""
         if (starts_before[first] & ends_after[last]).any():
             return False
         return int((starts_within[first] & ends_within[last]).sum()) <= allowed
@@ -1053,7 +1005,6 @@ def gutter_tolerating_contained_boxes(
                 break
             last = following
         span_high = runs[last][1]
-        # A span that grew was already found to fit; only the run alone is untested.
         if (
             (last > first or fits(first, first))
             and span_high - low >= minimum_gap

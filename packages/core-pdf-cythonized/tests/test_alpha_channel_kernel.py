@@ -1,11 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""A soft mask's alpha plane and the bytes it holds, as numpy took them.
-
-resolve_soft_mask copied ``view[..., 3]`` and marked ``present[alpha] =
-True``; alpha_channel does both in one pass. Both originals are numpy
-one-liners, so they serve as the reference directly.
-"""
 
 import numpy
 import pytest
@@ -20,7 +14,6 @@ def test_the_plane_and_its_values_are_numpys(seed, presence):
     height, width = rng.integers(1, 40, size=2)
     pixels = rng.integers(0, 256, size=(height, width, 4), dtype=numpy.uint8)
     if seed % 3 == 0:
-        # A mask plane is mostly a few values, like a rendered group's alpha.
         pixels[..., 3] = rng.choice(numpy.array([0, 128, 255], dtype=numpy.uint8), (height, width))
     alpha, present = alpha_channel(pixels, presence)
     expected = pixels[..., 3].copy()

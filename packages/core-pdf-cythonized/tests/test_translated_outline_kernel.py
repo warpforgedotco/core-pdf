@@ -1,14 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Translated outline edges: what transformed_outline's numpy steps made.
-
-transformed_outline added the translation to the cached linear columns with
-numpy, handed the sums to outline_edges and took the bounds as float(column
-.min()) and .max(). The reference here is exactly that, over the golden
-outlines at several translations, plus columns that hold a NaN or zeros of
-both signs -- the two cases where a hand-written minimum could part from
-numpy's.
-"""
 
 import gzip
 import math
@@ -78,7 +69,6 @@ def test_nans_and_signed_zeros_bound_as_numpy_does(xs, ys):
     linear_x = numpy.array(xs, dtype=numpy.float64)
     linear_y = numpy.array(ys, dtype=numpy.float64)
     spans = [(0, 4)]
-    # A -0.0 translation keeps both zeros: 0.0 + -0.0 is 0.0, -0.0 + -0.0 is -0.0.
     got = translated_outline_edges(linear_x, linear_y, -0.0, -0.0, spans)
     want = reference(linear_x, linear_y, -0.0, -0.0, spans)
     assert same(got, want)

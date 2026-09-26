@@ -27,13 +27,6 @@ from core_records import Record, frozen_setattr
 
 
 class PdfXRefEntry(NamedTuple):
-    """One cross-reference entry (ISO 32000-2 7.5.4, 7.5.8).
-
-    A tuple, and so immutable: a table of hundreds of thousands of rows is
-    built in C by canonical_table_entries rather than one Python constructor
-    call a row. A repaired entry is replaced, not changed in place.
-    """
-
     offset: int
     generation: int = 0
     in_use: bool = True
@@ -141,30 +134,18 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
     return int(row[:10]), generation, row[17] == 110, pos + 20
 
 
-# A run of rows parse_xref_entry_at accepts, but for the generation range.
 XREF_ROWS = re.compile(rb"(?:[0-9]{10} [0-9]{5} [fn](?: \r| \n|\r\n))*")
 XREF_ROW_SIZE = 20
 
-# PdfXRefEntry from a complete (offset, generation, in_use, object_stream,
-# index_in_stream) tuple, without a Python frame: map() calls it from C.
 new_xref_entry = partial(tuple.__new__, PdfXRefEntry)
 OFFSET_PLACES = 10 ** numpy.arange(9, -1, -1, dtype=numpy.int64)
 GENERATION_PLACES = 10 ** numpy.arange(4, -1, -1, dtype=numpy.int64)
-# Keys are computed in numpy while every object number fits comfortably.
 NUMPY_KEY_LIMIT = 1 << 46
 
 
 def canonical_table_entries(
     data: PdfByteBuffer, pos: int, start_obj: int, count: int
 ) -> XRefTable | None:
-    """The entries of `count` rows at `pos` that XREF_ROWS has matched, keyed.
-
-    Each row is then ten digits, a space, five digits, a space, n or f and
-    a two-byte line end, so its fields sit at fixed columns and are read as
-    columns: the same integers int() makes of the digits, and in_use where
-    the marker is n. None if a generation exceeds 65535, which the per-row
-    parse rejects.
-    """
     rows = numpy.frombuffer(
         data, dtype=numpy.uint8, count=XREF_ROW_SIZE * count, offset=pos
     ).reshape(count, XREF_ROW_SIZE)
@@ -191,7 +172,6 @@ WHITESPACE_TRANSLATIONS: dict[bytes, bytes] = {}
 
 
 def whitespace_to_space(rules: LexicalRules) -> bytes:
-    """A bytes.translate table mapping each of the rules' whitespace to a space."""
     table = WHITESPACE_TRANSLATIONS.get(rules.whitespace)
     if table is None:
         table = WHITESPACE_TRANSLATIONS[rules.whitespace] = bytes.maketrans(
@@ -341,27 +321,20 @@ class XRefScanner:
 
     @staticmethod
     def trailer_without_keyword(line: bytes, rules: LexicalRules) -> bool:
-        """Whether line starts the trailer dictionary without the trailer
-        keyword before it, which 7.5.5 requires: strict parsing raises."""
         if line.lstrip(rules.whitespace).startswith(b"<<"):
             raise PdfParseError("expected trailer keyword")
         return False
 
     @staticmethod
     def subsection_line_parts(line: bytes, rules: LexicalRules) -> list[bytes]:
-        """The words of a subsection header line, split at PDF whitespace."""
         return [part for part in line.translate(whitespace_to_space(rules)).split(b" ") if part]
 
     @staticmethod
     def parse_subsection_integer(token: bytes) -> int:
-        """A subsection header's first object number or count; ValueError if
-        it is not a PDF integer."""
         return parse_int_strict(token, "invalid PDF integer")
 
     @staticmethod
     def check_subsection_overlap(object_numbers: set[int], subsection: XRefTable) -> None:
-        """Record subsection's object numbers in object_numbers, raising if
-        an earlier subsection of the section already listed one."""
         numbers = {key >> 16 for key in subsection}
         if not object_numbers.isdisjoint(numbers):
             raise PdfParseError("overlapping xref table subsections")
@@ -371,7 +344,6 @@ class XRefScanner:
     def create_trailer_lexer(
         cls, data: PdfByteBuffer, semantic_context: SemanticContext | None
     ) -> PdfLexer:
-        """The lexer that reads the trailer dictionary after the table."""
         return PdfLexer(data, semantic_context=semantic_context)
 
     @classmethod
@@ -380,9 +352,6 @@ class XRefScanner:
     ) -> tuple[XRefTable, int, int]:
         entries: XRefTable = {}
         end = pos + 20 * num_objs
-        # Rows are fixed at 20 bytes, so a subsection that matches as a whole
-        # is read with one regex; anything else goes row by row and raises
-        # where parse_xref_entry_at does.
         if (
             num_objs > 0
             and start_obj >= 0
@@ -451,8 +420,6 @@ class XRefScanner:
 
 
 def validate_xref_widths(widths: Sequence[object]) -> int:
-    # Same shape as validate_xref_index: the widths come from a file, so the
-    # integers only exist once they have been checked for.
     numbers = [width for width in widths if type(width) is int and width >= 0]
     if len(numbers) != 3 or len(widths) != 3:
         raise PdfParseError("invalid xref stream W")
@@ -466,9 +433,6 @@ def validate_xref_index(index: Sequence[object], size: object) -> int:
         raise PdfParseError("invalid xref stream Index")
     if size <= 0 or len(index) % 2:
         raise PdfParseError("invalid xref stream Index")
-    # Collecting the entries that pass rather than asserting they all do: the
-    # values arrive from a file, and the list this produces is the first thing
-    # here entitled to be typed as integers.
     numbers = [value for value in index if type(value) is int and value >= 0]
     if len(numbers) != len(index):
         raise PdfParseError("invalid xref stream Index")
@@ -529,12 +493,6 @@ def xref_column(
 def xref_entries(
     index: list[int], kinds: list[int], values: list[int], generations: list[int]
 ) -> XRefTable:
-    """The entries of xref stream rows whose three fields are already read.
-
-    Every decoder of xref stream rows builds its entries here, from whole
-    columns, so the per-row work is this one loop and not a call per row. A
-    type 0 or 1 row with a generation over 65535 rejects the whole table.
-    """
     entries: XRefTable = {}
     row = 0
     for start, count in batched(index, 2, strict=True):
@@ -561,7 +519,6 @@ def xref_entries(
 def wide_xref_column(
     data: bytes, row_size: int, row_count: int, start: int, width: int
 ) -> list[int]:
-    """xref_column for a field wider than a uint64 holds: int.from_bytes per row."""
     return [
         int.from_bytes(data[pos : pos + width], "big")
         for pos in range(start, row_count * row_size, row_size)
@@ -571,7 +528,6 @@ def wide_xref_column(
 def decode_xref_row_table(
     data: bytes, widths: list[int], index: list[int], row_size: int, row_count: int
 ) -> XRefTable:
-    """Rows read a column at a time: numpy for fields of up to eight bytes."""
     if len(data) != row_count * row_size:
         raise PdfParseError("xref stream length mismatch")
     type_width, value_width, generation_width = widths
@@ -701,9 +657,6 @@ def overlay_xref_entries(destination: XRefTable, newer: XRefTable) -> None:
 
 
 def merge_xref_sections(sections: Iterable[XRefTable]) -> XRefTable:
-    """Newest first: each section adds the entries whose object numbers no
-    newer section has claimed. The shifts and membership tests run in C,
-    through map() and compress(), not a Python loop per key."""
     merged: XRefTable = {}
     claimed: set[int] = set()
     object_number = (16).__rrshift__

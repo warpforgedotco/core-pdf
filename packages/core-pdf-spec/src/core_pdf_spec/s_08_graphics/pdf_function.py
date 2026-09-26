@@ -69,8 +69,6 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
         raise ValueError("invalid sampled function size")
     if any(type(value) is not int for value in size_obj):
         raise ValueError("invalid sampled function size")
-    # Every entry has just been checked to be an int, so the annotation
-    # records that rather than asserting it again per element.
     sizes: tuple[int, ...] = tuple(size_obj)  # type: ignore[arg-type]
     if not sizes or any(size <= 0 for size in sizes):
         raise ValueError("invalid sampled function size")

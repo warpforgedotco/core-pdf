@@ -16,17 +16,11 @@ from .._shared import parse_indirect_object_at
 
 OBJECT_HEADER = re.compile(rb"(\d+)\s+(\d+)\s+obj\b")
 LINE_START_OBJECT_HEADER = re.compile(rb"(?m)^(\d+)\s+(\d+)\s+obj\b")
-# The first object header at or after an offset, not one inside a larger number.
 UNANCHORED_OBJECT_HEADER = re.compile(rb"(?<!\d)(\d+)\s+(\d+)\s+obj\b")
-# What bytes.lstrip() strips, so its end is where the stripped data starts.
 LEADING_WHITESPACE = re.compile(rb"\s*")
 
 
 def line_bounds(data: PdfByteBuffer, position: int) -> tuple[int, int]:
-    """The start and end of the line holding position, as bytes.splitlines() splits it.
-
-    A line ends at CR or LF; a CR LF pair only adds an empty line between.
-    """
     newline = data.rfind(b"\n", 0, position)
     start = max(newline, data.rfind(b"\r", newline + 1, position)) + 1
     end = data.find(b"\n", position)
@@ -37,14 +31,6 @@ def line_bounds(data: PdfByteBuffer, position: int) -> tuple[int, int]:
 
 
 def last_startxref_offset(data: PdfByteBuffer) -> int | None:
-    """The offset on the first non-blank line after the last `startxref` line.
-
-    It reads what walking data.splitlines() backwards from the end reads:
-    lines are stripped, the last one equal to `startxref` is the keyword, and
-    the nearest non-blank line after it must be all digits and below 2**31.
-    Only the lines holding a `startxref` are looked at, so the file is not
-    split into lines.
-    """
     keyword = data.rfind(b"startxref")
     while keyword >= 0:
         start, end = line_bounds(data, keyword)
@@ -239,7 +225,6 @@ def pdfminer_resolvable_pages(  # noqa: C901
     if start is None:
         yield from fallback_projection()
         return
-    # Declared, so the reassignment from a trailer value below cannot widen it.
     section_start: int = start
     section_pos = XRefScanner.skip_ws(data, section_start)
     section_is_direct = data[section_pos : section_pos + 4] == b"xref"
@@ -282,7 +267,6 @@ def pdfminer_resolvable_pages(  # noqa: C901
             xref_sections.append(entries)
             if previous is None:
                 break
-            # Any value goes on to read_section, which rejects a non-integer.
             section_start = cast(int, previous)
     except Exception:
         xref_sections = [strict_xref]
@@ -306,8 +290,6 @@ def pdfminer_resolvable_pages(  # noqa: C901
             if expected_header.match(data, info_entry.offset):
                 parse_indirect_object_at(data, info_entry.offset, recover_malformed_objects=False)
 
-    # A reference's answer depends only on its number and generation, and the
-    # page tree walk asks again for every page that shares a parent.
     resolvable_keys: dict[int, bool] = {}
 
     def reference_is_resolvable(value: object) -> bool:

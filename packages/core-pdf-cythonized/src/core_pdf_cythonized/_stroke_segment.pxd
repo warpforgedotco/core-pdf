@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# A stroked segment's 4x4 sampling and normal blend, for the stroke kernel.
 
 cdef bint segment_samples(
     unsigned char* pixels,

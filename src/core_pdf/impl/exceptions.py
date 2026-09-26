@@ -22,8 +22,7 @@ class PdfSourceError(PdfError):
     pass
 
 
-class PdfEmptySourceError(PdfSourceError):
-    """The source holds no bytes at all."""
+class PdfEmptySourceError(PdfSourceError): ...
 
 
 class PdfContractError(PdfError, TypeError):

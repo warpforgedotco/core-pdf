@@ -1,50 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF object syntax, the well-formed part (core_pdf.impl.recovery_lexer).
-
-Every indirect object core-pdf reads goes through the reader lexer's
-parse_dictionary and parse_array, and on the benchmark corpus the lexer is a
-quarter of extraction and over half of opening a document. Building the
-result is the small part: rebuilding the same object graphs from already
-parsed values costs 12% of parsing them. The rest is the interpreter
-dispatching once per token -- skip_ignored_at, scan_word_at, read_name, a
-regex search, the match in parse_object -- and that is what this removes.
-
-This is not the ContentScanner kind of kernel, and the difference matters.
-The Python lexer is not deleted: it is core_pdf_spec's, it stays the parser
-for everyone who uses spec without core, and it is still what core runs for
-anything this scanner does not own. So the scanner owns a subset exactly,
-and gives up on everything else by returning None, after which the caller
-parses the same bytes in Python from the same position. It gives up on:
-
-* anything the Python would raise on, or would hand to a recovery hook --
-  a missing key name, an unterminated container, a stray delimiter, an
-  identifier out of range, a malformed hex string, a single '>' at the end
-  of the data;
-* a keyword other than true, false and null, which the reader turns into a
-  string;
-* a number token the reader's int() or float() could read but the PDF
-  grammar would not (underscores, exponents, inf), inside the numeric array
-  shortcut;
-* a dictionary that a stream keyword -- or a one-byte misspelling of one --
-  follows, below the top level;
-* nesting deeper than MAX_DEPTH.
-
-Strings in an encrypted document are deciphered as they are read, through
-the lexer's decipher callable with the object and generation numbers, in
-the order the Python would call it. The exception is a /Contents entry: the
-reader defers a hex /Contents until it can see whether the dictionary is a
-signature, so a dictionary whose /Contents is a hex string is declined while
-deciphering; any other /Contents value is read like the rest. So is any
-string whose deciphering raises, so that the Python raises it.
-
-Nothing here knows what a PdfName or a PdfString is. The constructors and
-the interned-name table are handed in, so the kernel has no dependency on
-spec and its golden vectors can drive it with stand-ins.
-
-Numbers are converted by CPython's own routines -- PyLong_FromString and
-PyOS_string_to_double are what int() and float() call -- so a value can
-only come out as it would have from the Python.
-"""
 
 from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_FromStringAndSize
 from cpython.object cimport PyObject
@@ -60,11 +14,7 @@ cdef extern from "Python.h":
 
 
 cdef enum:
-    # Deeper than this, give the object back. The Python recurses about three
-    # frames a level and is bounded by the interpreter's recursion limit; this
-    # keeps the C stack bounded and leaves pathological nesting to the Python.
     MAX_DEPTH = 64
-    # Longest integer token converted without going through a Python int.
     FAST_INT_DIGITS = 18
 
 cdef object BAIL = object()
@@ -85,19 +35,10 @@ cdef inline bint is_digit(unsigned char byte) noexcept nogil:
 
 
 cdef inline bint is_python_space(unsigned char byte) noexcept nogil:
-    # What bytes.split() with no argument splits on.
     return byte == 32 or 9 <= byte <= 13
 
 
 cdef class ObjectScanner:
-    """Parse dictionaries and arrays the way the reader lexer does, or decline.
-
-    ``whitespace_table`` and ``separator_table`` are the lexer's
-    LexicalRules tables, 256 bytes each. ``names`` is the interned-name
-    table and ``name_of`` the constructor to call on a miss; ``string_type``
-    is called as ``string_type(data, is_literal=...)`` and ``reference_type``
-    as ``reference_type(object_number, generation_number)``.
-    """
 
     cdef const unsigned char[::1] view
     cdef const unsigned char *data
@@ -110,7 +51,6 @@ cdef class ObjectScanner:
     cdef object name_of
     cdef object string_type
     cdef object reference_type
-    # Set for the duration of one parse call.
     cdef object decipher
     cdef object object_number
     cdef object generation
@@ -145,23 +85,14 @@ cdef class ObjectScanner:
         self.reference_type = reference_type
 
     def release(self):
-        """Drop the buffer, so the lexer can release its memoryview."""
         self.view = None
         self.data = NULL
         self.length = 0
 
     def parse_dictionary(self, Py_ssize_t pos, decipher=None, object_number=0, generation=0):
-        """``(dictionary, end)`` for the ``<<`` at ``pos``, or None.
-
-        ``end`` is just past the closing ``>>``. What follows it -- a stream,
-        or not -- is the caller's to decide, as it is in the Python. Pass
-        ``decipher`` with the numbers of the object being read to have its
-        strings deciphered.
-        """
         return self.parse(pos, True, decipher, object_number, generation)
 
     def parse_array(self, Py_ssize_t pos, decipher=None, object_number=0, generation=0):
-        """``(list, end)`` for the ``[`` at ``pos``, or None."""
         return self.parse(pos, False, decipher, object_number, generation)
 
     cdef object parse(self, Py_ssize_t pos, bint dictionary, decipher, object_number, generation):
@@ -179,11 +110,8 @@ cdef class ObjectScanner:
             return None
         return value, cursor
 
-    # -- lexical helpers ----------------------------------------------------
 
     cdef Py_ssize_t skip_ignored(self, Py_ssize_t pos) noexcept:
-        # Whitespace runs and % comments, each comment taking one line end
-        # with it -- CRLF, LFCR, CR or LF -- as the lexer's ignored_re does.
         cdef const unsigned char *data = self.data
         cdef Py_ssize_t length = self.length
         while pos < length:
@@ -206,7 +134,6 @@ cdef class ObjectScanner:
         return pos
 
     cdef Py_ssize_t word_end(self, Py_ssize_t pos) noexcept:
-        # scan_word_at without skipping: a separator is a word on its own.
         if self.separator[self.data[pos]]:
             return pos + 1
         pos += 1
@@ -215,7 +142,6 @@ cdef class ObjectScanner:
         return pos
 
     cdef int number_kind(self, Py_ssize_t start, Py_ssize_t end) noexcept:
-        # is_number_token: 0 for not a number, 1 for an integer, 2 for a real.
         cdef const unsigned char *data = self.data
         cdef Py_ssize_t pos = start
         cdef Py_ssize_t digits = 0
@@ -249,7 +175,6 @@ cdef class ObjectScanner:
         return True
 
     cdef object integer(self, Py_ssize_t start, Py_ssize_t end):
-        # int() of a token number_kind called an integer.
         cdef const unsigned char *data = self.data
         cdef Py_ssize_t pos = start
         cdef bint negative = False
@@ -266,13 +191,9 @@ cdef class ObjectScanner:
         try:
             return PyLong_FromString(PyBytes_AS_STRING(token), NULL, 10)
         except ValueError:
-            # Over the interpreter's digit limit. The Python raises here too,
-            # into a recovery path that is not this kernel's.
             return BAIL
 
     cdef object real(self, Py_ssize_t start, Py_ssize_t end):
-        # float() of a token number_kind called a real. A NUL-terminated
-        # copy, because PyOS_string_to_double reads to the terminator.
         token = PyBytes_FromStringAndSize(<const char *> self.data + start, end - start)
         return PyOS_string_to_double(PyBytes_AS_STRING(token), NULL, NULL)
 
@@ -294,11 +215,8 @@ cdef class ObjectScanner:
             return None
         return BAIL
 
-    # -- values -------------------------------------------------------------
 
     cdef object name(self, Py_ssize_t *pos):
-        # read_name, then PdfName.of. The reader's escape handling keeps a
-        # '#' that does not start a valid pair, and decodes #00 to a NUL.
         cdef const unsigned char *data = self.data
         cdef Py_ssize_t start = pos[0] + 1
         cdef Py_ssize_t end = start
@@ -338,8 +256,6 @@ cdef class ObjectScanner:
         return self.name_of(raw)
 
     cdef object literal_string(self, Py_ssize_t *pos):
-        # read_literal_string with the reader's options: an unknown escape
-        # keeps its byte, and CRLF or LFCR count as one line end.
         cdef const unsigned char *data = self.data
         cdef Py_ssize_t length = self.length
         cdef Py_ssize_t start = pos[0] + 1
@@ -353,8 +269,6 @@ cdef class ObjectScanner:
             if data[cursor] == 40 or data[cursor] == 92 or data[cursor] == 13 or data[cursor] == 10:
                 break
             cursor += 1
-        # Output is never longer than the input it came from, so measure the
-        # input first and decode into a buffer of that size.
         cdef Py_ssize_t end = self.literal_string_end(start)
         if end < 0:
             return BAIL
@@ -410,7 +324,6 @@ cdef class ObjectScanner:
         return self.string(out[:size], True)
 
     cdef object string(self, bytes value, bint is_literal):
-        # apply_decipher, then the PdfString.
         if self.decipher is not None:
             try:
                 deciphered = self.decipher(self.object_number, self.generation, value, None)
@@ -422,7 +335,6 @@ cdef class ObjectScanner:
         return self.string_type(value, is_literal=is_literal)
 
     cdef Py_ssize_t literal_string_end(self, Py_ssize_t start) noexcept:
-        # Where the string's closing parenthesis ends, or -1 if it has none.
         cdef const unsigned char *data = self.data
         cdef Py_ssize_t length = self.length
         cdef Py_ssize_t cursor = start
@@ -454,13 +366,9 @@ cdef class ObjectScanner:
             return 8
         if escape == 102:
             return 12
-        # ( ) \ map to themselves, and so does every unknown escape.
         return escape
 
     cdef object hex_string(self, Py_ssize_t *pos):
-        # read_hex_string: hex digits with the lexical whitespace dropped,
-        # an odd count padded with a zero nibble. Anything else is malformed
-        # and goes to the reader's recovery, so it is declined.
         cdef const unsigned char *data = self.data
         cdef Py_ssize_t start = pos[0] + 1
         if start > self.length:
@@ -495,9 +403,6 @@ cdef class ObjectScanner:
         return self.string(out[:size], False)
 
     cdef object number_or_reference(self, Py_ssize_t start, Py_ssize_t end, Py_ssize_t *pos):
-        # parse_number_or_reference: an integer followed by an integer and
-        # the word R is a reference; anything else leaves the cursor at the
-        # end of the first number.
         if self.number_kind(start, end) == 2:
             pos[0] = end
             return self.real(start, end)
@@ -530,16 +435,12 @@ cdef class ObjectScanner:
         generation = self.integer(next_start, next_end)
         if object_number is BAIL or generation is BAIL:
             return BAIL
-        # The reader's parse_identifier raises on these, into recovery.
         if object_number < 0 or not 0 <= generation <= 65535:
             return BAIL
         pos[0] = marker_end
         return self.reference_type(object_number, generation)
 
     cdef object value(self, Py_ssize_t *pos, int depth, bint strip_endobj):
-        # parse_object when strip_endobj, an array element otherwise. The two
-        # differ only in the reader's scan_value_word, which splits a trailing
-        # "endobj" off a word it was glued to.
         cdef Py_ssize_t start = self.skip_ignored(pos[0])
         if start >= self.length:
             return BAIL
@@ -599,7 +500,6 @@ cdef class ObjectScanner:
         return values
 
     cdef bint hex_follows(self, Py_ssize_t pos) noexcept:
-        # Whether the value at pos is a hex string rather than a dictionary.
         pos = self.skip_ignored(pos)
         return (
             pos < self.length
@@ -608,10 +508,6 @@ cdef class ObjectScanner:
         )
 
     cdef object nested_dictionary(self, Py_ssize_t *pos, int depth):
-        # parse_dictionary_or_stream below the top level: the reader moves
-        # past whatever is ignorable after the dictionary, and treats
-        # "stream" there -- or any six bytes one substitution away from it --
-        # as a stream, which is the caller's to read.
         values = self.dictionary(pos, depth + 1)
         if values is BAIL:
             return BAIL
@@ -651,20 +547,12 @@ cdef class ObjectScanner:
             items.append(item)
 
     cdef object numeric_array(self, Py_ssize_t *pos):
-        # parse_numeric_array as the reader runs it, which is two attempts
-        # before the general path. The reader accepts any word as numeric, so
-        # it is int() or float() raising that ends an attempt. None means take
-        # the general path, BAIL that the outcome turns on what int() or
-        # float() would make of a token outside the PDF grammar.
         values = self.split_numeric_array(pos)
         if values is not None:
             return values
         return self.scanned_numeric_array(pos)
 
     cdef object split_numeric_array(self, Py_ssize_t *pos):
-        # First attempt: everything up to the first ']', split on Python
-        # whitespace, skipped when a comment, a nested array or a vertical
-        # tab could make that split disagree with the lexer.
         if not self.split_whitespace_compatible:
             return None
         cdef const unsigned char *data = self.data
@@ -700,8 +588,6 @@ cdef class ObjectScanner:
         return values
 
     cdef object scanned_numeric_array(self, Py_ssize_t *pos):
-        # Second attempt: the lexer's own words, with its whitespace and
-        # comments, up to the ']' that ends them.
         cdef list values = []
         cdef Py_ssize_t cursor = pos[0] + 1
         cdef Py_ssize_t end
@@ -720,8 +606,6 @@ cdef class ObjectScanner:
             cursor = end
 
     cdef object numeric_word(self, Py_ssize_t start, Py_ssize_t end):
-        # int() of a word without a '.', float() of one with: the value, None
-        # where both would raise, BAIL where they might not.
         cdef int kind = self.number_kind(start, end)
         if kind == 2:
             return self.real(start, end)
@@ -730,9 +614,6 @@ cdef class ObjectScanner:
         return BAIL if self.python_might_read(start, end) else None
 
     cdef bint python_might_read(self, Py_ssize_t start, Py_ssize_t end) noexcept:
-        # Whether int() (no '.') or float() (a '.') could accept a token the
-        # PDF grammar rejects: signs, digits and underscores for int(), and
-        # for float() also exponents and the letters of inf, infinity, nan.
         cdef bint dotted = memchr(self.data + start, 46, end - start) != NULL
         cdef unsigned char byte
         cdef Py_ssize_t cursor

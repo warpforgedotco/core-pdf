@@ -277,7 +277,6 @@ class SemanticContext(Record):
 
 
 def recognized_version(context: SemanticContext | None) -> PdfVersion | None:
-    """The version `context` pins when this implementation recognizes it, else None."""
     if context is None:
         return None
     version = context.version
@@ -285,7 +284,6 @@ def recognized_version(context: SemanticContext | None) -> PdfVersion | None:
 
 
 def require_recognized_version(context: SemanticContext | None, message: str) -> PdfVersion | None:
-    """The version `context` pins, None without a context; raises when it pins no recognized one."""
     if context is None:
         return None
     version = recognized_version(context)

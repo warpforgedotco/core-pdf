@@ -5,7 +5,7 @@ import re
 import struct
 import threading
 from abc import abstractmethod
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from io import BytesIO
 from math import inf, isfinite
 from typing import Any, ClassVar, TypeAlias
@@ -24,6 +24,7 @@ from core_adobe_fonts.cff.font import CFFFont as PdfCFFFont
 from core_adobe_fonts.cff.font import (
     cff_font_matrix as pdf_cff_font_matrix,
 )
+from core_adobe_fonts.type1.program import binary_entries, eexec_ciphertext
 from core_adobe_fonts.type1.program import parse_type1_font_program_encoding as parse_encoding
 from core_pdf._vendor.fontTools.cffLib import (
     cffExpertSubsetStrings,
@@ -58,7 +59,6 @@ MALFORMED_CFF_TABLE = (IndexError, OverflowError, TypeError, ValueError)
 
 
 def with_recovery[T](strict: Callable[..., T], repair: Callable[..., T], /, *args: Any) -> T:
-    """Read a CFF table strictly; rebuild it from the raw bytes if that fails."""
     try:
         return strict(*args)
     except MALFORMED_CFF_TABLE:
@@ -553,17 +553,6 @@ def type2_glyph_geometry_impl(
     flatten: bool = True,
     retain_contours: bool = True,
 ) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
-    """Interpret a Type 2 charstring into contours and a bounding box.
-
-    The interpretation and the pen that used to drive it both live in the
-    compiled kernel now; what stays here is the one thing the kernel cannot
-    finish, because it needs the font's charset rather than the charstring: a
-    composite glyph's components. The kernel reports the request and the
-    components are run back through this same function.
-    """
-    # `valid` is deliberately ignored: a malformed charstring still yields
-    # whatever it completed, exactly as the raising interpreter plus its
-    # swallowing caller did. The conformance tests are what read it.
     contours, bbox, seac, _valid = type2_glyph_geometry(
         charstring, local_subrs, global_subrs, flatten, retain_contours
     )
@@ -688,16 +677,8 @@ class CFFUnicodeRepairIndex:
                 code_to_gid[code_bytes] = gid
 
         self.make_font = font
-        # A decoder asks again for every string it decodes, and each request
-        # compares against the same candidate glyphs. Features depend only on
-        # the glyph's outline, so they are computed once per glyph, and the
-        # candidates' arrays once per index.
         self.feature_cache: dict[int, CFFGlyphFeature] = {}
         self.candidate_arrays_cache: FeatureArrays | None = None
-        # Each glyph's repair, or None, once decided. A glyph's decision reads
-        # only its own feature and the fixed candidates': the distance matrix
-        # sums integer-valued cells, so its row is exact whichever other
-        # glyphs share the request.
         self.decisions: dict[int, str | None] = {}
         self.label_names = labels
         self.code_to_gid_map = code_to_gid
@@ -826,10 +807,6 @@ def cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int, ...]:
     for x, y in cells:
         if 0 <= x < FEATURE_GRID_WIDTH and 0 <= y < FEATURE_GRID_HEIGHT:
             distances[y, x] = 0
-    # The two-pass 4-neighbour chamfer is the exact L1 distance transform, which is
-    # separable: one forward and one backward running minimum per axis. `limit` exceeds
-    # the largest achievable distance on this grid, so the all-unseeded case still
-    # returns `limit` everywhere exactly as the sequential scan did.
     for axis, extent in ((1, FEATURE_GRID_WIDTH), (0, FEATURE_GRID_HEIGHT)):
         offsets = numpy.arange(extent, dtype=numpy.int64)
         if axis == 0:
@@ -1047,15 +1024,6 @@ def parse_truetype_program(data: bytes) -> TTFont:
 
 
 def glyph_set_of(font: Any) -> Any:
-    """font.getGlyphSet(), built once per font and thread.
-
-    Each call built a fresh glyph set -- reading fvar, hmtx and the glyf
-    table's mapping -- to draw one glyph: 57 ms of a 240 ms profiled page
-    render on PyMuPDF test_3357, 166 glyphs. The set is equivalent every
-    time, but drawing tracks composite depth and variation location on it,
-    so one is kept per thread. It lives on the font, whose lifetime it
-    shares; a thread id reused after its thread ended takes over that set.
-    """
     sets = font.__dict__.get("_core_pdf_glyph_sets")
     if sets is None:
         sets = font.__dict__["_core_pdf_glyph_sets"] = {}
@@ -1132,8 +1100,6 @@ def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...
 
 
 class BitmapFromContours:
-    """`glyph_bitmap_for_gid` for programs that produce their own contours."""
-
     __slots__ = ()
 
     @abstractmethod
@@ -1148,8 +1114,6 @@ class BitmapFromContours:
 
 
 class BitmapFromOutlines:
-    """`glyph_bitmap_for_gid` for programs backed by a `FontToolsOutlineAccess`."""
-
     __slots__ = ()
 
     outlines: FontToolsOutlineAccess
@@ -1164,16 +1128,6 @@ TrueTypeTables = tuple[bytes, numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], 
 
 
 def truetype_tables(font: TTFont) -> TrueTypeTables | None:
-    """What truetype_contours reads, when it can stand in for fontTools' drawing.
-
-    That is a font fontTools draws from glyf -- one without a CFF table,
-    which getGlyphSet would prefer, and not a variable font -- whose glyph
-    set fontTools can build without decompiling glyf here: every glyph's loca
-    slice lies within the table, as the decompile's length check demands,
-    and hmtx, and vmtx if there is one, hold every glyph. Its glyph names
-    must be unique, since fontTools finds glyphs by name. None otherwise,
-    and fontTools draws every glyph.
-    """
     try:
         keys = set(font.keys())
         if (
@@ -1182,8 +1136,6 @@ def truetype_tables(font: TTFont) -> TrueTypeTables | None:
             or "fvar" in keys
             or not {"glyf", "loca", "hmtx"} <= keys
         ):
-            # A glyph set reads fvar's axes, and fails when it has none; a
-            # variable font is left to fontTools altogether.
             return None
         reader = font.reader
         if reader is None:
@@ -1196,7 +1148,6 @@ def truetype_tables(font: TTFont) -> TrueTypeTables | None:
         metrics = font["hmtx"].metrics
         lsb = numpy.asarray([int(metrics[name][1]) for name in order], dtype=numpy.int64)
         if "vmtx" in keys:
-            # The glyph set reads vmtx too, and each glyph drawn its entry.
             vertical = font["vmtx"].metrics
             if not all(name in vertical for name in order):
                 return None
@@ -1205,7 +1156,6 @@ def truetype_tables(font: TTFont) -> TrueTypeTables | None:
     if len(loca):
         starts = loca[:-1]
         ends = loca[1:]
-        # data[pos:next] must be next - pos bytes long.
         if bool(((ends < starts) | ((ends > len(glyf)) & (ends != starts))).any()):
             return None
     return glyf, loca, lsb, len(order)
@@ -1220,7 +1170,6 @@ class FontToolsOutlineAccess(BitmapFromContours):
         self.reverse_glyph_map = font.getReverseGlyphMap()
         units_per_em = float(getattr(font["head"], "unitsPerEm", 1000) or 1000)
         self.scale = 1000.0 / units_per_em if units_per_em else 1.0
-        # Read on the first glyph drawn; None if truetype_contours cannot be used.
         self.truetype: TrueTypeTables | None = None
         self.truetype_read = False
 
@@ -1709,42 +1658,17 @@ FONT_MATRIX_RE = re.compile(
 )
 SUBR_RE = re.compile(rb"\bdup\s+(\d+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
 CHARSTRING_RE = re.compile(rb"/([^\s/]+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
-HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
 MAX_SUBROUTINES = 4096
 
 
-def type1_binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> Iterator[tuple[bytes, bytes]]:
-    """Each `pattern` match's name and the binary payload after it; truncated ones are skipped."""
-    for match in pattern.finditer(data):
-        length = int(match.group(2))
-        start = match.end()
-        if length >= 0 and start + length <= len(data):
-            yield match.group(1), data[start : start + length]
-
-
 def type1_charstring(encrypted: bytes, len_iv: int, subrs: list[T1CharString]) -> T1CharString:
-    decoded = decrypt_type1(encrypted, 4330)
-    return T1CharString(decoded[len_iv:] if len_iv >= 0 else decoded, subrs=subrs)
+    if len_iv == -1:
+        return T1CharString(encrypted, subrs=subrs)
+    return T1CharString(decrypt_type1(encrypted, 4330)[len_iv:], subrs=subrs)
 
 
 def eexec_payload(data: bytes, length1: int | None) -> bytes:
-    if length1 is not None and 0 < length1 < len(data):
-        encrypted = data[length1:]
-    else:
-        marker = data.find(b"currentfile eexec")
-        if marker < 0:
-            raise ValueError("Type 1 eexec section is missing")
-        encrypted = data[marker + len(b"currentfile eexec") :].lstrip()
-    sample = encrypted[: min(len(encrypted), 512)]
-    if sample and all(byte in HEX_BYTES for byte in sample):
-        compact = bytes(byte for byte in encrypted if byte not in b" \t\r\n")
-        if len(compact) % 2:
-            compact = compact[:-1]
-        try:
-            encrypted = bytes.fromhex(compact.decode("ascii"))
-        except ValueError as exc:
-            raise ValueError("invalid hexadecimal Type 1 eexec section") from exc
-    decrypted = decrypt_type1(encrypted, 55665)
+    decrypted = decrypt_type1(eexec_ciphertext(data, length1, tolerant=True), 55665)
     if len(decrypted) < 4:
         raise ValueError("truncated Type 1 eexec section")
     return decrypted[4:]
@@ -1767,7 +1691,8 @@ class Type1FontProgram(BitmapFromContours):
             raise ValueError("invalid Type 1 lenIV")
 
         subr_data = {
-            int(index): payload for index, payload in type1_binary_entries(private, SUBR_RE)
+            int(index): payload
+            for index, payload in binary_entries(private, SUBR_RE, skip_truncated=True)
         }
         subr_count = max(subr_data, default=-1) + 1
         if subr_count > MAX_SUBROUTINES:
@@ -1782,7 +1707,7 @@ class Type1FontProgram(BitmapFromContours):
 
         charstrings = {
             name.decode("latin-1"): payload
-            for name, payload in type1_binary_entries(private, CHARSTRING_RE)
+            for name, payload in binary_entries(private, CHARSTRING_RE, skip_truncated=True)
         }
         self.charstrings = {
             name: type1_charstring(encrypted, len_iv, subrs)

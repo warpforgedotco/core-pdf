@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+from typing import ClassVar
 
 import pytest
 
@@ -57,6 +58,47 @@ def test_tounicode_parent_hooks_keep_strict_defaults() -> None:
     assert ToUnicodeCMap(local, inheritance_depth=99).lookup(b"\x01") == "A"
     with pytest.raises(ValueError, match="nesting too deep"):
         ParentlessToUnicodeCMap(local, inheritance_depth=2)
+
+
+class RecordingToUnicodeCMap(ToUnicodeCMap):
+    __slots__ = ()
+
+    max_inheritance_depth = 2
+    reasons: ClassVar[list[str]] = []
+
+    def reject_parent(self, reason: str) -> ToUnicodeCMap | None:
+        self.reasons.append(reason)
+        return None
+
+    def validate_mappings(self) -> None:
+        pass
+
+
+def test_tounicode_parent_that_fails_to_load_goes_through_reject_parent() -> None:
+    child = b"/Broken usecmap 1 beginbfchar <01> <0041> endbfchar"
+    broken = b"1 beginbfchar <01> endbfchar"
+    with pytest.raises(ValueError, match="block count"):
+        ToUnicodeCMap(child, usecmap_resolver=lambda name: broken)
+    RecordingToUnicodeCMap.reasons.clear()
+    cmap = RecordingToUnicodeCMap(child, usecmap_resolver=lambda name: broken)
+    assert cmap.lookup(b"\x01") == "A"
+    assert RecordingToUnicodeCMap.reasons == ["CMap block count does not match operands"]
+
+
+def test_tounicode_usecmap_chain_past_the_depth_limit_goes_through_reject_parent() -> None:
+    calls: list[str] = []
+
+    def resolve(name: str) -> bytes:
+        calls.append(name)
+        return f"/{name}x usecmap".encode()
+
+    RecordingToUnicodeCMap.reasons.clear()
+    cmap = RecordingToUnicodeCMap(
+        b"/P usecmap 1 beginbfchar <01> <0041> endbfchar", usecmap_resolver=resolve
+    )
+    assert cmap.lookup(b"\x01") == "A"
+    assert calls == ["P", "Px", "Pxx"]
+    assert RecordingToUnicodeCMap.reasons == ["ToUnicode CMap usecmap nesting too deep"]
 
 
 def test_tounicode_uses_utf16be_and_local_mapping_overrides_parent() -> None:

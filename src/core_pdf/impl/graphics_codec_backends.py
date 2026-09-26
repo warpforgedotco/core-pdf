@@ -15,7 +15,6 @@ from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupporte
 
 
 def thread_count(env_name: str) -> int:
-    """Worker threads: the environment setting, else the CPU count, bounded to 1..4."""
     configured = os.environ.get(env_name)
     if configured:
         try:
@@ -221,9 +220,6 @@ def tiff_predict_words_codec(
 def tiff_predict_codec(
     data: bytes | memoryview, *, columns: int, colors: int, bits_per_component: int
 ) -> bytes | None:
-    # Mirrors png_predict_codec: returns None when imagecodecs cannot take
-    # this shape, so the caller has one decision to make rather than a
-    # second copy of the bit-width table plus a bare except.
     try:
         if bits_per_component == 8:
             return tiff_predict_words_codec(data, columns, colors, "u1", 1)

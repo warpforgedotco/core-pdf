@@ -63,35 +63,6 @@ def quantize(values: numpy.ndarray[Any, Any], maximum: int = 255) -> numpy.ndarr
 def distinct_component_rows(
     values: numpy.ndarray[Any, Any],
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-    """Deduplicate colour rows for a tint transform.
-
-    The tint function is a compiled PDF function evaluated one row at a time in
-    Python, so it is worth paying to run it once per distinct colour rather
-    than once per pixel. Finding those distinct colours is the expensive part:
-    ``numpy.unique(values, axis=0)`` views each row as a void scalar and sorts
-    the lot, which on a ten-megapixel image is several seconds -- measured at
-    12.3s across four calls on one page, to discover that every row held the
-    same single value.
-
-    A Separation space has exactly one component (ISO 32000-2, 8.6.6.4), and so
-    do many DeviceN spaces in practice, and for one component the row sort is
-    not needed: a plain one-dimensional unique over the column is 7.6x to 13.7x
-    faster for the same answer. Wider spaces keep the row sort, which is still
-    the general case.
-
-    ``unique`` returns the one-dimensional column as a flat array, so it is
-    reshaped back into a column here; the inverse index is already the same
-    shape either way.
-
-    The two paths disagree on one input: the row sort compares raw bytes, so
-    every NaN row stays distinct, while the one-dimensional sort collapses all
-    NaNs into a single entry. That is not observable in the result. The tint
-    function is deterministic, so the collapsed rows all carried the same
-    output, and scattering one entry over those pixels writes what scattering
-    several copies of it wrote. A malformed Decode array is the only way NaN
-    reaches here at all, and it still ends the same way -- either a finite
-    tint for every NaN pixel, or the nonfinite check rejecting the lot.
-    """
     if values.shape[1] == 1:
         distinct, inverse = numpy.unique(values[:, 0], return_inverse=True)
         return distinct.reshape(-1, 1), inverse
@@ -100,12 +71,8 @@ def distinct_component_rows(
 
 type TintFunction = Callable[..., tuple[float, ...]]
 
-# Keyed by tint_function_key, or failing that by id(tint_fn), whose entry
-# then holds the function object so the id cannot be reused while cached.
 TINT_FUNCTION_CACHE: dict[object, tuple[object, TintFunction]] = {}
 TINT_FUNCTION_CACHE_LIMIT = 64
-# The same answers by function object, looked up before the key is built;
-# each entry holds its object so the id cannot be reused while cached.
 TINT_FUNCTION_OBJECTS: dict[int, tuple[object, TintFunction]] = {}
 TINT_FUNCTION_OBJECTS_LIMIT = 256
 TINT_OUTPUT_CACHE_LIMIT = 4096
@@ -122,14 +89,6 @@ def plain_function_value(value: object) -> bool:
 
 
 def tint_function_key(tint_fn: object) -> object | None:
-    """What compile_pdf_function reads of a stream function, if it can be a key.
-
-    It reads the dictionary and the decoded data, nothing else; the source
-    object differs per image, since deep_resolve rebuilds a stream whose
-    dictionary held a reference. Only a dictionary of numbers, names and
-    number arrays -- whose reprs say exactly what they hold -- is keyed by
-    content, and a stream that does not decode is left to the compiler.
-    """
     if type(tint_fn) is not PdfStream:
         return None
     items: list[tuple[str, str]] = []
@@ -139,27 +98,12 @@ def tint_function_key(tint_fn: object) -> object | None:
         items.append((repr(key), repr(value)))
     try:
         data = tint_fn.data
-    except Exception:  # noqa: BLE001 -- the compiler raises it, uncached
+    except Exception:  # noqa: BLE001
         return None
     return tuple(sorted(items)), bytes(data)
 
 
 def tint_function(tint_fn: object) -> TintFunction:
-    """`tint_fn` compiled, remembering its output for each input it is given.
-
-    Every image in a Separation or DeviceN space compiled its tint transform
-    again -- decoding a calculator's stream and parsing its program -- and
-    evaluated it once per distinct colour. Images on one page share their
-    functions and, at 8 bits, their input levels: PyMuPDF test_3806 renders
-    176 images through 8,430 function runs, 14 distinct functions among them.
-    A PDF function is a pure function of its inputs, so the compiled function
-    and the outputs it has produced are kept, and an input seen before costs a
-    lookup. Exceptions are not remembered; the next call raises again.
-
-    A function object seen before is found by identity first: images drawn
-    again share their colour space's objects, and building the key reprs the
-    dictionary and copies the decoded data.
-    """
     seen = TINT_FUNCTION_OBJECTS.get(id(tint_fn))
     if seen is not None and seen[0] is tint_fn:
         return seen[1]
@@ -185,7 +129,6 @@ def compiled_tint_function(tint_fn: object) -> TintFunction:
     outputs: dict[tuple[float, ...], tuple[float, ...]] = {}
 
     def remembered(*inputs: float) -> tuple[float, ...]:
-        # -0.0 equals 0.0 as a key, but a program can tell them apart.
         if 0.0 in inputs and any(copysign(1.0, value) < 0.0 for value in inputs):
             return compiled(*inputs)
         output = outputs.get(inputs)
@@ -316,24 +259,12 @@ def convert_distinct_codes(
     maximum: int,
     rendering: ColorRendering,
 ) -> numpy.ndarray:
-    """Convert a one-component image by the sample codes it uses, not by pixel.
-
-    Without a matte every output pixel depends only on its own sample, so
-    converting each code the image uses once and scattering the results is
-    the same image. Finding those codes from a table of at most 65,536 entries
-    replaces the sort distinct_component_rows would otherwise run over the
-    decoded floats: 0.7s on a 9.9-megapixel page in PyMuPDF test_3806.
-    """
-    # Sized by the codes present rather than by `maximum`: damaged data can
-    # hold samples above it, which decode the same way here as elsewhere.
     codes = numpy.ascontiguousarray(codes, dtype=numpy.uint16)
     present, largest = code_presence(codes)
     size = max(maximum, largest) + 1
     used = numpy.flatnonzero(present[:size])
     values = decode_sample_values(used.reshape(-1, 1), pairs, maximum)
     converted = convert_components(values, space, rendering=rendering)
-    # A table indexed by the code itself, so the scatter is one gather with
-    # no per-pixel array of positions.
     table = numpy.zeros((size, *converted.shape[1:]), dtype=converted.dtype)
     table[used] = converted
     if table.dtype != numpy.uint8 or table.ndim != 2:
@@ -341,7 +272,6 @@ def convert_distinct_codes(
     return gather_uint8_rows(table, codes)
 
 
-# Below this many pixels a multi-component image converts pixel by pixel.
 DISTINCT_SAMPLES_MINIMUM = 1 << 16
 
 
@@ -352,14 +282,6 @@ def convert_distinct_samples(
     maximum: int,
     rendering: ColorRendering,
 ) -> numpy.ndarray | None:
-    """Convert a two- to four-component image by its distinct sample rows.
-
-    Without a matte every output pixel depends only on its own samples, so
-    converting each distinct row once and scattering the results is the same
-    image -- the decode to float64, the clip and the colour transform all run
-    per row. Rows are found by a hash table on the raw integers; past a
-    quarter of the pixels distinct this gives up and returns None.
-    """
     found = distinct_uint16_rows(numpy.ascontiguousarray(integers), len(integers) // 4)
     if found is None:
         return None
@@ -381,7 +303,6 @@ def convert_integer_samples(
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
     space: ColorSpace | None = None,
 ) -> numpy.ndarray:
-    """`samples` in the dictionary's colour space, which `space` gives if already parsed."""
     if space is None:
         space = parse_color_space(dictionary.get("ColorSpace"))
     count = len(space.component_ranges)

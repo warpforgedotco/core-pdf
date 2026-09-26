@@ -314,8 +314,6 @@ def test_object_stream_recovery_skips_unusable_containers(kind):
     elif kind == "stale":
         parsed[key_for(1)] = (101, stream)
     elif kind == "wrong-type":
-        # A PDF name, not a bare str: PdfObject has no str member, and the
-        # reader reaches this through recover_pdf_name, which takes either.
         stream.dictionary = {"Type": PdfName.of(b"Other")}
     else:
         stream.dictionary = {"N": -1, "First": 0}
@@ -398,8 +396,6 @@ def pdf_with_headers_ending_in_dictionaries() -> bytes:
 def test_objects_written_without_a_space_after_obj_need_no_offset_repair(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Every entry of such a file used to look stale, which scanned the whole
-    # file for replacement offsets that the scan could not find either.
     scans: list[int] = []
 
     def brute_force_xref(self: PdfDocument) -> dict:

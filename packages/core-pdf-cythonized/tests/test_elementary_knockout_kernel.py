@@ -1,14 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""An elementary group into its knockout parent: the three steps, fused.
-
-composite_group built the element as a copy of the parent's initial backdrop,
-ran composite_elementary_normal over it, then composite_knockout_group, then
-parent_shape += (1.0 - parent_shape) * shape in numpy. The reference is that
-sequence, both kernels pinned by their own golden vectors, over random windows
-of larger buffers: coverage that is zero, partial and full, shapes below and
-above the element's alpha, with and without a parent shape plane.
-"""
 
 import numpy
 import pytest

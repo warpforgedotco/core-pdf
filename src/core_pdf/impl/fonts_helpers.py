@@ -23,7 +23,7 @@ from core_pdf_spec.s_09_fonts.helpers import (
 from core_pdf_spec.standards import SemanticContext, recognized_version
 
 
-def strip_subset_tag(font_name: str) -> str:
+def recover_strip_subset_tag(font_name: str) -> str:
     return font_name.split("+", 1)[-1]
 
 
@@ -89,7 +89,7 @@ def build_decode_table(
     return tuple(table)
 
 
-def parse_differences(
+def recover_differences(
     value: Any, resolve_name: Callable[[Any], str | None] | None = None
 ) -> dict[int, str]:
     differences: dict[int, str] = {}

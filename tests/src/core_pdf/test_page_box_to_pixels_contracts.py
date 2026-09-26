@@ -1,5 +1,3 @@
-"""A page box maps to pixels as max(0, min(size, floor/ceil(edge))) for each edge."""
-
 import math
 import random
 

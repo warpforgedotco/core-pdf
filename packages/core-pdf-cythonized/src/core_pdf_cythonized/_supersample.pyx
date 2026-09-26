@@ -1,29 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""4x4 supersampled path coverage (core_pdf.impl.render_target.fill_path).
-
-A path fill that glyph_coverage_plane cannot take -- in practice an even-odd
-fill, whose winding the signed-area accumulation does not model -- was
-covered by sampling: four sample rows a pixel row, the edge crossings of each
-sorted into spans by the fill rule, and four sample columns turned into
-per-pixel counts through a running sum of deltas. PyMuPDF test_3806, the
-slowest page in the corpus, is 16,262 even-odd fills, and this loop was 4.7 s
-of its 8.9 s rasterize: 5.6 million calls to math.ceil and 3.9 million each
-to min and max, on numbers.
-
-The kernel is that loop, term for term. The expressions below are the ones
-both of the original's crossing routines computed -- the numpy one for eight
-or more edges and the scalar one below that agreed exactly -- so a sample
-lands on the same bits and a span on the same pixel. What the original
-blended row by row, the caller now blends as one plane: a row with no
-coverage was skipped, and blending or recording zero coverage changes
-nothing, so trimming the plane to its first and last covered rows is the
-whole of the difference.
-
-math.ceil raised on a span edge that was not finite. The kernel raises the
-same exceptions, before returning anything rather than partway down the
-fill; capture rejects non-finite operands, so only a transform overflowing
-could produce one.
-"""
 
 from cpython.mem cimport PyMem_Free, PyMem_Malloc
 from libc.math cimport ceil
@@ -57,7 +32,6 @@ cdef int add_span(
     Py_ssize_t ix1,
     int *deltas,
 ) except -1:
-    # The pixel columns whose four sample columns fall inside the span.
     cdef double span_start = (start_x - crop_x0) * scale
     cdef double span_end = (end_x - crop_x0) * scale
     cdef double offset, first, last
@@ -66,11 +40,8 @@ cdef int add_span(
         offset = (sx + 0.5) / SAMPLES
         first = ceil(span_start - offset)
         last = ceil(span_end - offset)
-        # In the original's order: the start column is converted first.
         check_integral(first)
         check_integral(last)
-        # Clamp while still a double: an unclamped ceil can be far outside
-        # what a Py_ssize_t holds.
         start = ix0 if first <= ix0 else (ix1 if first >= ix1 else <Py_ssize_t> first)
         end = ix1 if last >= ix1 else (ix0 if last <= ix0 else <Py_ssize_t> last)
         if end > start:
@@ -89,7 +60,6 @@ cdef int add_sample_row(
     Py_ssize_t ix1,
     int *deltas,
 ) except -1:
-    # fill_path_crossing_spans, feeding each span straight to add_span.
     cdef double first, second, previous
     cdef Py_ssize_t index
     cdef int winding, delta
@@ -141,14 +111,6 @@ def supersampled_coverage_plane(
     Py_ssize_t iy1,
     bint evenodd,
 ):
-    """Sample counts, 0 to 16, for the pixels of a box, under a fill rule.
-
-    ``edges`` holds rows of page-space x0, y0, x1, y1. Returns
-    ``(counts, first_row)``, where ``counts`` covers the rows from
-    ``iy0 + first_row`` through the last row with any coverage and the full
-    width ``ix1 - ix0``; or ``None`` when no row is covered, which includes
-    every path whose edges are all horizontal.
-    """
     cdef const double[:, ::1] view = numpy.ascontiguousarray(edges, dtype=numpy.float64)
     if view.shape[0] and view.shape[1] != 4:
         raise ValueError("edges must have four columns")
@@ -165,7 +127,6 @@ def supersampled_coverage_plane(
 
     counts = numpy.zeros((height, width), dtype=numpy.uint8)
     cdef unsigned char[:, ::1] out = counts
-    # Per kept edge: x0, y0, x1, y1, low, high -- the original's segments.
     cdef double *segments = <double *> PyMem_Malloc(kept * 6 * sizeof(double))
     cdef Crossing *crossings = <Crossing *> PyMem_Malloc(kept * sizeof(Crossing))
     cdef int *deltas = <int *> PyMem_Malloc((width + 1) * sizeof(int))

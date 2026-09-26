@@ -15,7 +15,6 @@ from core_pdf_cythonized import cubic_sample_times
 
 
 def blank_cff_font[F: CFFFont](font_type: type[F]) -> F:
-    """A CFF font with no program data, glyphs or dictionaries, for kernel tests."""
     font = font_type.__new__(font_type)
     font.data = b""
     font.top_dict = {}
@@ -235,8 +234,6 @@ class CountingFeatureFont(FeatureFont):
 
 @pytest.mark.parametrize("count", [2, 33])
 def test_unicode_index_computes_each_glyph_feature_once(count: int) -> None:
-    # A decoder asks once per string it decodes, so the same index answers
-    # many overlapping requests; each must match what a fresh index returns.
     font = blank_cff_font(CountingFeatureFont)
     font.feature_requests = []
     font.charstrings = [b"\x0e"] * (count + 1)

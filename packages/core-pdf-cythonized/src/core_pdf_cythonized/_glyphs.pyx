@@ -1,21 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Per-glyph layout geometry (core_pdf.impl.capture_glyphs).
-
-capture_glyphs is 38.3% of a profiled page capture, and roughly half of that
-is scalar float arithmetic: an advance box, a baseline, a glyph transform, an
-ink box and two clip tests per glyph, tens of thousands of times a page. The
-original ran it inside the same loop that built a forty-field
-GlyphObservation, so there was nothing here a compiler could own -- object
-churn is the one shape Cython loses at. Splitting that loop into a scalar
-prepass, this kernel, and an object pass is what made it compilable.
-
-The arithmetic must match CPython bit for bit; the build disables float
-contraction so the compiler cannot fuse a multiply-add and move a box edge by
-an ULP. Two spellings in the original differed only by operand order --
-``e + offset * a`` against ``offset * a + e`` -- which IEEE 754 addition makes
-identical, so one formula serves both of its branches. tests/test_glyphs.py
-drives the golden vectors that pin all of it.
-"""
 
 from libc.math cimport ceil, isnan
 from libc.stdlib cimport free, malloc
@@ -40,27 +23,9 @@ def horizontal_glyph_geometry(
     list want_bitmap,
     bint want_transform=True,
 ):
-    """Lay out ``n`` horizontal glyphs.
-
-    ``glyph_boxes`` is four floats per glyph, NaN where the font gave none.
-    Returns per-glyph lists of advance boxes, baselines, glyph transforms and
-    ink boxes as tuples, plus flat visibility flags and bitmap dimensions,
-    and the union of the advance boxes and of the ink boxes as
-    RunGeometry.add accumulates them glyph by glyph (None for no glyphs).
-
-    ``want_transform`` is False when the caller will not rasterize glyph
-    outlines. The transform is six floats per glyph and nothing but the
-    renderer reads it, so skipping it drops the largest of the four tuples
-    this builds; the entries come back None, which is what marks the glyph as
-    carrying no paint.
-    """
     cdef Py_ssize_t n = len(offsets)
     cdef Py_ssize_t i, j, k
 
-    # Cython compiles indexing on a `cdef list` to an unchecked
-    # PyList_GET_ITEM, so a caller that gets a length wrong reads off the end
-    # of the list rather than raising. The prepass below is the only guard
-    # between that and a segfault, so it runs before any pointer is taken.
     if len(advances) != n or len(want_bitmap) != n:
         raise ValueError("offsets, advances and want_bitmap must be the same length")
     if len(glyph_boxes) != 4 * n:
@@ -110,8 +75,6 @@ def horizontal_glyph_geometry(
         qx1 = clip_page[2]
         qy1 = clip_page[3]
 
-    # One conversion pass into C storage, so the arithmetic below never
-    # touches a Python object.
     cdef double *off = <double *> malloc(n * sizeof(double))
     cdef double *adv = <double *> malloc(n * sizeof(double))
     cdef double *box = <double *> malloc(4 * n * sizeof(double))
@@ -138,8 +101,6 @@ def horizontal_glyph_geometry(
     cdef double fb_w, fb_h, r_w, r_h, width, height, size, scaled, ratio
     cdef bint have_box
     cdef int vis, bw, bh
-    # RunGeometry.add over the glyphs in order: the first boxes, then each
-    # edge kept unless the next is strictly beyond it.
     cdef double ua0 = 0.0, ua1 = 0.0, ua2 = 0.0, ua3 = 0.0
     cdef double ui0 = 0.0, ui1 = 0.0, ui2 = 0.0, ui3 = 0.0
 
@@ -318,13 +279,6 @@ def horizontal_glyph_geometry(
                     width = gx1 - gx0
                     height = gy1 - gy0
                     if width > 0.0 and height > 0.0:
-                        # Clamped as doubles, then cast. Converting a double
-                        # outside int's range is undefined: arm64 saturates and
-                        # gives the right answer by luck, x86-64 returns INT_MIN
-                        # and would clamp up to 16 instead of down to 64. A
-                        # malformed `Tf 1e10` reaches this, and the Python
-                        # original clamped arbitrary-precision ints, so it
-                        # always gave 64.
                         size = font_size if font_size > 1.0 else 1.0
                         scaled = ceil(size * 2.5)
                         if scaled < 16.0:

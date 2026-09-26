@@ -64,8 +64,6 @@ class CMapToken(Record):
 
 
 class CMapTokenRun(Record):
-    """Source bytes and the tokens read from them, shared by a CMap and its blocks."""
-
     __slots__ = ("data", "tokens")
 
     data: bytes
@@ -102,10 +100,6 @@ class CMapBlock(CMapTokenRun):
 
 class CMapProgram(CMapTokenRun):
     __slots__ = ()
-
-    # Parsing is strict. A subclass relaxes it through the hooks below: how the
-    # source is tokenised, which whole-program rules apply, and what a block's
-    # count, operands, and terminator must satisfy.
 
     @classmethod
     def parse(cls, data: bytes | bytearray | memoryview) -> Self:
@@ -171,7 +165,6 @@ class CMapProgram(CMapTokenRun):
             self.reject_unterminated_block()
 
     def block_count(self, begin_index: int) -> int:
-        """The entry count before the begin operator at `begin_index`."""
         if begin_index == 0:
             raise ValueError("missing CMap block count")
         count = self.tokens[begin_index - 1]
@@ -207,7 +200,6 @@ class CMapProgram(CMapTokenRun):
                 raise ValueError("invalid CMap mapping operand type")
 
     def reject_unterminated_block(self) -> None:
-        """A block without its end operator; returning drops the block."""
         raise ValueError("unterminated CMap mapping block")
 
 

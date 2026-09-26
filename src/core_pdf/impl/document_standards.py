@@ -62,12 +62,10 @@ WTPDF_PROFILES = {
 
 
 def find_pdf_header(data: PdfByteBuffer) -> int:
-    """Where the %PDF- header starts within the first 1024 bytes, or -1."""
     return data.find(b"%PDF-", 0, 1024)
 
 
 def local_name(tag: str) -> str:
-    """An XML tag or attribute name without its {namespace}."""
     return tag.rsplit("}", 1)[-1]
 
 
@@ -108,7 +106,6 @@ def resolve_catalog(resolver: PdfValueResolver, trailer: PdfDict) -> PdfDict | N
 
 
 def catalog_version(resolver: PdfValueResolver, trailer: PdfDict) -> PdfVersion | None:
-    """The version the trailer's catalog declares; ValueError if it has no catalog."""
     catalog = resolver.resolve(trailer.get("Root"))
     if not isinstance(catalog, dict):
         raise ValueError("missing catalog")
