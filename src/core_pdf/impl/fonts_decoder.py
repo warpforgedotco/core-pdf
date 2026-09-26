@@ -22,6 +22,7 @@ from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_cmap_resources import (
     CID_COLLECTION_UNICODE_OVERRIDES,
     CID_COLLECTION_UNICODE_SOURCES,
+    CMapUnicodeSource,
     predefined_cmap_unicode,
     resolve_cmap_decoder,
     resolve_cmap_resource,
@@ -65,7 +66,6 @@ from core_pdf.impl.types import (
     PdfString,
     Record,
     Rectangle,
-    frozen_setattr,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int_strict
@@ -187,7 +187,7 @@ def build_cff_unicode_repair_index(
     if not isinstance(font_file, PdfStream) or len(font_file.data) > 750_000:
         return None
     mapping = single_code_mapping(to_unicode, cmap)
-    if not any(is_repairable_to_unicode_label(value) for cid_value, value in mapping.values()):
+    if not any(is_repairable_to_unicode_label(value) for _, value in mapping.values()):
         return None
     mapping_items = tuple(sorted((code, cid, value) for code, (cid, value) in mapping.items()))
     return CFFUnicodeRepairIndex(font_program, mapping_items)
@@ -1437,29 +1437,8 @@ def dedupe_alternates(values: Iterable[str], selected: str) -> tuple[str, ...]:
     return tuple(alternates)
 
 
-class CompactCMap(Record):
-    __slots__ = ("effective_codes_by_cid",)
-
-    effective_codes_by_cid: dict[int, tuple[bytes, ...]]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("effective_codes_by_cid",)
-    __match_args__ = ("effective_codes_by_cid",)
-
-    def __init__(self, effective_codes_by_cid: dict[int, tuple[bytes, ...]]) -> None:
-        frozen_setattr(self, "effective_codes_by_cid", effective_codes_by_cid)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.effective_codes_by_cid == other.effective_codes_by_cid
-
-    def __hash__(self) -> int:
-        return hash((self.effective_codes_by_cid,))
-
-    def codes_for_cid(self, cid: int) -> tuple[bytes, ...]:
-        return self.effective_codes_by_cid.get(cid, ())
+# A predefined CMap inverted: each CID's codes that decode to it.
+CompactCMap = dict[int, tuple[bytes, ...]]
 
 
 def compact_cmap_from_decoder(decoder: CMapDecoder) -> CompactCMap:
@@ -1481,9 +1460,7 @@ def compact_cmap_from_decoder(decoder: CMapDecoder) -> CompactCMap:
                 continue
             seen.add(code)
             effective_codes_by_cid[cid_range.first_cid + offset].append(code)
-    return CompactCMap(
-        {cid: tuple(codes) for cid, codes in effective_codes_by_cid.items()},
-    )
+    return {cid: tuple(codes) for cid, codes in effective_codes_by_cid.items()}
 
 
 @cache
@@ -1500,7 +1477,7 @@ def preferred_unicode_for_cid(cmap_name: str, codec: str, cid: int) -> str | Non
         return None
     candidates = {
         text
-        for code in cmap.codes_for_cid(cid)
+        for code in cmap.get(cid, ())
         if (text := unicode_scalar_from_cmap_code(code, codec)) is not None
     }
     if not candidates:
@@ -1538,27 +1515,13 @@ class CIDUnicodeMap:
             return None
         sources = collection[self.vertical]
         opposite_sources = collection[not self.vertical]
-        candidates: Counter[str] = Counter()
-        for cmap_name, codec, weight in sources:
-            if weight <= 0:
-                continue
-            text = preferred_unicode_for_cid(cmap_name, codec, cid)
-            if text is not None:
-                candidates[text] += weight
-        if not candidates:
-            for cmap_name, codec, weight in opposite_sources:
-                if weight <= 0:
-                    continue
-                text = preferred_unicode_for_cid(cmap_name, codec, cid)
-                if text is not None:
-                    candidates[text] += weight
-        if not candidates:
-            for cmap_name, codec, weight in (*sources, *opposite_sources):
-                if weight > 0:
-                    continue
-                text = preferred_unicode_for_cid(cmap_name, codec, cid)
-                if text is not None:
-                    candidates[text] += 1
+        # Weighted votes from this writing mode's CMaps, else the other mode's,
+        # else one vote each from the CMaps given no weight.
+        candidates = (
+            tally_cid_votes(sources, cid)
+            or tally_cid_votes(opposite_sources, cid)
+            or tally_cid_votes((*sources, *opposite_sources), cid, unweighted=True)
+        )
         if not candidates:
             return None
         ranked = {
@@ -1566,6 +1529,20 @@ class CIDUnicodeMap:
             for text, weight in candidates.items()
         }
         return max(ranked, key=ranked.__getitem__)
+
+
+def tally_cid_votes(
+    sources: Iterable[CMapUnicodeSource], cid: int, *, unweighted: bool = False
+) -> Counter[str]:
+    """Each source's preferred text for `cid`, from the weighted or the unweighted sources."""
+    candidates: Counter[str] = Counter()
+    for cmap_name, codec, weight in sources:
+        if (weight <= 0) != unweighted:
+            continue
+        text = preferred_unicode_for_cid(cmap_name, codec, cid)
+        if text is not None:
+            candidates[text] += 1 if unweighted else weight
+    return candidates
 
 
 @cache
