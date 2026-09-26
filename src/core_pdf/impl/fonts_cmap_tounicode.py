@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from binascii import unhexlify
-from collections.abc import Callable
 
 from core_adobe_fonts.cmap.ranges import (
     ranges_overlap,
@@ -204,18 +203,6 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
 
     def reject_parent(self, reason: str) -> PdfToUnicodeCMap | None:  # noqa: ARG002
         return None
-
-    def load_parent(
-        self,
-        data: bytes,
-        resolver: Callable[[str], bytes | None] | None,
-        depth: int,
-        ancestor_names: tuple[str, ...] = (),
-    ) -> PdfToUnicodeCMap | None:
-        try:
-            return super().load_parent(data, resolver, depth, ancestor_names)
-        except ValueError:
-            return None
 
     def decode(self, data: bytes, *, preserve_nulls: bool = False) -> str:
         if not data:

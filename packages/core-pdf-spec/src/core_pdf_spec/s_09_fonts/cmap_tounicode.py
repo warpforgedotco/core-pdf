@@ -255,10 +255,14 @@ class ToUnicodeCMap:
         data = resolver(name) if resolver is not None else None
         if data is None:
             return self.reject_parent(f"unresolved ToUnicode CMap usecmap: {name}")
+        limit = self.max_inheritance_depth
+        if limit is not None and depth > limit:
+            return self.reject_parent("ToUnicode CMap usecmap nesting too deep")
         return self.load_parent(data, resolver, depth, (*ancestor_names, name))
 
     def reject_parent(self, reason: str) -> ToUnicodeCMap | None:
-        """Refuse a cyclic or unresolved usecmap; returning None inherits nothing."""
+        """Refuse a usecmap that is cyclic, unresolved, nested too deep, or that
+        fails to load; returning None inherits nothing."""
         raise ValueError(reason)
 
     def load_parent(
@@ -268,9 +272,15 @@ class ToUnicodeCMap:
         depth: int,
         ancestor_names: tuple[str, ...] = (),
     ) -> ToUnicodeCMap | None:
-        return type(self)(
-            data, usecmap_resolver=resolver, inheritance_depth=depth, ancestor_names=ancestor_names
-        )
+        try:
+            return type(self)(
+                data,
+                usecmap_resolver=resolver,
+                inheritance_depth=depth,
+                ancestor_names=ancestor_names,
+            )
+        except ValueError as error:
+            return self.reject_parent(str(error))
 
     def lookup(self, code: bytes) -> str | None:
         return self.mappings.get(code)
