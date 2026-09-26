@@ -177,6 +177,7 @@ class ByteBudgetCache[K, V]:
 # Keyed by id(source); the entry holds the source, so the id cannot be reused
 # while it is cached.
 type PreparedImageCache = ByteBudgetCache[int, tuple[ImageSource, PreparedImage | None]]
+type PreparedShadingCache = dict[tuple[int, ColorRendering], tuple[object, PreparedShading | None]]
 
 
 def prepared_image(cache: PreparedImageCache, source: ImageSource) -> PreparedImage | None:
@@ -555,6 +556,7 @@ class RasterTarget:
         "soft_mask_cache",
         "prepared_image_cache",
         "tiling_cell_cache",
+        "prepared_shading_cache",
         "active_soft_masks",
         "elementary_scratch",
         "group_member_boxes",
@@ -606,6 +608,10 @@ class RasterTarget:
         self.soft_mask_cache: SoftMaskCache = ByteBudgetCache(SOFT_MASK_CACHE_BYTES)
         self.prepared_image_cache: PreparedImageCache = ByteBudgetCache(PREPARED_IMAGE_CACHE_BYTES)
         self.tiling_cell_cache: TilingCellCache = {}
+        # A shading dictionary's prepared form, per dictionary and rendering.
+        # The entry keeps its dictionary alive, so the identity key cannot be
+        # reused while it is here.
+        self.prepared_shading_cache: PreparedShadingCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, ElementaryScratch] = {}
         # DisplayList.group_member_boxes of the list being painted, if known.
@@ -661,6 +667,7 @@ class RasterTarget:
         sibling.soft_mask_cache = self.soft_mask_cache
         sibling.prepared_image_cache = self.prepared_image_cache
         sibling.tiling_cell_cache = self.tiling_cell_cache
+        sibling.prepared_shading_cache = self.prepared_shading_cache
         sibling.active_soft_masks = self.active_soft_masks
         return sibling, view
 
@@ -3089,6 +3096,23 @@ class RasterTarget:
             box = (crop_x0, crop_y0, crop_x0 + width / scale, crop_y1)
         return normalize_rect(box)
 
+    def prepared_shading(
+        self, dictionary: object, rendering: ColorRendering
+    ) -> PreparedShading | None:
+        """prepare_shading's answer for the dictionary, prepared once per target.
+
+        A page that paints one shading many times -- a pattern fill per
+        path, an sh per tile -- parsed its function and colour space again
+        each time, and started a fresh colour cache.
+        """
+        key = (id(dictionary), rendering)
+        cached = self.prepared_shading_cache.get(key)
+        if cached is not None and cached[0] is dictionary:
+            return cached[1]
+        shading = prepare_shading(dictionary, rendering=rendering)
+        self.prepared_shading_cache[key] = (dictionary, shading)
+        return shading
+
     def paint_shading(self, data: dict[str, Any], blend_mode: str | None) -> None:
         """Paint an axial or radial shading over the clip, in two kernels.
 
@@ -3103,8 +3127,8 @@ class RasterTarget:
         raised at recorded as blend_px recorded it, and the same error
         raised.
         """
-        shading = prepare_shading(
-            data.get("dictionary"), rendering=data.get("color_rendering", DEFAULT_COLOR_RENDERING)
+        shading = self.prepared_shading(
+            data.get("dictionary"), data.get("color_rendering", DEFAULT_COLOR_RENDERING)
         )
         if shading is None:
             return

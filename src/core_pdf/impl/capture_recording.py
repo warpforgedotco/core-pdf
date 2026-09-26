@@ -430,6 +430,7 @@ class TextState(RecoveringTextState):
     capture_image_sources: dict[
         tuple[int, ColorRendering], tuple[PdfStream, ImageSource, float | None]
     ]
+    capture_shadings: dict[int, tuple[dict, dict]]
     capture_colors: dict[
         tuple[int, tuple[float, ...], str | None, BlackPointCompensation],
         tuple[object, tuple[float, ...] | None],
@@ -482,6 +483,7 @@ class TextState(RecoveringTextState):
         self.capture_frames = {}
         self.capture_patterns = {}
         self.capture_image_sources = {}
+        self.capture_shadings = {}
         self.capture_colors = {}
         self.capture_soft_masks = {}
         self.capture_mask_resources = {}
@@ -1419,12 +1421,21 @@ class TextState(RecoveringTextState):
         return result
 
     def capture_shading_dictionary(self, dictionary: dict) -> dict:
-        return {
+        # One captured dictionary per shading, so a shading painted again --
+        # an sh per tile -- is resolved once and the rasterizer, which keys
+        # its prepared shadings by the dictionary, prepares it once. The
+        # entry keeps the source alive, so its identity cannot be reused.
+        cached = self.capture_shadings.get(id(dictionary))
+        if cached is not None and cached[0] is dictionary:
+            return cached[1]
+        captured = {
             key: self.resolver.deep_resolve(value)
             if str(key) in {"ColorSpace", "Function", "Coords", "Domain", "Extend", "BBox"}
             else value
             for key, value in dictionary.items()
         }
+        self.capture_shadings[id(dictionary)] = (dictionary, captured)
+        return captured
 
     def nested_capture_state(self) -> TextState:
         nested = TextState(
@@ -1443,6 +1454,7 @@ class TextState(RecoveringTextState):
         nested.capture_font_decoders = self.capture_font_decoders
         nested.capture_font_companions = self.capture_font_companions
         nested.capture_colors = self.capture_colors
+        nested.capture_shadings = self.capture_shadings
         return nested
 
     def capture_pattern(self, pattern: object) -> PatternPaint | None:

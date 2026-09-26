@@ -299,3 +299,38 @@ def test_blending_rules_follow_the_documents_version(
     assert outcomes[0] == outcomes[1]
     if version is None and mode != "Screen":
         assert outcomes[0][0] is not None
+
+
+def test_a_shading_painted_again_is_prepared_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core_pdf.impl.types import PdfName
+
+    shading = {PdfName.of(k.encode()): v for k, v in SHADING.items()}
+    prepared: list[object] = []
+    original = raster.prepare_shading
+
+    def counting(dictionary: object, **options: Any) -> Any:
+        prepared.append(dictionary)
+        return original(dictionary, **options)
+
+    monkeypatch.setattr(raster, "prepare_shading", counting)
+    target = make_backdrop_target(12, 3, planes=False)
+    for _ in range(3):
+        target.paint_shading({"dictionary": shading}, None)
+    assert prepared == [shading]
+    sibling, _ = target.blank_sibling()
+    assert sibling.prepared_shading_cache is target.prepared_shading_cache
+
+
+def test_a_shading_painted_again_is_captured_once() -> None:
+    from core_pdf import PdfDocument
+
+    shading = (
+        b"<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [10 10 100 70] "
+        b"/Function " + FUNCTION + b" >>"
+    )
+    data = one_page_pdf(shading, b"q 20 15 70 50 re W n /S sh Q /S sh", b"")
+    with PdfDocument(data) as document:
+        program = document.pages[0].get_page_program()
+    dictionaries = [drawing.dictionary for drawing in program.drawings if drawing.kind == "shading"]
+    assert len(dictionaries) == 2
+    assert dictionaries[0] is dictionaries[1]
