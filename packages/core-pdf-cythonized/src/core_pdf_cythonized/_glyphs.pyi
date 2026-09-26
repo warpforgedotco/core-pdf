@@ -26,4 +26,6 @@ def horizontal_glyph_geometry(
     list[Rectangle],
     list[int],
     list[int],
+    Rectangle | None,
+    Rectangle | None,
 ]: ...

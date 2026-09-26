@@ -221,6 +221,7 @@ def capture_glyphs(
     positions: list[tuple[float, float]] = []
     offset = 0.0
     cursor = 0
+    any_split = False
     for glyph in glyphs:
         if is_vertical:
             _, advance_y = decoder.glyph_advance_vector(
@@ -262,6 +263,8 @@ def capture_glyphs(
             False if chunk_length == 1 else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
         )
         suspicious_flags.append(suspicious)
+        if glyph.split_unicode and chunk_length != 1 and not suspicious:
+            any_split = True
         want_bitmap.append(
             1 if want_render and (should_capture_glyph_bitmap(chunk_text) or suspicious) else 0
         )
@@ -274,6 +277,7 @@ def capture_glyphs(
 
     # ---- pass two: the geometry kernel ------------------------------------
     if is_vertical:
+        advance_union = ink_union = None
         advance_f, baseline_f, transform_f, ink_f, visible_f, bitmap_f = vertical_glyph_geometry(
             offsets,
             advances,
@@ -292,7 +296,16 @@ def capture_glyphs(
         )
     else:
         # Positional: the kernel's keyword parsing matched each name per call.
-        advance_f, baseline_f, transform_f, ink_f, visible_f, bitmap_f = horizontal_glyph_geometry(
+        (
+            advance_f,
+            baseline_f,
+            transform_f,
+            ink_f,
+            visible_f,
+            bitmap_f,
+            advance_union,
+            ink_union,
+        ) = horizontal_glyph_geometry(
             offsets,
             advances,
             glyph_boxes,
@@ -311,6 +324,11 @@ def capture_glyphs(
         )
 
     # ---- pass three: the observations -------------------------------------
+    # The kernel accumulated the run's boxes as RunGeometry.add would have,
+    # glyph by glyph; with no glyph split into fragments, whose boxes are cut
+    # here, those are the run's, and only the confidence is gathered below.
+    fused = want_runs and advance_union is not None and not any_split
+    run_confidence: float | None = None
     styled_observation = GlyphObservation.styled
     add_run_geometry = result.geometry.add
     append_glyph = result.glyphs.append
@@ -365,7 +383,12 @@ def capture_glyphs(
             )
             append_glyph(observation)
             if want_runs:
-                add_run_geometry(advance_bbox, rect, observation_confidence)
+                if not fused:
+                    add_run_geometry(advance_bbox, rect, observation_confidence)
+                elif index == 0 or run_confidence is None:
+                    run_confidence = observation_confidence
+                elif observation_confidence is not None:
+                    run_confidence = min(run_confidence, observation_confidence)
                 append_cluster(observation)
             continue
 
@@ -433,5 +456,11 @@ def capture_glyphs(
             )
             if cluster is not None:
                 result.clusters.append(cluster)
+    if fused and advance_union is not None and ink_union is not None:
+        geometry = result.geometry
+        geometry.started = True
+        geometry.advance = advance_union
+        geometry.ink = ink_union
+        geometry.confidence = run_confidence
     result.cluster_count = len(kept)
     return result
