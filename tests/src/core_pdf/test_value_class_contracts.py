@@ -193,7 +193,10 @@ def equal(left: object, right: object) -> bool | None:
 
 
 def test_value_classes_are_discovered() -> None:
-    assert len(VALUE_CLASSES) > 200
+    # A floor against discovery quietly finding nothing, not a census: a
+    # subclass that inherits its fields and boilerplate leaves the suite, as
+    # core's FilterParams and OCR's PageAnalysis did.
+    assert len(VALUE_CLASSES) > 150
 
 
 def test_almost_every_value_class_is_constructible_from_placeholders() -> None:

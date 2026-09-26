@@ -28,6 +28,7 @@ from core_pdf_spec.s_07_syntax.xref import (
     decode_xref_row,
     key_for,
     new_xref_entry,
+    xref_column,
 )
 from core_pdf_spec.s_07_syntax.xref import XRefScanner as SyntaxXRefScanner
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -815,16 +816,6 @@ class XRefScanner(SyntaxXRefScanner):
         return entries, dict_obj
 
 
-def xref_stream_column(
-    rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], start: int, width: int
-) -> list[int]:
-    """The big-endian field `width` bytes wide at `start` of every row, as ints."""
-    values = numpy.zeros(len(rows), dtype=numpy.uint64)
-    for column in range(start, start + width):
-        values = (values << numpy.uint64(8)) | rows[:, column]
-    return values.tolist()
-
-
 # Object numbers below this make keys that fit an int64 column.
 XREF_STREAM_KEY_LIMIT = 1 << 46
 
@@ -832,7 +823,7 @@ XREF_STREAM_KEY_LIMIT = 1 << 46
 def xref_stream_array(
     rows: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], start: int, width: int
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint64]]:
-    """xref_stream_column, left as a uint64 array."""
+    """xref_column, left as a uint64 array."""
     values = numpy.zeros(len(rows), dtype=numpy.uint64)
     for column in range(start, start + width):
         values = (values << numpy.uint64(8)) | rows[:, column]
@@ -917,9 +908,9 @@ def decode_xref_stream_rows(
     )
     if last_object < XREF_STREAM_KEY_LIMIT:
         return xref_stream_entries(rows, w, available_index, effective_size)
-    kinds = xref_stream_column(rows, 0, w[0]) if w[0] else [1] * row_count
-    values = xref_stream_column(rows, w[0], w[1])
-    generations = xref_stream_column(rows, w[0] + w[1], w[2]) if w[2] else [0] * row_count
+    kinds = xref_column(rows, 0, w[0]) if w[0] else [1] * row_count
+    values = xref_column(rows, w[0], w[1])
+    generations = xref_column(rows, w[0] + w[1], w[2]) if w[2] else [0] * row_count
     entries: XRefTable = {}
     row = 0
     for i in range(0, len(available_index), 2):

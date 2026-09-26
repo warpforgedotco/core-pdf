@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import IntEnum, StrEnum
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, NoReturn, Self
 
 from core_pdf.impl.extract.contracts import (
     GlyphEvidence,
@@ -16,11 +16,6 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.contracts import (
     PageEvidence as NativePageEvidence,
 )
-
-if TYPE_CHECKING:
-    from core_pdf.impl.capture.program import PageProgram
-    from core_pdf.impl.document.page import PdfPage
-    from core_pdf.impl.document.records import RawAnnotation, RawFormField
 
 frozen_setattr = object.__setattr__
 
@@ -443,125 +438,14 @@ class PageEvidence(NativePageEvidence):
 
 
 class PageAnalysis(NativePageAnalysis):
+    """Core's page analysis, carrying the OCR evidence.
+
+    Its fields, constructor, equality, hash, repr and replace are core's.
+    """
+
     __slots__ = ()
 
     evidence: PageEvidence
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "page",
-        "width",
-        "height",
-        "rotation",
-        "fields",
-        "annotations",
-        "program",
-        "observations",
-        "evidence",
-    )
-    __match_args__ = (
-        "page",
-        "width",
-        "height",
-        "rotation",
-        "fields",
-        "annotations",
-        "program",
-        "observations",
-        "evidence",
-    )
-
-    def __init__(
-        self,
-        page: PdfPage,
-        width: float,
-        height: float,
-        rotation: int,
-        fields: tuple[RawFormField, ...],
-        annotations: tuple[RawAnnotation, ...],
-        program: PageProgram,
-        observations: ObservationBatch,
-        evidence: PageEvidence,
-    ) -> None:
-        frozen_setattr(self, "page", page)
-        frozen_setattr(self, "width", width)
-        frozen_setattr(self, "height", height)
-        frozen_setattr(self, "rotation", rotation)
-        frozen_setattr(self, "fields", fields)
-        frozen_setattr(self, "annotations", annotations)
-        frozen_setattr(self, "program", program)
-        frozen_setattr(self, "observations", observations)
-        frozen_setattr(self, "evidence", evidence)
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page={self.page!r}, "
-            f"width={self.width!r}, "
-            f"height={self.height!r}, "
-            f"rotation={self.rotation!r}, "
-            f"fields={self.fields!r}, "
-            f"annotations={self.annotations!r}, "
-            f"program={self.program!r}, "
-            f"observations={self.observations!r}, "
-            f"evidence={self.evidence!r}"
-            ")"
-        )
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.page == other.page
-            and self.width == other.width
-            and self.height == other.height
-            and self.rotation == other.rotation
-            and self.fields == other.fields
-            and self.annotations == other.annotations
-            and self.program == other.program
-            and self.observations == other.observations
-            and self.evidence == other.evidence
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.page,
-                self.width,
-                self.height,
-                self.rotation,
-                self.fields,
-                self.annotations,
-                self.program,
-                self.observations,
-                self.evidence,
-            )
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        page = changes.pop("page", self.page)
-        width = changes.pop("width", self.width)
-        height = changes.pop("height", self.height)
-        rotation = changes.pop("rotation", self.rotation)
-        fields = changes.pop("fields", self.fields)
-        annotations = changes.pop("annotations", self.annotations)
-        program = changes.pop("program", self.program)
-        observations = changes.pop("observations", self.observations)
-        evidence = changes.pop("evidence", self.evidence)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            page,
-            width,
-            height,
-            rotation,
-            fields,
-            annotations,
-            program,
-            observations,
-            evidence,
-        )
 
 
 class OcrPass:
