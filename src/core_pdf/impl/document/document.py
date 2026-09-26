@@ -37,7 +37,11 @@ from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.document.recovery.resolver import ObjectResolver
 from core_pdf.impl.document.recovery.text_strings import parse_text_string
 from core_pdf.impl.document.recovery.trees import iter_name_tree_items, iter_number_tree_items
-from core_pdf.impl.document.recovery.xref import XRefScanner, iter_indirect_object_headers
+from core_pdf.impl.document.recovery.xref import (
+    StrictXRefScanner,
+    XRefScanner,
+    iter_indirect_object_headers,
+)
 from core_pdf.impl.document.standards import (
     bootstrap_security_context,
     discover_document_standards,
@@ -1528,9 +1532,8 @@ class PdfDocument(Generic[PageT]):
             return None
         try:
             read_section = partial(
-                XRefScanner.recover_section_at,
+                StrictXRefScanner.recover_section_at,
                 self.raw_data,
-                recover_malformed_objects=False,
                 semantic_context=self.xref_context,
             )
             for _revision in iter_xref_revisions(start, read_section):

@@ -281,6 +281,7 @@ class PdfLexer(SyntaxLexer):
         )
 
     def handle_empty_indirect_object(self) -> object:
+        self.advance(6)
         return None
 
     def handle_invalid_name_escape(
@@ -522,56 +523,23 @@ class PdfLexer(SyntaxLexer):
             raise PdfParseError("invalid indirect object identifier")
         return obj_num, gen_num
 
-    def parse_dictionary_or_stream(self) -> Any:
-        dictionary = self.parse_dictionary()
-        self.pos = self.skip_ignored_at(self.pos)
-        if self.raw_data[self.pos : self.pos + 6] == b"stream" or (
-            self.pos + 6 <= self.data_len
-            and matches_keyword_with_one_substitution(self.raw_data, self.pos, b"stream")
+    def stream_data_start(self) -> int | None:
+        # The keyword may carry one wrong byte. After it, a run of spaces is
+        # skipped up to the end of line it leads to; without one, only the
+        # first space.
+        data = self.raw_data
+        pos = self.pos
+        if data[pos : pos + 6] != b"stream" and not (
+            pos + 6 <= self.data_len and matches_keyword_with_one_substitution(data, pos, b"stream")
         ):
-            # After the keyword, a run of spaces is skipped up to the end of
-            # line it leads to; without one, only the first space.
-            self.pos += 6
-            data = self.raw_data
-            if self.pos < self.data_len and data[self.pos] in (0, 9, 12, 32):
-                separator_end = self.pos + 1
-                while separator_end < self.data_len and data[separator_end] in (0, 9, 12, 32):
-                    separator_end += 1
-                if separator_end < self.data_len and data[separator_end] in (10, 13):
-                    self.pos = separator_end
-                else:
-                    self.pos += 1
-            return self.parse_stream(dictionary)
-        return dictionary
-
-    def parse_indirect_object(self, *, expected_reference: PdfReference | None = None) -> Any:
-        obj_num, gen_num = self.read_indirect_header()
-        if expected_reference is not None and (obj_num, gen_num) != (
-            expected_reference.object_number,
-            expected_reference.generation_number,
-        ):
-            raise PdfParseError("indirect object header does not match expected reference")
-        previous_obj = self.current_obj_num
-        previous_gen = self.current_gen_num
-        self.current_obj_num = obj_num
-        self.current_gen_num = gen_num
-        try:
-            self.pos = self.skip_ignored_at(self.pos)
-            if self.raw_data[self.pos : self.pos + 6] == b"endobj":
-                self.advance(6)
-                return self.handle_empty_indirect_object()
-            obj = self.parse_object()
-        finally:
-            self.current_obj_num = previous_obj
-            self.current_gen_num = previous_gen
-        self.pos = self.skip_ignored_at(self.pos)
-        keyword = self.scan_word(skip_ignored=True)
-        if keyword is None or keyword[0] != b"endobj":
-            if self.handle_missing_endobj(keyword):
-                return obj
-            raise PdfParseError("expected keyword 'endobj'")
-        self.pos = keyword[1]
-        return obj
+            return None
+        start = pos + 6
+        if start < self.data_len and data[start] in (0, 9, 12, 32):
+            end = start + 1
+            while end < self.data_len and data[end] in (0, 9, 12, 32):
+                end += 1
+            return end if end < self.data_len and data[end] in (10, 13) else start + 1
+        return start
 
 
 def matches_keyword_with_one_substitution(
