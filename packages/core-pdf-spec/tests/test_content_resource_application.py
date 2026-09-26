@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from _content_support import make_interpreter
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import ShadingPattern, TilingPattern
-from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
@@ -16,15 +16,9 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName, PdfReference
 
 
-def make_state(
-    interpreter_class: type[ContentInterpreter] = ContentInterpreter,
-) -> ContentInterpreter:
-    return interpreter_class(ObjectResolver(b"", {}), None, None)  # ty: ignore[invalid-argument-type]
-
-
 @pytest.mark.parametrize("entry_point", ["operator", "application"])
 def test_extgstate_updates_only_present_fields_and_clamps_opacity(entry_point: str) -> None:
-    state = make_state()
+    state = make_interpreter()
     values = {"ca": -0.5, "CA": 1.5, "BM": [PdfName.of("Multiply"), PdfName.of("Screen")]}
     if entry_point == "operator":
         state.resources = {"ExtGState": {"G": values}}
@@ -52,7 +46,7 @@ def test_extgstate_updates_only_present_fields_and_clamps_opacity(entry_point: s
 
 @pytest.mark.parametrize("entry_point", ["operator", "application"])
 def test_extgstate_keeps_earlier_fields_when_a_later_field_is_invalid(entry_point: str) -> None:
-    state = make_state()
+    state = make_interpreter()
     state.graphics.stroke_opacity = 0.75
     state.graphics.blend_mode = "Screen"
     values = {"ca": 0.5, "CA": "invalid", "BM": PdfName.of("Multiply")}
@@ -82,7 +76,7 @@ def test_extgstate_application_retains_polymorphic_coercion_order() -> None:
             calls.append(("name", value))
             return "Screen"
 
-    state = make_state(CoercingInterpreter)
+    state = make_interpreter(interpreter_class=CoercingInterpreter)
     state.apply_extgstate({"ca": "fill", "CA": "stroke", "BM": ["blend", "unused"]})
     assert calls == [("number", "fill"), ("number", "stroke"), ("name", "blend")]
     assert (
@@ -105,7 +99,7 @@ def test_pattern_resource_lookup_preserves_source_identity_and_laziness(
             calls.append((category, name))
             return selection[0]
 
-    state = make_state(LookupRecordingInterpreter)
+    state = make_interpreter(interpreter_class=LookupRecordingInterpreter)
     resolver = state.resolver
     dictionary: PdfDict = {
         "PatternType": 1 if stream else 2,
@@ -144,7 +138,7 @@ def test_pattern_resource_lookup_preserves_source_identity_and_laziness(
 
 @pytest.mark.parametrize("resource", [None, 42, [], PdfName.of("Invalid")])
 def test_pattern_selection_rejects_resources_without_a_dictionary(resource: object) -> None:
-    state = make_state()
+    state = make_interpreter()
     state.resources = {"Pattern": {"P": resource}}
     assert state.resolve_pattern_resource(PdfName.of("P")) is None
     with pytest.raises(PdfParseError, match="invalid pattern resource"):
@@ -154,7 +148,7 @@ def test_pattern_selection_rejects_resources_without_a_dictionary(resource: obje
 
 
 def test_pattern_selection_still_requires_painttype_and_matching_color_space() -> None:
-    state = make_state()
+    state = make_interpreter()
     dictionary: PdfDict = {"PatternType": 1, "BBox": [0, 0, 1, 1], "XStep": 1, "YStep": 1}
     state.resources = {"Pattern": {"P": PdfStream(dictionary=dictionary)}}
     with pytest.raises(PdfParseError, match="invalid pattern"):

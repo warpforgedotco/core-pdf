@@ -2,11 +2,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from _content_support import NullSink, make_interpreter
 
 from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import TilingPattern
-from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.s_08_graphics.color import (
@@ -18,15 +17,6 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.metrics import glyph_advance_vector, text_adjustment_vector
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
-
-
-class Sink:
-    def __getattr__(self, name: str) -> Any:
-        return lambda *args, **kwargs: None
-
-
-def make_state() -> ContentInterpreter:
-    return ContentInterpreter(ObjectResolver(b"", {}), Sink(), None)  # ty: ignore[invalid-argument-type]
 
 
 def make_pattern(paint_type: int = 1, **entries: Any) -> PdfStream:
@@ -60,7 +50,7 @@ def test_matrix_requires_exactly_six_entries(value: object) -> None:
 
 @pytest.mark.parametrize("indirect", [False, True])
 def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
-    state = make_state()
+    state = make_interpreter(NullSink())
     resolver = state.resolver
     resolver.objects[key_for(1, 0)] = [1, 0, 0, 1, PdfReference(2, 0), 6]  # ty: ignore[unresolved-attribute]
     resolver.objects[key_for(2, 0)] = 5  # ty: ignore[unresolved-attribute]
@@ -104,7 +94,7 @@ def test_form_and_pattern_share_matrix_resolution(indirect: bool) -> None:
 def test_form_retains_transparency_transform_and_source_identity(
     indirect: bool, isolated: bool, opacity: float, blend: str | None
 ) -> None:
-    state = make_state()
+    state = make_interpreter(NullSink())
     bbox = [0, 0, 2, 3]
     form = PdfStream(
         raw_data=b"",
@@ -134,7 +124,7 @@ def test_form_retains_transparency_transform_and_source_identity(
 
 @pytest.mark.parametrize("resources", [None, {}, {"Font": {}}])
 def test_form_inherits_resources_only_when_absent(resources: dict | None) -> None:
-    state = make_state()
+    state = make_interpreter(NullSink())
     form = PdfStream(dictionary={"Subtype": PdfName.of("Form"), "BBox": [0, 0, 1, 1]})
     if resources is not None:
         form.dictionary["Resources"] = resources
@@ -153,7 +143,7 @@ def test_form_inherits_resources_only_when_absent(resources: dict | None) -> Non
     ],
 )
 def test_form_rejects_missing_bbox_and_invalid_subtypes(dictionary: dict, message: str) -> None:
-    state = make_state()
+    state = make_interpreter(NullSink())
     state.resources = {"XObject": {"F": PdfStream(dictionary=dictionary)}}
     with pytest.raises(PdfParseError, match=message):
         state.append_xobject(PdfName.of("F"), 0)
@@ -168,7 +158,7 @@ def test_tj_horizontal_scale_applies_only_horizontally(
         text_adjustment_vector(100, vertical=vertical, font_size=10, horizontal_scale=200)
         == expected
     )
-    state = make_state()
+    state = make_interpreter(NullSink())
     state.graphics.current_decoder = SimpleNamespace(is_vertical=vertical)  # ty: ignore[invalid-assignment]
     state.graphics.font_size, state.graphics.horizontal_scale = 10, 200
     state.text_matrix = Matrix(2, 3, 5, 7, 11, 13)
@@ -212,7 +202,7 @@ class Font:
 def test_type3_glyphs_use_font_service_spacing(
     monkeypatch: pytest.MonkeyPatch, font_size: int
 ) -> None:
-    state = make_state()
+    state = make_interpreter(NullSink())
     state.graphics.font_size, state.graphics.char_space, state.graphics.word_space = font_size, 2, 3
     origins: list[float] = []
     monkeypatch.setattr(
@@ -228,7 +218,7 @@ def test_type3_glyphs_use_font_service_spacing(
 
 @pytest.mark.parametrize("text", ["", "A"])
 def test_text_show_updates_after_callback_and_emits_one_boundary(text: str) -> None:
-    state = make_state()
+    state = make_interpreter(NullSink())
     events: list[tuple[str, float]] = []
 
     def show(*args: Any) -> None:
@@ -326,7 +316,7 @@ def test_color_range_validation_precedes_initialization(ranges: list[object]) ->
 
 @pytest.mark.parametrize("stroke", [False, True])
 def test_color_space_selection_initializes_and_clears_pattern(stroke: bool) -> None:
-    state = make_state()
+    state = make_interpreter(NullSink())
     state.resources = {"ColorSpace": {"DeviceRGB": PdfName.of("DeviceGray")}}
     state.graphics.fill_pattern = state.graphics.stroke_pattern = object()  # ty: ignore[invalid-assignment]
     state.execute_operation("CS" if stroke else "cs", (PdfName.of("DeviceRGB"),), 0)
@@ -344,7 +334,7 @@ def test_color_space_selection_initializes_and_clears_pattern(stroke: bool) -> N
 @pytest.mark.parametrize("kind", ["Separation", "DeviceN", "ICCBased"])
 @pytest.mark.parametrize("stroke", [False, True])
 def test_special_color_spaces_require_extended_operator(kind: str, stroke: bool) -> None:
-    state = make_state()
+    state = make_interpreter(NullSink())
     state.graphics.fill_space = state.graphics.stroke_space = ColorSpace(kind, ((0.0, 1.0),) * 1)
     with pytest.raises(PdfParseError, match="requires SCN"):
         state.execute_operation("SC" if stroke else "sc", (0.5,), 0)
@@ -366,7 +356,7 @@ def test_special_color_spaces_require_extended_operator(kind: str, stroke: bool)
 def test_pattern_selection_matches_underlying_space(
     base: str | None, paint_type: int, components: tuple[float, ...], valid: bool
 ) -> None:
-    state = make_state()
+    state = make_interpreter(NullSink())
     space = [PdfName.of("Pattern")] + ([PdfName.of(base)] if base else [])
     state.resources = {
         "ColorSpace": {"P": space},
@@ -388,7 +378,7 @@ def test_pattern_retains_lab_base_and_public_positional_constructors() -> None:
         ["Pattern", ["Lab", {"WhitePoint": [1, 1, 1], "Range": [-2, 2, -3, 3]}]]
     )
     assert space.base is not None
-    state = make_state()
+    state = make_interpreter(NullSink())
     state.resources = {"Pattern": {"P": make_pattern(2)}}
     pattern = state.resolve_pattern_color(PdfName.of("P"), space=space, base_components=(50, -2, 3))
     assert isinstance(pattern, TilingPattern)

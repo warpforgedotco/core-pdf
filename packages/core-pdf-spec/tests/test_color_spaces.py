@@ -2,11 +2,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from _content_support import make_interpreter
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content import interpreter
-from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
-from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color import (
     color_space_paints,
@@ -203,13 +202,8 @@ def test_mask_and_jpx_bit_depth_rules() -> None:
     )
 
 
-def make_state() -> ContentInterpreter:
-    sink = SimpleNamespace()
-    return ContentInterpreter(ObjectResolver(b"", {}), sink, None)  # ty: ignore[invalid-argument-type]
-
-
 def test_custom_color_handler_receives_raw_operands_after_validation() -> None:
-    state = make_state()
+    state = make_interpreter(SimpleNamespace())
     state.graphics.fill_space = DEVICE_RGB
     operands = (2, -1, 0.5)
     observed = []
@@ -228,7 +222,7 @@ def test_custom_color_handler_receives_raw_operands_after_validation() -> None:
 def test_default_color_normalizes_components_once(
     monkeypatch: pytest.MonkeyPatch, pattern: bool
 ) -> None:
-    state = make_state()
+    state = make_interpreter(SimpleNamespace())
     space = parse_color_space(["Pattern", lab()] if pattern else lab())
     state.graphics.fill_space = space
     calls = []

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from _content_support import NullSink
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content import interpreter
@@ -23,13 +24,10 @@ from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
 from core_pdf_spec.types import PdfName, PdfString
 
 
-class EventSink:
+class EventSink(NullSink):
     def __init__(self) -> None:
         self.colors: list[tuple[float, ...] | None] = []
         self.saved = 0
-
-    def __getattr__(self, name: str) -> Any:
-        return lambda *args, **kwargs: None
 
     def save_graphics(self, state: ContentInterpreter) -> None:
         self.saved += 1

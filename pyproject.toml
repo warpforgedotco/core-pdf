@@ -112,7 +112,8 @@ testpaths = [
 ]
 addopts = "--import-mode=importlib"
 norecursedirs = ["tests/fixtures"]
-pythonpath = ["."]
+# The spec tests import their shared scaffolding, _content_support, by name.
+pythonpath = [".", "packages/core-pdf-spec/tests"]
 markers = [
     "compat_differential: compares supported facades against reference libraries",
 ]
@@ -243,7 +244,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [tool.ty.environment]
-root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
+root = [".", "packages/core-pdf-spec/tests", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
 
 [tool.ty.src]
 exclude = [

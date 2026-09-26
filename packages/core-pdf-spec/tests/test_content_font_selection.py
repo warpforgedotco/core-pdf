@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from _content_support import NullSink
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -15,12 +16,9 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName, PdfReference
 
 
-class Sink:
+class Sink(NullSink):
     def __init__(self) -> None:
         self.images: list[PdfStream] = []
-
-    def __getattr__(self, name: str) -> Any:
-        return lambda *args, **kwargs: None
 
     def paint_image(self, state: ContentInterpreter, image: PdfStream) -> None:
         self.images.append(image)
