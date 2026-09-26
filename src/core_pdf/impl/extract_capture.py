@@ -7,6 +7,7 @@ import re
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from collections.abc import Iterable
+from itertools import chain
 from typing import Any
 
 import numpy
@@ -29,6 +30,7 @@ from core_pdf.impl.geometry import (
     rect_tuple,
 )
 from core_pdf.impl.glyphs import (
+    GlyphClusterLike,
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
@@ -218,6 +220,9 @@ def apply_structure_actual_text(
     if structure is None:
         return runs
     replacements: dict[int, TextRun] = {}
+    # Each replacement's clusters, gathered as its runs arrive and joined
+    # once at the end, rather than a tuple regrown per run.
+    replacement_clusters: dict[int, list[tuple[GlyphClusterLike, ...]]] = {}
     output: list[TextRun] = []
     # The owner is a walk up from the MCID's element, and a page's runs share
     # few MCIDs, so each is walked once.
@@ -247,13 +252,17 @@ def apply_structure_actual_text(
                 glyph_clusters=run.glyph_clusters,
             )
             replacements[marker] = replacement
+            replacement_clusters[marker] = [run.glyph_clusters]
             output.append(replacement)
             continue
         replacement.absorb_extent(run)
         replacement.union_ink_bbox(run.ink_bbox)
-        replacement.glyph_clusters += run.glyph_clusters
+        replacement_clusters[marker].append(run.glyph_clusters)
         replacement.visible = replacement.visible or run.visible
         replacement.inside_active_clip = replacement.inside_active_clip or run.inside_active_clip
+    for marker, clusters in replacement_clusters.items():
+        if len(clusters) > 1:
+            replacements[marker].glyph_clusters = tuple(chain.from_iterable(clusters))
     return tuple(output)
 
 
