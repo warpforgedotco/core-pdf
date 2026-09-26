@@ -128,11 +128,22 @@ class DocumentOperation(AbstractContextManager["DocumentOperation"]):
         self.release()
 
 
+def first_indexes(values: Iterable[object]) -> dict[object, int]:
+    """Each hashable value's first index in values."""
+    indexes: dict[object, int] = {}
+    for index, value in enumerate(values):
+        with contextlib.suppress(TypeError):
+            indexes.setdefault(value, index)
+    return indexes
+
+
 class PageLookup[LookupPageT: PdfPage]:
     __slots__ = (
         "document",
         "iter_nodes",
         "indexes",
+        "struct_parents_indexes",
+        "signature_indexes",
         "_pages",
         "names",
     )
@@ -141,13 +152,18 @@ class PageLookup[LookupPageT: PdfPage]:
         self.document = document
         self.iter_nodes: tuple[PageNode, ...] | None = None
         self.indexes: dict[int, int] = {}
+        self.struct_parents_indexes: dict[object, int] | None = None
+        self.signature_indexes: dict[object, int] | None = None
         self._pages: tuple[LookupPageT, ...] | None = None
         self.names: dict[str, RawNamedDestination] | None = None
 
     @property
     def nodes(self) -> tuple[PageNode, ...]:
         if self.iter_nodes is None:
-            self.iter_nodes = tuple(self.document.iter_recovered_page_nodes())
+            # The document's pages are its page nodes, already walked.
+            self.iter_nodes = tuple(
+                PageNode(page.page_dict, page.inherited_values) for page in self.document.pages
+            )
             for index, node in enumerate(self.iter_nodes):
                 self.indexes.setdefault(id(node.dictionary), index)
         return self.iter_nodes
@@ -169,17 +185,39 @@ class PageLookup[LookupPageT: PdfPage]:
             return index
         page_struct_parents = page_obj.get("StructParents")
         if page_struct_parents is not None:
-            for index, node in enumerate(nodes):
-                if node.dictionary.get("StructParents") == page_struct_parents:
-                    return index
+            if self.struct_parents_indexes is None:
+                self.struct_parents_indexes = first_indexes(
+                    node.dictionary.get("StructParents") for node in nodes
+                )
+            index = self.first_index(
+                self.struct_parents_indexes,
+                page_struct_parents,
+                (node.dictionary.get("StructParents") for node in nodes),
+            )
+            if index is not None:
+                return index
         for index, node in enumerate(nodes):
             if node.dictionary == page_obj:
                 return index
-        signature = self.document.recovered_page_signature(page_obj)
-        for index, node in enumerate(nodes):
-            if self.document.recovered_page_signature(node.dictionary) == signature:
-                return index
-        return None
+        signature_of = self.document.recovered_page_signature
+        if self.signature_indexes is None:
+            self.signature_indexes = first_indexes(signature_of(node.dictionary) for node in nodes)
+        return self.first_index(
+            self.signature_indexes,
+            signature_of(page_obj),
+            (signature_of(node.dictionary) for node in nodes),
+        )
+
+    @staticmethod
+    def first_index(
+        indexes: dict[object, int], value: object, values: Iterable[object]
+    ) -> int | None:
+        """The first index whose value equals value: from indexes, or by
+        scanning values when value cannot be hashed."""
+        try:
+            return indexes.get(value)
+        except TypeError:
+            return next((index for index, item in enumerate(values) if item == value), None)
 
     def resolve_named_destination(self, name: str) -> RawNamedDestination | None:
         if self.names is None:
@@ -533,7 +571,7 @@ class PdfDocument(Generic[PageT]):
         if not isinstance(cached, NotBuilt):
             return cached
         root = self.catalog_dict("StructTreeRoot")
-        tree = None if root is None else StructureTree(self, root, page_lookup=PageLookup(self))
+        tree = None if root is None else StructureTree(self, root, page_lookup=self.page_lookup)
         self.structure_cache = tree
         return tree
 
@@ -829,7 +867,7 @@ class PdfDocument(Generic[PageT]):
                     return count
             except PdfParseError, ValueError:
                 pass
-        return len(self.build_page_dicts())
+        return len(self.pages)
 
     def build_page_dicts(self) -> list[PdfDict]:
         return list(self.iter_page_dicts())
@@ -1001,8 +1039,17 @@ class PdfDocument(Generic[PageT]):
             labels.append(format_page_label(current_spec, page_index - current_index, self.resolve))
         return labels
 
+    @property
+    def page_lookup(self) -> PageLookup[PageT]:
+        # One for the document, reset with its pages: each builds its page
+        # indexes and named destinations once.
+        lookup = self.page_lookup_cache
+        if lookup is None:
+            lookup = self.page_lookup_cache = PageLookup(self)
+        return lookup
+
     def page_index_for(self, page_obj: object) -> int | None:
-        return PageLookup(self).page_index_for(page_obj)
+        return self.page_lookup.page_index_for(page_obj)
 
     def iter_selected_pages(
         self, pages: PageSelection | None = None
@@ -1030,7 +1077,7 @@ class PdfDocument(Generic[PageT]):
         page_lookup: PageLookup[PageT] | None = None,
     ) -> list[RawOutlineItem]:
         if page_lookup is None:
-            page_lookup = PageLookup(self)
+            page_lookup = self.page_lookup
         recover_outlines = self.recovery_enabled
         if level > 200:
             raise ValueError("invalid outline depth")
@@ -1120,7 +1167,7 @@ class PdfDocument(Generic[PageT]):
         return normalized.page_index
 
     def resolve_named_destination(self, name: str) -> RawNamedDestination | None:
-        return self.named_destinations().get(name)
+        return self.page_lookup.resolve_named_destination(name)
 
     def destination_from_list(
         self,
@@ -1133,7 +1180,7 @@ class PdfDocument(Generic[PageT]):
         page_obj = self.resolver.resolve(resolved_list[0])
         if page_obj is None:
             raise ValueError("invalid destination page reference")
-        lookup = PageLookup(self) if page_lookup is None else page_lookup
+        lookup = self.page_lookup if page_lookup is None else page_lookup
         page_index = lookup.page_index_for(page_obj)
         if page_index is None:
             raise ValueError("invalid destination page reference")
@@ -1155,7 +1202,7 @@ class PdfDocument(Generic[PageT]):
         *,
         page_lookup: PageLookup[PageT] | None = None,
     ) -> RawNamedDestination:
-        lookup = PageLookup(self) if page_lookup is None else page_lookup
+        lookup = self.page_lookup if page_lookup is None else page_lookup
         return self.normalize_destination_entry(val, lookup.resolve_named_destination, lookup)
 
     def normalize_destination_entry(
@@ -1194,7 +1241,7 @@ class PdfDocument(Generic[PageT]):
     def named_destinations(
         self, *, page_lookup: PageLookup[PageT] | None = None
     ) -> dict[str, RawNamedDestination]:
-        lookup = PageLookup(self) if page_lookup is None else page_lookup
+        lookup = self.page_lookup if page_lookup is None else page_lookup
         targets: dict[str, object] = {}
         dests = self.resolver.resolve(self.catalog().get("Dests"))
         if isinstance(dests, dict):
