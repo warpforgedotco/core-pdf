@@ -153,20 +153,11 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     if isinstance(parms_raw, (list, tuple)) and len(decode_parms) > len(names):
         decode_parms = decode_parms[: len(names)]
 
-    if len(decode_parms) not in {0, 1, len(names)}:
-        raise FilterParseError("invalid stream decode parameters")
-
-    if len(decode_parms) == 1 and len(names) > 1:
-        raise FilterParseError("invalid stream decode parameters")
-
+    # An array is now one entry per filter; anything else gave none, or one
+    # for a single filter. So the entries are empty or line up with names.
     steps: list[FilterStep] = []
     for index, filter_name in enumerate(names):
-        if len(decode_parms) == 1:
-            parms = decode_parms[0]
-        elif len(decode_parms) == len(names):
-            parms = decode_parms[index]
-        else:
-            parms = None
+        parms = decode_parms[index] if decode_parms else None
         if filter_name in CCITT_FILTERS:
             parms = with_ccitt_image_rows(parms, dictionary)
         if filter_name in PARAMETERIZED_FILTERS and type(parms) is not FilterParams:
