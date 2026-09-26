@@ -215,11 +215,7 @@ class StructureElement(StructureNode):
         if page_ref is None:
             return None
         page_obj = self.document.resolver.resolve(page_ref)
-        page_index = (
-            self.document.page_index_for(page_obj)
-            if self.page_lookup is None
-            else self.page_lookup.page_index_for(page_obj)
-        )
+        page_index = (self.page_lookup or self.document).page_index_for(page_obj)
         if page_index is None:
             raise ValueError("invalid structure page reference")
         return page_index
@@ -538,11 +534,7 @@ def get_kid_page_index(
     pg = kid.get("Pg")
     if pg is not None:
         page_obj = document.resolver.resolve(pg)
-        index = (
-            document.page_index_for(page_obj)
-            if page_lookup is None
-            else page_lookup.page_index_for(page_obj)
-        )
+        index = (page_lookup or document).page_index_for(page_obj)
         if index is None:
             raise ValueError("invalid structure page reference")
         return index
