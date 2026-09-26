@@ -9,12 +9,11 @@ Point = tuple[float, float]
 Contours = tuple[tuple[Point, ...], ...]
 
 
-def transform_contours(
-    contours: Sequence[Sequence[Point]], matrix: Sequence[float], scale: float = 1000.0
-) -> Contours:
+def transform_contours(contours: Sequence[Sequence[Point]], matrix: Sequence[float]) -> Contours:
+    """Map glyph-space contours through `matrix` into 1000-unit text space."""
     a, b, c, d, e, f = matrix
     return tuple(
-        tuple(((x * a + y * c + e) * scale, (x * b + y * d + f) * scale) for x, y in contour)
+        tuple(((x * a + y * c + e) * 1000.0, (x * b + y * d + f) * 1000.0) for x, y in contour)
         for contour in contours
     )
 

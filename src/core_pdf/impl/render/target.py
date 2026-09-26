@@ -1407,12 +1407,12 @@ class RasterTarget:
         pixels[idx + 3] = max(0, min(255, out_a_i))
 
     def blend_normal_solid_span(
-        self, row: int, start: int, end: int, rgba: tuple[int, int, int, int], *, shape: int = 255
+        self, row: int, start: int, end: int, rgba: tuple[int, int, int, int]
     ) -> None:
         sr, sg, sb, sa = rgba
         if end <= start:
             return
-        self.record_source_shape(row // (self.width * 4), slice(start, end), shape)
+        self.record_source_shape(row // (self.width * 4), slice(start, end), 255)
         if sa <= 0:
             return
         self.record_source_alpha(row // (self.width * 4), slice(start, end), sa)
