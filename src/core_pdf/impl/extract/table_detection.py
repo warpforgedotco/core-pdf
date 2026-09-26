@@ -489,7 +489,7 @@ def stream_table(
     populated = 0
     numeric_by_column = [0] * column_count
     text_lengths = 0
-    for row_index, row in enumerate(selected):
+    for _row_index, row in enumerate(selected):
         cells: list[list[int]] = [[] for make_column in columns]
         for index in row:
             x0 = all_x0[index]
@@ -701,7 +701,7 @@ def stream_tables(
             continue
         row_columns: dict[int, set[int]] = defaultdict(set)
         for column_index, column in enumerate(columns):
-            for row_index, index_value in column:
+            for row_index, _index_value in column:
                 row_columns[row_index].add(column_index)
         pair_counts: Counter[tuple[int, int]] = Counter()
         for present in row_columns.values():

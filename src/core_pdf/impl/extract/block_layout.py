@@ -1064,7 +1064,7 @@ def gutter_tolerating_contained_boxes(
     best: tuple[float, float] | None = None
     for index, (low, _high) in enumerate(runs):
         span_high = runs[index][1]
-        for next_low, next_high in runs[index + 1 :]:
+        for _next_low, next_high in runs[index + 1 :]:
             if not unspanned(low, next_high) or enclosed(low, next_high) > allowed:
                 break
             span_high = next_high

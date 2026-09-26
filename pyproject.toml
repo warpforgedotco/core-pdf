@@ -218,9 +218,6 @@ select = [
 ]
 
 ignore = [
-    # Loop/unpack variables the codebase deliberately names `ignored*` or
-    # `internal_*` rather than `_`; the rules cannot see that convention.
-    "B007",   # unused loop control variable
     # The one getattr() flagged reads an attribute that the vendored fontTools
     # DirectoryEntry does not declare; `ty` rejects direct attribute access there.
     "B009",   # getattr with a constant attribute value

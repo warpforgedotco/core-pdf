@@ -2425,7 +2425,7 @@ class RasterTarget:
             while active_heap and active_heap[0][0] > page_y:
                 heapq.heappop(active_heap)
             crossings: list[tuple[float, int]] = []
-            for low, edge_index in active_heap:
+            for _low, edge_index in active_heap:
                 ex0, ey0, ex1, ey1, edge_low, edge_high = edge_segments[edge_index]
                 if not (edge_low <= page_y < edge_high):
                     continue
@@ -2517,7 +2517,7 @@ class RasterTarget:
             while active_heap and active_heap[0][0] > scan_y:
                 heapq.heappop(active_heap)
             intersections: list[tuple[float, int]] = []
-            for low, edge_index in active_heap:
+            for _low, edge_index in active_heap:
                 ex0, ey0, ex1, ey1, edge_low, edge_high = edge_bounds[edge_index]
                 if not (edge_low <= scan_y < edge_high):
                     continue
