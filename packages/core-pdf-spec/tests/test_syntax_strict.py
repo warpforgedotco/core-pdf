@@ -13,7 +13,7 @@ from core_pdf_spec.s_07_syntax.objects import PdfObjectStream, parse_object_stre
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.resources import resolve_resource_dict
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.trees import iter_number_tree_items
+from core_pdf_spec.s_07_syntax.trees import MalformedTreeNode, iter_number_tree_items
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import XRefScanner, decode_xref_rows, key_for
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
@@ -188,6 +188,22 @@ def test_xref_rejects_invalid_generation_and_truncated_rows() -> None:
 def test_number_tree_rejects_malformed_nodes_and_entries(tree: dict) -> None:
     with pytest.raises(ValueError):
         list(iter_number_tree_items(tree, lambda value: value))
+
+
+def test_number_tree_reports_a_null_kid_with_its_node() -> None:
+    # A null root is an empty tree (ISO 32000-2, 7.9.7); a null kid is not a
+    # dictionary, so strict traversal rejects it and names the node it saw.
+    tree = {"Kids": [None, {"Nums": [1, "one"]}]}
+    assert list(iter_number_tree_items(None, lambda value: value)) == []
+    with pytest.raises(ValueError, match="invalid number tree node"):
+        list(iter_number_tree_items(tree, lambda value: value))
+    reports: list[str] = []
+    items = list(iter_number_tree_items(tree, lambda value: value, on_malformed=reports.append))
+    assert items == [(1, "one")]
+    (report,) = reports
+    assert isinstance(report, MalformedTreeNode)
+    assert report == "invalid number tree node"
+    assert report.node is None
 
 
 def test_inheritance_resource_and_page_tree_damage_is_rejected() -> None:

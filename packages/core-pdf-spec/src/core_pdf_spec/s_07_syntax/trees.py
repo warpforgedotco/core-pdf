@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import TypeVar
 
-from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.types import PdfReference
 
 ResolveFn = Callable[[object], object]
@@ -14,27 +14,20 @@ NumberDecodeFn = Callable[[object], int | None]
 TreeKeyT = TypeVar("TreeKeyT")
 
 
-def require_tree_node(current: object, tree_name: str) -> PdfDict:
-    if not isinstance(current, dict):
-        raise ValueError(f"invalid {tree_name} tree node")
-    return current
+class MalformedTreeNode(str):
+    """The message for a tree node that is not a dictionary, and the node.
 
+    A str, so every on_malformed callback takes it as the message it raises
+    or skips; one that wants to treat some nodes differently -- a reader
+    that reads a null kid as an empty subtree -- looks at `node`.
+    """
 
-def tree_array(node: PdfDict, field: str, resolve: ResolveFn, tree_name: str) -> PdfArray | None:
-    value = resolve(node.get(field))
-    if value is not None and not isinstance(value, list):
-        raise ValueError(f"invalid {tree_name} tree {field} array")
-    return value
+    node: object
 
-
-def tree_entry[TreeKeyT](
-    entries: PdfArray, index: int, key: TreeKeyT | None, key_error: str
-) -> tuple[TreeKeyT, object]:
-    if index + 1 >= len(entries):
-        raise ValueError(key_error)
-    if key is None:
-        raise ValueError(key_error)
-    return key, entries[index + 1]
+    def __new__(cls, message: str, node: object) -> MalformedTreeNode:
+        report = super().__new__(cls, message)
+        report.node = node
+        return report
 
 
 MalformedFn = Callable[[str], None]
@@ -42,7 +35,7 @@ MalformedFn = Callable[[str], None]
 
 def raise_malformed(message: str) -> None:
     """The strict response to a malformed tree: ValueError(message)."""
-    raise ValueError(message)
+    raise ValueError(str(message))
 
 
 def iter_tree_items[TreeKeyT](
@@ -57,7 +50,6 @@ def iter_tree_items[TreeKeyT](
     max_depth: int | None = None,
     on_malformed: MalformedFn = raise_malformed,
     on_malformed_entry: MalformedFn | None = None,
-    skip_null_nodes: bool = False,
 ) -> Iterator[tuple[TreeKeyT, object]]:
     """The key and value of each entry of the tree at node, in key order.
 
@@ -67,8 +59,8 @@ def iter_tree_items[TreeKeyT](
     undecodable key -- to on_malformed_entry, which defaults to it. The
     default raises ValueError; a reader's callback that returns instead has
     the node skipped, the entry skipped, or the odd array's last key
-    dropped. A null root is an empty tree; with skip_null_nodes, so is any
-    null node.
+    dropped. A null root is an empty tree; any other null node is malformed,
+    reported as a MalformedTreeNode whose node is None.
     """
     entry_malformed = on_malformed if on_malformed_entry is None else on_malformed_entry
     seen: dict[int, PdfDict] = {}
@@ -87,12 +79,12 @@ def iter_tree_items[TreeKeyT](
                 continue
             references.add(reference)
         resolved = resolve(raw)
-        if resolved is None and (is_root or skip_null_nodes):
+        if resolved is None and is_root:
             is_root = False
             continue
         is_root = False
         if not isinstance(resolved, dict):
-            on_malformed(f"invalid {tree_name} tree node")
+            on_malformed(MalformedTreeNode(f"invalid {tree_name} tree node", resolved))
             continue
         current = resolved
         marker = id(current)
@@ -108,12 +100,11 @@ def iter_tree_items[TreeKeyT](
             if len(entries) % 2:
                 entry_malformed(f"invalid {tree_name} tree {key_field} array")
             for index in range(0, len(entries) - len(entries) % 2, 2):
-                decoded_key = decode_key(entries[index])
-                try:
-                    key, value = tree_entry(entries, index, decoded_key, key_error)
-                except ValueError as error:
-                    entry_malformed(str(error))
+                key = decode_key(entries[index])
+                if key is None:
+                    entry_malformed(key_error)
                     continue
+                value = entries[index + 1]
                 yield key, resolve(value) if resolve_values else value
         kids = resolve(current.get("Kids"))
         if kids is None:
@@ -134,7 +125,6 @@ def iter_number_tree_items(
     max_depth: int | None = None,
     on_malformed: MalformedFn = raise_malformed,
     on_malformed_entry: MalformedFn | None = None,
-    skip_null_nodes: bool = False,
 ) -> Iterator[tuple[int, object]]:
     decode = decode_number
     if decode is None:
@@ -154,7 +144,6 @@ def iter_number_tree_items(
         max_depth=max_depth,
         on_malformed=on_malformed,
         on_malformed_entry=on_malformed_entry,
-        skip_null_nodes=skip_null_nodes,
     )
 
 
@@ -167,7 +156,6 @@ def iter_name_tree_items(
     max_depth: int | None = None,
     on_malformed: MalformedFn = raise_malformed,
     on_malformed_entry: MalformedFn | None = None,
-    skip_null_nodes: bool = False,
 ) -> Iterator[tuple[str, object]]:
     yield from iter_tree_items(
         node,
@@ -180,12 +168,12 @@ def iter_name_tree_items(
         max_depth=max_depth,
         on_malformed=on_malformed,
         on_malformed_entry=on_malformed_entry,
-        skip_null_nodes=skip_null_nodes,
     )
 
 
 __all__ = (
     "MalformedFn",
+    "MalformedTreeNode",
     "NameDecodeFn",
     "NumberDecodeFn",
     "ResolveFn",
@@ -193,6 +181,4 @@ __all__ = (
     "iter_number_tree_items",
     "iter_tree_items",
     "raise_malformed",
-    "tree_array",
-    "tree_entry",
 )
