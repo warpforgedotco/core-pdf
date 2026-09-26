@@ -12,6 +12,7 @@ from typing import Any, ClassVar, TypeAlias
 
 import numpy
 
+from core_adobe_fonts.cff.charstrings import cubic_point
 from core_adobe_fonts.cff.font import (
     CFF_EXPERT_ENCODING_CODES,
     CFF_STANDARD_STRING_COUNT,
@@ -1663,17 +1664,7 @@ def flatten_quadratic(p0: Point, p1: Point, p2: Point, segments: int = 6) -> lis
 
 
 def flatten_cubic(p0: Point, p1: Point, p2: Point, p3: Point, segments: int = 8) -> list[Point]:
-    out: list[Point] = []
-    for i in range(1, segments + 1):
-        t = i / segments
-        mt = 1.0 - t
-        out.append(
-            (
-                mt**3 * p0[0] + 3.0 * mt * mt * t * p1[0] + 3.0 * mt * t * t * p2[0] + t**3 * p3[0],
-                mt**3 * p0[1] + 3.0 * mt * mt * t * p1[1] + 3.0 * mt * t * t * p2[1] + t**3 * p3[1],
-            )
-        )
-    return out
+    return [cubic_point(p0, p1, p2, p3, i / segments) for i in range(1, segments + 1)]
 
 
 def parse_opentype_program(data: bytes) -> TTFont:
