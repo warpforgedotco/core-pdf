@@ -36,10 +36,10 @@ from core_pdf.impl.graphics.stream_decoding import (
     decode_stream_data,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.scalars import parse_int
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_cythonized import interleave_soft_mask
 from core_pdf_spec.s_07_filters.errors import FilterError
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf_spec.s_08_graphics.color_kernels import (
     decode_sample_values,
     unpack_image_samples,
@@ -206,8 +206,8 @@ class PreparedImage(Record):
 
 
 def decode_mask(source: ImageSource) -> DecodedRaster | None:
-    width = parse_int(source.dictionary.get("Width"), 0)
-    height = parse_int(source.dictionary.get("Height"), 0)
+    width = parse_int(source.dictionary.get("Width"), 0, python_syntax=True)
+    height = parse_int(source.dictionary.get("Height"), 0, python_syntax=True)
     if width <= 0 or height <= 0:
         return None
     try:
@@ -250,11 +250,11 @@ def decode_matte(
     source: ImageSource, soft_mask: SoftMask
 ) -> tuple[tuple[float, ...], numpy.ndarray[Any, Any]]:
     dictionary = soft_mask.dictionary
-    width = parse_int(dictionary.get("Width"), 0)
-    height = parse_int(dictionary.get("Height"), 0)
+    width = parse_int(dictionary.get("Width"), 0, python_syntax=True)
+    height = parse_int(dictionary.get("Height"), 0, python_syntax=True)
     if (width, height) != (
-        parse_int(source.dictionary.get("Width"), 0),
-        parse_int(source.dictionary.get("Height"), 0),
+        parse_int(source.dictionary.get("Width"), 0, python_syntax=True),
+        parse_int(source.dictionary.get("Height"), 0, python_syntax=True),
     ):
         raise ValueError("image matte requires matching soft mask dimensions")
     decoded = decode_image_samples(soft_mask.raw, dictionary)
@@ -269,7 +269,7 @@ def decode_matte(
         ):
             decode = (0, 1)
     elif decoded is not None:
-        bits = parse_int(dictionary.get("BitsPerComponent"), 8)
+        bits = parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True)
         integers = unpack_image_samples(decoded, bits, width, height, 1)
         maximum = (1 << bits) - 1
     else:
@@ -408,14 +408,14 @@ def decode_image_samples(
     raw: bytes | memoryview,
     dictionary: dict[Any, Any],
 ) -> bytes | memoryview | DecodedImage | None:
-    width = parse_int(dictionary.get("Width"), 0)
-    height = parse_int(dictionary.get("Height"), 0)
+    width = parse_int(dictionary.get("Width"), 0, python_syntax=True)
+    height = parse_int(dictionary.get("Height"), 0, python_syntax=True)
     if width <= 0 or height <= 0:
         return None
     native, declined = decode_stream_image_data(raw, dictionary)
     if native is not None and native.width == width and native.height == height:
         return native
-    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
+    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True)
     if bits_per_component == 16:
         if declined is not None:
             return declined
@@ -461,8 +461,8 @@ def decode_pdf_image(
         return None
     with suppress(ValueError):
         rendering = image_color_rendering(dictionary, rendering)
-    width = parse_int(dictionary.get("Width"), 0)
-    height = parse_int(dictionary.get("Height"), 0)
+    width = parse_int(dictionary.get("Width"), 0, python_syntax=True)
+    height = parse_int(dictionary.get("Height"), 0, python_syntax=True)
     if width <= 0 or height <= 0:
         return None
     samples = decode_image_samples(raw, dictionary)
@@ -481,7 +481,7 @@ def decode_pdf_image(
             return None
         array, channels = canonical
         return DecodedRaster(array, width, height, channels)
-    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
+    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True)
     if bits_per_component == 16 or image_has_color_key_mask(dictionary):
         try:
             converted_words = convert_integer_image(
@@ -546,7 +546,8 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
         filters = dictionary.get("Filter", ())
         filters = filters if isinstance(filters, (list, tuple)) else (filters,)
         if soft_mask_source.dictionary.get("Matte") is not None and (
-            parse_int(dictionary.get("BitsPerComponent"), 8) == 16 or "JPXDecode" in filters
+            parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True) == 16
+            or "JPXDecode" in filters
         ):
             try:
                 matte, alpha = decode_matte(source, soft_mask_source)

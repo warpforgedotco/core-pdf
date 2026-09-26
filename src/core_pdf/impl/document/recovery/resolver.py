@@ -11,7 +11,6 @@ from core_pdf.impl.document.recovery.xref import iter_indirect_object_headers
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.graphics.stream_decoding import decode_stream_data
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.scalars import parse_box, parse_float, parse_int
 from core_pdf.impl.types import PdfReference, PdfString
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data as decode_spec_stream_data
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
@@ -25,8 +24,27 @@ from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
 )
+from core_pdf_spec.s_07_syntax_primitives.coercion import (
+    parse_float,
+    parse_float_strict,
+    parse_int,
+)
 
 LEXER_POOL_LIMIT = 8
+
+
+def parse_box(value: object) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return None
+    try:
+        return (
+            parse_float_strict(value[0], python_syntax=True),
+            parse_float_strict(value[1], python_syntax=True),
+            parse_float_strict(value[2], python_syntax=True),
+            parse_float_strict(value[3], python_syntax=True),
+        )
+    except ValueError:
+        return None
 
 
 class ObjectResolver(SyntaxResolver):
@@ -142,13 +160,13 @@ class ObjectResolver(SyntaxResolver):
         return None
 
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
-        return parse_float(self.resolve(value), default=default)
+        return parse_float(self.resolve(value), default=default, python_syntax=True)
 
     def resolve_name(self, value: object) -> str | None:
         return recover_pdf_name(resolve_reference_chain(value, self.resolve))
 
     def resolve_int(self, value: object, default: int | None = None) -> int | None:
-        return parse_int(self.resolve(value), default)
+        return parse_int(self.resolve(value), default, python_syntax=True)
 
     def resolve_box(self, value: object) -> tuple[float, float, float, float] | None:
         resolved = self.deep_resolve(value)

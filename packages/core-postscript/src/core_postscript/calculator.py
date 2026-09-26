@@ -5,10 +5,9 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable, Iterator, Sequence
-from typing import Any, ClassVar, NoReturn, Self
+from typing import ClassVar
 
-frozen_setattr = object.__setattr__
-
+from core_records import Record, frozen_setattr
 
 STACK_LIMIT = 100
 NESTING_LIMIT = 255
@@ -65,7 +64,7 @@ type Operand = int | float | bool
 type Instruction = Operand | str | Conditional
 
 
-class Conditional:
+class Conditional(Record):
     __slots__ = ("when_true", "when_false")
 
     when_true: tuple[Instruction, ...]
@@ -82,14 +81,6 @@ class Conditional:
         frozen_setattr(self, "when_true", when_true)
         frozen_setattr(self, "when_false", when_false)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"when_true={self.when_true!r}, "
-            f"when_false={self.when_false!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -99,26 +90,6 @@ class Conditional:
 
     def __hash__(self) -> int:
         return hash((self.when_true, self.when_false))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        when_true = changes.pop("when_true", self.when_true)
-        when_false = changes.pop("when_false", self.when_false)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(when_true, when_false)
 
 
 def iter_tokens(source: bytes) -> Iterator[bytes]:

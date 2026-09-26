@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.standards import PdfVersion, SemanticContext
-
-frozen_setattr = object.__setattr__
-
+from core_records import FrozenFields, PickleFields, ReprFields, frozen_setattr
 
 WHITESPACE = b"\x00\t\n\x0c\r "
 DELIMITERS = b"()<>[]/%"
@@ -19,7 +17,7 @@ SEPARATOR_TABLE = bytes([1 if i in WHITESPACE or i in DELIMITERS else 0 for i in
 WS_TABLE = bytes([1 if i in WHITESPACE else 0 for i in range(256)])
 
 
-class LexicalRules:
+class LexicalRules(FrozenFields, PickleFields, ReprFields):
     __slots__ = (
         "whitespace",
         "name_escapes",
@@ -56,6 +54,12 @@ class LexicalRules:
         "split_whitespace_compatible",
         "content_token_re",
     )
+    __repr_fields__: ClassVar[tuple[str, ...]] = (
+        "whitespace",
+        "name_escapes",
+        "delimiters",
+        "canonical_identifiers",
+    )
     __match_args__ = ("whitespace", "name_escapes", "delimiters", "canonical_identifiers")
 
     def __init__(
@@ -70,16 +74,6 @@ class LexicalRules:
         frozen_setattr(self, "delimiters", delimiters)
         frozen_setattr(self, "canonical_identifiers", canonical_identifiers)
         self._post_init()
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"whitespace={self.whitespace!r}, "
-            f"name_escapes={self.name_escapes!r}, "
-            f"delimiters={self.delimiters!r}, "
-            f"canonical_identifiers={self.canonical_identifiers!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -114,19 +108,6 @@ class LexicalRules:
                 self.content_token_re,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
 
     def __replace__(self, /, **changes: Any) -> Self:
         whitespace = changes.pop("whitespace", self.whitespace)

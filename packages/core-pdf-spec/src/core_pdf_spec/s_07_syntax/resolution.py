@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar, Self
+from typing import ClassVar
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.types import PdfReference
+from core_records import ReplaceFields, ReprFields
 
 CONTAINER_TYPES = (dict, list, tuple, PdfStream)
 
@@ -24,7 +25,7 @@ def resolve_reference_chain(value: object, resolve: Callable[[object], object]) 
     return value
 
 
-class ResolutionNode:
+class ResolutionNode(ReprFields, ReplaceFields):
     __slots__ = ("original", "values", "keys", "parents", "changed")
 
     original: object
@@ -50,17 +51,6 @@ class ResolutionNode:
         self.parents = set() if parents is None else parents
         self.changed = changed
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"original={self.original!r}, "
-            f"values={self.values!r}, "
-            f"keys={self.keys!r}, "
-            f"parents={self.parents!r}, "
-            f"changed={self.changed!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -75,16 +65,6 @@ class ResolutionNode:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        original = changes.pop("original", self.original)
-        values = changes.pop("values", self.values)
-        keys = changes.pop("keys", self.keys)
-        parents = changes.pop("parents", self.parents)
-        changed = changes.pop("changed", self.changed)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(original, values, keys, parents, changed)
 
 
 def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> object:

@@ -58,15 +58,14 @@ def loop_path_counts(edges, box, view, fill_rule):
     return counts
 
 
-def loop_segment_counts(segment, half, round_cap, box, view, cap_extension):
-    """fill_line's sampling of a diagonal segment."""
+def loop_segment_counts(segment, half, box, view, cap_extension):
+    """fill_line's sampling of a diagonal, butt- or square-capped segment."""
     crop_x0, crop_y1, scale = view
     x0, y0, x1, y1 = segment
     ix0, iy0, ix1, iy1 = box
     dx, dy = x1 - x0, y1 - y0
     seg_len2 = dx * dx + dy * dy
     half2 = half * half
-    inv_seg_len2 = 1.0 / seg_len2
     projection_extension = cap_extension * seg_len2**0.5
     cross_limit = half2 * seg_len2
     counts = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
@@ -80,19 +79,9 @@ def loop_segment_counts(segment, half, round_cap, box, view, cap_extension):
                 for page_x in page_xs:
                     offset_x = page_x - x0
                     cross = offset_x * dy - offset_y * dx
-                    if not round_cap:
-                        projection = offset_x * dx + offset_y * dy
-                        if -projection_extension <= projection <= seg_len2 + projection_extension:
-                            covered += cross * cross <= cross_limit
-                        continue
-                    t = (offset_x * dx + offset_y * dy) * inv_seg_len2
-                    if 0.0 <= t <= 1.0:
+                    projection = offset_x * dx + offset_y * dy
+                    if -projection_extension <= projection <= seg_len2 + projection_extension:
                         covered += cross * cross <= cross_limit
-                    elif t < 0.0:
-                        covered += offset_x * offset_x + offset_y * offset_y <= half2
-                    else:
-                        end_x, end_y = page_x - x1, page_y - y1
-                        covered += end_x * end_x + end_y * end_y <= half2
             counts[py - iy0, px - ix0] = covered
     return counts
 
@@ -124,12 +113,12 @@ def test_segment_counts_are_the_loops(seed: int) -> None:
     segment = (rng.uniform(0, 12), rng.uniform(0, 12), rng.uniform(0, 12), rng.uniform(0, 12))
     view = (0.0, 12.0, rng.choice([1.0, 2.0, 0.75]))
     half = rng.choice([0.5, 1.0, 2.5])
-    line_cap = rng.choice([0, 1, 2])
+    line_cap = rng.choice([0, 2])
     cap_extension = half if line_cap == 2 else 0.0
     box = (0, 0, int(12 * view[2]), int(12 * view[2]))
     dx, dy = segment[2] - segment[0], segment[3] - segment[1]
     seg_len2 = dx * dx + dy * dy
-    expected = loop_segment_counts(segment, half, line_cap == 1, box, view, cap_extension)
+    expected = loop_segment_counts(segment, half, box, view, cap_extension)
     counts = numpy.zeros_like(expected)
     stroke_segment_samples(
         numpy.zeros((box[3], box[2], 4), dtype=numpy.uint8),
@@ -139,14 +128,13 @@ def test_segment_counts_are_the_loops(seed: int) -> None:
         view[0],
         view[1],
         view[2],
-        *segment,
+        segment[0],
+        segment[1],
         dx,
         dy,
         seg_len2,
-        1.0 / seg_len2,
         half * half,
         cap_extension * seg_len2**0.5,
-        line_cap == 1,
         10,
         20,
         30,

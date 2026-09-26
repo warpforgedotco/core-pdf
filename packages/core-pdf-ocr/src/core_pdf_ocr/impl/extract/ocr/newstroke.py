@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import math
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
 import numpy
 
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath
 from core_pdf.impl.runs import TextRun
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr._vendor.newstroke_data import NEWSTROKE_ASCII, NEWSTROKE_ASCII_ALTERNATES
-
-frozen_setattr = object.__setattr__
-
 
 FIT_ERROR = 0.08
 FIXED_ERROR = 0.10
@@ -27,7 +25,7 @@ MIN_CHARACTERS = 1_000
 MIN_SEQUENCES = 100
 
 
-class NewstrokeDecode:
+class NewstrokeDecode(Record):
     __slots__ = (
         "runs",
         "candidate_segments",
@@ -83,19 +81,6 @@ class NewstrokeDecode:
         frozen_setattr(self, "sequences", sequences)
         frozen_setattr(self, "maximum_error", maximum_error)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"runs={self.runs!r}, "
-            f"candidate_segments={self.candidate_segments!r}, "
-            f"matched_segments={self.matched_segments!r}, "
-            f"glyphs={self.glyphs!r}, "
-            f"characters={self.characters!r}, "
-            f"sequences={self.sequences!r}, "
-            f"maximum_error={self.maximum_error!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -124,39 +109,6 @@ class NewstrokeDecode:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        runs = changes.pop("runs", self.runs)
-        candidate_segments = changes.pop("candidate_segments", self.candidate_segments)
-        matched_segments = changes.pop("matched_segments", self.matched_segments)
-        glyphs = changes.pop("glyphs", self.glyphs)
-        characters = changes.pop("characters", self.characters)
-        sequences = changes.pop("sequences", self.sequences)
-        maximum_error = changes.pop("maximum_error", self.maximum_error)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            runs,
-            candidate_segments,
-            matched_segments,
-            glyphs,
-            characters,
-            sequences,
-            maximum_error,
-        )
-
     @property
     def matched_coverage(self) -> float:
         return self.matched_segments / max(1, self.candidate_segments)
@@ -173,7 +125,7 @@ class NewstrokeDecode:
         )
 
 
-class Template:
+class Template(Record):
     __slots__ = (
         "char",
         "width",
@@ -235,20 +187,6 @@ class Template:
         frozen_setattr(self, "centroid_x", centroid_x)
         frozen_setattr(self, "centroid_y", centroid_y)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"char={self.char!r}, "
-            f"width={self.width!r}, "
-            f"segments={self.segments!r}, "
-            f"continuity={self.continuity!r}, "
-            f"solver={self.solver!r}, "
-            f"points={self.points!r}, "
-            f"centroid_x={self.centroid_x!r}, "
-            f"centroid_y={self.centroid_y!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -279,43 +217,8 @@ class Template:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        char = changes.pop("char", self.char)
-        width = changes.pop("width", self.width)
-        segments = changes.pop("segments", self.segments)
-        continuity = changes.pop("continuity", self.continuity)
-        solver = changes.pop("solver", self.solver)
-        points = changes.pop("points", self.points)
-        centroid_x = changes.pop("centroid_x", self.centroid_x)
-        centroid_y = changes.pop("centroid_y", self.centroid_y)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            char,
-            width,
-            segments,
-            continuity,
-            solver,
-            points,
-            centroid_x,
-            centroid_y,
-        )
-
-
-class TemplateSet:
+class TemplateSet(Record):
     __slots__ = ("all", "robust", "by_first_delta")
 
     all: tuple[Template, ...]
@@ -335,15 +238,6 @@ class TemplateSet:
         frozen_setattr(self, "robust", robust)
         frozen_setattr(self, "by_first_delta", by_first_delta)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"all={self.all!r}, "
-            f"robust={self.robust!r}, "
-            f"by_first_delta={self.by_first_delta!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -358,29 +252,8 @@ class TemplateSet:
     def __hash__(self) -> int:
         return hash((self.all, self.robust, self.by_first_delta))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        all = changes.pop("all", self.all)
-        robust = changes.pop("robust", self.robust)
-        by_first_delta = changes.pop("by_first_delta", self.by_first_delta)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(all, robust, by_first_delta)
-
-
-class Segment:
+class Segment(Record):
     __slots__ = ("x0", "y0", "x1", "y1", "style", "line_width")
 
     x0: float
@@ -409,18 +282,6 @@ class Segment:
         frozen_setattr(self, "style", style)
         frozen_setattr(self, "line_width", line_width)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"x0={self.x0!r}, "
-            f"y0={self.y0!r}, "
-            f"x1={self.x1!r}, "
-            f"y1={self.y1!r}, "
-            f"style={self.style!r}, "
-            f"line_width={self.line_width!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -438,32 +299,8 @@ class Segment:
     def __hash__(self) -> int:
         return hash((self.x0, self.y0, self.x1, self.y1, self.style, self.line_width))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        x0 = changes.pop("x0", self.x0)
-        y0 = changes.pop("y0", self.y0)
-        x1 = changes.pop("x1", self.x1)
-        y1 = changes.pop("y1", self.y1)
-        style = changes.pop("style", self.style)
-        line_width = changes.pop("line_width", self.line_width)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(x0, y0, x1, y1, style, line_width)
-
-
-class Transform:
+class Transform(Record):
     __slots__ = ("matrix", "inverse", "scale", "x_scale", "y_scale")
 
     matrix: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
@@ -489,17 +326,6 @@ class Transform:
         frozen_setattr(self, "x_scale", x_scale)
         frozen_setattr(self, "y_scale", y_scale)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"matrix={self.matrix!r}, "
-            f"inverse={self.inverse!r}, "
-            f"scale={self.scale!r}, "
-            f"x_scale={self.x_scale!r}, "
-            f"y_scale={self.y_scale!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -516,31 +342,8 @@ class Transform:
     def __hash__(self) -> int:
         return hash((self.matrix, self.inverse, self.scale, self.x_scale, self.y_scale))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        matrix = changes.pop("matrix", self.matrix)
-        inverse = changes.pop("inverse", self.inverse)
-        scale = changes.pop("scale", self.scale)
-        x_scale = changes.pop("x_scale", self.x_scale)
-        y_scale = changes.pop("y_scale", self.y_scale)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(matrix, inverse, scale, x_scale, y_scale)
-
-
-class Match:
+class Match(Record):
     __slots__ = ("char", "start", "stop", "width", "transform", "translation", "error")
 
     char: str
@@ -580,19 +383,6 @@ class Match:
         frozen_setattr(self, "translation", translation)
         frozen_setattr(self, "error", error)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"char={self.char!r}, "
-            f"start={self.start!r}, "
-            f"stop={self.stop!r}, "
-            f"width={self.width!r}, "
-            f"transform={self.transform!r}, "
-            f"translation={self.translation!r}, "
-            f"error={self.error!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -620,31 +410,6 @@ class Match:
                 self.error,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        char = changes.pop("char", self.char)
-        start = changes.pop("start", self.start)
-        stop = changes.pop("stop", self.stop)
-        width = changes.pop("width", self.width)
-        transform = changes.pop("transform", self.transform)
-        translation = changes.pop("translation", self.translation)
-        error = changes.pop("error", self.error)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(char, start, stop, width, transform, translation, error)
 
 
 def make_templates() -> TemplateSet:

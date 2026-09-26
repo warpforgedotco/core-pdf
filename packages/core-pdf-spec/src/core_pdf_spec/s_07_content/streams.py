@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import GraphicsState
@@ -11,18 +11,17 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.types import Rectangle
+from core_records import FrozenFields, PickleFields, ReprFields, frozen_setattr
 
 if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
     from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 
-frozen_setattr = object.__setattr__
-
 
 StreamKey = tuple[str, int, int]
 
 
-class StreamState:
+class StreamState(FrozenFields, PickleFields, ReprFields):
     __slots__ = (
         "graphics_state",
         "resources",
@@ -110,25 +109,6 @@ class StreamState:
         frozen_setattr(self, "initial_text_knockout", initial_text_knockout)
         frozen_setattr(self, "in_text_object", in_text_object)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"graphics_state={self.graphics_state!r}, "
-            f"resources={self.resources!r}, "
-            f"text_matrix={self.text_matrix!r}, "
-            f"line_matrix={self.line_matrix!r}, "
-            f"graphics_stack_floor={self.graphics_stack_floor!r}, "
-            f"graphics_stack_len={self.graphics_stack_len!r}, "
-            f"marked_content_stack_len={self.marked_content_stack_len!r}, "
-            f"xobject_depth={self.xobject_depth!r}, "
-            f"compatibility_depth={self.compatibility_depth!r}, "
-            f"pending_clip_rule={self.pending_clip_rule!r}, "
-            f"initial_alpha_is_shape={self.initial_alpha_is_shape!r}, "
-            f"initial_text_knockout={self.initial_text_knockout!r}, "
-            f"in_text_object={self.in_text_object!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -169,19 +149,6 @@ class StreamState:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
     def __replace__(self, /, **changes: Any) -> Self:
         graphics_state = changes.pop("graphics_state", self.graphics_state)
         resources = changes.pop("resources", self.resources)
@@ -217,7 +184,7 @@ class StreamState:
         )
 
 
-class ContentStreamFrame:
+class ContentStreamFrame(ReprFields):
     __slots__ = (
         "stream",
         "resources",
@@ -303,27 +270,6 @@ class ContentStreamFrame:
         self.stream_key = stream_key
         self.lexer = None
         self.old_state = None
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"stream={self.stream!r}, "
-            f"resources={self.resources!r}, "
-            f"ctm={self.ctm!r}, "
-            f"depth={self.depth!r}, "
-            f"clip_bbox={self.clip_bbox!r}, "
-            f"group_alpha={self.group_alpha!r}, "
-            f"group_isolated={self.group_isolated!r}, "
-            f"group_knockout={self.group_knockout!r}, "
-            f"form_bbox_operand={self.form_bbox_operand!r}, "
-            f"form_bbox={self.form_bbox!r}, "
-            f"is_form={self.is_form!r}, "
-            f"source_key={self.source_key!r}, "
-            f"stream_key={self.stream_key!r}, "
-            f"lexer={self.lexer!r}, "
-            f"old_state={self.old_state!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:

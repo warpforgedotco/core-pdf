@@ -24,7 +24,9 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     decoded_name,
     parse_box,
     parse_float,
+    parse_float_strict,
     parse_int,
+    parse_int_strict,
     require_pdf_integer,
     require_pdf_number,
     require_pdf_number_array,
@@ -63,6 +65,50 @@ def test_object_validation_and_lexical_conversion_have_distinct_inputs() -> None
     assert parse_box([0, -2.5, 100, 200]) == (0.0, -2.5, 100.0, 200.0)
     assert parse_int(b"+12") == 12
     assert parse_float(b"-.5") == -0.5
+
+
+@pytest.mark.parametrize(
+    ("value", "pdf", "python"),
+    [
+        (b"1_000", None, 1000),
+        (" 7 ", None, 7),
+        ("\u0661\u0662", None, 12),
+        (b"\xff", None, None),
+        (b"12", 12, 12),
+        (True, None, None),
+    ],
+)
+def test_python_syntax_reads_integers_as_int_does(
+    value: object, pdf: int | None, python: int | None
+) -> None:
+    assert parse_int(value) == pdf
+    assert parse_int(value, python_syntax=True) == python
+
+
+@pytest.mark.parametrize(
+    ("value", "pdf", "python"),
+    [
+        (b"1e3", None, 1000.0),
+        ("inf", None, float("inf")),
+        (float("-inf"), None, float("-inf")),
+        (b"-.5", -0.5, -0.5),
+        (10**400, None, None),
+    ],
+)
+def test_python_syntax_reads_reals_as_float_does(
+    value: object, pdf: float | None, python: float | None
+) -> None:
+    assert parse_float(value, None) == pdf
+    assert parse_float(value, None, python_syntax=True) == python
+
+
+def test_strict_parsers_raise_under_either_syntax() -> None:
+    assert parse_int_strict(b"1_0", python_syntax=True) == 10
+    assert parse_float_strict("1e1", python_syntax=True) == 10.0
+    with pytest.raises(ValueError, match="invalid integer"):
+        parse_int_strict(b"1_0")
+    with pytest.raises(ValueError, match="invalid float"):
+        parse_float_strict("x", python_syntax=True)
 
 
 @pytest.mark.parametrize("value", ["12", b"12", True, float("inf")])

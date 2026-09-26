@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from functools import partial
 from itertools import batched, compress, repeat
 from operator import not_
-from typing import Any, ClassVar, Literal, NamedTuple, NoReturn, Protocol, Self
+from typing import Any, ClassVar, Literal, NamedTuple, Protocol
 
 import numpy
 
@@ -23,8 +23,7 @@ from core_pdf_spec.s_07_syntax_primitives.numbers import parse_identifier_tokens
 from core_pdf_spec.s_07_syntax_primitives.tokens import lexical_rules
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfByteBuffer
-
-frozen_setattr = object.__setattr__
+from core_records import Record, frozen_setattr
 
 
 class PdfXRefEntry(NamedTuple):
@@ -45,7 +44,7 @@ class PdfXRefEntry(NamedTuple):
 XRefTable = dict[int, PdfXRefEntry]
 
 
-class ParsedXRefSection:
+class ParsedXRefSection(Record):
     __slots__ = ("offset", "kind", "entries", "trailer")
 
     offset: int
@@ -68,16 +67,6 @@ class ParsedXRefSection:
         frozen_setattr(self, "entries", entries)
         frozen_setattr(self, "trailer", trailer)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"offset={self.offset!r}, "
-            f"kind={self.kind!r}, "
-            f"entries={self.entries!r}, "
-            f"trailer={self.trailer!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -93,30 +82,8 @@ class ParsedXRefSection:
     def __hash__(self) -> int:
         return hash((self.offset, self.kind, self.entries, self.trailer))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        offset = changes.pop("offset", self.offset)
-        kind = changes.pop("kind", self.kind)
-        entries = changes.pop("entries", self.entries)
-        trailer = changes.pop("trailer", self.trailer)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(offset, kind, entries, trailer)
-
-
-class XRefRevision:
+class XRefRevision(Record):
     __slots__ = ("offset", "entries", "trailer")
 
     offset: int
@@ -131,15 +98,6 @@ class XRefRevision:
         frozen_setattr(self, "entries", entries)
         frozen_setattr(self, "trailer", trailer)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"offset={self.offset!r}, "
-            f"entries={self.entries!r}, "
-            f"trailer={self.trailer!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -153,27 +111,6 @@ class XRefRevision:
 
     def __hash__(self) -> int:
         return hash((self.offset, self.entries, self.trailer))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        offset = changes.pop("offset", self.offset)
-        entries = changes.pop("entries", self.entries)
-        trailer = changes.pop("trailer", self.trailer)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(offset, entries, trailer)
 
 
 class XRefSectionReader(Protocol):

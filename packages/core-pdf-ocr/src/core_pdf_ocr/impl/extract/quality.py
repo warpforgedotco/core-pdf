@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any, ClassVar, NamedTuple, NoReturn, Self
+from typing import ClassVar, NamedTuple
 
 import numpy
 
@@ -14,11 +14,10 @@ from core_pdf.impl.extract.quality import (
 from core_pdf.impl.extract.quality import (
     analyze_text as analyze_text,
 )
+from core_pdf.impl.types import Record, frozen_setattr
 
-frozen_setattr = object.__setattr__
 
-
-class CandidateMetrics:
+class CandidateMetrics(Record):
     __slots__ = (
         "characters",
         "alphanumeric_characters",
@@ -80,20 +79,6 @@ class CandidateMetrics:
         frozen_setattr(self, "utility", utility)
         frozen_setattr(self, "median_text_height", median_text_height)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"characters={self.characters!r}, "
-            f"alphanumeric_characters={self.alphanumeric_characters!r}, "
-            f"tokens={self.tokens!r}, "
-            f"line_count={self.line_count!r}, "
-            f"mean_confidence={self.mean_confidence!r}, "
-            f"symbol_ratio={self.symbol_ratio!r}, "
-            f"utility={self.utility!r}, "
-            f"median_text_height={self.median_text_height!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -124,45 +109,8 @@ class CandidateMetrics:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        characters = changes.pop("characters", self.characters)
-        alphanumeric_characters = changes.pop(
-            "alphanumeric_characters", self.alphanumeric_characters
-        )
-        tokens = changes.pop("tokens", self.tokens)
-        line_count = changes.pop("line_count", self.line_count)
-        mean_confidence = changes.pop("mean_confidence", self.mean_confidence)
-        symbol_ratio = changes.pop("symbol_ratio", self.symbol_ratio)
-        utility = changes.pop("utility", self.utility)
-        median_text_height = changes.pop("median_text_height", self.median_text_height)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            characters,
-            alphanumeric_characters,
-            tokens,
-            line_count,
-            mean_confidence,
-            symbol_ratio,
-            utility,
-            median_text_height,
-        )
-
-
-class Candidate:
+class Candidate(Record):
     __slots__ = ("mode", "observations", "metrics", "symbols", "recognition_status")
 
     mode: int
@@ -194,17 +142,6 @@ class Candidate:
         frozen_setattr(self, "symbols", ObservationBatch.empty() if symbols is None else symbols)
         frozen_setattr(self, "recognition_status", recognition_status)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"mode={self.mode!r}, "
-            f"observations={self.observations!r}, "
-            f"metrics={self.metrics!r}, "
-            f"symbols={self.symbols!r}, "
-            f"recognition_status={self.recognition_status!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -228,29 +165,6 @@ class Candidate:
                 self.recognition_status,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        mode = changes.pop("mode", self.mode)
-        observations = changes.pop("observations", self.observations)
-        metrics = changes.pop("metrics", self.metrics)
-        symbols = changes.pop("symbols", self.symbols)
-        recognition_status = changes.pop("recognition_status", self.recognition_status)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(mode, observations, metrics, symbols, recognition_status)
 
 
 class TextUtility(NamedTuple):

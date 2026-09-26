@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from enum import StrEnum
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
 import numpy
 
@@ -17,12 +17,10 @@ from core_pdf.impl.extract.contracts import FULL_PAGE_IMAGE_COVERAGE
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.graphics.images import decode_image, decode_pdf_image
 from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_bilinear, resample_nearest
 from core_pdf_ocr.impl.extract.ocr.types import Raster
-
-frozen_setattr = object.__setattr__
-
 
 DIRECT_OCR_TARGET_RESOLUTION = 400
 
@@ -152,7 +150,7 @@ OCR_IMAGE_TEXT_STRONG_HORIZONTAL_EDGES = 0.09
 OCR_IMAGE_TEXT_MIN_HORIZONTAL_EDGE_SHARE = 0.85
 
 
-class RasterTextSignal:
+class RasterTextSignal(Record):
     __slots__ = ("likely_text", "horizontal_edge_ratio")
 
     likely_text: bool
@@ -164,14 +162,6 @@ class RasterTextSignal:
     def __init__(self, likely_text: bool, horizontal_edge_ratio: float) -> None:
         frozen_setattr(self, "likely_text", likely_text)
         frozen_setattr(self, "horizontal_edge_ratio", horizontal_edge_ratio)
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"likely_text={self.likely_text!r}, "
-            f"horizontal_edge_ratio={self.horizontal_edge_ratio!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -185,26 +175,6 @@ class RasterTextSignal:
 
     def __hash__(self) -> int:
         return hash((self.likely_text, self.horizontal_edge_ratio))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        likely_text = changes.pop("likely_text", self.likely_text)
-        horizontal_edge_ratio = changes.pop("horizontal_edge_ratio", self.horizontal_edge_ratio)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(likely_text, horizontal_edge_ratio)
 
 
 def raster_text_signal(image: RasterImage) -> RasterTextSignal:

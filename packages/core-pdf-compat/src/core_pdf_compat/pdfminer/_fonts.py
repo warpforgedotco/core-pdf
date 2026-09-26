@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
 from core_pdf.impl.exceptions import PdfError
@@ -10,6 +10,7 @@ from core_pdf.impl.fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf.impl.fonts.metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.types import ReplaceFields, ReprFields
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
@@ -30,7 +31,7 @@ def _mapping_value(mapping: object, name: str) -> object | None:
     return next((value for key, value in mapping.items() if str(key) == name), None)
 
 
-class _FontProjection:
+class _FontProjection(ReprFields, ReplaceFields):
     __slots__ = (
         "font",
         "values",
@@ -80,18 +81,6 @@ class _FontProjection:
         self.first_char = first_char
         self.recovered_malformed_token = recovered_malformed_token
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"font={self.font!r}, "
-            f"values={self.values!r}, "
-            f"has_widths={self.has_widths!r}, "
-            f"legacy_widths={self.legacy_widths!r}, "
-            f"first_char={self.first_char!r}, "
-            f"recovered_malformed_token={self.recovered_malformed_token!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -107,26 +96,6 @@ class _FontProjection:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        font = changes.pop("font", self.font)
-        values = changes.pop("values", self.values)
-        has_widths = changes.pop("has_widths", self.has_widths)
-        legacy_widths = changes.pop("legacy_widths", self.legacy_widths)
-        first_char = changes.pop("first_char", self.first_char)
-        recovered_malformed_token = changes.pop(
-            "recovered_malformed_token", self.recovered_malformed_token
-        )
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            font,
-            values,
-            has_widths,
-            legacy_widths,
-            first_char,
-            recovered_malformed_token,
-        )
 
 
 FONT_PROJECTION_CACHE_MAX_ENTRIES = 128

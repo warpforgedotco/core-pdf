@@ -2,118 +2,26 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
-
 from core_pdf.impl.graphics.filter_registry import (
     CCITT_FILTERS,
     FILTER_NAME_ALIASES,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.pdf_values import is_pdf_null
-from core_pdf.impl.scalars import parse_int
-from core_pdf.impl.types import PdfReference, ReplaceFields, ReprFields, frozen_setattr
+from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
 from core_pdf_spec.s_07_filters.decode_spec import FilterStep, StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterParseError
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
 
 
-class FilterParams(PdfFilterParams, ReplaceFields, ReprFields):
+class FilterParams(PdfFilterParams):
+    """Spec's FilterParams, with DecodeParms read as the renderer tolerates them.
+
+    Its fields, constructor, equality, hash, repr and replace are spec's.
+    """
+
     __slots__ = ()
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "early_change",
-        "predictor",
-        "columns",
-        "colors",
-        "bits_per_component",
-        "k",
-        "damaged_rows_before_error",
-        "black_is_1",
-        "rows",
-        "encoded_byte_align",
-        "has_columns",
-        "jbig2_globals",
-    )
-    __match_args__ = (
-        "early_change",
-        "predictor",
-        "columns",
-        "colors",
-        "bits_per_component",
-        "k",
-        "damaged_rows_before_error",
-        "black_is_1",
-        "rows",
-        "encoded_byte_align",
-        "has_columns",
-        "jbig2_globals",
-    )
-
-    def __init__(
-        self,
-        early_change: int = 1,
-        predictor: int = 1,
-        columns: int = 1,
-        colors: int = 1,
-        bits_per_component: int = 8,
-        k: int = 0,
-        damaged_rows_before_error: int = 0,
-        black_is_1: bool = False,
-        rows: int = 0,
-        encoded_byte_align: bool = False,
-        has_columns: bool = False,
-        jbig2_globals: object | None = None,
-    ) -> None:
-        frozen_setattr(self, "early_change", early_change)
-        frozen_setattr(self, "predictor", predictor)
-        frozen_setattr(self, "columns", columns)
-        frozen_setattr(self, "colors", colors)
-        frozen_setattr(self, "bits_per_component", bits_per_component)
-        frozen_setattr(self, "k", k)
-        frozen_setattr(self, "damaged_rows_before_error", damaged_rows_before_error)
-        frozen_setattr(self, "black_is_1", black_is_1)
-        frozen_setattr(self, "rows", rows)
-        frozen_setattr(self, "encoded_byte_align", encoded_byte_align)
-        frozen_setattr(self, "has_columns", has_columns)
-        frozen_setattr(self, "jbig2_globals", jbig2_globals)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.early_change == other.early_change
-            and self.predictor == other.predictor
-            and self.columns == other.columns
-            and self.colors == other.colors
-            and self.bits_per_component == other.bits_per_component
-            and self.k == other.k
-            and self.damaged_rows_before_error == other.damaged_rows_before_error
-            and self.black_is_1 == other.black_is_1
-            and self.rows == other.rows
-            and self.encoded_byte_align == other.encoded_byte_align
-            and self.has_columns == other.has_columns
-            and self.jbig2_globals == other.jbig2_globals
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.early_change,
-                self.predictor,
-                self.columns,
-                self.colors,
-                self.bits_per_component,
-                self.k,
-                self.damaged_rows_before_error,
-                self.black_is_1,
-                self.rows,
-                self.encoded_byte_align,
-                self.has_columns,
-                self.jbig2_globals,
-            )
-        )
 
     @classmethod
     def from_parms(cls, parms: object) -> FilterParams:
@@ -142,7 +50,7 @@ class FilterParams(PdfFilterParams, ReplaceFields, ReprFields):
                 continue
             if not isinstance(value, (int, bytes, str)):
                 raise ValueError(f"invalid DecodeParms {name}")
-            parsed = parse_int(value, None)
+            parsed = parse_int(value, None, python_syntax=True)
             if parsed is None:
                 raise ValueError(f"invalid DecodeParms {name}")
             normalized[name] = parsed

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, NoReturn, Protocol, Self, TypeAlias
+from typing import ClassVar, Protocol, Self, TypeAlias
 
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -10,14 +10,12 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     is_pdf_null,
     require_pdf_integer,
 )
-
-frozen_setattr = object.__setattr__
-
+from core_records import Record, frozen_setattr
 
 DecodeParam: TypeAlias = object
 
 
-class FilterParams:
+class FilterParams(Record):
     __slots__ = (
         "early_change",
         "predictor",
@@ -103,24 +101,6 @@ class FilterParams:
         frozen_setattr(self, "has_columns", has_columns)
         frozen_setattr(self, "jbig2_globals", jbig2_globals)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"early_change={self.early_change!r}, "
-            f"predictor={self.predictor!r}, "
-            f"columns={self.columns!r}, "
-            f"colors={self.colors!r}, "
-            f"bits_per_component={self.bits_per_component!r}, "
-            f"k={self.k!r}, "
-            f"damaged_rows_before_error={self.damaged_rows_before_error!r}, "
-            f"black_is_1={self.black_is_1!r}, "
-            f"rows={self.rows!r}, "
-            f"encoded_byte_align={self.encoded_byte_align!r}, "
-            f"has_columns={self.has_columns!r}, "
-            f"jbig2_globals={self.jbig2_globals!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -157,51 +137,6 @@ class FilterParams:
                 self.has_columns,
                 self.jbig2_globals,
             )
-        )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        early_change = changes.pop("early_change", self.early_change)
-        predictor = changes.pop("predictor", self.predictor)
-        columns = changes.pop("columns", self.columns)
-        colors = changes.pop("colors", self.colors)
-        bits_per_component = changes.pop("bits_per_component", self.bits_per_component)
-        k = changes.pop("k", self.k)
-        damaged_rows_before_error = changes.pop(
-            "damaged_rows_before_error", self.damaged_rows_before_error
-        )
-        black_is_1 = changes.pop("black_is_1", self.black_is_1)
-        rows = changes.pop("rows", self.rows)
-        encoded_byte_align = changes.pop("encoded_byte_align", self.encoded_byte_align)
-        has_columns = changes.pop("has_columns", self.has_columns)
-        jbig2_globals = changes.pop("jbig2_globals", self.jbig2_globals)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            early_change,
-            predictor,
-            columns,
-            colors,
-            bits_per_component,
-            k,
-            damaged_rows_before_error,
-            black_is_1,
-            rows,
-            encoded_byte_align,
-            has_columns,
-            jbig2_globals,
         )
 
     @classmethod
@@ -273,7 +208,7 @@ class FilterParams:
         )
 
 
-class FilterStep:
+class FilterStep(Record):
     __slots__ = ("name", "params")
 
     name: str
@@ -286,9 +221,6 @@ class FilterStep:
         frozen_setattr(self, "name", name)
         frozen_setattr(self, "params", params)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(name={self.name!r}, params={self.params!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -299,28 +231,8 @@ class FilterStep:
     def __hash__(self) -> int:
         return hash((self.name, self.params))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        name = changes.pop("name", self.name)
-        params = changes.pop("params", self.params)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(name, params)
-
-
-class StreamDecodeSpec:
+class StreamDecodeSpec(Record):
     __slots__ = ("steps",)
 
     steps: tuple[FilterStep, ...]
@@ -331,9 +243,6 @@ class StreamDecodeSpec:
     def __init__(self, steps: tuple[FilterStep, ...]) -> None:
         frozen_setattr(self, "steps", steps)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(steps={self.steps!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -343,25 +252,6 @@ class StreamDecodeSpec:
 
     def __hash__(self) -> int:
         return hash((self.steps,))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        steps = changes.pop("steps", self.steps)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(steps)
 
 
 def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:

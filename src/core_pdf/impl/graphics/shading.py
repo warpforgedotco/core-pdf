@@ -12,8 +12,8 @@ from core_pdf.impl.graphics.functions import (
     compile_pdf_function,
     number_array,
 )
-from core_pdf.impl.scalars import parse_int
 from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.shading import parse_shading
 
@@ -130,7 +130,7 @@ def prepare_shading(
         return None
     if not raw_color_space_paints(dictionary.get("ColorSpace")):
         return None
-    shading_type = parse_int(dictionary.get("ShadingType"), 0)
+    shading_type = parse_int(dictionary.get("ShadingType"), 0, python_syntax=True)
     if shading_type not in {2, 3}:
         return None
     coords = number_array(dictionary.get("Coords"))

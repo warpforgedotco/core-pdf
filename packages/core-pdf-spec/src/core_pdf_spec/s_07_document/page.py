@@ -4,20 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 from math import isfinite
-from typing import Any, ClassVar, NoReturn, Self
+from typing import ClassVar
 
 from core_pdf_spec.s_07_syntax.inherited_values import inherited_dictionary_value
 from core_pdf_spec.s_07_syntax.types import InheritedValueMap, PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 from core_pdf_spec.types import Rectangle
-
-frozen_setattr = object.__setattr__
-
+from core_records import Record, frozen_setattr
 
 PAGE_INHERITED_KEYS = ("MediaBox", "CropBox", "Rotate", "Resources")
 
 
-class PageNode:
+class PageNode(Record):
     __slots__ = ("dictionary", "inherited_values")
 
     dictionary: PdfDict
@@ -30,14 +28,6 @@ class PageNode:
         frozen_setattr(self, "dictionary", dictionary)
         frozen_setattr(self, "inherited_values", inherited_values)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"dictionary={self.dictionary!r}, "
-            f"inherited_values={self.inherited_values!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -49,26 +39,6 @@ class PageNode:
 
     def __hash__(self) -> int:
         return hash((self.dictionary, self.inherited_values))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        dictionary = changes.pop("dictionary", self.dictionary)
-        inherited_values = changes.pop("inherited_values", self.inherited_values)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(dictionary, inherited_values)
 
 
 def page_clip(media: Rectangle, crop: Rectangle | None = None) -> Rectangle:

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, NoReturn, Self
+from typing import ClassVar
 
 from core_pdf.impl.render.model import RasterImage
+from core_pdf.impl.types import Record, frozen_setattr
 
-frozen_setattr = object.__setattr__
 
-
-class Raster:
+class Raster(Record):
     __slots__ = ("image", "resolution")
 
     image: RasterImage
@@ -22,11 +21,6 @@ class Raster:
         frozen_setattr(self, "image", image)
         frozen_setattr(self, "resolution", resolution)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}(image={self.image!r}, resolution={self.resolution!r})"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -37,26 +31,6 @@ class Raster:
     def __hash__(self) -> int:
         return hash((self.image, self.resolution))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        image = changes.pop("image", self.image)
-        resolution = changes.pop("resolution", self.resolution)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(image, resolution)
-
     @property
     def width(self) -> int:
         return self.image.width
@@ -66,7 +40,7 @@ class Raster:
         return self.image.height
 
 
-class RasterRegion:
+class RasterRegion(Record):
     __slots__ = ("raster", "page_box")
 
     raster: Raster
@@ -83,9 +57,6 @@ class RasterRegion:
         frozen_setattr(self, "raster", raster)
         frozen_setattr(self, "page_box", page_box)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(raster={self.raster!r}, page_box={self.page_box!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -96,28 +67,8 @@ class RasterRegion:
     def __hash__(self) -> int:
         return hash((self.raster, self.page_box))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        raster = changes.pop("raster", self.raster)
-        page_box = changes.pop("page_box", self.page_box)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(raster, page_box)
-
-
-class StrokedTextCell:
+class StrokedTextCell(Record):
     __slots__ = ("source_box", "packed_box", "drawing_indexes")
 
     source_box: tuple[float, float, float, float]
@@ -137,15 +88,6 @@ class StrokedTextCell:
         frozen_setattr(self, "packed_box", packed_box)
         frozen_setattr(self, "drawing_indexes", drawing_indexes)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"source_box={self.source_box!r}, "
-            f"packed_box={self.packed_box!r}, "
-            f"drawing_indexes={self.drawing_indexes!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -160,29 +102,8 @@ class StrokedTextCell:
     def __hash__(self) -> int:
         return hash((self.source_box, self.packed_box, self.drawing_indexes))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        source_box = changes.pop("source_box", self.source_box)
-        packed_box = changes.pop("packed_box", self.packed_box)
-        drawing_indexes = changes.pop("drawing_indexes", self.drawing_indexes)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(source_box, packed_box, drawing_indexes)
-
-
-class PackedStrokedTextRaster:
+class PackedStrokedTextRaster(Record):
     __slots__ = ("raster", "packed_box", "cells")
 
     raster: Raster
@@ -202,15 +123,6 @@ class PackedStrokedTextRaster:
         frozen_setattr(self, "packed_box", packed_box)
         frozen_setattr(self, "cells", cells)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"raster={self.raster!r}, "
-            f"packed_box={self.packed_box!r}, "
-            f"cells={self.cells!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -225,29 +137,8 @@ class PackedStrokedTextRaster:
     def __hash__(self) -> int:
         return hash((self.raster, self.packed_box, self.cells))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        raster = changes.pop("raster", self.raster)
-        packed_box = changes.pop("packed_box", self.packed_box)
-        cells = changes.pop("cells", self.cells)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(raster, packed_box, cells)
-
-
-class OcrRegion:
+class OcrRegion(Record):
     __slots__ = ("page_box", "score", "reasons")
 
     page_box: tuple[float, float, float, float]
@@ -267,15 +158,6 @@ class OcrRegion:
         frozen_setattr(self, "score", score)
         frozen_setattr(self, "reasons", reasons)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page_box={self.page_box!r}, "
-            f"score={self.score!r}, "
-            f"reasons={self.reasons!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -290,34 +172,13 @@ class OcrRegion:
     def __hash__(self) -> int:
         return hash((self.page_box, self.score, self.reasons))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        page_box = changes.pop("page_box", self.page_box)
-        score = changes.pop("score", self.score)
-        reasons = changes.pop("reasons", self.reasons)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(page_box, score, reasons)
-
     @property
     def area(self) -> float:
         x0, y0, x1, y1 = self.page_box
         return max(0.0, x1 - x0) * max(0.0, y1 - y0)
 
 
-class OcrTask:
+class OcrTask(Record):
     __slots__ = (
         "mode",
         "image",
@@ -385,21 +246,6 @@ class OcrTask:
         frozen_setattr(self, "recognize_words", recognize_words)
         frozen_setattr(self, "collect_symbols", collect_symbols)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"mode={self.mode!r}, "
-            f"image={self.image!r}, "
-            f"rectangle={self.rectangle!r}, "
-            f"page_box={self.page_box!r}, "
-            f"resolution={self.resolution!r}, "
-            f"minimum_confidence={self.minimum_confidence!r}, "
-            f"character_confidence_threshold={self.character_confidence_threshold!r}, "
-            f"recognize_words={self.recognize_words!r}, "
-            f"collect_symbols={self.collect_symbols!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -430,45 +276,6 @@ class OcrTask:
                 self.recognize_words,
                 self.collect_symbols,
             )
-        )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        mode = changes.pop("mode", self.mode)
-        image = changes.pop("image", self.image)
-        rectangle = changes.pop("rectangle", self.rectangle)
-        page_box = changes.pop("page_box", self.page_box)
-        resolution = changes.pop("resolution", self.resolution)
-        minimum_confidence = changes.pop("minimum_confidence", self.minimum_confidence)
-        character_confidence_threshold = changes.pop(
-            "character_confidence_threshold", self.character_confidence_threshold
-        )
-        recognize_words = changes.pop("recognize_words", self.recognize_words)
-        collect_symbols = changes.pop("collect_symbols", self.collect_symbols)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            mode,
-            image,
-            rectangle,
-            page_box,
-            resolution,
-            minimum_confidence,
-            character_confidence_threshold,
-            recognize_words,
-            collect_symbols,
         )
 
 

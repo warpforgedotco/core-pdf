@@ -1,6 +1,6 @@
 [project]
 name = "core-pdf-spec"
-version = "0.9.0"
+version = "0.9.1"
 description = "PDF specification algorithms and semantic interfaces"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -13,6 +13,7 @@ dependencies = [
     "core-jbig2>=0.2.0,<0.3.0",
     "core-pdf-crypto>=0.1.0,<0.2.0",
     "core-postscript>=0.1.0,<0.2.0",
+    "core-records>=0.1.0,<0.2.0",
     "numpy>=2.5.1",
 ]
 
@@ -41,3 +42,4 @@ core-postscript = { workspace = true }
 core-pdf-crypto = { workspace = true }
 core-adobe-fonts = { workspace = true }
 core-jbig2 = { workspace = true }
+core-records = { workspace = true }

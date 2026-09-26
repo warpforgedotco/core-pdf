@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar, Literal, NoReturn, Self
+from typing import ClassVar, Literal
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
@@ -17,11 +17,10 @@ from core_pdf_spec.s_08_graphics.color_spec import ColorSpace, parse_color_space
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator, compile_pdf_function
 from core_pdf_spec.types import PdfReference
+from core_records import Record, frozen_setattr
 
-frozen_setattr = object.__setattr__
 
-
-class SoftMask:
+class SoftMask(Record):
     __slots__ = ("subtype", "group", "ctm", "transfer", "backdrop_color", "color_space")
 
     subtype: Literal["Alpha", "Luminosity"]
@@ -57,18 +56,6 @@ class SoftMask:
         frozen_setattr(self, "backdrop_color", backdrop_color)
         frozen_setattr(self, "color_space", color_space)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"subtype={self.subtype!r}, "
-            f"group={self.group!r}, "
-            f"ctm={self.ctm!r}, "
-            f"transfer={self.transfer!r}, "
-            f"backdrop_color={self.backdrop_color!r}, "
-            f"color_space={self.color_space!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -94,30 +81,6 @@ class SoftMask:
                 self.color_space,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        subtype = changes.pop("subtype", self.subtype)
-        group = changes.pop("group", self.group)
-        ctm = changes.pop("ctm", self.ctm)
-        transfer = changes.pop("transfer", self.transfer)
-        backdrop_color = changes.pop("backdrop_color", self.backdrop_color)
-        color_space = changes.pop("color_space", self.color_space)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(subtype, group, ctm, transfer, backdrop_color, color_space)
 
 
 def resolve(value: object, resolver: PdfValueResolver) -> PdfObject:

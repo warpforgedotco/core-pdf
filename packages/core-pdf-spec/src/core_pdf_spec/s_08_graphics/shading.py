@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar, NoReturn, Self
+from typing import ClassVar
 
 from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_number_array
 from core_pdf_spec.s_08_graphics.pdf_function import (
     PdfFunctionEvaluator,
     compile_pdf_function,
 )
+from core_records import Record, frozen_setattr
 
-frozen_setattr = object.__setattr__
 
-
-class ShadingSpec:
+class ShadingSpec(Record):
     __slots__ = (
         "shading_type",
         "coords",
@@ -44,6 +43,15 @@ class ShadingSpec:
         "color_space",
         "bbox",
         "evaluator",
+    )
+    __repr_fields__: ClassVar[tuple[str, ...]] = (
+        "shading_type",
+        "coords",
+        "domain",
+        "extend_start",
+        "extend_end",
+        "color_space",
+        "bbox",
     )
     __match_args__ = (
         "shading_type",
@@ -76,19 +84,6 @@ class ShadingSpec:
         frozen_setattr(self, "bbox", bbox)
         frozen_setattr(self, "evaluator", evaluator)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"shading_type={self.shading_type!r}, "
-            f"coords={self.coords!r}, "
-            f"domain={self.domain!r}, "
-            f"extend_start={self.extend_start!r}, "
-            f"extend_end={self.extend_end!r}, "
-            f"color_space={self.color_space!r}, "
-            f"bbox={self.bbox!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -115,41 +110,6 @@ class ShadingSpec:
                 self.color_space,
                 self.bbox,
             )
-        )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        shading_type = changes.pop("shading_type", self.shading_type)
-        coords = changes.pop("coords", self.coords)
-        domain = changes.pop("domain", self.domain)
-        extend_start = changes.pop("extend_start", self.extend_start)
-        extend_end = changes.pop("extend_end", self.extend_end)
-        color_space = changes.pop("color_space", self.color_space)
-        bbox = changes.pop("bbox", self.bbox)
-        evaluator = changes.pop("evaluator", self.evaluator)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            shading_type,
-            coords,
-            domain,
-            extend_start,
-            extend_end,
-            color_space,
-            bbox,
-            evaluator,
         )
 
 

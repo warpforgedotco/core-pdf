@@ -7,7 +7,7 @@ from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self
+from typing import TYPE_CHECKING, ClassVar
 
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.contracts import ObservationBatch, bbox_tuple
@@ -17,6 +17,7 @@ from core_pdf.impl.extract.selection import (
 )
 from core_pdf.impl.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.output.model import Document
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
     capture_from_program,
@@ -33,8 +34,6 @@ if TYPE_CHECKING:
     from core_pdf.impl.document.document import PdfDocument
     from core_pdf.impl.document.page import PdfPage
 
-frozen_setattr = object.__setattr__
-
 
 DOCUMENT_FONT_SEED_LIMIT = 4
 DOCUMENT_FONT_SEEDS_PER_DECODER = 2
@@ -43,7 +42,7 @@ DOCUMENT_STROKED_MIN_RUN_COVERAGE = 0.70
 DOCUMENT_STROKED_MIN_GLYPH_COVERAGE = 0.70
 
 
-class FontEnrichment:
+class FontEnrichment(Record):
     __slots__ = ("learned_unicode", "recognition_by_index")
 
     learned_unicode: LearnedUnicodeMap
@@ -70,14 +69,6 @@ class FontEnrichment:
             else recognition_by_index,
         )
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"learned_unicode={self.learned_unicode!r}, "
-            f"recognition_by_index={self.recognition_by_index!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -90,26 +81,6 @@ class FontEnrichment:
 
     def __hash__(self) -> int:
         return hash((self.learned_unicode, self.recognition_by_index))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        learned_unicode = changes.pop("learned_unicode", self.learned_unicode)
-        recognition_by_index = changes.pop("recognition_by_index", self.recognition_by_index)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(learned_unicode, recognition_by_index)
 
 
 def unknown_decoder_counts(capture: PageAnalysis) -> Counter[object]:

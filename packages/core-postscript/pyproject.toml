@@ -8,7 +8,9 @@ license-files = ["LICENSE.txt"]
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 classifiers = ["Development Status :: 3 - Alpha"]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "core-records>=0.1.0,<0.2.0",
+]
 
 [build-system]
 requires = ["setuptools>=80", "wheel"]
@@ -29,3 +31,6 @@ core_postscript = ["py.typed"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["**/__pycache__/*", "**/*.pyc", "*.pdf", "**/*.pdf"]
+
+[tool.uv.sources]
+core-records = { workspace = true }

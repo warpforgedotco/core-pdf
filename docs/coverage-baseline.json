@@ -9,6 +9,7 @@
     "packages/core-jbig2/src/core_jbig2",
     "packages/core-pdf-crypto/src/core_pdf_crypto",
     "packages/core-adobe-fonts/src/core_adobe_fonts",
+    "packages/core-records/src/core_records",
     "packages/core-pdf-cythonized/src/core_pdf_cythonized"
   ],
   "statements": {

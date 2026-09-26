@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.array_views import UInt8Array, uint8_view
+from core_pdf.impl.array_views import UInt8Array
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl.geometry import intersect_bbox
 
@@ -98,8 +98,7 @@ def dash_subpath(
 
 
 def rasterize_unclipped_line_normal(
-    pixels: bytearray,
-    width: int,
+    target_pixels: numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]],
     crop_x0: float,
     crop_y1: float,
     scale: float,
@@ -109,15 +108,17 @@ def rasterize_unclipped_line_normal(
     y1: float,
     line_width: float,
     rgba: tuple[int, int, int, int],
-    line_cap: int,
     pixel_box: tuple[int, int, int, int],
     *,
-    target_pixels: numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]] | None = None,
-    x_coords: numpy.ndarray[tuple[int], numpy.dtype[numpy.float64]] | None = None,
-    y_coords: numpy.ndarray[tuple[int], numpy.dtype[numpy.float64]] | None = None,
     return_source_alpha: bool = False,
     source_shape: UInt8Array | None = None,
 ) -> UInt8Array | None:
+    """A butt-capped segment's 4x4 coverage over its pixel box, blended normally.
+
+    fill_line's route for boxes of more than 64 pixels under no clip or a
+    rectangular one. The cap extension is zero, and still multiplied
+    through as it was, so a NaN or infinite segment samples as before.
+    """
     x_delta = x1 - x0
     y_delta = y1 - y0
     segment_length_squared = x_delta * x_delta + y_delta * y_delta
@@ -126,73 +127,44 @@ def rasterize_unclipped_line_normal(
 
     segment_length = segment_length_squared**0.5
     half = max(0.5 / scale, line_width * 0.5)
-    half_squared = half * half
-    cap_extension = half if line_cap == 2 else 0.0
-    inv_segment_length_squared = 1.0 / segment_length_squared
+    cap_extension = 0.0
     ix0, iy0, ix1, iy1 = pixel_box
     samples = 4
     sample_total = samples * samples
     red, green, blue, source_alpha = rgba
-    if x_coords is None:
-        x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
-    if y_coords is None:
-        y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
+    x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
+    y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
     if x_coords.size == 0 or y_coords.size == 0:
         return None
 
     covered = numpy.zeros((y_coords.size, x_coords.size), dtype=numpy.int16)
-    if line_cap in {0, 2}:
-        x_page = crop_x0 + (x_coords + 0.5 / samples) / scale
-        y_page = crop_y1 - (y_coords + 0.5 / samples) / scale
-        x_offset = x_page - x0
-        y_offset = y_page - y0
-        projection_base = numpy.add.outer(y_offset * y_delta, x_offset * x_delta)
-        cross_base = numpy.add.outer(-y_offset * x_delta, x_offset * y_delta)
-        sample_step = 1.0 / (samples * scale)
-        cross_limit = half * segment_length
-        projection_extension = cap_extension * segment_length
-        mask = numpy.empty_like(projection_base, dtype=bool)
-        condition = numpy.empty_like(projection_base, dtype=bool)
-        for sy in range(samples):
-            for sx in range(samples):
-                projection_shift = sample_step * (sx * x_delta - sy * y_delta)
-                numpy.greater_equal(
-                    projection_base, -projection_extension - projection_shift, out=mask
-                )
-                numpy.less_equal(
-                    projection_base,
-                    segment_length_squared + projection_extension - projection_shift,
-                    out=condition,
-                )
-                numpy.logical_and(mask, condition, out=mask)
-                cross_shift = sample_step * (sx * y_delta + sy * x_delta)
-                numpy.greater_equal(cross_base, -cross_limit - cross_shift, out=condition)
-                numpy.logical_and(mask, condition, out=mask)
-                numpy.less_equal(cross_base, cross_limit - cross_shift, out=condition)
-                numpy.logical_and(mask, condition, out=mask)
-                numpy.add(covered, mask, out=covered)
-    else:
-        base_page_x = crop_x0 + (x_coords + 0.5 / samples) / scale
-        base_page_y = crop_y1 - (y_coords + 0.5 / samples) / scale
-        t_base = (
-            numpy.add.outer(
-                (base_page_y - y0) * y_delta,
-                (base_page_x - x0) * x_delta,
+    x_page = crop_x0 + (x_coords + 0.5 / samples) / scale
+    y_page = crop_y1 - (y_coords + 0.5 / samples) / scale
+    x_offset = x_page - x0
+    y_offset = y_page - y0
+    projection_base = numpy.add.outer(y_offset * y_delta, x_offset * x_delta)
+    cross_base = numpy.add.outer(-y_offset * x_delta, x_offset * y_delta)
+    sample_step = 1.0 / (samples * scale)
+    cross_limit = half * segment_length
+    projection_extension = cap_extension * segment_length
+    mask = numpy.empty_like(projection_base, dtype=bool)
+    condition = numpy.empty_like(projection_base, dtype=bool)
+    for sy in range(samples):
+        for sx in range(samples):
+            projection_shift = sample_step * (sx * x_delta - sy * y_delta)
+            numpy.greater_equal(projection_base, -projection_extension - projection_shift, out=mask)
+            numpy.less_equal(
+                projection_base,
+                segment_length_squared + projection_extension - projection_shift,
+                out=condition,
             )
-            * inv_segment_length_squared
-        )
-        sample_step = 1.0 / (samples * scale)
-        for sy in range(samples):
-            for sx in range(samples):
-                t = (
-                    t_base
-                    + sample_step * (sx * x_delta - sy * y_delta) * inv_segment_length_squared
-                )
-                closest_t = numpy.clip(t, 0.0, 1.0)
-                distance_x = base_page_x + sx * sample_step - (x0 + x_delta * closest_t)
-                distance_y = base_page_y[:, None] - sy * sample_step - (y0 + y_delta * closest_t)
-                inside = distance_x * distance_x + distance_y * distance_y <= half_squared
-                covered += inside
+            numpy.logical_and(mask, condition, out=mask)
+            cross_shift = sample_step * (sx * y_delta + sy * x_delta)
+            numpy.greater_equal(cross_base, -cross_limit - cross_shift, out=condition)
+            numpy.logical_and(mask, condition, out=mask)
+            numpy.less_equal(cross_base, cross_limit - cross_shift, out=condition)
+            numpy.logical_and(mask, condition, out=mask)
+            numpy.add(covered, mask, out=covered)
 
     if not numpy.any(covered):
         return None
@@ -206,8 +178,6 @@ def rasterize_unclipped_line_normal(
     if not numpy.any(mask):
         return None
 
-    if target_pixels is None:
-        target_pixels = uint8_view(pixels).reshape(-1, width, 4)
     target = target_pixels[iy0:iy1, ix0:ix1, :]
 
     opaque = alpha >= 255

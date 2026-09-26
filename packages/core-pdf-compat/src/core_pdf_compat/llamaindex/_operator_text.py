@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
 from core_pdf.impl.capture.recovery import iter_content_operations
 from core_pdf.impl.document.recovery.lexer import PdfLexer
@@ -10,7 +10,7 @@ from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts.decoder import FontDecoder
 from core_pdf.impl.fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import PdfName, PdfString
+from core_pdf.impl.types import PdfName, PdfString, Record, frozen_setattr
 from core_pdf_compat._text_state import (
     PREDEFINED_ENCODING_CODECS,
     append_directional_text,
@@ -25,9 +25,6 @@ from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     STANDARD_ENCODING,
 )
-
-frozen_setattr = object.__setattr__
-
 
 WIN_ANSI_ENCODING = tuple(legacy_base_table("WinAnsiEncoding"))
 MAC_ROMAN_ENCODING = tuple(legacy_base_table("MacRomanEncoding"))
@@ -68,7 +65,7 @@ def difference_text(glyph_name: str, code: int) -> str:
     return f"/{glyph_name}" if not mapped or mapped == glyph_name else mapped
 
 
-class Font:
+class Font(Record):
     __slots__ = (
         "decoder",
         "space_character",
@@ -124,19 +121,6 @@ class Font:
         frozen_setattr(self, "character_widths", character_widths)
         frozen_setattr(self, "default_width", default_width)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"decoder={self.decoder!r}, "
-            f"space_character={self.space_character!r}, "
-            f"space_width={self.space_width!r}, "
-            f"encoding={self.encoding!r}, "
-            f"character_map={self.character_map!r}, "
-            f"character_widths={self.character_widths!r}, "
-            f"default_width={self.default_width!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -163,39 +147,6 @@ class Font:
                 self.character_widths,
                 self.default_width,
             )
-        )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        decoder = changes.pop("decoder", self.decoder)
-        space_character = changes.pop("space_character", self.space_character)
-        space_width = changes.pop("space_width", self.space_width)
-        encoding = changes.pop("encoding", self.encoding)
-        character_map = changes.pop("character_map", self.character_map)
-        character_widths = changes.pop("character_widths", self.character_widths)
-        default_width = changes.pop("default_width", self.default_width)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            decoder,
-            space_character,
-            space_width,
-            encoding,
-            character_map,
-            character_widths,
-            default_width,
         )
 
     def encoded(self, data: bytes) -> str:

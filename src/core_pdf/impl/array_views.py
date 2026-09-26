@@ -2,22 +2,11 @@
 
 from __future__ import annotations
 
-from operator import index
 from typing import Any, TypeAlias
 
 import numpy
 
-
-def uint8_view(
-    buffer: bytes | bytearray | memoryview | numpy.ndarray[Any, Any],
-    *,
-    count: int = -1,
-    offset: int = 0,
-) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-    if isinstance(buffer, numpy.ndarray):
-        buffer = numpy.ascontiguousarray(buffer, dtype=numpy.uint8).reshape(-1)
-    return numpy.frombuffer(buffer, dtype=numpy.uint8, count=index(count), offset=index(offset))
-
+from core_jbig2.bitmap import uint8_view as uint8_view
 
 ByteBuffer: TypeAlias = bytes | bytearray | memoryview | numpy.ndarray[Any, Any]
 UInt8Array = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]

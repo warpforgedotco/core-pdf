@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
-frozen_setattr = object.__setattr__
+from core_pdf.impl.types import Record, frozen_setattr
 
 
 class ElementMetadata(dict[str, Any]):
@@ -16,7 +16,7 @@ class ElementMetadata(dict[str, Any]):
         return dict(self)
 
 
-class Element:
+class Element(Record):
     __slots__ = ("text", "metadata")
 
     text: str
@@ -30,9 +30,6 @@ class Element:
         frozen_setattr(self, "metadata", ElementMetadata() if metadata is None else metadata)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(text={self.text!r}, metadata={self.metadata!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -42,26 +39,6 @@ class Element:
 
     def __hash__(self) -> int:
         return hash((self.text, self.metadata))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        metadata = changes.pop("metadata", self.metadata)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(text, metadata)
 
     def _post_init(self) -> None:
         if not isinstance(self.metadata, ElementMetadata):

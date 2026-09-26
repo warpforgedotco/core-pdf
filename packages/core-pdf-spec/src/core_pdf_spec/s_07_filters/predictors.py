@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from operator import index
-from typing import Any
 
 import numpy
 
+from core_jbig2.bitmap import uint8_view
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams
 from core_pdf_spec.s_07_filters.errors import (
     FilterParseError,
@@ -22,17 +21,6 @@ from core_pdf_spec.samples import unpack_subbyte_rows
 # for anything else.
 SUPPORTED_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})
 SUBBYTE_PREDICTOR_BITS = frozenset({1, 2, 4})
-
-
-def uint8_view(
-    buffer: bytes | bytearray | memoryview | numpy.ndarray[Any, Any],
-    *,
-    count: int = -1,
-    offset: int = 0,
-) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-    if isinstance(buffer, numpy.ndarray):
-        buffer = numpy.ascontiguousarray(buffer, dtype=numpy.uint8).reshape(-1)
-    return numpy.frombuffer(buffer, dtype=numpy.uint8, count=index(count), offset=index(offset))
 
 
 def png_predict(

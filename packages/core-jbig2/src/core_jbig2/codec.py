@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, NoReturn, Self
+from typing import ClassVar
 
 from core_jbig2.bitmap import (
     compose_packed_bitmap_data,
     uint8_matrix_view,
 )
-
-frozen_setattr = object.__setattr__
-
+from core_records import Record, ReplaceFields, ReprFields, frozen_setattr
 
 JBIG2_PAGE_INFO = 48
 JBIG2_END_OF_FILE = 51
@@ -33,7 +31,7 @@ class Jbig2UnsupportedError(Jbig2Error):
 GENERIC_TEMPLATE_0_DEFAULT_AT = ((3, -1), (-3, -1), (2, -2), (-2, -2))
 
 
-class JBIG2Segment:
+class JBIG2Segment(ReprFields, ReplaceFields):
     __slots__ = ("number", "flags", "retention_flags", "page_association", "data")
 
     number: int
@@ -65,17 +63,6 @@ class JBIG2Segment:
         self.page_association = page_association
         self.data = data
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"number={self.number!r}, "
-            f"flags={self.flags!r}, "
-            f"retention_flags={self.retention_flags!r}, "
-            f"page_association={self.page_association!r}, "
-            f"data={self.data!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -91,22 +78,12 @@ class JBIG2Segment:
 
     __hash__ = None  # type: ignore[assignment]
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        number = changes.pop("number", self.number)
-        flags = changes.pop("flags", self.flags)
-        retention_flags = changes.pop("retention_flags", self.retention_flags)
-        page_association = changes.pop("page_association", self.page_association)
-        data = changes.pop("data", self.data)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(number, flags, retention_flags, page_association, data)
-
     @property
     def segment_type(self) -> int:
         return self.flags & 0x3F
 
 
-class JBIG2PageInfo:
+class JBIG2PageInfo(ReprFields, ReplaceFields):
     __slots__ = ("width", "height", "x_resolution", "y_resolution", "flags")
 
     width: int
@@ -138,17 +115,6 @@ class JBIG2PageInfo:
         self.y_resolution = y_resolution
         self.flags = flags
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"width={self.width!r}, "
-            f"height={self.height!r}, "
-            f"x_resolution={self.x_resolution!r}, "
-            f"y_resolution={self.y_resolution!r}, "
-            f"flags={self.flags!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -164,18 +130,8 @@ class JBIG2PageInfo:
 
     __hash__ = None  # type: ignore[assignment]
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        width = changes.pop("width", self.width)
-        height = changes.pop("height", self.height)
-        x_resolution = changes.pop("x_resolution", self.x_resolution)
-        y_resolution = changes.pop("y_resolution", self.y_resolution)
-        flags = changes.pop("flags", self.flags)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(width, height, x_resolution, y_resolution, flags)
 
-
-class JBIG2Region:
+class JBIG2Region(Record):
     __slots__ = ("width", "height", "x", "y", "flags", "raw")
 
     width: int
@@ -196,18 +152,6 @@ class JBIG2Region:
         frozen_setattr(self, "flags", flags)
         frozen_setattr(self, "raw", raw)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"width={self.width!r}, "
-            f"height={self.height!r}, "
-            f"x={self.x!r}, "
-            f"y={self.y!r}, "
-            f"flags={self.flags!r}, "
-            f"raw={self.raw!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -225,32 +169,8 @@ class JBIG2Region:
     def __hash__(self) -> int:
         return hash((self.width, self.height, self.x, self.y, self.flags, self.raw))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        width = changes.pop("width", self.width)
-        height = changes.pop("height", self.height)
-        x = changes.pop("x", self.x)
-        y = changes.pop("y", self.y)
-        flags = changes.pop("flags", self.flags)
-        raw = changes.pop("raw", self.raw)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(width, height, x, y, flags, raw)
-
-
-class JBIG2GenericRegionHeader:
+class JBIG2GenericRegionHeader(Record):
     __slots__ = ("region", "mmr", "template", "prediction", "adaptive_pixels", "bitmap_start")
 
     region: JBIG2Region
@@ -286,18 +206,6 @@ class JBIG2GenericRegionHeader:
         frozen_setattr(self, "adaptive_pixels", adaptive_pixels)
         frozen_setattr(self, "bitmap_start", bitmap_start)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"region={self.region!r}, "
-            f"mmr={self.mmr!r}, "
-            f"template={self.template!r}, "
-            f"prediction={self.prediction!r}, "
-            f"adaptive_pixels={self.adaptive_pixels!r}, "
-            f"bitmap_start={self.bitmap_start!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -324,32 +232,8 @@ class JBIG2GenericRegionHeader:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        region = changes.pop("region", self.region)
-        mmr = changes.pop("mmr", self.mmr)
-        template = changes.pop("template", self.template)
-        prediction = changes.pop("prediction", self.prediction)
-        adaptive_pixels = changes.pop("adaptive_pixels", self.adaptive_pixels)
-        bitmap_start = changes.pop("bitmap_start", self.bitmap_start)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(region, mmr, template, prediction, adaptive_pixels, bitmap_start)
-
-
-class JBIG2SegmentHeader:
+class JBIG2SegmentHeader(ReprFields, ReplaceFields):
     __slots__ = (
         "number",
         "flags",
@@ -411,20 +295,6 @@ class JBIG2SegmentHeader:
         self.data_length = data_length
         self.header_length = header_length
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"number={self.number!r}, "
-            f"flags={self.flags!r}, "
-            f"retention_flags={self.retention_flags!r}, "
-            f"referred_to_count={self.referred_to_count!r}, "
-            f"referred_to_segments={self.referred_to_segments!r}, "
-            f"page_association={self.page_association!r}, "
-            f"data_length={self.data_length!r}, "
-            f"header_length={self.header_length!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -443,30 +313,8 @@ class JBIG2SegmentHeader:
 
     __hash__ = None  # type: ignore[assignment]
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        number = changes.pop("number", self.number)
-        flags = changes.pop("flags", self.flags)
-        retention_flags = changes.pop("retention_flags", self.retention_flags)
-        referred_to_count = changes.pop("referred_to_count", self.referred_to_count)
-        referred_to_segments = changes.pop("referred_to_segments", self.referred_to_segments)
-        page_association = changes.pop("page_association", self.page_association)
-        data_length = changes.pop("data_length", self.data_length)
-        header_length = changes.pop("header_length", self.header_length)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            number,
-            flags,
-            retention_flags,
-            referred_to_count,
-            referred_to_segments,
-            page_association,
-            data_length,
-            header_length,
-        )
 
-
-class JBIG2Image:
+class JBIG2Image(ReprFields, ReplaceFields):
     __slots__ = ("width", "height", "stride", "data")
 
     width: int
@@ -483,16 +331,6 @@ class JBIG2Image:
         self.stride = stride
         self.data = data
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"width={self.width!r}, "
-            f"height={self.height!r}, "
-            f"stride={self.stride!r}, "
-            f"data={self.data!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -506,15 +344,6 @@ class JBIG2Image:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        width = changes.pop("width", self.width)
-        height = changes.pop("height", self.height)
-        stride = changes.pop("stride", self.stride)
-        data = changes.pop("data", self.data)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(width, height, stride, data)
 
     @classmethod
     def create(cls, width: int, height: int) -> JBIG2Image:

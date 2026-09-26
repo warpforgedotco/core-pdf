@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
 from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_integer, require_pdf_number
 from core_pdf_spec.s_09_fonts.dictionaries import (
     font_descriptor,
     get_descendant,
 )
-
-frozen_setattr = object.__setattr__
-
+from core_records import Record, frozen_setattr
 
 MIN_CID = 0
 MAX_CID = 0xFFFF
@@ -81,7 +79,7 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
     return widths
 
 
-class FontMetrics:
+class FontMetrics(Record):
     __slots__ = (
         "widths",
         "default_width",
@@ -131,18 +129,6 @@ class FontMetrics:
         frozen_setattr(self, "default_vertical_origin_y", default_vertical_origin_y)
         frozen_setattr(self, "vertical_metrics", vertical_metrics)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"widths={self.widths!r}, "
-            f"default_width={self.default_width!r}, "
-            f"default_width_explicit={self.default_width_explicit!r}, "
-            f"default_vertical_displacement_y={self.default_vertical_displacement_y!r}, "
-            f"default_vertical_origin_y={self.default_vertical_origin_y!r}, "
-            f"vertical_metrics={self.vertical_metrics!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -167,41 +153,6 @@ class FontMetrics:
                 self.default_vertical_origin_y,
                 self.vertical_metrics,
             )
-        )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        widths = changes.pop("widths", self.widths)
-        default_width = changes.pop("default_width", self.default_width)
-        default_width_explicit = changes.pop("default_width_explicit", self.default_width_explicit)
-        default_vertical_displacement_y = changes.pop(
-            "default_vertical_displacement_y", self.default_vertical_displacement_y
-        )
-        default_vertical_origin_y = changes.pop(
-            "default_vertical_origin_y", self.default_vertical_origin_y
-        )
-        vertical_metrics = changes.pop("vertical_metrics", self.vertical_metrics)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            widths,
-            default_width,
-            default_width_explicit,
-            default_vertical_displacement_y,
-            default_vertical_origin_y,
-            vertical_metrics,
         )
 
 

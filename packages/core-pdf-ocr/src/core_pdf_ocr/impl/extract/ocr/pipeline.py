@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from copy import replace
-from typing import Any, ClassVar, NoReturn, Self
+from typing import ClassVar
 
 import numpy
 
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_ocr.impl.extract.capture import promoted_hidden_observations
 from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,
@@ -56,10 +57,8 @@ from core_pdf_ocr.impl.extract.ocr.vector import (
 )
 from core_pdf_ocr.impl.extract.quality import Candidate
 
-frozen_setattr = object.__setattr__
 
-
-class OcrPassState:
+class OcrPassState(Record):
     __slots__ = (
         "selected",
         "selected_tasks",
@@ -97,16 +96,6 @@ class OcrPassState:
         frozen_setattr(self, "previous_region_additions", previous_region_additions)
         frozen_setattr(self, "seeded_region_selected", seeded_region_selected)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"selected={self.selected!r}, "
-            f"selected_tasks={self.selected_tasks!r}, "
-            f"previous_region_additions={self.previous_region_additions!r}, "
-            f"seeded_region_selected={self.seeded_region_selected!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -127,35 +116,6 @@ class OcrPassState:
                 self.previous_region_additions,
                 self.seeded_region_selected,
             )
-        )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        selected = changes.pop("selected", self.selected)
-        selected_tasks = changes.pop("selected_tasks", self.selected_tasks)
-        previous_region_additions = changes.pop(
-            "previous_region_additions", self.previous_region_additions
-        )
-        seeded_region_selected = changes.pop("seeded_region_selected", self.seeded_region_selected)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            selected,
-            selected_tasks,
-            previous_region_additions,
-            seeded_region_selected,
         )
 
     def prepare(self, ocr_pass: OcrPass, *, visible_native_characters: int) -> OcrPassState | None:

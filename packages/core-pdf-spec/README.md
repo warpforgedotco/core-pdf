@@ -27,7 +27,7 @@ The library contains implemented PDF semantics and the PDF-facing wrappers over 
 referenced standards. The referenced-standard kernels themselves are separate floor
 distributions that spec depends on: `core-postscript`, `core-jbig2`,
 `core-pdf-crypto`, and `core-adobe-fonts` (which also carries the bundled CMaps and
-standard font tables). It preserves standard-defined defaults and fallback rules. Malformed-input repair, retry/skip policy, substitute fonts, fontTools backends,
+standard font tables), with `core-records` supplying the value-class mixins. It preserves standard-defined defaults and fallback rules. Malformed-input repair, retry/skip policy, substitute fonts, fontTools backends,
 Unicode guesses, output-device choices, capture products, and rasterization belong to
 applications such as `core-pdf`. Semantic sinks, stream decoders, and font providers are supplied
 through typed interfaces. Unsupported algorithms report failure instead of selecting a backend.
@@ -44,7 +44,7 @@ Image sample decoding and range enforcement belong to the caller. The existing
 
 The current spec version is `0.7.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.9.0,<0.10.0`; changes to that range require core integration and differential validation.
+`>=0.9.1,<0.10.0`; changes to that range require core integration and differential validation.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are

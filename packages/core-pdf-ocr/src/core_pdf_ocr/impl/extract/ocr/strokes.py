@@ -6,7 +6,7 @@ import string
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from typing import Any, ClassVar, NoReturn, Self, TypeAlias
+from typing import ClassVar, TypeAlias
 
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath
 from core_pdf.impl.geometry import (
@@ -16,10 +16,7 @@ from core_pdf.impl.geometry import (
     points_bbox,
     rect_tuple,
 )
-from core_pdf.impl.types import Rectangle
-
-frozen_setattr = object.__setattr__
-
+from core_pdf.impl.types import Record, Rectangle, frozen_setattr
 
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]
 GlyphTopology: TypeAlias = tuple[tuple[tuple[bool, int], ...], ...]
@@ -37,7 +34,7 @@ STROKED_TEXT_SEED_RUN_MAX_WIDTH = 64.0
 STROKED_TEXT_ALLOWED_CHARACTERS = frozenset(string.ascii_letters + string.digits + "+-./_")
 
 
-class StrokedTextSeed:
+class StrokedTextSeed(Record):
     __slots__ = ("text", "bbox", "confidence", "sequence")
 
     text: str
@@ -54,16 +51,6 @@ class StrokedTextSeed:
         frozen_setattr(self, "confidence", confidence)
         frozen_setattr(self, "sequence", sequence)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"bbox={self.bbox!r}, "
-            f"confidence={self.confidence!r}, "
-            f"sequence={self.sequence!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -79,30 +66,8 @@ class StrokedTextSeed:
     def __hash__(self) -> int:
         return hash((self.text, self.bbox, self.confidence, self.sequence))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        bbox = changes.pop("bbox", self.bbox)
-        confidence = changes.pop("confidence", self.confidence)
-        sequence = changes.pop("sequence", self.sequence)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(text, bbox, confidence, sequence)
-
-
-class StrokedTextObservation:
+class StrokedTextObservation(Record):
     __slots__ = ("text", "bbox", "first_drawing", "last_drawing", "confidence")
 
     text: str
@@ -134,17 +99,6 @@ class StrokedTextObservation:
         frozen_setattr(self, "last_drawing", last_drawing)
         frozen_setattr(self, "confidence", confidence)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"bbox={self.bbox!r}, "
-            f"first_drawing={self.first_drawing!r}, "
-            f"last_drawing={self.last_drawing!r}, "
-            f"confidence={self.confidence!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -161,31 +115,8 @@ class StrokedTextObservation:
     def __hash__(self) -> int:
         return hash((self.text, self.bbox, self.first_drawing, self.last_drawing, self.confidence))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        bbox = changes.pop("bbox", self.bbox)
-        first_drawing = changes.pop("first_drawing", self.first_drawing)
-        last_drawing = changes.pop("last_drawing", self.last_drawing)
-        confidence = changes.pop("confidence", self.confidence)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(text, bbox, first_drawing, last_drawing, confidence)
-
-
-class StrokedTextDecode:
+class StrokedTextDecode(Record):
     __slots__ = (
         "observations",
         "eligible_seeds",
@@ -271,24 +202,6 @@ class StrokedTextDecode:
         frozen_setattr(self, "candidate_glyphs", candidate_glyphs)
         frozen_setattr(self, "decoded_candidate_glyphs", decoded_candidate_glyphs)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"observations={self.observations!r}, "
-            f"eligible_seeds={self.eligible_seeds!r}, "
-            f"aligned_seeds={self.aligned_seeds!r}, "
-            f"accepted_seeds={self.accepted_seeds!r}, "
-            f"initial_signatures={self.initial_signatures!r}, "
-            f"learned_signatures={self.learned_signatures!r}, "
-            f"approximate_signatures={self.approximate_signatures!r}, "
-            f"alphabet={self.alphabet!r}, "
-            f"candidate_runs={self.candidate_runs!r}, "
-            f"decoded_candidate_runs={self.decoded_candidate_runs!r}, "
-            f"candidate_glyphs={self.candidate_glyphs!r}, "
-            f"decoded_candidate_glyphs={self.decoded_candidate_glyphs!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -327,51 +240,6 @@ class StrokedTextDecode:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        observations = changes.pop("observations", self.observations)
-        eligible_seeds = changes.pop("eligible_seeds", self.eligible_seeds)
-        aligned_seeds = changes.pop("aligned_seeds", self.aligned_seeds)
-        accepted_seeds = changes.pop("accepted_seeds", self.accepted_seeds)
-        initial_signatures = changes.pop("initial_signatures", self.initial_signatures)
-        learned_signatures = changes.pop("learned_signatures", self.learned_signatures)
-        approximate_signatures = changes.pop("approximate_signatures", self.approximate_signatures)
-        alphabet = changes.pop("alphabet", self.alphabet)
-        candidate_runs = changes.pop("candidate_runs", self.candidate_runs)
-        decoded_candidate_runs = changes.pop("decoded_candidate_runs", self.decoded_candidate_runs)
-        candidate_glyphs = changes.pop("candidate_glyphs", self.candidate_glyphs)
-        decoded_candidate_glyphs = changes.pop(
-            "decoded_candidate_glyphs", self.decoded_candidate_glyphs
-        )
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            observations,
-            eligible_seeds,
-            aligned_seeds,
-            accepted_seeds,
-            initial_signatures,
-            learned_signatures,
-            approximate_signatures,
-            alphabet,
-            candidate_runs,
-            decoded_candidate_runs,
-            candidate_glyphs,
-            decoded_candidate_glyphs,
-        )
-
     @property
     def candidate_run_coverage(self) -> float:
         return self.decoded_candidate_runs / max(1, self.candidate_runs)
@@ -381,7 +249,7 @@ class StrokedTextDecode:
         return self.decoded_candidate_glyphs / max(1, self.candidate_glyphs)
 
 
-class StrokedTextRun:
+class StrokedTextRun(Record):
     __slots__ = ("bbox", "drawing_indexes", "glyph_count")
 
     bbox: Rectangle
@@ -395,15 +263,6 @@ class StrokedTextRun:
         frozen_setattr(self, "bbox", bbox)
         frozen_setattr(self, "drawing_indexes", drawing_indexes)
         frozen_setattr(self, "glyph_count", glyph_count)
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"bbox={self.bbox!r}, "
-            f"drawing_indexes={self.drawing_indexes!r}, "
-            f"glyph_count={self.glyph_count!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -419,29 +278,8 @@ class StrokedTextRun:
     def __hash__(self) -> int:
         return hash((self.bbox, self.drawing_indexes, self.glyph_count))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        bbox = changes.pop("bbox", self.bbox)
-        drawing_indexes = changes.pop("drawing_indexes", self.drawing_indexes)
-        glyph_count = changes.pop("glyph_count", self.glyph_count)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(bbox, drawing_indexes, glyph_count)
-
-
-class PathRecord:
+class PathRecord(Record):
     __slots__ = ("index", "path", "bbox")
 
     index: int
@@ -456,15 +294,6 @@ class PathRecord:
         frozen_setattr(self, "path", path)
         frozen_setattr(self, "bbox", bbox)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"index={self.index!r}, "
-            f"path={self.path!r}, "
-            f"bbox={self.bbox!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -475,32 +304,11 @@ class PathRecord:
     def __hash__(self) -> int:
         return hash((self.index, self.path, self.bbox))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        index = changes.pop("index", self.index)
-        path = changes.pop("path", self.path)
-        bbox = changes.pop("bbox", self.bbox)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(index, path, bbox)
-
 
 Glyph: TypeAlias = tuple[PathRecord, ...]
 
 
-class StrokedTextProfile:
+class StrokedTextProfile(Record):
     __slots__ = ("records", "run_profiles", "seed_runs")
 
     records: tuple[PathRecord, ...]
@@ -520,15 +328,6 @@ class StrokedTextProfile:
         frozen_setattr(self, "run_profiles", run_profiles)
         frozen_setattr(self, "seed_runs", seed_runs)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"records={self.records!r}, "
-            f"run_profiles={self.run_profiles!r}, "
-            f"seed_runs={self.seed_runs!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -543,29 +342,8 @@ class StrokedTextProfile:
     def __hash__(self) -> int:
         return hash((self.records, self.run_profiles, self.seed_runs))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        records = changes.pop("records", self.records)
-        run_profiles = changes.pop("run_profiles", self.run_profiles)
-        seed_runs = changes.pop("seed_runs", self.seed_runs)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(records, run_profiles, seed_runs)
-
-
-class SeedSample:
+class SeedSample(Record):
     __slots__ = ("seed", "text", "signatures")
 
     seed: StrokedTextSeed
@@ -585,15 +363,6 @@ class SeedSample:
         frozen_setattr(self, "text", text)
         frozen_setattr(self, "signatures", signatures)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"seed={self.seed!r}, "
-            f"text={self.text!r}, "
-            f"signatures={self.signatures!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -608,29 +377,8 @@ class SeedSample:
     def __hash__(self) -> int:
         return hash((self.seed, self.text, self.signatures))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        seed = changes.pop("seed", self.seed)
-        text = changes.pop("text", self.text)
-        signatures = changes.pop("signatures", self.signatures)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(seed, text, signatures)
-
-
-class StrokedTextRunProfile:
+class StrokedTextRunProfile(Record):
     __slots__ = ("glyphs", "signatures", "bbox", "first_drawing", "last_drawing", "seed_run")
 
     glyphs: tuple[Glyph, ...]
@@ -666,18 +414,6 @@ class StrokedTextRunProfile:
         frozen_setattr(self, "last_drawing", last_drawing)
         frozen_setattr(self, "seed_run", seed_run)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"glyphs={self.glyphs!r}, "
-            f"signatures={self.signatures!r}, "
-            f"bbox={self.bbox!r}, "
-            f"first_drawing={self.first_drawing!r}, "
-            f"last_drawing={self.last_drawing!r}, "
-            f"seed_run={self.seed_run!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -703,30 +439,6 @@ class StrokedTextRunProfile:
                 self.seed_run,
             )
         )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        glyphs = changes.pop("glyphs", self.glyphs)
-        signatures = changes.pop("signatures", self.signatures)
-        bbox = changes.pop("bbox", self.bbox)
-        first_drawing = changes.pop("first_drawing", self.first_drawing)
-        last_drawing = changes.pop("last_drawing", self.last_drawing)
-        seed_run = changes.pop("seed_run", self.seed_run)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(glyphs, signatures, bbox, first_drawing, last_drawing, seed_run)
 
 
 def path_records(

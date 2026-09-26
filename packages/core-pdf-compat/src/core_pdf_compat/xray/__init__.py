@@ -6,7 +6,7 @@ from collections import defaultdict
 from math import ceil, floor
 from os import PathLike
 from pathlib import Path
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
@@ -21,7 +21,7 @@ from core_pdf.impl.geometry import (
 )
 from core_pdf.impl.render.page import compose_page
 from core_pdf.impl.text import collapse_ws
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.types import PdfReference, ReplaceFields, ReprFields
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 from .._shared import float32 as _float32
@@ -40,7 +40,7 @@ class XrayDocument(PdfDocument):
         return None
 
 
-class _Rectangle:
+class _Rectangle(ReprFields, ReplaceFields):
     __slots__ = ("bbox", "seqno", "fill", "allow_same_fill")
 
     bbox: tuple[float, float, float, float]
@@ -63,16 +63,6 @@ class _Rectangle:
         self.fill = fill
         self.allow_same_fill = allow_same_fill
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"bbox={self.bbox!r}, "
-            f"seqno={self.seqno!r}, "
-            f"fill={self.fill!r}, "
-            f"allow_same_fill={self.allow_same_fill!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -87,17 +77,8 @@ class _Rectangle:
 
     __hash__ = None  # type: ignore[assignment]
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        bbox = changes.pop("bbox", self.bbox)
-        seqno = changes.pop("seqno", self.seqno)
-        fill = changes.pop("fill", self.fill)
-        allow_same_fill = changes.pop("allow_same_fill", self.allow_same_fill)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(bbox, seqno, fill, allow_same_fill)
 
-
-class _Character:
+class _Character(ReprFields, ReplaceFields):
     __slots__ = ("bbox", "text", "seqno", "fill")
 
     bbox: tuple[float, float, float, float]
@@ -120,16 +101,6 @@ class _Character:
         self.seqno = seqno
         self.fill = fill
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"bbox={self.bbox!r}, "
-            f"text={self.text!r}, "
-            f"seqno={self.seqno!r}, "
-            f"fill={self.fill!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -144,17 +115,8 @@ class _Character:
 
     __hash__ = None  # type: ignore[assignment]
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        bbox = changes.pop("bbox", self.bbox)
-        text = changes.pop("text", self.text)
-        seqno = changes.pop("seqno", self.seqno)
-        fill = changes.pop("fill", self.fill)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(bbox, text, seqno, fill)
 
-
-class _RecoveredFont:
+class _RecoveredFont(ReprFields, ReplaceFields):
     __slots__ = ("cmap", "first_char", "widths")
 
     cmap: ToUnicodeCMap
@@ -169,15 +131,6 @@ class _RecoveredFont:
         self.first_char = first_char
         self.widths = widths
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"cmap={self.cmap!r}, "
-            f"first_char={self.first_char!r}, "
-            f"widths={self.widths!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -190,14 +143,6 @@ class _RecoveredFont:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        cmap = changes.pop("cmap", self.cmap)
-        first_char = changes.pop("first_char", self.first_char)
-        widths = changes.pop("widths", self.widths)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(cmap, first_char, widths)
 
 
 def _occluded(character: _Character, rectangle: _Rectangle, threshold: float) -> bool:

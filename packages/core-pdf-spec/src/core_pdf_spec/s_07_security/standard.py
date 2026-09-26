@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from hashlib import md5, sha256, sha384, sha512
 from hmac import compare_digest
 from types import MappingProxyType
-from typing import Any, ClassVar, Literal, NoReturn, Self
+from typing import ClassVar, Literal
 
 from core_pdf_spec.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.decode_spec import normalize_stream_decode_spec
@@ -28,9 +28,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
 )
 from core_pdf_spec.types import MISSING
-
-frozen_setattr = object.__setattr__
-
+from core_records import Record, frozen_setattr
 
 CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
 
@@ -57,7 +55,7 @@ PDF_MAC_PERMISSION_BIT = 13
 PDF_MAC_PERMISSION_MASK = 1 << (PDF_MAC_PERMISSION_BIT - 1)
 
 
-class StandardSecurityConfig:
+class StandardSecurityConfig(Record):
     __slots__ = (
         "version",
         "revision",
@@ -173,29 +171,6 @@ class StandardSecurityConfig:
         frozen_setattr(self, "kdf_salt", kdf_salt)
         frozen_setattr(self, "pdf_mac_required", pdf_mac_required)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"version={self.version!r}, "
-            f"revision={self.revision!r}, "
-            f"permissions={self.permissions!r}, "
-            f"owner_entry={self.owner_entry!r}, "
-            f"user_entry={self.user_entry!r}, "
-            f"length_bits={self.length_bits!r}, "
-            f"document_id={self.document_id!r}, "
-            f"encrypt_metadata={self.encrypt_metadata!r}, "
-            f"stream_filter={self.stream_filter!r}, "
-            f"string_filter={self.string_filter!r}, "
-            f"embedded_file_filter={self.embedded_file_filter!r}, "
-            f"crypt_filters={self.crypt_filters!r}, "
-            f"owner_encrypted_key={self.owner_encrypted_key!r}, "
-            f"user_encrypted_key={self.user_encrypted_key!r}, "
-            f"encrypted_permissions={self.encrypted_permissions!r}, "
-            f"kdf_salt={self.kdf_salt!r}, "
-            f"pdf_mac_required={self.pdf_mac_required!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -244,61 +219,8 @@ class StandardSecurityConfig:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        version = changes.pop("version", self.version)
-        revision = changes.pop("revision", self.revision)
-        permissions = changes.pop("permissions", self.permissions)
-        owner_entry = changes.pop("owner_entry", self.owner_entry)
-        user_entry = changes.pop("user_entry", self.user_entry)
-        length_bits = changes.pop("length_bits", self.length_bits)
-        document_id = changes.pop("document_id", self.document_id)
-        encrypt_metadata = changes.pop("encrypt_metadata", self.encrypt_metadata)
-        stream_filter = changes.pop("stream_filter", self.stream_filter)
-        string_filter = changes.pop("string_filter", self.string_filter)
-        embedded_file_filter = changes.pop("embedded_file_filter", self.embedded_file_filter)
-        crypt_filters = changes.pop("crypt_filters", self.crypt_filters)
-        owner_encrypted_key = changes.pop("owner_encrypted_key", self.owner_encrypted_key)
-        user_encrypted_key = changes.pop("user_encrypted_key", self.user_encrypted_key)
-        encrypted_permissions = changes.pop("encrypted_permissions", self.encrypted_permissions)
-        kdf_salt = changes.pop("kdf_salt", self.kdf_salt)
-        pdf_mac_required = changes.pop("pdf_mac_required", self.pdf_mac_required)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            version,
-            revision,
-            permissions,
-            owner_entry,
-            user_entry,
-            length_bits,
-            document_id,
-            encrypt_metadata,
-            stream_filter,
-            string_filter,
-            embedded_file_filter,
-            crypt_filters,
-            owner_encrypted_key,
-            user_encrypted_key,
-            encrypted_permissions,
-            kdf_salt,
-            pdf_mac_required,
-        )
-
-
-class StandardSecurityHandler:
+class StandardSecurityHandler(Record):
     __slots__ = ("config", "file_key")
 
     config: StandardSecurityConfig
@@ -311,9 +233,6 @@ class StandardSecurityHandler:
         frozen_setattr(self, "config", config)
         frozen_setattr(self, "file_key", file_key)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(config={self.config!r}, file_key={self.file_key!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -323,26 +242,6 @@ class StandardSecurityHandler:
 
     def __hash__(self) -> int:
         return hash((self.config, self.file_key))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        config = changes.pop("config", self.config)
-        file_key = changes.pop("file_key", self.file_key)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(config, file_key)
 
     def decrypt(
         self,
