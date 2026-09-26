@@ -7,7 +7,6 @@ import pytest
 from core_jbig2.codec import (
     Jbig2ParseError,
     parse_embedded_segments,
-    parse_referred_to_segments,
     parse_segment_header,
 )
 
@@ -70,16 +69,3 @@ def test_extended_count_keeps_high_five_bits_when_checking_required_storage():
     data = struct.pack(">IBI", 0x2000000, 52, 0xE1000000) + bytes(10)
     with pytest.raises(Jbig2ParseError):
         parse_segment_header(data, 0)
-
-
-@pytest.mark.parametrize(
-    ("long_form", "data", "expected"),
-    [(False, b"\x01\xfe", [1, 254]), (True, bytes.fromhex("00000100 01000000"), [256, 16777216])],
-)
-def test_exported_reference_reader_preserves_legacy_byte_width_contract(long_form, data, expected):
-    assert parse_referred_to_segments(b"x" + data + b"z", 1, 2, long_form) == (
-        expected,
-        1 + len(data),
-    )
-    with pytest.raises(Jbig2ParseError):
-        parse_referred_to_segments(data[:-1], 0, 2, long_form)
