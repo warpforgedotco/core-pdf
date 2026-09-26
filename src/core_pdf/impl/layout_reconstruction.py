@@ -677,6 +677,9 @@ class GlyphLineBuilder:
     ) -> bool:
         if not recent_runs:
             return False
+        # geometry.bbox_area and bbox_intersection_area, inline: this runs for
+        # every run against the recent ones, and their calls and float()
+        # coercions would cost more than the arithmetic.
         x0, y0, x1, y1 = run.advance_bbox
         box_area = (y1 - y0) * (x1 - x0)
         if box_area <= 0:
