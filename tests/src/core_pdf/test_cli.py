@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -66,3 +68,16 @@ def test_cli_discovery_and_failure_status(
     assert "1 failed" in capsys.readouterr().out
     assert run([str(tmp_path / "missing.pdf")]) == 1
     assert "does not exist" in capsys.readouterr().err
+
+
+def test_module_entry_point_exits_with_the_run_status(tmp_path: Path) -> None:
+    # python -m core_pdf must report failure through its exit status, as the
+    # core-pdf script does, rather than exit 0 whatever run() returned.
+    result = subprocess.run(
+        [sys.executable, "-m", "core_pdf", str(tmp_path / "missing.pdf")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "does not exist" in result.stderr

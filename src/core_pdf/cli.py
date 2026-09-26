@@ -111,7 +111,6 @@ def run(
 
         total = len(pdf_paths)
         succeeded = 0
-        failed = 0
 
         for path in pdf_paths:
             try:
@@ -129,9 +128,9 @@ def run(
                 succeeded += 1
             except Exception as exc:
                 print(f"{program_name} [{path}]: {exc}", file=sys.stderr)
-                failed += 1
 
-        success_rate = (succeeded / total * 100) if total > 0 else 0.0
+        failed = total - succeeded
+        success_rate = succeeded / total * 100
         print(
             f"Processed {total} PDF(s): {succeeded} succeeded, "
             f"{failed} failed ({success_rate:.1f}% success rate)"
