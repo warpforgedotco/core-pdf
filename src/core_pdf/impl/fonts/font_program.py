@@ -15,10 +15,10 @@ import numpy
 from core_adobe_fonts.cff.font import (
     CFF_EXPERT_ENCODING_CODES,
     CFF_STANDARD_STRING_COUNT,
+    DEFAULT_CFF_FONT_MATRIX,
     STANDARD_GLYPH_SIDS,
     CffFontMatrix,
 )
-from core_adobe_fonts.cff.font import DEFAULT_CFF_FONT_MATRIX as DEFAULT_CFF_MATRIX
 from core_adobe_fonts.cff.font import CFFFont as PdfCFFFont
 from core_adobe_fonts.cff.font import (
     cff_font_matrix as pdf_cff_font_matrix,
@@ -107,9 +107,6 @@ class CFFGlyphFeature(FrozenFields, ReplaceFields, ReprFields):
 
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
 assert len(STANDARD_GLYPH_SIDS) == CFF_STANDARD_STRING_COUNT
-
-
-DEFAULT_CFF_FONT_MATRIX = DEFAULT_CFF_MATRIX
 
 
 def cff_font_matrix(
@@ -1090,7 +1087,7 @@ def raw_glyph_locations(font: TTFont) -> tuple[Any, bytes]:
         locations = font["loca"]
         reader = font.reader
         glyph_data = bytes(reader["glyf"]) if reader is not None else b""
-    except FONT_PROGRAM_ERRORS:
+    except Exception:
         return (), b""
     return locations, glyph_data
 
@@ -1108,9 +1105,6 @@ def glyph_header_bbox(
     if contours == 0:
         return None
     return (float(x_min), float(y_min), float(x_max), float(y_max))
-
-
-FONT_PROGRAM_ERRORS = Exception
 
 
 def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
@@ -1190,7 +1184,7 @@ def truetype_tables(font: TTFont) -> TrueTypeTables | None:
             vertical = font["vmtx"].metrics
             if not all(name in vertical for name in order):
                 return None
-    except FONT_PROGRAM_ERRORS:
+    except Exception:
         return None
     if len(loca):
         starts = loca[:-1]
@@ -1233,13 +1227,13 @@ class FontToolsOutlineAccess(BitmapFromContours):
         try:
             contours = fonttools_contours(self.font, glyph_id)
             return contours if self.scale == 1.0 else scale_contours(contours, self.scale)
-        except FONT_PROGRAM_ERRORS:
+        except Exception:
             return ()
 
     def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
         try:
             return fonttools_bbox(self.font, glyph_id, self.scale)
-        except FONT_PROGRAM_ERRORS:
+        except Exception:
             return None
 
 
@@ -1358,7 +1352,7 @@ class TrueTypeFontProgram(BitmapFromOutlines):
     def glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         try:
             return fonttools_contours(self.font, gid)
-        except FONT_PROGRAM_ERRORS:
+        except Exception:
             return ()
 
     def composite_body_bbox(
@@ -1395,7 +1389,7 @@ class TrueTypeFontProgram(BitmapFromOutlines):
                 else:
                     body_bbox = (xmin, ymin, xmax, ymax)
             return (body_bbox, has_dot)
-        except FONT_PROGRAM_ERRORS:
+        except Exception:
             return (None, False)
 
 
@@ -1429,7 +1423,7 @@ def cached_truetype_program(
 def tt_font_from_data(data: bytes) -> TTFont:
     try:
         return parse_truetype_program(data)
-    except FONT_PROGRAM_ERRORS as exc:
+    except Exception as exc:
         raise ValueError("invalid TrueType font program") from exc
 
 
@@ -1437,11 +1431,11 @@ def ensure_glyph_order(font: TTFont) -> None:
     try:
         font.getGlyphOrder()
         return
-    except FONT_PROGRAM_ERRORS:
+    except Exception:
         pass
     try:
         glyph_count = int(font["maxp"].numGlyphs)
-    except FONT_PROGRAM_ERRORS as exc:
+    except Exception as exc:
         raise ValueError("invalid TrueType glyph order") from exc
     if glyph_count <= 0:
         raise ValueError("invalid TrueType glyph order")
@@ -1458,7 +1452,7 @@ def best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
             name_cmap = symbol_cmap.cmap if symbol_cmap is not None else {}
             symbol_fallback = bool(name_cmap)
         reverse_glyph_map = font.getReverseGlyphMap()
-    except FONT_PROGRAM_ERRORS:
+    except Exception:
         return {}
     mapping: dict[int, int] = {}
     for codepoint, glyph_name in name_cmap.items():
@@ -1484,7 +1478,7 @@ def code_gid_cmap(font: TTFont) -> dict[int, int]:
     try:
         cmap_table = font["cmap"]
         reverse_glyph_map = font.getReverseGlyphMap()
-    except FONT_PROGRAM_ERRORS:
+    except Exception:
         return {}
 
     def gid_for(glyph_name: str) -> int:
@@ -1501,7 +1495,7 @@ def code_gid_cmap(font: TTFont) -> dict[int, int]:
     for platform, encoding in ((3, 0), (1, 0)):
         try:
             subtable = cmap_table.getcmap(platform, encoding)
-        except FONT_PROGRAM_ERRORS:
+        except Exception:
             continue
         if subtable is None:
             continue
@@ -1692,7 +1686,7 @@ class OpenTypeFontProgram(BitmapFromOutlines):
             self.outlines = FontToolsOutlineAccess(self.font)
             if "CFF2" in self.font and "fvar" in self.font:
                 del self.font["fvar"]
-        except FONT_PROGRAM_ERRORS as exc:
+        except Exception as exc:
             raise ValueError("invalid OpenType CFF font program") from exc
 
     def glyph_id_for_name(self, glyph_name: str) -> int | None:
