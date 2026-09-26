@@ -134,6 +134,12 @@ class LineJoin(IntEnum):
 PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
 
 
+# byte / 255 in float32, which is what a plane without a transfer converts
+# each byte to: the same division, one element at a time.
+UNIT_MASK_TABLE = numpy.arange(256, dtype=numpy.float32) / 255.0
+UNIT_MASK_TABLE.setflags(write=False)
+
+
 @final
 class SoftMaskPlane:
     """A resolved soft mask: its luminosity or alpha as a page of float32, by the window.
@@ -158,6 +164,10 @@ class SoftMaskPlane:
         if self.table is None:
             return window.astype(numpy.float32) / 255.0
         return self.table[window]
+
+    def values(self) -> numpy.ndarray[Any, numpy.dtype[numpy.float32]]:
+        """The float32 each alpha byte stands for: indexing a window gives table[alpha]."""
+        return UNIT_MASK_TABLE if self.table is None else self.table
 
     @property
     def nbytes(self) -> int:

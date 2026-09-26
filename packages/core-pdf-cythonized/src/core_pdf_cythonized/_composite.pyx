@@ -91,7 +91,7 @@ def composite_elementary_normal(destination, rendered, source_alpha):
     return effective
 
 
-def composite_masked_normal(destination, rendered, double opacity, mask_alpha):
+def composite_masked_normal(destination, rendered, double opacity, mask_codes, mask_table):
     """Composite an isolated group through a soft mask, normal blend mode.
 
     The numpy original quantized the effective alpha, gathered the visible
@@ -103,20 +103,27 @@ def composite_masked_normal(destination, rendered, double opacity, mask_alpha):
     is the same arithmetic in one pass, in the same float64 and in the same
     order, so every intermediate lands on the same bits.
 
-    ``mask_alpha`` must be float32, as every resolved soft mask plane is. The
-    domain check -- a NaN effective alpha, whose uint8 cast numpy leaves to
-    the platform -- completes before any pixel is written.
+    The mask comes as the soft mask's own bytes, ``mask_codes``, and the
+    float32 value each byte stands for, ``mask_table`` (256 entries): a
+    SoftMaskPlane's alpha and its transfer table, or byte / 255 in float32
+    without one. The float32 window the plane would have built from them
+    holds the same values, one lookup at a time. The domain check -- a NaN
+    effective alpha, whose uint8 cast numpy leaves to the platform --
+    completes before any pixel is written.
 
     Returns the effective alpha plane, quantized exactly as the original did.
     """
-    cdef const float[:, :] mask = mask_alpha
+    cdef const unsigned char[:, :] codes = mask_codes
+    cdef const float[::1] table = mask_table
     cdef unsigned char[:, :, :] dst = destination
     cdef const unsigned char[:, :, :] src = rendered
 
-    cdef Py_ssize_t height = mask.shape[0]
-    cdef Py_ssize_t width = mask.shape[1]
+    if table.shape[0] != 256:
+        raise ValueError("mask_table must hold 256 values")
+    cdef Py_ssize_t height = codes.shape[0]
+    cdef Py_ssize_t width = codes.shape[1]
     if dst.shape[0] != height or dst.shape[1] != width or dst.shape[2] != 4:
-        raise ValueError("destination must be mask_alpha.shape + (4,)")
+        raise ValueError("destination must be mask_codes.shape + (4,)")
     if src.shape[0] != height or src.shape[1] != width or src.shape[2] != 4:
         raise ValueError("rendered and destination must have the same shape")
 
@@ -126,24 +133,84 @@ def composite_masked_normal(destination, rendered, double opacity, mask_alpha):
     cdef Py_ssize_t y, x
     cdef double scaled
     cdef bint any_visible = False
+    # A soft-masked group is mostly flat fills over a flat backdrop -- on
+    # test_3450, 995 pixels in 1,000 have the inputs of the pixel before --
+    # and every result is a function of its pixel's inputs alone, so each
+    # pass keeps the last inputs and what they gave.
+    cdef int last_alpha = -1, last_code = -1, alpha_in, code
+    cdef unsigned char last_out = 0
 
     for y in range(height):
         for x in range(width):
-            # (alpha * opacity) * mask, left to right as numpy evaluated it,
-            # with the float32 mask widened exactly to float64.
-            scaled = rint(<double> src[y, x, 3] * opacity * <double> mask[y, x])
-            if scaled != scaled:
-                raise ValueError("effective alpha is NaN")
-            if scaled < 0.0:
-                scaled = 0.0
-            elif scaled > 255.0:
-                scaled = 255.0
-            out[y, x] = <unsigned char> <int> scaled
-            if out[y, x] > 0:
+            alpha_in = src[y, x, 3]
+            code = codes[y, x]
+            if alpha_in != last_alpha or code != last_code:
+                # (alpha * opacity) * mask, left to right as numpy evaluated
+                # it, with the float32 mask widened exactly to float64.
+                scaled = rint(<double> alpha_in * opacity * <double> table[code])
+                if scaled != scaled:
+                    raise ValueError("effective alpha is NaN")
+                if scaled < 0.0:
+                    scaled = 0.0
+                elif scaled > 255.0:
+                    scaled = 255.0
+                last_out = <unsigned char> <int> scaled
+                last_alpha = alpha_in
+                last_code = code
+            out[y, x] = last_out
+            if last_out > 0:
                 any_visible = True
 
     if not any_visible:
         return effective
+
+    cdef double src_a, one_minus_src_a, dst_a, out_a
+    cdef unsigned int source_key, backdrop_key
+    cdef unsigned int last_source = 0, last_backdrop = 0
+    cdef int last_visible = -1, visible
+    cdef unsigned char result[4]
+    with nogil:
+        for y in range(height):
+            for x in range(width):
+                visible = out[y, x]
+                if visible == 0:
+                    continue
+                source_key = (
+                    <unsigned int> src[y, x, 0]
+                    | (<unsigned int> src[y, x, 1] << 8)
+                    | (<unsigned int> src[y, x, 2] << 16)
+                )
+                backdrop_key = (
+                    <unsigned int> dst[y, x, 0]
+                    | (<unsigned int> dst[y, x, 1] << 8)
+                    | (<unsigned int> dst[y, x, 2] << 16)
+                    | (<unsigned int> dst[y, x, 3] << 24)
+                )
+                if (
+                    visible != last_visible
+                    or source_key != last_source
+                    or backdrop_key != last_backdrop
+                ):
+                    src_a = <double> visible / 255.0
+                    one_minus_src_a = 1.0 - src_a
+                    dst_a = <double> dst[y, x, 3] / 255.0
+                    # src_a is positive here, so out_a is too: the original's
+                    # guard against a zero divisor and its transparent-pixel
+                    # override can never fire on a visible pixel.
+                    out_a = src_a + dst_a * one_minus_src_a
+                    result[0] = normal_channel(src[y, x, 0], dst[y, x, 0], src_a, dst_a, one_minus_src_a, out_a)
+                    result[1] = normal_channel(src[y, x, 1], dst[y, x, 1], src_a, dst_a, one_minus_src_a, out_a)
+                    result[2] = normal_channel(src[y, x, 2], dst[y, x, 2], src_a, dst_a, one_minus_src_a, out_a)
+                    result[3] = clamp_byte(rint(out_a * 255.0))
+                    last_visible = visible
+                    last_source = source_key
+                    last_backdrop = backdrop_key
+                dst[y, x, 0] = result[0]
+                dst[y, x, 1] = result[1]
+                dst[y, x, 2] = result[2]
+                dst[y, x, 3] = result[3]
+
+    return effective
 
     cdef double src_a, one_minus_src_a, dst_a, out_a
     with nogil:

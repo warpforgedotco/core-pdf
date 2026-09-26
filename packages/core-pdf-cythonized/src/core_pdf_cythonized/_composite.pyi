@@ -13,7 +13,8 @@ def composite_masked_normal(
     destination: numpy.ndarray[Any, Any],
     rendered: numpy.ndarray[Any, Any],
     opacity: float,
-    mask_alpha: numpy.ndarray[Any, Any],
+    mask_codes: numpy.ndarray[Any, Any],
+    mask_table: numpy.ndarray[Any, Any],
 ) -> numpy.ndarray[Any, Any]: ...
 def composite_normal_group(
     destination: numpy.ndarray[Any, Any],

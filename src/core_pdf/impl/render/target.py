@@ -328,10 +328,22 @@ def composite_masked_group(
     source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None,
     opacity: float,
     blend_mode: str | None,
-    mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
+    mask: SoftMaskPlane,
+    window: tuple[slice, slice],
     *,
     semantic_context: SemanticContext,
 ) -> UInt8Array:
+    mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
+    if source_alpha is None and mode in {None, "normal"}:
+        # Every soft-masked group in the corpus lands here. The planes run to
+        # tens of thousands of pixels, and boolean-mask gathers and scatters
+        # around the arithmetic were almost all of what numpy spent on them.
+        # The kernel reads the mask's bytes through its table, so the window
+        # is never converted to float32 at all.
+        return composite_masked_normal(
+            destination, rendered, opacity, mask.alpha[window], mask.values()
+        )
+    mask_alpha = mask[window]
     if source_alpha is not None:
         return composite_nonisolated_group(
             destination,
@@ -342,12 +354,6 @@ def composite_masked_group(
             semantic_context=semantic_context,
             mask_alpha=mask_alpha,
         )
-    mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
-    if mode in {None, "normal"}:
-        # Every soft-masked group in the corpus lands here. The planes run to
-        # tens of thousands of pixels, and boolean-mask gathers and scatters
-        # around the arithmetic were almost all of what numpy spent on them.
-        return composite_masked_normal(destination, rendered, opacity, mask_alpha)
     effective_alpha = numpy.clip(
         numpy.rint(rendered[..., 3].astype(numpy.float64) * opacity * mask_alpha), 0, 255
     ).astype(numpy.uint8)
@@ -1506,7 +1512,8 @@ class RasterTarget:
                 else None,
                 source_scale,
                 group_blend_mode,
-                group.mask_alpha[rows, columns],
+                group.mask_alpha,
+                (rows, columns),
                 semantic_context=self.semantic_context,
             )
         if group.backdrop is not None:
