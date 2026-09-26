@@ -460,19 +460,10 @@ def decode_xref_row_at(
     type_end = pos + widths[0]
     offset_end = type_end + widths[1]
     kind = int.from_bytes(data[pos:type_end], "big") if widths[0] else 1
-    value = int.from_bytes(data[type_end:offset_end], "big") if widths[1] else 0
+    value = int.from_bytes(data[type_end:offset_end], "big")
     generation = int.from_bytes(data[offset_end:end], "big") if widths[2] else 0
-    if kind < 2:
-        if generation > 65535:
-            raise PdfParseError("invalid xref generation number")
-        return key_for(object_number, generation), PdfXRefEntry(value, generation, kind == 1), end
-    if kind == 2:
-        return (
-            key_for(object_number),
-            PdfXRefEntry(0, 0, True, object_stream=value, index_in_stream=generation),
-            end,
-        )
-    return key_for(object_number), PdfXRefEntry(0, 0, False), end
+    [(key, entry)] = xref_entries([object_number, 1], [kind], [value], [generation]).items()
+    return key, entry, end
 
 
 def decode_xref_rows(data: bytes, w: list[int], index: object, size: int) -> XRefTable:
@@ -492,24 +483,15 @@ def xref_column(
     return values.tolist()
 
 
-def decode_xref_columns(
-    data: bytes, widths: list[int], index: list[int], row_size: int, row_count: int
+def xref_entries(
+    index: list[int], kinds: list[int], values: list[int], generations: list[int]
 ) -> XRefTable:
-    """decode_xref_row_table with each field read for every row at once.
+    """The entries of xref stream rows whose three fields are already read.
 
-    A field of up to eight bytes fits a uint64, so a column of them is one
-    pass rather than an int.from_bytes per row. The one row that
-    decode_xref_row_at rejects -- type 0 or 1 with a generation over 65535
-    -- rejects the whole table, as it did.
+    Every decoder of xref stream rows builds its entries here, from whole
+    columns, so the per-row work is this one loop and not a call per row. A
+    type 0 or 1 row with a generation over 65535 rejects the whole table.
     """
-    rows = numpy.frombuffer(data, dtype=numpy.uint8, count=row_count * row_size).reshape(
-        row_count, row_size
-    )
-    kinds = xref_column(rows, 0, widths[0]) if widths[0] else [1] * row_count
-    values = xref_column(rows, widths[0], widths[1])
-    generations = (
-        xref_column(rows, widths[0] + widths[1], widths[2]) if widths[2] else [0] * row_count
-    )
     entries: XRefTable = {}
     row = 0
     for start, count in batched(index, 2, strict=True):
@@ -533,20 +515,47 @@ def decode_xref_columns(
     return entries
 
 
+def wide_xref_column(
+    data: bytes, row_size: int, row_count: int, start: int, width: int
+) -> list[int]:
+    """xref_column for a field wider than a uint64 holds: int.from_bytes per row."""
+    return [
+        int.from_bytes(data[pos : pos + width], "big")
+        for pos in range(start, row_count * row_size, row_size)
+    ]
+
+
 def decode_xref_row_table(
     data: bytes, widths: list[int], index: list[int], row_size: int, row_count: int
 ) -> XRefTable:
+    """Rows read a column at a time: numpy for fields of up to eight bytes."""
     if len(data) != row_count * row_size:
         raise PdfParseError("xref stream length mismatch")
+    type_width, value_width, generation_width = widths
     if max(widths) <= 8:
-        return decode_xref_columns(data, widths, index, row_size, row_count)
-    entries: XRefTable = {}
-    pos = 0
-    for start, count in batched(index, 2, strict=True):
-        for object_number in range(start, start + count):
-            key, entry, pos = decode_xref_row_at(data, pos, widths, object_number, row_size)
-            entries[key] = entry
-    return entries
+        rows = numpy.frombuffer(data, dtype=numpy.uint8, count=row_count * row_size).reshape(
+            row_count, row_size
+        )
+        values = xref_column(rows, type_width, value_width)
+        kinds = xref_column(rows, 0, type_width) if type_width else [1] * row_count
+        generations = (
+            xref_column(rows, type_width + value_width, generation_width)
+            if generation_width
+            else [0] * row_count
+        )
+    else:
+        values = wide_xref_column(data, row_size, row_count, type_width, value_width)
+        kinds = (
+            wide_xref_column(data, row_size, row_count, 0, type_width)
+            if type_width
+            else [1] * row_count
+        )
+        generations = (
+            wide_xref_column(data, row_size, row_count, type_width + value_width, generation_width)
+            if generation_width
+            else [0] * row_count
+        )
+    return xref_entries(index, kinds, values, generations)
 
 
 def find_eof_marker(data: PdfByteBuffer, *, semantic_context: SemanticContext | None = None) -> int:
