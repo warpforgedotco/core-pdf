@@ -15,22 +15,12 @@ from core_pdf_spec.s_08_graphics.pdf_function import (
 )
 
 
-def number_array(value: Any) -> tuple[float, ...]:
+def number_array(value: Any, *, python_syntax: bool = True) -> tuple[float, ...]:
     if not isinstance(value, (list, tuple)):
         return ()
     output: list[float] = []
     for item in value:
-        parsed = parse_float(item, None, python_syntax=True)
-        if parsed is None:
-            return ()
-        output.append(parsed)
-    return tuple(output)
-
-
-def sampled_number_array(values: list[Any] | tuple[Any, ...]) -> tuple[float, ...]:
-    output: list[float] = []
-    for value in values:
-        parsed = parse_float(value, None)
+        parsed = parse_float(item, None, python_syntax=python_syntax)
         if parsed is None:
             return ()
         output.append(parsed)
@@ -115,7 +105,7 @@ def compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             dictionary["Size"] = sizes
             domain = dictionary.get("Domain")
             if isinstance(domain, (list, tuple)):
-                dictionary["Domain"] = sampled_number_array(domain[: 2 * len(sizes)])
+                dictionary["Domain"] = number_array(domain[: 2 * len(sizes)], python_syntax=False)
             raw_encode = dictionary.get("Encode")
             encodes: list[float] = []
             for index, size in enumerate(sizes):
@@ -129,7 +119,7 @@ def compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             dictionary["Encode"] = encodes
         raw_range = dictionary.get("Range")
         if isinstance(raw_range, (list, tuple)):
-            ranges = sampled_number_array(raw_range[: len(raw_range) // 2 * 2])
+            ranges = number_array(raw_range[: len(raw_range) // 2 * 2], python_syntax=False)
             dictionary["Range"] = tuple(
                 value
                 for lower, upper in zip(ranges[::2], ranges[1::2], strict=True)
