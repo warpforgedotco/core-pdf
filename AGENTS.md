@@ -103,8 +103,10 @@ The authored test suite includes facade tests and differential comparisons under
 `packages/core-pdf-spec/tests`, each standards package's tests under its own
 `packages/<name>/tests` (which import nothing from spec or core), and validation tests under
 `packages/core-pdf-validate/tests`. Reference corpora remain in
-`tests/fixtures`. `docs/` holds `api.md`, `standards.md`, `roadmap.md`, and
-licensing material; maintenance scripts are in `scripts/`.
+`tests/fixtures`. `docs/` holds `api.md`, `standards.md`, `roadmap.md`, `coverage.md`
+(running and reading coverage) with its enforced floors in `coverage-baseline.json`, the
+historical `unused-code-review.md` log, and licensing material; maintenance scripts are in
+`scripts/`.
 
 ## Build, Test, and Development Commands
 

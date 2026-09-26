@@ -1,7 +1,9 @@
 # Coverage and unused-code review
 
-See the [review findings](unused-code-review.md) for current results, historical baselines,
-and reviewed candidates.
+The current statement and branch floors are the exact fractions in
+[`coverage-baseline.json`](coverage-baseline.json), which CI enforces. The
+[unused-code review log](unused-code-review.md) is a historical record of past reviews,
+their coverage at the time, and the candidates they settled.
 
 Set `CORE_PDF_VERAPDF` to the veraPDF 1.30.2 executable and install the
 [pinned OCR prerequisites](../packages/core-pdf-ocr/tests/fixtures/README.md).
