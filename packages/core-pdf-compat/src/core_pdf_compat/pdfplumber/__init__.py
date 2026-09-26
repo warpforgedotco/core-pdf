@@ -610,6 +610,9 @@ class Page:
         self._structured_page = None
         self._layout = None
         self._adapter.flush_program()
+        # PDF.objects merges every page's objects and keeps them; drop the
+        # merge so a closed page's objects are not held through it.
+        self.pdf.flush_merged_objects()
 
     def flush_cache(self, *_: Any) -> None:
         self.close()
@@ -2046,11 +2049,14 @@ class PDF(ClosingMixin):
         self._document.close()
 
     def flush_cache(self, *_: Any) -> None:
+        for page in self._pages or ():
+            page.flush_cache()
+        self.flush_merged_objects()
+
+    def flush_merged_objects(self) -> None:
         self._objects = None
         self._rect_edges = None
         self._curve_edges = None
-        for page in self._pages or ():
-            page.flush_cache()
 
 
 open = PDF.open

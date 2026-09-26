@@ -64,3 +64,14 @@ def test_line_grouping_thresholds_and_blank_only_groups(size, tops, expected):
     assert [line["text"] for line in compat._lines(chars)] == expected
     assert compat._lines([]) == []
     assert compat._lines([chars[-1]]) == []
+
+
+def test_closing_a_page_drops_the_documents_merged_objects(text_pdf_bytes) -> None:
+    from io import BytesIO
+
+    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+        merged = pdf.objects
+        assert merged["char"]
+        pdf.pages[0].close()
+        assert pdf._objects is None
+        assert pdf.objects == merged

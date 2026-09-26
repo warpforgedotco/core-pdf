@@ -100,7 +100,11 @@ def iter_tree_items[TreeKeyT](
             if len(entries) % 2:
                 entry_malformed(f"invalid {tree_name} tree {key_field} array")
             for index in range(0, len(entries) - len(entries) % 2, 2):
-                key = decode_key(entries[index])
+                try:
+                    key = decode_key(entries[index])
+                except ValueError as error:
+                    entry_malformed(str(error))
+                    continue
                 if key is None:
                     entry_malformed(key_error)
                     continue

@@ -13,7 +13,11 @@ from core_pdf_spec.s_07_syntax.objects import PdfObjectStream, parse_object_stre
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.resources import resolve_resource_dict
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.trees import MalformedTreeNode, iter_number_tree_items
+from core_pdf_spec.s_07_syntax.trees import (
+    MalformedTreeNode,
+    iter_name_tree_items,
+    iter_number_tree_items,
+)
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import XRefScanner, decode_xref_rows, key_for
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
@@ -204,6 +208,23 @@ def test_number_tree_reports_a_null_kid_with_its_node() -> None:
     assert isinstance(report, MalformedTreeNode)
     assert report == "invalid number tree node"
     assert report.node is None
+
+
+def test_a_key_that_fails_to_decode_is_a_malformed_entry() -> None:
+    def decode(value: object) -> str:
+        if value == b"bad":
+            raise ValueError("undecodable name tree key")
+        return str(value)
+
+    tree = {"Names": [b"bad", 1, "good", 2]}
+    with pytest.raises(ValueError, match="undecodable name tree key"):
+        list(iter_name_tree_items(tree, lambda value: value, decode))
+    reports: list[str] = []
+    items = list(
+        iter_name_tree_items(tree, lambda value: value, decode, on_malformed=reports.append)
+    )
+    assert items == [("good", 2)]
+    assert reports == ["undecodable name tree key"]
 
 
 def test_inheritance_resource_and_page_tree_damage_is_rejected() -> None:

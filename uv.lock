@@ -614,7 +614,7 @@ requires-dist = [
 
 [[package]]
 name = "core-pdf-spec"
-version = "0.13.0"
+version = "0.13.1"
 source = { editable = "packages/core-pdf-spec" }
 dependencies = [
     { name = "core-adobe-fonts" },

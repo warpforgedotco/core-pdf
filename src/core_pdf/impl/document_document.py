@@ -382,6 +382,11 @@ class PdfDocument(Generic[PageT]):
         self.reset_caches()
         try:
             self.raw_data = self.load_data(source)
+            if not len(self.raw_data):
+                # A path or a file with a descriptor fails as empty inside
+                # load_data, where mmap refuses it; bytes and readers arrive
+                # here, and fail the same way rather than open with no pages.
+                raise PdfEmptySourceError("PDF source is empty")
             self._standards = discover_header_standards(self.raw_data)
             header = self._standards
             context = header.context if legacy_name_context(header.context) else None

@@ -4,7 +4,12 @@ from typing import Any
 import pytest
 
 from core_pdf.impl.document_document import PdfDocument, check_security_aliases
-from core_pdf.impl.exceptions import PdfDocumentClosedError, PdfSourceError, PdfUnsupportedError
+from core_pdf.impl.exceptions import (
+    PdfDocumentClosedError,
+    PdfEmptySourceError,
+    PdfSourceError,
+    PdfUnsupportedError,
+)
 from core_pdf_spec.s_07_syntax.types import PdfDict
 
 
@@ -88,6 +93,21 @@ def test_empty_file_source_has_a_clear_error(tmp_path, borrowed):
     else:
         with pytest.raises(PdfSourceError, match="empty"):
             PdfDocument(path)
+
+
+class EmptyReader:
+    def read(self, size: int = -1) -> bytes:
+        return b""
+
+
+@pytest.mark.parametrize(
+    "source",
+    [b"", bytearray(), memoryview(b""), BytesIO(b""), EmptyReader()],
+    ids=["bytes", "bytearray", "memoryview", "BytesIO", "reader"],
+)
+def test_every_empty_source_fails_as_an_empty_file_does(source: Any) -> None:
+    with pytest.raises(PdfEmptySourceError, match="PDF source is empty"):
+        PdfDocument(source)
 
 
 def test_unsupported_source_has_a_clear_error():
