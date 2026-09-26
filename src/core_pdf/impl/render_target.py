@@ -957,24 +957,15 @@ class RasterTarget:
                     if (graphics_mask := data.get("graphics_soft_mask")) is not None
                     else None
                 )
-                if not isolated and not knockout:
+                # A knockout group takes scratch only where the pixels it
+                # can touch are known.
+                region = self.knockout_group_region(item) if not isolated and knockout else None
+                if not isolated and (not knockout or region is not None):
                     # A non-isolated group starts as its backdrop, as an
                     # elementary group does, so it takes the same per-depth
                     # scratch: a page of Type 3 text inside a knockout group
                     # opened 9,956 of these, each copying the whole page and
                     # zeroing two page-sized planes to paint a glyph.
-                    self.push_scratch_group(
-                        opacity,
-                        data.get("blend_mode"),
-                        track_shape=data.get("group_track_shape", False),
-                        mask_alpha=group_mask_alpha,
-                        alpha_is_shape=data.get("alpha_is_shape", False),
-                    )
-                elif (
-                    not isolated
-                    and knockout
-                    and (region := self.knockout_group_region(item)) is not None
-                ):
                     self.push_scratch_group(
                         opacity,
                         data.get("blend_mode"),
@@ -2611,78 +2602,67 @@ class RasterTarget:
         pixel_area = (ix1 - ix0) * (iy1 - iy0)
         rectangular_clip = clip_paths_are_axis_aligned_rects()
         normal_fast = blend_mode is None
-        if normal_fast and rectangular_clip and fill_rule == "nonzero" and pixel_area < 10_000:
-            source = (
-                edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
-            )
-            # The transform and the flat-edge filter fuse into the kernel's own
-            # pass over the edges. None means no edge spans any y, which is the
-            # early return the sloped mask used to give: coverage would be zero
-            # everywhere and the blend a no-op.
-            rows = slice(iy0, iy1)
-            columns = slice(ix0, ix1)
-            source_alpha = self.group_source_alpha
-            source_shape = self.group_source_shape
-            drawn = fill_glyph_coverage(
-                source,
-                crop_x0,
-                crop_y1,
-                scale,
-                ix0,
-                iy0,
-                ix1 - ix0,
-                iy1 - iy0,
-                rgba,
-                self.pixel_array[rows, columns],
-                source_alpha[rows, columns] if source_alpha is not None else None,
-                source_shape[rows, columns] if source_shape is not None else None,
-                self.shape_alpha,
-            )
-            if drawn is not None:
-                # Both plane records extended the window by the whole box, as
-                # the no-plane path does.
-                self.extend_paint_window(rows, columns)
-            return
-        if normal_fast and rectangular_clip and pixel_area < 10_000:
-            # What reaches here is a fill fill_glyph_coverage cannot take --
-            # in practice an even-odd one -- and 4x4 supersampling covers it.
-            # A row the sampling misses is left out of the plane, as the
-            # row-by-row original skipped it.
-            source = (
-                edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
-            )
-            sampled = supersampled_coverage_plane(
-                source, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
-            )
-            if sampled is None:
-                return
-            counts, first_row = sampled
-            rows = slice(iy0 + first_row, iy0 + first_row + len(counts))
-            columns = slice(ix0, ix1)
-            coverage = counts.astype(numpy.float32)
-            alpha_plane = numpy.rint(coverage * rgba[3] / 16).astype(numpy.uint8)
-            blend_normal_alpha_array_numpy(self.pixel_array[rows, columns], rgba, alpha_plane)
-            self.record_source_alpha(rows, columns, alpha_plane)
-            if self.group_source_shape is not None:
-                self.record_source_shape(
-                    rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
-                )
-            return
         if pixel_area < 10_000:
-            # What is left of a small fill: a clip that is not rectangles, or
-            # a blend other than normal, which the kernels above cannot take.
-            # supersampled_coverage_plane gives the 4x4 counts the per-pixel
-            # loop this replaced sampled, and blend_counts its clip test,
-            # blend_px's arithmetic and the per-pixel group-plane updates.
             source = (
                 edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
             )
+            if normal_fast and rectangular_clip and fill_rule == "nonzero":
+                # The transform and the flat-edge filter fuse into the
+                # kernel's own pass over the edges. None means no edge spans
+                # any y, which is the early return the sloped mask used to
+                # give: coverage would be zero everywhere and the blend a
+                # no-op.
+                rows = slice(iy0, iy1)
+                columns = slice(ix0, ix1)
+                source_alpha = self.group_source_alpha
+                source_shape = self.group_source_shape
+                drawn = fill_glyph_coverage(
+                    source,
+                    crop_x0,
+                    crop_y1,
+                    scale,
+                    ix0,
+                    iy0,
+                    ix1 - ix0,
+                    iy1 - iy0,
+                    rgba,
+                    self.pixel_array[rows, columns],
+                    source_alpha[rows, columns] if source_alpha is not None else None,
+                    source_shape[rows, columns] if source_shape is not None else None,
+                    self.shape_alpha,
+                )
+                if drawn is not None:
+                    # Both plane records extended the window by the whole
+                    # box, as the no-plane path does.
+                    self.extend_paint_window(rows, columns)
+                return
+            # What is left of a small fill takes the 4x4 counts the per-pixel
+            # loop this replaced sampled. A row the sampling misses is left
+            # out of the plane, as the row-by-row original skipped it.
             sampled = supersampled_coverage_plane(
                 source, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
             )
             if sampled is None:
                 return
             counts, first_row = sampled
+            if normal_fast and rectangular_clip:
+                # A fill fill_glyph_coverage cannot take -- in practice an
+                # even-odd one.
+                rows = slice(iy0 + first_row, iy0 + first_row + len(counts))
+                columns = slice(ix0, ix1)
+                coverage = counts.astype(numpy.float32)
+                alpha_plane = numpy.rint(coverage * rgba[3] / 16).astype(numpy.uint8)
+                blend_normal_alpha_array_numpy(self.pixel_array[rows, columns], rgba, alpha_plane)
+                self.record_source_alpha(rows, columns, alpha_plane)
+                if self.group_source_shape is not None:
+                    self.record_source_shape(
+                        rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
+                    )
+                return
+            # A clip that is not rectangles, or a blend other than normal,
+            # which the kernels above cannot take: blend_counts gives the
+            # loop's clip test, blend_px's arithmetic and the per-pixel
+            # group-plane updates.
             top = iy0 + first_row
             self.blend_counts(
                 counts,
