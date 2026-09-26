@@ -15,13 +15,14 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf import PdfDocument
 from core_pdf.impl.graphics.shading import prepare_shading
 from core_pdf.impl.render import target as raster
 from core_pdf.impl.render.target import RasterTarget
 from core_pdf_cythonized import shading_t, shading_values
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING
+from tests.src.core_pdf.pdf_bytes import serialize_pdf
+from tests.src.core_pdf.raster_support import make_backdrop_target, rendered
 
 
 def reference_paint_shading(
@@ -167,16 +168,7 @@ def one_page_pdf(shading: bytes, content: bytes, form: bytes) -> bytes:
         8: b"<< /Type /ExtGState /ca 0.8 /BM /Multiply >>",
         9: b"<< /Type /ExtGState /ca 0.7 /BM /ColorDodge >>",
     }
-    data = bytearray(b"%PDF-1.7\n")
-    offsets = {}
-    for number, body in objects.items():
-        offsets[number] = len(data)
-        data += b"%d 0 obj\n" % number + body + b"\nendobj\n"
-    xref = len(data)
-    data += b"xref\n0 10\n0000000000 65535 f \n"
-    data += b"".join(b"%010d 00000 n \n" % offsets[number] for number in range(1, 10))
-    data += b"trailer\n<< /Size 10 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % xref
-    return bytes(data)
+    return serialize_pdf(objects, b"1.7")
 
 
 FUNCTION = b"<< /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0.5 1] /N 1 >>"
@@ -216,11 +208,6 @@ CONTENTS = [
 ]
 
 
-def rendered(data: bytes) -> bytes:
-    with PdfDocument(data) as document:
-        return document.pages[0].render().rasterize(scale=1.5).array().tobytes()
-
-
 @pytest.mark.parametrize("shading", SHADINGS)
 @pytest.mark.parametrize(("content", "form"), CONTENTS)
 def test_kernel_paint_is_the_loops(
@@ -230,29 +217,6 @@ def test_kernel_paint_is_the_loops(
     compiled = rendered(data)
     monkeypatch.setattr(RasterTarget, "paint_shading", reference_paint_shading)
     assert rendered(data) == compiled
-
-
-def make_target(width: int, height: int, *, planes: bool) -> RasterTarget:
-    pixels = bytearray(bytes([10, 200, 90, 180]) * (width * height))
-    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(height, width, 4)
-    clip = raster.ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
-    target = RasterTarget(
-        pixels,
-        None,
-        clip=clip,
-        width=width,
-        height=height,
-        scale=1,
-        crop_x0=0,
-        crop_y0=0,
-        crop_y1=height,
-        page_view=view,
-    )
-    if planes:
-        target.group_source_alpha = numpy.full((height, width), 0.25, dtype=numpy.float32)
-        target.group_source_shape = numpy.full((height, width), 0.5, dtype=numpy.float32)
-        target.paint_window = []
-    return target
 
 
 def plane_bytes(plane: numpy.ndarray | None) -> bytes | None:
@@ -289,7 +253,7 @@ def test_a_colour_failing_part_way_paints_what_the_loop_painted(
     outcomes = []
     for paint in (RasterTarget.paint_shading, reference_paint_shading):
         seen.clear()
-        target = make_target(12, 3, planes=planes)
+        target = make_backdrop_target(12, 3, planes=planes)
         with pytest.raises(ArithmeticError, match="no colour"):
             paint(target, {"dictionary": shading, "fill_opacity": opacity}, "Multiply")
         outcomes.append(
@@ -316,7 +280,7 @@ def test_blending_rules_follow_the_documents_version(
     context = SemanticContext(None if version is None else PdfVersion(*version))
     outcomes = []
     for paint in (RasterTarget.paint_shading, reference_paint_shading):
-        target = make_target(12, 3, planes=planes)
+        target = make_backdrop_target(12, 3, planes=planes)
         target.semantic_context = context
         try:
             paint(target, {"dictionary": shading, "fill_opacity": 0.8}, mode)

@@ -6,7 +6,7 @@ import zlib
 import pytest
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator, compile_pdf_function
+from core_pdf_spec.s_08_graphics.pdf_function import compile_pdf_function
 from core_pdf_spec.types import PdfName
 
 
@@ -18,12 +18,6 @@ def make_stream(program: bytes, **entries: object) -> PdfStream:
     }
     dictionary.update(entries)
     return PdfStream(dictionary, program)
-
-
-def constant(expression: str, outputs: int = 1) -> PdfFunctionEvaluator:
-    return compile_pdf_function(
-        make_stream(("{ pop " + expression + " }").encode("ascii"), Range=[-1e100, 1e100] * outputs)
-    )
 
 
 def test_calculator_clips_inputs_before_execution_and_outputs_after_execution() -> None:

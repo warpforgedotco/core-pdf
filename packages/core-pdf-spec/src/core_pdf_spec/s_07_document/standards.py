@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
-from core_pdf_spec.standards import PdfExtension, PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfExtension, PdfVersion
 from core_pdf_spec.types import PdfName, PdfString
 
 
@@ -67,55 +67,9 @@ def parse_extension(prefix: str, value: object) -> PdfExtension:
     )
 
 
-def parse_extensions(
-    value: object, *, context: SemanticContext | None = None
-) -> tuple[PdfExtension, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, dict):
-        raise ValueError("Extensions must be a direct dictionary")
-    kind = value.get("Type")
-    if kind is not None and (not isinstance(kind, PdfName) or kind.value != "Extensions"):
-        raise ValueError("invalid Extensions Type")
-    extensions: list[PdfExtension] = []
-    for key, raw in value.items():
-        if isinstance(key, PdfName):
-            prefix = key.value
-        elif isinstance(key, str):
-            prefix = key
-        elif isinstance(key, bytes):
-            prefix = key.decode("latin-1")
-        else:
-            raise ValueError("invalid Extensions dictionary key")
-        if prefix == "Type":
-            continue
-        if isinstance(raw, list):
-            if not raw:
-                raise ValueError("developer extensions array must not be empty")
-            if (
-                context is not None
-                and context.version is not None
-                and context.version < PdfVersion(2, 0)
-            ):
-                raise ValueError("developer extensions arrays require PDF 2.0")
-            values = raw
-        else:
-            values = [raw]
-        for declaration in values:
-            extension = parse_extension(prefix, declaration)
-            if context is not None and context.version is not None:
-                if extension.base_version > context.version:
-                    raise ValueError("extension BaseVersion exceeds effective PDF version")
-                if context.version >= PdfVersion(2, 0) and extension.url is None:
-                    raise ValueError("PDF 2.0 developer extensions require URL")
-            extensions.append(extension)
-    return tuple(extensions)
-
-
 __all__ = (
     "effective_pdf_version",
     "parse_catalog_version",
     "parse_extension",
-    "parse_extensions",
     "parse_header_version",
 )

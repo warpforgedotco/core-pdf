@@ -3,15 +3,13 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar
 
+from core_adobe_fonts.cmap.decoder import MAX_CID, MIN_CID
 from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_integer, require_pdf_number
 from core_pdf_spec.s_09_fonts.dictionaries import (
     font_descriptor,
     get_descendant,
 )
 from core_records import Record, frozen_setattr
-
-MIN_CID = 0
-MAX_CID = 0xFFFF
 
 
 class CompactCIDWidthMap(Mapping[int, float]):
@@ -156,6 +154,16 @@ class FontMetrics(Record):
         )
 
 
+def w2_metric(values: Any) -> tuple[float, float, float]:
+    """One W2 vertical metric: w1y, v_x, v_y."""
+    a, b, c = values
+    return (
+        require_pdf_number(a, "invalid W2"),
+        require_pdf_number(b, "invalid W2"),
+        require_pdf_number(c, "invalid W2"),
+    )
+
+
 def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     vertical: dict[int, tuple[float, float, float]] = {}
     vy, dy = 880.0, -1000.0
@@ -179,30 +187,20 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
         index = 0
         while index < len(w2):
             first = require_pdf_integer(w2[index], "invalid CID W2")
-            if not 0 <= first <= 65535 or index + 1 >= len(w2):
+            if not 0 <= first <= MAX_CID or index + 1 >= len(w2):
                 raise ValueError("invalid CID W2")
             item = w2[index + 1]
             if isinstance(item, (list, tuple)):
-                if len(item) % 3 or first + len(item) // 3 > 65536:
+                if len(item) % 3 or first + len(item) // 3 > MAX_CID + 1:
                     raise ValueError("invalid CID W2 range")
                 for offset in range(len(item) // 3):
-                    a, b, c = item[offset * 3 : offset * 3 + 3]
-                    vertical[first + offset] = (
-                        require_pdf_number(a, "invalid W2"),
-                        require_pdf_number(b, "invalid W2"),
-                        require_pdf_number(c, "invalid W2"),
-                    )
+                    vertical[first + offset] = w2_metric(item[offset * 3 : offset * 3 + 3])
                 index += 2
             else:
                 last = require_pdf_integer(item, "invalid CID W2")
-                if not first <= last <= 65535 or index + 4 >= len(w2):
+                if not first <= last <= MAX_CID or index + 4 >= len(w2):
                     raise ValueError("invalid CID W2 range")
-                a, b, c = w2[index + 2 : index + 5]
-                metric = (
-                    require_pdf_number(a, "invalid W2"),
-                    require_pdf_number(b, "invalid W2"),
-                    require_pdf_number(c, "invalid W2"),
-                )
+                metric = w2_metric(w2[index + 2 : index + 5])
                 vertical.update((cid, metric) for cid in range(first, last + 1))
                 index += 5
         return FontMetrics(

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import re
+from functools import total_ordering
 from typing import ClassVar
 
+from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_records import Record, frozen_setattr
 
 
+@total_ordering
 class PdfVersion(Record):
     __slots__ = ("major", "minor")
 
@@ -36,21 +39,6 @@ class PdfVersion(Record):
         if other.__class__ is not self.__class__:
             return NotImplemented
         return (self.major, self.minor) < (other.major, other.minor)
-
-    def __le__(self, other: object) -> bool:
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (self.major, self.minor) <= (other.major, other.minor)
-
-    def __gt__(self, other: object) -> bool:
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (self.major, self.minor) > (other.major, other.minor)
-
-    def __ge__(self, other: object) -> bool:
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (self.major, self.minor) >= (other.major, other.minor)
 
     def _post_init(self) -> None:
         if type(self.major) is not int or type(self.minor) is not int:
@@ -286,6 +274,24 @@ class SemanticContext(Record):
 
     def __hash__(self) -> int:
         return hash((self.version, self.extensions, self.baseline))
+
+
+def recognized_version(context: SemanticContext | None) -> PdfVersion | None:
+    """The version `context` pins when this implementation recognizes it, else None."""
+    if context is None:
+        return None
+    version = context.version
+    return version if version is not None and version.recognized else None
+
+
+def require_recognized_version(context: SemanticContext | None, message: str) -> PdfVersion | None:
+    """The version `context` pins, None without a context; raises when it pins no recognized one."""
+    if context is None:
+        return None
+    version = recognized_version(context)
+    if version is None:
+        raise PdfUnsupportedError(message)
+    return version
 
 
 class DocumentStandards(Record):
@@ -706,4 +712,6 @@ __all__ = (
     "StandardsDiagnostic",
     "get_extension_coverage",
     "get_standard_profile",
+    "recognized_version",
+    "require_recognized_version",
 )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import ClassVar, Literal
 
+from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -84,13 +85,9 @@ class SoftMask(Record):
 
 
 def resolve(value: object, resolver: PdfValueResolver) -> PdfObject:
-    seen: set[tuple[int, int]] = set()
-    while isinstance(value, PdfReference):
-        key = (value.object_number, value.generation_number)
-        if key in seen:
-            raise ValueError("cyclic soft-mask reference")
-        seen.add(key)
-        value = resolver.resolve(value)
+    value = resolve_reference_chain(value, resolver.resolve)
+    if isinstance(value, PdfReference):
+        raise ValueError("cyclic soft-mask reference")
     return value  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
 

@@ -55,6 +55,20 @@ def require_pdf_number_array(
     return tuple(require_pdf_number(item, message) for item in value)
 
 
+def require_pdf_number_pairs(
+    value: object,
+    message: str,
+    *,
+    count: int | None = None,
+    length_message: str | None = None,
+) -> tuple[tuple[float, float], ...]:
+    """(low, high) pairs of a number array: `count` pairs, or any nonzero number of them."""
+    values = require_pdf_number_array(value, message)
+    if len(values) != 2 * count if count is not None else not values or len(values) % 2:
+        raise ValueError(message if length_message is None else length_message)
+    return tuple(zip(values[::2], values[1::2], strict=True))
+
+
 def scalar_token(value: object) -> bytes | None:
     if type(value) is bytes:
         return value
@@ -177,10 +191,20 @@ def parse_float_strict(
     return parsed
 
 
-def parse_box(value: object) -> tuple[float, float, float, float] | None:
+def parse_box(
+    value: object, *, python_syntax: bool = False
+) -> tuple[float, float, float, float] | None:
+    """Four numbers, or None; `python_syntax` reads each as parse_float_strict does."""
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
     try:
+        if python_syntax:
+            return (
+                parse_float_strict(value[0], python_syntax=True),
+                parse_float_strict(value[1], python_syntax=True),
+                parse_float_strict(value[2], python_syntax=True),
+                parse_float_strict(value[3], python_syntax=True),
+            )
         return (
             require_pdf_number(value[0]),
             require_pdf_number(value[1]),
@@ -226,6 +250,7 @@ __all__ = (
     "require_pdf_integer",
     "require_pdf_number",
     "require_pdf_number_array",
+    "require_pdf_number_pairs",
     "parse_text_string",
     "scalar_text",
 )

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any
 
 import pytest
+from _content_support import NullSink
 
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_content.inline_images import validate_inline_images
@@ -187,13 +187,9 @@ def test_object_stream_header_uses_selected_whitespace() -> None:
 def test_nested_content_streams_share_the_document_name_rules(version: str, expected: str) -> None:
     tags: list[str] = []
 
-    class Sink:
-        def __getattr__(self, name: str) -> Any:
-            return lambda *args, **kwargs: None
-
     resolver = ObjectResolver(b"", {})
     context = SemanticContext(PdfVersion.parse(version))
-    state = ContentInterpreter(resolver, Sink(), None, semantic_context=context)  # ty: ignore[invalid-argument-type]
+    state = ContentInterpreter(resolver, NullSink(), None, semantic_context=context)  # ty: ignore[invalid-argument-type]
 
     def record_tag(operands: ContentOperands, depth: int) -> None:
         tags.append(str(operands[0]))

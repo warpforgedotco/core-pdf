@@ -41,12 +41,7 @@ def contiguous_bytes(array: numpy.ndarray[Any, Any]) -> memoryview:
     return memoryview(numpy.ascontiguousarray(array)).cast("B")
 
 
-def uint8_image_view(
-    buffer: ByteBuffer,
-    shape: tuple[int, ...],
-    *,
-    allow_trailing: bool = False,
-) -> UInt8Array:
+def uint8_image_view(buffer: ByteBuffer, shape: tuple[int, ...]) -> UInt8Array:
     view = uint8_view(buffer)
     expected = 1
     for dimension in shape:
@@ -54,10 +49,8 @@ def uint8_image_view(
     view_len = len(view)
     if view_len < expected:
         raise ValueError("buffer is smaller than requested image shape")
-    if not allow_trailing and view_len != expected:
-        raise ValueError("buffer is larger than requested image shape")
     if view_len != expected:
-        view = view[:expected]
+        raise ValueError("buffer is larger than requested image shape")
     return view.reshape(shape)
 
 

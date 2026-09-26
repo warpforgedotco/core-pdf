@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import ClassVar
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.types import PdfReference
-from core_records import ReplaceFields, ReprFields
 
 CONTAINER_TYPES = (dict, list, tuple, PdfStream)
 
@@ -25,46 +23,17 @@ def resolve_reference_chain(value: object, resolve: Callable[[object], object]) 
     return value
 
 
-class ResolutionNode(ReprFields, ReplaceFields):
+class ResolutionNode:
+    """resolve_object_graph's scratch state for one container."""
+
     __slots__ = ("original", "values", "keys", "parents", "changed")
 
-    original: object
-    values: list[object]
-    keys: tuple[object, ...]
-    parents: set[int]
-    changed: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = ("original", "values", "keys", "parents", "changed")
-    __match_args__ = ("original", "values", "keys", "parents", "changed")
-
-    def __init__(
-        self,
-        original: object,
-        values: list[object] | None = None,
-        keys: tuple[object, ...] = (),
-        parents: set[int] | None = None,
-        changed: bool = False,
-    ) -> None:
+    def __init__(self, original: object) -> None:
         self.original = original
-        self.values = [] if values is None else values
-        self.keys = keys
-        self.parents = set() if parents is None else parents
-        self.changed = changed
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.original == other.original
-            and self.values == other.values
-            and self.keys == other.keys
-            and self.parents == other.parents
-            and self.changed == other.changed
-        )
-
-    __hash__ = None  # type: ignore[assignment]
+        self.values: list[object] = []
+        self.keys: tuple[object, ...] = ()
+        self.parents: set[int] = set()
+        self.changed = False
 
 
 def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> object:

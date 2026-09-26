@@ -159,11 +159,13 @@ class ObjectResolver:
         resolved = self.deep_resolve(value)
         return resolved if isinstance(resolved, dict) else None
 
-    def resolve_box(self, value: object) -> tuple[float, float, float, float] | None:
+    def resolve_box(
+        self, value: object, *, python_syntax: bool = False
+    ) -> tuple[float, float, float, float] | None:
         resolved = self.deep_resolve(value)
         if resolved is None:
             return None
-        box = parse_box(resolved)
+        box = parse_box(resolved, python_syntax=python_syntax)
         if box is None:
             raise ValueError("invalid box value")
         return box

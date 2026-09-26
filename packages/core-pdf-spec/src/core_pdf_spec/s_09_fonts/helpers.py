@@ -8,9 +8,8 @@ from core_adobe_fonts.encodings import (
     STANDARD_ENCODING_GLYPH_NAMES,
     WIN_ANSI_ENCODING_GLYPH_NAMES,
 )
-from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
-from core_pdf_spec.standards import PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
 
 BASE_ENCODING_GLYPH_NAMES: dict[str, tuple[str, ...]] = {
     "StandardEncoding": STANDARD_ENCODING_GLYPH_NAMES,
@@ -22,8 +21,7 @@ BASE_ENCODING_GLYPH_NAMES: dict[str, tuple[str, ...]] = {
 def get_base_encoding_glyph_names(
     base_encoding: str, *, context: SemanticContext | None = None
 ) -> tuple[str, ...]:
-    if context is not None and (context.version is None or not context.version.recognized):
-        raise PdfUnsupportedError("font-encoding semantics require a recognized PDF version")
+    require_recognized_version(context, "font-encoding semantics require a recognized PDF version")
     names = BASE_ENCODING_GLYPH_NAMES[base_encoding]
     if (
         base_encoding == "WinAnsiEncoding"

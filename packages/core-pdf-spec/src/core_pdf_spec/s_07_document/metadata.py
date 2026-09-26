@@ -14,13 +14,6 @@ def info_dictionary(resolver: PdfValueResolver, trailer: PdfDict) -> PdfDict | N
     return info
 
 
-def metadata_stream(resolver: PdfValueResolver, trailer: PdfDict) -> PdfStream | None:
-    root = resolver.resolve(trailer.get("Root"))
-    if root is None:
-        return None
-    return catalog_metadata_stream(resolver, root)
-
-
 def catalog_metadata_stream(resolver: PdfValueResolver, catalog: object) -> PdfStream | None:
     if not isinstance(catalog, dict):
         raise ValueError("invalid trailer Root dictionary")
@@ -33,5 +26,4 @@ def catalog_metadata_stream(resolver: PdfValueResolver, catalog: object) -> PdfS
 __all__ = (
     "catalog_metadata_stream",
     "info_dictionary",
-    "metadata_stream",
 )

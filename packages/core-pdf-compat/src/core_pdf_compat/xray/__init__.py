@@ -11,7 +11,6 @@ from typing import Any, ClassVar
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
 from core_pdf.impl.capture.program import PageProgram
-from core_pdf.impl.document.recovery.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.geometry import (
@@ -24,8 +23,10 @@ from core_pdf.impl.text import collapse_ws
 from core_pdf.impl.types import PdfReference, ReplaceFields, ReprFields
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
-from .._shared import float32 as _float32
+from .._shared import parse_indirect_object_at
 
+_FLOAT32 = struct.Struct("f")
+_UINT32 = struct.Struct("I")
 _DATE = re.compile(r"[0-3]?\d[/\-][0-3]?\d[/\-]\d{2,4}")
 _OK_WORDS = re.compile(
     r"confidential|name +redacted|privileged?|re|red|reda|redac|redact|"
@@ -244,6 +245,10 @@ def _fitz_box(
     )
 
 
+def _float32(value: float) -> float:
+    return _FLOAT32.unpack(_FLOAT32.pack(value))[0]
+
+
 def _fitz_coordinate(value: float) -> float:
     millipoint = round(value, 3)
     if abs(value - millipoint) < 0.00005:
@@ -252,23 +257,20 @@ def _fitz_coordinate(value: float) -> float:
 
 
 def _next_float32(value: float) -> float:
-    bits = struct.unpack("I", struct.pack("f", value))[0]
-    return struct.unpack("f", struct.pack("I", bits + 1))[0]
+    bits = _UINT32.unpack(_FLOAT32.pack(value))[0]
+    return _FLOAT32.unpack(_UINT32.pack(bits + 1))[0]
 
 
 def _parse_object_at(document: Any, offset: int) -> object | None:
-    lexer = PdfLexer(
-        document.raw_data,
-        reference_resolver=document.resolver.resolve,
-        decipher=document.decipher,
-    )
     try:
-        lexer.rewind(offset)
-        return lexer.parse_indirect_object()
+        return parse_indirect_object_at(
+            document.raw_data,
+            offset,
+            reference_resolver=document.resolver.resolve,
+            decipher=document.decipher,
+        )
     except TypeError, ValueError:
         return None
-    finally:
-        lexer.close()
 
 
 def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:

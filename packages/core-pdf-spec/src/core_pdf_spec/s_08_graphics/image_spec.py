@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Self
 
-from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.resolver import STREAM_DECODE_KEYS
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
@@ -14,7 +13,7 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
     ColorRendering,
     parse_rendering_intent,
 )
-from core_pdf_spec.standards import PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
 from core_records import Record, ReprFields, frozen_setattr
 
 IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
@@ -152,26 +151,29 @@ def image_color_rendering(
     )
 
 
+def has_jpx_filter(dictionary: dict[object, object]) -> bool:
+    filters = dictionary.get("Filter")
+    filters = filters if isinstance(filters, (list, tuple)) else (filters,)
+    return any(decoded_name(value) == "JPXDecode" for value in filters)
+
+
 def image_decode_array_applies(
     dictionary: dict[object, object], *, context: SemanticContext | None = None
 ) -> bool:
-    filters = dictionary.get("Filter")
-    filters = filters if isinstance(filters, (list, tuple)) else (filters,)
-    if not any(decoded_name(value) == "JPXDecode" for value in filters):
+    if not has_jpx_filter(dictionary):
         return True
     if dictionary.get("ImageMask") is True:
         return True
-    if context is None:
+    version = require_recognized_version(
+        context, "JPX Decode interpretation requires a recognized PDF version"
+    )
+    if version is None:
         return False
-    if context.version is None or not context.version.recognized:
-        raise PdfUnsupportedError("JPX Decode interpretation requires a recognized PDF version")
-    return context.version >= PdfVersion(2, 0) and dictionary.get("ColorSpace") is not None
+    return version >= PdfVersion(2, 0) and dictionary.get("ColorSpace") is not None
 
 
 def image_smask_in_data(dictionary: dict[object, object]) -> int:
-    filters = dictionary.get("Filter")
-    filters = filters if isinstance(filters, (list, tuple)) else (filters,)
-    if not any(decoded_name(value) == "JPXDecode" for value in filters):
+    if not has_jpx_filter(dictionary):
         return 0
     selector = require_pdf_integer(dictionary.get("SMaskInData", 0), "invalid image SMaskInData")
     if selector not in {0, 1, 2}:
@@ -179,31 +181,10 @@ def image_smask_in_data(dictionary: dict[object, object]) -> int:
     return selector
 
 
-def image_bits_per_component(dictionary: dict[object, object]) -> int | None:
-    filters = dictionary.get("Filter")
-    filters = filters if isinstance(filters, (list, tuple)) else (filters,)
-    if any(decoded_name(value) == "JPXDecode" for value in filters):
-        return None
-    value = dictionary.get("BitsPerComponent")
-    if dictionary.get("ImageMask") is True:
-        if value is None:
-            return 1
-        if require_pdf_integer(value, "invalid image bits-per-component") != 1:
-            raise ValueError("invalid image mask bits-per-component")
-        return 1
-    if value is None:
-        raise ValueError("missing image bits-per-component")
-    bits = require_pdf_integer(value, "invalid image bits-per-component")
-    if bits not in {1, 2, 4, 8, 16}:
-        raise ValueError("invalid image bits-per-component")
-    return bits
-
-
 __all__ = (
     "image_color_rendering",
     "image_smask_in_data",
     "image_decode_array_applies",
-    "image_bits_per_component",
     "SoftMask",
     "ImageSource",
     "image_source_from_stream",

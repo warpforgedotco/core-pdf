@@ -17,6 +17,7 @@ from core_pdf_spec.s_14_structure.dictionaries import (
     parse_role_map,
 )
 from core_pdf_spec.s_14_structure.roles import StructureRole, resolve_structure_role
+from core_pdf_spec.standards import recognized_version
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.document import PageLookup, PdfDocument
@@ -190,7 +191,7 @@ class StructureElement(StructureNode):
             return cached
         resolver = self.document.resolver
         context = resolver.semantic_context
-        if context is not None and (context.version is None or not context.version.recognized):
+        if recognized_version(context) is None:
             context = None
         try:
             tree = self.document.structure
@@ -215,11 +216,7 @@ class StructureElement(StructureNode):
         if page_ref is None:
             return None
         page_obj = self.document.resolver.resolve(page_ref)
-        page_index = (
-            self.document.page_index_for(page_obj)
-            if self.page_lookup is None
-            else self.page_lookup.page_index_for(page_obj)
-        )
+        page_index = (self.page_lookup or self.document).page_index_for(page_obj)
         if page_index is None:
             raise ValueError("invalid structure page reference")
         return page_index
@@ -538,11 +535,7 @@ def get_kid_page_index(
     pg = kid.get("Pg")
     if pg is not None:
         page_obj = document.resolver.resolve(pg)
-        index = (
-            document.page_index_for(page_obj)
-            if page_lookup is None
-            else page_lookup.page_index_for(page_obj)
-        )
+        index = (page_lookup or document).page_index_for(page_obj)
         if index is None:
             raise ValueError("invalid structure page reference")
         return index

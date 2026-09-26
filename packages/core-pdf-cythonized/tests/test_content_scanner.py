@@ -159,4 +159,3 @@ def test_the_tokenizer_uses_the_kernel():
     from core_pdf_cythonized import ContentScanner
 
     assert recovery.ContentScanner is ContentScanner
-    assert not hasattr(recovery, "match_token")

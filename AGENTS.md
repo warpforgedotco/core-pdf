@@ -53,7 +53,9 @@ Two kernels own their algorithms outright, moved rather than copied so that the
 distributions they came from stay pure Python: `composite_knockout_element` (ISO
 32000-2 11.4.x knockout compositing, out of spec) and
 `decode_arithmetic_generic_template0` (the T.88 MQ decoder and generic template 0,
-out of `core-jbig2`), each with its conformance tests. Those are the only members of
+out of `core-jbig2`), each with its conformance tests. The knockout kernel's input check
+`unit_range` does mirror spec's `s_11_transparency.groups.unit_range`, since the package
+imports nothing from spec: change one and change the other. Those are the only members of
 the package that are not mirrors of code owned elsewhere. `core-jbig2`'s base decoder,
 and so spec's `decode_jbig2`, report arithmetic generic regions as unsupported; core's
 recovery decoder decodes them with the kernel. One kernel,
@@ -101,8 +103,10 @@ The authored test suite includes facade tests and differential comparisons under
 `packages/core-pdf-spec/tests`, each standards package's tests under its own
 `packages/<name>/tests` (which import nothing from spec or core), and validation tests under
 `packages/core-pdf-validate/tests`. Reference corpora remain in
-`tests/fixtures`. `docs/` holds `api.md`, `standards.md`, `roadmap.md`, and
-licensing material; maintenance scripts are in `scripts/`.
+`tests/fixtures`. `docs/` holds `api.md`, `standards.md`, `roadmap.md`, `coverage.md`
+(running and reading coverage) with its enforced floors in `coverage-baseline.json`, the
+historical `unused-code-review.md` log, and licensing material; maintenance scripts are in
+`scripts/`.
 
 ## Build, Test, and Development Commands
 

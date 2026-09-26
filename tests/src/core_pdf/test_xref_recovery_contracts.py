@@ -10,6 +10,7 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.types import PdfName, PdfReference
+from tests.src.core_pdf.pdf_bytes import serialize_pdf
 
 
 @pytest.mark.parametrize("ending", [b"", b"\n", b"\r", b"\r\n", b"\n\r", b" \n", b"\t\r\n"])
@@ -391,19 +392,7 @@ def pdf_with_headers_ending_in_dictionaries() -> bytes:
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
     )
-    data = bytearray(b"%PDF-1.4\n")
-    offsets = []
-    for number, value in enumerate(objects, 1):
-        offsets.append(len(data))
-        data.extend(f"{number} 0 obj".encode() + value + b"\nendobj\n")
-    xref = len(data)
-    data.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
-    for offset in offsets:
-        data.extend(f"{offset:010d} 00000 n \n".encode())
-    data.extend(
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
-    )
-    return bytes(data)
+    return serialize_pdf(objects, header_end=b"")
 
 
 def test_objects_written_without_a_space_after_obj_need_no_offset_repair(

@@ -1,5 +1,10 @@
 # Coverage and unused-code findings
 
+> Historical log. Each entry records one review as it stood when written, including the
+> test counts and coverage figures of that run; paths and numbers are not kept current.
+> For current coverage floors see [`coverage-baseline.json`](coverage-baseline.json), and
+> for how to run and read coverage see [`coverage.md`](coverage.md).
+
 ## Dash expansion has one owner
 
 Removed the private `fill_line(dash_pattern=...)` option and its callback into

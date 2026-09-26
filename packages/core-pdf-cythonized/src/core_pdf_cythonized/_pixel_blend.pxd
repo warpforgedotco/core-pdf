@@ -3,7 +3,7 @@
 # of its Python loops. Shared so there is one copy of it, as _bezier.pxd is
 # for curve sampling.
 
-from libc.math cimport rint
+from core_pdf_cythonized._byte_clamp cimport round_to_byte
 
 
 # The blend modes blend_px treats apart; any other composites as normal.
@@ -15,18 +15,9 @@ cdef enum:
     MODE_COLOR_BURN = 4
 
 
-cdef inline int clamp_byte(double value) noexcept nogil:
-    cdef double rounded = rint(value)
-    if rounded < 0.0:
-        return 0
-    if rounded > 255.0:
-        return 255
-    return <int> rounded
-
-
 cdef inline int coverage_alpha(int alpha, int covered) noexcept nogil:
     # blend_coverage_pixel: max(0, min(255, round(alpha * covered / 16))).
-    return clamp_byte(<double> (alpha * covered) / 16.0)
+    return round_to_byte(<double> (alpha * covered) / 16.0)
 
 
 cdef inline void blend_normal_pixel(
@@ -48,10 +39,10 @@ cdef inline void blend_normal_pixel(
     src_a = sa / 255.0
     dst_a = da / 255.0
     out_a = src_a + dst_a * (1.0 - src_a)
-    pixel[0] = <unsigned char> clamp_byte(((red / 255.0 * 255.0) * src_a + (dr * dst_a) * (1.0 - src_a)) / out_a)
-    pixel[1] = <unsigned char> clamp_byte(((green / 255.0 * 255.0) * src_a + (dg * dst_a) * (1.0 - src_a)) / out_a)
-    pixel[2] = <unsigned char> clamp_byte(((blue / 255.0 * 255.0) * src_a + (db * dst_a) * (1.0 - src_a)) / out_a)
-    pixel[3] = <unsigned char> clamp_byte(out_a * 255.0)
+    pixel[0] = <unsigned char> round_to_byte(((red / 255.0 * 255.0) * src_a + (dr * dst_a) * (1.0 - src_a)) / out_a)
+    pixel[1] = <unsigned char> round_to_byte(((green / 255.0 * 255.0) * src_a + (dg * dst_a) * (1.0 - src_a)) / out_a)
+    pixel[2] = <unsigned char> round_to_byte(((blue / 255.0 * 255.0) * src_a + (db * dst_a) * (1.0 - src_a)) / out_a)
+    pixel[3] = <unsigned char> round_to_byte(out_a * 255.0)
 
 
 cdef inline float plane_accumulate(float previous, double source) noexcept nogil:
@@ -113,7 +104,7 @@ cdef inline void blend_mode_pixel(
             source[k] = source[k] * (1.0 - dst_a) + dst_a * color_burn(backdrop, source[k], revised)
     cdef double out_a = src_a + dst_a * (1.0 - src_a)
     for k in range(3):
-        pixel[k] = <unsigned char> clamp_byte(
+        pixel[k] = <unsigned char> round_to_byte(
             ((source[k] * 255.0) * src_a + destination[k] * dst_a * (1.0 - src_a)) / out_a
         )
-    pixel[3] = <unsigned char> clamp_byte(out_a * 255.0)
+    pixel[3] = <unsigned char> round_to_byte(out_a * 255.0)

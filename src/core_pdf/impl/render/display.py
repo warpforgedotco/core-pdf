@@ -16,6 +16,7 @@ from core_pdf.impl.render.model import (
     ImagePaintItem,
     PathPaintItem,
     PathPaintKind,
+    path_paint_fields,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number, parse_int
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
@@ -451,7 +452,7 @@ class DisplayList:
                     seqno=drawing.seqno,
                     bbox=drawing.rect,
                     path=drawing.path,
-                    **drawing_paint_kwargs(drawing),
+                    **path_paint_fields(drawing),
                 )
             )
             return
@@ -459,7 +460,7 @@ class DisplayList:
             drawing.kind,
             drawing.seqno,
             bbox=drawing.rect,
-            **drawing_paint_kwargs(drawing),
+            **path_paint_fields(drawing),
             group_isolated=drawing.group_isolated,
             group_knockout=drawing.group_knockout,
             raw_data=drawing.raw_data,
@@ -470,26 +471,6 @@ class DisplayList:
             path=drawing.path,
             items=drawing.items,
         )
-
-
-def drawing_paint_kwargs(drawing: CapturedDrawing) -> dict[str, Any]:
-    return {
-        "fill": drawing.fill,
-        "fill_opacity": drawing.fill_opacity,
-        "stroke_color": drawing.stroke_color,
-        "stroke_opacity": drawing.stroke_opacity,
-        "line_width": drawing.line_width,
-        "line_cap": drawing.line_cap,
-        "line_join": drawing.line_join,
-        "dash_pattern": drawing.dash_pattern,
-        "fill_rule": drawing.fill_rule,
-        "blend_mode": drawing.blend_mode,
-        "soft_mask_alpha": drawing.soft_mask_alpha,
-        "alpha_is_shape": drawing.alpha_is_shape,
-        "graphics_soft_mask": drawing.graphics_soft_mask,
-        "fill_pattern": drawing.fill_pattern,
-        "stroke_pattern": drawing.stroke_pattern,
-    }
 
 
 def display_item_box(

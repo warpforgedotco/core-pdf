@@ -35,7 +35,7 @@ def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tup
 
 
 def chart_cell_texts(text: str) -> tuple[str, ...]:
-    tokens = tuple(part for part in text.split() if part)
+    tokens = tuple(text.split())
     numeric_count = sum(bool(CHART_NUMERIC_TOKEN.fullmatch(part)) for part in tokens)
     if len(tokens) >= 4 and numeric_count >= 3:
         return tokens
@@ -103,7 +103,7 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
                 key=lambda item: item.column,
             )
         )
-        for row_index, (center_y_of, group) in enumerate(row_groups)
+        for row_index, (_, group) in enumerate(row_groups)
     )
     return Table(
         order=-1,

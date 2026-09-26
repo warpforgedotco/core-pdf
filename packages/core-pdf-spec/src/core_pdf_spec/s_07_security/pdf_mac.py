@@ -35,8 +35,6 @@ def validate_pdf_mac_if_present(
             handler.file_key,
             handler.config.kdf_salt,
         )
-    except PdfUnsupportedError:
-        raise
     except UnsupportedAlgorithmError as exc:
         raise PdfUnsupportedError(str(exc)) from exc
     except (ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:

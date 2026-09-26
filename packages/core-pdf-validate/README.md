@@ -53,7 +53,7 @@ arguments raise normal Python exceptions.
 Run the companion suite with the workspace environment:
 
 ```sh
-uv run --all-packages --extra unstructured --group test pytest packages/core-pdf-validate/tests
+uv run --all-packages --group test pytest packages/core-pdf-validate/tests
 ```
 
 Set `CORE_PDF_VERAPDF` to an installed executable to additionally run real-engine

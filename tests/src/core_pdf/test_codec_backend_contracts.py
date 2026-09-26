@@ -3,6 +3,7 @@ import pytest
 
 from core_pdf.impl.graphics import codec_backends as codecs
 from core_pdf_spec.s_07_filters import predictors as strict
+from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 
 
 @pytest.mark.parametrize(
@@ -51,16 +52,16 @@ def test_uint16_precision_can_be_preserved_without_aliasing_strided_storage():
     ],
 )
 def test_unsupported_decoded_shapes_and_types_fail_clearly(source):
-    with pytest.raises(codecs.CodecUnsupportedError, match="test decoder returned"):
+    with pytest.raises(FilterUnsupportedError, match="test decoder returned"):
         codecs.normalize_imagecodecs_array(source, name="test")
 
 
 @pytest.mark.parametrize(
     ("data", "valid", "error"),
     [
-        (b"", True, codecs.CodecParseError),
-        (b"bad", False, codecs.CodecParseError),
-        (b"header", True, codecs.CodecUnsupportedError),
+        (b"", True, FilterParseError),
+        (b"bad", False, FilterParseError),
+        (b"header", True, FilterUnsupportedError),
     ],
 )
 def test_codec_failures_distinguish_invalid_and_unsupported_streams(data, valid, error):
@@ -74,7 +75,7 @@ def test_failed_signature_probe_still_reports_parse_error():
     def probe(data):
         raise RuntimeError("probe failed")
 
-    with pytest.raises(codecs.CodecParseError):
+    with pytest.raises(FilterParseError):
         codecs.raise_codec_error(b"bad", RuntimeError(), check=probe, name="test")
 
 

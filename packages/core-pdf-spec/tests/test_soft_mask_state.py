@@ -3,12 +3,12 @@
 from typing import Any, cast
 
 import pytest
+from _content_support import NullSink, make_interpreter
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
-from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
@@ -17,13 +17,10 @@ from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.types import PdfName, PdfReference
 
 
-class Sink:
+class Sink(NullSink):
     def __init__(self) -> None:
         self.paints: list[tuple[SoftMask | None, float, float, str | None, bool, bool]] = []
         self.frames: list[tuple[str, ContentStreamFrame, SoftMask | None]] = []
-
-    def __getattr__(self, name: str) -> Any:
-        return lambda *args, **kwargs: None
 
     def paint_path(
         self, state: ContentInterpreter, path: PdfPath, kind: str, fill_rule: str
@@ -49,7 +46,7 @@ class Sink:
 
 def make_state() -> tuple[ContentInterpreter, Sink]:
     sink = Sink()
-    return ContentInterpreter(ObjectResolver(b"", {}), sink, None), sink  # ty: ignore[invalid-argument-type]
+    return make_interpreter(sink), sink
 
 
 def make_group(**entries: object) -> PdfStream:

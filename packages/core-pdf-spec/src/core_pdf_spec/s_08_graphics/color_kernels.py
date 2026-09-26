@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy
 
+from core_jbig2.bitmap import uint8_view
 from core_pdf_spec.samples import unpack_subbyte_rows
 
 
@@ -20,11 +21,7 @@ def unpack_subbyte_image_samples(
         raise ValueError("invalid image sample layout")
     row_samples = width * components
     row_bytes = (row_samples * bits_per_component + 7) // 8
-    packed = (
-        numpy.asarray(data, dtype=numpy.uint8).reshape(-1)
-        if isinstance(data, numpy.ndarray)
-        else numpy.frombuffer(data, dtype=numpy.uint8)
-    )
+    packed = uint8_view(data)
     if len(packed) < row_bytes * height:
         raise ValueError("invalid image sample data")
     return unpack_subbyte_rows(
@@ -54,11 +51,7 @@ def unpack_image_samples(
         return unpack_subbyte_image_samples(data, bits_per_component, width, height, components)
     if bits_per_component not in {8, 16} or min(width, height, components) <= 0:
         raise ValueError("invalid image sample layout")
-    packed = (
-        numpy.asarray(data, dtype=numpy.uint8).reshape(-1)
-        if isinstance(data, numpy.ndarray)
-        else numpy.frombuffer(data, dtype=numpy.uint8)
-    )
+    packed = uint8_view(data)
     count = width * height * components
     length = count * (bits_per_component // 8)
     if len(packed) < length:

@@ -14,7 +14,7 @@ import numpy
 import pytest
 
 from core_pdf.impl.render.target import RasterTarget
-from tests.src.core_pdf.test_pattern_rendering import make_target
+from tests.src.core_pdf.raster_support import make_target
 
 
 def grouped_target(width: int = 40, height: int = 40, *, isolated: bool = True) -> RasterTarget:

@@ -27,12 +27,6 @@ from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.pipeline import extract_page
 from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.graphics.images import decode_image
-from core_pdf.impl.layout.lines import (
-    LayoutGeometrySummary,
-    LayoutLine,
-    page_layout_geometry_issues,
-    page_layout_geometry_summary,
-)
 from core_pdf.impl.output.model import Page as StructuredPage
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
@@ -409,15 +403,6 @@ class PdfPage:
     def run_extract_page(self, context: ExtractionScope) -> StructuredPage:
         return extract_page(self, context)
 
-    def get_text_lines(self) -> list[LayoutLine]:
-        return [LayoutLine([run]) for run in self.chars if run.text]
-
-    def extract_geometry_issues(self) -> tuple[object, ...]:
-        return page_layout_geometry_issues(self.get_text_lines())
-
-    def extract_geometry_summary(self) -> LayoutGeometrySummary:
-        return page_layout_geometry_summary(self.get_text_lines())
-
     @staticmethod
     def drawing_records(drawings: Iterable[Any]) -> tuple[DrawingRecord, ...]:
         return tuple(
@@ -431,9 +416,6 @@ class PdfPage:
             for drawing in drawings
             if drawing.kind not in {"scope-begin", "scope-end"}
         )
-
-    def get_drawings(self) -> tuple[DrawingRecord, ...]:
-        return self.drawing_records(self.get_page_program().drawings)
 
     def extract_images(
         self,

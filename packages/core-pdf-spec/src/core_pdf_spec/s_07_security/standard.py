@@ -11,14 +11,13 @@ from hmac import compare_digest
 from types import MappingProxyType
 from typing import ClassVar, Literal
 
+from core_pdf_crypto.ciphers import aes_cbc_encrypt, rc4_crypt
 from core_pdf_spec.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.decode_spec import normalize_stream_decode_spec
 from core_pdf_spec.s_07_security.ciphers import (
     aes_cbc_decrypt,
-    aes_cbc_encrypt,
     aes_ecb_decrypt,
     aes_gcm_decrypt,
-    rc4_crypt,
 )
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import (

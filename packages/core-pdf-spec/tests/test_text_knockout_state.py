@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from _content_support import NullSink, make_interpreter
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -18,13 +19,10 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName, PdfReference
 
 
-class TextSink:
+class TextSink(NullSink):
     def __init__(self) -> None:
         self.events: list[tuple[str, bool, bool]] = []
         self.patterns: list[TilingPattern] = []
-
-    def __getattr__(self, name: str) -> Any:
-        return lambda *args, **kwargs: None
 
     def text_boundary(self, state: ContentInterpreter, kind: str) -> None:
         self.events.append((kind, state.graphics.text_knockout, state.in_text_object))
@@ -39,7 +37,7 @@ class TextSink:
 
 def make_state() -> tuple[ContentInterpreter, TextSink]:
     sink = TextSink()
-    return ContentInterpreter(ObjectResolver(b"", {}), sink, None), sink  # ty: ignore[invalid-argument-type]
+    return make_interpreter(sink), sink
 
 
 def test_text_knockout_defaults_preserve_positional_snapshot_construction() -> None:

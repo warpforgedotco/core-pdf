@@ -9,7 +9,6 @@ from core_pdf_spec.s_07_document.standards import (
     effective_pdf_version,
     parse_catalog_version,
     parse_extension,
-    parse_extensions,
     parse_header_version,
 )
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
@@ -77,27 +76,23 @@ def test_extension_level_is_a_positive_direct_integer(level: object) -> None:
         parse_extension("ADBE", {"BaseVersion": PdfName.of("1.7"), "ExtensionLevel": level})
 
 
-def test_extensions_keep_independent_levels_prefixes_and_revisions() -> None:
-    extensions = parse_extensions(
-        {
-            "Type": PdfName.of("Extensions"),
-            "ADBE": {"BaseVersion": PdfName.of("1.7"), "ExtensionLevel": 3},
-            "ISO_": [
-                {
-                    "BaseVersion": PdfName.of("2.0"),
-                    "ExtensionLevel": 32004,
-                    "ExtensionRevision": PdfString(b":2024"),
-                    "URL": PdfString(b"https://www.iso.org/standard/45877.html"),
-                },
-                {"BaseVersion": PdfName.of("2.0"), "ExtensionLevel": 32003},
-            ],
-            "FUTR": {"BaseVersion": PdfName.of("3.0"), "ExtensionLevel": 1},
-        }
-    )
+def test_extensions_keep_levels_prefixes_and_revisions() -> None:
+    extensions = [
+        parse_extension("ADBE", {"BaseVersion": PdfName.of("1.7"), "ExtensionLevel": 3}),
+        parse_extension(
+            "ISO_",
+            {
+                "BaseVersion": PdfName.of("2.0"),
+                "ExtensionLevel": 32004,
+                "ExtensionRevision": PdfString(b":2024"),
+                "URL": PdfString(b"https://www.iso.org/standard/45877.html"),
+            },
+        ),
+        parse_extension("FUTR", {"BaseVersion": PdfName.of("3.0"), "ExtensionLevel": 1}),
+    ]
     assert [(ext.prefix, ext.extension_level) for ext in extensions] == [
         ("ADBE", 3),
         ("ISO_", 32004),
-        ("ISO_", 32003),
         ("FUTR", 1),
     ]
     assert extensions[1].extension_revision == ":2024"
@@ -111,37 +106,6 @@ def test_extensions_keep_independent_levels_prefixes_and_revisions() -> None:
         )
         is None
     )
-
-
-def test_contextual_extension_constraints_and_valid_defaults() -> None:
-    assert parse_extensions(None) == ()
-    assert parse_extensions({}) == ()
-    declaration = {"BaseVersion": PdfName.of("1.7"), "ExtensionLevel": 1}
-    assert parse_extensions({"TEST": declaration}, context=SemanticContext(PdfVersion(1, 7)))
-    with pytest.raises(ValueError, match="require URL"):
-        parse_extensions({"TEST": declaration}, context=SemanticContext(PdfVersion(2, 0)))
-    with pytest.raises(ValueError, match="exceeds"):
-        parse_extensions({"TEST": declaration}, context=SemanticContext(PdfVersion(1, 6)))
-    with pytest.raises(ValueError, match="arrays require"):
-        parse_extensions({"TEST": [declaration]}, context=SemanticContext(PdfVersion(1, 7)))
-    declaration["URL"] = PdfString(b"https://example.invalid/extension")
-    assert parse_extensions({"TEST": [declaration]}, context=SemanticContext(PdfVersion(2, 0)))
-
-
-@pytest.mark.parametrize(
-    "declarations",
-    [
-        1,
-        {"Type": PdfString(b"Extensions")},
-        {"ADBE": PdfReference(3)},
-        {"ADBE": []},
-        {"ADBE": {"BaseVersion": PdfReference(2), "ExtensionLevel": 1}},
-        {"ADBE": {"BaseVersion": PdfName.of("1.7"), "ExtensionLevel": 1, "URL": PdfReference(2)}},
-    ],
-)
-def test_extensions_do_not_resolve_or_skip_invalid_entries(declarations: object) -> None:
-    with pytest.raises(ValueError):
-        parse_extensions(declarations)
 
 
 def test_text_encoding_changes_only_with_pdf_2_0() -> None:

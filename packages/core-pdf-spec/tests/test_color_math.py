@@ -1,13 +1,9 @@
-from collections.abc import Callable
-
 import numpy
 import pytest
 
 from core_pdf_spec.s_08_graphics.color_math import (
-    ColorSamples,
     compensate_black_point_xyz,
     lab_components_to_xyz,
-    lab_to_xyz,
     xyz_to_lab_components,
 )
 
@@ -54,30 +50,8 @@ def test_lab_piecewise_transition_applies_to_each_xyz_component() -> None:
     )
 
 
-def test_normalized_lab_wrapper_preserves_original_float32_results() -> None:
-    values = numpy.array(
-        [[0, 0.5, 0.5], [1, 1, 0], [0.08, 128 / 255, 128 / 255], [0.5, 0.2, 0.8]],
-        dtype=numpy.float32,
-    )
-    expected_bits = numpy.array(
-        [
-            [3103783820, 0, 968314105],
-            [1072687578, 1065353216, 1083815531],
-            [1007283174, 1007753894, 1008600245],
-            [1032526043, 1044159331, 1005182458],
-        ],
-        dtype=numpy.uint32,
-    )
-    result = lab_to_xyz(values, (0.9505, 1.0, 1.089))
-    assert result.dtype == numpy.float32
-    numpy.testing.assert_array_max_ulp(result, expected_bits.view(numpy.float32), maxulp=2)
-
-
-@pytest.mark.parametrize("convert", [lab_components_to_xyz, lab_to_xyz])
 @pytest.mark.parametrize("layout", ["contiguous", "strided", "empty"])
-def test_lab_conversion_retains_shape_and_leaves_readonly_inputs_untouched(
-    convert: Callable[[ColorSamples, tuple[float, float, float]], ColorSamples], layout: str
-) -> None:
+def test_lab_conversion_retains_shape_and_leaves_readonly_inputs_untouched(layout: str) -> None:
     backing = numpy.arange(24, dtype=numpy.float32).reshape(4, 6)
     values = backing[::2, ::2]
     if layout == "contiguous":
@@ -89,13 +63,13 @@ def test_lab_conversion_retains_shape_and_leaves_readonly_inputs_untouched(
     original = values.copy()
     backing_original = backing.copy()
     values.flags.writeable = False
-    result = convert(values, (0.9505, 1.0, 1.089))
+    result = lab_components_to_xyz(values, (0.9505, 1.0, 1.089))
     assert result.shape == values.shape
     assert result.dtype == numpy.float32
     assert not numpy.shares_memory(result, values)
     numpy.testing.assert_array_equal(values, original)
     numpy.testing.assert_array_equal(backing, backing_original)
-    numpy.testing.assert_array_equal(result, convert(original, (0.9505, 1.0, 1.089)))
+    numpy.testing.assert_array_equal(result, lab_components_to_xyz(original, (0.9505, 1.0, 1.089)))
 
 
 def test_xyz_inverse_matches_independent_lab_vectors_across_piecewise_transition() -> None:

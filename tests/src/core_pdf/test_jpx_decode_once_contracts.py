@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import imagecodecs
 import numpy
 import pytest
 
@@ -9,8 +10,6 @@ from core_pdf.impl.graphics import codec_backends
 from core_pdf.impl.graphics.images import decode_image_samples
 from core_pdf.impl.graphics.stream_decoding import decode_stream_data
 from core_pdf.impl.types import PdfName
-
-imagecodecs = pytest.importorskip("imagecodecs")
 
 
 def jpx_image(color_space: object) -> tuple[bytes, dict[Any, Any]]:

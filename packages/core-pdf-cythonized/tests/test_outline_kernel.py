@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from core_pdf_cythonized import outline_edges
+from core_pdf_cythonized import outline_edges, translated_outline_edges
 
 GOLDEN_PATH = Path(__file__).parent / "outline_golden.pkl.gz"
 GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
@@ -71,11 +71,21 @@ def test_a_two_point_span_with_equal_ends_is_dropped_not_kept():
     assert dropped
 
 
+@pytest.mark.parametrize("span", [(0, 3), (-1, 2)])
+def test_a_span_outside_the_columns_is_refused(span):
+    # The kernels build without bounds checks, so this is checked up front.
+    xs = numpy.array([0.0, 1.0])
+    ys = numpy.array([0.0, 1.0])
+    with pytest.raises(IndexError):
+        outline_edges(xs, ys, [span])
+    with pytest.raises(IndexError):
+        translated_outline_edges(xs, ys, 0.0, 0.0, [span])
+
+
 def test_render_commands_use_the_kernel():
     # Through translated_outline_edges, which runs outline_edges on the
     # translated columns.
     pytest.importorskip("core_pdf")
     from core_pdf.impl.render import commands
-    from core_pdf_cythonized import translated_outline_edges
 
     assert commands.translated_outline_edges is translated_outline_edges

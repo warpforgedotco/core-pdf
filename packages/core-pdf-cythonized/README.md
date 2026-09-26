@@ -96,11 +96,10 @@ the wheel.
 
 | kernel | replaces | measured |
 | ------ | -------- | -------- |
-| `cubic_sample_times` | `core_pdf.impl.fonts.font_program` (deleted) | 7.57x on the kernel; 3.7% of a glyph-outline page, 0% on pages needing no outlines |
-| `signed_area_coverage` | `core_pdf.impl.render.paths` (deleted, with `group_offsets`) | 4.26x on the kernel; ~20% off full render on glyph-heavy pages |
-| `blend_normal_alpha_array_numpy` | `core_pdf.impl.render.blend` (deleted) | 9.04x on the kernel, over 26,315 calls averaging 38 elements |
-| `rect_coverage_plane` | `core_pdf.impl.render.paths` (deleted) | 8.57x on the kernel; -21% on a vector-heavy page render, -7 to -9% elsewhere |
-| `fill_rect_coverage` | the blend and group-plane records of `fill_rect`'s partially covered rectangles, and their two `rect_coverage_plane` calls (deleted); `rect_coverage_plane` stays as the golden-pinned reference | five kernel round trips per rectangle become one pass; -5% render on final-r3-report-emergency p4, test_2533, chinese-tables |
+| `cubic_sample_times` | `cubic_sample_times` and its `cubic_is_flat` helper in `core_pdf.impl.fonts.font_program` (deleted) | 7.57x on the kernel; 3.7% of a glyph-outline page, 0% on pages needing no outlines |
+| `signed_area_coverage` | `signed_area_coverage` and `group_offsets` in `core_pdf.impl.render.paths` (deleted) | 4.26x on the kernel; ~20% off full render on glyph-heavy pages |
+| `blend_normal_alpha_array_numpy` | `blend_normal_alpha_array_numpy` in `core_pdf.impl.render.blend` (deleted) | 9.04x on the kernel, over 26,315 calls averaging 38 elements |
+| `fill_rect_coverage` | the blend and group-plane records of `fill_rect`'s partially covered rectangles, and their two coverage-plane calls (deleted; the coverage plane was first `rect_coverage_plane`, 8.57x over the numpy `rect_coverage_plane` in `core_pdf.impl.render.paths`, -21% on a vector-heavy page render, and is now pinned by its golden vectors through this kernel) | five kernel round trips per rectangle become one pass; -5% render on final-r3-report-emergency p4, test_2533, chinese-tables |
 | `outline_edges` | `core_pdf.impl.render.commands` (edge half only) | 2.01x on the kernel; -2.5 to -4.4% on text-page render |
 | `translated_outline_edges` | the translation and the four numpy bound reductions around `outline_edges` in `core_pdf.impl.render.commands.transformed_outline` (deleted) | six array operations per drawn glyph become one call; -5% on ISO 32000-2 text-page render. The four bounds are one pass per column since, not four scans whose runtime min-or-max select kept the compiler from vectorizing: 3.1 to 2.1 us on a 58-point glyph, -7% on lyft text-page render |
 | `glyph_coverage_plane` | the device-edge preparation in `core_pdf.impl.render.target.fill_path` (deleted) | 8.3us of numpy prep per call removed, against 3.3us of actual coverage; -10.6% / -7.5% on text-page render |

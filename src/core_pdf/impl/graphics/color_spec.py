@@ -11,11 +11,10 @@ from core_pdf.impl.graphics.icc_profiles import (
     parse_icc_transform,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.pdf_values import coerce_to_bytes
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float, parse_int
+from core_pdf_spec.s_07_syntax_primitives.coercion import coerce_to_bytes, parse_float, parse_int
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_spec import (
     ColorParams,
@@ -171,11 +170,13 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                 if type(value[2]) is bool or hival is None or hival < 0:
                     raise ValueError("invalid hival")
                 try:
-                    lookup = (
-                        value[3].data
-                        if isinstance(value[3], PdfStream)
-                        else coerce_to_bytes(value[3])
-                    )
+                    raw_lookup = value[3]
+                    if isinstance(raw_lookup, PdfStream):
+                        lookup = raw_lookup.data
+                    elif isinstance(raw_lookup, str):
+                        lookup = raw_lookup.encode("latin-1")
+                    else:
+                        lookup = coerce_to_bytes(raw_lookup)
                 except TypeError:
                     lookup = None
                 base = parse_color_space(value[1], active)

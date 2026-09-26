@@ -20,14 +20,15 @@ uncalibrated ink formula, and this is a SWOP one.
   17x17x17x17 grid, `B2A*` are `mft2` over 33x33x33. We read `A2B1` and `B2A1`,
   the relative colorimetric pair, because PDF 32000-1 8.6.5.8 makes
   RelativeColorimetric the default rendering intent. The `B2A1` tag is what the
-  black point detection in `s_08_graphics/icc_profiles.py` runs against; without
+  black point detection in `src/core_pdf/impl/graphics/icc_profiles.py` runs against; without
   it, black point compensation has no source black to scale from.
 - **SHA-256**: `0ac00fe6f03901bfd06ef70e72ec2c55fa3c043c6c34c0b6d70f06cc7a40a822`
 
 Replacing this file with another CMYK profile needs no code change beyond the
-filename in `s_08_graphics/device_profiles.py`, as long as it is an ICC v2
+filename in `src/core_pdf/impl/graphics/device_profiles.py`, as long as it is an ICC v2
 profile whose tables are `mft1`/`mft2`; the v4 `mAB `/`mBA ` tag types are not
 parsed. Note that MuPDF and Ghostscript default to a *different* SWOP profile
 ("Artifex CMYK SWOP Profile", AGPL), so our DeviceCMYK output is close to but
 not identical with theirs. Swapping profiles moves rendered output for every
-DeviceCMYK page, so regenerate `tests/snapshots/raster/first_page_scale1.json`.
+DeviceCMYK page, so rerun the DeviceCMYK conversion checks in
+`tests/src/core_pdf/test_color_conversion_contracts.py` and the rendering differentials.

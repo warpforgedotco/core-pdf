@@ -16,6 +16,7 @@ INT_MAX = (1 << 31) - 1
 INT_MASK = (1 << 32) - 1
 NUMBER = re.compile(rb"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)\Z")
 WHITESPACE = b"\x00\t\n\f\r "
+TOKEN_END = WHITESPACE + b"{}%"
 UNARY = frozenset(
     (
         "abs",
@@ -107,7 +108,7 @@ def iter_tokens(source: bytes) -> Iterator[bytes]:
             position += 1
         else:
             start = position
-            while position < len(source) and source[position] not in WHITESPACE + b"{}%":
+            while position < len(source) and source[position] not in TOKEN_END:
                 position += 1
             yield source[start:position]
 

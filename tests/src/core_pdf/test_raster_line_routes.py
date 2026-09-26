@@ -3,7 +3,7 @@ import pytest
 
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render import target as render_target
-from tests.src.core_pdf.test_pattern_rendering import make_target
+from tests.src.core_pdf.raster_support import make_target
 
 
 def expected_coverage(clipped: bool) -> np.ndarray:

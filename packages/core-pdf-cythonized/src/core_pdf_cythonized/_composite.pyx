@@ -31,6 +31,8 @@ from libc.math cimport isfinite, rint, rintf
 
 import numpy
 
+from core_pdf_cythonized._byte_clamp cimport double_to_byte, float_to_byte
+
 
 cdef struct Strides:
     Py_ssize_t pixel
@@ -180,7 +182,7 @@ def composite_masked_normal(destination, rendered, double opacity, mask_codes, m
                 dst[y, x, 0] = normal_channel(src[y, x, 0], dst[y, x, 0], src_a, dst_a, one_minus_src_a, out_a)
                 dst[y, x, 1] = normal_channel(src[y, x, 1], dst[y, x, 1], src_a, dst_a, one_minus_src_a, out_a)
                 dst[y, x, 2] = normal_channel(src[y, x, 2], dst[y, x, 2], src_a, dst_a, one_minus_src_a, out_a)
-                dst[y, x, 3] = clamp_byte(rint(out_a * 255.0))
+                dst[y, x, 3] = double_to_byte(rint(out_a * 255.0))
 
     return effective
 
@@ -196,17 +198,9 @@ cdef inline unsigned char normal_channel(
     # The source colour went through /255.0 and back through *255.0 in the
     # original, which is not the identity in floating point, so it stays.
     cdef double colour = <double> source / 255.0
-    return clamp_byte(
+    return double_to_byte(
         rint(((colour * 255.0) * src_a + <double> backdrop * dst_a * one_minus_src_a) / out_a)
     )
-
-
-cdef inline unsigned char clamp_byte(double value) noexcept nogil:
-    if value < 0.0:
-        return 0
-    if value > 255.0:
-        return 255
-    return <unsigned char> <int> value
 
 
 def composite_normal_group(
@@ -341,14 +335,6 @@ cdef float general_source_alpha(unsigned char alpha, double source_scale, double
     return value / SCALE
 
 
-cdef inline unsigned char clamp_to_byte(double value) noexcept nogil:
-    if value < 0.0:
-        return 0
-    if value > 255.0:
-        return 255
-    return <unsigned char> <int> value
-
-
 cdef void opaque_backdrop(
     unsigned char[:, :, :] dst,
     const unsigned char[:, :, :] src,
@@ -369,7 +355,7 @@ cdef void opaque_backdrop(
             backdrop_pixel = &dst[y, 0, 0] + x * d.pixel
             alpha = effective[source_pixel[3 * r.channel]] / 255.0
             for c in range(3):
-                backdrop_pixel[c * d.channel] = clamp_to_byte(
+                backdrop_pixel[c * d.channel] = double_to_byte(
                     rint(
                         <double> source_pixel[c * r.channel] * alpha
                         + <double> backdrop_pixel[c * d.channel] * (1.0 - alpha)
@@ -436,13 +422,3 @@ cdef void general(
                     rintf((<float> source_pixel[c * r.channel] * sa + weight) / oa)
                 )
             backdrop_pixel[3 * d.channel] = float_to_byte(rintf(oa * SCALE))
-
-
-cdef inline unsigned char float_to_byte(float value) noexcept nogil:
-    cdef float ZERO = 0.0
-    cdef float SCALE = 255.0
-    if value < ZERO:
-        return 0
-    if value > SCALE:
-        return 255
-    return <unsigned char> <int> value

@@ -20,7 +20,7 @@ finally:
 
 Modules follow PDF chapters: syntax primitives, objects/xref, filters, content execution,
 document semantics, security, graphics, fonts, and structure. A module's `__all__` lists its
-supported exports; `internal_` names are private. Public parser methods document strict
+supported exports; other names, such as `INTERNAL_` constants, are private. Public parser methods document strict
 parsing and the extension points consumers can implement.
 
 The library contains implemented PDF semantics and the PDF-facing wrappers over the
@@ -39,12 +39,11 @@ bundled font data retains its original notices inside `core-adobe-fonts`.
 
 For Lab color conversion, `s_08_graphics.color_math.lab_components_to_xyz` accepts
 NumPy float32 rows of actual `(L*, a*, b*)` components and a reference white point.
-Image sample decoding and range enforcement belong to the caller. The existing
-`lab_to_xyz` function retains its normalized input convention as a compatibility wrapper.
+Image sample decoding and range enforcement belong to the caller.
 
-The current spec version is `0.7.0`, released independently of core. During `0.x`, breaking
+The current spec version is `0.10.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.9.1,<0.10.0`; changes to that range require core integration and differential validation.
+`>=0.10.0,<0.11.0`; changes to that range require core integration and differential validation.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are
@@ -67,8 +66,7 @@ validation backend's capabilities.
 `effective_pdf_version(header, catalog, previous=...)`. The latter preserves the highest
 declared version across revisions; callers supply the preceding effective version. Parsing
 helpers do not search for displaced headers, resolve indirect extension entries, or recover
-invalid values. `parse_extensions(..., context=...)` additionally applies document-version
-constraints. Reader orchestration and recovery belong to the caller.
+invalid values. Reader orchestration and recovery belong to the caller.
 
 ```python
 from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
@@ -196,6 +194,23 @@ defined in Adobe PDF 1.3, Table 4.20; parsing does not impose a PDF 1.6 availabi
 `s_08_graphics.color.color_space_paints` identifies Separation `/None` and all-`/None`
 DeviceN spaces that discard output, including through Indexed and uncolored Pattern
 bases. Mixed DeviceN spaces retain every input component for their alternate tint transform.
+
+When migrating to `0.10.0`, stop using these exports, which nothing in the workspace called:
+
+- `s_08_graphics.color.indexed_color_components`, `tint_color_components`, and
+  `calgray_to_xyz`.
+- `s_08_graphics.color_math.lab_to_xyz`, the normalized-input wrapper; call
+  `lab_components_to_xyz` with actual `(L*, a*, b*)` components.
+- `s_08_graphics.image_spec.image_bits_per_component`.
+- `s_07_document.metadata.metadata_stream`; resolve the trailer's `Root` and pass it to
+  `catalog_metadata_stream`.
+- `s_07_document.standards.parse_extensions`; parse each declaration with
+  `parse_extension`.
+- `s_07_syntax.trees.tree_node`.
+
+`s_07_security.ciphers` no longer defines `aes_cbc_encrypt` or `rc4_crypt`, which only
+forwarded to `core_pdf_crypto.ciphers`; import them from there. Spec now requires
+`core-jbig2` 0.3 and `core-adobe-fonts` 0.2, which drop exports of their own.
 
 When migrating to `0.7.0`: `s_07_filters.jbig2.decode_jbig2` raises `FilterUnsupportedError`
 for arithmetic-coded generic regions, which it used to decode, just as it already did for

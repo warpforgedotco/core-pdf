@@ -278,12 +278,8 @@ class VeraPdfBackend:
             raise ValueError("executable must not be empty")
 
     def validate(self, source: Path, *, profile: str) -> ProfileResult:
-        result = self.validate_profile(source, profile=profile)
         capability = PROFILES.get(profile)
-        return replace(result, profile_edition=capability[2] if capability is not None else None)
-
-    def validate_profile(self, source: Path, *, profile: str) -> ProfileResult:
-        if profile not in PROFILES:
+        if capability is None:
             return ProfileResult(
                 profile,
                 "unsupported_profile",
@@ -291,12 +287,13 @@ class VeraPdfBackend:
                 self.name,
                 diagnostics=(f"Unsupported validation target: {profile}",),
             )
+        flavour, _, edition = capability
         command = [
             os.fspath(self.executable),
             "--format",
             "xml",
             "--flavour",
-            PROFILES[profile][0],
+            flavour,
             "--maxfailures",
             "-1",
             str(source.resolve()),
@@ -326,12 +323,16 @@ class VeraPdfBackend:
                         diagnostics=(f"veraPDF exceeded {self.timeout:g} seconds",),
                         raw_report=stdout,
                         stderr=stderr,
+                        profile_edition=edition,
                     )
-                return parse_report(
-                    stdout,
-                    profile=profile,
-                    returncode=process.returncode,
-                    stderr=stderr,
+                return replace(
+                    parse_report(
+                        stdout,
+                        profile=profile,
+                        returncode=process.returncode,
+                        stderr=stderr,
+                    ),
+                    profile_edition=edition,
                 )
         except FileNotFoundError as error:
             return ProfileResult(
@@ -340,6 +341,7 @@ class VeraPdfBackend:
                 "not_checked",
                 self.name,
                 diagnostics=(f"veraPDF executable not found: {error.filename}",),
+                profile_edition=edition,
             )
         except OSError as error:
             return ProfileResult(
@@ -348,4 +350,5 @@ class VeraPdfBackend:
                 "not_checked",
                 self.name,
                 diagnostics=(f"Could not run veraPDF: {error}",),
+                profile_edition=edition,
             )

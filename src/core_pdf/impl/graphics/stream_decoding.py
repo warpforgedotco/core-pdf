@@ -33,7 +33,6 @@ from core_pdf.impl.graphics.filter_registry import (
     FILTER_DESCRIPTORS,
     PREDICTOR_FILTERS,
 )
-from core_pdf.impl.pdf_values import is_pdf_null
 from core_pdf_cythonized import decode_arithmetic_generic_template0
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
@@ -51,6 +50,7 @@ from core_pdf_spec.s_07_filters.predictors import (
 from core_pdf_spec.s_07_filters.predictors import (
     apply_predictor as strict_apply_predictor,
 )
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_null
 from core_pdf_spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
     full_source_bytes,
@@ -196,21 +196,10 @@ class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
             compose_packed_bitmap_region(region, bitmap, self.image, self.page_info)
 
 
-def decode(
-    call: Callable[..., numpy.ndarray[Any, Any]], *args: Any, **kwargs: Any
-) -> numpy.ndarray[Any, Any]:
-    try:
-        return call(*args, **kwargs)
-    except codec_backends.CodecParseError as exc:
-        raise FilterParseError(str(exc)) from exc
-    except codec_backends.CodecUnsupportedError as exc:
-        raise FilterUnsupportedError(str(exc)) from exc
-
-
 def decode_jpeg_image(
     data: bytes | memoryview, *, out: numpy.ndarray[Any, Any] | None = None
 ) -> numpy.ndarray[Any, Any]:
-    return decode(codec_backends.decode_jpeg_image, data, out=out)
+    return codec_backends.decode_jpeg_image(data, out=out)
 
 
 def decode_jpx_image(
@@ -219,9 +208,7 @@ def decode_jpx_image(
     out: numpy.ndarray[Any, Any] | None = None,
     preserve_precision: bool = False,
 ) -> numpy.ndarray[Any, Any]:
-    return decode(
-        codec_backends.decode_jpx_image, data, out=out, preserve_precision=preserve_precision
-    )
+    return codec_backends.decode_jpx_image(data, out=out, preserve_precision=preserve_precision)
 
 
 def decode_jpeg(data: bytes, parms: object) -> bytes:
@@ -235,8 +222,7 @@ def decode_jpx(data: bytes, parms: object) -> bytes:
 def decode_ccitt_fax_image(
     data: bytes | memoryview, parms: FilterParams, *, out: numpy.ndarray[Any, Any] | None = None
 ) -> numpy.ndarray[Any, Any]:
-    array = decode(
-        codec_backends.decode_ccitt_fax_image,
+    array = codec_backends.decode_ccitt_fax_image(
         data,
         width=parms.columns if parms.has_columns else 1728,
         height=parms.rows,
@@ -308,12 +294,15 @@ def png_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) ->
 
 
 def tiff_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -> bytes:
-    return tiff_predict_tolerant(
-        data,
-        columns=params.columns,
-        colors=params.colors,
-        bits_per_component=params.bits_per_component,
+    columns = params.columns
+    colors = params.colors
+    bits_per_component = params.bits_per_component
+    decoded = tiff_predict_codec(
+        data, columns=columns, colors=colors, bits_per_component=bits_per_component
     )
+    if decoded is not None:
+        return decoded
+    return tiff_predict(data, columns=columns, colors=colors, bits_per_component=bits_per_component)
 
 
 def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
@@ -323,17 +312,6 @@ def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
     return strict_apply_predictor(
         data, params, png=png_predictor_tolerant, tiff=tiff_predictor_tolerant
     )
-
-
-def tiff_predict_tolerant(
-    data: bytes | memoryview, *, columns: int, colors: int, bits_per_component: int
-) -> bytes:
-    decoded = tiff_predict_codec(
-        data, columns=columns, colors=colors, bits_per_component=bits_per_component
-    )
-    if decoded is not None:
-        return decoded
-    return tiff_predict(data, columns=columns, colors=colors, bits_per_component=bits_per_component)
 
 
 ASCII_HEX_DIGITS = b"0123456789ABCDEFabcdef"

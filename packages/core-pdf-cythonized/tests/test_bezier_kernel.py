@@ -61,5 +61,3 @@ def test_core_reaches_the_sampler_through_the_type2_kernel():
     from core_pdf_cythonized import type2_glyph_geometry
 
     assert font_program.type2_glyph_geometry is type2_glyph_geometry
-    assert not hasattr(font_program, "pure_cubic_sample_times")
-    assert not hasattr(font_program, "execute_type2_charstring")

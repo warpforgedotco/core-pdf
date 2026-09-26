@@ -61,7 +61,7 @@ from core_pdf_cythonized._knockout import (
 from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import outline_edges, translated_outline_edges
 from core_pdf_cythonized._paths import flatten_path_commands, path_bounds
-from core_pdf_cythonized._rect import fill_rect_coverage, rect_coverage_plane
+from core_pdf_cythonized._rect import fill_rect_coverage
 from core_pdf_cythonized._sample_blit import (
     alpha_channel,
     interleave_soft_mask,
@@ -107,7 +107,6 @@ __all__ = (
     "object_headers_match",
     "outline_edges",
     "path_bounds",
-    "rect_coverage_plane",
     "sample_opaque_pixels",
     "shading_blend",
     "shading_t",

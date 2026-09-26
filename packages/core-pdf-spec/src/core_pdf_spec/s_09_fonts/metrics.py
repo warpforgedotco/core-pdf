@@ -11,11 +11,9 @@ def standard_14_widths(
     if base_font_name is None or decode_table is None:
         return None
     entry = FONT_DATA.get(base_font_name)
-    if not isinstance(entry, dict):
+    if entry is None:
         return None
-    char_widths = entry.get("widths")
-    if not isinstance(char_widths, dict):
-        return None
+    char_widths = entry["widths"]
     sparse: dict[int, float] = {}
     for code in range(min(len(decode_table), 256)):
         text = decode_table[code]

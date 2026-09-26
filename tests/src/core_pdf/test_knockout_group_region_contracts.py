@@ -11,6 +11,7 @@ from core_pdf.impl.render import display
 from core_pdf.impl.render.display import plain_fill_members_box
 from core_pdf.impl.render.model import DisplayItem, DisplayListItem, PathPaintItem, PathPaintKind
 from core_pdf.impl.render.target import RasterTarget
+from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 
 def fill(bbox: tuple[float, float, float, float] | None, **changes: Any) -> PathPaintItem:
@@ -77,27 +78,6 @@ CONTENT = (
     b"0 0 0 rg 0 -6 Td (WAVAWO) Tj ET "
     b"BT /F1 20 Tf 0 0.5 0 rg 30 70 Td [(AV) 400 (AV)] TJ ET"
 )
-
-
-def one_page_pdf(content: bytes) -> bytes:
-    objects = {
-        1: b"<< /Type /Catalog /Pages 2 0 R >>",
-        2: b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        3: b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
-        b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-        4: b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream",
-        5: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    }
-    data = bytearray(b"%PDF-1.4\n")
-    offsets = {}
-    for number, body in objects.items():
-        offsets[number] = len(data)
-        data += b"%d 0 obj\n" % number + body + b"\nendobj\n"
-    xref = len(data)
-    data += b"xref\n0 6\n0000000000 65535 f \n"
-    data += b"".join(b"%010d 00000 n \n" % offsets[number] for number in range(1, 6))
-    data += b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % xref
-    return bytes(data)
 
 
 def rendered() -> bytes:

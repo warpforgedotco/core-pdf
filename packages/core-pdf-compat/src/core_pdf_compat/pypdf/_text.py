@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import re
 from collections.abc import Mapping
 from contextlib import suppress
@@ -18,17 +17,16 @@ from core_pdf.impl.fonts.widths import parse_font_widths
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfString, ReplaceFields, ReprFields
 from core_pdf_compat._text_state import (
+    IDENTITY_MATRIX,
     PREDEFINED_ENCODING_CODECS,
+    TextMachine,
     append_directional_text,
+    embedded_font_program_count,
     ensure_line_break,
-    flush_text,
     legacy_base_table,
-    positioned_text,
+    type1_encoding_entries,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_08_graphics.matrix import multiply_affine
-
-Matrix = list[float]
 
 
 class LegacyFont(ReprFields, ReplaceFields):
@@ -214,7 +212,7 @@ class LegacyFont(ReprFields, ReplaceFields):
         return glyph.unicode
 
 
-class LegacyTextExtractor:
+class LegacyTextExtractor(TextMachine[LegacyFont]):
     def __init__(
         self,
         page: Any,
@@ -227,22 +225,7 @@ class LegacyTextExtractor:
         self.resources = resources if resources is not None else page.resources
         self.known_forms = known_forms if known_forms is not None else set()
         self.form_text_cache = form_text_cache if form_text_cache is not None else {}
-        self.fonts = self.collect_fonts(self.resources)
-        self.cm: Matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-        self.tm: Matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-        self.previous_cm = self.cm.copy()
-        self.previous_tm = self.tm.copy()
-        self.stack: list[tuple[Matrix, LegacyFont | None, float, float]] = []
-        self.font: LegacyFont | None = None
-        self.font_size = 12.0
-        self.half_space_width = 125.0
-        self.leading = 0.0
-        self.text = ""
-        self.output_parts: list[str] = []
-        self.output_last = ""
-        self.rtl = False
-        self.accumulated_width = 0.0
-        self.actual_height = 0.0
+        super().__init__(self.collect_fonts(self.resources))
 
     def collect_fonts(self, resources: object) -> dict[str, LegacyFont]:
         resolved_resources = self.document.resolver.resolve(resources)
@@ -269,14 +252,7 @@ class LegacyTextExtractor:
                 if isinstance(descriptor_font, dict)
                 else None
             )
-            if (
-                isinstance(descriptor, dict)
-                and sum(
-                    descriptor.get(key) is not None
-                    for key in ("FontFile", "FontFile2", "FontFile3")
-                )
-                > 1
-            ):
+            if isinstance(descriptor, dict) and embedded_font_program_count(descriptor) > 1:
                 raise ValueError("font descriptor contains more than one font program")
             try:
                 decoder = FontDecoder(self.document.resolver.resolve_font_dict(font))
@@ -462,17 +438,8 @@ class LegacyTextExtractor:
         if len(encoding_parts) < 2:
             return {}
         result: dict[str, str] = {}
-        for line in encoding_parts[1].replace(b"\r", b"\n").split(b"\n"):
-            if not line.startswith(b"dup"):
-                continue
-            words = [word for word in line.split(b" ") if word]
-            if len(words) < 3 or (len(words) > 3 and words[3] != b"put"):
-                continue
+        for code, name in type1_encoding_entries(encoding_parts[1]):
             with suppress(ValueError):
-                code = int(words[1])
-                if not 0 <= code <= 255:
-                    continue
-                name = words[2].removeprefix(b"/").decode("latin-1")
                 mapped = self.legacy_glyph_name(name, unknown="")
                 if not mapped and name.startswith("uni"):
                     mapped = chr(int(name[3:], 16))
@@ -587,36 +554,12 @@ class LegacyTextExtractor:
                 return widths, default_width, float(legacy_width)
         return widths, default_width, 200.0
 
-    def flush(self) -> None:
-        self.text, self.output_last = flush_text(self.output_parts, self.text, self.output_last)
-
     def add_text(self, value: str) -> None:
         for character in value:
             self.add_text_unit(character)
 
     def add_text_unit(self, value: str) -> None:
         self.text, self.rtl = append_directional_text(self.text, self.rtl, value)
-
-    def check_position(self, string_width: float) -> None:
-        self.text, self.output_last = positioned_text(
-            self.output_parts,
-            self.text,
-            self.output_last,
-            previous_text_matrix=self.previous_tm,
-            previous_current_matrix=self.previous_cm,
-            text_matrix=self.tm,
-            current_matrix=self.cm,
-            line_height=self.actual_height,
-            font_size=self.font_size,
-            space_width=self.current_space_width,
-            string_width=string_width,
-        )
-        self.previous_tm = self.tm.copy()
-        self.previous_cm = self.cm.copy()
-
-    @property
-    def current_space_width(self) -> float:
-        return self.half_space_width
 
     def show(self, data: bytes) -> None:
         if self.font is None:
@@ -627,39 +570,18 @@ class LegacyTextExtractor:
             self.add_text_unit(part)
         self.accumulated_width += width * self.font_size
         self.actual_height = self.font_size
-        self.check_position(0.0)
+        self.positioned(0.0)
 
     def move_text(self, tx: float, ty: float) -> None:
         self.tm[4] += tx * self.tm[0] + ty * self.tm[2]
         self.tm[5] += tx * self.tm[1] + ty * self.tm[3]
-        self.check_position(self.accumulated_width / 1000.0)
+        self.positioned(self.accumulated_width / 1000.0)
         self.accumulated_width = 0.0
 
-    def process(self, operator: str, operands: tuple[object, ...]) -> None:  # noqa: C901
+    def process(self, operator: str, operands: tuple[object, ...]) -> None:
+        if self.apply_state_operator(operator, operands):
+            return
         match operator:
-            case "BT":
-                self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                self.flush()
-            case "ET":
-                self.flush()
-            case "q":
-                self.stack.append((self.cm.copy(), self.font, self.font_size, self.leading))
-            case "Q":
-                if self.stack:
-                    self.cm, self.font, self.font_size, self.leading = self.stack.pop()
-                else:
-                    self.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-            case "cm":
-                self.flush()
-                try:
-                    values = [float(value) for value in operands[:6]]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                except TypeError, ValueError:
-                    values = []
-                self.cm = (
-                    list(multiply_affine(values, self.cm))
-                    if len(values) == 6
-                    else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                )
             case "Tf":
                 self.flush()
                 if operands:
@@ -669,9 +591,6 @@ class LegacyTextExtractor:
                     ) / 2.0
                 if len(operands) > 1:
                     self.font_size = float(operands[1])  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            case "TL":
-                scale_x = math.hypot(self.tm[0], self.tm[2])
-                self.leading = float(operands[0]) * self.font_size * scale_x if operands else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             case "Td" | "TD":
                 tx = float(operands[0]) if operands else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                 ty = float(operands[1]) if len(operands) > 1 else 0.0  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
@@ -680,8 +599,8 @@ class LegacyTextExtractor:
                 self.move_text(tx, ty)
             case "Tm":
                 values = [float(value) for value in operands[:6]]  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                self.tm = values if len(values) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                self.check_position(self.accumulated_width / 1000.0)
+                self.tm = values if len(values) == 6 else list(IDENTITY_MATRIX)
+                self.positioned(self.accumulated_width / 1000.0)
                 self.accumulated_width = 0.0
             case "T*":
                 self.move_text(0.0, -self.leading)
@@ -689,7 +608,7 @@ class LegacyTextExtractor:
                 value = operands[0] if operands else None
                 self.show(bytes(value.data) if isinstance(value, PdfString) else b"")
             case "TJ":
-                threshold = self.current_space_width * 0.95
+                threshold = self.half_space_width * 0.95
                 for item in operands[0] if operands else []:  # type: ignore[attr-defined]  # ty: ignore[not-iterable]
                     match item:
                         case PdfString(data=data):
@@ -708,7 +627,7 @@ class LegacyTextExtractor:
                                 self.font.synthetic_space_width if self.font is not None else 250.0
                             ) * self.font_size
                             self.actual_height = self.font_size
-                            self.check_position(0.0)
+                            self.positioned(0.0)
             case "'":
                 self.process("T*", ())
                 self.process("Tj", operands)

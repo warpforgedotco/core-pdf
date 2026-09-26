@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_document.metadata import metadata_stream
+from core_pdf_spec.s_07_document.metadata import catalog_metadata_stream
 from core_pdf_spec.s_07_document.page import iter_page_nodes, page_rotation
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
@@ -20,7 +20,17 @@ from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 
 @pytest.mark.parametrize(
-    "data", [b"<6z1>", b"/A#XX", b"<<bad /Type /Page>>", b"<< /Bad ] /Type /Page >>"]
+    "data",
+    [
+        b"<6z1>",
+        b"/A#XX",
+        b"<<bad /Type /Page>>",
+        b"<< /Bad ] /Type /Page >>",
+        # Numeric arrays reject number spellings PDF does not have.
+        b"[1_000 2]",
+        b"[1.2e3 4]",
+        b"[1_000 % ignored\n2]",
+    ],
 )
 def test_lexer_rejects_malformed_values(data: bytes) -> None:
     lexer = PdfLexer(data)
@@ -54,16 +64,6 @@ def test_pdf_string_defaults_and_odd_hex_padding() -> None:
     lexer = PdfLexer(b"[(a\\q) (a\n\rb) <6 1 2>]")
     try:
         assert [value.data for value in lexer.parse_object()] == [b"aq", b"a\n\nb", b"a "]
-    finally:
-        lexer.close()
-
-
-@pytest.mark.parametrize("data", [b"[1_000 2]", b"[1.2e3 4]", b"[1_000 % ignored\n2]"])
-def test_numeric_arrays_reject_non_pdf_number_spellings(data: bytes) -> None:
-    lexer = PdfLexer(data)
-    try:
-        with pytest.raises(PdfParseError):
-            lexer.parse_object()
     finally:
         lexer.close()
 
@@ -232,13 +232,11 @@ def test_metadata_rejects_malformed_catalog_but_preserves_null_and_absence() -> 
     resolver = ObjectResolver(b"", {})
     try:
         with pytest.raises(ValueError, match="Root"):
-            metadata_stream(resolver, {"Root": 17})
-        assert metadata_stream(resolver, {}) is None
-        assert metadata_stream(resolver, {"Root": PdfReference(999)}) is None
-        assert metadata_stream(resolver, {"Root": {}}) is None
+            catalog_metadata_stream(resolver, 17)
+        assert catalog_metadata_stream(resolver, {}) is None
         stream = PdfStream({}, b"<x/>")
-        assert metadata_stream(resolver, {"Root": {"Metadata": stream}}) is stream
+        assert catalog_metadata_stream(resolver, {"Metadata": stream}) is stream
         with pytest.raises(ValueError, match="Metadata"):
-            metadata_stream(resolver, {"Root": {"Metadata": 17}})
+            catalog_metadata_stream(resolver, {"Metadata": 17})
     finally:
         resolver.close()

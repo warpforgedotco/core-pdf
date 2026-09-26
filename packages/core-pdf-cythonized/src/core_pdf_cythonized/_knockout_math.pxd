@@ -3,18 +3,6 @@
 # _knockout.pyx), shared so the fused glyph knockout in _coverage.pyx is these
 # same expressions, not a copy.
 
-from libc.math cimport rint
-
-
-cdef inline double clamp_byte(double value) noexcept nogil:
-    value = rint(value * 255.0)
-    if value < 0.0:
-        return 0.0
-    if value > 255.0:
-        return 255.0
-    return value
-
-
 cdef inline double knockout_component(
     double element_k,
     double element_complete,

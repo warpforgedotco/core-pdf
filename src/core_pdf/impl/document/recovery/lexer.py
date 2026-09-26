@@ -28,7 +28,7 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     LexicalRules,
     lexical_rules,
 )
-from core_pdf_spec.standards import PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext, recognized_version
 
 RECOVERABLE_DICTIONARY_KEY_NAMES = {
     b"Type",
@@ -194,7 +194,7 @@ class PdfLexer(SyntaxLexer):
         return values
 
     def select_lexical_rules(self, context: SemanticContext | None) -> LexicalRules:
-        if context is not None and (context.version is None or not context.version.recognized):
+        if recognized_version(context) is None:
             context = None
         rules = lexical_rules(context)
         reader_rules = READER_RULES.get(rules)

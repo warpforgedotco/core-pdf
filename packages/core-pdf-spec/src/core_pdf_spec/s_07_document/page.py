@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable, Iterator
 from math import isfinite
 from typing import ClassVar
 
-from core_pdf_spec.s_07_syntax.inherited_values import inherited_dictionary_value
+from core_pdf_spec.s_07_syntax.inherited_values import add_inherited_values
 from core_pdf_spec.s_07_syntax.types import InheritedValueMap, PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 from core_pdf_spec.types import Rectangle
@@ -80,12 +80,7 @@ def page_inherited_values(
 ) -> InheritedValueMap:
     values: InheritedValueMap = {}
     for node in nodes:
-        for key in keys:
-            if key in values:
-                continue
-            value = inherited_dictionary_value(node, key, None, resolve)
-            if value is not None:
-                values[key] = value  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        add_inherited_values(values, node, keys, resolve)
     return values
 
 
@@ -110,7 +105,6 @@ def iter_page_nodes(
             if depth and on_invalid_child is not None and on_invalid_child(current):
                 continue
             raise ValueError("invalid page tree node")
-        current = current
         if id(current) in ancestors:
             raise ValueError("page tree cycle detected")
         kind = (

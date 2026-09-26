@@ -1,6 +1,6 @@
 [project]
 name = "core-adobe-fonts"
-version = "0.1.0"
+version = "0.2.0"
 description = "Adobe font format kernels: CFF, Type 2, Type 1, CMaps, AGL, Core 14 metrics"
 readme = "README.md"
 license = "AGPL-3.0-only"

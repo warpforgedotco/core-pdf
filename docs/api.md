@@ -168,12 +168,12 @@ Set `CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1` to run every facade against every fixt
 module group per PDF chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, and so on).
 It provides strict algorithms, PDF primitives, standard data, and semantic service
 protocols, with no document facade or command line. Its supported exports are the names
-in each module's `__all__`; `internal_` names are private. Parser extension methods are
+in each module's `__all__`; other names, such as `INTERNAL_` constants, are private. Parser extension methods are
 documented next to their strict implementations. Spec reports malformed input rather
 than repairing it, except where a referenced standard prescribes a fallback, and it is
 not a complete conformance validator.
 
-Core requires `core-pdf-spec>=0.9.1,<0.10.0` and `core-pdf-cythonized>=0.1.0,<0.2.0`;
+Core requires `core-pdf-spec>=0.10.0,<0.11.0` and `core-pdf-cythonized>=0.1.0,<0.2.0`;
 the latter carries compiled kernels with no pure-Python fallback, so core needs a
 wheel for the target platform or a C compiler at install time. Referenced-standard
 kernels (the PostScript calculator, JBIG2, ciphers and PDF MAC, and the Adobe font

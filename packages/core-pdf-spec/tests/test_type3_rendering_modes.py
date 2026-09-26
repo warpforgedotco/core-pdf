@@ -3,18 +3,12 @@
 from typing import Any
 
 import pytest
+from _content_support import NullSink, make_interpreter
 
-from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
-from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.metrics import glyph_advance_vector
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
-
-
-class Sink:
-    def __getattr__(self, name: str) -> Any:
-        return lambda *args, **kwargs: None
 
 
 class Type3Font:
@@ -49,7 +43,7 @@ class Type3Font:
 def test_type3_invisible_modes_skip_programs_but_keep_width_spacing_and_scale(
     render_mode: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    state = ContentInterpreter(ObjectResolver(b"", {}), Sink(), None)  # ty: ignore[invalid-argument-type]
+    state = make_interpreter(NullSink())
     state.graphics.render_mode = render_mode
     state.graphics.font_size = 12
     state.graphics.char_space = 2

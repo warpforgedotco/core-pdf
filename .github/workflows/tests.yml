@@ -39,17 +39,6 @@ jobs:
           uv sync --locked --all-packages
           --group lint --group test --group vendor-test --group benchmark
 
-      - name: Run strict spec, standards, and validation tests
-        run: >-
-          uv run --locked --all-packages --group test pytest
-          packages/core-pdf-spec/tests
-          packages/core-pdf-validate/tests
-          packages/core-postscript/tests
-          packages/core-jbig2/tests
-          packages/core-pdf-crypto/tests
-          packages/core-adobe-fonts/tests
-          packages/core-records/tests
-
       - name: Build standalone distributions
         run: uv build --all-packages
 

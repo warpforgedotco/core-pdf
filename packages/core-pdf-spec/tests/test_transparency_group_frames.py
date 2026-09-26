@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-from typing import Any
 
 import pytest
+from _content_support import NullSink, make_interpreter
 
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_07_content.streams import ContentStreamExecutor, ContentStreamFrame, StreamKey
-from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
@@ -15,12 +14,9 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.types import PdfName, PdfReference, Rectangle
 
 
-class PaintSink:
+class PaintSink(NullSink):
     def __init__(self) -> None:
         self.paints: list[tuple[float, float, str | None]] = []
-
-    def __getattr__(self, name: str) -> Any:
-        return lambda *args, **kwargs: None
 
     def paint_path(
         self, state: ContentInterpreter, path: PdfPath, kind: str, fill_rule: str
@@ -32,7 +28,7 @@ class PaintSink:
 
 def make_state() -> tuple[ContentInterpreter, PaintSink]:
     sink = PaintSink()
-    return ContentInterpreter(ObjectResolver(b"", {}), sink, None), sink  # ty: ignore[invalid-argument-type]
+    return make_interpreter(sink), sink
 
 
 def form_xobject(group: PdfDict | None = None) -> PdfStream:

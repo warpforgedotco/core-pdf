@@ -2,20 +2,16 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from _content_support import make_interpreter
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content import interpreter
-from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
-from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color import (
     color_space_paints,
-    indexed_color_components,
     normalize_color_components,
-    tint_color_components,
 )
 from core_pdf_spec.s_08_graphics.color_spec import DEVICE_RGB, ColorSpace, parse_color_space
-from core_pdf_spec.s_08_graphics.image_spec import image_bits_per_component
 from core_pdf_spec.types import PdfName
 
 
@@ -56,7 +52,7 @@ def test_ordinary_spaces_and_unbound_colored_patterns_can_paint(name: str) -> No
     assert color_space_paints(parse_color_space(name))
 
 
-def test_mixed_none_component_still_reaches_the_alternate_tint_function() -> None:
+def test_mixed_none_component_still_paints() -> None:
     function = PdfStream(
         dictionary={
             "FunctionType": 0,
@@ -69,14 +65,12 @@ def test_mixed_none_component_still_reaches_the_alternate_tint_function() -> Non
     )
     space = parse_color_space(["DeviceN", ["None", "Spot"], "DeviceGray", function])
     assert color_space_paints(space)
-    assert tint_color_components(space, (0.25, 0.9)) == (0.25,)
 
 
 def test_indexed_lab_lookup_scales_each_base_component_range() -> None:
     space = parse_color_space(["Indexed", lab(), 0, b"\xff\x00\xff"])
     assert space.base is not None
     assert space.base.kind == "Lab"
-    assert indexed_color_components(space, 0) == (100, -20, 40)
 
 
 def test_indexed_icc_retains_profile_alternate_and_ranges() -> None:
@@ -91,20 +85,15 @@ def test_indexed_icc_retains_profile_alternate_and_ranges() -> None:
     assert space.base.icc_profile == b"inert ICC bytes"
     assert "N" not in space.base.params
     assert "Range" not in space.base.params
-    assert indexed_color_components(space, 0) == (1, -2, 3)
 
 
 @pytest.mark.parametrize("kind", ["Separation", "DeviceN"])
-def test_tint_alternate_keeps_calibrated_space_and_checks_result_count(kind: str) -> None:
+def test_tint_alternate_keeps_calibrated_space(kind: str) -> None:
     names: object = PdfName.of("Ink") if kind == "Separation" else [PdfName.of("Ink")]
     space = parse_color_space([kind, names, lab(), tint()])
     assert space.colorants == ("Ink",)
     assert space.alternate is not None
     assert space.alternate.kind == "Lab"
-    assert tint_color_components(space, (0.5,)) == (0.5, 0.5, 0.5)
-    bad = parse_color_space([kind, names, lab(), tint(2)])
-    with pytest.raises(ValueError, match="output count"):
-        tint_color_components(bad, (0.5,))
 
 
 def test_indexed_allows_separation_base() -> None:
@@ -112,7 +101,6 @@ def test_indexed_allows_separation_base() -> None:
     space = parse_color_space(["Indexed", base, 0, b"\xff"])
     assert space.base is not None
     assert space.base.kind == "Separation"
-    assert indexed_color_components(space, 0) == (1,)
 
 
 @pytest.mark.parametrize("base", ["Pattern", ["Indexed", "DeviceGray", 0, b"\0"]])
@@ -175,41 +163,14 @@ def test_color_space_cycle_is_rejected() -> None:
         parse_color_space(raw)
 
 
-@pytest.mark.parametrize("bits", [1, 2, 4, 8, 16])
-def test_image_bits_are_separate_from_color_space(bits: int) -> None:
-    assert image_bits_per_component({"BitsPerComponent": bits}) == bits
+def test_image_bits_are_separate_from_color_space() -> None:
     space = parse_color_space("DeviceRGB")
     assert not hasattr(space, "bits_per_component")
     assert not hasattr(space, "channels")
 
 
-@pytest.mark.parametrize("bits", [None, 0, 3, True, "8", 8.0])
-def test_ordinary_image_requires_valid_integer_bit_depth(bits: object) -> None:
-    with pytest.raises(ValueError):
-        image_bits_per_component({"BitsPerComponent": bits})
-
-
-def test_mask_and_jpx_bit_depth_rules() -> None:
-    assert image_bits_per_component({"ImageMask": True}) == 1
-    assert image_bits_per_component({"ImageMask": True, "BitsPerComponent": 1}) == 1
-    with pytest.raises(ValueError):
-        image_bits_per_component({"ImageMask": True, "BitsPerComponent": 8})
-    assert image_bits_per_component({"Filter": PdfName.of("JPXDecode")}) is None
-    assert (
-        image_bits_per_component(
-            {"Filter": [PdfName.of("JPXDecode")], "BitsPerComponent": "ignored"}
-        )
-        is None
-    )
-
-
-def make_state() -> ContentInterpreter:
-    sink = SimpleNamespace()
-    return ContentInterpreter(ObjectResolver(b"", {}), sink, None)  # ty: ignore[invalid-argument-type]
-
-
 def test_custom_color_handler_receives_raw_operands_after_validation() -> None:
-    state = make_state()
+    state = make_interpreter(SimpleNamespace())
     state.graphics.fill_space = DEVICE_RGB
     operands = (2, -1, 0.5)
     observed = []
@@ -228,7 +189,7 @@ def test_custom_color_handler_receives_raw_operands_after_validation() -> None:
 def test_default_color_normalizes_components_once(
     monkeypatch: pytest.MonkeyPatch, pattern: bool
 ) -> None:
-    state = make_state()
+    state = make_interpreter(SimpleNamespace())
     space = parse_color_space(["Pattern", lab()] if pattern else lab())
     state.graphics.fill_space = space
     calls = []

@@ -28,6 +28,7 @@ from core_pdf.impl.render.model import LineCap
 from core_pdf.impl.render.paths import circle_path, dash_subpath, intersect_box
 from core_pdf.impl.render.target import RasterTarget
 from core_pdf_cythonized import path_bounds
+from tests.src.core_pdf.pdf_bytes import serialize_pdf
 
 
 def deferred(xs: Any, ys: Any, spans: list[tuple[int, int, bool]]) -> CapturedPath:
@@ -405,16 +406,7 @@ def one_page_pdf(content: bytes) -> bytes:
         5: b"<< /Type /ExtGState /CA 0.5 >>",
         6: b"<< /Type /ExtGState /CA 0.8 /BM /Multiply >>",
     }
-    data = bytearray(b"%PDF-1.7\n")
-    offsets = {}
-    for number, body in objects.items():
-        offsets[number] = len(data)
-        data += b"%d 0 obj\n" % number + body + b"\nendobj\n"
-    xref = len(data)
-    data += b"xref\n0 7\n0000000000 65535 f \n"
-    data += b"".join(b"%010d 00000 n \n" % offsets[number] for number in range(1, 7))
-    data += b"trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % xref
-    return bytes(data)
+    return serialize_pdf(objects, b"1.7")
 
 
 @pytest.mark.parametrize("scale", [1.0, 2.0])

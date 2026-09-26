@@ -14,10 +14,6 @@ NumberDecodeFn = Callable[[object], int | None]
 TreeKeyT = TypeVar("TreeKeyT")
 
 
-def tree_node(value: object, resolve: ResolveFn, tree_name: str) -> PdfDict:
-    return require_tree_node(resolve(value), tree_name)
-
-
 def require_tree_node(current: object, tree_name: str) -> PdfDict:
     if not isinstance(current, dict):
         raise ValueError(f"invalid {tree_name} tree node")
@@ -135,5 +131,4 @@ __all__ = (
     "iter_number_tree_items",
     "tree_array",
     "tree_entry",
-    "tree_node",
 )

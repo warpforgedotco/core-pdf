@@ -5,8 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar, Self
 
-from core_pdf_spec.exceptions import PdfUnsupportedError
-from core_pdf_spec.standards import PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
 from core_records import FrozenFields, PickleFields, ReprFields, frozen_setattr
 
 WHITESPACE = b"\x00\t\n\x0c\r "
@@ -186,11 +185,11 @@ PDF_2_0 = PdfVersion(2, 0)
 
 
 def lexical_rules(context: SemanticContext | None = None) -> LexicalRules:
-    if context is None:
+    version = require_recognized_version(
+        context, "lexical semantics require a recognized PDF version"
+    )
+    if version is None:
         return CURRENT_RULES
-    version = context.version
-    if version is None or not version.recognized:
-        raise PdfUnsupportedError("lexical semantics require a recognized PDF version")
     if version < PDF_1_2:
         return EARLY_RULES
     if version < PDF_1_3:

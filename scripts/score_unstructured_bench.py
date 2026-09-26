@@ -6,7 +6,6 @@ import html
 import json
 import os
 import sys
-import textwrap
 import unicodedata
 from collections import Counter
 from collections.abc import Iterable
@@ -15,12 +14,10 @@ from functools import partial
 from pathlib import Path
 from random import Random
 from time import perf_counter
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar, Self
 
 from core_pdf import PdfDocument
-
-frozen_setattr = object.__setattr__
-
+from core_records import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
 
 ROOT = Path(__file__).resolve().parents[1]
 SCORE_BENCH_ROOT = ROOT / "tests" / "fixtures" / "SCORE-Bench"
@@ -30,7 +27,7 @@ PARTITION_SALT = "core-pdf-precision-v1\0"
 SCORING_SCHEMA_VERSION = "2"
 
 
-class ScoreBenchCase:
+class ScoreBenchCase(FrozenFields, ReprFields, ReplaceFields):
     stem: str
     pdf: Path
     content_gt: Path
@@ -44,16 +41,6 @@ class ScoreBenchCase:
         frozen_setattr(self, "pdf", pdf)
         frozen_setattr(self, "content_gt", content_gt)
         frozen_setattr(self, "table_gt", table_gt)
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"stem={self.stem!r}, "
-            f"pdf={self.pdf!r}, "
-            f"content_gt={self.content_gt!r}, "
-            f"table_gt={self.table_gt!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -70,23 +57,8 @@ class ScoreBenchCase:
     def __hash__(self) -> int:
         return hash((self.stem, self.pdf, self.content_gt, self.table_gt))
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        stem = changes.pop("stem", self.stem)
-        pdf = changes.pop("pdf", self.pdf)
-        content_gt = changes.pop("content_gt", self.content_gt)
-        table_gt = changes.pop("table_gt", self.table_gt)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(stem, pdf, content_gt, table_gt)
-
-
-class CaseScore:
+class CaseScore(FrozenFields, ReprFields, ReplaceFields):
     stem: str
     status: str
     cct: float
@@ -232,39 +204,6 @@ class CaseScore:
         frozen_setattr(self, "missing_top", missing_top)
         frozen_setattr(self, "extra_top", extra_top)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"stem={self.stem!r}, "
-            f"status={self.status!r}, "
-            f"cct={self.cct!r}, "
-            f"percent_tokens_found={self.percent_tokens_found!r}, "
-            f"percent_tokens_added={self.percent_tokens_added!r}, "
-            f"precision={self.precision!r}, "
-            f"gt_tokens={self.gt_tokens!r}, "
-            f"predicted_tokens={self.predicted_tokens!r}, "
-            f"matched_tokens={self.matched_tokens!r}, "
-            f"elapsed_seconds={self.elapsed_seconds!r}, "
-            f"scoring_schema_version={self.scoring_schema_version!r}, "
-            f"content_f1={self.content_f1!r}, "
-            f"order_gap={self.order_gap!r}, "
-            f"cer={self.cer!r}, "
-            f"wer={self.wer!r}, "
-            f"table_structure_f1={self.table_structure_f1!r}, "
-            f"table_content_f1={self.table_content_f1!r}, "
-            f"table_expected={self.table_expected!r}, "
-            f"table_predicted={self.table_predicted!r}, "
-            f"table_matched={self.table_matched!r}, "
-            f"open_elapsed_seconds={self.open_elapsed_seconds!r}, "
-            f"text_elapsed_seconds={self.text_elapsed_seconds!r}, "
-            f"table_elapsed_seconds={self.table_elapsed_seconds!r}, "
-            f"evaluation_elapsed_seconds={self.evaluation_elapsed_seconds!r}, "
-            f"error={self.error!r}, "
-            f"missing_top={self.missing_top!r}, "
-            f"extra_top={self.extra_top!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -333,76 +272,8 @@ class CaseScore:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        stem = changes.pop("stem", self.stem)
-        status = changes.pop("status", self.status)
-        cct = changes.pop("cct", self.cct)
-        percent_tokens_found = changes.pop("percent_tokens_found", self.percent_tokens_found)
-        percent_tokens_added = changes.pop("percent_tokens_added", self.percent_tokens_added)
-        precision = changes.pop("precision", self.precision)
-        gt_tokens = changes.pop("gt_tokens", self.gt_tokens)
-        predicted_tokens = changes.pop("predicted_tokens", self.predicted_tokens)
-        matched_tokens = changes.pop("matched_tokens", self.matched_tokens)
-        elapsed_seconds = changes.pop("elapsed_seconds", self.elapsed_seconds)
-        scoring_schema_version = changes.pop("scoring_schema_version", self.scoring_schema_version)
-        content_f1 = changes.pop("content_f1", self.content_f1)
-        order_gap = changes.pop("order_gap", self.order_gap)
-        cer = changes.pop("cer", self.cer)
-        wer = changes.pop("wer", self.wer)
-        table_structure_f1 = changes.pop("table_structure_f1", self.table_structure_f1)
-        table_content_f1 = changes.pop("table_content_f1", self.table_content_f1)
-        table_expected = changes.pop("table_expected", self.table_expected)
-        table_predicted = changes.pop("table_predicted", self.table_predicted)
-        table_matched = changes.pop("table_matched", self.table_matched)
-        open_elapsed_seconds = changes.pop("open_elapsed_seconds", self.open_elapsed_seconds)
-        text_elapsed_seconds = changes.pop("text_elapsed_seconds", self.text_elapsed_seconds)
-        table_elapsed_seconds = changes.pop("table_elapsed_seconds", self.table_elapsed_seconds)
-        evaluation_elapsed_seconds = changes.pop(
-            "evaluation_elapsed_seconds", self.evaluation_elapsed_seconds
-        )
-        error = changes.pop("error", self.error)
-        missing_top = changes.pop("missing_top", self.missing_top)
-        extra_top = changes.pop("extra_top", self.extra_top)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            stem,
-            status,
-            cct,
-            percent_tokens_found,
-            percent_tokens_added,
-            precision,
-            gt_tokens,
-            predicted_tokens,
-            matched_tokens,
-            elapsed_seconds,
-            scoring_schema_version,
-            content_f1,
-            order_gap,
-            cer,
-            wer,
-            table_structure_f1,
-            table_content_f1,
-            table_expected,
-            table_predicted,
-            table_matched,
-            open_elapsed_seconds,
-            text_elapsed_seconds,
-            table_elapsed_seconds,
-            evaluation_elapsed_seconds,
-            error,
-            missing_top,
-            extra_top,
-        )
-
-
-class NumberedCaseScore:
+class NumberedCaseScore(FrozenFields, ReprFields, ReplaceFields):
     case_number: int
     score: CaseScore
 
@@ -413,11 +284,6 @@ class NumberedCaseScore:
         frozen_setattr(self, "case_number", case_number)
         frozen_setattr(self, "score", score)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}(case_number={self.case_number!r}, score={self.score!r})"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -427,19 +293,6 @@ class NumberedCaseScore:
 
     def __hash__(self) -> int:
         return hash((self.case_number, self.score))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        case_number = changes.pop("case_number", self.case_number)
-        score = changes.pop("score", self.score)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(case_number, score)
 
 
 def score_failure_bucket(score: CaseScore) -> str:
@@ -508,44 +361,6 @@ def shorten_middle(value: str, width: int) -> str:
     prefix_width = (width - 3) // 2
     suffix_width = width - 3 - prefix_width
     return f"{value[:prefix_width]}...{value[-suffix_width:]}"
-
-
-def wrap_cell(value: str, width: int) -> list[str]:
-    if len(value) <= width:
-        return [value]
-    wrapped = textwrap.wrap(
-        value,
-        width=width,
-        break_long_words=True,
-        break_on_hyphens=True,
-    )
-    if wrapped:
-        return wrapped
-    return [value[:width]]
-
-
-def format_table_cell(value: str, width: int, align: str) -> str:
-    if len(value) > width:
-        value = shorten_middle(value, width)
-    if align == "right":
-        return value.rjust(width)
-    return value.ljust(width)
-
-
-def print_metric_summary(title: str, values: list[float], suffix: str = "") -> None:
-    if not values:
-        return
-    print(
-        f"  {title:<18} "
-        f"mean {mean(values):>7.4f}{suffix}  "
-        f"p10 {percentile(values, 0.1):>7.4f}{suffix}  "
-        f"p50 {percentile(values, 0.5):>7.4f}{suffix}  "
-        f"p90 {percentile(values, 0.9):>7.4f}{suffix}  "
-        f"p95 {percentile(values, 0.95):>7.4f}{suffix}  "
-        f"p99 {percentile(values, 0.99):>7.4f}{suffix}  "
-        f"min {min(values):>7.4f}{suffix}  "
-        f"max {max(values):>7.4f}{suffix}"
-    )
 
 
 def metric_value(value: float, suffix: str = "") -> str:
@@ -1179,12 +994,6 @@ def predicted_table_cells(value: object) -> list[tuple[int, int, int, int, int, 
     return cells
 
 
-def counter_f1(reference: Counter[Any], predicted: Counter[Any]) -> float:
-    matched = sum((reference & predicted).values())
-    total = sum(reference.values()) + sum(predicted.values())
-    return 2 * matched / total if total else 1.0
-
-
 def clean_score_bench_text(text: str) -> str:
     lines = []
     for line in text.splitlines():
@@ -1235,7 +1044,7 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
-class ScoreBench:
+class ScoreBench(ReprFields):
     document_class: type[PdfDocument]
     root: Path
     limit: int | None
@@ -1274,6 +1083,9 @@ class ScoreBench:
         "partition",
         "fail_on_errors",
     )
+    __repr_fields__: ClassVar[tuple[str, ...] | None] = tuple(
+        name for name in __fields__ if name != "document_class"
+    )
 
     def __init__(
         self,
@@ -1301,23 +1113,6 @@ class ScoreBench:
         self.fail_on_errors = fail_on_errors
         self.total_cases = 0
         self.started_at = 0.0
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"root={self.root!r}, "
-            f"limit={self.limit!r}, "
-            f"case_filters={self.case_filters!r}, "
-            f"json_output={self.json_output!r}, "
-            f"html_output={self.html_output!r}, "
-            f"full_results={self.full_results!r}, "
-            f"report_limit={self.report_limit!r}, "
-            f"partition={self.partition!r}, "
-            f"fail_on_errors={self.fail_on_errors!r}, "
-            f"total_cases={self.total_cases!r}, "
-            f"started_at={self.started_at!r}"
-            ")"
-        )
 
     def __eq__(self, other: object) -> bool:
         if self is other:

@@ -17,7 +17,8 @@ from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
 from libc.math cimport ceil, fabs, floor, rint
 
 from core_pdf_cythonized._alpha_blend cimport accumulate_plane, blend_one, opaque_channel
-from core_pdf_cythonized._knockout_math cimport clamp_byte, knockout_component
+from core_pdf_cythonized._byte_clamp cimport unit_to_byte
+from core_pdf_cythonized._knockout_math cimport knockout_component
 
 import numpy
 
@@ -476,8 +477,8 @@ def fill_glyph_knockout(
                                 <double> backdrop[r, c, k] / 255.0, initial, ra,
                             )
                         for k in range(3):
-                            destination[r, c, k] = <unsigned char> clamp_byte(colour[k])
-                        destination[r, c, 3] = <unsigned char> clamp_byte(ra)
+                            destination[r, c, k] = <unsigned char> unit_to_byte(colour[k])
+                        destination[r, c, 3] = <unsigned char> unit_to_byte(ra)
                         group_alpha[r, c] = <float> rga
                     if has_parent_shape:
                         previous = parent_shape[r, c]

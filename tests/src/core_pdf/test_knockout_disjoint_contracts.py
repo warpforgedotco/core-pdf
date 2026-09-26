@@ -20,7 +20,7 @@ from core_pdf.impl.render.model import (
     RasterGroup,
 )
 from core_pdf.impl.render.target import RasterTarget
-from tests.src.core_pdf.test_pattern_rendering import make_target as make_real_target
+from tests.src.core_pdf.raster_support import make_target as make_real_target
 
 
 def make_target() -> RasterTarget:

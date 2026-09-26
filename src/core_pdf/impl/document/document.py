@@ -1653,7 +1653,6 @@ class PdfDocument(Generic[PageT]):
             search_start,
             search_end,
             allow_prefix_before_start=True,
-            semantic_context=self.xref_context,
         ):
             if (
                 object_number == expected_object_number
@@ -1681,7 +1680,6 @@ class PdfDocument(Generic[PageT]):
             offset,
             search_end,
             allow_prefix_before_start=True,
-            semantic_context=self.xref_context,
         ):
             return (
                 parsed_offset == offset
@@ -2075,13 +2073,6 @@ def create_recovered_security_handler(
     return create_standard_security_handler(document_id, normalized, password)
 
 
-# "N G obj" at an object header, with the inter-token whitespace PDF allows
-# and a trailing separator so a longer keyword cannot match.
-# A delimiter may end the keyword as well as whitespace: "12 0 obj<<" is a
-# well-formed header (ISO 32000-2 7.2, delimiter characters), and some writers
-# emit every object that way. Accepting only whitespace sent all of PDF
-# Reference 1.7's 110,755 entries down the slow fallback, and from there into a
-# brute-force scan of the whole file for replacement offsets.
 # Past this an object number does not fit the kernel's 63 bits, and one
 # that fits never compares equal to a header run that does not.
 HUGE_OBJECT_NUMBER = 1 << 63

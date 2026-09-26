@@ -305,38 +305,10 @@ class CMapDecoder:
             ranges.append(make_range(start_bytes, end_bytes, cid))
 
     def mapped_cid(self, code: bytes) -> int | None:
-        cid = self.cid_mappings.get(code)
-        if cid is not None:
-            return cid
-        if not code:
-            return None
-        by_lead_byte = self.cid_ranges_by_lead_byte.get(len(code))
-        if by_lead_byte is None:
-            return None
-        for cid_range in by_lead_byte.get(code[0], ()):
-            if cid_range.contains(code):
-                return cid_range.first_cid + range_offset(
-                    code,
-                    cid_range.start,
-                    cid_range.end,
-                    validate_range=False,
-                    validate_code=False,
-                )
-        return None
+        return mapped_code(code, self.cid_mappings, self.cid_ranges_by_lead_byte)
 
     def mapped_notdef(self, code: bytes) -> int | None:
-        cid = self.notdef_mappings.get(code)
-        if cid is not None:
-            return cid
-        if not code:
-            return None
-        by_lead_byte = self.notdef_ranges_by_lead_byte.get(len(code))
-        if by_lead_byte is None:
-            return None
-        for notdef_range in by_lead_byte.get(code[0], ()):
-            if notdef_range.contains(code):
-                return notdef_range.cid
-        return None
+        return mapped_code(code, self.notdef_mappings, self.notdef_ranges_by_lead_byte)
 
     def decode_entries(self, data: bytes) -> list[tuple[bytes, int]]:
         if not data:
@@ -388,12 +360,16 @@ class CMapDecoder:
         n = len(data)
         ranges = self.code_space_ranges_by_length
         decode_lengths = self.decode_lengths
+        cid_mappings = self.cid_mappings
+        cid_ranges = self.cid_ranges_by_lead_byte
+        notdef_mappings = self.notdef_mappings
+        notdef_ranges = self.notdef_ranges_by_lead_byte
         while pos < n:
             matched = False
             for length in decode_lengths:
                 if length <= 0 or pos + length > n:
                     continue
-                chunk = bytes((data[pos],)) if length == 1 else data[pos : pos + length]
+                chunk = data[pos : pos + length]
                 length_ranges = ranges.get(length)
                 if ranges and not length_ranges:
                     continue
@@ -401,9 +377,9 @@ class CMapDecoder:
                     code_in_range(chunk, start, end) for start, end in length_ranges
                 ):
                     continue
-                cid = self.mapped_cid(chunk)
+                cid = mapped_code(chunk, cid_mappings, cid_ranges)
                 if cid is None:
-                    cid = self.mapped_notdef(chunk)
+                    cid = mapped_code(chunk, notdef_mappings, notdef_ranges)
                 if cid is None:
                     cid = int.from_bytes(chunk, "big") if self.default_to_identity and chunk else 0
                 entry = (chunk, cid)
@@ -446,6 +422,33 @@ class CMapDecoder:
 CMapResourceResolver = Callable[[str], bytes | bytearray | memoryview | None]
 
 
+def mapped_code(
+    code: bytes,
+    mappings: dict[bytes, int],
+    ranges_by_lead_byte: dict[int, dict[int, tuple[CIDRange, ...]]]
+    | dict[int, dict[int, tuple[NotdefRange, ...]]],
+) -> int | None:
+    """The CID a single code or a range maps code to, or None.
+
+    decode_entries calls this directly rather than through mapped_cid and
+    mapped_notdef, which would add a call per code to its loop.
+    """
+    cid = mappings.get(code)
+    if cid is not None:
+        return cid
+    if not code:
+        return None
+    by_lead_byte = ranges_by_lead_byte.get(len(code))
+    if by_lead_byte is None:
+        return None
+    # code_in_range, not code_range.contains: one call per range scanned
+    # rather than two, which pays for cid_for's call on the one that matches.
+    for code_range in by_lead_byte.get(code[0], ()):
+        if code_in_range(code, code_range.start, code_range.end):
+            return code_range.cid_for(code)
+    return None
+
+
 def index_ranges_by_length[CodeRangeT: (CIDRange, NotdefRange)](
     ranges: list[CodeRangeT],
 ) -> dict[int, tuple[CodeRangeT, ...]]:
@@ -480,6 +483,8 @@ def index_code_space_ranges(
 
 
 __all__ = [
+    "MAX_CID",
+    "MIN_CID",
     "CodeRangeT",
     "CMapDecoder",
     "CMapResourceResolver",

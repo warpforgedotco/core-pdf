@@ -26,7 +26,9 @@ of two equal values survives, which matters only for signed zeros.
 
 from cpython cimport array
 from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
-from libc.math cimport ceil, fabs, isinf, isnan
+from libc.math cimport ceil, fabs
+
+from core_pdf_cythonized._pymath cimport check_integral, py_max, py_min
 
 import numpy
 
@@ -127,24 +129,6 @@ cdef class PathBuilder:
         return 0
 
 
-cdef int check_integral(double value) except -1:
-    # What math.ceil raises converting the value to an int.
-    if isnan(value):
-        raise ValueError("cannot convert float NaN to integer")
-    if isinf(value):
-        raise OverflowError("cannot convert float infinity to integer")
-    return 0
-
-
-cdef inline double python_max(double left, double right) noexcept:
-    # max(left, right): the left one unless the right is strictly greater.
-    return right if right > left else left
-
-
-cdef inline double python_min(double left, double right) noexcept:
-    return right if right < left else left
-
-
 cdef bint add_subpath_box(
     const double* px, const double* py, Py_ssize_t start, Py_ssize_t end, bint have_box, double* box
 ) noexcept:
@@ -172,10 +156,10 @@ cdef bint add_subpath_box(
         box[2] = sx1
         box[3] = sy1
         return True
-    box[0] = python_min(box[0], sx0)
-    box[1] = python_min(box[1], sy0)
-    box[2] = python_max(box[2], sx1)
-    box[3] = python_max(box[3], sy1)
+    box[0] = py_min(box[0], sx0)
+    box[1] = py_min(box[1], sy0)
+    box[2] = py_max(box[2], sx1)
+    box[3] = py_max(box[3], sy1)
     return True
 
 
@@ -184,8 +168,8 @@ cdef int add_curve(PathBuilder path, const double *values, hypot) except -1:
     # linear part of the curve's CTM (a, b, c, d) and its flatness.
     cdef double x0 = values[0], y0 = values[1], x1 = values[2], y1 = values[3]
     cdef double x2 = values[4], y2 = values[5], x3 = values[6], y3 = values[7]
-    cdef double scale = python_max(
-        python_max(<double> hypot(values[8], values[9]), <double> hypot(values[10], values[11])),
+    cdef double scale = py_max(
+        py_max(<double> hypot(values[8], values[9]), <double> hypot(values[10], values[11])),
         1.0,
     )
     cdef double control_len = (
@@ -195,7 +179,7 @@ cdef int add_curve(PathBuilder path, const double *values, hypot) except -1:
     )
     # flatness or 0.25: either zero is falsy, a NaN is not.
     cdef double flatness_value = values[12] if values[12] != 0.0 else 0.25
-    cdef double flatness = python_max(0.1, flatness_value)
+    cdef double flatness = py_max(0.1, flatness_value)
     cdef double steps = ceil(control_len * scale / (flatness * 8.0))
     check_integral(steps)
     # max(4, min(128, steps)), each keeping its first argument on a tie.

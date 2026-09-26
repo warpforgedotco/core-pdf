@@ -11,23 +11,18 @@ from typing import NoReturn
 import imagecodecs
 import numpy
 
-
-class CodecParseError(ValueError):
-    pass
+from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 
 
-class CodecUnsupportedError(ValueError):
-    pass
-
-
-def env_int(name: str, default: int) -> int:
-    configured = os.environ.get(name)
+def thread_count(env_name: str) -> int:
+    """Worker threads: the environment setting, else the CPU count, bounded to 1..4."""
+    configured = os.environ.get(env_name)
     if configured:
         try:
-            return max(1, int(configured))
+            return min(4, max(1, int(configured)))
         except ValueError:
             pass
-    return default
+    return max(1, min(4, os.cpu_count() or 1))
 
 
 def raise_codec_error(
@@ -38,14 +33,14 @@ def raise_codec_error(
     name: str,
 ) -> NoReturn:
     if not data:
-        raise CodecParseError(f"invalid {name} stream") from exc
+        raise FilterParseError(f"invalid {name} stream") from exc
     try:
         valid = bool(check(data))
     except Exception:
         valid = False
     if not valid:
-        raise CodecParseError(f"invalid {name} stream") from exc
-    raise CodecUnsupportedError(f"unsupported {name} stream") from exc
+        raise FilterParseError(f"invalid {name} stream") from exc
+    raise FilterUnsupportedError(f"unsupported {name} stream") from exc
 
 
 def normalize_imagecodecs_array(
@@ -57,11 +52,11 @@ def normalize_imagecodecs_array(
 ) -> numpy.ndarray:
     array = numpy.asarray(decoded)
     if array.ndim not in {2, 3}:
-        raise CodecUnsupportedError(f"{name} decoder returned an unsupported shape")
+        raise FilterUnsupportedError(f"{name} decoder returned an unsupported shape")
     if array.dtype.kind not in ({"u", "i", "f"} if allow_float else {"u", "i"}):
-        raise CodecUnsupportedError(f"{name} decoder returned an unsupported dtype")
+        raise FilterUnsupportedError(f"{name} decoder returned an unsupported dtype")
     if array.ndim == 3 and array.shape[2] <= 0:
-        raise CodecUnsupportedError(f"{name} decoder returned zero channels")
+        raise FilterUnsupportedError(f"{name} decoder returned zero channels")
     if preserve_uint16 and array.dtype == numpy.uint16:
         return numpy.ascontiguousarray(array)
     if array.dtype != numpy.uint8:
@@ -107,7 +102,7 @@ def decode_jpx_image(
 
 
 def jpx_thread_count() -> int:
-    return min(4, env_int("CORE_PDF_JPX_THREADS", max(1, min(4, os.cpu_count() or 1))))
+    return thread_count("CORE_PDF_JPX_THREADS")
 
 
 def decode_ccitt_fax_image(
@@ -140,7 +135,7 @@ def decode_ccitt_fax_image(
         raise_codec_error(data, exc, check=decoder_check, name="CCITT")
     array = numpy.asarray(decoded)
     if array.ndim != 2 or array.shape[1] != width or array.dtype != numpy.uint8:
-        raise CodecUnsupportedError("CCITT decoder returned an unsupported image")
+        raise FilterUnsupportedError("CCITT decoder returned an unsupported image")
     return array
 
 
@@ -166,56 +161,44 @@ def png_predict_codec(
     bits_per_component: int,
 ) -> bytes | None:
     try:
-        return png_predict_imagecodecs(
-            data, columns=columns, colors=colors, bits_per_component=bits_per_component
+        color_type = PNG_COLOR_TYPES.get(colors)
+        if color_type is None:
+            return None
+        if bits_per_component not in (8, 16) and (
+            color_type != 0 or (columns * bits_per_component) % 8
+        ):
+            return None
+        if not 1 <= columns <= PNG_MAX_DIMENSION:
+            return None
+        row_length = max(1, (colors * columns * bits_per_component + 7) // 8)
+        rows = len(data) // (row_length + 1)
+        if not 1 <= rows <= PNG_MAX_DIMENSION:
+            return None
+        body = memoryview(data)[: rows * (row_length + 1)]
+        header = struct.pack(">IIBBBBB", columns, rows, bits_per_component, color_type, 0, 0, 0)
+        png = b"".join(
+            (
+                PNG_SIGNATURE,
+                png_chunk(b"IHDR", header),
+                png_chunk(b"IDAT", zlib.compress(body, 0)),
+                png_chunk(b"IEND", b""),
+            )
         )
+        decoded = numpy.asarray(imagecodecs.png_decode(png))
+        if bits_per_component == 16:
+            return decoded.astype(">u2", copy=False).tobytes()
+        if bits_per_component == 8:
+            return decoded.tobytes()
+        bits = bits_per_component
+        samples = decoded.reshape(rows, columns) // (255 // ((1 << bits) - 1))
+        per_byte = 8 // bits
+        grouped = samples.reshape(rows, -1, per_byte)
+        packed = numpy.zeros(grouped.shape[:2], dtype=numpy.uint8)
+        for sample_index in range(per_byte):
+            packed |= grouped[:, :, sample_index] << (bits * (per_byte - 1 - sample_index))
+        return packed.tobytes()
     except Exception:
         return None
-
-
-def png_predict_imagecodecs(
-    data: bytes | memoryview,
-    *,
-    columns: int,
-    colors: int,
-    bits_per_component: int,
-) -> bytes | None:
-    color_type = PNG_COLOR_TYPES.get(colors)
-    if color_type is None:
-        return None
-    if bits_per_component not in (8, 16) and (
-        color_type != 0 or (columns * bits_per_component) % 8
-    ):
-        return None
-    if not 1 <= columns <= PNG_MAX_DIMENSION:
-        return None
-    row_length = max(1, (colors * columns * bits_per_component + 7) // 8)
-    rows = len(data) // (row_length + 1)
-    if not 1 <= rows <= PNG_MAX_DIMENSION:
-        return None
-    body = memoryview(data)[: rows * (row_length + 1)]
-    header = struct.pack(">IIBBBBB", columns, rows, bits_per_component, color_type, 0, 0, 0)
-    png = b"".join(
-        (
-            PNG_SIGNATURE,
-            png_chunk(b"IHDR", header),
-            png_chunk(b"IDAT", zlib.compress(body, 0)),
-            png_chunk(b"IEND", b""),
-        )
-    )
-    decoded = numpy.asarray(imagecodecs.png_decode(png))
-    if bits_per_component == 16:
-        return decoded.astype(">u2", copy=False).tobytes()
-    if bits_per_component == 8:
-        return decoded.tobytes()
-    bits = bits_per_component
-    samples = decoded.reshape(rows, columns) // (255 // ((1 << bits) - 1))
-    per_byte = 8 // bits
-    grouped = samples.reshape(rows, -1, per_byte)
-    packed = numpy.zeros(grouped.shape[:2], dtype=numpy.uint8)
-    for sample_index in range(per_byte):
-        packed |= grouped[:, :, sample_index] << (bits * (per_byte - 1 - sample_index))
-    return packed.tobytes()
 
 
 def tiff_predict_words_codec(

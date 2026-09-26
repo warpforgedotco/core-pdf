@@ -20,7 +20,7 @@ from core_pdf_spec.s_09_fonts.helpers import (
 from core_pdf_spec.s_09_fonts.helpers import (
     build_simple_encoding_glyph_names as spec_simple_encoding_glyph_names,
 )
-from core_pdf_spec.standards import SemanticContext
+from core_pdf_spec.standards import SemanticContext, recognized_version
 
 
 def strip_subset_tag(font_name: str) -> str:
@@ -151,6 +151,4 @@ def build_simple_encoding_glyph_names(
 
 
 def encoding_context(context: SemanticContext | None) -> SemanticContext | None:
-    if context is not None and (context.version is None or not context.version.recognized):
-        return None
-    return context
+    return None if recognized_version(context) is None else context

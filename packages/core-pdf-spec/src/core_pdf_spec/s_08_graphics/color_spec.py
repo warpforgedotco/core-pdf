@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import ClassVar, TypeAlias
 
-from core_pdf_spec.exceptions import PdfUnsupportedError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
@@ -15,8 +14,9 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
     require_pdf_number,
     require_pdf_number_array,
+    require_pdf_number_pairs,
 )
-from core_pdf_spec.standards import PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
 from core_records import Record, frozen_setattr
 
 ColorParams: TypeAlias = Mapping[str, object]
@@ -105,9 +105,7 @@ class ColorSpace(Record):
     ) -> None:
         frozen_setattr(self, "kind", kind)
         frozen_setattr(self, "component_ranges", component_ranges)
-        frozen_setattr(
-            self, "params", (lambda: MappingProxyType({}))() if params is None else params
-        )
+        frozen_setattr(self, "params", MappingProxyType({}) if params is None else params)
         frozen_setattr(self, "base", base)
         frozen_setattr(self, "alternate", alternate)
         frozen_setattr(self, "colorants", colorants)
@@ -191,11 +189,18 @@ def parse_device_n_attributes(
     *,
     context: SemanticContext | None = None,
 ) -> DeviceNAttributes:
-    if context is not None and (context.version is None or not context.version.recognized):
-        raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
-    version = context.version if context is not None else None
+    version = require_recognized_version(
+        context, "color-space semantics require a recognized PDF version"
+    )
     names = colorant_names(colorants)
     return parse_device_n_attributes_for(value, names, set(), version)
+
+
+def is_cmyk_process_space(space: ColorSpace) -> bool:
+    """Whether a DeviceN process space is CMYK, which reserves the CMYK colorant names."""
+    return space.kind == "DeviceCMYK" or (
+        space.kind == "ICCBased" and len(space.component_ranges) == 4
+    )
 
 
 def device_n_process(
@@ -215,7 +220,7 @@ def device_n_process(
     count = len(space.component_ranges)
     if len(components) != count or len(set(components)) != count:
         raise ValueError("invalid DeviceN process Components")
-    cmyk = space.kind == "DeviceCMYK" or (space.kind == "ICCBased" and count == 4)
+    cmyk = is_cmyk_process_space(space)
     if any(name in {"All", "None"} for name in components) or any(
         name in CMYK_NAMES and (not cmyk or name != CMYK_NAMES[index])
         for index, name in enumerate(components)
@@ -273,10 +278,7 @@ def parse_device_n_attributes_for(
         if subtype == "NChannel" and process is None and any(name in CMYK_NAMES for name in names):
             raise ValueError("NChannel process colorants require a Process dictionary")
         process_names = set(process.components) if process is not None else set()
-        if process is not None and (
-            process.color_space.kind == "DeviceCMYK"
-            or (process.color_space.kind == "ICCBased" and len(process.components) == 4)
-        ):
+        if process is not None and is_cmyk_process_space(process.color_space):
             process_names.update(CMYK_NAMES)
         raw_colorants = source.get("Colorants")
         colorant_spaces: dict[str, ColorSpace] = {}
@@ -312,8 +314,7 @@ def array(value: object, size: int, message: str) -> tuple[float, ...]:
 
 
 def parse_component_ranges(value: object, count: int) -> ComponentRanges:
-    values = array(value, 2 * count, "invalid color component Range")
-    ranges = tuple(zip(values[::2], values[1::2], strict=True))
+    ranges = require_pdf_number_pairs(value, "invalid color component Range", count=count)
     if any(low > high for low, high in ranges):
         raise ValueError("invalid color component Range")
     return ranges
@@ -355,9 +356,9 @@ def calibrated_params(kind: str, source: PdfDict) -> ColorParams:
 
 
 def parse_color_space(value: object, *, context: SemanticContext | None = None) -> ColorSpace:
-    if context is not None and (context.version is None or not context.version.recognized):
-        raise PdfUnsupportedError("color-space semantics require a recognized PDF version")
-    version = context.version if context is not None else None
+    version = require_recognized_version(
+        context, "color-space semantics require a recognized PDF version"
+    )
     return parse_color_space_versioned(value, set(), version)
 
 

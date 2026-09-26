@@ -2,6 +2,7 @@
 
 
 import pytest
+from _content_support import make_interpreter
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -14,17 +15,13 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.types import PdfName, PdfReference, Rectangle
 
 
-def make_state() -> ContentInterpreter:
-    return ContentInterpreter(ObjectResolver(b"", {}), None, None)  # ty: ignore[invalid-argument-type]
-
-
 @pytest.mark.parametrize("indirect_array", [False, True])
 @pytest.mark.parametrize("indirect_components", [False, True])
 @pytest.mark.parametrize("transparency", [False, True])
 def test_frame_keeps_resolved_local_bbox_and_original_operand(
     indirect_array: bool, indirect_components: bool, transparency: bool
 ) -> None:
-    state = make_state()
+    state = make_interpreter()
     resolver = state.resolver
     values = [5, 7, 1, 2]
     array = []
@@ -60,7 +57,7 @@ def test_frame_keeps_resolved_local_bbox_and_original_operand(
 def test_frame_normalizes_corner_order_without_discarding_empty_bounds(
     bounds: list[int], expected: Rectangle
 ) -> None:
-    frame = make_state().append_form_xobject(PdfStream(dictionary={"BBox": bounds}), 0)
+    frame = make_interpreter().append_form_xobject(PdfStream(dictionary={"BBox": bounds}), 0)
     assert frame is not None
     assert frame.form_bbox == expected
     assert frame.clip_bbox == expected
@@ -115,7 +112,7 @@ def test_frame_retains_local_bounds_separately_from_transformed_envelope(
     expected_ctm: Matrix,
     expected_envelope: Rectangle,
 ) -> None:
-    state = make_state()
+    state = make_interpreter()
     state.graphics.ctm = parent_matrix
     dictionary: PdfDict = {"BBox": [1, 2, 5, 7]}
     if form_matrix is not None:
@@ -130,7 +127,7 @@ def test_frame_retains_local_bounds_separately_from_transformed_envelope(
 @pytest.mark.parametrize("dictionary", [{}, {"BBox": None}])
 def test_missing_form_bounds_retain_strict_required_bbox_failure(dictionary: PdfDict) -> None:
     with pytest.raises(PdfParseError, match="requires a BBox"):
-        make_state().append_form_xobject(PdfStream(dictionary=dictionary), 0)
+        make_interpreter().append_form_xobject(PdfStream(dictionary=dictionary), 0)
 
 
 @pytest.mark.parametrize(
@@ -148,7 +145,7 @@ def test_missing_form_bounds_retain_strict_required_bbox_failure(dictionary: Pdf
 )
 def test_invalid_form_bounds_retain_strict_box_failure(bounds: object) -> None:
     with pytest.raises(ValueError, match="invalid box value"):
-        make_state().append_form_xobject(PdfStream(dictionary={"BBox": bounds}), 0)
+        make_interpreter().append_form_xobject(PdfStream(dictionary={"BBox": bounds}), 0)
 
 
 def test_local_bbox_transport_preserves_reader_bbox_hook_and_queue_signature() -> None:
@@ -203,7 +200,7 @@ def test_reader_missing_bbox_hook_keeps_none_transport() -> None:
 
 
 def test_existing_frame_and_queue_callers_default_to_no_local_bbox() -> None:
-    state = make_state()
+    state = make_interpreter()
     stream = PdfStream()
     frame = ContentStreamFrame(stream, {}, IDENTITY_MATRIX, 1, (1, 2, 5, 7), 0.5)
     assert frame.form_bbox is None

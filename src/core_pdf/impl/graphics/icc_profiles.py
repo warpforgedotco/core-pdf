@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache, lru_cache
 from typing import Any, ClassVar
@@ -10,7 +9,7 @@ from typing import Any, ClassVar
 import imagecodecs
 import numpy
 
-from core_pdf.impl.graphics.codec_backends import env_int
+from core_pdf.impl.graphics.codec_backends import thread_count
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
 from core_pdf_spec.s_08_graphics.color_rendering import (
@@ -188,7 +187,7 @@ PARALLEL_ROWS = 1 << 18
 
 
 def cms_thread_count() -> int:
-    return min(4, env_int("CORE_PDF_CMS_THREADS", max(1, min(4, os.cpu_count() or 1))))
+    return thread_count("CORE_PDF_CMS_THREADS")
 
 
 def cms_transform(

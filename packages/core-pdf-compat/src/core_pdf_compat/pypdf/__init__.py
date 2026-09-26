@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from copy import replace
 from io import BytesIO
-from os import PathLike
 from typing import Any
 
 from core_pdf import PdfDocument
@@ -13,10 +12,9 @@ from core_pdf.impl.output.model import (
     Page,
 )
 from core_pdf.impl.types import PdfReference
-from core_pdf_compat._shared import ClosingMixin, coerce_bbox
+from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pypdf._text import extract_legacy_text
-
-PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
+from core_pdf_spec.s_07_syntax.xref import key_for
 
 
 def validate_pypdf_page_tree(pdf: PdfDocument) -> None:
@@ -24,7 +22,7 @@ def validate_pypdf_page_tree(pdf: PdfDocument) -> None:
     if literal_trailers:
         latest_root = literal_trailers[-1].get("Root")
         if isinstance(latest_root, PdfReference):
-            root_key = (latest_root.object_number << 16) | latest_root.generation_number
+            root_key = key_for(latest_root.object_number, latest_root.generation_number)
             if root_key not in pdf.xref:
                 raise ValueError("catalog root references a missing object generation")
         elif latest_root is not None and not isinstance(latest_root, dict):
@@ -213,7 +211,7 @@ class PdfPageObject:
 
     def set_cropbox(self, box: tuple[float, float, float, float]) -> PdfPageObject:
         rectangle = Rectangle(*box)
-        self._page = replace(self._page, cropbox=coerce_bbox(tuple(rectangle)))
+        self._page = replace(self._page, cropbox=tuple(rectangle))
         self.cropbox = rectangle
         return self
 

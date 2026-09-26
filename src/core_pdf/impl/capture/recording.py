@@ -135,21 +135,15 @@ class MarkedContentEntry:
 MATRIX_TOLERANCE = 0.1
 
 
-def detect_rotation_from_linear(
-    A: float, B: float, C: float, D: float, tolerance: float = MATRIX_TOLERANCE
-) -> int:
+def detect_rotation_from_linear(A: float, B: float, C: float, D: float) -> int:
     scale_x = hypot(A, B)
     scale_y = hypot(C, D)
     if scale_x <= 0 or scale_y <= 0:
         return 0
     na, nb, nc, nd = A / scale_x, B / scale_x, C / scale_y, D / scale_y
-    if (
-        abs(na - 1.0) < tolerance
-        and abs(nb) < tolerance
-        and abs(nc) < tolerance
-        and abs(nd - 1.0) < tolerance
-    ):
-        return 0
+    # Upright is the common case and falls through: each test below fails
+    # on its first comparison for it, cheaper than confirming all four.
+    tolerance = MATRIX_TOLERANCE
     if (
         abs(na) < tolerance
         and abs(nb - 1.0) < tolerance

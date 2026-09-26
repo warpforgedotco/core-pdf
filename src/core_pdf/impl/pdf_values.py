@@ -8,24 +8,6 @@ from typing import ClassVar
 from core_pdf.impl.types import PdfString, ReplaceFields, ReprFields
 
 
-def is_pdf_null(value: object) -> bool:
-    return value is None or type(value).__name__ == "NullObject"
-
-
-def coerce_to_bytes(value: object) -> bytes:
-    if isinstance(value, bytes):
-        return value
-    if isinstance(value, bytearray):
-        return bytes(value)
-    if isinstance(value, memoryview):
-        return value.tobytes()
-    if isinstance(value, PdfString):
-        return value.data
-    if isinstance(value, str):
-        return value.encode("latin-1")
-    raise TypeError(f"cannot coerce {type(value).__name__} to bytes")
-
-
 class CoercionFrame(ReplaceFields, ReprFields):
     __slots__ = ("original", "entries", "values", "pending", "changed")
 

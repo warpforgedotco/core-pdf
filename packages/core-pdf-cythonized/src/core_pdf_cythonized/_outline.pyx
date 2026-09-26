@@ -28,9 +28,22 @@ def outline_edges(double[::1] xs, double[::1] ys, spans):
 
     Returns (edges, kept, dropped) where `kept` is a list of (start, end) with
     end already adjusted for a duplicated closing point, and `dropped` is True
-    if any span was too short to contribute.
+    if any span was too short to contribute. A span reaching outside the
+    columns raises IndexError.
     """
-    cdef Py_ssize_t start, end, i, w = 0, total = 0
+    cdef Py_ssize_t count = min(xs.shape[0], ys.shape[0])
+    if not _spans_inside(spans, count):
+        raise IndexError("outline span outside the columns")
+    return _outline_edges(&xs[0], &ys[0], spans)
+
+
+cdef tuple _outline_edges(const double* xs, const double* ys, spans):
+    # The edges over raw columns, shared by outline_edges and
+    # translated_outline_edges, so the latter reaches it without a Python call
+    # and two more buffer acquisitions per glyph. The kernels build without
+    # bounds checks or wraparound, so each caller first proves with
+    # _spans_inside that every span lies inside the columns.
+    cdef Py_ssize_t start, end, i, total = 0
     cdef bint dropped = False
     cdef bint closes
     cdef list kept = []
@@ -41,53 +54,6 @@ def outline_edges(double[::1] xs, double[::1] ys, spans):
         # The original built the point list first, dropped a duplicated final
         # point, and only then checked the length -- so a two-point span whose
         # ends coincide collapses to one point and is dropped, not kept.
-        if end > start and xs[start] == xs[end - 1] and ys[start] == ys[end - 1]:
-            end -= 1
-        if end - start >= 2:
-            closes = xs[start] != xs[end - 1] or ys[start] != ys[end - 1]
-            kept.append((start, end, closes))
-            total += (end - start - 1) + (1 if closes else 0)
-        else:
-            dropped = True
-
-    if not kept:
-        return None, kept, dropped
-
-    edges = numpy.empty((total, 4), numpy.float64)
-    cdef double[:, ::1] out = edges
-    for span in kept:
-        start = span[0]
-        end = span[1]
-        closes = span[2]
-        for i in range(start, end - 1):
-            out[w, 0] = xs[i]
-            out[w, 1] = ys[i]
-            out[w, 2] = xs[i + 1]
-            out[w, 3] = ys[i + 1]
-            w += 1
-        if closes:
-            out[w, 0] = xs[end - 1]
-            out[w, 1] = ys[end - 1]
-            out[w, 2] = xs[start]
-            out[w, 3] = ys[start]
-            w += 1
-    return edges, kept, dropped
-
-
-cdef tuple _outline_edges(const double* xs, const double* ys, spans):
-    # outline_edges over raw columns whose spans all lie inside them, so
-    # translated_outline_edges reaches it without a Python call and two more
-    # buffer acquisitions per glyph. Inside those bounds every index below is
-    # one outline_edges reads the same element with; the caller sends any
-    # other span to outline_edges itself, with its wraparound and errors.
-    cdef Py_ssize_t start, end, i, total = 0
-    cdef bint dropped = False
-    cdef bint closes
-    cdef list kept = []
-
-    for span in spans:
-        start = span[0]
-        end = span[1]
         if end > start and xs[start] == xs[end - 1] and ys[start] == ys[end - 1]:
             end -= 1
         if end - start >= 2:
@@ -213,10 +179,9 @@ def translated_outline_edges(double[::1] linear_x, double[::1] linear_y, double 
     for i in range(count):
         xs[i] = linear_x[i] + e
         ys[i] = linear_y[i] + f
-    if count and _spans_inside(spans, count):
-        edges, kept, dropped = _outline_edges(&xs[0], &ys[0], spans)
-    else:
-        edges, kept, dropped = outline_edges(xs, ys, spans)
+    if not _spans_inside(spans, count):
+        raise IndexError("outline span outside the columns")
+    edges, kept, dropped = _outline_edges(&xs[0], &ys[0], spans)
     if edges is None:
         return column_x, column_y, None, kept, dropped, None
     cdef double low_x, high_x, low_y, high_y

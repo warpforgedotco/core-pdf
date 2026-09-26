@@ -3,11 +3,11 @@
 from typing import Any
 
 import pytest
+from _content_support import NullSink, make_interpreter
 
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import PdfPath, TilingPattern
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
-from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
@@ -15,13 +15,10 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName, PdfReference
 
 
-class PaintSink:
+class PaintSink(NullSink):
     def __init__(self) -> None:
         self.states: list[tuple[bool, float, str | None]] = []
         self.patterns: list[TilingPattern] = []
-
-    def __getattr__(self, name: str) -> Any:
-        return lambda *args, **kwargs: None
 
     def paint_path(
         self, state: ContentInterpreter, path: PdfPath, kind: str, fill_rule: str
@@ -35,7 +32,7 @@ class PaintSink:
 
 def make_state() -> tuple[ContentInterpreter, PaintSink]:
     sink = PaintSink()
-    return ContentInterpreter(ObjectResolver(b"", {}), sink, None), sink  # ty: ignore[invalid-argument-type]
+    return make_interpreter(sink), sink
 
 
 @pytest.mark.parametrize("isolated", [False, True])

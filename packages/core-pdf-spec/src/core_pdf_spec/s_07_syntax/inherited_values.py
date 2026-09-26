@@ -23,6 +23,21 @@ def inherited_dictionary_value(
     return parent_value if resolved is None else value
 
 
+def add_inherited_values(
+    values: InheritedValueMap,
+    node: PdfDict,
+    keys: tuple[str, ...],
+    resolve: Callable[[object], object],
+) -> None:
+    """Add to `values` each of `keys` that `node` sets and `values` lacks."""
+    for key in keys:
+        if key in values:
+            continue
+        value = inherited_dictionary_value(node, key, None, resolve)
+        if value is not None:
+            values[key] = value  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+
+
 def collect_inherited_values(
     node: PdfDict,
     keys: tuple[str, ...],
@@ -46,15 +61,9 @@ def collect_inherited_values(
             raise ValueError("inherited dictionary cycle detected")
         seen[marker] = current
 
-        current_dict = current
-        for key in keys:
-            if key in values:
-                continue
-            value = inherited_dictionary_value(current_dict, key, None, resolve_ref)
-            if value is not None:
-                values[key] = value  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        add_inherited_values(values, current, keys, resolve_ref)
 
-        parent = current_dict.get("Parent")
+        parent = current.get("Parent")
         if isinstance(parent, PdfReference):
             reference = (parent.object_number, parent.generation_number)
             if reference in references:

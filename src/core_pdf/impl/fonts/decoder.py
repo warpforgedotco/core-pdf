@@ -33,7 +33,6 @@ from core_pdf.impl.fonts.cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts.cmap_tounicode import ToUnicodeCMap, unicode_scalar_or_replacement
 from core_pdf.impl.fonts.fallback import fallback_glyph_outline
 from core_pdf.impl.fonts.font_program import (
-    FONT_PROGRAM_ERRORS,
     LEGITIMATE_MULTI_CHAR_GLYPHS,
     CFFFont,
     CFFUnicodeRepairIndex,
@@ -157,13 +156,12 @@ def cff_font(inputs: FontProgramInputs) -> CFFFont | None:
     subtype = recover_pdf_name(font_file.dictionary.get("Subtype"))
     if inputs.descendant is None and subtype not in {"Type1C", "OpenType"}:
         return None
-    font_data: bytes | None = font_file.data
+    font_data = font_file.data
     if subtype == "OpenType":
-        if font_data is None:
+        cff_table = extract_cff_table(font_data)
+        if cff_table is None:
             return None
-        font_data = extract_cff_table(font_data)
-        if font_data is None:
-            return None
+        font_data = cff_table
     try:
         return CFFFont(font_data)
     except ValueError:
@@ -205,7 +203,7 @@ def extract_cff_table(data: bytes) -> bytes | None:
             return None
         table = reader.tables.get("CFF ")
         return table.loadData(reader.file) if table is not None else None
-    except FONT_PROGRAM_ERRORS:
+    except Exception:
         return None
     finally:
         if font is not None:

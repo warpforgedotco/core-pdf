@@ -23,7 +23,8 @@ FMAs and shift the results.
 from cpython.mem cimport PyMem_Free, PyMem_Malloc
 from libc.math cimport rint
 
-from core_pdf_cythonized._knockout_math cimport clamp_byte, knockout_component
+from core_pdf_cythonized._byte_clamp cimport unit_to_byte
+from core_pdf_cythonized._knockout_math cimport knockout_component
 
 import numpy
 
@@ -189,8 +190,8 @@ def composite_knockout_group(destination, backdrop, element, group_alpha, elemen
                         <double> bak[i, j, k] / 255.0, initial, ra,
                     )
                 for k in range(3):
-                    dst[i, j, k] = <unsigned char> clamp_byte(colour[k])
-                dst[i, j, 3] = <unsigned char> clamp_byte(ra)
+                    dst[i, j, k] = <unsigned char> unit_to_byte(colour[k])
+                dst[i, j, 3] = <unsigned char> unit_to_byte(ra)
                 group[i, j] = <float> rga
 
 
@@ -281,8 +282,8 @@ def composite_elementary_knockout(
                                 <double> backdrop[i, j, k] / 255.0, initial, ra,
                             )
                         for k in range(3):
-                            destination[i, j, k] = <unsigned char> clamp_byte(colour[k])
-                        destination[i, j, 3] = <unsigned char> clamp_byte(ra)
+                            destination[i, j, k] = <unsigned char> unit_to_byte(colour[k])
+                        destination[i, j, 3] = <unsigned char> unit_to_byte(ra)
                         group_alpha[i, j] = <float> rga
                     if has_parent_shape:
                         previous = parent_shape[i, j]

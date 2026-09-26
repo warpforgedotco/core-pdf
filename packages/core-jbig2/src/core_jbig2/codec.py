@@ -357,18 +357,11 @@ class JBIG2Image(ReprFields, ReplaceFields):
         self.data[:] = bytes([fill_byte]) * len(self.data)
 
 
-def read_be_u32(data: bytes, pos: int) -> int:
+def read_be_int32(data: bytes, pos: int, *, signed: bool = False) -> int:
     chunk = data[pos : pos + 4]
     if len(chunk) != 4:
         raise Jbig2ParseError("truncated JBIG2 data")
-    return int.from_bytes(chunk, "big")
-
-
-def read_be_i32(data: bytes, pos: int) -> int:
-    chunk = data[pos : pos + 4]
-    if len(chunk) != 4:
-        raise Jbig2ParseError("truncated JBIG2 data")
-    return int.from_bytes(chunk, "big", signed=True)
+    return int.from_bytes(chunk, "big", signed=signed)
 
 
 def read_be_i8(data: bytes, pos: int) -> int:
@@ -379,10 +372,10 @@ def read_be_i8(data: bytes, pos: int) -> int:
 def parse_page_info(data: bytes) -> JBIG2PageInfo:
     if len(data) < 19:
         raise Jbig2ParseError("truncated JBIG2 page info")
-    width = read_be_u32(data, 0)
-    height = read_be_u32(data, 4)
-    x_resolution = read_be_u32(data, 8)
-    y_resolution = read_be_u32(data, 12)
+    width = read_be_int32(data, 0)
+    height = read_be_int32(data, 4)
+    x_resolution = read_be_int32(data, 8)
+    y_resolution = read_be_int32(data, 12)
     flags = data[16]
     return JBIG2PageInfo(
         width=width,
@@ -397,10 +390,10 @@ def parse_region(data: bytes, kind: str) -> JBIG2Region:
     if len(data) < 17:
         raise Jbig2ParseError(f"truncated JBIG2 {kind} region")
     return JBIG2Region(
-        width=read_be_u32(data, 0),
-        height=read_be_u32(data, 4),
-        x=read_be_i32(data, 8),
-        y=read_be_i32(data, 12),
+        width=read_be_int32(data, 0),
+        height=read_be_int32(data, 4),
+        x=read_be_int32(data, 8, signed=True),
+        y=read_be_int32(data, 12, signed=True),
         flags=data[16],
         raw=data,
     )
@@ -428,34 +421,12 @@ def parse_generic_region_header(region: JBIG2Region) -> JBIG2GenericRegionHeader
     return JBIG2GenericRegionHeader(region, mmr, template, prediction, tuple(at), pos)
 
 
-def read_u8(data: bytes, pos: int) -> tuple[int, int]:
-    if pos + 1 > len(data):
+def read_uint(data: bytes, pos: int, width: int) -> tuple[int, int]:
+    """The big-endian unsigned integer of `width` bytes at `pos`, and the position after it."""
+    end = pos + width
+    if end > len(data):
         raise Jbig2ParseError("truncated JBIG2 data")
-    return data[pos], pos + 1
-
-
-def read_u32(data: bytes, pos: int) -> tuple[int, int]:
-    if pos + 4 > len(data):
-        raise Jbig2ParseError("truncated JBIG2 data")
-    return read_be_u32(data, pos), pos + 4
-
-
-def read_u24(data: bytes, pos: int) -> tuple[int, int]:
-    if pos + 3 > len(data):
-        raise Jbig2ParseError("truncated JBIG2 data")
-    return int.from_bytes(data[pos : pos + 3], "big"), pos + 3
-
-
-def parse_page_association(data: bytes, pos: int, long_form: bool) -> tuple[int, int]:
-    if long_form:
-        return read_u32(data, pos)
-    return read_u8(data, pos)
-
-
-def parse_referred_to_segments(
-    data: bytes, pos: int, count: int, long_form: bool
-) -> tuple[list[int], int]:
-    return read_segment_references(data, pos, count, 4 if long_form else 1)
+    return int.from_bytes(data[pos:end], "big"), end
 
 
 def read_segment_references(data: bytes, pos: int, count: int, width: int) -> tuple[list[int], int]:
@@ -471,12 +442,12 @@ def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int
     start = pos
     if pos + 11 > len(data):
         raise Jbig2ParseError("truncated JBIG2 segment header")
-    number, pos = read_u32(data, pos)
-    flags, pos = read_u8(data, pos)
-    retention_flags, pos = read_u8(data, pos)
+    number, pos = read_uint(data, pos, 4)
+    flags, pos = read_uint(data, pos, 1)
+    retention_flags, pos = read_uint(data, pos, 1)
     referred_to_count = retention_flags >> 5
     if referred_to_count == 7:
-        ref_count, pos = read_u24(data, pos)
+        ref_count, pos = read_uint(data, pos, 3)
         referred_to_count = ((retention_flags & 0x1F) << 24) | ref_count
         bit_bytes = (referred_to_count + 1 + 7) // 8
         if pos + bit_bytes > len(data):
@@ -490,8 +461,8 @@ def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int
     )
     if pos + (4 if (flags & 0x40) else 1) + 4 > len(data):
         raise Jbig2ParseError("truncated JBIG2 segment header")
-    page_association, pos = parse_page_association(data, pos, bool(flags & 0x40))
-    data_length, pos = read_u32(data, pos)
+    page_association, pos = read_uint(data, pos, 4 if flags & 0x40 else 1)
+    data_length, pos = read_uint(data, pos, 4)
     return (
         JBIG2SegmentHeader(
             number=number,
@@ -580,13 +551,13 @@ class JBIG2PageDecoder:
         elif kind == 52:
             if len(segment.data) < 4:
                 raise Jbig2ParseError("truncated JBIG2 profiles segment")
-            count = read_be_u32(segment.data, 0)
+            count = read_be_int32(segment.data, 0)
             if len(segment.data) != 4 + count * 4:
                 raise Jbig2ParseError("invalid JBIG2 profiles segment length")
         elif kind == 62:
             if len(segment.data) < 4:
                 raise Jbig2ParseError("truncated JBIG2 extension segment")
-            extension = read_be_u32(segment.data, 0)
+            extension = read_be_int32(segment.data, 0)
             if extension & (1 << 31):
                 if not extension & (1 << 29):
                     raise Jbig2ParseError("necessary JBIG2 extension requires reserved bit 29")
@@ -674,20 +645,8 @@ __all__ = (
     "JBIG2PageInfo",
     "JBIG2SegmentHeader",
     "JBIG2Image",
-    "read_be_u32",
-    "read_be_i32",
-    "read_be_i8",
     "parse_page_info",
     "parse_generic_region_header",
-    "read_u8",
-    "read_u32",
-    "read_u24",
-    "parse_page_association",
-    "parse_referred_to_segments",
     "parse_segment_header",
-    "jbig2_page_default_pixel",
-    "jbig2_page_combination_operator",
-    "jbig2_page_allows_region_operator",
     "compose_packed_bitmap_region",
-    "region_operator",
 )

@@ -6,13 +6,12 @@
 
 from libc.math cimport rintf
 
+from core_pdf_cythonized._byte_clamp cimport float_to_byte
+
 
 cdef inline unsigned char opaque_channel(float value) noexcept nogil:
     # blend_one's result for a channel when sa == 1: rintf((v * 1 + d * 0) / 1).
-    cdef float ZERO = 0.0
-    cdef float SCALE = 255.0
-    value = rintf(value)
-    return <unsigned char> (ZERO if value < ZERO else (SCALE if value > SCALE else value))
+    return float_to_byte(rintf(value))
 
 
 cdef inline void blend_one(
@@ -37,16 +36,11 @@ cdef inline void blend_one(
     cdef float oa = sa + da * (ONE - sa)
     cdef float safe = oa if oa > ZERO else ONE
     cdef float weight = da * (ONE - sa)
-    cdef float value
 
-    value = rintf((red * sa + d0 * weight) / safe)
-    c0[0] = <unsigned char> (ZERO if value < ZERO else (SCALE if value > SCALE else value))
-    value = rintf((green * sa + d1 * weight) / safe)
-    c1[0] = <unsigned char> (ZERO if value < ZERO else (SCALE if value > SCALE else value))
-    value = rintf((blue * sa + d2 * weight) / safe)
-    c2[0] = <unsigned char> (ZERO if value < ZERO else (SCALE if value > SCALE else value))
-    value = rintf(oa * SCALE)
-    c3[0] = <unsigned char> (ZERO if value < ZERO else (SCALE if value > SCALE else value))
+    c0[0] = float_to_byte(rintf((red * sa + d0 * weight) / safe))
+    c1[0] = float_to_byte(rintf((green * sa + d1 * weight) / safe))
+    c2[0] = float_to_byte(rintf((blue * sa + d2 * weight) / safe))
+    c3[0] = float_to_byte(rintf(oa * SCALE))
 
 
 cdef inline float accumulate_plane(float previous, unsigned char coverage, double scale) noexcept nogil:

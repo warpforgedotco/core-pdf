@@ -109,13 +109,6 @@ def test_page_pipeline_dispatches_recognition_with_exact_context(ocr_capture, mo
     assert extraction.recognize(context) is recognition
 
 
-def test_legacy_reason_strings_normalize_and_vector_match_ratio_handles_empty_counts(
-    ocr_capture,
-) -> None:
+def test_legacy_reason_strings_normalize() -> None:
     plan = WorkPlan(PageRoute.NATIVE, reason="healthy-native-text")  # ty: ignore[invalid-argument-type]
     assert plan.reason is PagePlanReason.HEALTHY_NATIVE_TEXT
-    assert ocr_capture.evidence.vector_text_segment_coverage == 0
-    evidence = replace(
-        ocr_capture.evidence, vector_text_candidate_segments=20, vector_text_matched_segments=15
-    )
-    assert evidence.vector_text_segment_coverage == 0.75
