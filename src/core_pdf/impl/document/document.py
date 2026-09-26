@@ -34,6 +34,7 @@ from core_pdf.impl.document.records import (
     RawOutlineItem,
 )
 from core_pdf.impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl.document.recovery.policy import MalformedFn, malformed_policy
 from core_pdf.impl.document.recovery.resolver import ObjectResolver
 from core_pdf.impl.document.recovery.text_strings import parse_text_string
 from core_pdf.impl.document.recovery.trees import iter_name_tree_items, iter_number_tree_items
@@ -558,11 +559,10 @@ class PdfDocument(Generic[PageT]):
 
     def catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None:
         value = self.resolver.resolve(self.catalog().get(key))
-        if value is None:
-            return None
-        if isinstance(value, dict):
+        if value is None or isinstance(value, dict):
             return value
-        if recoverable and self.recovery_enabled:
+        if recoverable:
+            self.malformed(f"invalid {key} dictionary")
             return None
         raise ValueError(f"invalid {key} dictionary")
 
@@ -582,6 +582,17 @@ class PdfDocument(Generic[PageT]):
     @property
     def recovery_enabled(self) -> bool:
         return self.xref_was_recovered or self.page_tree_was_recovered
+
+    def malformed(self, message: str) -> None:
+        """Raise ValueError(message), unless recovering, when the caller
+        skips what is malformed."""
+        if not self.recovery_enabled:
+            raise ValueError(message)
+
+    def recovery_policy(self) -> MalformedFn:
+        """malformed as it stands now, for a walk that keeps one policy
+        throughout even if building the pages midway starts recovery."""
+        return malformed_policy(self.recovery_enabled)
 
     def load_data(self, source: PdfSource) -> PdfByteBuffer:
         if isinstance(source, (str, PathLike)):
@@ -673,10 +684,7 @@ class PdfDocument(Generic[PageT]):
         ):
             if not entry.in_use:
                 continue
-            try:
-                obj = self.resolver.resolve(PdfReference(key >> 16, key & 0xFFFF))
-            except Exception:
-                continue
+            obj = self.resolver.resolve_or_none(PdfReference(key >> 16, key & 0xFFFF))
             if not isinstance(obj, dict):
                 continue
             marker = id(obj)
@@ -732,16 +740,10 @@ class PdfDocument(Generic[PageT]):
         if node_type != "Pages":
             return -100
         score = 20
-        try:
-            kids = self.resolver.resolve(obj.get("Kids"))
-        except Exception:
-            kids = None
+        kids = self.resolver.resolve_or_none(obj.get("Kids"))
         if isinstance(kids, list):
             score += min(len(kids), 20)
-        try:
-            count = self.resolver.resolve(obj.get("Count"))
-        except Exception:
-            count = None
+        count = self.resolver.resolve_or_none(obj.get("Count"))
         if type(count) is int and count >= 0:
             score += min(count, 20)
         if obj.get("Resources") is not None:
@@ -763,10 +765,7 @@ class PdfDocument(Generic[PageT]):
         sources: list[PdfDict] = []
         parent = page_dict.get("Parent")
         if parent is not None:
-            try:
-                parent_obj = self.resolver.resolve(parent)
-            except Exception:
-                parent_obj = None
+            parent_obj = self.resolver.resolve_or_none(parent)
             if isinstance(parent_obj, dict):
                 sources.append(parent_obj)
         sources.extend(pages_nodes)
@@ -781,14 +780,8 @@ class PdfDocument(Generic[PageT]):
     def collect_inherited_values_from_node(
         self, node: PdfDict, keys: list[str]
     ) -> InheritedValueMap:
-        def resolve_ref(value: object) -> object:
-            try:
-                return self.resolver.resolve(value)
-            except Exception:
-                return None
-
         return collect_inherited_values(
-            node, tuple(keys), resolve_ref, stop_at_malformed_parent=True
+            node, tuple(keys), self.resolver.resolve_or_none, stop_at_malformed_parent=True
         )
 
     def recovered_page_signature(self, page_dict: PdfDict) -> tuple[object, ...]:
@@ -999,7 +992,7 @@ class PdfDocument(Generic[PageT]):
             for page_index, spec in iter_number_tree_items(
                 labels_root,
                 self.resolve,
-                recover=self.recovery_enabled,
+                on_malformed=self.recovery_policy(),
             )
             if isinstance(spec, dict)
         ]
@@ -1007,8 +1000,7 @@ class PdfDocument(Generic[PageT]):
             return None
         specs.sort(key=lambda item: item[0])
         if specs[0][0] != 0:
-            if not self.recovery_enabled:
-                raise ValueError("PageLabels is missing page index 0")
+            self.malformed("PageLabels is missing page index 0")
             specs.insert(0, (0, {}))
 
         if page_count is None:
@@ -1061,26 +1053,24 @@ class PdfDocument(Generic[PageT]):
         if page_lookup is None:
             page_lookup = self.page_lookup
         recover_outlines = self.recovery_enabled
+        malformed = malformed_policy(recover_outlines)
         if level > 200:
             raise ValueError("invalid outline depth")
         if not isinstance(item, dict):
-            if recover_outlines:
-                return []
-            raise ValueError("invalid outline item")
+            malformed("invalid outline item")
+            return []
         result: list[RawOutlineItem] = []
         current: object | None = item
         seen: set[int] = set()
         while current is not None:
             current = self.resolver.resolve(current)
             if not isinstance(current, dict):
-                if recover_outlines:
-                    break
-                raise ValueError("invalid outline item")
+                malformed("invalid outline item")
+                break
             marker = id(current)
             if marker in seen:
-                if recover_outlines:
-                    break
-                raise ValueError("outline cycle detected")
+                malformed("outline cycle detected")
+                break
             seen.add(marker)
             title = self.resolver.resolve_str(current.get("Title"))
             dest = current.get("Dest")
@@ -1105,10 +1095,9 @@ class PdfDocument(Generic[PageT]):
             if first is not None:
                 first = self.resolver.resolve(first)
                 if not isinstance(first, dict):
-                    if recover_outlines:
-                        current = current.get("Next")
-                        continue
-                    raise ValueError("invalid outline child")
+                    malformed("invalid outline child")
+                    current = current.get("Next")
+                    continue
                 result.extend(self.walk_outlines(first, level + 1, page_lookup=page_lookup))
             current = current.get("Next")
         return result
@@ -1119,9 +1108,8 @@ class PdfDocument(Generic[PageT]):
             return 0
         current_count = self.resolver.resolve_int(raw_count)
         if current_count is None:
-            if self.recovery_enabled:
-                return 0
-            raise ValueError("invalid outline count")
+            self.malformed("invalid outline count")
+            return 0
         return current_count
 
     def resolve_destination(
@@ -1231,7 +1219,7 @@ class PdfDocument(Generic[PageT]):
                         dests_tree,
                         self.resolver.resolve,
                         self.resolver.resolve_str,
-                        recover=self.recovery_enabled,
+                        on_malformed=self.recovery_policy(),
                     )
                 )
 
@@ -1276,14 +1264,12 @@ class PdfDocument(Generic[PageT]):
             if field_list is None:
                 field_list = []
             elif not isinstance(field_list, list):
-                if self.recovery_enabled:
-                    field_list = []
-                else:
-                    raise ValueError("invalid AcroForm Fields array")
+                self.malformed("invalid AcroForm Fields array")
+                field_list = []
             for field in field_list:
                 field_obj = self.resolver.resolve(field)
                 records.extend(
-                    collect_field_records(self.resolver, field_obj, recover=self.recovery_enabled)
+                    collect_field_records(self.resolver, field_obj, self.recovery_policy())
                 )
         if not records or self.recovery_enabled:
             records.extend(self.discover_widget_field_records(records))
@@ -1371,9 +1357,7 @@ class PdfDocument(Generic[PageT]):
                     continue
                 seen_widgets.add(id(root))
                 seen_widgets.add(id(annot))
-                records.extend(
-                    collect_field_records(self.resolver, root, recover=self.recovery_enabled)
-                )
+                records.extend(collect_field_records(self.resolver, root, self.recovery_policy()))
         return records
 
     def widget_field_root(self, annot: PdfDict) -> PdfDict:
@@ -1403,7 +1387,7 @@ class PdfDocument(Generic[PageT]):
             embedded_tree,
             self.resolver.resolve,
             self.resolver.resolve_str,
-            recover=recover,
+            on_malformed=malformed_policy(recover),
         ):
             try:
                 record = self.embedded_file_record(name, value)
@@ -1447,7 +1431,7 @@ class PdfDocument(Generic[PageT]):
         return hidden
 
     def build_oc_hidden_layers(self) -> frozenset[str]:
-        recover = self.recovery_enabled
+        malformed = self.recovery_policy()
         try:
             self.catalog()
         except ValueError:
@@ -1459,17 +1443,14 @@ class PdfDocument(Generic[PageT]):
         if ocgs is None:
             return frozenset()
         if not isinstance(ocgs, list):
-            if recover:
-                return frozenset()
-            raise ValueError("invalid OCProperties OCGs array")
+            malformed("invalid OCProperties OCGs array")
+            return frozenset()
 
         on_layers: set[tuple[int, int] | int] = set()
         default_config = self.resolver.resolve(oc.get("D"))
         if default_config is not None and not isinstance(default_config, dict):
-            if recover:
-                default_config = None
-            else:
-                raise ValueError("invalid OCProperties D dictionary")
+            malformed("invalid OCProperties D dictionary")
+            default_config = None
         if default_config is not None:
             base_state_value = default_config.get("BaseState")
             base_state = (
@@ -1477,14 +1458,14 @@ class PdfDocument(Generic[PageT]):
                 if base_state_value is not None
                 else None
             )
-            if base_state_value is not None and base_state is None:
-                if not recover:
-                    raise ValueError("invalid OCProperties BaseState value")
-            elif base_state not in (None, "ON", "OFF", "Unchanged"):
-                if recover:
-                    base_state = None
-                else:
-                    raise ValueError("invalid OCProperties BaseState value")
+            if (base_state_value is not None and base_state is None) or base_state not in (
+                None,
+                "ON",
+                "OFF",
+                "Unchanged",
+            ):
+                malformed("invalid OCProperties BaseState value")
+                base_state = None
             if base_state != "OFF":
                 for ocg in ocgs:
                     key = self.ocg_key(ocg, self.resolver.resolve(ocg))
@@ -1498,9 +1479,8 @@ class PdfDocument(Generic[PageT]):
                 for ref in refs:
                     ocg_resolved = self.resolver.resolve(ref)
                     if not isinstance(ocg_resolved, dict):
-                        if recover:
-                            continue
-                        raise ValueError(f"invalid OCProperties {override_name} entry")
+                        malformed(f"invalid OCProperties {override_name} entry")
+                        continue
                     key = self.ocg_key(ref, ocg_resolved)
                     if key is not None:
                         update(key)
@@ -1509,14 +1489,12 @@ class PdfDocument(Generic[PageT]):
         for ocg_ref in ocgs:
             ocg_resolved = self.resolver.resolve(ocg_ref)
             if not isinstance(ocg_resolved, dict):
-                if recover:
-                    continue
-                raise ValueError("invalid OCProperties OCG entry")
+                malformed("invalid OCProperties OCG entry")
+                continue
             name = self.resolver.resolve_str(ocg_resolved.get("Name"))
             if not name:
-                if recover:
-                    continue
-                raise ValueError("invalid OCProperties OCG name")
+                malformed("invalid OCProperties OCG name")
+                continue
             key = self.ocg_key(ocg_ref, ocg_resolved)
             if key is None or key not in on_layers:
                 hidden_layers.add(name)
@@ -1775,10 +1753,7 @@ class PdfDocument(Generic[PageT]):
             if entry is None:
                 return None
             if entry.object_stream is not None:
-                try:
-                    resolved = resolver.resolve(value)
-                except Exception:
-                    return None
+                resolved = resolver.resolve_or_none(value)
                 object_cache[key] = resolved
                 return resolved
             lexer.rewind(entry.offset)
@@ -1866,10 +1841,7 @@ class PdfDocument(Generic[PageT]):
             scored: list[tuple[int, int, int, int]] = []
             for obj_num, gen_num, offset, compressed in candidates:
                 if compressed:
-                    try:
-                        obj = resolver.resolve(PdfReference(obj_num, gen_num))
-                    except Exception:
-                        continue
+                    obj = resolver.resolve_or_none(PdfReference(obj_num, gen_num))
                 else:
                     lexer.rewind(offset)
                     try:

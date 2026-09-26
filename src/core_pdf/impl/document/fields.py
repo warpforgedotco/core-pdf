@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal, Protocol, TypeAlias
 
 from core_pdf.impl.document.records import RawFormField
+from core_pdf.impl.document.recovery.policy import MalformedFn
 from core_pdf.impl.document.recovery.text_strings import parse_text_string
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_document.fields import (
@@ -56,8 +57,8 @@ def field_record(
     parent_name: str,
     parent_type: str,
     parent_value: object,
+    malformed: MalformedFn,
     *,
-    recover: bool,
     terminal_widget: bool = False,
 ) -> RawFormField:
     title = resolver.resolve_str(node.get("T"))
@@ -67,9 +68,8 @@ def field_record(
     value_text = field_value_text(resolver, value)
     try:
         kids = field_children(None if terminal_widget else node.get("Kids"))
-    except ValueError:
-        if not recover:
-            raise
+    except ValueError as error:
+        malformed(str(error))
         kids = []
     is_widget = terminal_widget or resolver.resolve_name_or_text(node.get("Subtype")) == "Widget"
     return RawFormField(
@@ -87,8 +87,7 @@ def field_record(
 def collect_field_records(
     resolver: FieldResolver,
     node: object,
-    *,
-    recover: bool,
+    malformed: MalformedFn,
 ) -> list[RawFormField]:
     seen: set[int] = set()
     records: list[RawFormField] = []
@@ -100,14 +99,12 @@ def collect_field_records(
             continue
         _, current_node, parent_name, parent_type, parent_value, depth = entry
         if depth > 50:
-            if recover:
-                continue
-            raise ValueError("invalid AcroForm depth")
+            malformed("invalid AcroForm depth")
+            continue
         current_node = resolver.resolve(current_node)
         if not isinstance(current_node, dict) or id(current_node) in seen:
-            if recover:
-                continue
-            raise ValueError("invalid AcroForm field entry")
+            malformed("invalid AcroForm field entry")
+            continue
         seen.add(id(current_node))
         record = field_record(
             resolver,
@@ -115,15 +112,14 @@ def collect_field_records(
             parent_name,
             parent_type,
             parent_value,
-            recover=recover,
+            malformed,
         )
         records.append(record)
         for kid in reversed(record.kids):
             resolved_kid = resolver.resolve(kid)
             if not isinstance(resolved_kid, dict):
-                if recover:
-                    continue
-                raise ValueError("invalid AcroForm kid entry")
+                malformed("invalid AcroForm kid entry")
+                continue
             if resolver.resolve_name_or_text(resolved_kid.get("Subtype")) == "Widget":
                 stack.append(
                     (
@@ -134,7 +130,7 @@ def collect_field_records(
                             record.name,
                             record.type,
                             record.value,
-                            recover=recover,
+                            malformed,
                             terminal_widget=True,
                         ),
                     )

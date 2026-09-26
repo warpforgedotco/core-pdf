@@ -394,14 +394,12 @@ class StructureTree(StructureNode):
             return results
         if not isinstance(resolved, dict):
             raise ValueError("invalid parent tree dictionary")
-        recover_parent_tree = self.document.recovery_enabled
-
         results.update(
             iter_number_tree_items(
                 resolved,
                 self.document.resolver.resolve,
                 decode_number=self.document.resolver.resolve_int,
-                recover_entries=recover_parent_tree,
+                on_malformed_entry=self.document.recovery_policy(),
                 resolve_values=False,
                 tree_name="parent",
                 max_depth=MAX_PARENT_TREE_DEPTH,
@@ -526,28 +524,25 @@ def make_kids(
     *,
     page_lookup: PageLookup[Any] | None = None,
 ) -> Iterator[StructureChild]:
-    recover_structure = document.recovery_enabled
+    malformed = document.recovery_policy()
     stack: list[tuple[Any, int]] = [(kid, depth)]
     while stack:
         current, depth = stack.pop()
         if depth > MAX_STRUCTURE_DEPTH:
-            if recover_structure:
-                continue
-            raise ValueError("invalid structure depth")
+            malformed("invalid structure depth")
+            continue
         if current is None:
             continue
         if isinstance(current, list):
             stack.extend((item, depth + 1) for item in reversed(current))
             continue
         if type(current) is bool:
-            if recover_structure:
-                continue
-            raise ValueError("invalid structure content mcid")
+            malformed("invalid structure content mcid")
+            continue
         if isinstance(current, int):
             if current < 0:
-                if recover_structure:
-                    continue
-                raise ValueError("invalid structure content mcid")
+                malformed("invalid structure content mcid")
+                continue
             yield StructureContentItem(
                 page_index=page.page_number - 1 if page is not None else None,
                 mcid=current,
@@ -562,9 +557,8 @@ def make_kids(
             if ktype == "MCR":
                 mcid = document.resolver.resolve_int(current.get("MCID"))
                 if mcid is None:
-                    if recover_structure:
-                        continue
-                    raise ValueError("invalid structure content mcid")
+                    malformed("invalid structure content mcid")
+                    continue
                 yield StructureContentItem(
                     page_index=get_kid_page_index(document, page, current, page_lookup),
                     mcid=mcid,
@@ -574,9 +568,8 @@ def make_kids(
             if ktype == "OBJR":
                 obj = document.resolver.resolve(current.get("Obj"))
                 if not isinstance(obj, dict):
-                    if recover_structure:
-                        continue
-                    raise ValueError("invalid structure object reference")
+                    malformed("invalid structure object reference")
+                    continue
                 yield StructureContentObject(
                     page_index=get_kid_page_index(document, page, current, page_lookup),
                     props=obj,
@@ -584,6 +577,4 @@ def make_kids(
                 continue
             yield StructureElement(document, current, page_lookup=page_lookup)
             continue
-        if recover_structure:
-            continue
-        raise ValueError("invalid structure kid entry")
+        malformed("invalid structure kid entry")

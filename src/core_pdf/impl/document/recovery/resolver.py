@@ -19,7 +19,7 @@ from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver as SyntaxResolver
 from core_pdf_spec.s_07_syntax.resources import resolve_resource_dict as resolve_spec_resources
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
@@ -128,6 +128,14 @@ class ObjectResolver(SyntaxResolver):
             raise PdfParseError("expected indirect object header")
         lexer.rewind(header[0])
         return lexer.parse_indirect_object()
+
+    def resolve_or_none(self, value: object) -> PdfObject | None:
+        """resolve, or None where resolving raises: for the recovery scans,
+        which skip what they cannot read."""
+        try:
+            return self.resolve(value)
+        except Exception:
+            return None
 
     def resolve_name_or_text(self, value: object, *, name_like: bool = False) -> str | None:
         text = self.resolve_name(value)

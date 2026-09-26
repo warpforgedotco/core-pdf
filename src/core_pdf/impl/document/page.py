@@ -109,14 +109,13 @@ class PdfPage:
         return self._annotation_dicts(strict=False)
 
     def _annotation_dicts(self, *, strict: bool) -> list[PdfDict]:
-        recover_annotations = self.document.recovery_enabled
+        malformed = self.document.recovery_policy()
         raw_annots = self.document.resolver.resolve(self.inherited_values.get("Annots"))
         if raw_annots is None:
             return []
         if not isinstance(raw_annots, list):
-            if strict and not recover_annotations:
-                raise ValueError("invalid page Annots array")
             if strict:
+                malformed("invalid page Annots array")
                 return []
             annots: list[PdfObject] = [raw_annots]
         else:
@@ -126,25 +125,22 @@ class PdfPage:
             annot = resolve_annotation_dict(self.document.resolver, annot_ref)
             if annot is not None:
                 resolved_annots.append(annot)
-            elif strict and not recover_annotations:
-                raise ValueError("invalid page annotation entry")
+            elif strict:
+                malformed("invalid page annotation entry")
         return resolved_annots
 
     def get_annotations(self) -> list[RawAnnotation]:
-        recover_annotations = self.document.recovery_enabled
+        malformed = self.document.recovery_policy()
         results = []
         for annot in self._annotation_dicts(strict=True):
             subtype = self.document.resolver.resolve_name(annot.get("Subtype"))
             try:
                 rect = self.document.resolver.resolve_box(annot.get("Rect"))
             except ValueError:
-                if recover_annotations:
-                    continue
-                raise ValueError("invalid page annotation rectangle") from None
+                rect = None
             if rect is None:
-                if recover_annotations:
-                    continue
-                raise ValueError("invalid page annotation rectangle")
+                malformed("invalid page annotation rectangle")
+                continue
             contents = self.document.resolver.resolve_str(annot.get("Contents")) or ""
             dest = annot.get("Dest")
             action: object = annot.get("A")
