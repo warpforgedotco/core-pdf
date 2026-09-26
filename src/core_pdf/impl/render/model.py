@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import IntEnum
+from operator import attrgetter
 from typing import Any, ClassVar, Self, final
 
 import numpy
@@ -174,6 +175,31 @@ class SoftMaskPlane:
         return self.alpha.nbytes
 
 
+# The paint state a captured drawing hands to its path item, in to_data order.
+PATH_PAINT_FIELDS = (
+    "fill",
+    "fill_opacity",
+    "stroke_color",
+    "stroke_opacity",
+    "line_width",
+    "line_cap",
+    "line_join",
+    "dash_pattern",
+    "fill_rule",
+    "blend_mode",
+    "soft_mask_alpha",
+    "alpha_is_shape",
+    "graphics_soft_mask",
+    "fill_pattern",
+    "stroke_pattern",
+)
+path_paint_values = attrgetter(*PATH_PAINT_FIELDS)
+
+
+def path_paint_fields(source: object) -> dict[str, Any]:
+    return dict(zip(PATH_PAINT_FIELDS, path_paint_values(source), strict=True))
+
+
 @final
 class PathPaintItem(ReplaceFields, ReprFields):
     __slots__ = (
@@ -320,25 +346,7 @@ class PathPaintItem(ReplaceFields, ReprFields):
         return PATH_PAINT_NAMES[int(self.paint_kind)]
 
     def to_data(self) -> dict[str, Any]:
-        return {
-            "bbox": self.bbox,
-            "path": self.path,
-            "fill": self.fill,
-            "fill_opacity": self.fill_opacity,
-            "stroke_color": self.stroke_color,
-            "stroke_opacity": self.stroke_opacity,
-            "line_width": self.line_width,
-            "line_cap": self.line_cap,
-            "line_join": self.line_join,
-            "dash_pattern": self.dash_pattern,
-            "fill_rule": self.fill_rule,
-            "blend_mode": self.blend_mode,
-            "soft_mask_alpha": self.soft_mask_alpha,
-            "alpha_is_shape": self.alpha_is_shape,
-            "graphics_soft_mask": self.graphics_soft_mask,
-            "fill_pattern": self.fill_pattern,
-            "stroke_pattern": self.stroke_pattern,
-        }
+        return {"bbox": self.bbox, "path": self.path, **path_paint_fields(self)}
 
 
 @final
