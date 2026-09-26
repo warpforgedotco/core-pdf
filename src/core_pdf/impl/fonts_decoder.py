@@ -7,7 +7,6 @@ import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
-from copy import replace
 from functools import cache
 from io import BytesIO
 from typing import Any, ClassVar
@@ -237,36 +236,23 @@ def opentype_font(inputs: FontProgramInputs) -> OpenTypeFontProgram | None:
         return None
 
 
+def recover_descriptor(value: object) -> dict[str, Any] | None:
+    return value if isinstance(value, dict) else None
+
+
+def recover_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStream | None:
+    value = descriptor.get(key) if descriptor is not None else None
+    return value if isinstance(value, PdfStream) else None
+
+
 def font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
-    try:
-        inputs = prepare_font_program_inputs(font)
-    except ValueError:
-        descendant = get_descendant(font)
-        font_dict = descendant if descendant is not None else font
-        descriptor = font_dict.get("FontDescriptor")
-        original_descriptor = font.get("FontDescriptor")
-        streams = (
-            original_descriptor.get("FontFile") if isinstance(original_descriptor, dict) else None,
-            descriptor.get("FontFile2") if isinstance(descriptor, dict) else None,
-            descriptor.get("FontFile3") if isinstance(descriptor, dict) else None,
-        )
-        first, second, third = (
-            value if isinstance(value, PdfStream) else None for value in streams
-        )
-        inputs = FontProgramInputs(
-            recover_pdf_name(font_dict.get("Subtype")),
-            recover_pdf_name(font.get("Subtype")),
-            descendant,
-            first,
-            second,
-            third,
-        )
-    else:
-        font_dict = inputs.descendant if inputs.descendant is not None else font
-        subtype = recover_pdf_name(font_dict.get("Subtype"))
-        original_subtype = recover_pdf_name(font.get("Subtype"))
-        if (subtype, original_subtype) != (inputs.subtype, inputs.original_subtype):
-            inputs = replace(inputs, subtype=subtype, original_subtype=original_subtype)
+    inputs = prepare_font_program_inputs(
+        font,
+        read_name=recover_pdf_name,
+        read_descendant=get_descendant,
+        read_descriptor=recover_descriptor,
+        read_font_file=recover_font_file,
+    )
     for resolver in (
         cff_font,
         tt_font,

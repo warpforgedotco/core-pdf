@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -114,23 +115,37 @@ def descriptor_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStre
     return value
 
 
-def prepare_font_program_inputs(font: dict[str, Any]) -> FontProgramInputs:
-    descendant = get_descendant(font)
+def prepare_font_program_inputs(
+    font: dict[str, Any],
+    *,
+    read_name: Callable[[object], str | None] = decoded_name,
+    read_descendant: Callable[[dict[Any, Any]], dict[Any, Any] | None] = get_descendant,
+    read_descriptor: Callable[[object], dict[str, Any] | None] = font_descriptor,
+    read_font_file: Callable[[dict[str, Any] | None, str], PdfStream | None] = (
+        descriptor_font_file
+    ),
+) -> FontProgramInputs:
+    """The dictionaries and streams that select a font's embedded program.
+
+    Each reader coerces one entry and, by default, raises ValueError on a
+    malformed value; a caller that recovers passes readers that return None.
+    """
+    descendant = read_descendant(font)
     font_dict = descendant if descendant is not None else font
-    original_descriptor = font_descriptor(font.get("FontDescriptor"))
-    font_file = descriptor_font_file(original_descriptor, "FontFile")
+    original_descriptor = read_descriptor(font.get("FontDescriptor"))
+    font_file = read_font_file(original_descriptor, "FontFile")
     descriptor = (
-        font_descriptor(font_dict.get("FontDescriptor"))
+        read_descriptor(font_dict.get("FontDescriptor"))
         if font_dict is not font
         else original_descriptor
     )
     return FontProgramInputs(
-        subtype=decoded_name(font_dict.get("Subtype")),
-        original_subtype=decoded_name(font.get("Subtype")),
+        subtype=read_name(font_dict.get("Subtype")),
+        original_subtype=read_name(font.get("Subtype")),
         descendant=descendant,
         font_file=font_file,
-        font_file2=descriptor_font_file(descriptor, "FontFile2"),
-        font_file3=descriptor_font_file(descriptor, "FontFile3"),
+        font_file2=read_font_file(descriptor, "FontFile2"),
+        font_file3=read_font_file(descriptor, "FontFile3"),
     )
 
 
