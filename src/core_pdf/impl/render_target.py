@@ -26,7 +26,11 @@ from core_pdf.impl.capture_records import (
 )
 from core_pdf.impl.geometry import normalize_rect, points_bbox, rect_tuple
 from core_pdf.impl.graphics_images import PreparedImage, prepare_image
-from core_pdf.impl.graphics_shading import PreparedShading, prepare_shading
+from core_pdf.impl.graphics_shading import (
+    PreparedShading,
+    ShadingEvaluatorCache,
+    prepare_shading,
+)
 from core_pdf.impl.graphics_soft_masks import image_color_key_mask_is_shape
 from core_pdf.impl.render_blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
@@ -179,6 +183,9 @@ class ByteBudgetCache[K, V]:
 # while it is cached.
 type PreparedImageCache = ByteBudgetCache[int, tuple[ImageSource, PreparedImage | None]]
 type PreparedShadingCache = dict[tuple[int, ColorRendering], tuple[object, PreparedShading | None]]
+# Each cache is cleared when it reaches this many entries: a tiled sh adds one
+# shading dictionary per tile, and the cache holds each of them.
+SHADING_CACHE_LIMIT = 4096
 
 
 def prepared_image(cache: PreparedImageCache, source: ImageSource) -> PreparedImage | None:
@@ -558,6 +565,7 @@ class RasterTarget:
         "prepared_image_cache",
         "tiling_cell_cache",
         "prepared_shading_cache",
+        "shading_evaluator_cache",
         "active_soft_masks",
         "elementary_scratch",
         "group_member_boxes",
@@ -613,6 +621,7 @@ class RasterTarget:
         # The entry keeps its dictionary alive, so the identity key cannot be
         # reused while it is here.
         self.prepared_shading_cache: PreparedShadingCache = {}
+        self.shading_evaluator_cache: ShadingEvaluatorCache = {}
         self.active_soft_masks: set[SoftMaskKey] = set()
         self.elementary_scratch: dict[int, ElementaryScratch] = {}
         # DisplayList.group_member_boxes of the list being painted, if known.
@@ -669,6 +678,7 @@ class RasterTarget:
         sibling.prepared_image_cache = self.prepared_image_cache
         sibling.tiling_cell_cache = self.tiling_cell_cache
         sibling.prepared_shading_cache = self.prepared_shading_cache
+        sibling.shading_evaluator_cache = self.shading_evaluator_cache
         sibling.active_soft_masks = self.active_soft_masks
         return sibling, view
 
@@ -3080,14 +3090,23 @@ class RasterTarget:
 
         A page that paints one shading many times -- a pattern fill per
         path, an sh per tile -- parsed its function and colour space again
-        each time, and started a fresh colour cache.
+        each time, and started a fresh colour cache. A tiled sh paints a copy
+        of the dictionary per tile, with the tile's own Coords and BBox, so
+        those share the evaluator cache, keyed on the Function and
+        ColorSpace the copies have in common.
         """
         key = (id(dictionary), rendering)
-        cached = self.prepared_shading_cache.get(key)
+        cache = self.prepared_shading_cache
+        cached = cache.get(key)
         if cached is not None and cached[0] is dictionary:
             return cached[1]
-        shading = prepare_shading(dictionary, rendering=rendering)
-        self.prepared_shading_cache[key] = (dictionary, shading)
+        evaluators = self.shading_evaluator_cache
+        if len(evaluators) >= SHADING_CACHE_LIMIT:
+            evaluators.clear()
+        shading = prepare_shading(dictionary, rendering=rendering, evaluators=evaluators)
+        if len(cache) >= SHADING_CACHE_LIMIT:
+            cache.clear()
+        cache[key] = (dictionary, shading)
         return shading
 
     def paint_shading(self, data: dict[str, Any], blend_mode: str | None) -> None:
