@@ -13,11 +13,11 @@
     "packages/core-pdf-cythonized/src/core_pdf_cythonized"
   ],
   "statements": {
-    "covered": 41022,
-    "total": 44066
+    "covered": 39046,
+    "total": 42127
   },
   "branches": {
-    "covered": 13735,
-    "total": 16012
+    "covered": 12993,
+    "total": 15352
   }
 }
