@@ -14,11 +14,14 @@ import core_pdf_spec.s_07_filters.codecs as strict
 from core_jbig2.bitmap import compose_packed_bitmap_data
 from core_jbig2.codec import (
     GENERIC_TEMPLATE_0_DEFAULT_AT,
+    JBIG2_IMMEDIATE_GENERIC_REGION,
+    JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION,
+    JBIG2_IMMEDIATE_TEXT_REGION,
+    JBIG2_PAGE_INFO,
     JBIG2GenericRegionHeader,
     JBIG2PageDecoder,
     Jbig2ParseError,
     JBIG2Region,
-    JBIG2Segment,
     Jbig2UnsupportedError,
     compose_packed_bitmap_region,
 )
@@ -149,9 +152,16 @@ def decode_stream_data(
 
 
 class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
-    def decode_segment(self, segment: JBIG2Segment) -> None:
-        if segment.segment_type in (48, 6, 38, 39):
-            super().decode_segment(segment)
+    # The page and its immediate regions; anything else is skipped rather
+    # than failing the image.
+    supported_segment_types = frozenset(
+        {
+            JBIG2_PAGE_INFO,
+            JBIG2_IMMEDIATE_TEXT_REGION,
+            JBIG2_IMMEDIATE_GENERIC_REGION,
+            JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION,
+        }
+    )
 
     def decode_text_region(self, region: JBIG2Region) -> None:
         image = self.image
