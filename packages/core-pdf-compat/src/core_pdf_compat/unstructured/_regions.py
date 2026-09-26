@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
 import numpy
 
 from core_pdf.impl.geometry import flip_rect_vertical, interval_overlap
+from core_pdf.impl.types import Record
 from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTTextBox
 
 from ._classification import (
@@ -20,7 +21,7 @@ from ._elements import (
 frozen_setattr = object.__setattr__
 
 
-class TextRegion:
+class TextRegion(Record):
     __slots__ = ("text", "bbox", "element_class")
 
     text: str
@@ -40,15 +41,6 @@ class TextRegion:
         frozen_setattr(self, "bbox", bbox)
         frozen_setattr(self, "element_class", element_class)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"bbox={self.bbox!r}, "
-            f"element_class={self.element_class!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -62,27 +54,6 @@ class TextRegion:
 
     def __hash__(self) -> int:
         return hash((self.text, self.bbox, self.element_class))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        bbox = changes.pop("bbox", self.bbox)
-        element_class = changes.pop("element_class", self.element_class)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(text, bbox, element_class)
 
 
 def clean_text(text: str) -> str:

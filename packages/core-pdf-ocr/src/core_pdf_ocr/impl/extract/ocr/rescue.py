@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from copy import replace
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
 import numpy
 
 from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.types import Record
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_RESCUE_DENSE_MIN_CHARACTERS,
     OCR_RESCUE_DENSE_MIN_CONFIDENCE,
@@ -77,7 +78,7 @@ def observation_coverage_grid(
     return output.astype(numpy.float32, copy=False).reshape(-1)
 
 
-class RescueCoverage:
+class RescueCoverage(Record):
     __slots__ = ("raster_count", "cell_count", "ink", "weak_ink")
 
     raster_count: int
@@ -100,16 +101,6 @@ class RescueCoverage:
         frozen_setattr(self, "ink", ink)
         frozen_setattr(self, "weak_ink", weak_ink)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"raster_count={self.raster_count!r}, "
-            f"cell_count={self.cell_count!r}, "
-            f"ink={self.ink!r}, "
-            f"weak_ink={self.weak_ink!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -124,28 +115,6 @@ class RescueCoverage:
 
     def __hash__(self) -> int:
         return hash((self.raster_count, self.cell_count, self.ink, self.weak_ink))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        raster_count = changes.pop("raster_count", self.raster_count)
-        cell_count = changes.pop("cell_count", self.cell_count)
-        ink = changes.pop("ink", self.ink)
-        weak_ink = changes.pop("weak_ink", self.weak_ink)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(raster_count, cell_count, ink, weak_ink)
 
     @property
     def mean_ink(self) -> float:

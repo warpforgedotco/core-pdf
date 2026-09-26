@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import math
 from copy import replace
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.render.model import RenderOptions
 from core_pdf.impl.render.page import compose_page
+from core_pdf.impl.types import Record
 from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     OCR_PREFLIGHT_PIXELS,
@@ -96,7 +97,7 @@ def region_tasks(
     )
 
 
-class OcrPassTasks:
+class OcrPassTasks(Record):
     __slots__ = ("ocr_pass", "tasks", "packed_stroked")
 
     ocr_pass: OcrPass
@@ -116,15 +117,6 @@ class OcrPassTasks:
         frozen_setattr(self, "tasks", tasks)
         frozen_setattr(self, "packed_stroked", packed_stroked)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"ocr_pass={self.ocr_pass!r}, "
-            f"tasks={self.tasks!r}, "
-            f"packed_stroked={self.packed_stroked!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -138,27 +130,6 @@ class OcrPassTasks:
 
     def __hash__(self) -> int:
         return hash((self.ocr_pass, self.tasks, self.packed_stroked))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        ocr_pass = changes.pop("ocr_pass", self.ocr_pass)
-        tasks = changes.pop("tasks", self.tasks)
-        packed_stroked = changes.pop("packed_stroked", self.packed_stroked)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(ocr_pass, tasks, packed_stroked)
 
 
 class OcrSession:

@@ -4,10 +4,11 @@ import contextlib
 from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
 from core_pdf import PdfDocument
 from core_pdf.impl.document.recovery.xref import XRefScanner
+from core_pdf.impl.types import Record
 from core_pdf_spec.s_07_content.inline_images import validate_inline_images
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 
@@ -64,7 +65,7 @@ class _MetadataMixin:
         return _metadata_text(self.metadata, excluded, self.metadata_template)
 
 
-class Document(_MetadataMixin):
+class Document(Record, _MetadataMixin):
     __slots__ = (
         "text",
         "metadata",
@@ -120,19 +121,6 @@ class Document(_MetadataMixin):
         frozen_setattr(self, "metadata_template", metadata_template)
         frozen_setattr(self, "text_template", text_template)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"metadata={self.metadata!r}, "
-            f"id_={self.id_!r}, "
-            f"excluded_llm_metadata_keys={self.excluded_llm_metadata_keys!r}, "
-            f"excluded_embed_metadata_keys={self.excluded_embed_metadata_keys!r}, "
-            f"metadata_template={self.metadata_template!r}, "
-            f"text_template={self.text_template!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -161,43 +149,6 @@ class Document(_MetadataMixin):
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        metadata = changes.pop("metadata", self.metadata)
-        id_ = changes.pop("id_", self.id_)
-        excluded_llm_metadata_keys = changes.pop(
-            "excluded_llm_metadata_keys", self.excluded_llm_metadata_keys
-        )
-        excluded_embed_metadata_keys = changes.pop(
-            "excluded_embed_metadata_keys", self.excluded_embed_metadata_keys
-        )
-        metadata_template = changes.pop("metadata_template", self.metadata_template)
-        text_template = changes.pop("text_template", self.text_template)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            text,
-            metadata,
-            id_,
-            excluded_llm_metadata_keys,
-            excluded_embed_metadata_keys,
-            metadata_template,
-            text_template,
-        )
-
     @property
     def doc_id(self) -> str:
         return self.id_ or str(self.metadata.get("doc_id", ""))
@@ -206,7 +157,7 @@ class Document(_MetadataMixin):
         return {"id_": self.doc_id, "text": self.text, "metadata": dict(self.metadata)}
 
 
-class Node(_MetadataMixin):
+class Node(Record, _MetadataMixin):
     __slots__ = (
         "text",
         "node_id",
@@ -274,21 +225,6 @@ class Node(_MetadataMixin):
         frozen_setattr(self, "metadata_template", metadata_template)
         frozen_setattr(self, "text_template", text_template)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"node_id={self.node_id!r}, "
-            f"metadata={self.metadata!r}, "
-            f"relationships={self.relationships!r}, "
-            f"id_={self.id_!r}, "
-            f"excluded_llm_metadata_keys={self.excluded_llm_metadata_keys!r}, "
-            f"excluded_embed_metadata_keys={self.excluded_embed_metadata_keys!r}, "
-            f"metadata_template={self.metadata_template!r}, "
-            f"text_template={self.text_template!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -319,47 +255,6 @@ class Node(_MetadataMixin):
                 self.metadata_template,
                 self.text_template,
             )
-        )
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        node_id = changes.pop("node_id", self.node_id)
-        metadata = changes.pop("metadata", self.metadata)
-        relationships = changes.pop("relationships", self.relationships)
-        id_ = changes.pop("id_", self.id_)
-        excluded_llm_metadata_keys = changes.pop(
-            "excluded_llm_metadata_keys", self.excluded_llm_metadata_keys
-        )
-        excluded_embed_metadata_keys = changes.pop(
-            "excluded_embed_metadata_keys", self.excluded_embed_metadata_keys
-        )
-        metadata_template = changes.pop("metadata_template", self.metadata_template)
-        text_template = changes.pop("text_template", self.text_template)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            text,
-            node_id,
-            metadata,
-            relationships,
-            id_,
-            excluded_llm_metadata_keys,
-            excluded_embed_metadata_keys,
-            metadata_template,
-            text_template,
         )
 
     @property

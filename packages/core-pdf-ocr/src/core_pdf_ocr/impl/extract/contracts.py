@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import IntEnum, StrEnum
-from typing import Any, ClassVar, NoReturn, Self
+from typing import Any, ClassVar
 
 from core_pdf.impl.extract.contracts import (
     GlyphEvidence,
@@ -16,6 +16,7 @@ from core_pdf.impl.extract.contracts import (
 from core_pdf.impl.extract.contracts import (
     PageEvidence as NativePageEvidence,
 )
+from core_pdf.impl.types import Record
 
 frozen_setattr = object.__setattr__
 
@@ -95,7 +96,7 @@ class FusionPolicy(StrEnum):
     UNCOVERED_VECTOR = "uncovered-vector"
 
 
-class StrokedVectorTextEvidence:
+class StrokedVectorTextEvidence(Record):
     __slots__ = ("trusted", "drawing_indexes", "bbox", "candidate_paths")
 
     trusted: bool
@@ -123,16 +124,6 @@ class StrokedVectorTextEvidence:
         frozen_setattr(self, "bbox", bbox)
         frozen_setattr(self, "candidate_paths", candidate_paths)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"trusted={self.trusted!r}, "
-            f"drawing_indexes={self.drawing_indexes!r}, "
-            f"bbox={self.bbox!r}, "
-            f"candidate_paths={self.candidate_paths!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -147,28 +138,6 @@ class StrokedVectorTextEvidence:
 
     def __hash__(self) -> int:
         return hash((self.trusted, self.drawing_indexes, self.bbox, self.candidate_paths))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        trusted = changes.pop("trusted", self.trusted)
-        drawing_indexes = changes.pop("drawing_indexes", self.drawing_indexes)
-        bbox = changes.pop("bbox", self.bbox)
-        candidate_paths = changes.pop("candidate_paths", self.candidate_paths)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(trusted, drawing_indexes, bbox, candidate_paths)
 
 
 class PageEvidence(NativePageEvidence):
@@ -293,33 +262,6 @@ class PageEvidence(NativePageEvidence):
             StrokedVectorTextEvidence() if stroked_vector_text is None else stroked_vector_text,
         )
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"page_area={self.page_area!r}, "
-            f"native_characters={self.native_characters!r}, "
-            f"visible_native_characters={self.visible_native_characters!r}, "
-            f"suspicious_characters={self.suspicious_characters!r}, "
-            f"image_count={self.image_count!r}, "
-            f"image_area_ratio={self.image_area_ratio!r}, "
-            f"image_boxes={self.image_boxes!r}, "
-            f"text_coverage={self.text_coverage!r}, "
-            f"full_page_image={self.full_page_image!r}, "
-            f"text_quality={self.text_quality!r}, "
-            f"all_text_quality={self.all_text_quality!r}, "
-            f"glyphs={self.glyphs!r}, "
-            f"painted_native_characters={self.painted_native_characters!r}, "
-            f"trusted_hidden_text={self.trusted_hidden_text!r}, "
-            f"vector_complexity={self.vector_complexity!r}, "
-            f"image_filters={self.image_filters!r}, "
-            f"uncovered_vector_area={self.uncovered_vector_area!r}, "
-            f"vector_text_candidate_segments={self.vector_text_candidate_segments!r}, "
-            f"vector_text_matched_segments={self.vector_text_matched_segments!r}, "
-            f"vector_text_trusted={self.vector_text_trusted!r}, "
-            f"stroked_vector_text={self.stroked_vector_text!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -376,62 +318,6 @@ class PageEvidence(NativePageEvidence):
             )
         )
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        page_area = changes.pop("page_area", self.page_area)
-        native_characters = changes.pop("native_characters", self.native_characters)
-        visible_native_characters = changes.pop(
-            "visible_native_characters", self.visible_native_characters
-        )
-        suspicious_characters = changes.pop("suspicious_characters", self.suspicious_characters)
-        image_count = changes.pop("image_count", self.image_count)
-        image_area_ratio = changes.pop("image_area_ratio", self.image_area_ratio)
-        image_boxes = changes.pop("image_boxes", self.image_boxes)
-        text_coverage = changes.pop("text_coverage", self.text_coverage)
-        full_page_image = changes.pop("full_page_image", self.full_page_image)
-        text_quality = changes.pop("text_quality", self.text_quality)
-        all_text_quality = changes.pop("all_text_quality", self.all_text_quality)
-        glyphs = changes.pop("glyphs", self.glyphs)
-        painted_native_characters = changes.pop(
-            "painted_native_characters", self.painted_native_characters
-        )
-        trusted_hidden_text = changes.pop("trusted_hidden_text", self.trusted_hidden_text)
-        vector_complexity = changes.pop("vector_complexity", self.vector_complexity)
-        image_filters = changes.pop("image_filters", self.image_filters)
-        uncovered_vector_area = changes.pop("uncovered_vector_area", self.uncovered_vector_area)
-        vector_text_candidate_segments = changes.pop(
-            "vector_text_candidate_segments", self.vector_text_candidate_segments
-        )
-        vector_text_matched_segments = changes.pop(
-            "vector_text_matched_segments", self.vector_text_matched_segments
-        )
-        vector_text_trusted = changes.pop("vector_text_trusted", self.vector_text_trusted)
-        stroked_vector_text = changes.pop("stroked_vector_text", self.stroked_vector_text)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            page_area,
-            native_characters,
-            visible_native_characters,
-            suspicious_characters,
-            image_count,
-            image_area_ratio,
-            image_boxes,
-            text_coverage,
-            full_page_image,
-            text_quality,
-            all_text_quality,
-            glyphs,
-            painted_native_characters,
-            trusted_hidden_text,
-            vector_complexity,
-            image_filters,
-            uncovered_vector_area,
-            vector_text_candidate_segments,
-            vector_text_matched_segments,
-            vector_text_trusted,
-            stroked_vector_text,
-        )
-
     @property
     def vector_text_segment_coverage(self) -> float:
         return self.vector_text_matched_segments / max(1, self.vector_text_candidate_segments)
@@ -448,7 +334,7 @@ class PageAnalysis(NativePageAnalysis):
     evidence: PageEvidence
 
 
-class OcrPass:
+class OcrPass(Record):
     __slots__ = (
         "name",
         "scope",
@@ -594,34 +480,6 @@ class OcrPass:
         frozen_setattr(self, "recognize_words", recognize_words)
         frozen_setattr(self, "collect_symbols", collect_symbols)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"name={self.name!r}, "
-            f"scope={self.scope!r}, "
-            f"scale={self.scale!r}, "
-            f"modes={self.modes!r}, "
-            f"tiles={self.tiles!r}, "
-            f"parallel_tiles={self.parallel_tiles!r}, "
-            f"region_columns={self.region_columns!r}, "
-            f"max_regions={self.max_regions!r}, "
-            f"minimum_confidence={self.minimum_confidence!r}, "
-            f"run_if_characters_below={self.run_if_characters_below!r}, "
-            f"minimum_utility_gain={self.minimum_utility_gain!r}, "
-            f"adaptive_scale={self.adaptive_scale!r}, "
-            f"minimum_characters_for_rescue={self.minimum_characters_for_rescue!r}, "
-            f"character_confidence_threshold={self.character_confidence_threshold!r}, "
-            f"run_if_additions_below={self.run_if_additions_below!r}, "
-            f"seed_with_native={self.seed_with_native!r}, "
-            f"region_first={self.region_first!r}, "
-            f"preprocess={self.preprocess!r}, "
-            f"pixel_budget={self.pixel_budget!r}, "
-            f"include_native_text={self.include_native_text!r}, "
-            f"recognize_words={self.recognize_words!r}, "
-            f"collect_symbols={self.collect_symbols!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -680,77 +538,8 @@ class OcrPass:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        name = changes.pop("name", self.name)
-        scope = changes.pop("scope", self.scope)
-        scale = changes.pop("scale", self.scale)
-        modes = changes.pop("modes", self.modes)
-        tiles = changes.pop("tiles", self.tiles)
-        parallel_tiles = changes.pop("parallel_tiles", self.parallel_tiles)
-        region_columns = changes.pop("region_columns", self.region_columns)
-        max_regions = changes.pop("max_regions", self.max_regions)
-        minimum_confidence = changes.pop("minimum_confidence", self.minimum_confidence)
-        run_if_characters_below = changes.pop(
-            "run_if_characters_below", self.run_if_characters_below
-        )
-        minimum_utility_gain = changes.pop("minimum_utility_gain", self.minimum_utility_gain)
-        adaptive_scale = changes.pop("adaptive_scale", self.adaptive_scale)
-        minimum_characters_for_rescue = changes.pop(
-            "minimum_characters_for_rescue", self.minimum_characters_for_rescue
-        )
-        character_confidence_threshold = changes.pop(
-            "character_confidence_threshold", self.character_confidence_threshold
-        )
-        run_if_additions_below = changes.pop("run_if_additions_below", self.run_if_additions_below)
-        seed_with_native = changes.pop("seed_with_native", self.seed_with_native)
-        region_first = changes.pop("region_first", self.region_first)
-        preprocess = changes.pop("preprocess", self.preprocess)
-        pixel_budget = changes.pop("pixel_budget", self.pixel_budget)
-        include_native_text = changes.pop("include_native_text", self.include_native_text)
-        recognize_words = changes.pop("recognize_words", self.recognize_words)
-        collect_symbols = changes.pop("collect_symbols", self.collect_symbols)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            name,
-            scope,
-            scale,
-            modes,
-            tiles,
-            parallel_tiles,
-            region_columns,
-            max_regions,
-            minimum_confidence,
-            run_if_characters_below,
-            minimum_utility_gain,
-            adaptive_scale,
-            minimum_characters_for_rescue,
-            character_confidence_threshold,
-            run_if_additions_below,
-            seed_with_native,
-            region_first,
-            preprocess,
-            pixel_budget,
-            include_native_text,
-            recognize_words,
-            collect_symbols,
-        )
-
-
-class WorkPlan:
+class WorkPlan(Record):
     __slots__ = (
         "route",
         "reason",
@@ -807,19 +596,6 @@ class WorkPlan:
         frozen_setattr(self, "augment_page_candidates", augment_page_candidates)
         self._post_init()
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"route={self.route!r}, "
-            f"reason={self.reason!r}, "
-            f"ocr_passes={self.ocr_passes!r}, "
-            f"verify_hidden_text={self.verify_hidden_text!r}, "
-            f"fusion_policy={self.fusion_policy!r}, "
-            f"allow_direct_image_ocr={self.allow_direct_image_ocr!r}, "
-            f"augment_page_candidates={self.augment_page_candidates!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -848,41 +624,6 @@ class WorkPlan:
             )
         )
 
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        route = changes.pop("route", self.route)
-        reason = changes.pop("reason", self.reason)
-        ocr_passes = changes.pop("ocr_passes", self.ocr_passes)
-        verify_hidden_text = changes.pop("verify_hidden_text", self.verify_hidden_text)
-        fusion_policy = changes.pop("fusion_policy", self.fusion_policy)
-        allow_direct_image_ocr = changes.pop("allow_direct_image_ocr", self.allow_direct_image_ocr)
-        augment_page_candidates = changes.pop(
-            "augment_page_candidates", self.augment_page_candidates
-        )
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            route,
-            reason,
-            ocr_passes,
-            verify_hidden_text,
-            fusion_policy,
-            allow_direct_image_ocr,
-            augment_page_candidates,
-        )
-
     def _post_init(self) -> None:
         if not isinstance(self.reason, PagePlanReason):
             object.__setattr__(self, "reason", PagePlanReason(self.reason))
@@ -894,7 +635,7 @@ class WorkPlan:
         )
 
 
-class RecognitionResult:
+class RecognitionResult(Record):
     __slots__ = ("observations", "stroked_vector_alphabet")
 
     observations: ObservationBatch
@@ -911,14 +652,6 @@ class RecognitionResult:
         frozen_setattr(self, "observations", observations)
         frozen_setattr(self, "stroked_vector_alphabet", stroked_vector_alphabet)
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"observations={self.observations!r}, "
-            f"stroked_vector_alphabet={self.stroked_vector_alphabet!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -931,25 +664,3 @@ class RecognitionResult:
 
     def __hash__(self) -> int:
         return hash((self.observations, self.stroked_vector_alphabet))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __getstate__(self) -> list[Any]:
-        return [getattr(self, name) for name in self.__fields__]
-
-    def __setstate__(self, state: list[Any]) -> None:
-        for name, value in zip(self.__fields__, state, strict=True):
-            frozen_setattr(self, name, value)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        observations = changes.pop("observations", self.observations)
-        stroked_vector_alphabet = changes.pop(
-            "stroked_vector_alphabet", self.stroked_vector_alphabet
-        )
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(observations, stroked_vector_alphabet)

@@ -9,7 +9,7 @@ from io import BytesIO
 from itertools import accumulate, groupby, pairwise
 from operator import itemgetter
 from types import SimpleNamespace
-from typing import Any, ClassVar, NoReturn, Self, TypeAlias
+from typing import Any, ClassVar, TypeAlias
 
 from core_pdf import PdfDocument
 from core_pdf.impl.geometry import (
@@ -22,7 +22,14 @@ from core_pdf.impl.output.model import Table as StructuredTable
 from core_pdf.impl.output.model import TableCell
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.render.paths import intersect_box
-from core_pdf.impl.types import DrawingRecord, ImageRecord, PdfReference
+from core_pdf.impl.types import (
+    DrawingRecord,
+    FrozenFields,
+    ImageRecord,
+    PdfReference,
+    ReplaceFields,
+    ReprFields,
+)
 
 from .._shared import ClosingMixin, PdfInput, encode_png
 from .exceptions import PdfminerException
@@ -1532,7 +1539,7 @@ class TableFinder:
         return intersections
 
 
-class _ImageOriginal:
+class _ImageOriginal(FrozenFields, ReprFields, ReplaceFields):
     width: int
     height: int
 
@@ -1543,9 +1550,6 @@ class _ImageOriginal:
         frozen_setattr(self, "width", width)
         frozen_setattr(self, "height", height)
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__qualname__}(width={self.width!r}, height={self.height!r})"
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -1555,19 +1559,6 @@ class _ImageOriginal:
 
     def __hash__(self) -> int:
         return hash((self.width, self.height))
-
-    def __setattr__(self, name: str, value: object) -> NoReturn:
-        raise AttributeError(f"cannot assign to field {name!r}")
-
-    def __delattr__(self, name: str) -> NoReturn:
-        raise AttributeError(f"cannot delete field {name!r}")
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        width = changes.pop("width", self.width)
-        height = changes.pop("height", self.height)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(width, height)
 
     @property
     def size(self) -> tuple[int, int]:

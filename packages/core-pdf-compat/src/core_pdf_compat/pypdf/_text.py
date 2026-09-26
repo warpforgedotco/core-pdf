@@ -4,7 +4,7 @@ import math
 import re
 from collections.abc import Mapping
 from contextlib import suppress
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_pdf.impl.capture.recovery import iter_content_operations
@@ -16,7 +16,7 @@ from core_pdf.impl.fonts.helpers import strip_subset_tag
 from core_pdf.impl.fonts.metrics import LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.fonts.widths import parse_font_widths
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import PdfName, PdfString
+from core_pdf.impl.types import PdfName, PdfString, ReplaceFields, ReprFields
 from core_pdf_compat._text_state import (
     PREDEFINED_ENCODING_CODECS,
     append_directional_text,
@@ -31,7 +31,7 @@ from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 Matrix = list[float]
 
 
-class LegacyFont:
+class LegacyFont(ReprFields, ReplaceFields):
     __slots__ = (
         "decoder",
         "cmap",
@@ -117,24 +117,6 @@ class LegacyFont:
         self.difference_fallbacks = difference_fallbacks
         self.width_uses_source_code = width_uses_source_code
 
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"decoder={self.decoder!r}, "
-            f"cmap={self.cmap!r}, "
-            f"widths={self.widths!r}, "
-            f"default_width={self.default_width!r}, "
-            f"space_width={self.space_width!r}, "
-            f"synthetic_space_width={self.synthetic_space_width!r}, "
-            f"space_code_bytes={self.space_code_bytes!r}, "
-            f"encoding_table={self.encoding_table!r}, "
-            f"encoding_codec={self.encoding_codec!r}, "
-            f"character_map={self.character_map!r}, "
-            f"difference_fallbacks={self.difference_fallbacks!r}, "
-            f"width_uses_source_code={self.width_uses_source_code!r}"
-            ")"
-        )
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -156,36 +138,6 @@ class LegacyFont:
         )
 
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        decoder = changes.pop("decoder", self.decoder)
-        cmap = changes.pop("cmap", self.cmap)
-        widths = changes.pop("widths", self.widths)
-        default_width = changes.pop("default_width", self.default_width)
-        space_width = changes.pop("space_width", self.space_width)
-        synthetic_space_width = changes.pop("synthetic_space_width", self.synthetic_space_width)
-        space_code_bytes = changes.pop("space_code_bytes", self.space_code_bytes)
-        encoding_table = changes.pop("encoding_table", self.encoding_table)
-        encoding_codec = changes.pop("encoding_codec", self.encoding_codec)
-        character_map = changes.pop("character_map", self.character_map)
-        difference_fallbacks = changes.pop("difference_fallbacks", self.difference_fallbacks)
-        width_uses_source_code = changes.pop("width_uses_source_code", self.width_uses_source_code)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            decoder,
-            cmap,
-            widths,
-            default_width,
-            space_width,
-            synthetic_space_width,
-            space_code_bytes,
-            encoding_table,
-            encoding_codec,
-            character_map,
-            difference_fallbacks,
-            width_uses_source_code,
-        )
 
     def decode_parts(self, data: bytes) -> tuple[tuple[str, ...], float]:
         glyphs = self.decoder.decode_glyphs(data)
