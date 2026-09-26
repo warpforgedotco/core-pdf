@@ -17,6 +17,7 @@ pixel, exactly as numpy.outer did.
 """
 
 from libc.math cimport rint
+from libc.stdlib cimport free, malloc
 from libc.string cimport memcpy
 from cpython.mem cimport PyMem_Free, PyMem_Malloc
 
@@ -86,6 +87,116 @@ def rect_coverage_plane(
     return plane
 
 
+cdef int fill_rect_pixels(
+    unsigned char* base,
+    Py_ssize_t row_stride,
+    Py_ssize_t ix0,
+    Py_ssize_t ix1,
+    Py_ssize_t iy0,
+    Py_ssize_t iy1,
+    double left,
+    double right,
+    double top,
+    double bottom,
+    int red_byte,
+    int green_byte,
+    int blue_byte,
+    int cap,
+) noexcept nogil:
+    """fill_rect_coverage into packed pixels with no plane: base is pixel (iy0, ix0).
+
+    Returns -1 if the column table cannot be allocated, else 0. The stroke
+    kernel paints its square joins and caps through this too.
+    """
+    cdef Py_ssize_t width = ix1 - ix0
+    cdef Py_ssize_t height = iy1 - iy0
+    if width <= 0 or height <= 0:
+        return 0
+    cdef float red = <float> red_byte
+    cdef float green = <float> green_byte
+    cdef float blue = <float> blue_byte
+    cdef double alpha = <double> cap
+    cdef int opaque_from = 255 if cap >= 255 else 256
+    cdef unsigned char opaque[4]
+    opaque[0] = opaque_channel(red)
+    opaque[1] = opaque_channel(green)
+    opaque[2] = opaque_channel(blue)
+    opaque[3] = 255
+    # Per column: the coverage, and the alpha byte of a fully covered row,
+    # where the product is the column's coverage exactly. Most rows of a
+    # large rectangle are full, so their pixels skip the multiply and the
+    # rounding, and their opaque run is written as a block.
+    cdef double* columns = <double*> malloc(width * (sizeof(double) + 1))
+    if columns == NULL:
+        return -1
+    cdef unsigned char* full_raw = <unsigned char*> (columns + width)
+    cdef unsigned char* row
+    cdef unsigned char* pixel
+    cdef bint full_row
+    cdef Py_ssize_t i, j, k
+    cdef Py_ssize_t run_start = 0, run_end = 0, segment_end, resume
+    cdef double row_coverage
+    cdef unsigned char raw
+    # A translucent band over a flat backdrop repeats its inputs pixel after
+    # pixel, and each result depends on its own pixel's inputs alone.
+    cdef unsigned int backdrop, last_backdrop = 0
+    cdef int last_raw = -1
+    cdef unsigned char blended[4]
+    for j in range(width):
+        columns[j] = axis_coverage(<double> (ix0 + j), left, right)
+        full_raw[j] = <unsigned char> rint(columns[j] * alpha)
+    while run_start < width and full_raw[run_start] < opaque_from:
+        run_start += 1
+    run_end = run_start
+    while run_end < width and full_raw[run_end] >= opaque_from:
+        run_end += 1
+    for k in range(run_end, width):
+        if full_raw[k] >= opaque_from:
+            run_start = run_end = 0
+            break
+    for i in range(height):
+        row = base + i * row_stride
+        row_coverage = axis_coverage(<double> (iy0 + i), top, bottom)
+        full_row = row_coverage == 1.0
+        # The columns left for the loop below: all of them, or those either
+        # side of the block.
+        segment_end = width
+        resume = width
+        if full_row and run_end > run_start:
+            for j in range(run_start, run_end):
+                memcpy(row + 4 * j, opaque, 4)
+            segment_end = run_start
+            resume = run_end
+        j = 0
+        while j < width:
+            if j == segment_end:
+                j = resume
+                if j >= width:
+                    break
+            if full_row:
+                raw = full_raw[j]
+            else:
+                raw = <unsigned char> rint(row_coverage * columns[j] * alpha)
+            if raw != 0:
+                pixel = row + 4 * j
+                if raw >= opaque_from:
+                    memcpy(pixel, opaque, 4)
+                else:
+                    memcpy(&backdrop, pixel, 4)
+                    if raw != last_raw or backdrop != last_backdrop:
+                        memcpy(blended, pixel, 4)
+                        blend_one(
+                            &blended[0], &blended[1], &blended[2], &blended[3],
+                            raw, cap, red, green, blue,
+                        )
+                        last_raw = raw
+                        last_backdrop = backdrop
+                    memcpy(pixel, blended, 4)
+            j += 1
+    free(columns)
+    return 0
+
+
 def fill_rect_coverage(
     Py_ssize_t ix0,
     Py_ssize_t ix1,
@@ -133,42 +244,41 @@ def fill_rect_coverage(
         raise ValueError("source_alpha differs from the rectangle in shape")
     if has_shape and (source_shape.shape[0] != height or source_shape.shape[1] != width):
         raise ValueError("source_shape differs from the rectangle in shape")
-    cdef float red = <float> <int> rgba[0]
-    cdef float green = <float> <int> rgba[1]
-    cdef float blue = <float> <int> rgba[2]
+    cdef int red_byte = <int> rgba[0]
+    cdef int green_byte = <int> rgba[1]
+    cdef int blue_byte = <int> rgba[2]
     cdef int cap = <int> rgba[3]
+    cdef int status
+    if target.strides[1] == 4 and target.strides[2] == 1 and not has_alpha and not has_shape:
+        with nogil:
+            status = fill_rect_pixels(
+                &target[0, 0, 0], target.strides[0], ix0, ix1, iy0, iy1,
+                left, right, top, bottom, red_byte, green_byte, blue_byte, cap,
+            )
+        if status < 0:
+            raise MemoryError
+        return
+    cdef float red = <float> red_byte
+    cdef float green = <float> green_byte
+    cdef float blue = <float> blue_byte
     cdef double alpha = <double> cap
     cdef int opaque_from = 255 if cap >= 255 else 256
     cdef unsigned char opaque_red = opaque_channel(red)
     cdef unsigned char opaque_green = opaque_channel(green)
     cdef unsigned char opaque_blue = opaque_channel(blue)
     # Per column: the coverage, and the alpha and shape bytes of a fully
-    # covered row, where the product is the column's coverage exactly. Most
-    # rows of a large rectangle are full, so their pixels skip the multiply
-    # and both roundings.
+    # covered row, where the product is the column's coverage exactly.
     cdef double* columns = <double*> PyMem_Malloc(width * (sizeof(double) + 2))
     if columns == NULL:
         raise MemoryError
     cdef unsigned char* full_raw = <unsigned char*> (columns + width)
     cdef unsigned char* full_shape = full_raw + width
-    cdef bint packed = target.strides[1] == 4 and target.strides[2] == 1
-    cdef unsigned char opaque[4]
-    opaque[0] = opaque_red
-    opaque[1] = opaque_green
-    opaque[2] = opaque_blue
-    opaque[3] = 255
-    cdef unsigned char* pixel
     cdef bint full_row
-    cdef Py_ssize_t i, j, k
-    # The columns a full row paints opaque, when they are one run and no
-    # plane is recorded: those rows write the run as a block.
-    cdef Py_ssize_t run_start = 0, run_end = 0, segment_end, resume
-    cdef unsigned int opaque_word
+    cdef Py_ssize_t i, j
     cdef double row_coverage, product
     cdef unsigned char raw, shape
-    # A translucent band over a flat backdrop repeats its inputs pixel after
-    # pixel, and each result depends on its own pixel's inputs alone, so the
-    # blend and both plane updates keep the last inputs and what they gave.
+    # The blend and both plane updates keep the last inputs and what they
+    # gave, as fill_rect_pixels does.
     cdef unsigned int backdrop, last_backdrop = 0
     cdef int last_raw = -1
     cdef unsigned char blended[4]
@@ -181,51 +291,22 @@ def fill_rect_coverage(
                 columns[j] = axis_coverage(<double> (ix0 + j), left, right)
                 full_raw[j] = <unsigned char> rint(columns[j] * alpha)
                 full_shape[j] = <unsigned char> rint(columns[j] * 255.0)
-            if packed and not has_alpha and not has_shape:
-                while run_start < width and full_raw[run_start] < opaque_from:
-                    run_start += 1
-                run_end = run_start
-                while run_end < width and full_raw[run_end] >= opaque_from:
-                    run_end += 1
-                for k in range(run_end, width):
-                    if full_raw[k] >= opaque_from:
-                        run_start = run_end = 0
-                        break
-            memcpy(&opaque_word, opaque, 4)
             for i in range(height):
                 row_coverage = axis_coverage(<double> (iy0 + i), top, bottom)
                 full_row = row_coverage == 1.0
-                # The columns left for the loop below: all of them, or those
-                # either side of the block.
-                segment_end = width
-                resume = width
-                if full_row and run_end > run_start:
-                    pixel = &target[i, 0, 0]
-                    for j in range(run_start, run_end):
-                        memcpy(pixel + 4 * j, &opaque_word, 4)
-                    segment_end = run_start
-                    resume = run_end
-                j = 0
-                while j < width:
-                    if j == segment_end:
-                        j = resume
-                        if j >= width:
-                            break
+                for j in range(width):
                     if full_row:
                         raw = full_raw[j]
+                        product = columns[j]
                     else:
                         product = row_coverage * columns[j]
                         raw = <unsigned char> rint(product * alpha)
                     if raw != 0:
                         if raw >= opaque_from:
-                            if packed:
-                                pixel = &target[i, j, 0]
-                                memcpy(pixel, opaque, 4)
-                            else:
-                                target[i, j, 0] = opaque_red
-                                target[i, j, 1] = opaque_green
-                                target[i, j, 2] = opaque_blue
-                                target[i, j, 3] = 255
+                            target[i, j, 0] = opaque_red
+                            target[i, j, 1] = opaque_green
+                            target[i, j, 2] = opaque_blue
+                            target[i, j, 3] = 255
                         else:
                             backdrop = (
                                 <unsigned int> target[i, j, 0]
@@ -269,6 +350,5 @@ def fill_rect_coverage(
                             last_shape = shape
                             last_shape_in = previous_bits
                         source_shape[i, j] = last_shape_out
-                    j += 1
     finally:
         PyMem_Free(columns)
