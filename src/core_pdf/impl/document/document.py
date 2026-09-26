@@ -262,6 +262,9 @@ class PdfDocument(Generic[PageT]):
         "page_cache",
         "fields_by_page_cache",
         "structure_cache",
+        "page_labels_cache",
+        "hidden_layers_cache",
+        "page_lookup_cache",
     )
 
     source: PdfSource
@@ -287,6 +290,9 @@ class PdfDocument(Generic[PageT]):
     page_cache: tuple[PageT, ...] | None
     fields_by_page_cache: dict[int, list[RawFormField]] | None
     structure_cache: StructureTree | None | NotBuilt
+    page_labels_cache: tuple[str, ...] | None | NotBuilt
+    hidden_layers_cache: frozenset[str] | None
+    page_lookup_cache: PageLookup[PageT] | None
 
     def __init__(
         self,
@@ -319,9 +325,7 @@ class PdfDocument(Generic[PageT]):
         # are built once. Every page.extract() asks for the fields, and building
         # them walks every page, so without this a whole-document pass is
         # quadratic in its page count.
-        self.page_cache = None
-        self.fields_by_page_cache = None
-        self.structure_cache = NOT_BUILT
+        self.reset_caches()
         try:
             self.raw_data = self.load_data(source)
             self._standards = discover_header_standards(self.raw_data)
@@ -381,12 +385,18 @@ class PdfDocument(Generic[PageT]):
                 self.resolver.xref = self.xref
             # Anything built above belongs to a resolver that may since have
             # been replaced.
-            self.page_cache = None
-            self.fields_by_page_cache = None
-            self.structure_cache = NOT_BUILT
+            self.reset_caches()
         except BaseException:
             self.close()
             raise
+
+    def reset_caches(self) -> None:
+        self.page_cache = None
+        self.fields_by_page_cache = None
+        self.structure_cache = NOT_BUILT
+        self.page_labels_cache = NOT_BUILT
+        self.hidden_layers_cache = None
+        self.page_lookup_cache = None
 
     @property
     def font_semantic_context(self) -> SemanticContext | None:
@@ -455,9 +465,7 @@ class PdfDocument(Generic[PageT]):
             return
         self._closed = True
         self.font_decoders.clear()
-        self.page_cache = None
-        self.fields_by_page_cache = None
-        self.structure_cache = NOT_BUILT
+        self.reset_caches()
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
@@ -847,7 +855,7 @@ class PdfDocument(Generic[PageT]):
         pending = tuple(pending)
         if not pending:
             return ()
-        labels = self.page_labels
+        labels = self.cached_page_labels()
         return tuple(
             PageScoped(
                 page_index=page_index,
@@ -934,10 +942,20 @@ class PdfDocument(Generic[PageT]):
 
     @property
     def page_labels(self) -> list[str] | None:
-        return self.build_page_labels()
+        labels = self.cached_page_labels()
+        return None if labels is None else list(labels)
+
+    def cached_page_labels(self) -> tuple[str, ...] | None:
+        # Built once: every page's label indexes these, and building them
+        # walks the whole PageLabels tree and page list.
+        cached = self.page_labels_cache
+        if isinstance(cached, NotBuilt):
+            labels = self.build_page_labels()
+            cached = self.page_labels_cache = None if labels is None else tuple(labels)
+        return cached
 
     def page_label(self, page_index: int) -> str | None:
-        labels = self.page_labels
+        labels = self.cached_page_labels()
         if labels is None or page_index < 0 or page_index >= len(labels):
             return None
         return labels[page_index]
@@ -972,7 +990,7 @@ class PdfDocument(Generic[PageT]):
             specs.insert(0, (0, {}))
 
         if page_count is None:
-            page_count = len(self.build_page_dicts())
+            page_count = len(self.pages)
         labels: list[str] = []
         spec_pos = 0
         current_index, current_spec = specs[0]
@@ -1410,6 +1428,13 @@ class PdfDocument(Generic[PageT]):
         return None
 
     def oc_hidden_layers(self) -> frozenset[str]:
+        # Built once: every page's capture asks for it.
+        hidden = self.hidden_layers_cache
+        if hidden is None:
+            hidden = self.hidden_layers_cache = self.build_oc_hidden_layers()
+        return hidden
+
+    def build_oc_hidden_layers(self) -> frozenset[str]:
         recover = self.recovery_enabled
         try:
             catalog = self.catalog()
