@@ -9,7 +9,7 @@ cd "${PROJECT_ROOT}"
 
 # Standards packages beneath core-pdf-spec; every one ships Python and the
 # fonts package ships CMap data, so include both code and package data.
-STANDARDS_PACKAGES=(core_predictors core_postscript core_jbig2 core_pdf_crypto core_adobe_fonts)
+STANDARDS_PACKAGES=(core_records core_postscript core_jbig2 core_pdf_crypto core_adobe_fonts)
 INCLUDE_ARGS=(--include-package=core_pdf_spec --include-package-data=core_pdf_spec)
 for package in "${STANDARDS_PACKAGES[@]}"; do
     INCLUDE_ARGS+=("--include-package=${package}" "--include-package-data=${package}")

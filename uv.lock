@@ -18,6 +18,7 @@ members = [
     "core-pdf-spec",
     "core-pdf-validate",
     "core-postscript",
+    "core-records",
 ]
 
 [[package]]
@@ -413,17 +414,27 @@ wheels = [
 name = "core-adobe-fonts"
 version = "0.1.0"
 source = { editable = "packages/core-adobe-fonts" }
+dependencies = [
+    { name = "core-records" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "core-records", editable = "packages/core-records" }]
 
 [[package]]
 name = "core-jbig2"
 version = "0.2.0"
 source = { editable = "packages/core-jbig2" }
 dependencies = [
+    { name = "core-records" },
     { name = "numpy" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "numpy", specifier = ">=2.5.1" }]
+requires-dist = [
+    { name = "core-records", editable = "packages/core-records" },
+    { name = "numpy", specifier = ">=2.5.1" },
+]
 
 [[package]]
 name = "core-pdf"
@@ -434,6 +445,7 @@ dependencies = [
     { name = "core-jbig2" },
     { name = "core-pdf-cythonized" },
     { name = "core-pdf-spec" },
+    { name = "core-records" },
     { name = "defusedxml" },
     { name = "imagecodecs" },
     { name = "numpy" },
@@ -493,6 +505,7 @@ requires-dist = [
     { name = "core-jbig2", editable = "packages/core-jbig2" },
     { name = "core-pdf-cythonized", editable = "packages/core-pdf-cythonized" },
     { name = "core-pdf-spec", editable = "packages/core-pdf-spec" },
+    { name = "core-records", editable = "packages/core-records" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "imagecodecs", specifier = ">=2026.6.26" },
     { name = "numpy", specifier = ">=2.5.1" },
@@ -618,6 +631,7 @@ dependencies = [
     { name = "core-jbig2" },
     { name = "core-pdf-crypto" },
     { name = "core-postscript" },
+    { name = "core-records" },
     { name = "numpy" },
 ]
 
@@ -627,6 +641,7 @@ requires-dist = [
     { name = "core-jbig2", editable = "packages/core-jbig2" },
     { name = "core-pdf-crypto", editable = "packages/core-pdf-crypto" },
     { name = "core-postscript", editable = "packages/core-postscript" },
+    { name = "core-records", editable = "packages/core-records" },
     { name = "numpy", specifier = ">=2.5.1" },
 ]
 
@@ -649,6 +664,17 @@ requires-dist = [
 name = "core-postscript"
 version = "0.1.0"
 source = { editable = "packages/core-postscript" }
+dependencies = [
+    { name = "core-records" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "core-records", editable = "packages/core-records" }]
+
+[[package]]
+name = "core-records"
+version = "0.1.0"
+source = { editable = "packages/core-records" }
 
 [[package]]
 name = "coverage"

@@ -25,7 +25,12 @@ Four standards packages sit beneath spec as the workspace floor, one per externa
 specification family: `core-postscript` (the PLRM calculator subset), `core-jbig2`
 (ITU-T T.88), `core-pdf-crypto` (ciphers, RFC 5652 CMS, ISO/TS 32003 and 32004), and
 `core-adobe-fonts` (CFF, Type 2, Type 1, CMaps, the Adobe Glyph List, and Core 14 metrics,
-with the CMap data). Each lives at `packages/<name>/src/<name>/` and imports nothing from
+with the CMap data). Beneath them is `core-records`, the value-class mixins
+(`FrozenFields`, `PickleFields`, `ReprFields`, `ReplaceFields`, and `Record`, all four)
+that every package's hand-written records take their frozen setattr, pickle state, repr,
+and `copy.replace` from; it imports no other workspace package, and core re-exports it
+from `core_pdf.impl.types`. A record whose repr shows only some fields names them in
+`__repr_fields__`; a `__replace__` that calls a keyword-only `__init__` stays hand-written. Each lives at `packages/<name>/src/<name>/` and imports nothing from
 core, spec, OCR, or validate, including type-only imports. A floor package may import
 another floor package, declared as a dependency, rather than carry a copy of its code:
 `uint8_view` lives in `core_jbig2.bitmap` alone, and spec and core import it. The PNG and TIFF predictor kernels are the exception to the

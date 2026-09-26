@@ -13,6 +13,7 @@ dependencies = [
     "core-jbig2>=0.2.0,<0.3.0",
     "core-pdf-crypto>=0.1.0,<0.2.0",
     "core-postscript>=0.1.0,<0.2.0",
+    "core-records>=0.1.0,<0.2.0",
     "numpy>=2.5.1",
 ]
 
@@ -41,3 +42,4 @@ core-postscript = { workspace = true }
 core-pdf-crypto = { workspace = true }
 core-adobe-fonts = { workspace = true }
 core-jbig2 = { workspace = true }
+core-records = { workspace = true }

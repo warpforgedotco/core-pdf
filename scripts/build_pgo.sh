@@ -25,7 +25,7 @@ fi
 
 # Standards packages beneath core-pdf-spec: source roots for PYTHONPATH and
 # include flags for Nuitka (the fonts package carries CMap package data).
-STANDARDS_DISTRIBUTIONS=(core-predictors core-postscript core-jbig2 core-pdf-crypto core-adobe-fonts)
+STANDARDS_DISTRIBUTIONS=(core-records core-postscript core-jbig2 core-pdf-crypto core-adobe-fonts)
 SOURCE_PATH="${PROJECT_ROOT}/src:${PROJECT_ROOT}/packages/core-pdf-spec/src"
 INCLUDE_ARGS=(
     --include-package=core_pdf

@@ -48,6 +48,7 @@ jobs:
           packages/core-jbig2/tests
           packages/core-pdf-crypto/tests
           packages/core-adobe-fonts/tests
+          packages/core-records/tests
 
       - name: Build standalone distributions
         run: uv build --all-packages
@@ -136,6 +137,7 @@ jobs:
       fail-fast: false
       matrix:
         package:
+          - core-records
           - core-postscript
           - core-jbig2
           - core-pdf-crypto

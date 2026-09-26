@@ -20,6 +20,7 @@ dependencies = [
     "core-jbig2>=0.2.0,<0.3.0",
     "core-adobe-fonts>=0.1.0,<0.2.0",
     "core-pdf-cythonized>=0.1.0,<0.2.0",
+    "core-records>=0.1.0,<0.2.0",
 ]
 
 [project.scripts]
@@ -38,6 +39,7 @@ members = [
     "packages/core-jbig2",
     "packages/core-pdf-crypto",
     "packages/core-adobe-fonts",
+    "packages/core-records",
     "packages/core-pdf-cythonized",
 ]
 
@@ -46,6 +48,7 @@ core-adobe-fonts = { workspace = true }
 core-pdf-cythonized = { workspace = true }
 core-jbig2 = { workspace = true }
 core-pdf-spec = { workspace = true }
+core-records = { workspace = true }
 
 # [tool.uv.sources]
 # nuitka = { path = "../Nuitka", editable = true }
@@ -111,6 +114,7 @@ testpaths = [
     "packages/core-jbig2/tests",
     "packages/core-pdf-crypto/tests",
     "packages/core-adobe-fonts/tests",
+    "packages/core-records/tests",
 ]
 addopts = "--import-mode=importlib"
 norecursedirs = ["tests/fixtures"]
@@ -131,6 +135,7 @@ source = [
     "packages/core-jbig2/src/core_jbig2",
     "packages/core-pdf-crypto/src/core_pdf_crypto",
     "packages/core-adobe-fonts/src/core_adobe_fonts",
+    "packages/core-records/src/core_records",
     "packages/core-pdf-cythonized/src/core_pdf_cythonized",
 ]
 omit = ["*/_vendor/*"]
@@ -143,7 +148,7 @@ precision = 2
 output = "htmlcov/coverage.json"
 
 [tool.ruff]
-src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-pdf-cythonized/src", "."]
+src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src", "packages/core-pdf-cythonized/src", "."]
 extend-exclude = [
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
@@ -239,8 +244,8 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.14"
-files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-spec/src/core_pdf_spec", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-postscript/src/core_postscript", "packages/core-jbig2/src/core_jbig2", "packages/core-pdf-crypto/src/core_pdf_crypto", "packages/core-adobe-fonts/src/core_adobe_fonts", "packages/core-pdf-cythonized/src/core_pdf_cythonized"]
-mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src"]
+files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-spec/src/core_pdf_spec", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-postscript/src/core_postscript", "packages/core-jbig2/src/core_jbig2", "packages/core-pdf-crypto/src/core_pdf_crypto", "packages/core-adobe-fonts/src/core_adobe_fonts", "packages/core-records/src/core_records", "packages/core-pdf-cythonized/src/core_pdf_cythonized"]
+mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
 ignore_missing_imports = true
@@ -250,7 +255,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [tool.ty.environment]
-root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-pdf-cythonized/src"]
+root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
 
 [tool.ty.src]
 exclude = [
@@ -292,6 +297,7 @@ root_packages = [
     "core_jbig2",
     "core_pdf_crypto",
     "core_adobe_fonts",
+    "core_records",
 ]
 exclude_type_checking_imports = true
 
@@ -419,6 +425,24 @@ source_modules = [
     "core_adobe_fonts",
 ]
 forbidden_modules = ["core_pdf", "core_pdf_ocr", "core_pdf_spec", "core_pdf_validate", "core_pdf_compat"]
+
+# The value-class mixins every other workspace package may import, so they
+# import none of them.
+[[tool.importlinter.contracts]]
+name = "core_records imports no other workspace package"
+type = "forbidden"
+source_modules = ["core_records"]
+forbidden_modules = [
+    "core_pdf",
+    "core_pdf_ocr",
+    "core_pdf_compat",
+    "core_pdf_spec",
+    "core_pdf_validate",
+    "core_postscript",
+    "core_jbig2",
+    "core_pdf_crypto",
+    "core_adobe_fonts",
+]
 
 # Shared code lives in modules at the impl root, one feature per subpackage
 # beneath it. tests/src/core_pdf/test_impl_root_contracts.py keeps this list
