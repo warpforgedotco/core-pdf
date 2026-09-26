@@ -294,12 +294,15 @@ def png_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) ->
 
 
 def tiff_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -> bytes:
-    return tiff_predict_tolerant(
-        data,
-        columns=params.columns,
-        colors=params.colors,
-        bits_per_component=params.bits_per_component,
+    columns = params.columns
+    colors = params.colors
+    bits_per_component = params.bits_per_component
+    decoded = tiff_predict_codec(
+        data, columns=columns, colors=colors, bits_per_component=bits_per_component
     )
+    if decoded is not None:
+        return decoded
+    return tiff_predict(data, columns=columns, colors=colors, bits_per_component=bits_per_component)
 
 
 def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
@@ -309,17 +312,6 @@ def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
     return strict_apply_predictor(
         data, params, png=png_predictor_tolerant, tiff=tiff_predictor_tolerant
     )
-
-
-def tiff_predict_tolerant(
-    data: bytes | memoryview, *, columns: int, colors: int, bits_per_component: int
-) -> bytes:
-    decoded = tiff_predict_codec(
-        data, columns=columns, colors=colors, bits_per_component=bits_per_component
-    )
-    if decoded is not None:
-        return decoded
-    return tiff_predict(data, columns=columns, colors=colors, bits_per_component=bits_per_component)
 
 
 ASCII_HEX_DIGITS = b"0123456789ABCDEFabcdef"
