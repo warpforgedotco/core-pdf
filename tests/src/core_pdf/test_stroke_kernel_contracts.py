@@ -83,7 +83,7 @@ def reference_stroke_path(
                     radius = line_width * 0.5 if line_width > 0.0 else 0.5 / scale
                     self.fill_path(circle_path(x0, y0, radius), rgba, blend_mode)
                 continue
-            self.fill_line(x0, y0, x1, y1, line_width, rgba, blend_mode, 0)
+            self.fill_line(x0, y0, x1, y1, line_width, rgba, blend_mode)
             if line_cap != 0:
                 self.fill_cap(x0, y0, line_width, rgba, line_cap, blend_mode)
                 self.fill_cap(x1, y1, line_width, rgba, line_cap, blend_mode)
@@ -91,11 +91,11 @@ def reference_stroke_path(
         for index in range(len(points) - 1):
             x0, y0 = points[index]
             x1, y1 = points[index + 1]
-            self.fill_line(x0, y0, x1, y1, line_width, rgba, blend_mode, 0)
+            self.fill_line(x0, y0, x1, y1, line_width, rgba, blend_mode)
         if subpath.closed and points[0] != points[-1]:
             x0, y0 = points[-1]
             x1, y1 = points[0]
-            self.fill_line(x0, y0, x1, y1, line_width, rgba, blend_mode, 0)
+            self.fill_line(x0, y0, x1, y1, line_width, rgba, blend_mode)
         for x, y in points[1:-1]:
             self.fill_join(x, y, line_width, rgba, line_join, blend_mode)
         if subpath.closed:

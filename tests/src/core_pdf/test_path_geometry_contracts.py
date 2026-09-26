@@ -115,16 +115,13 @@ def test_circle_path_preserves_center_and_radius(radius):
         assert (x - 3) ** 2 + (y - 5) ** 2 == pytest.approx(radius**2)
 
 
-@pytest.mark.parametrize("cap", [0, 1, 2])
 @pytest.mark.parametrize("opacity", [0, 128, 255])
-@pytest.mark.parametrize("supplied_views", [False, True])
-def test_line_caps_preserve_shape_independently_of_opacity(cap, opacity, supplied_views):
+def test_a_butt_capped_line_keeps_its_shape_whatever_its_opacity(opacity):
     pixels = bytearray(8 * 8 * 4)
     target = np.frombuffer(pixels, dtype=np.uint8).reshape(8, 8, 4)
     shape = np.zeros((8, 8), dtype=np.uint8)
     alpha = paths.rasterize_unclipped_line_normal(
-        pixels,
-        8,
+        target,
         0,
         8,
         1,
@@ -134,11 +131,7 @@ def test_line_caps_preserve_shape_independently_of_opacity(cap, opacity, supplie
         4,
         2,
         (200, 100, 50, opacity),
-        cap,
         (0, 0, 8, 8),
-        target_pixels=target if supplied_views else None,
-        x_coords=np.arange(8, dtype=np.float64) if supplied_views else None,
-        y_coords=np.arange(8, dtype=np.float64) if supplied_views else None,
         return_source_alpha=True,
         source_shape=shape,
     )
@@ -156,82 +149,19 @@ def test_line_caps_preserve_shape_independently_of_opacity(cap, opacity, supplie
         assert not target.any()
     else:
         np.testing.assert_array_equal(target[3, 3], [200, 100, 50, opacity])
-    if cap == 0:
-        assert not shape[:, :2].any()
-    elif cap == 1:
-        assert 0 < shape[3, 1] < 255
-    else:
-        assert shape[3, 1] == 255
+    assert not shape[:, :2].any()
 
 
 @pytest.mark.parametrize("box", [(0, 0, 0, 8), (0, 0, 8, 0)])
 def test_line_rasterization_with_empty_pixel_box_is_a_noop(box):
-    pixels = bytearray(8 * 8 * 4)
+    target = np.zeros((8, 8, 4), dtype=np.uint8)
     assert (
         paths.rasterize_unclipped_line_normal(
-            pixels, 8, 0, 8, 1, 2, 4, 6, 4, 2, (200, 100, 50, 255), 0, box
+            target, 0, 8, 1, 2, 4, 6, 4, 2, (200, 100, 50, 255), box
         )
         is None
     )
-    assert not any(pixels)
-
-
-@pytest.mark.parametrize("endpoints", [((2, 4), (6, 4)), ((4, 2), (4, 6)), ((2, 2), (6, 6))])
-@pytest.mark.parametrize("reverse", [False, True])
-def test_square_cap_coverage_matches_independent_rectangle_sampling(
-    endpoints: tuple[tuple[float, float], tuple[float, float]], reverse: bool
-) -> None:
-    start, end = endpoints[::-1] if reverse else endpoints
-    dx, dy = end[0] - start[0], end[1] - start[1]
-    length = (dx * dx + dy * dy) ** 0.5
-    ux, uy = dx / length, dy / length
-    polygon = [
-        (start[0] - ux - uy, start[1] - uy + ux),
-        (end[0] + ux - uy, end[1] + uy + ux),
-        (end[0] + ux + uy, end[1] + uy - ux),
-        (start[0] - ux + uy, start[1] - uy - ux),
-    ]
-
-    def inside(x, y):
-        signs = [
-            (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])
-            for a, b in zip(polygon, polygon[1:] + polygon[:1])
-        ]
-        return all(v >= 0 for v in signs) or all(v <= 0 for v in signs)
-
-    expected = np.array(
-        [
-            [
-                round(
-                    255
-                    * sum(
-                        inside(x + sx, 8 - y - sy)
-                        for sx in (0.125, 0.375, 0.625, 0.875)
-                        for sy in (0.125, 0.375, 0.625, 0.875)
-                    )
-                    / 16
-                )
-                for x in range(8)
-            ]
-            for y in range(8)
-        ],
-        dtype=np.uint8,
-    )
-    actual = paths.rasterize_unclipped_line_normal(
-        bytearray(8 * 8 * 4),
-        8,
-        0,
-        8,
-        1,
-        *start,
-        *end,
-        2,
-        (200, 100, 50, 255),
-        2,
-        (0, 0, 8, 8),
-        return_source_alpha=True,
-    )
-    np.testing.assert_array_equal(actual, expected)
+    assert not target.any()
 
 
 def test_a_deferred_outline_builds_the_same_subpaths_as_an_eager_one():

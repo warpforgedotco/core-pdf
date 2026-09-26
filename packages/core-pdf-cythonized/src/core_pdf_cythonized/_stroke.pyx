@@ -573,7 +573,6 @@ cdef int fill_line(Paint* p, double x0, double y0, double x1, double y1, double 
         return found
     cdef Py_ssize_t ix0 = pixel_box[0], iy0 = pixel_box[1], ix1 = pixel_box[2], iy1 = pixel_box[3]
     cdef double half2 = half * half
-    cdef double inv_seg_len2 = 1.0 / seg_len2
     cdef double projection_extension = cap_extension * seg_len
     if p.clip_mode != CLIP_ROWS and (ix1 - ix0) * (iy1 - iy0) > 64:
         if line_raster(p, x0, y0, x1, y1, line_width, ix0, iy0, ix1, iy1) < 0:
@@ -595,8 +594,8 @@ cdef int fill_line(Paint* p, double x0, double y0, double x1, double y1, double 
     cdef Py_ssize_t covered_box[4]
     if segment_samples(
         p.pixels + iy0 * p.row_stride + ix0 * 4, p.row_stride, ix0, iy0, ix1, iy1,
-        p.crop_x0, p.crop_y1, p.scale, x0, y0, x1, y1, dx, dy, seg_len2, inv_seg_len2,
-        half2, projection_extension, False, p.red, p.green, p.blue, p.alpha,
+        p.crop_x0, p.crop_y1, p.scale, x0, y0, dx, dy, seg_len2,
+        half2, projection_extension, p.red, p.green, p.blue, p.alpha,
         allowed, NULL, covered_box,
     ):
         extend(p, covered_box[1], covered_box[3], covered_box[0], covered_box[2])

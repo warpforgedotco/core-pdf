@@ -2790,24 +2790,28 @@ class RasterTarget:
         line_width: float,
         rgba: tuple[int, int, int, int],
         blend_mode: str | None = None,
-        line_cap: int = 0,
     ) -> None:
+        """One butt-capped segment of a stroke that stroke_polylines calls back.
+
+        That is a stroke under a blend other than normal, or into a group
+        recording planes; stroke_path paints every other stroke in the
+        kernel, and its caps and joins are fill_cap's and fill_join's. The
+        cap extension is zero, and still multiplied through as it was, so a
+        NaN or infinite segment boxes as before.
+        """
         clipped_pixel_box = self.clip.clipped_pixel_box
         clip = self.clip
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
-        fill_circle = self.fill_circle
         fill_rect = self.fill_rect
-        pixels = self.pixels
         scale = self.scale
-        width = self.width
         dx = x1 - x0
         dy = y1 - y0
+        cap_extension = 0.0
         if abs(dx) <= 1e-12 or abs(dy) <= 1e-12:
             half = max(0.5 / scale, float(line_width) * 0.5)
-            cap_extension = half if line_cap == 2 else 0.0
             if abs(dy) <= 1e-12:
                 fill_rect(
                     (
@@ -2819,9 +2823,6 @@ class RasterTarget:
                     rgba,
                     blend_mode,
                 )
-                if line_cap == 1:
-                    fill_circle(x0, y0, half, rgba, blend_mode)
-                    fill_circle(x1, y1, half, rgba, blend_mode)
             else:
                 fill_rect(
                     (
@@ -2833,27 +2834,16 @@ class RasterTarget:
                     rgba,
                     blend_mode,
                 )
-                if line_cap == 1:
-                    fill_circle(x0, y0, half, rgba, blend_mode)
-                    fill_circle(x1, y1, half, rgba, blend_mode)
             return
         seg_len2 = dx * dx + dy * dy
         half = max(0.5 / scale, float(line_width) * 0.5)
         if seg_len2 <= 1e-12:
-            if line_cap == 1:
-                fill_circle(x0, y0, half, rgba, blend_mode)
-            else:
-                fill_rect(
-                    (x0 - half, y0 - half, x0 + half, y0 + half),
-                    rgba,
-                    blend_mode,
-                )
+            fill_rect((x0 - half, y0 - half, x0 + half, y0 + half), rgba, blend_mode)
             return
 
         seg_len = seg_len2**0.5
         ux = dx / seg_len
         uy = dy / seg_len
-        cap_extension = half if line_cap == 2 else 0.0
         box = (
             min(x0, x1) - half - abs(ux) * cap_extension,
             min(y0, y1) - half - abs(uy) * cap_extension,
@@ -2866,24 +2856,19 @@ class RasterTarget:
         box, pixel_box = clipped_box
         ix0, iy0, ix1, iy1 = pixel_box
         half2 = half * half
-        inv_seg_len2 = 1.0 / seg_len2
         projection_extension = cap_extension * seg_len
-        normal_fast = blend_mode is None
         if (
             (not clip_regions or clip_paths_are_axis_aligned_rects())
-            and normal_fast
+            and blend_mode is None
             and (ix1 - ix0) * (iy1 - iy0) > RASTER_KERNEL_MIN_PIXEL_AREA
         ):
-            x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
-            y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
             shape_plane = (
                 numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
                 if self.group_source_shape is not None
                 else None
             )
             alpha_plane = rasterize_unclipped_line_normal(
-                pixels,
-                width,
+                self.pixel_array,
                 crop_x0,
                 crop_y1,
                 scale,
@@ -2893,11 +2878,7 @@ class RasterTarget:
                 y1,
                 line_width,
                 rgba,
-                line_cap,
                 pixel_box,
-                target_pixels=self.pixel_array,
-                x_coords=x_coords,
-                y_coords=y_coords,
                 return_source_alpha=self.group_source_alpha is not None,
                 source_shape=shape_plane,
             )
@@ -2911,9 +2892,7 @@ class RasterTarget:
                 self.extend_paint_window(slice(iy0, iy1), slice(ix0, ix1))
             return
         allowed = self.clip_pixel_mask(ix0, iy0, ix1, iy1) if clip_regions else None
-        # stroke_polylines paints normal blending with no group planes, so
-        # what reaches here is any other blend, or a group recording planes:
-        # the segment's samples as counts, blended as blend_px blends them.
+        # The segment's samples as counts, blended as blend_px blends them.
         counts = numpy.zeros((iy1 - iy0, ix1 - ix0), dtype=numpy.uint8)
         stroke_segment_samples(
             self.pixel_array,
@@ -2928,15 +2907,11 @@ class RasterTarget:
             scale,
             x0,
             y0,
-            x1,
-            y1,
             dx,
             dy,
             seg_len2,
-            inv_seg_len2,
             half2,
             projection_extension,
-            line_cap not in {0, 2},
             *rgba,
             allowed,
             counts,
@@ -3048,7 +3023,7 @@ class RasterTarget:
         )
 
         def line(x0: float, y0: float, x1: float, y1: float) -> None:
-            self.fill_line(x0, y0, x1, y1, line_width, rgba, blend_mode, 0)
+            self.fill_line(x0, y0, x1, y1, line_width, rgba, blend_mode)
 
         def join(x: float, y: float) -> None:
             self.fill_join(x, y, line_width, rgba, line_join, blend_mode)

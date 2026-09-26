@@ -20,7 +20,9 @@ half to even. setup.py builds with -ffp-contract=off.
 
 The caller computes the segment's scalars (length squared, half width
 squared, cap extension) exactly as before and passes them in, so no square
-root is recomputed here. It returns the box of pixels it covered, which is
+root is recomputed here. Every segment that reaches here is butt- or
+square-capped: stroke caps are painted by fill_cap, so the round-cap
+sampling fill_line once had is gone. It returns the box of pixels it covered, which is
 what blend_px's per-pixel paint-window extension amounts to.
 """
 
@@ -43,15 +45,11 @@ cdef bint segment_samples(
     double scale,
     double x0,
     double y0,
-    double x1,
-    double y1,
     double dx,
     double dy,
     double seg_len2,
-    double inv_seg_len2,
     double half2,
     double projection_extension,
-    bint round_cap,
     int red,
     int green,
     int blue,
@@ -71,7 +69,7 @@ cdef bint segment_samples(
     cdef Py_ssize_t px, py, sx, sy
     cdef double page_x[4]
     cdef double page_y[4]
-    cdef double offset_x, offset_y, projection, cross, t, end_x, end_y
+    cdef double offset_x, offset_y, projection, cross
     cdef int covered, sa
     cdef Py_ssize_t low_x = ix1, low_y = iy1, high_x = ix0, high_y = iy0
     cdef Py_ssize_t box_width = ix1 - ix0
@@ -88,27 +86,12 @@ cdef bint segment_samples(
                 offset_y = page_y[sy] - y0
                 for sx in range(4):
                     offset_x = page_x[sx] - x0
-                    if not round_cap:
-                        projection = offset_x * dx + offset_y * dy
-                        if projection < -projection_extension or projection > seg_len2 + projection_extension:
-                            continue
-                        cross = offset_x * dy - offset_y * dx
-                        if cross * cross <= cross_limit:
-                            covered += 1
-                    else:
-                        t = (offset_x * dx + offset_y * dy) * inv_seg_len2
-                        if 0.0 <= t <= 1.0:
-                            cross = offset_x * dy - offset_y * dx
-                            if cross * cross <= cross_limit:
-                                covered += 1
-                        elif t < 0.0:
-                            if offset_x * offset_x + offset_y * offset_y <= half2:
-                                covered += 1
-                        else:
-                            end_x = page_x[sx] - x1
-                            end_y = page_y[sy] - y1
-                            if end_x * end_x + end_y * end_y <= half2:
-                                covered += 1
+                    projection = offset_x * dx + offset_y * dy
+                    if projection < -projection_extension or projection > seg_len2 + projection_extension:
+                        continue
+                    cross = offset_x * dy - offset_y * dx
+                    if cross * cross <= cross_limit:
+                        covered += 1
             if not covered:
                 continue
             if px < low_x:
@@ -148,15 +131,11 @@ def stroke_segment_samples(
     double scale,
     double x0,
     double y0,
-    double x1,
-    double y1,
     double dx,
     double dy,
     double seg_len2,
-    double inv_seg_len2,
     double half2,
     double projection_extension,
-    bint round_cap,
     int red,
     int green,
     int blue,
@@ -192,8 +171,8 @@ def stroke_segment_samples(
     with nogil:
         any_covered = segment_samples(
             origin, pixels.strides[0], ix0, iy0, ix1, iy1, crop_x0, crop_y1, scale,
-            x0, y0, x1, y1, dx, dy, seg_len2, inv_seg_len2, half2, projection_extension,
-            round_cap, red, green, blue, alpha, allowed_bytes, count_bytes, box,
+            x0, y0, dx, dy, seg_len2, half2, projection_extension,
+            red, green, blue, alpha, allowed_bytes, count_bytes, box,
         )
     if not any_covered:
         return None

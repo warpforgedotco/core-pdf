@@ -6,7 +6,7 @@ from core_pdf.impl.render import target as render_target
 from tests.src.core_pdf.test_pattern_rendering import make_target
 
 
-def expected_coverage(cap: int, clipped: bool) -> np.ndarray:
+def expected_coverage(clipped: bool) -> np.ndarray:
     length = np.hypot(9, 7)
     tangent = np.array([9, 7]) / length
     normal = np.array([-7, 9]) / length
@@ -20,28 +20,20 @@ def expected_coverage(cap: int, clipped: bool) -> np.ndarray:
                     relative = np.array([column + sx - 3, 16 - row - sy - 4])
                     along = float(relative @ tangent)
                     across = float(relative @ normal)
-                    if cap == 1:
-                        beyond = max(-along, along - length, 0)
-                        inside = np.hypot(beyond, across) <= 1.5
-                    else:
-                        extension = 1.5 if cap == 2 else 0
-                        inside = (
-                            -extension - 1e-12 <= along <= length + extension + 1e-12
-                            and abs(across) <= 1.5
-                        )
+                    inside = -1e-12 <= along <= length + 1e-12 and abs(across) <= 1.5
                     counts[row, column] += inside
     return counts / 16
 
 
-@pytest.mark.parametrize("cap", [0, 1, 2])
 @pytest.mark.parametrize("alpha", [0, 128, 255])
 @pytest.mark.parametrize("clipped", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
 def test_line_routes_preserve_pixels_alpha_and_shape(
-    monkeypatch: pytest.MonkeyPatch, cap: int, alpha: int, clipped: bool, reverse: bool
+    monkeypatch: pytest.MonkeyPatch, alpha: int, clipped: bool, reverse: bool
 ) -> None:
+    # fill_line is butt-capped: a stroke's caps are fill_cap's.
     results = []
-    coverage = expected_coverage(cap, clipped)
+    coverage = expected_coverage(clipped)
     for route in ("scalar", "vector", "blend"):
         monkeypatch.setattr(
             render_target, "RASTER_KERNEL_MIN_PIXEL_AREA", 10_000 if route == "scalar" else 0
@@ -58,7 +50,6 @@ def test_line_routes_preserve_pixels_alpha_and_shape(
             3,
             (200, 50, 10, alpha),
             blend_mode="Normal" if route == "blend" else None,
-            line_cap=cap,
         )
         pixels = np.frombuffer(target.pixels, dtype=np.uint8).reshape(16, 16, 4).copy()
         group = target.pop_group()
