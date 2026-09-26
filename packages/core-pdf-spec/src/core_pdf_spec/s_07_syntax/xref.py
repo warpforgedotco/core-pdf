@@ -17,7 +17,7 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     decoded_name,
-    parse_int,
+    parse_int_strict,
 )
 from core_pdf_spec.s_07_syntax_primitives.numbers import parse_identifier_tokens
 from core_pdf_spec.s_07_syntax_primitives.tokens import lexical_rules
@@ -264,13 +264,6 @@ class XRefScanner:
             pos += 1
         return bytes(data[start:end]), pos
 
-    @staticmethod
-    def parse_subsection_integer(token: bytes) -> int:
-        value = parse_int(token, None)
-        if value is None:
-            raise ValueError("invalid PDF integer")
-        return value
-
     @classmethod
     def parse_table_section(
         cls,
@@ -307,8 +300,8 @@ class XRefScanner:
                 continue
             if len(parts) == 2:
                 try:
-                    start_obj = cls.parse_subsection_integer(parts[0])
-                    num_objs = cls.parse_subsection_integer(parts[1])
+                    start_obj = parse_int_strict(parts[0], "invalid PDF integer")
+                    num_objs = parse_int_strict(parts[1], "invalid PDF integer")
                 except ValueError as error:
                     raise PdfParseError("invalid xref table subsection") from error
                 if start_obj < 0 or num_objs < 0:
@@ -408,19 +401,10 @@ class XRefScanner:
             raise PdfParseError("invalid xref stream size")
         if not isinstance(widths, list):
             raise PdfParseError("invalid xref stream W")
-        w = widths
-        row_size = validate_xref_widths(w)
         index = dictionary.get("Index")
         if index is None:
             index = [0, size]
-        if not isinstance(index, list):
-            raise PdfParseError("invalid xref stream Index")
-        indices = index
-        row_count = validate_xref_index(indices, size)
-        return (
-            decode_xref_row_table(stream.data, w, indices, row_size, row_count),  # type: ignore[arg-type]
-            dictionary,
-        )
+        return decode_xref_rows(stream.data, widths, index, size), dictionary  # type: ignore[arg-type]
 
 
 def validate_xref_widths(widths: Sequence[object]) -> int:
@@ -491,9 +475,11 @@ def decode_xref_row_at(
     return key_for(object_number), PdfXRefEntry(0, 0, False), end
 
 
-def decode_xref_rows(data: bytes, w: list[int], index: list[int], size: int) -> XRefTable:
-    row_count = validate_xref_index(index, size)
+def decode_xref_rows(data: bytes, w: list[int], index: object, size: int) -> XRefTable:
     row_size = validate_xref_widths(w)
+    if not isinstance(index, list):
+        raise PdfParseError("invalid xref stream Index")
+    row_count = validate_xref_index(index, size)
     return decode_xref_row_table(data, w, index, row_size, row_count)
 
 
