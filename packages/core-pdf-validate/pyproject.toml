@@ -9,13 +9,17 @@ authors = [
     { name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }
 ]
 requires-python = ">=3.14"
+classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
     "core-pdf>=0.0.7,<0.1.0",
     "defusedxml>=0.7.1",
 ]
 
+[project.urls]
+Repository = "https://github.com/core-experiments/core-pdf"
+
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=80", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.uv.sources]
@@ -23,6 +27,7 @@ core-pdf = { workspace = true }
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
