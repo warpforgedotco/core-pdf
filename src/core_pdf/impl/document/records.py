@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from core_pdf.impl.document.recovery.text_strings import decode_pdf_text_string
 from core_pdf.impl.types import PdfName, PdfString, Rectangle, ReplaceFields
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
@@ -182,7 +183,12 @@ class RawFormField:
         result: list[str] = []
         for item in value:
             if isinstance(item, PdfString):
-                result.append(item.data.decode("utf-8", errors="replace"))
+                # A text string (7.9.2.2), decoded as field values are; one
+                # that is not valid in its encoding keeps the lenient reading.
+                try:
+                    result.append(decode_pdf_text_string(item.data))
+                except ValueError:
+                    result.append(item.data.decode("utf-8", errors="replace"))
             elif isinstance(item, str):
                 result.append(item)
         return tuple(result)
