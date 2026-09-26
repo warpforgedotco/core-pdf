@@ -511,7 +511,14 @@ class XRefScanner(SyntaxXRefScanner):
         *,
         stop_at_first_trailer: bool = False,
         semantic_context: SemanticContext | None = None,
+        parsed_objects: dict[int, object] | None = None,
     ) -> XRefTable:
+        """The in-use objects found by reading every object header in data.
+
+        parsed_objects, if given, receives each object other than a stream
+        that parsed, by offset, as a PdfLexer over data in semantic_context
+        with no decipher parses it.
+        """
         entries: XRefTable = {}
         parsed_streams: dict[int, tuple[int, PdfStream]] = {}
         lexer = PdfLexer(data, semantic_context=semantic_context)
@@ -552,6 +559,8 @@ class XRefScanner(SyntaxXRefScanner):
                 stream_marker = bare_stream_marker(data, offset, marker, scan_end)
                 if stream_marker >= 0 and data.find(b"endstream", stream_marker + 6, scan_end) < 0:
                     break
+            if parsed_objects is not None and not isinstance(obj, PdfStream):
+                parsed_objects[offset] = obj
             early_stream_end = (
                 isinstance(obj, PdfStream)
                 and data.find(b"endstream", offset, max(offset, lexer.pos - 9)) >= 0

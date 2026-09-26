@@ -33,7 +33,7 @@ from core_pdf.impl.document.records import (
     RawNamedDestination,
     RawOutlineItem,
 )
-from core_pdf.impl.document.recovery.lexer import PdfLexer
+from core_pdf.impl.document.recovery.lexer import PdfLexer, reader_rules_for
 from core_pdf.impl.document.recovery.policy import MalformedFn, malformed_policy
 from core_pdf.impl.document.recovery.resolver import ObjectResolver
 from core_pdf.impl.document.recovery.text_strings import parse_text_string
@@ -65,6 +65,7 @@ from core_pdf.impl.output.model import Document as StructuredDocument
 from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import (
+    MISSING,
     ImageRecord,
     PageScoped,
     PdfByteBuffer,
@@ -312,6 +313,8 @@ class PdfDocument(Generic[PageT]):
         "page_labels_cache",
         "hidden_layers_cache",
         "page_lookup_cache",
+        "brute_force_objects",
+        "literal_trailers_cache",
     )
 
     source: PdfSource
@@ -340,6 +343,8 @@ class PdfDocument(Generic[PageT]):
     page_labels_cache: tuple[str, ...] | None | NotBuilt
     hidden_layers_cache: frozenset[str] | None
     page_lookup_cache: PageLookup[PageT] | None
+    brute_force_objects: tuple[SemanticContext | None, dict[int, object]] | None
+    literal_trailers_cache: tuple[SemanticContext | None, tuple[PdfDict, ...]] | None
 
     def __init__(
         self,
@@ -368,6 +373,8 @@ class PdfDocument(Generic[PageT]):
         self._standards = DocumentStandards()
         self.standards_complete = False
         self.font_decoders = {}
+        self.brute_force_objects = None
+        self.literal_trailers_cache = None
         # The document is read-only once open, so its page tree and form fields
         # are built once. Every page.extract() asks for the fields, and building
         # them walks every page, so without this a whole-document pass is
@@ -1521,13 +1528,37 @@ class PdfDocument(Generic[PageT]):
         return None
 
     def brute_force_xref(self) -> dict[int, PdfXRefEntry]:
-        return XRefScanner.brute_force_scan(
+        # The objects it parses, other than streams, are kept for catalog
+        # inference and the resolver, which would parse the same ones again.
+        parsed: dict[int, object] = {}
+        context = self.xref_context
+        xref = XRefScanner.brute_force_scan(
             self.raw_data,
             stop_at_first_trailer=not self.recovery_scan_all_revisions,
-            semantic_context=self.xref_context,
+            semantic_context=context,
+            parsed_objects=parsed,
         )
+        self.brute_force_objects = (context, parsed)
+        return xref
+
+    def brute_forced_objects(self) -> dict[int, object]:
+        """What the last brute-force scan parsed, if it read in the current
+        context: see ObjectResolver.adopt_parsed_objects."""
+        scanned = self.brute_force_objects
+        if scanned is None or scanned[0] != self.xref_context:
+            return {}
+        return scanned[1]
 
     def scan_xref(self) -> None:
+        self.brute_force_objects = None
+        try:
+            self.scan_xref_sections()
+        finally:
+            parsed = self.brute_forced_objects()
+            self.brute_force_objects = None
+            self.resolver.adopt_parsed_objects(parsed, reader_rules_for(self.xref_context))
+
+    def scan_xref_sections(self) -> None:
         data = self.raw_data
         try:
             start = XRefScanner.find_startxref(data, semantic_context=self.xref_context)
@@ -1737,6 +1768,16 @@ class PdfDocument(Generic[PageT]):
         entries_by_ref = {
             (k >> 16, k & 0xFFFF): entry for k, entry in self.xref.items() if entry.in_use
         }
+        # Each offset's object as the brute-force scan parsed it, handed out
+        # once: parsing an offset again for another key makes a new object.
+        unclaimed = dict(self.brute_forced_objects())
+
+        def parse_at(offset: int) -> Any:
+            parsed = unclaimed.pop(offset, MISSING)
+            if parsed is not MISSING:
+                return parsed
+            lexer.rewind(offset)
+            return lexer.parse_indirect_object()
 
         def resolve_for_inference(value: object, depth: int = 0) -> object:
             if depth > 12:
@@ -1756,9 +1797,8 @@ class PdfDocument(Generic[PageT]):
                 resolved = resolver.resolve_or_none(value)
                 object_cache[key] = resolved
                 return resolved
-            lexer.rewind(entry.offset)
             try:
-                resolved = lexer.parse_indirect_object()
+                resolved = parse_at(entry.offset)
             except Exception:
                 return None
             object_cache[key] = resolved
@@ -1843,9 +1883,8 @@ class PdfDocument(Generic[PageT]):
                 if compressed:
                     obj = resolver.resolve_or_none(PdfReference(obj_num, gen_num))
                 else:
-                    lexer.rewind(offset)
                     try:
-                        obj = lexer.parse_indirect_object()
+                        obj = parse_at(offset)
                     except Exception:
                         continue
                 object_cache[(obj_num, gen_num)] = obj
@@ -1889,7 +1928,7 @@ class PdfDocument(Generic[PageT]):
     def infer_trailer_metadata(self) -> PdfDict:
         metadata: PdfDict = {}
 
-        for candidate in self.iter_literal_trailer_dictionaries():
+        for candidate in self.literal_trailer_dictionaries():
             for key in TRAILER_METADATA_KEYS:
                 if key not in candidate:
                     continue
@@ -1911,6 +1950,18 @@ class PdfDocument(Generic[PageT]):
                 if self.is_valid_trailer_metadata_value(key, value):
                     metadata[key] = value
         return metadata
+
+    def literal_trailer_dictionaries(self) -> tuple[PdfDict, ...]:
+        # Read once per context: a scan can merge trailer metadata twice,
+        # and these depend only on the data and the context.
+        context = self.xref_context
+        cached = self.literal_trailers_cache
+        if cached is None or cached[0] != context:
+            cached = self.literal_trailers_cache = (
+                context,
+                tuple(self.iter_literal_trailer_dictionaries()),
+            )
+        return cached[1]
 
     def iter_literal_trailer_dictionaries(self) -> Iterator[PdfDict]:
         data = self.raw_data

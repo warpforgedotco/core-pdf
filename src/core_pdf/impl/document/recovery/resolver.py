@@ -11,7 +11,7 @@ from core_pdf.impl.document.recovery.xref import iter_indirect_object_headers
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.graphics.stream_decoding import decode_stream_data
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import PdfReference, PdfString
+from core_pdf.impl.types import MISSING, PdfReference, PdfString
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data as decode_spec_stream_data
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.objects import PdfObjectStream as SyntaxObjectStream
@@ -28,12 +28,13 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_float,
     parse_int,
 )
+from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules
 
 LEXER_POOL_LIMIT = 8
 
 
 class ObjectResolver(SyntaxResolver):
-    __slots__ = ("lexer_pool",)
+    __slots__ = ("lexer_pool", "parsed_objects", "parsed_rules")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         # Lexers over the whole file, idle between objects. Reading an object
@@ -43,7 +44,28 @@ class ObjectResolver(SyntaxResolver):
         # nested reference needs while another is mid-object comes out of the
         # pool separately.
         self.lexer_pool: list[PdfLexer] = []
+        self.parsed_objects: dict[int, object] = {}
+        self.parsed_rules: LexicalRules | None = None
         super().__init__(*args, **kwargs)
+
+    def adopt_parsed_objects(self, objects: dict[int, object], rules: LexicalRules) -> None:
+        """Objects already parsed, by offset, by a PdfLexer over this data
+        with no decipher reading by rules: what loading them would parse again.
+
+        Only objects other than streams, whose Length a lexer may resolve,
+        belong here; the rest of an object's parse depends only on the
+        lexer's rules and decipher. Each is handed out once, since two loads
+        of one offset make two objects, and only to a load whose lexer still
+        reads as that one did.
+        """
+        with self.lock:
+            self.parsed_objects = objects
+            self.parsed_rules = rules
+
+    def close(self) -> None:
+        with self.lock:
+            self.parsed_objects = {}
+        super().close()
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
         entry = super().xref_entry(ref)
@@ -57,6 +79,16 @@ class ObjectResolver(SyntaxResolver):
     def load_indirect_object(
         self, lexer: SyntaxLexer, offset: int, *, expected_reference: PdfReference
     ) -> object:
+        if (
+            self.parsed_objects
+            and lexer.decipher is None
+            and type(lexer) is PdfLexer
+            and lexer.lexical_rules == self.parsed_rules
+        ):
+            with self.lock:
+                parsed = self.parsed_objects.pop(offset, MISSING)
+            if parsed is not MISSING:
+                return parsed
         try:
             lexer.rewind(offset)
             return lexer.parse_indirect_object()

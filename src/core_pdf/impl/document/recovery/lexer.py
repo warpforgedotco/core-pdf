@@ -108,6 +108,15 @@ def reader_eol_pair(first: int, second: int) -> bool:
     return (first == 13 and second == 10) or (first == 10 and second == 13)
 
 
+def reader_rules_for(context: SemanticContext | None) -> LexicalRules:
+    """The lexical rules a reader lexer in context reads with."""
+    if recognized_version(context) is None:
+        context = None
+    rules = lexical_rules(context)
+    reader_rules = READER_RULES.get(rules)
+    return reader_lexical_rules(rules) if reader_rules is None else reader_rules
+
+
 class PdfLexer(SyntaxLexer):
     __slots__ = (
         "recover_malformed_objects",
@@ -205,11 +214,7 @@ class PdfLexer(SyntaxLexer):
         return values
 
     def select_lexical_rules(self, context: SemanticContext | None) -> LexicalRules:
-        if recognized_version(context) is None:
-            context = None
-        rules = lexical_rules(context)
-        reader_rules = READER_RULES.get(rules)
-        return reader_lexical_rules(rules) if reader_rules is None else reader_rules
+        return reader_rules_for(context)
 
     def read_string(
         self,
