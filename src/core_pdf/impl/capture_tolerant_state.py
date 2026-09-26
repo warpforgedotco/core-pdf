@@ -6,7 +6,7 @@ import typing
 from collections.abc import Mapping
 
 from core_pdf.impl.capture_recovery import CaptureRecovery
-from core_pdf.impl.fonts_helpers import strip_subset_tag
+from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.graphics_color_spec import parse_color_space
 from core_pdf.impl.graphics_functions import compile_pdf_function
 from core_pdf.impl.pdf_names import recover_pdf_name
@@ -44,7 +44,7 @@ def font_companions(
         sibling = resolve(reference)
         if not isinstance(sibling, dict):
             continue
-        name = strip_subset_tag(recover_pdf_name(sibling.get("BaseFont")) or "")
+        name = recover_strip_subset_tag(recover_pdf_name(sibling.get("BaseFont")) or "")
         if name:
             grouped.setdefault(name, []).append(
                 (reference.object_number, reference.generation_number)
@@ -68,7 +68,7 @@ def font_signature(
         return None
     if any(type(value) is not PdfReference for value in fonts.values()):
         return None
-    base_name = strip_subset_tag(recover_pdf_name(font_obj.get("BaseFont")) or "")
+    base_name = recover_strip_subset_tag(recover_pdf_name(font_obj.get("BaseFont")) or "")
     companions: tuple[tuple[int, int], ...] = ()
     if base_name:
         companions = font_companions(fonts, resolve, companions_cache).get(base_name, ())

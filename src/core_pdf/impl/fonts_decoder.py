@@ -47,8 +47,8 @@ from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode
 from core_pdf.impl.fonts_helpers import (
     build_decode_table,
     build_simple_encoding_glyph_names,
-    parse_differences,
-    strip_subset_tag,
+    recover_differences,
+    recover_strip_subset_tag,
     unicode_for_glyph_name,
 )
 from core_pdf.impl.fonts_metrics import (
@@ -57,8 +57,8 @@ from core_pdf.impl.fonts_metrics import (
     standard_14_widths,
 )
 from core_pdf.impl.fonts_widths import (
-    get_descendant,
     parse_font_widths,
+    recover_descendant,
 )
 from core_pdf.impl.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
@@ -90,7 +90,7 @@ FontProgram = CFFFont | TrueTypeFontProgram | Type1FontProgram | OpenTypeFontPro
 def descriptor_font_name(font: dict[str, Any], subtype: str | None) -> str | None:
     descriptor = font.get("FontDescriptor")
     if subtype == "Type0":
-        descendant = get_descendant(font)
+        descendant = recover_descendant(font)
         if isinstance(descendant, dict):
             descendant_descriptor = descendant.get("FontDescriptor")
             descriptor = descendant_descriptor or descriptor
@@ -175,7 +175,7 @@ def build_cff_unicode_repair_index(
 ) -> CFFUnicodeRepairIndex | None:
     if to_unicode is None or not isinstance(font_program, CFFFont):
         return None
-    descendant = get_descendant(font)
+    descendant = recover_descendant(font)
     if descendant is None:
         return None
     if recover_pdf_name(descendant.get("Subtype")) != "CIDFontType0":
@@ -249,7 +249,7 @@ def font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
     inputs = prepare_font_program_inputs(
         font,
         read_name=recover_pdf_name,
-        read_descendant=get_descendant,
+        read_descendant=recover_descendant,
         read_descriptor=recover_descriptor,
         read_font_file=recover_font_file,
     )
@@ -471,7 +471,7 @@ def font_is_vertical(
         or (cmap is not None and cmap.wmode == 1)
     ):
         return True
-    descendant = get_descendant(font) if subtype == "Type0" else None
+    descendant = recover_descendant(font) if subtype == "Type0" else None
     if descendant is None:
         return False
     wmode = descendant.get("WMode")
@@ -710,7 +710,7 @@ class FontDecoder:
         font_metrics = parse_font_widths(font, subtype)
         widths = font_metrics.widths
         default_width = font_metrics.default_width
-        is_cid_font = subtype == "Type0" and get_descendant(font) is not None
+        is_cid_font = subtype == "Type0" and recover_descendant(font) is not None
 
         base_font_name = resolve_base_font_name(font, subtype)
         is_vertical = font_is_vertical(font, subtype, base_encoding, base_font_name, cmap)
@@ -824,7 +824,7 @@ class FontDecoder:
         cls,
         font: dict[str, Any],
     ) -> tuple[str | None, str | None]:
-        descendant = get_descendant(font)
+        descendant = recover_descendant(font)
         system_info = descendant.get("CIDSystemInfo") if descendant else None
         if not isinstance(system_info, dict):
             system_info = font.get("CIDSystemInfo")
@@ -863,7 +863,7 @@ class FontDecoder:
                 differences_obj = encoding_obj.get("Differences")
                 if differences_obj is not None and not isinstance(differences_obj, (list, tuple)):
                     differences_obj = None
-                differences = parse_differences(
+                differences = recover_differences(
                     list(differences_obj)
                     if isinstance(differences_obj, tuple)
                     else differences_obj,
@@ -1628,7 +1628,7 @@ def should_prefer_glyph_name_mapping(
 def normalized_base_font_name(base_font_name: str | None) -> str | None:
     if base_font_name is None:
         return None
-    return strip_subset_tag(base_font_name)
+    return recover_strip_subset_tag(base_font_name)
 
 
 def build_glyph_decode_table(

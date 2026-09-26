@@ -11,7 +11,7 @@ from core_pdf.impl.capture_recovery import iter_content_operations
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_glyphs import TEX_GLYPH_ALIASES
-from core_pdf.impl.fonts_helpers import strip_subset_tag
+from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.fonts_metrics import LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.fonts_widths import parse_font_widths
 from core_pdf.impl.pdf_names import recover_pdf_name
@@ -393,7 +393,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         if encoding is not None:
             return False
         # A standard 14 font with no /Encoding reads its built-in one.
-        base_font = strip_subset_tag(recover_pdf_name(font.get("BaseFont") or "") or "")
+        base_font = recover_strip_subset_tag(recover_pdf_name(font.get("BaseFont") or "") or "")
         return base_font in CORE14_FONT_DATA
 
     def legacy_encoding(
