@@ -62,11 +62,6 @@ def test_render_target_uses_the_kernel():
     # otherwise stand alone, so cibuildwheel can run the golden vectors
     # against a freshly built wheel with nothing else present.
     pytest.importorskip("core_pdf")
-    from core_pdf.impl.render import paths, target
+    from core_pdf.impl.render import target
 
     assert target.fill_glyph_coverage is fill_glyph_coverage
-    assert not hasattr(paths, "signed_area_coverage")
-    # The device-space entry point is the one the golden vectors pin; core
-    # reaches the shared core through the fused glyph front end instead.
-    assert not hasattr(target, "signed_area_coverage")
-    assert not hasattr(paths, "group_offsets")

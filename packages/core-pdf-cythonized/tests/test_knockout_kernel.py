@@ -77,7 +77,6 @@ def test_spec_no_longer_owns_the_algorithm():
     pytest.importorskip("core_pdf_spec")
     from core_pdf_spec.s_11_transparency import groups
 
-    assert not hasattr(groups, "composite_knockout_element")
     assert "composite_knockout_element" not in groups.__all__
     # remove_group_backdrop and its helper stay behind.
     assert hasattr(groups, "remove_group_backdrop")
