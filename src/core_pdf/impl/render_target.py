@@ -73,6 +73,12 @@ from core_pdf.impl.render_patterns import (
     tiling_cell,
     tiling_pattern_uses_normal_blends,
 )
+from core_pdf.impl.render_raster_state import (
+    EMPTY_PIXEL_BOX,
+    ElementaryScratch,
+    PixelBox,
+    RasterState,
+)
 from core_pdf.impl.render_resources import RenderResources
 from core_pdf.impl.scalars import clamp01
 from core_pdf_cythonized import (
@@ -125,18 +131,6 @@ BLEND_MODE_CODES: dict[str | None, int] = {
     "colordodge": BLEND_COLOR_DODGE,
     "colorburn": BLEND_COLOR_BURN,
 }
-
-
-class ElementaryScratch:
-    __slots__ = ("buffer", "dirty", "source_alpha", "source_shape", "synced_parent", "view")
-
-    def __init__(self, size: int, height: int, width: int) -> None:
-        self.buffer = bytearray(size)
-        self.view = uint8_image_view(self.buffer, (height, width, 4))
-        self.source_alpha = numpy.zeros((height, width), dtype=numpy.float32)
-        self.source_shape = numpy.zeros((height, width), dtype=numpy.float32)
-        self.synced_parent: RasterGroup | None = None
-        self.dirty: list[int] | None = None
 
 
 def prepared_image_bytes(prepared: PreparedImage | None) -> int:
@@ -378,10 +372,6 @@ def composite_masked_group(
     return effective_alpha
 
 
-type PixelBox = tuple[int, int, int, int]
-EMPTY_PIXEL_BOX: PixelBox = (0, 0, 0, 0)
-
-
 def graphics_soft_mask(item: DisplayItem) -> CapturedSoftMask | None:
     if isinstance(item, (PathPaintItem, ImagePaintItem)):
         return item.graphics_soft_mask
@@ -466,7 +456,7 @@ def sample_image_plane(
     return plane[source_y, source_x]
 
 
-class RasterTarget:
+class RasterTarget(RasterState):
     __slots__ = (
         "pixels",
         "pixel_array",
@@ -514,11 +504,6 @@ class RasterTarget:
     ) -> None:
         self.semantic_context = blend_context(semantic_context)
         self.buffer_stack = [RasterGroup(pixels, view=page_view)]
-        self.pixels: bytearray
-        self.pixel_array: UInt8Array
-        self.group_source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
-        self.group_source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None
-        self.paint_window: list[int] | None
         self.sync_group_mirrors()
         self.paint_alpha_is_shape = False
         self.shape_alpha = 1.0
@@ -531,14 +516,14 @@ class RasterTarget:
         self.page_pixels = page_view
         self.page_buffer = pixels
         self.crop_y0 = crop_y0
-        self.clip_stack: list[int] = []
+        self.clip_stack = []
         self.clip_floor = 0
         self.group_floor = 1
-        self.scope_stack: list[tuple[int, list[int], int, int, int]] = []
+        self.scope_stack = []
         self.resources = RenderResources() if resources is None else resources
-        self.elementary_scratch: dict[int, ElementaryScratch] = {}
-        self.group_member_boxes: dict[int, tuple[float, float, float, float] | None] | None = None
-        self.stroke_scratch: bytearray | None = None
+        self.elementary_scratch = {}
+        self.group_member_boxes = None
+        self.stroke_scratch = None
         if group_alpha is not None:
             self.push_group(bytearray(len(pixels)), group_alpha, None)
             self.group_floor = len(self.buffer_stack)
