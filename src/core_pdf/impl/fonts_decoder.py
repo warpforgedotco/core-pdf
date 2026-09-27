@@ -209,6 +209,9 @@ class FontDecoder:
         "is_cid_font",
         "is_type3",
         "font_name",
+        "is_vertical",
+        "ascent",
+        "descent",
         "encoding",
         "metrics",
         "unicode",
@@ -232,6 +235,9 @@ class FontDecoder:
     is_cid_font: bool
     is_type3: bool
     font_name: str | None
+    is_vertical: bool
+    ascent: float
+    descent: float
     encoding: FontEncoding
     metrics: FontMetricsModel
     unicode: UnicodeResolver
@@ -299,6 +305,9 @@ class FontDecoder:
         self.is_cid_font = is_cid_font
         self.is_type3 = is_type3
         self.font_name = base_font_name
+        self.is_vertical = metrics.is_vertical
+        self.ascent = metrics.ascent
+        self.descent = metrics.descent
         self.encoding = encoding
         self.metrics = metrics
         self.geometry = geometry
@@ -385,18 +394,6 @@ class FontDecoder:
     @property
     def vertical_metrics(self) -> dict[int, tuple[float, float, float]]:
         return self.metrics.vertical_metrics
-
-    @property
-    def is_vertical(self) -> bool:
-        return self.metrics.is_vertical
-
-    @property
-    def ascent(self) -> float:
-        return self.metrics.ascent
-
-    @property
-    def descent(self) -> float:
-        return self.metrics.descent
 
     @property
     def font_matrix(self) -> Matrix:
