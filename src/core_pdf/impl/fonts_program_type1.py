@@ -10,12 +10,14 @@ from core_pdf._vendor.fontTools.pens.recordingPen import (
     RecordingPen,
 )
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
-from core_pdf.impl.fonts_program_base import GlyphBox, GlyphContours, GlyphNaming, GlyphProgram
+from core_pdf.impl.fonts_program_base import GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts_program_truetype import recording_to_contours
 from core_pdf.impl.fonts_raster_kernel import (
+    Contours,
     Point,
     transform_contours,
 )
+from core_pdf.impl.types import Rectangle
 from core_pdf_cythonized import decrypt_type1
 
 LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
@@ -104,7 +106,7 @@ class Type1FontProgram(GlyphProgram):
     def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:
         return self.glyph_id_for_name(naming.glyph_name(code))
 
-    def glyph_bbox_uncached(self, glyph_id: int) -> GlyphBox | None:
+    def glyph_bbox_for_gid(self, glyph_id: int) -> Rectangle | None:
         try:
             if not self.has_glyph_id(glyph_id):
                 return None
@@ -127,7 +129,7 @@ class Type1FontProgram(GlyphProgram):
         except Exception:
             return None
 
-    def glyph_contours_uncached(self, glyph_id: int) -> GlyphContours:
+    def normalized_glyph_contours(self, glyph_id: int) -> Contours:
         if not self.has_glyph_id(glyph_id):
             return ()
         return self.glyph_contours(self.glyph_names[glyph_id])

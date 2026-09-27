@@ -27,11 +27,13 @@ from core_pdf.impl.fonts_cff_repair import (
     CFFGlyphFeature,
     feature_from_contours,
 )
-from core_pdf.impl.fonts_program_base import GlyphBox, GlyphContours, GlyphNaming, GlyphProgram
+from core_pdf.impl.fonts_program_base import GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts_raster_kernel import (
+    Contours,
     transform_contours,
 )
 from core_pdf.impl.geometry import points_bbox
+from core_pdf.impl.types import Rectangle
 from core_pdf_cythonized import type2_glyph_geometry
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 
@@ -431,11 +433,11 @@ class CFFFont(PdfCFFFont, GlyphProgram):
             return EMPTY_FEATURE
         return feature_from_contours(contours)
 
-    def glyph_bbox_uncached(self, glyph_id: int) -> GlyphBox | None:
+    def glyph_bbox_for_gid(self, glyph_id: int) -> Rectangle | None:
         geometry = self.glyph_geometry_for_gid(glyph_id, bounds_only=True)
         return geometry[1]
 
-    def glyph_contours_uncached(self, glyph_id: int) -> GlyphContours:
+    def normalized_glyph_contours(self, glyph_id: int) -> Contours:
         return self.glyph_geometry_for_gid(glyph_id)[0]
 
     def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:

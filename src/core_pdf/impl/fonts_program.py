@@ -24,8 +24,6 @@ from core_pdf_spec.s_09_fonts.dictionaries import (
     prepare_font_program_inputs,
 )
 
-FontProgram = CFFFont | TrueTypeFontProgram | Type1FontProgram | OpenTypeFontProgram
-
 
 def tt_font(inputs: FontProgramInputs) -> TrueTypeFontProgram | None:
     if inputs.subtype not in {"CIDFontType2", "TrueType"}:
@@ -122,7 +120,7 @@ def recover_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStream 
     return value if isinstance(value, PdfStream) else None
 
 
-FONT_PROGRAM_LOADERS: tuple[Callable[[FontProgramInputs], FontProgram | None], ...] = (
+FONT_PROGRAM_LOADERS: tuple[Callable[[FontProgramInputs], GlyphProgram | None], ...] = (
     cff_font,
     tt_font,
     type1_font,
@@ -130,7 +128,7 @@ FONT_PROGRAM_LOADERS: tuple[Callable[[FontProgramInputs], FontProgram | None], .
 )
 
 
-def font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
+def font_program_for_pdf_font(font: dict[str, Any]) -> GlyphProgram | None:
     inputs = prepare_font_program_inputs(
         font,
         read_name=recover_pdf_name,

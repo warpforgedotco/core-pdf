@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 from core_pdf.impl.fonts_encoding import FontEncoding
 from core_pdf.impl.fonts_fallback import fallback_glyph_outline
 from core_pdf.impl.fonts_metrics import FontMetricsModel
-from core_pdf.impl.fonts_program_base import GlyphContours, GlyphProgram
+from core_pdf.impl.fonts_program_base import NULL_PROGRAM, GlyphProgram
+from core_pdf.impl.fonts_raster_kernel import Contours
 from core_pdf.impl.glyph_outlines import GlyphOutlineArrays, outline_arrays
 from core_pdf.impl.types import Rectangle
 
@@ -79,7 +80,13 @@ class GlyphGeometry:
     def glyph_bbox_uncached(self, code: int) -> Rectangle | None:
         if code < 0:
             return None
-        return self.program.glyph_bbox_for_code(code, self.glyph_id_for_code(code), self.metrics)
+        program = self.program
+        if program is NULL_PROGRAM:
+            metrics = self.metrics
+            width = metrics.glyph_width(code)
+            return None if width <= 0 else (0.0, metrics.descent, width, metrics.ascent)
+        glyph_id = self.glyph_id_for_code(code)
+        return program.glyph_bbox_for_gid(glyph_id) if glyph_id is not None else None
 
     def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
         if code < 0:
@@ -104,13 +111,16 @@ class GlyphGeometry:
             arrays = cache[key] = outline_arrays(self.glyph_outline_uncached(code, gid, text))
             return arrays
 
-    def glyph_outline_uncached(self, code: int, gid: int | None, text: str) -> GlyphContours:
+    def glyph_outline_uncached(self, code: int, gid: int | None, text: str) -> Contours:
         glyph_id = gid if gid is not None else self.glyph_id_for_code(code)
         if glyph_id is None:
             return ()
-        return self.program.glyph_outline_for(glyph_id, text, self)
+        program = self.program
+        if program is NULL_PROGRAM:
+            return self.fallback_glyph_outline(text)
+        return program.normalized_glyph_contours(glyph_id)
 
-    def fallback_glyph_outline(self, text: str) -> GlyphContours:
+    def fallback_glyph_outline(self, text: str) -> Contours:
         encoding = self.encoding
         return fallback_glyph_outline(
             self.font_name,

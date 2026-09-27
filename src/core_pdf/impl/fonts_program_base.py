@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Protocol
 
-from core_pdf.impl.fonts_raster_kernel import (
-    Point,
-    rasterize_contours,
-)
-
-GlyphBox = tuple[float, float, float, float]
-GlyphContours = tuple[tuple[Point, ...], ...]
+from core_pdf.impl.fonts_raster_kernel import Contours, rasterize_contours
+from core_pdf.impl.types import Rectangle
 
 
 class GlyphNaming(Protocol):
@@ -19,21 +14,7 @@ class GlyphNaming(Protocol):
     def glyph_name(self, code: int) -> str: ...
 
 
-class GlyphBoxMetrics(Protocol):
-    @property
-    def ascent(self) -> float: ...
-
-    @property
-    def descent(self) -> float: ...
-
-    def glyph_width(self, code: int) -> float: ...
-
-
-class GlyphOutlineFallback(Protocol):
-    def fallback_glyph_outline(self, text: str) -> GlyphContours: ...
-
-
-class GlyphProgram:
+class GlyphProgram(ABC):
     __slots__ = ()
 
     @abstractmethod
@@ -43,16 +24,10 @@ class GlyphProgram:
     def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None: ...
 
     @abstractmethod
-    def glyph_contours_uncached(self, glyph_id: int) -> GlyphContours: ...
+    def normalized_glyph_contours(self, glyph_id: int) -> Contours: ...
 
     @abstractmethod
-    def glyph_bbox_uncached(self, glyph_id: int) -> GlyphBox | None: ...
-
-    def normalized_glyph_contours(self, glyph_id: int) -> GlyphContours:
-        return self.glyph_contours_uncached(glyph_id)
-
-    def glyph_bbox_for_gid(self, glyph_id: int) -> GlyphBox | None:
-        return self.glyph_bbox_uncached(glyph_id)
+    def glyph_bbox_for_gid(self, glyph_id: int) -> Rectangle | None: ...
 
     def glyph_bitmap_for_gid(
         self, glyph_id: int, *, width: int = 24, height: int = 32
@@ -67,18 +42,8 @@ class GlyphProgram:
     def font_builtin_encoding(self) -> tuple[dict[int, str], bool] | None:
         return None
 
-    def code_bbox(self, code: int) -> GlyphBox | None:
+    def code_bbox(self, code: int) -> Rectangle | None:
         return None
-
-    def glyph_bbox_for_code(
-        self, code: int, glyph_id: int | None, metrics: GlyphBoxMetrics
-    ) -> GlyphBox | None:
-        return self.glyph_bbox_for_gid(glyph_id) if glyph_id is not None else None
-
-    def glyph_outline_for(
-        self, glyph_id: int, text: str, fallback: GlyphOutlineFallback
-    ) -> GlyphContours:
-        return self.normalized_glyph_contours(glyph_id)
 
 
 class NullProgram(GlyphProgram):
@@ -90,22 +55,11 @@ class NullProgram(GlyphProgram):
     def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:
         return code
 
-    def glyph_contours_uncached(self, glyph_id: int) -> GlyphContours:
+    def normalized_glyph_contours(self, glyph_id: int) -> Contours:
         return ()
 
-    def glyph_bbox_uncached(self, glyph_id: int) -> GlyphBox | None:
+    def glyph_bbox_for_gid(self, glyph_id: int) -> Rectangle | None:
         return None
-
-    def glyph_bbox_for_code(
-        self, code: int, glyph_id: int | None, metrics: GlyphBoxMetrics
-    ) -> GlyphBox | None:
-        width = metrics.glyph_width(code)
-        return None if width <= 0 else (0.0, metrics.descent, width, metrics.ascent)
-
-    def glyph_outline_for(
-        self, glyph_id: int, text: str, fallback: GlyphOutlineFallback
-    ) -> GlyphContours:
-        return fallback.fallback_glyph_outline(text)
 
 
 NULL_PROGRAM = NullProgram()

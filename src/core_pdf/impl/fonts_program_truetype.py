@@ -17,12 +17,14 @@ from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode
-from core_pdf.impl.fonts_program_base import GlyphBox, GlyphContours, GlyphNaming, GlyphProgram
+from core_pdf.impl.fonts_program_base import GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts_raster_kernel import (
+    Contours,
     Point,
     scale_contours,
 )
 from core_pdf.impl.geometry import transform_bbox
+from core_pdf.impl.types import Rectangle
 from core_pdf_cythonized import truetype_contours
 from core_pdf_spec.s_09_fonts.font_program_truetype import (
     is_unicode_scalar,
@@ -226,10 +228,10 @@ class FontToolsProgram(GlyphProgram):
     def has_glyph_id(self, glyph_id: int) -> bool:
         return self.outlines.has_glyph_id(glyph_id)
 
-    def glyph_contours_uncached(self, glyph_id: int) -> GlyphContours:
+    def normalized_glyph_contours(self, glyph_id: int) -> Contours:
         return self.outlines.normalized_glyph_contours(glyph_id)
 
-    def glyph_bbox_uncached(self, glyph_id: int) -> GlyphBox | None:
+    def glyph_bbox_for_gid(self, glyph_id: int) -> Rectangle | None:
         return self.outlines.glyph_bbox_for_gid(glyph_id)
 
 
@@ -308,10 +310,10 @@ class TrueTypeFontProgram(FontToolsProgram):
     def unicode_for_gid(self, gid: int) -> str:
         return self.glyph_to_unicode.get(gid, "")
 
-    def code_bbox(self, code: int) -> GlyphBox | None:
+    def code_bbox(self, code: int) -> Rectangle | None:
         return self.glyph_bbox_for_gid(self.mapped_glyph_id(code))
 
-    def glyph_bbox_uncached(self, glyph_id: int) -> GlyphBox | None:
+    def glyph_bbox_for_gid(self, glyph_id: int) -> Rectangle | None:
         bbox = glyph_header_bbox(self.glyph_locations, self.glyph_table_data, glyph_id)
         if bbox is None:
             return None
