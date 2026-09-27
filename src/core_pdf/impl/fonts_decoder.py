@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import typing
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 from core_adobe_fonts.cmap.ranges import (
     code_in_ranges,
 )
 from core_pdf.impl.caches import BoundedDict
-from core_pdf.impl.fonts_cff_repair import CFFUnicodeRepairIndex
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts_encoding import FontEncoding
@@ -21,7 +20,6 @@ from core_pdf.impl.fonts_helpers import (
 )
 from core_pdf.impl.fonts_metrics import FontMetricsModel
 from core_pdf.impl.fonts_program import load_glyph_program
-from core_pdf.impl.fonts_program_base import GlyphProgram
 from core_pdf.impl.fonts_unicode import (
     UnicodeChoice,
     UnicodeResolver,
@@ -221,6 +219,9 @@ class FontDecoder:
         "cid_glyph_cache",
         "string_glyph_cache",
         "glyph_width",
+        "glyph_name",
+        "glyph_id_for_code",
+        "glyph_advance_vector",
         "glyph_bbox",
         "glyph_bitmap",
         "glyph_outline_arrays",
@@ -247,6 +248,9 @@ class FontDecoder:
     cid_glyph_cache: dict[tuple[bytes, int], DecodedGlyph]
     string_glyph_cache: BoundedDict[bytes, tuple[DecodedGlyph, ...]]
     glyph_width: Callable[[int], float]
+    glyph_name: Callable[..., str]
+    glyph_id_for_code: Callable[[int], int | None]
+    glyph_advance_vector: Callable[..., tuple[float, float]]
     glyph_bbox: Callable[[int], Rectangle | None]
     glyph_bitmap: Callable[..., tuple[int, ...]]
     glyph_outline_arrays: Callable[..., GlyphOutlineArrays | None]
@@ -329,6 +333,9 @@ class FontDecoder:
         self.cid_glyph_cache = {}
         self.string_glyph_cache = BoundedDict(STRING_GLYPH_CACHE_MAX_ENTRIES)
         self.glyph_width = metrics.glyph_width
+        self.glyph_name = encoding.glyph_name
+        self.glyph_id_for_code = geometry.glyph_id_for_code
+        self.glyph_advance_vector = metrics.glyph_advance_vector
         self.vertical_glyph_metric = metrics.vertical_glyph_metric
         self.vertical_glyph_position = metrics.vertical_glyph_position
         self.glyph_bbox = geometry.glyph_bbox
@@ -336,77 +343,11 @@ class FontDecoder:
         self.glyph_outline_arrays = geometry.glyph_outline_arrays
 
     @property
-    def font_program(self) -> GlyphProgram:
-        return self.geometry.program
-
-    @property
-    def to_unicode(self) -> ToUnicodeCMap | None:
-        return self.unicode.to_unicode
-
-    @property
-    def cff_unicode_repair_index(self) -> CFFUnicodeRepairIndex | None:
-        return self.unicode.cff_unicode_repair_index
-
-    @property
-    def cmap(self) -> CMapDecoder | None:
-        return self.encoding.cmap
-
-    @property
-    def base_encoding(self) -> str | None:
-        return self.encoding.base_encoding
-
-    @property
-    def differences(self) -> dict[int, str]:
-        return self.encoding.differences
-
-    @property
-    def encoding_differences(self) -> dict[int, str]:
-        return self.encoding.encoding_differences
-
-    @property
-    def cid_registry(self) -> str | None:
-        return self.encoding.cid_registry
-
-    @property
-    def cid_ordering(self) -> str | None:
-        return self.encoding.cid_ordering
-
-    @property
-    def widths(self) -> Mapping[int, float]:
-        return self.metrics.widths
-
-    @widths.setter
-    def widths(self, widths: Mapping[int, float]) -> None:
-        self.metrics.widths = widths
-
-    @property
-    def default_width(self) -> float:
-        return self.metrics.default_width
-
-    @property
-    def default_vertical_displacement_y(self) -> float:
-        return self.metrics.default_vertical_displacement_y
-
-    @property
-    def default_vertical_origin_y(self) -> float:
-        return self.metrics.default_vertical_origin_y
-
-    @property
-    def vertical_metrics(self) -> dict[int, tuple[float, float, float]]:
-        return self.metrics.vertical_metrics
-
-    @property
     def font_matrix(self) -> Matrix:
         try:
             return Matrix.from_operand(self.font.get("FontMatrix"))
         except ValueError:
             return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-
-    def glyph_name(self, code: int) -> str:
-        return self.encoding.glyph_name(code)
-
-    def glyph_id_for_code(self, code: int) -> int | None:
-        return self.geometry.glyph_id_for_code(code)
 
     def decode(self, data: bytes) -> str:
         if not data:
@@ -539,25 +480,6 @@ class FontDecoder:
             choice.alternates,
             cid,
             choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
-        )
-
-    def glyph_advance_vector(
-        self,
-        code: int,
-        *,
-        font_size: float,
-        char_space: float,
-        word_space: float,
-        horizontal_scale: float,
-        encoded_space: bool,
-    ) -> tuple[float, float]:
-        return self.metrics.glyph_advance_vector(
-            code,
-            font_size=font_size,
-            char_space=char_space,
-            word_space=word_space,
-            horizontal_scale=horizontal_scale,
-            encoded_space=encoded_space,
         )
 
     def text_advance_vector(

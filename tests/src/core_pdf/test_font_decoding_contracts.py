@@ -209,7 +209,7 @@ def test_invalid_type1_length_metadata_does_not_prevent_font_recovery(length):
             "FontDescriptor": {"FontFile": PdfStream({"Length1": length}, b"damaged program")},
         }
     )
-    assert font.font_program is NULL_PROGRAM
+    assert font.geometry.program is NULL_PROGRAM
     assert font.decode_glyphs(b"A")[0].unicode == "A"
 
 

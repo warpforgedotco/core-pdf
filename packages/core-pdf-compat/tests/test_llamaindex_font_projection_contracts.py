@@ -59,7 +59,7 @@ def test_simple_font_widths_truncate_individual_metrics_toward_zero(projection, 
 
 def test_simple_font_uses_only_positive_single_byte_decoder_widths_when_undeclared(projection):
     decoder = FontDecoder({})
-    decoder.widths = {-1: 300, 0: 0, 65: 500, 66: -20, 255: 200, 256: 700}
+    decoder.metrics.widths = {-1: 300, 0: 0, 65: 500, 66: -20, 255: 200, 256: 700}
     assert projection.resolve_widths({}, decoder) == ({65: 500, 255: 200}, 0.0)
 
 

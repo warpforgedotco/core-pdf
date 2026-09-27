@@ -269,7 +269,7 @@ class OperatorTextProjection:
                 space_code = next(
                     (
                         code
-                        for code, glyph_name in decoder.differences.items()
+                        for code, glyph_name in decoder.encoding.differences.items()
                         if difference_text(glyph_name, code) == " "
                     ),
                     None,
@@ -366,8 +366,8 @@ class OperatorTextProjection:
     def resolve_to_unicode(
         font: Mapping[object, object], decoder: FontDecoder
     ) -> ToUnicodeCMap | None:
-        if decoder.to_unicode is not None:
-            return decoder.to_unicode
+        if decoder.unicode.to_unicode is not None:
+            return decoder.unicode.to_unicode
         raw_cmap = font.get("ToUnicode")
         if not isinstance(raw_cmap, PdfStream):
             return None
@@ -470,7 +470,7 @@ class OperatorTextProjection:
             if not widths:
                 widths.update(
                     (code, width)
-                    for code, width in decoder.widths.items()
+                    for code, width in decoder.metrics.widths.items()
                     if 0 <= code < 256 and width > 0
                 )
         return widths, default_width
@@ -494,7 +494,7 @@ class OperatorTextProjection:
             table = base_encoding_table(recover_pdf_name(raw_encoding.get("BaseEncoding")))
         else:
             return "charmap"
-        for code, glyph_name in decoder.differences.items():
+        for code, glyph_name in decoder.encoding.differences.items():
             if not 0 <= code < 256:
                 continue
             table[code] = difference_text(glyph_name, code)
@@ -511,9 +511,9 @@ class OperatorTextProjection:
     ) -> dict[str, str]:
         if to_unicode is None:
             result: dict[str, str] = {}
-            if decoder.differences:
+            if decoder.encoding.differences:
                 return result
-            for code, glyph_name in decoder.encoding_differences.items():
+            for code, glyph_name in decoder.encoding.encoding_differences.items():
                 mapped = legacy_glyph_name_to_unicode(glyph_name)
                 if mapped != glyph_name:
                     result[chr(code)] = mapped

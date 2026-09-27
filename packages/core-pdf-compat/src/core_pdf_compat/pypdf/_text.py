@@ -398,10 +398,10 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         if encoding_obj is None and base_font not in {"Symbol", "ZapfDingbats"}:
             table = [chr(code) for code in range(256)]
         else:
-            table = legacy_base_table(decoder.base_encoding or "StandardEncoding")
+            table = legacy_base_table(decoder.encoding.base_encoding or "StandardEncoding")
         character_map: dict[str, str] = {}
 
-        for code, name in decoder.differences.items():
+        for code, name in decoder.encoding.differences.items():
             if 0 <= code <= 255:
                 table[code] = self.legacy_glyph_name(name)
 
@@ -489,7 +489,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         space_code: int,
     ) -> tuple[Mapping[int, float], float, float]:
         subtype = recover_pdf_name(font.get("Subtype") or "")
-        widths = decoder.widths
+        widths = decoder.metrics.widths
         if decoder.is_type3:
             char_procs = self.document.resolver.resolve(font.get("CharProcs"))
             if (
@@ -504,7 +504,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
             with suppress(ValueError):
                 widths = parse_font_widths(font, subtype).widths
 
-        default_width = decoder.default_width
+        default_width = decoder.metrics.default_width
         if not decoder.is_cid_font:
             descriptor = self.document.resolver.resolve(font.get("FontDescriptor"))
             missing_width = (

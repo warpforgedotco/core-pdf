@@ -15,6 +15,7 @@ from ._capture import (
 from ._fonts import (
     _font_value,
     _pdfminer_builtin_width,
+    decoder_encoding_differences,
     pdfminer_descent,
     pdfminer_embedded_cmap_is_unusable,
     pdfminer_font_name,
@@ -247,9 +248,7 @@ def project_page(
             if builtin_width is not None:
                 normalized_width = builtin_width * 0.001
             base_font = str(_font_value(glyph.font_decoder.font, "BaseFont"))
-            glyph_name = getattr(glyph.font_decoder, "encoding_differences", {}).get(
-                glyph.char_code
-            )
+            glyph_name = decoder_encoding_differences(glyph.font_decoder).get(glyph.char_code)
             if (
                 glyph_name
                 and _font_value(glyph.font_decoder.font, "Widths") is None
