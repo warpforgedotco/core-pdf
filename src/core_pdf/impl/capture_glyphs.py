@@ -18,7 +18,13 @@ from core_pdf.impl.glyphs import (
     min_optional_confidence,
 )
 from core_pdf.impl.types import RecordType, Rectangle, ReplaceFields, ReprFields
-from core_pdf_cythonized import horizontal_glyph_geometry
+from core_pdf_cythonized import (
+    DECODED_GLYPH_FIELDS,
+    OBSERVATION_FIELDS,
+    SlotLayout,
+    capture_horizontal_glyphs,
+    horizontal_glyph_geometry,
+)
 
 TextBasis = tuple[float, float, float, float, float, float]
 
@@ -176,6 +182,9 @@ GLYPH_BITMAP_REPAIR_LABELS = frozenset(
 SUSPICIOUS_GLYPH_BITMAP_TEXT = {"\ufffd", "\ufffc"}
 
 
+GLYPH_BITMAP_LABELS = GLYPH_BITMAP_REPAIR_LABELS | SUSPICIOUS_GLYPH_BITMAP_TEXT
+
+
 def should_capture_glyph_bitmap(text: str) -> bool:
     if len(text) != 1:
         return False
@@ -195,6 +204,10 @@ def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
         return False
     punctuation = sum(not char.isalnum() for char in nonspace)
     return punctuation >= 1 and punctuation / len(nonspace) >= 0.25
+
+
+DECODED_GLYPH_LAYOUT = SlotLayout(DecodedGlyph, DECODED_GLYPH_FIELDS)
+OBSERVATION_LAYOUT = SlotLayout(GlyphObservation, OBSERVATION_FIELDS)
 
 
 class RunGeometry(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False, eq=False):
@@ -326,6 +339,49 @@ def capture_glyphs(
         return result
     effective_font_name = decoder.font_name or font_name
     is_vertical = decoder.is_vertical
+    if not is_vertical:
+        captured = capture_horizontal_glyphs(
+            text,
+            glyphs,
+            DECODED_GLYPH_LAYOUT,
+            OBSERVATION_LAYOUT,
+            decoder.glyph_width,
+            decoder.glyph_bbox if options.ink_bounds else None,
+            font_size,
+            char_space,
+            word_space,
+            horizontal_scale,
+            options.render_details,
+            options.text_runs,
+            text_basis,
+            font_ascent,
+            font_descent,
+            rise,
+            font_scale,
+            advance_scale,
+            clip_bbox,
+            page_clip,
+            visible,
+            style,
+            seqno,
+            effective_font_name,
+            cluster_start,
+            glyph_unicode_confidence,
+            should_capture_suspicious_multi_glyph_bitmap,
+            GLYPH_BITMAP_LABELS,
+            result.glyphs,
+            result.clusters,
+        )
+        if captured is not None:
+            kept_count, kept_advance, kept_ink, kept_confidence = captured
+            if options.text_runs and kept_advance is not None and kept_ink is not None:
+                geometry = result.geometry
+                geometry.started = True
+                geometry.advance = kept_advance
+                geometry.ink = kept_ink
+                geometry.confidence = kept_confidence
+            result.cluster_count = kept_count
+            return result
     glyph_width = decoder.glyph_width
     glyph_bbox_for_code = decoder.glyph_bbox
     vertical_position = decoder.vertical_glyph_position

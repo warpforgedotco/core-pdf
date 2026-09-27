@@ -31,6 +31,7 @@ KERNEL_USES = [
     ("core_pdf.impl.render_target", "sample_opaque_pixels"),
     ("core_pdf.impl.render_target", "supersampled_coverage_plane"),
     ("core_pdf.impl.render_commands", "translated_outline_edges"),
+    ("core_pdf.impl.capture_glyphs", "capture_horizontal_glyphs"),
     ("core_pdf.impl.capture_records", "fill_edge_rows"),
     ("core_pdf.impl.fonts_raster_kernel", "glyph_bitmap_rows"),
     ("core_pdf.impl.render_blend", "blend_visible_rgba"),

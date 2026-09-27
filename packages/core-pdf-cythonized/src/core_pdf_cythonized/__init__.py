@@ -27,7 +27,13 @@ from core_pdf_cythonized._distinct_rows import (
 )
 from core_pdf_cythonized._downsample import box_downsample_blocks
 from core_pdf_cythonized._glyph_bitmap import glyph_bitmap_rows
-from core_pdf_cythonized._glyphs import horizontal_glyph_geometry
+from core_pdf_cythonized._glyphs import (
+    DECODED_GLYPH_FIELDS,
+    OBSERVATION_FIELDS,
+    SlotLayout,
+    capture_horizontal_glyphs,
+    horizontal_glyph_geometry,
+)
 from core_pdf_cythonized._jbig2 import decode_arithmetic_generic_template0
 from core_pdf_cythonized._knockout import (
     composite_elementary_knockout,
@@ -54,6 +60,10 @@ from core_pdf_cythonized._type2 import type2_glyph_geometry
 from core_pdf_cythonized._xref_headers import object_headers_match
 
 __all__ = (
+    "DECODED_GLYPH_FIELDS",
+    "OBSERVATION_FIELDS",
+    "SlotLayout",
+    "capture_horizontal_glyphs",
     "ContentScanner",
     "ObjectScanner",
     "accumulate_source_plane",
