@@ -9,7 +9,7 @@ import numpy
 
 from core_pdf.impl.geometry import bbox_union, normalize_rect, points_bbox
 from core_pdf.impl.types import GeneratedRecord, RecordType, Rectangle, ReplaceFields, ReprFields
-from core_pdf_cythonized import path_bounds
+from core_pdf_cythonized import fill_edge_rows, path_bounds
 from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
@@ -365,28 +365,7 @@ class CapturedPath:
         if deferred is None:
             return None
         column_x, column_y, spans, _ = deferred
-        starts: list[int] = []
-        ends: list[int] = []
-        closing: list[bool] = []
-        for start, end, _flag in spans:
-            if end - start < 2:
-                continue
-            starts.extend(range(start, end - 1))
-            ends.extend(range(start + 1, end))
-            closing.extend([False] * (end - 1 - start))
-            starts.append(end - 1)
-            ends.append(start)
-            closing.append(True)
-        if not starts:
-            return numpy.empty((0, 4), dtype=numpy.float64)
-        first = numpy.asarray(starts, dtype=numpy.intp)
-        second = numpy.asarray(ends, dtype=numpy.intp)
-        x0 = column_x[first]
-        y0 = column_y[first]
-        x1 = column_x[second]
-        y1 = column_y[second]
-        keep = ~numpy.asarray(closing, dtype=numpy.bool_) | (x0 != x1) | (y0 != y1)
-        return numpy.column_stack((x0, y0, x1, y1))[keep]
+        return fill_edge_rows(column_x, column_y, spans)
 
     def fill_edges(self) -> list[tuple[float, float, float, float]]:
         edges: list[tuple[float, float, float, float]] = []

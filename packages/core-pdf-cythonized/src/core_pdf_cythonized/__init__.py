@@ -3,6 +3,7 @@
 
 from core_pdf_cythonized._bezier import cubic_sample_times
 from core_pdf_cythonized._blend import blend_normal_alpha_array_numpy
+from core_pdf_cythonized._blend_visible import blend_visible_rgba
 from core_pdf_cythonized._cmap import scan_to_unicode_cmap
 from core_pdf_cythonized._composite import (
     composite_elementary_normal,
@@ -23,6 +24,7 @@ from core_pdf_cythonized._distinct_rows import (
     gather_uint8_rows,
 )
 from core_pdf_cythonized._downsample import box_downsample_blocks
+from core_pdf_cythonized._glyph_bitmap import glyph_bitmap_rows
 from core_pdf_cythonized._glyphs import horizontal_glyph_geometry
 from core_pdf_cythonized._jbig2 import decode_arithmetic_generic_template0
 from core_pdf_cythonized._knockout import (
@@ -32,7 +34,7 @@ from core_pdf_cythonized._knockout import (
 )
 from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import outline_edges, translated_outline_edges
-from core_pdf_cythonized._paths import flatten_path_commands, path_bounds
+from core_pdf_cythonized._paths import fill_edge_rows, flatten_path_commands, path_bounds
 from core_pdf_cythonized._rect import fill_rect_coverage
 from core_pdf_cythonized._sample_blit import (
     alpha_channel,
@@ -56,6 +58,7 @@ __all__ = (
     "alpha_channel",
     "blend_coverage_counts",
     "blend_normal_alpha_array_numpy",
+    "blend_visible_rgba",
     "code_presence",
     "box_downsample_blocks",
     "composite_elementary_knockout",
@@ -68,11 +71,13 @@ __all__ = (
     "decode_arithmetic_generic_template0",
     "decrypt_type1",
     "distinct_uint16_rows",
+    "fill_edge_rows",
     "fill_glyph_coverage",
     "fill_glyph_knockout",
     "fill_rect_coverage",
     "flatten_path_commands",
     "gather_uint8_rows",
+    "glyph_bitmap_rows",
     "glyph_coverage_plane",
     "horizontal_glyph_geometry",
     "interleave_soft_mask",

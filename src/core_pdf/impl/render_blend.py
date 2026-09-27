@@ -10,6 +10,7 @@ import numpy
 from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.geometry import clamp01
 from core_pdf.impl.graphics_device_profiles import cmyk_floats_to_srgb, component_byte
+from core_pdf_cythonized import blend_visible_rgba
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_components
 from core_pdf_spec.standards import PdfVersion, SemanticContext
@@ -251,6 +252,15 @@ def resolve_constant_alpha(opacity: object, soft_mask_alpha: object) -> float:
     )
 
 
+KERNEL_BLEND_MODES: dict[BlendOp | None, int] = {
+    None: 0,
+    BlendOp.NORMAL: 0,
+    BlendOp.UNSUPPORTED: 0,
+    BlendOp.MULTIPLY: 1,
+    BlendOp.SCREEN: 2,
+}
+
+
 def blend_visible_pixels(
     destination: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]],
@@ -262,6 +272,12 @@ def blend_visible_pixels(
     *,
     semantic_context: SemanticContext | None = None,
 ) -> None:
+    kernel_mode = KERNEL_BLEND_MODES.get(blend_mode)
+    if kernel_mode is not None:
+        blend_visible_rgba(
+            destination, visible.view(numpy.uint8), red, green, blue, alpha, kernel_mode
+        )
+        return
     backdrop = destination[visible].astype(numpy.float64)
     channels = blend_channels_f64(
         red,

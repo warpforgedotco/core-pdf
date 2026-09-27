@@ -5,6 +5,8 @@ from math import ceil
 
 import numpy
 
+from core_pdf_cythonized import glyph_bitmap_rows
+
 Point = tuple[float, float]
 Contours = tuple[tuple[Point, ...], ...]
 
@@ -22,6 +24,15 @@ def scale_contours(contours: Sequence[Sequence[Point]], scale: float) -> Contour
 
 
 def rasterize_contours(
+    contours: Sequence[Sequence[Point]], *, width: int, height: int
+) -> tuple[int, ...]:
+    rows = glyph_bitmap_rows(contours, width, height)
+    if rows is not None:
+        return rows
+    return rasterize_contours_python(contours, width=width, height=height)
+
+
+def rasterize_contours_python(
     contours: Sequence[Sequence[Point]], *, width: int, height: int
 ) -> tuple[int, ...]:
     points = [point for contour in contours for point in contour]
