@@ -1,0 +1,35 @@
+{
+ "PyMuPDF/tests/resources/merge-form1.pdf": [
+  "6b14b633c4359a9e685f0a451716378ab06e710ad42cd27312ca8a5712b51bbc"
+ ],
+ "PyMuPDF/tests/resources/test_3950.pdf": [
+  "367e70da6a1f75b8cd5f1d85fef4508132280a4b9182977d2fa087824080b149"
+ ],
+ "PyMuPDF/tests/resources/test_4936.pdf": [
+  "6332fca2b2a1f5cefb59cb6609b5ac848e1b979b19b13ebdf7717f918fe74826"
+ ],
+ "PyMuPDF/tests/resources/test_5054.pdf": [
+  "ebb0e95b91eadf45c4a4a40cf59f3da572ae2b39e704c5680cb1b473b9603ac5"
+ ],
+ "pdfminer.six/samples/contrib/issue_1165_linewidth.pdf": [
+  "f5ce41fce2cbb0c633082c26cf47a6caaae10114c97e3fdf864b880f7dc83f44"
+ ],
+ "pdfminer.six/samples/nonfree/cmp_itext_logo.pdf": [
+  "3a316ab6626b995d1753a4e01d61bf87e02fe6dce76d5148eed3150dbc87a22f"
+ ],
+ "pikepdf/tests/resources/formxobject.pdf": [
+  "562baa99770cd7a365d3f92f4aa6129ad4efe9921b1716efc5883441d06969ab"
+ ],
+ "pikepdf/tests/resources/pal-1bit-trivial.pdf": [
+  "a942dd7c0127bcadaf9dc11638db9a98e274c0765aef686caaf5ae6fff7ab36e"
+ ],
+ "pypdf/resources/Sample_Td-matrix.pdf": [
+  "c876c1b7bfe4cd828fc14f565aa295a0f8b1e196344389a6a03c29f574ba4209"
+ ],
+ "pypdf/resources/reportlab-inline-image.pdf": [
+  "0583b0de1eb3789e8bb2bf5c0c2c413219b39200cdff52548a6cdc4e3dfe7560"
+ ],
+ "pypdf/sample-files/024-annotations/annotated_pdf.pdf": [
+  "b89ce4ce62a320a6cc5a6d95ef81f0d31857ad998692f95ac1f1edfc3ec3caed"
+ ]
+}
