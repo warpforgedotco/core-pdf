@@ -1,6 +1,7 @@
 import copy
 import inspect
 import pickle
+from types import FunctionType
 from typing import Any, ClassVar
 
 import pytest
@@ -109,7 +110,7 @@ def test_the_generated_surface_matches_the_hand_written_one() -> None:
 
 def test_generated_methods_are_named_for_their_class() -> None:
     for name in ("__init__", "__eq__", "__hash__", "__repr__", "__replace__", "__getstate__"):
-        method = Point.__dict__[name]
+        method = getattr(Point, name)
         assert method.__qualname__ == f"Point.{name}"
         assert method.__module__ == __name__
 
@@ -289,12 +290,12 @@ def test_string_annotations_are_read_without_evaluation() -> None:
 
 def test_every_record_gets_its_own_code_objects() -> None:
     for name in ("__init__", "__eq__", "__hash__", "__repr__", "__replace__", "__getstate__"):
-        assert Point.__dict__[name].__code__ is not Named.__dict__[name].__code__
+        assert getattr(Point, name).__code__ is not getattr(Named, name).__code__
 
 
 def test_generated_equality_and_hash_compile_to_the_hand_written_bytecode() -> None:
     for name in ("__eq__", "__hash__"):
-        generated = Point.__dict__[name].__code__
+        generated = getattr(Point, name).__code__
         written = HandPoint.__dict__[name].__code__
         assert generated.co_code == written.co_code
         assert generated.co_names == written.co_names
@@ -302,7 +303,7 @@ def test_generated_equality_and_hash_compile_to_the_hand_written_bytecode() -> N
 
 
 def test_frozen_init_writes_through_slot_descriptors() -> None:
-    init = Point.__dict__["__init__"]
+    init = Point.__init__
     assert "__setattr__" not in init.__code__.co_names
     setters = [init.__globals__[name] for name in init.__code__.co_names]
     assert [setter.__self__ for setter in setters] == [
@@ -313,7 +314,7 @@ def test_frozen_init_writes_through_slot_descriptors() -> None:
 
 
 def test_mutable_init_assigns_attributes() -> None:
-    init = Mutable.__dict__["__init__"]
+    init = Mutable.__init__
     assert init.__code__.co_names == ("value", "items")
 
 
@@ -392,3 +393,18 @@ def test_a_subclass_without_fields_inherits_everything() -> None:
     loose.value = 2
     assert loose.value == 2
     assert repr(loose) == f"{Loose.__qualname__}(value=2, items=[])"
+
+
+def test_methods_are_generated_on_first_use() -> None:
+    class Late(GeneratedRecord):
+        value: int
+
+    pending = {
+        name: type(Late.__dict__[name]).__name__ for name in ("__init__", "__eq__", "__repr__")
+    }
+    assert pending == {"__init__": "Pending", "__eq__": "Pending", "__repr__": "Pending"}
+    assert Late(1) == Late(1)
+    assert repr(Late(2)).endswith("Late(value=2)")
+    for name in ("__init__", "__eq__", "__repr__"):
+        assert type(Late.__dict__[name]) is FunctionType
+    assert inspect.signature(Late).parameters["value"].annotation == "int"

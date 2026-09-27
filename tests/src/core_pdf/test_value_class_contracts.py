@@ -298,7 +298,8 @@ def test_generated_methods_are_specialised_per_class(dunder: str) -> None:
     codes = [
         method.__code__
         for cls in GENERATED.values()
-        if isinstance(method := cls.__dict__.get(dunder), FunctionType)
+        if dunder in cls.__dict__
+        and isinstance(method := getattr(cls, dunder), FunctionType)
         and method.__code__.co_filename == "<record>"
     ]
     assert codes

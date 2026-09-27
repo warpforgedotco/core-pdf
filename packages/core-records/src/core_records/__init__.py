@@ -298,7 +298,46 @@ def field_setter(name: str, instance: object, value: object) -> None:
     frozen_setattr(instance, name, value)
 
 
+class Pending:
+    __slots__ = ("build", "fields", "name", "owner")
+
+    def __init__(
+        self, name: str, fields: tuple[str, ...], build: Callable[[type], FunctionType]
+    ) -> None:
+        self.name = name
+        self.fields = fields
+        self.build = build
+        self.owner: type | None = None
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self.owner = owner
+
+    def __get__(self, instance: object, owner: type | None = None) -> Any:
+        cls = self.owner
+        assert cls is not None
+        function = self.build(cls)
+        type.__setattr__(cls, self.name, function)
+        return function if instance is None else function.__get__(instance, owner)
+
+
+def pending_method(kind: str, fields: tuple[str, ...]) -> Pending:
+    return Pending(kind, fields, partial(specialise_method, kind, fields))
+
+
+def specialise_method(kind: str, fields: tuple[str, ...], cls: type) -> FunctionType:
+    return specialise(cls, kind, fields)
+
+
+def inherited_attribute(cls: type, name: str) -> object:
+    for ancestor in cls.__mro__:
+        if name in ancestor.__dict__:
+            return ancestor.__dict__[name]
+    return None
+
+
 def takes_fields_in_order(init: object, fields: tuple[str, ...]) -> bool:
+    if isinstance(init, Pending):
+        return init.fields == fields
     code = getattr(init, "__code__", None)
     return isinstance(code, CodeType) and code.co_varnames[1 : code.co_argcount] == fields
 
@@ -306,46 +345,49 @@ def takes_fields_in_order(init: object, fields: tuple[str, ...]) -> bool:
 def specialises(cls: type, name: str, explicit: set[str]) -> bool:
     if name in explicit:
         return False
-    inherited = getattr(cls, name, None)
-    return inherited in GENERATED or inherited in SHARED
+    inherited = inherited_attribute(cls, name)
+    return isinstance(inherited, Pending) or inherited in GENERATED or inherited in SHARED
 
 
-def build_init(cls: type, specs: FieldSpecs, frozen: bool) -> FunctionType:
-    fields = tuple(specs)
-    defaults: list[Any] = []
-    for name, (default, _) in specs.items():
+def check_defaults(name: str, specs: FieldSpecs) -> None:
+    has_default = False
+    for field, (default, _) in specs.items():
         if default is not MISSING:
-            defaults.append(default)
-        elif defaults:
-            message = f"non-default field {name!r} follows a default field in {cls.__qualname__}"
-            raise TypeError(message)
+            has_default = True
+        elif has_default:
+            raise TypeError(f"non-default field {field!r} follows a default field in {name}")
+
+
+def build_init(specs: FieldSpecs, frozen: bool, cls: type) -> FunctionType:
+    fields = tuple(specs)
+    defaults = tuple(default for default, _ in specs.values() if default is not MISSING)
     kind = "post_init" if hasattr(cls, "__post_init__") else "init"
     if frozen:
         scope = dict(BUILTINS)
         for index, name in enumerate(fields):
             scope[f"__set_{index}"] = slot_setter(cls, name)
-        function = specialise(cls, kind, fields, scope, tuple(defaults) or None)
+        function = specialise(cls, kind, fields, scope, defaults or None)
     else:
-        function = specialise(cls, f"mutable_{kind}", fields, BUILTINS, tuple(defaults) or None)
+        function = specialise(cls, f"mutable_{kind}", fields, BUILTINS, defaults or None)
     function.__annotations__ = {name: annotation for name, (_, annotation) in specs.items()}
     function.__annotations__["return"] = "None"
     return function
 
 
-def mixin_methods(
-    cls: type, fields: tuple[str, ...], explicit: set[str], generated: dict[str, FunctionType]
-) -> dict[str, FunctionType]:
-    methods: dict[str, FunctionType] = {}
+def install_mixin_methods(cls: type, fields: tuple[str, ...], explicit: set[str]) -> None:
+    methods: list[Pending] = []
     if specialises(cls, "__repr__", explicit):
         names = getattr(cls, "__repr_fields__", None)
-        methods["__repr__"] = specialise(cls, "__repr__", fields if names is None else names)
+        methods.append(pending_method("__repr__", fields if names is None else names))
     if specialises(cls, "__replace__", explicit) and takes_fields_in_order(
-        generated.get("__init__", getattr(cls, "__init__", None)), fields
+        inherited_attribute(cls, "__init__"), fields
     ):
-        methods["__replace__"] = specialise(cls, "__replace__", fields)
+        methods.append(pending_method("__replace__", fields))
     if specialises(cls, "__getstate__", explicit):
-        methods["__getstate__"] = specialise(cls, "__getstate__", fields)
-    return methods
+        methods.append(pending_method("__getstate__", fields))
+    for method in methods:
+        method.owner = cls
+        setattr(cls, method.name, method)
 
 
 @dataclass_transform(frozen_default=True, eq_default=True)
@@ -368,8 +410,7 @@ class RecordType(type):
             cls = super().__new__(mcs, name, bases, namespace, **kwargs)
             fields = getattr(cls, "__fields__", None)
             if fields is not None:
-                for attribute, function in mixin_methods(cls, fields, set(namespace), {}).items():
-                    setattr(cls, attribute, function)
+                install_mixin_methods(cls, fields, set(namespace))
             return cls
         specs = inherited_specs(bases)
         for field, annotation in own.items():
@@ -394,20 +435,18 @@ class RecordType(type):
         )
         if "__hash__" not in explicit and not generate_hash and (hash is False or generate_eq):
             namespace["__hash__"] = None
+        if init and "__init__" not in explicit:
+            check_defaults(name, specs)
+            namespace["__init__"] = Pending("__init__", fields, partial(build_init, specs, frozen))
+        if generate_eq:
+            namespace["__eq__"] = pending_method("__eq__", fields)
+        if generate_hash:
+            namespace["__hash__"] = pending_method("__hash__", fields)
         namespace["__fields__"] = fields
         namespace["__field_specs__"] = specs
         namespace.setdefault("__match_args__", fields)
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
-        generated: dict[str, FunctionType] = {}
-        if init and "__init__" not in explicit:
-            generated["__init__"] = build_init(cls, specs, frozen)
-        if generate_eq:
-            generated["__eq__"] = specialise(cls, "__eq__", fields)
-        if generate_hash:
-            generated["__hash__"] = specialise(cls, "__hash__", fields)
-        generated.update(mixin_methods(cls, fields, explicit, generated))
-        for attribute, function in generated.items():
-            setattr(cls, attribute, function)
+        install_mixin_methods(cls, fields, explicit)
         return cls
 
 

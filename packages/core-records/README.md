@@ -16,7 +16,8 @@ when the class has one), `__eq__` (identity shortcut,
 exact class check, field-by-field `and`), `__hash__` over the field tuple, and its
 own `__repr__`, `__replace__` and `__getstate__` in place of the shared mixin
 methods. Every generated method is a separate code object per class, so the
-interpreter specialises each one for its own receiver type. A method written in the
+interpreter specialises each one for its own receiver type, and it is built on
+first use, so importing a module of records compiles nothing. A method written in the
 class body wins. Class keywords select the variations: `frozen=False` for a mutable
 record (no guards, unhashable when compared by value), `init=False` to inherit the
 parent's `__init__`, `eq=False` to keep identity equality, and `hash=False` for an
