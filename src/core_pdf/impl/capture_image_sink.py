@@ -56,8 +56,6 @@ def soft_mask_mean_alpha(source: ImageSource) -> float | None:
 
 
 class ImageCaptureMixin(CaptureHost):
-    __slots__ = ()
-
     def captured_image_source(self, xobj: PdfStream) -> tuple[ImageSource, float | None]:
         rendering = self.graphics.color_rendering
         cache = self.caches.capture_image_sources

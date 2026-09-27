@@ -29,8 +29,6 @@ class CaptureGraphicsSave:
 
 
 class ScopeCaptureMixin(CaptureHost):
-    __slots__ = ()
-
     def save_graphics(self, state: object) -> None:
         self.capture_graphics_stack.append(CaptureGraphicsSave(self.clip_bbox, self.group_alpha))
 

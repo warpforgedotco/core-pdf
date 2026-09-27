@@ -114,7 +114,7 @@ def test_alias_selection_reuses_the_capture_owned_decoder(document):
     assert state.get_decoder() is decoder
     assert select(state, resources, "Alias") is decoder
     assert select(state, resources, "F") is decoder
-    assert len(state.capture_font_decoders[(1, 0)]) == 1
+    assert len(state.caches.capture_font_decoders[(1, 0)]) == 1
 
 
 @pytest.mark.parametrize("wrapped", [False, True])

@@ -175,7 +175,7 @@ def test_the_same_source_under_the_same_state_parses_once(
     assert state.resolve_soft_mask(value) is None
     assert state.resolve_soft_mask(value) is None
     assert len(parses) == 1
-    assert len(state.parsed_soft_masks) == 1
+    assert len(state.caches.parsed_soft_masks) == 1
 
 
 def test_the_parse_cache_separates_masks_by_transform(
@@ -208,7 +208,7 @@ def test_the_parse_cache_is_bounded(state: TextState, parses: list[object]) -> N
 
 
 def test_a_nested_capture_shares_the_parse_cache(state: TextState) -> None:
-    assert state.nested_capture_state().parsed_soft_masks is state.parsed_soft_masks
+    assert state.nested_capture_state().caches.parsed_soft_masks is state.caches.parsed_soft_masks
 
 
 def make_plane(megabytes: float) -> np.ndarray:

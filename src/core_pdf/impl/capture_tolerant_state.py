@@ -149,47 +149,6 @@ class RecoveringTextState(ContentInterpreter):
             semantic_context=semantic_context,
         )
 
-    @property
-    def parsed_soft_masks(self) -> IdentityCache[SoftMask | None]:
-        return self.caches.parsed_soft_masks
-
-    @property
-    def capture_soft_masks(self) -> IdentityCache[CapturedSoftMask | None]:
-        return self.caches.capture_soft_masks
-
-    @property
-    def capture_mask_resources(self) -> IdentityCache[PdfDict]:
-        return self.caches.capture_mask_resources
-
-    @property
-    def capture_active_mask_groups(self) -> set[int]:
-        return self.caches.capture_active_mask_groups
-
-    @property
-    def capture_image_sources(self) -> IdentityCache[tuple[ImageSource, float | None]]:
-        return self.caches.capture_image_sources
-
-    @property
-    def capture_font_decoders(self) -> dict[object, list[tuple[object, object, FontDecoder]]]:
-        return self.caches.capture_font_decoders
-
-    @property
-    def capture_font_companions(self) -> FontCompanionsCache:
-        return self.caches.capture_font_companions
-
-    @property
-    def capture_colors(
-        self,
-    ) -> BoundedDict[
-        tuple[int, tuple[float, ...], str | None, BlackPointCompensation],
-        tuple[object, tuple[float, ...]],
-    ]:
-        return self.caches.capture_colors
-
-    @property
-    def capture_shadings(self) -> IdentityCache[dict]:
-        return self.caches.capture_shadings
-
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
         cache = self.caches.parsed_soft_masks
         resources = self.resources

@@ -61,8 +61,6 @@ class StrokeLineRows:
 
 
 class PathCaptureMixin(CaptureHost):
-    __slots__ = ()
-
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         if not source.ops:
             return

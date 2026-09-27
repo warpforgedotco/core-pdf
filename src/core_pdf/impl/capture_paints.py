@@ -52,8 +52,6 @@ def state_key(value: object) -> object:
 
 
 class PaintResolutionMixin(CaptureHost):
-    __slots__ = ()
-
     def resolve_soft_mask(self, value: object) -> PdfSoftMask | None:
         mask = super().resolve_soft_mask(value)
         if mask is not None:

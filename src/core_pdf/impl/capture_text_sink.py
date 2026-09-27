@@ -131,8 +131,6 @@ class TextLayout:
 
 
 class GlyphCaptureMixin(CaptureHost):
-    __slots__ = ()
-
     def is_text_visible(self, text: str) -> bool:
         if not text:
             return False
