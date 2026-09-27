@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.recovery_policy import Recovery
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.types import PdfReference
@@ -15,7 +16,7 @@ class OptionalContent:
         __slots__ = ()
 
     resolver: ObjectResolver
-    hidden_layers_cache: frozenset[str] | None
+    caches: DocumentCaches
 
     if TYPE_CHECKING:
 
@@ -35,10 +36,7 @@ class OptionalContent:
         return None
 
     def oc_hidden_layers(self) -> frozenset[str]:
-        hidden = self.hidden_layers_cache
-        if hidden is None:
-            hidden = self.hidden_layers_cache = self.build_oc_hidden_layers()
-        return hidden
+        return self.caches.get("hidden_layers", self.build_oc_hidden_layers)
 
     def build_oc_hidden_layers(self) -> frozenset[str]:
         malformed = self.recovery.malformed

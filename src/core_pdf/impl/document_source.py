@@ -16,6 +16,7 @@ from core_pdf.impl.exceptions import (
     PdfSourceError,
 )
 from core_pdf.impl.fonts_fallback import RasterFontRepository
+from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.types import PdfByteBuffer, PdfSource
 
@@ -58,10 +59,7 @@ class DocumentLifecycle:
     operation_cancelled: threading.Event
     active_operations: int
     font_decoders: dict[object, object]
-
-    if TYPE_CHECKING:
-
-        def reset_caches(self) -> None: ...
+    caches: DocumentCaches
 
     def __enter__(self) -> Self:
         if self.closed:
@@ -109,7 +107,7 @@ class DocumentLifecycle:
             return
         self._closed = True
         self.font_decoders.clear()
-        self.reset_caches()
+        self.caches.clear("content")
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:

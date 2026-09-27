@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from core_pdf.impl.document_fields import collect_field_records
 from core_pdf.impl.document_page import PdfPage
 from core_pdf.impl.document_records import RawEmbeddedFile, RawFormField
+from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.recovery_policy import Recovery
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_trees import iter_name_tree_items
@@ -20,7 +21,7 @@ class DocumentForms[PageT: PdfPage]:
         __slots__ = ()
 
     resolver: ObjectResolver
-    fields_by_page_cache: dict[int, list[RawFormField]] | None
+    caches: DocumentCaches
 
     if TYPE_CHECKING:
 
@@ -73,10 +74,10 @@ class DocumentForms[PageT: PdfPage]:
         }
 
     def cached_fields_by_page(self) -> dict[int, list[RawFormField]]:
-        grouped = self.fields_by_page_cache
-        if grouped is None:
-            grouped = self.fields_by_page_cache = self.group_fields_by_page(self.pages)
-        return grouped
+        return self.caches.get("fields_by_page", self.group_all_fields_by_page)
+
+    def group_all_fields_by_page(self) -> dict[int, list[RawFormField]]:
+        return self.group_fields_by_page(self.pages)
 
     def group_fields_by_page(
         self, page_sequence: tuple[PageT, ...]

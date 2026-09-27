@@ -10,6 +10,7 @@ from core_pdf.impl.document_page import PdfPage
 from core_pdf.impl.document_page_links import goto_action_destination
 from core_pdf.impl.document_records import RawNamedDestination, RawOutlineItem
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.recovery_policy import Recovery
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_trees import iter_name_tree_items
@@ -29,32 +30,24 @@ def first_indexes(values: Iterable[object]) -> dict[object, int]:
 
 
 class PageLookup[LookupPageT: PdfPage]:
-    __slots__ = (
-        "document",
-        "iter_nodes",
-        "indexes",
-        "struct_parents_indexes",
-        "signature_indexes",
-        "names",
-    )
+    __slots__ = ("document", "indexes", "memo")
 
     def __init__(self, document: PdfDocument[LookupPageT]) -> None:
         self.document = document
-        self.iter_nodes: tuple[PageNode, ...] | None = None
         self.indexes: dict[int, int] = {}
-        self.struct_parents_indexes: dict[object, int] | None = None
-        self.signature_indexes: dict[object, int] | None = None
-        self.names: dict[str, RawNamedDestination] | None = None
+        self.memo = DocumentCaches()
 
     @property
     def nodes(self) -> tuple[PageNode, ...]:
-        if self.iter_nodes is None:
-            self.iter_nodes = tuple(
-                PageNode(page.page_dict, page.inherited_values) for page in self.document.pages
-            )
-            for index, node in enumerate(self.iter_nodes):
-                self.indexes.setdefault(id(node.dictionary), index)
-        return self.iter_nodes
+        return self.memo.get("nodes", self.build_nodes)
+
+    def build_nodes(self) -> tuple[PageNode, ...]:
+        nodes = tuple(
+            PageNode(page.page_dict, page.inherited_values) for page in self.document.pages
+        )
+        for index, node in enumerate(nodes):
+            self.indexes.setdefault(id(node.dictionary), index)
+        return nodes
 
     @property
     def pages(self) -> tuple[LookupPageT, ...]:
@@ -71,12 +64,12 @@ class PageLookup[LookupPageT: PdfPage]:
             return index
         page_struct_parents = page_obj.get("StructParents")
         if page_struct_parents is not None:
-            if self.struct_parents_indexes is None:
-                self.struct_parents_indexes = first_indexes(
-                    node.dictionary.get("StructParents") for node in nodes
-                )
+            struct_parents_indexes = self.memo.get(
+                "struct_parents",
+                lambda: first_indexes(node.dictionary.get("StructParents") for node in nodes),
+            )
             index = self.first_index(
-                self.struct_parents_indexes,
+                struct_parents_indexes,
                 page_struct_parents,
                 (node.dictionary.get("StructParents") for node in nodes),
             )
@@ -86,10 +79,12 @@ class PageLookup[LookupPageT: PdfPage]:
             if node.dictionary == page_obj:
                 return index
         signature_of = self.document.recovered_page_signature
-        if self.signature_indexes is None:
-            self.signature_indexes = first_indexes(signature_of(node.dictionary) for node in nodes)
+        signature_indexes = self.memo.get(
+            "signatures",
+            lambda: first_indexes(signature_of(node.dictionary) for node in nodes),
+        )
         return self.first_index(
-            self.signature_indexes,
+            signature_indexes,
             signature_of(page_obj),
             (signature_of(node.dictionary) for node in nodes),
         )
@@ -104,9 +99,11 @@ class PageLookup[LookupPageT: PdfPage]:
             return next((index for index, item in enumerate(values) if item == value), None)
 
     def resolve_named_destination(self, name: str) -> RawNamedDestination | None:
-        if self.names is None:
-            self.names = self.document.named_destinations(page_lookup=self)
-        return self.names.get(name)
+        names = self.memo.get("names", self.collect_named_destinations)
+        return names.get(name)
+
+    def collect_named_destinations(self) -> dict[str, RawNamedDestination]:
+        return self.document.named_destinations(page_lookup=self)
 
 
 def unresolved_destination(name: str) -> RawNamedDestination:

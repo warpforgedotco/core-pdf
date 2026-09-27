@@ -20,6 +20,7 @@ from core_pdf.impl.document_page_tree import (
 )
 from core_pdf.impl.document_standards import find_pdf_header
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer, reader_rules_for
 from core_pdf.impl.recovery_resolver import ObjectResolver
@@ -51,20 +52,17 @@ class XRefRecovery:
     xref_was_recovered: bool
     xref_recovery_reason: str | None
     recovery_scan_all_revisions: bool
-    brute_force_objects: tuple[SemanticContext | None, dict[int, object]] | None
-    literal_trailers_cache: tuple[SemanticContext | None, tuple[PdfDict, ...]] | None
-    strict_xref_error_cache: tuple[SemanticContext | None, str | None] | None
+    pending_parsed_objects: tuple[SemanticContext | None, dict[int, object]] | None
+    caches: DocumentCaches
 
     @property
     def xref_context(self) -> SemanticContext | None:
         return self.resolver.semantic_context
 
     def strict_xref_validation_error(self) -> str | None:
-        context = self.xref_context
-        cached = self.strict_xref_error_cache
-        if cached is None or cached[0] != context:
-            cached = self.strict_xref_error_cache = (context, self.read_strict_xref_error())
-        return cached[1]
+        return self.caches.get_keyed(
+            "strict_xref_error", self.xref_context, self.read_strict_xref_error
+        )
 
     def read_strict_xref_error(self) -> str | None:
         start = XRefScanner.find_startxref(self.raw_data, semantic_context=self.xref_context)
@@ -91,22 +89,22 @@ class XRefRecovery:
             semantic_context=context,
             parsed_objects=parsed,
         )
-        self.brute_force_objects = (context, parsed)
+        self.pending_parsed_objects = (context, parsed)
         return xref
 
     def brute_forced_objects(self) -> dict[int, object]:
-        scanned = self.brute_force_objects
+        scanned = self.pending_parsed_objects
         if scanned is None or scanned[0] != self.xref_context:
             return {}
         return scanned[1]
 
     def scan_xref(self) -> None:
-        self.brute_force_objects = None
+        self.pending_parsed_objects = None
         try:
             self.scan_xref_sections()
         finally:
             parsed = self.brute_forced_objects()
-            self.brute_force_objects = None
+            self.pending_parsed_objects = None
             self.resolver.adopt_parsed_objects(parsed, reader_rules_for(self.xref_context))
 
     def scan_xref_sections(self) -> None:
@@ -493,14 +491,12 @@ class XRefRecovery:
         return metadata
 
     def literal_trailer_dictionaries(self) -> tuple[PdfDict, ...]:
-        context = self.xref_context
-        cached = self.literal_trailers_cache
-        if cached is None or cached[0] != context:
-            cached = self.literal_trailers_cache = (
-                context,
-                tuple(self.iter_literal_trailer_dictionaries()),
-            )
-        return cached[1]
+        return self.caches.get_keyed(
+            "literal_trailers", self.xref_context, self.collect_literal_trailer_dictionaries
+        )
+
+    def collect_literal_trailer_dictionaries(self) -> tuple[PdfDict, ...]:
+        return tuple(self.iter_literal_trailer_dictionaries())
 
     def iter_literal_trailer_dictionaries(self) -> Iterator[PdfDict]:
         data = self.raw_data

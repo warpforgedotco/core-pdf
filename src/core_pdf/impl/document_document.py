@@ -18,9 +18,6 @@ from core_pdf.impl.document_navigation import (
 from core_pdf.impl.document_optional_content import OptionalContent
 from core_pdf.impl.document_page import PdfPage
 from core_pdf.impl.document_page_tree import MAX_PAGE_TREE_DEPTH, PageTreeRecovery
-from core_pdf.impl.document_records import (
-    RawFormField,
-)
 from core_pdf.impl.document_security import SecuritySetupMixin, check_security_aliases
 from core_pdf.impl.document_source import DocumentLifecycle, DocumentOperation, load_source
 from core_pdf.impl.document_standards import (
@@ -39,6 +36,7 @@ from core_pdf.impl.exceptions import (
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_selection import extract_document
 from core_pdf.impl.fonts_fallback import RasterFontRepository
+from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.output_model import Document as StructuredDocument
 from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.pdf_names import recover_pdf_name
@@ -77,12 +75,6 @@ class DocumentAdapter(Protocol):
     def apply(self, document: StructuredDocument, /) -> StructuredDocument: ...
 
 
-class NotBuilt: ...
-
-
-NOT_BUILT = NotBuilt()
-
-
 class PdfDocument(
     DocumentLifecycle,
     XRefRecovery,
@@ -116,15 +108,8 @@ class PdfDocument(
         "_standards",
         "standards_complete",
         "font_decoders",
-        "page_cache",
-        "fields_by_page_cache",
-        "structure_cache",
-        "page_labels_cache",
-        "hidden_layers_cache",
-        "page_lookup_cache",
-        "brute_force_objects",
-        "literal_trailers_cache",
-        "strict_xref_error_cache",
+        "caches",
+        "pending_parsed_objects",
     )
 
     source: PdfSource
@@ -147,15 +132,8 @@ class PdfDocument(
     _standards: DocumentStandards
     standards_complete: bool
     font_decoders: dict[object, object]
-    page_cache: tuple[PageT, ...] | None
-    fields_by_page_cache: dict[int, list[RawFormField]] | None
-    structure_cache: StructureTree | None | NotBuilt
-    page_labels_cache: tuple[str, ...] | None | NotBuilt
-    hidden_layers_cache: frozenset[str] | None
-    page_lookup_cache: PageLookup[PageT] | None
-    brute_force_objects: tuple[SemanticContext | None, dict[int, object]] | None
-    literal_trailers_cache: tuple[SemanticContext | None, tuple[PdfDict, ...]] | None
-    strict_xref_error_cache: tuple[SemanticContext | None, str | None] | None
+    caches: DocumentCaches
+    pending_parsed_objects: tuple[SemanticContext | None, dict[int, object]] | None
 
     def __init__(
         self,
@@ -184,10 +162,8 @@ class PdfDocument(
         self._standards = DocumentStandards()
         self.standards_complete = False
         self.font_decoders = {}
-        self.brute_force_objects = None
-        self.literal_trailers_cache = None
-        self.strict_xref_error_cache = None
-        self.reset_caches()
+        self.pending_parsed_objects = None
+        self.caches = DocumentCaches()
         try:
             self.raw_data, self.file_handle = load_source(source)
             if not len(self.raw_data):
@@ -196,14 +172,6 @@ class PdfDocument(
         except BaseException:
             self.close()
             raise
-
-    def reset_caches(self) -> None:
-        self.page_cache = None
-        self.fields_by_page_cache = None
-        self.structure_cache = NOT_BUILT
-        self.page_labels_cache = NOT_BUILT
-        self.hidden_layers_cache = None
-        self.page_lookup_cache = None
 
     @property
     def font_semantic_context(self) -> SemanticContext | None:
@@ -264,13 +232,11 @@ class PdfDocument(
 
     @property
     def structure(self) -> StructureTree | None:
-        cached = self.structure_cache
-        if not isinstance(cached, NotBuilt):
-            return cached
+        return self.caches.get("structure", self.build_structure)
+
+    def build_structure(self) -> StructureTree | None:
         root = self.catalog_dict("StructTreeRoot")
-        tree = None if root is None else StructureTree(self, root, page_lookup=self.page_lookup)
-        self.structure_cache = tree
-        return tree
+        return None if root is None else StructureTree(self, root, page_lookup=self.page_lookup)
 
     @property
     def recovery_enabled(self) -> bool:
@@ -375,10 +341,10 @@ class PdfDocument(
 
     @property
     def pages(self) -> tuple[PageT, ...]:
-        pages = self.page_cache
-        if pages is None:
-            pages = self.page_cache = self.build_pages(self.iter_recovered_page_nodes())
-        return pages
+        return self.caches.get("pages", self.build_page_tree)
+
+    def build_page_tree(self) -> tuple[PageT, ...]:
+        return self.build_pages(self.iter_recovered_page_nodes())
 
     def build_pages(self, nodes: Iterable[PageNode]) -> tuple[PageT, ...]:
         factory = cast("type[PageT]", self.page_class)
@@ -398,11 +364,11 @@ class PdfDocument(
         return None if labels is None else list(labels)
 
     def cached_page_labels(self) -> tuple[str, ...] | None:
-        cached = self.page_labels_cache
-        if isinstance(cached, NotBuilt):
-            labels = self.build_page_labels()
-            cached = self.page_labels_cache = None if labels is None else tuple(labels)
-        return cached
+        return self.caches.get("page_labels", self.build_page_label_tuple)
+
+    def build_page_label_tuple(self) -> tuple[str, ...] | None:
+        labels = self.build_page_labels()
+        return None if labels is None else tuple(labels)
 
     def page_label(self, page_index: int) -> str | None:
         labels = self.cached_page_labels()
@@ -450,10 +416,10 @@ class PdfDocument(
 
     @property
     def page_lookup(self) -> PageLookup[PageT]:
-        lookup = self.page_lookup_cache
-        if lookup is None:
-            lookup = self.page_lookup_cache = PageLookup(self)
-        return lookup
+        return self.caches.get("page_lookup", self.build_page_lookup)
+
+    def build_page_lookup(self) -> PageLookup[PageT]:
+        return PageLookup(self)
 
     def page_index_for(self, page_obj: object) -> int | None:
         return self.page_lookup.page_index_for(page_obj)
