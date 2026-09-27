@@ -10,9 +10,9 @@ from os import PathLike
 from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO, Self
 
+from core_pdf.impl.caches import DocumentCaches
 from core_pdf.impl.exceptions import PdfDocumentClosedError, PdfEmptySourceError, PdfSourceError
 from core_pdf.impl.fonts_fallback import RasterFontRepository
-from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.types import PdfByteBuffer, PdfSource
 
@@ -103,7 +103,7 @@ class DocumentLifecycle:
             return
         self._closed = True
         self.font_decoders.clear()
-        self.caches.clear("content")
+        self.caches.clear()
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:

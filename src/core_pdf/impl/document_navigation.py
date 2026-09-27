@@ -6,11 +6,11 @@ import contextlib
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
+from core_pdf.impl.caches import DocumentCaches
 from core_pdf.impl.document_page import PdfPage
 from core_pdf.impl.document_page_links import goto_action_destination
 from core_pdf.impl.document_records import RawNamedDestination, RawOutlineItem
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.recovery_policy import Recovery
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_trees import iter_name_tree_items
@@ -39,10 +39,7 @@ class PageLookup[LookupPageT: PdfPage]:
 
     @property
     def nodes(self) -> tuple[PageNode, ...]:
-        try:
-            return self.memo.content["nodes"]
-        except KeyError:
-            return self.memo.get("nodes", self.build_nodes)
+        return self.memo.get("nodes", self.build_nodes)
 
     def build_nodes(self) -> tuple[PageNode, ...]:
         nodes = tuple(

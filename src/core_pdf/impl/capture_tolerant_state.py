@@ -5,7 +5,7 @@ from __future__ import annotations
 import typing
 from collections.abc import Callable, Mapping
 
-from core_pdf.impl.caches import MISSING, BoundedDict, IdentityCache
+from core_pdf.impl.caches import BoundedDict, IdentityCache
 from core_pdf.impl.capture_records import CapturedSoftMask
 from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
@@ -13,6 +13,7 @@ from core_pdf.impl.graphics_color_spec import parse_color_space
 from core_pdf.impl.graphics_functions import compile_pdf_function
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.scalars import clamp01
+from core_pdf.impl.types import MISSING, MissingObject
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import ContentSink
 from core_pdf_spec.s_07_content.operations import (
@@ -85,10 +86,6 @@ COLOR_CACHE_LIMIT = 4096
 SOFT_MASK_CACHE_LIMIT = COLOR_CACHE_LIMIT
 
 
-def soft_mask_cache_limit() -> int:
-    return SOFT_MASK_CACHE_LIMIT
-
-
 class CaptureCaches:
     __slots__ = (
         "parsed_soft_masks",
@@ -116,7 +113,7 @@ class CaptureCaches:
     capture_shadings: IdentityCache[dict]
 
     def __init__(self) -> None:
-        self.parsed_soft_masks = IdentityCache(soft_mask_cache_limit)
+        self.parsed_soft_masks = IdentityCache(SOFT_MASK_CACHE_LIMIT)
         self.capture_soft_masks = IdentityCache(SOFT_MASK_CACHE_LIMIT)
         self.capture_mask_resources = IdentityCache()
         self.capture_active_mask_groups = set()
@@ -195,10 +192,11 @@ class RecoveringTextState(ContentInterpreter):
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
         cache = self.caches.parsed_soft_masks
-        pins = (self.resources,)
+        resources = self.resources
         ctm = self.graphics.ctm
-        cached = cache.get(value, ctm, pins=pins, default=MISSING)
-        if cached is not MISSING:
+        key = (id(value), id(resources), ctm)
+        cached = cache.get_key(value, key, MISSING)
+        if not isinstance(cached, MissingObject):
             return cached
         mask = parse_soft_mask(
             value,
@@ -206,7 +204,7 @@ class RecoveringTextState(ContentInterpreter):
             ctm=ctm,
             compile_function=compile_pdf_function,
         )
-        return cache.put(value, mask, ctm, pins=pins)
+        return cache.put_key(value, key, mask, (resources,))
 
     def operation_table(self) -> Mapping[str, OperationHandler]:
         overrides = self.operator_overrides

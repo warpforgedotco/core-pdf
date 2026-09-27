@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy
 
+from core_pdf.impl.caches import DocumentCaches
 from core_pdf.impl.document_page_tree import (
     MAX_PAGE_TREE_DEPTH,
     infer_page_tree_node_type,
@@ -20,7 +21,6 @@ from core_pdf.impl.document_page_tree import (
 )
 from core_pdf.impl.document_standards import find_pdf_header
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer, reader_rules_for
 from core_pdf.impl.recovery_resolver import ObjectResolver

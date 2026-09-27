@@ -38,7 +38,8 @@ def tiling_cell(
     preserve_object_boundaries: bool,
 ) -> tuple[DisplayList, CapturedPath]:
     cache = resources.tiling_cells
-    cached = cache.get(pattern, preserve_object_boundaries)
+    key = (id(pattern), preserve_object_boundaries)
+    cached = cache.get_key(pattern, key)
     if cached is not None:
         return cached
     cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
@@ -50,7 +51,7 @@ def tiling_cell(
     cell_clip = CapturedPath()
     cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
     append_captured_program(display, pattern.program, include_text=True)
-    return cache.put(pattern, (display, cell_clip), preserve_object_boundaries)
+    return cache.put_key(pattern, key, (display, cell_clip))
 
 
 def path_cell_extent(item: PathPaintItem) -> tuple[object, float]:

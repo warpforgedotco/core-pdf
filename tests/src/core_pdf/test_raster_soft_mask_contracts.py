@@ -200,15 +200,11 @@ def test_the_parse_cache_separates_masks_by_resource_scope(
     assert len(parses) == 2
 
 
-def test_the_parse_cache_is_bounded(
-    state: TextState, parses: list[object], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from core_pdf.impl import capture_tolerant_state as tolerant_state
-
-    monkeypatch.setattr(tolerant_state, "SOFT_MASK_CACHE_LIMIT", 3)
+def test_the_parse_cache_is_bounded(state: TextState, parses: list[object]) -> None:
+    state.caches.parsed_soft_masks.limit = 3
     for index in range(4):
         state.resolve_soft_mask({"S": "Alpha", "n": index})
-    assert len(state.parsed_soft_masks) <= 3
+    assert len(state.caches.parsed_soft_masks) <= 3
 
 
 def test_a_nested_capture_shares_the_parse_cache(state: TextState) -> None:

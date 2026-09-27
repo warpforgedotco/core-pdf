@@ -6,7 +6,6 @@ import math
 
 import numpy
 
-from core_pdf.impl.caches import MISSING
 from core_pdf.impl.capture_records import CapturedPath, ShadingPattern, TilingPattern
 from core_pdf.impl.geometry import normalize_rect, rect_tuple
 from core_pdf.impl.graphics_shading import PreparedShading, prepare_shading
@@ -22,6 +21,7 @@ from core_pdf.impl.render_patterns import (
 )
 from core_pdf.impl.render_resources import RenderResources
 from core_pdf.impl.scalars import clamp01
+from core_pdf.impl.types import MISSING, MissingObject
 from core_pdf_cythonized import shading_blend, shading_values
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import ColorRendering
@@ -42,13 +42,14 @@ def prepared_shading(
     resources: RenderResources, dictionary: object, rendering: ColorRendering
 ) -> PreparedShading | None:
     cache = resources.shadings
-    cached = cache.get(dictionary, rendering, default=MISSING)
-    if cached is not MISSING:
+    key = (id(dictionary), rendering)
+    cached = cache.get_key(dictionary, key, MISSING)
+    if not isinstance(cached, MissingObject):
         return cached
     shading = prepare_shading(
         dictionary, rendering=rendering, evaluators=resources.shading_evaluators
     )
-    return cache.put(dictionary, shading, rendering)
+    return cache.put_key(dictionary, key, shading)
 
 
 class RasterShading(RasterImages):

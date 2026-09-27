@@ -8,7 +8,6 @@ from dataclasses import replace
 from math import hypot
 from typing import TYPE_CHECKING
 
-from core_pdf.impl.caches import MISSING
 from core_pdf.impl.capture_host import CaptureHost
 from core_pdf.impl.capture_program import CapturedProgram
 from core_pdf.impl.capture_records import (
@@ -18,6 +17,7 @@ from core_pdf.impl.capture_records import (
     TilingPattern,
 )
 from core_pdf.impl.graphics_color import color_operands_to_srgb
+from core_pdf.impl.types import MISSING, MissingObject
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import GraphicsState
 from core_pdf_spec.s_07_content.model import ShadingPattern as PdfShadingPattern
@@ -58,8 +58,9 @@ class PaintResolutionMixin(CaptureHost):
         mask = super().resolve_soft_mask(value)
         if mask is not None:
             scopes = self.caches.capture_mask_resources
-            if scopes.get(mask, default=MISSING) is MISSING:
-                scopes.put(mask, self.resources)
+            key = id(mask)
+            if scopes.get_key(mask, key, MISSING) is MISSING:
+                scopes.put_key(mask, key, self.resources)
         return mask
 
     def initial_pattern(self, *, stroke: bool) -> bool:
@@ -124,9 +125,9 @@ class PaintResolutionMixin(CaptureHost):
         initial_text_knockout = (
             pattern.text_knockout if isinstance(pattern, PdfTilingPattern) else True
         )
-        key = (rendering, initial_alpha_is_shape, initial_text_knockout)
-        cached = self.capture_patterns.get(pattern, *key, default=MISSING)
-        if cached is not MISSING:
+        cache_key = (id(pattern), rendering, initial_alpha_is_shape, initial_text_knockout)
+        cached = self.capture_patterns.get_key(pattern, cache_key, MISSING)
+        if not isinstance(cached, MissingObject):
             return cached
         result: PatternPaint | None = None
         if isinstance(pattern, PdfShadingPattern):
@@ -149,7 +150,7 @@ class PaintResolutionMixin(CaptureHost):
                 )
             finally:
                 nested.release()
-        return self.capture_patterns.put(pattern, result, *key)
+        return self.capture_patterns.put_key(pattern, cache_key, result)
 
     def capture_tiling_pattern(
         self,
@@ -199,17 +200,20 @@ class PaintResolutionMixin(CaptureHost):
         mask = self.graphics.soft_mask
         if mask is None or not self.options.render_details:
             return None
-        key = tuple(state_key(getattr(self.graphics, name)) for name in MASK_KEYED_FIELDS)
+        key = (
+            id(mask),
+            tuple(state_key(getattr(self.graphics, name)) for name in MASK_KEYED_FIELDS),
+        )
         caches = self.caches
-        cached = caches.capture_soft_masks.get(mask, key, default=MISSING)
-        if cached is not MISSING:
+        cached = caches.capture_soft_masks.get_key(mask, key, MISSING)
+        if not isinstance(cached, MissingObject):
             return cached
         graphics = copy(self.graphics)
         graphics.ctm = mask.ctm
         graphics.soft_mask = None
         graphics.fill_opacity = graphics.stroke_opacity = 1.0
         graphics.blend_mode = None
-        caches.capture_soft_masks.put(mask, None, key)
+        caches.capture_soft_masks.put_key(mask, key, None)
         group_key = id(mask.group)
         if mask.subtype != "Alpha" or group_key in caches.capture_active_mask_groups:
             return None
@@ -220,8 +224,8 @@ class PaintResolutionMixin(CaptureHost):
         try:
             nested = self.nested_capture_state()
             nested.graphics = copy(graphics)
-            scope = caches.capture_mask_resources.get(mask, default=MISSING)
-            nested.resources = self.resources if scope is MISSING else scope
+            scope = caches.capture_mask_resources.get_key(mask, id(mask), MISSING)
+            nested.resources = self.resources if isinstance(scope, MissingObject) else scope
             frame = nested.append_form_xobject(mask.group, 0)
             if frame is None:
                 return None
@@ -229,8 +233,8 @@ class PaintResolutionMixin(CaptureHost):
             nested.run_accumulator.flush()
             if not nested.text_boundaries:
                 return None
-            return caches.capture_soft_masks.put(
-                mask, CapturedSoftMask(nested.captured_program(), mask.transfer), key
+            return caches.capture_soft_masks.put_key(
+                mask, key, CapturedSoftMask(nested.captured_program(), mask.transfer)
             )
         except PdfParseError, TypeError, ValueError, ArithmeticError:
             return None

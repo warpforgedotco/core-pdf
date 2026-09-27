@@ -1,4 +1,5 @@
-from core_pdf.impl.caches import MISSING, BoundedDict, IdentityCache
+from core_pdf.impl.caches import BoundedDict, IdentityCache
+from core_pdf.impl.types import MISSING
 
 
 def test_a_bounded_dict_clears_everything_once_full() -> None:
@@ -38,18 +39,28 @@ def test_none_values_are_distinguished_from_misses() -> None:
 
 
 def test_the_limit_is_read_when_storing() -> None:
-    limit = [3]
-    cache: IdentityCache[int] = IdentityCache(lambda: limit[0])
+    cache: IdentityCache[int] = IdentityCache(3)
     objects = [object() for _ in range(4)]
     for index, value in enumerate(objects[:3]):
         cache.put(value, index)
     assert len(cache) == 3
-    limit[0] = 10
+    cache.limit = 10
     cache.put(objects[3], 3)
     assert len(cache) == 4
     cache.limit = 4
     cache.put(object(), 4)
     assert len(cache) == 1
+
+
+def test_prebuilt_keys_match_the_variadic_form() -> None:
+    value: dict[str, int] = {}
+    scope: dict[str, int] = {}
+    cache: IdentityCache[int] = IdentityCache()
+    cache.put_key(value, (id(value), id(scope), 2), 1, (scope,))
+    assert cache.get(value, 2, pins=(scope,)) == 1
+    cache.put(value, 3, 4)
+    assert cache.get_key(value, (id(value), 4)) == 3
+    assert cache.get_key(object(), (id(value), 4), MISSING) is MISSING
 
 
 def test_discard_removes_only_the_matching_entry() -> None:

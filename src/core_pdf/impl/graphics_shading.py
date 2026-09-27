@@ -173,9 +173,8 @@ def prepare_shading(
         normalized["BBox"] = bbox
     function = normalized.get("Function")
     color_space = normalized["ColorSpace"]
-    cached = (
-        evaluators.get(function, rendering, pins=(color_space,)) if evaluators is not None else None
-    )
+    key = (id(function), id(color_space), rendering)
+    cached = evaluators.get_key(function, key) if evaluators is not None else None
     if cached is not None:
         compiled, evaluator, color_model = cached
         try:
@@ -190,8 +189,8 @@ def prepare_shading(
             return None
         evaluator, color_model = shading_color_evaluator(spec.evaluator, space, rendering)
         if evaluators is not None:
-            evaluators.put(
-                function, (spec.evaluator, evaluator, color_model), rendering, pins=(color_space,)
+            evaluators.put_key(
+                function, key, (spec.evaluator, evaluator, color_model), (color_space,)
             )
     return PreparedShading(
         spec.shading_type,

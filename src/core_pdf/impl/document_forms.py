@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from core_pdf.impl.caches import DocumentCaches
 from core_pdf.impl.document_fields import collect_field_records
 from core_pdf.impl.document_page import PdfPage
 from core_pdf.impl.document_records import RawEmbeddedFile, RawFormField
-from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.recovery_policy import Recovery
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_trees import iter_name_tree_items

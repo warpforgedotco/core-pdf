@@ -61,13 +61,12 @@ class ImageCaptureMixin(CaptureHost):
     def captured_image_source(self, xobj: PdfStream) -> tuple[ImageSource, float | None]:
         rendering = self.graphics.color_rendering
         cache = self.caches.capture_image_sources
-        cached = cache.get(xobj, rendering)
+        key = (id(xobj), rendering)
+        cached = cache.get_key(xobj, key)
         if cached is not None:
             return cached
-        return cache.put(
-            xobj,
-            image_source_from_stream(xobj, self.resolver, color_rendering=rendering),
-            rendering,
+        return cache.put_key(
+            xobj, key, image_source_from_stream(xobj, self.resolver, color_rendering=rendering)
         )
 
     def paint_image(self, state: object, xobj: PdfStream) -> None:

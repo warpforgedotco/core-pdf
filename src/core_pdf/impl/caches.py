@@ -3,17 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Iterator
-from enum import Enum
-from typing import overload
-
-
-class Missing(Enum):
-    MISSING = 0
-
-
-MISSING = Missing.MISSING
-
-type CacheLimit = int | Callable[[], int] | None
+from typing import Any, cast, overload
 
 
 class BoundedDict[K, V](dict[K, V]):
@@ -33,7 +23,7 @@ class BoundedDict[K, V](dict[K, V]):
 class IdentityCache[V]:
     __slots__ = ("entries", "limit")
 
-    def __init__(self, limit: CacheLimit = None) -> None:
+    def __init__(self, limit: int | None = None) -> None:
         self.entries: dict[Hashable, tuple[object, tuple[object, ...], V]] = {}
         self.limit = limit
 
@@ -58,15 +48,27 @@ class IdentityCache[V]:
             return default
         return entry[2]
 
+    @overload
+    def get_key(self, obj: object, key: Hashable) -> V | None: ...
+
+    @overload
+    def get_key[D](self, obj: object, key: Hashable, default: D) -> V | D: ...
+
+    def get_key(self, obj: object, key: Hashable, default: object = None) -> object:
+        entry = self.entries.get(key)
+        if entry is None or entry[0] is not obj:
+            return default
+        return entry[2]
+
     def put(self, obj: object, value: V, *extra: Hashable, pins: tuple[object, ...] = ()) -> V:
+        key = (id(obj), *map(id, pins), *extra) if extra or pins else id(obj)
+        return self.put_key(obj, key, value, pins)
+
+    def put_key(self, obj: object, key: Hashable, value: V, pins: tuple[object, ...] = ()) -> V:
         entries = self.entries
         limit = self.limit
-        if limit is not None:
-            if not isinstance(limit, int):
-                limit = limit()
-            if len(entries) >= limit:
-                entries.clear()
-        key = (id(obj), *map(id, pins), *extra) if extra or pins else id(obj)
+        if limit is not None and len(entries) >= limit:
+            entries.clear()
         entries[key] = (obj, pins, value)
         return value
 
@@ -116,4 +118,29 @@ class ByteBudgetCache[K, V]:
         self.size += size
 
 
-__all__ = ("MISSING", "BoundedDict", "ByteBudgetCache", "CacheLimit", "IdentityCache", "Missing")
+class DocumentCaches:
+    __slots__ = ("content", "xref")
+
+    def __init__(self) -> None:
+        self.content: dict[str, Any] = {}
+        self.xref: dict[str, tuple[object, object]] = {}
+
+    def get[V](self, name: str, build: Callable[[], V]) -> V:
+        content = self.content
+        try:
+            return content[name]
+        except KeyError:
+            value = content[name] = build()
+            return value
+
+    def get_keyed[V](self, name: str, key: object, build: Callable[[], V]) -> V:
+        entry = self.xref.get(name)
+        if entry is None or entry[0] != key:
+            entry = self.xref[name] = (key, build())
+        return cast("V", entry[1])
+
+    def clear(self) -> None:
+        self.content.clear()
+
+
+__all__ = ("BoundedDict", "ByteBudgetCache", "DocumentCaches", "IdentityCache")

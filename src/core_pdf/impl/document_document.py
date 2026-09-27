@@ -7,6 +7,7 @@ import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVar, cast
 
+from core_pdf.impl.caches import DocumentCaches
 from core_pdf.impl.document_forms import DocumentForms
 from core_pdf.impl.document_metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.document_navigation import (
@@ -31,7 +32,6 @@ from core_pdf.impl.exceptions import PdfEmptySourceError, PdfParseError
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_selection import extract_document
 from core_pdf.impl.fonts_fallback import RasterFontRepository
-from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.output_model import Document as StructuredDocument
 from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.pdf_names import recover_pdf_name
@@ -325,10 +325,7 @@ class PdfDocument(
 
     @property
     def pages(self) -> tuple[PageT, ...]:
-        try:
-            return self.caches.content["pages"]
-        except KeyError:
-            return self.caches.get("pages", self.build_page_tree)
+        return self.caches.get("pages", self.build_page_tree)
 
     def build_page_tree(self) -> tuple[PageT, ...]:
         return self.build_pages(self.iter_recovered_page_nodes())
@@ -403,10 +400,7 @@ class PdfDocument(
 
     @property
     def page_lookup(self) -> PageLookup[PageT]:
-        try:
-            return self.caches.content["page_lookup"]
-        except KeyError:
-            return self.caches.get("page_lookup", self.build_page_lookup)
+        return self.caches.get("page_lookup", self.build_page_lookup)
 
     def build_page_lookup(self) -> PageLookup[PageT]:
         return PageLookup(self)

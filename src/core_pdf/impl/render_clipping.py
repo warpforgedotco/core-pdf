@@ -130,7 +130,7 @@ class ClipState:
         self.span_arrays: IdentityCache[RowSpanArrays] = IdentityCache()
 
     def row_span_arrays(self, region: ClipRegion) -> RowSpanArrays:
-        cached = self.span_arrays.get(region)
+        cached = self.span_arrays.get_key(region, id(region))
         if cached is not None:
             return cached
         rows = region.rows or ()
@@ -139,7 +139,7 @@ class ClipState:
         spans = numpy.asarray(
             [value for row in rows for span in row for value in span], dtype=numpy.int64
         )
-        return self.span_arrays.put(region, (offsets, spans))
+        return self.span_arrays.put_key(region, id(region), (offsets, spans))
 
     @property
     def depth(self) -> int:
