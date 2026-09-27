@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy
 
@@ -17,7 +17,7 @@ from core_pdf.impl.extract_contracts import FULL_PAGE_IMAGE_COVERAGE
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.graphics_images import decode_image, decode_pdf_image
 from core_pdf.impl.render_model import RasterImage
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_bilinear, resample_nearest
 from core_pdf_ocr.impl.extract.ocr.types import Raster
@@ -150,31 +150,9 @@ OCR_IMAGE_TEXT_STRONG_HORIZONTAL_EDGES = 0.09
 OCR_IMAGE_TEXT_MIN_HORIZONTAL_EDGE_SHARE = 0.85
 
 
-class RasterTextSignal(Record):
-    __slots__ = ("likely_text", "horizontal_edge_ratio")
-
+class RasterTextSignal(GeneratedRecord):
     likely_text: bool
     horizontal_edge_ratio: float
-
-    __fields__: ClassVar[tuple[str, ...]] = ("likely_text", "horizontal_edge_ratio")
-    __match_args__ = ("likely_text", "horizontal_edge_ratio")
-
-    def __init__(self, likely_text: bool, horizontal_edge_ratio: float) -> None:
-        frozen_setattr(self, "likely_text", likely_text)
-        frozen_setattr(self, "horizontal_edge_ratio", horizontal_edge_ratio)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.likely_text == other.likely_text
-            and self.horizontal_edge_ratio == other.horizontal_edge_ratio
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.likely_text, self.horizontal_edge_ratio))
 
 
 def raster_text_signal(image: RasterImage) -> RasterTextSignal:

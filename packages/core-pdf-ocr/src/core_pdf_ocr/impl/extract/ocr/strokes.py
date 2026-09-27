@@ -6,7 +6,7 @@ import string
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from typing import ClassVar, TypeAlias
+from typing import TypeAlias
 
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath
 from core_pdf.impl.geometry import (
@@ -16,7 +16,7 @@ from core_pdf.impl.geometry import (
     points_bbox,
     rect_tuple,
 )
-from core_pdf.impl.types import Record, Rectangle, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, Rectangle
 
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]
 GlyphTopology: TypeAlias = tuple[tuple[tuple[bool, int], ...], ...]
@@ -34,179 +34,30 @@ STROKED_TEXT_SEED_RUN_MAX_WIDTH = 64.0
 STROKED_TEXT_ALLOWED_CHARACTERS = frozenset(string.ascii_letters + string.digits + "+-./_")
 
 
-class StrokedTextSeed(Record):
-    __slots__ = ("text", "bbox", "confidence", "sequence")
-
+class StrokedTextSeed(GeneratedRecord):
     text: str
     bbox: Rectangle
     confidence: float
     sequence: int
 
-    __fields__: ClassVar[tuple[str, ...]] = ("text", "bbox", "confidence", "sequence")
-    __match_args__ = ("text", "bbox", "confidence", "sequence")
 
-    def __init__(self, text: str, bbox: Rectangle, confidence: float, sequence: int) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "confidence", confidence)
-        frozen_setattr(self, "sequence", sequence)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.bbox == other.bbox
-            and self.confidence == other.confidence
-            and self.sequence == other.sequence
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.text, self.bbox, self.confidence, self.sequence))
-
-
-class StrokedTextObservation(Record):
-    __slots__ = ("text", "bbox", "first_drawing", "last_drawing", "confidence")
-
+class StrokedTextObservation(GeneratedRecord):
     text: str
     bbox: Rectangle
     first_drawing: int
     last_drawing: int
-    confidence: float
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "text",
-        "bbox",
-        "first_drawing",
-        "last_drawing",
-        "confidence",
-    )
-    __match_args__ = ("text", "bbox", "first_drawing", "last_drawing", "confidence")
-
-    def __init__(
-        self,
-        text: str,
-        bbox: Rectangle,
-        first_drawing: int,
-        last_drawing: int,
-        confidence: float = 96.0,
-    ) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "first_drawing", first_drawing)
-        frozen_setattr(self, "last_drawing", last_drawing)
-        frozen_setattr(self, "confidence", confidence)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.bbox == other.bbox
-            and self.first_drawing == other.first_drawing
-            and self.last_drawing == other.last_drawing
-            and self.confidence == other.confidence
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.text, self.bbox, self.first_drawing, self.last_drawing, self.confidence))
+    confidence: float = 96.0
 
 
-class StrokedTextDecode(Record):
-    __slots__ = (
-        "observations",
-        "aligned_seeds",
-        "learned_signatures",
-        "alphabet",
-        "candidate_runs",
-        "decoded_candidate_runs",
-        "candidate_glyphs",
-        "decoded_candidate_glyphs",
-    )
-
-    observations: tuple[StrokedTextObservation, ...]
-    aligned_seeds: int
-    learned_signatures: int
-    alphabet: tuple[tuple[GlyphSignature, str], ...]
-    candidate_runs: int
-    decoded_candidate_runs: int
-    candidate_glyphs: int
-    decoded_candidate_glyphs: int
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "observations",
-        "aligned_seeds",
-        "learned_signatures",
-        "alphabet",
-        "candidate_runs",
-        "decoded_candidate_runs",
-        "candidate_glyphs",
-        "decoded_candidate_glyphs",
-    )
-    __match_args__ = (
-        "observations",
-        "aligned_seeds",
-        "learned_signatures",
-        "alphabet",
-        "candidate_runs",
-        "decoded_candidate_runs",
-        "candidate_glyphs",
-        "decoded_candidate_glyphs",
-    )
-
-    def __init__(
-        self,
-        observations: tuple[StrokedTextObservation, ...] = (),
-        aligned_seeds: int = 0,
-        learned_signatures: int = 0,
-        alphabet: tuple[tuple[GlyphSignature, str], ...] = (),
-        candidate_runs: int = 0,
-        decoded_candidate_runs: int = 0,
-        candidate_glyphs: int = 0,
-        decoded_candidate_glyphs: int = 0,
-    ) -> None:
-        frozen_setattr(self, "observations", observations)
-        frozen_setattr(self, "aligned_seeds", aligned_seeds)
-        frozen_setattr(self, "learned_signatures", learned_signatures)
-        frozen_setattr(self, "alphabet", alphabet)
-        frozen_setattr(self, "candidate_runs", candidate_runs)
-        frozen_setattr(self, "decoded_candidate_runs", decoded_candidate_runs)
-        frozen_setattr(self, "candidate_glyphs", candidate_glyphs)
-        frozen_setattr(self, "decoded_candidate_glyphs", decoded_candidate_glyphs)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.observations == other.observations
-            and self.aligned_seeds == other.aligned_seeds
-            and self.learned_signatures == other.learned_signatures
-            and self.alphabet == other.alphabet
-            and self.candidate_runs == other.candidate_runs
-            and self.decoded_candidate_runs == other.decoded_candidate_runs
-            and self.candidate_glyphs == other.candidate_glyphs
-            and self.decoded_candidate_glyphs == other.decoded_candidate_glyphs
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.observations,
-                self.aligned_seeds,
-                self.learned_signatures,
-                self.alphabet,
-                self.candidate_runs,
-                self.decoded_candidate_runs,
-                self.candidate_glyphs,
-                self.decoded_candidate_glyphs,
-            )
-        )
+class StrokedTextDecode(GeneratedRecord):
+    observations: tuple[StrokedTextObservation, ...] = ()
+    aligned_seeds: int = 0
+    learned_signatures: int = 0
+    alphabet: tuple[tuple[GlyphSignature, str], ...] = ()
+    candidate_runs: int = 0
+    decoded_candidate_runs: int = 0
+    candidate_glyphs: int = 0
+    decoded_candidate_glyphs: int = 0
 
     @property
     def candidate_run_coverage(self) -> float:
@@ -217,196 +68,40 @@ class StrokedTextDecode(Record):
         return self.decoded_candidate_glyphs / max(1, self.candidate_glyphs)
 
 
-class StrokedTextRun(Record):
-    __slots__ = ("bbox", "drawing_indexes", "glyph_count")
-
+class StrokedTextRun(GeneratedRecord):
     bbox: Rectangle
     drawing_indexes: tuple[int, ...]
     glyph_count: int
 
-    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "drawing_indexes", "glyph_count")
-    __match_args__ = ("bbox", "drawing_indexes", "glyph_count")
 
-    def __init__(self, bbox: Rectangle, drawing_indexes: tuple[int, ...], glyph_count: int) -> None:
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "drawing_indexes", drawing_indexes)
-        frozen_setattr(self, "glyph_count", glyph_count)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.bbox == other.bbox
-            and self.drawing_indexes == other.drawing_indexes
-            and self.glyph_count == other.glyph_count
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.bbox, self.drawing_indexes, self.glyph_count))
-
-
-class PathRecord(Record):
-    __slots__ = ("index", "path", "bbox")
-
+class PathRecord(GeneratedRecord):
     index: int
     path: CapturedPath
     bbox: Rectangle
-
-    __fields__: ClassVar[tuple[str, ...]] = ("index", "path", "bbox")
-    __match_args__ = ("index", "path", "bbox")
-
-    def __init__(self, index: int, path: CapturedPath, bbox: Rectangle) -> None:
-        frozen_setattr(self, "index", index)
-        frozen_setattr(self, "path", path)
-        frozen_setattr(self, "bbox", bbox)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.index == other.index and self.path == other.path and self.bbox == other.bbox
-
-    def __hash__(self) -> int:
-        return hash((self.index, self.path, self.bbox))
 
 
 Glyph: TypeAlias = tuple[PathRecord, ...]
 
 
-class StrokedTextProfile(Record):
-    __slots__ = ("records", "run_profiles", "seed_runs")
-
-    records: tuple[PathRecord, ...]
-    run_profiles: tuple[StrokedTextRunProfile, ...]
-    seed_runs: tuple[StrokedTextRun, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("records", "run_profiles", "seed_runs")
-    __match_args__ = ("records", "run_profiles", "seed_runs")
-
-    def __init__(
-        self,
-        records: tuple[PathRecord, ...] = (),
-        run_profiles: tuple[StrokedTextRunProfile, ...] = (),
-        seed_runs: tuple[StrokedTextRun, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "records", records)
-        frozen_setattr(self, "run_profiles", run_profiles)
-        frozen_setattr(self, "seed_runs", seed_runs)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.records == other.records
-            and self.run_profiles == other.run_profiles
-            and self.seed_runs == other.seed_runs
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.records, self.run_profiles, self.seed_runs))
+class StrokedTextProfile(GeneratedRecord):
+    records: tuple[PathRecord, ...] = ()
+    run_profiles: tuple[StrokedTextRunProfile, ...] = ()
+    seed_runs: tuple[StrokedTextRun, ...] = ()
 
 
-class SeedSample(Record):
-    __slots__ = ("seed", "text", "signatures")
-
+class SeedSample(GeneratedRecord):
     seed: StrokedTextSeed
     text: str
     signatures: tuple[GlyphSignature, ...]
 
-    __fields__: ClassVar[tuple[str, ...]] = ("seed", "text", "signatures")
-    __match_args__ = ("seed", "text", "signatures")
 
-    def __init__(
-        self,
-        seed: StrokedTextSeed,
-        text: str,
-        signatures: tuple[GlyphSignature, ...],
-    ) -> None:
-        frozen_setattr(self, "seed", seed)
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "signatures", signatures)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.seed == other.seed
-            and self.text == other.text
-            and self.signatures == other.signatures
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.seed, self.text, self.signatures))
-
-
-class StrokedTextRunProfile(Record):
-    __slots__ = ("glyphs", "signatures", "bbox", "first_drawing", "last_drawing", "seed_run")
-
+class StrokedTextRunProfile(GeneratedRecord):
     glyphs: tuple[Glyph, ...]
     signatures: tuple[GlyphSignature | None, ...]
     bbox: Rectangle
     first_drawing: int
     last_drawing: int
     seed_run: StrokedTextRun | None
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "glyphs",
-        "signatures",
-        "bbox",
-        "first_drawing",
-        "last_drawing",
-        "seed_run",
-    )
-    __match_args__ = ("glyphs", "signatures", "bbox", "first_drawing", "last_drawing", "seed_run")
-
-    def __init__(
-        self,
-        glyphs: tuple[Glyph, ...],
-        signatures: tuple[GlyphSignature | None, ...],
-        bbox: Rectangle,
-        first_drawing: int,
-        last_drawing: int,
-        seed_run: StrokedTextRun | None,
-    ) -> None:
-        frozen_setattr(self, "glyphs", glyphs)
-        frozen_setattr(self, "signatures", signatures)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "first_drawing", first_drawing)
-        frozen_setattr(self, "last_drawing", last_drawing)
-        frozen_setattr(self, "seed_run", seed_run)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.glyphs == other.glyphs
-            and self.signatures == other.signatures
-            and self.bbox == other.bbox
-            and self.first_drawing == other.first_drawing
-            and self.last_drawing == other.last_drawing
-            and self.seed_run == other.seed_run
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.glyphs,
-                self.signatures,
-                self.bbox,
-                self.first_drawing,
-                self.last_drawing,
-                self.seed_run,
-            )
-        )
 
 
 def path_records(

@@ -7,7 +7,7 @@ from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_contracts import ObservationBatch
@@ -18,7 +18,7 @@ from core_pdf.impl.extract_selection import (
 from core_pdf.impl.geometry import bbox_tuple
 from core_pdf.impl.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.output_model import Document
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, frozen_setattr
 from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
     capture_from_program,
@@ -43,14 +43,9 @@ DOCUMENT_STROKED_MIN_RUN_COVERAGE = 0.70
 DOCUMENT_STROKED_MIN_GLYPH_COVERAGE = 0.70
 
 
-class FontEnrichment(Record):
-    __slots__ = ("learned_unicode", "recognition_by_index")
-
+class FontEnrichment(GeneratedRecord, eq=False):
     learned_unicode: LearnedUnicodeMap
     recognition_by_index: Mapping[int, RecognitionResult]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("learned_unicode", "recognition_by_index")
-    __match_args__ = ("learned_unicode", "recognition_by_index")
 
     def __init__(
         self,

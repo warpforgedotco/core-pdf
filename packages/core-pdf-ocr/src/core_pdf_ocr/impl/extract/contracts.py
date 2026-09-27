@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf.impl.extract_contracts import (
     GlyphEvidence,
@@ -16,7 +16,7 @@ from core_pdf.impl.extract_contracts import (
 from core_pdf.impl.extract_contracts import (
     PageEvidence as NativePageEvidence,
 )
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, frozen_setattr
 
 PSM_AUTO = 3
 PSM_SPARSE_TEXT = 11
@@ -86,107 +86,19 @@ class FusionPolicy(StrEnum):
     UNCOVERED_VECTOR = "uncovered-vector"
 
 
-class StrokedVectorTextEvidence(Record):
-    __slots__ = ("trusted", "drawing_indexes", "bbox", "candidate_paths")
-
-    trusted: bool
-    drawing_indexes: tuple[int, ...]
-    bbox: tuple[float, float, float, float] | None
-    candidate_paths: int
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "trusted",
-        "drawing_indexes",
-        "bbox",
-        "candidate_paths",
-    )
-    __match_args__ = ("trusted", "drawing_indexes", "bbox", "candidate_paths")
-
-    def __init__(
-        self,
-        trusted: bool = False,
-        drawing_indexes: tuple[int, ...] = (),
-        bbox: tuple[float, float, float, float] | None = None,
-        candidate_paths: int = 0,
-    ) -> None:
-        frozen_setattr(self, "trusted", trusted)
-        frozen_setattr(self, "drawing_indexes", drawing_indexes)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "candidate_paths", candidate_paths)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.trusted == other.trusted
-            and self.drawing_indexes == other.drawing_indexes
-            and self.bbox == other.bbox
-            and self.candidate_paths == other.candidate_paths
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.trusted, self.drawing_indexes, self.bbox, self.candidate_paths))
+class StrokedVectorTextEvidence(GeneratedRecord):
+    trusted: bool = False
+    drawing_indexes: tuple[int, ...] = ()
+    bbox: tuple[float, float, float, float] | None = None
+    candidate_paths: int = 0
 
 
 class PageEvidence(NativePageEvidence):
-    __slots__ = (
-        "vector_complexity",
-        "image_filters",
-        "uncovered_vector_area",
-        "vector_text_trusted",
-        "stroked_vector_text",
-    )
-
     vector_complexity: int
     image_filters: tuple[str, ...]
     uncovered_vector_area: float | None
     vector_text_trusted: bool
     stroked_vector_text: StrokedVectorTextEvidence
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "page_area",
-        "native_characters",
-        "visible_native_characters",
-        "suspicious_characters",
-        "image_count",
-        "image_area_ratio",
-        "image_boxes",
-        "text_coverage",
-        "full_page_image",
-        "text_quality",
-        "all_text_quality",
-        "glyphs",
-        "painted_native_characters",
-        "trusted_hidden_text",
-        "vector_complexity",
-        "image_filters",
-        "uncovered_vector_area",
-        "vector_text_trusted",
-        "stroked_vector_text",
-    )
-    __match_args__ = (
-        "page_area",
-        "native_characters",
-        "visible_native_characters",
-        "suspicious_characters",
-        "image_count",
-        "image_area_ratio",
-        "image_boxes",
-        "text_coverage",
-        "full_page_image",
-        "text_quality",
-        "all_text_quality",
-        "glyphs",
-        "painted_native_characters",
-        "trusted_hidden_text",
-        "vector_complexity",
-        "image_filters",
-        "uncovered_vector_area",
-        "vector_text_trusted",
-        "stroked_vector_text",
-    )
 
     def __init__(
         self,
@@ -240,58 +152,6 @@ class PageEvidence(NativePageEvidence):
             StrokedVectorTextEvidence() if stroked_vector_text is None else stroked_vector_text,
         )
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.page_area == other.page_area
-            and self.native_characters == other.native_characters
-            and self.visible_native_characters == other.visible_native_characters
-            and self.suspicious_characters == other.suspicious_characters
-            and self.image_count == other.image_count
-            and self.image_area_ratio == other.image_area_ratio
-            and self.image_boxes == other.image_boxes
-            and self.text_coverage == other.text_coverage
-            and self.full_page_image == other.full_page_image
-            and self.text_quality == other.text_quality
-            and self.all_text_quality == other.all_text_quality
-            and self.glyphs == other.glyphs
-            and self.painted_native_characters == other.painted_native_characters
-            and self.trusted_hidden_text == other.trusted_hidden_text
-            and self.vector_complexity == other.vector_complexity
-            and self.image_filters == other.image_filters
-            and self.uncovered_vector_area == other.uncovered_vector_area
-            and self.vector_text_trusted == other.vector_text_trusted
-            and self.stroked_vector_text == other.stroked_vector_text
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.page_area,
-                self.native_characters,
-                self.visible_native_characters,
-                self.suspicious_characters,
-                self.image_count,
-                self.image_area_ratio,
-                self.image_boxes,
-                self.text_coverage,
-                self.full_page_image,
-                self.text_quality,
-                self.all_text_quality,
-                self.glyphs,
-                self.painted_native_characters,
-                self.trusted_hidden_text,
-                self.vector_complexity,
-                self.image_filters,
-                self.uncovered_vector_area,
-                self.vector_text_trusted,
-                self.stroked_vector_text,
-            )
-        )
-
 
 class PageAnalysis(NativePageAnalysis):
     __slots__ = ()
@@ -299,297 +159,41 @@ class PageAnalysis(NativePageAnalysis):
     evidence: PageEvidence
 
 
-class OcrPass(Record):
-    __slots__ = (
-        "name",
-        "scope",
-        "scale",
-        "modes",
-        "tiles",
-        "parallel_tiles",
-        "region_columns",
-        "max_regions",
-        "minimum_confidence",
-        "run_if_characters_below",
-        "minimum_utility_gain",
-        "adaptive_scale",
-        "minimum_characters_for_rescue",
-        "character_confidence_threshold",
-        "run_if_additions_below",
-        "seed_with_native",
-        "region_first",
-        "preprocess",
-        "pixel_budget",
-        "include_native_text",
-        "recognize_words",
-        "collect_symbols",
-    )
-
+class OcrPass(GeneratedRecord):
     name: str
     scope: OcrPassScope
     scale: float
     modes: tuple[int, ...]
-    tiles: int
-    parallel_tiles: int
-    region_columns: int
-    max_regions: int
-    minimum_confidence: float
-    run_if_characters_below: int | None
-    minimum_utility_gain: float
-    adaptive_scale: bool
-    minimum_characters_for_rescue: int
-    character_confidence_threshold: float | None
-    run_if_additions_below: int | None
-    seed_with_native: bool
-    region_first: bool
-    preprocess: str
-    pixel_budget: int
-    include_native_text: bool
-    recognize_words: bool
-    collect_symbols: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "name",
-        "scope",
-        "scale",
-        "modes",
-        "tiles",
-        "parallel_tiles",
-        "region_columns",
-        "max_regions",
-        "minimum_confidence",
-        "run_if_characters_below",
-        "minimum_utility_gain",
-        "adaptive_scale",
-        "minimum_characters_for_rescue",
-        "character_confidence_threshold",
-        "run_if_additions_below",
-        "seed_with_native",
-        "region_first",
-        "preprocess",
-        "pixel_budget",
-        "include_native_text",
-        "recognize_words",
-        "collect_symbols",
-    )
-    __match_args__ = (
-        "name",
-        "scope",
-        "scale",
-        "modes",
-        "tiles",
-        "parallel_tiles",
-        "region_columns",
-        "max_regions",
-        "minimum_confidence",
-        "run_if_characters_below",
-        "minimum_utility_gain",
-        "adaptive_scale",
-        "minimum_characters_for_rescue",
-        "character_confidence_threshold",
-        "run_if_additions_below",
-        "seed_with_native",
-        "region_first",
-        "preprocess",
-        "pixel_budget",
-        "include_native_text",
-        "recognize_words",
-        "collect_symbols",
-    )
-
-    def __init__(
-        self,
-        name: str,
-        scope: OcrPassScope,
-        scale: float,
-        modes: tuple[int, ...],
-        tiles: int = 1,
-        parallel_tiles: int = 1,
-        region_columns: int = 2,
-        max_regions: int = 3,
-        minimum_confidence: float = 20.0,
-        run_if_characters_below: int | None = None,
-        minimum_utility_gain: float = 1.1,
-        adaptive_scale: bool = False,
-        minimum_characters_for_rescue: int = 0,
-        character_confidence_threshold: float | None = None,
-        run_if_additions_below: int | None = None,
-        seed_with_native: bool = False,
-        region_first: bool = True,
-        preprocess: str = "none",
-        pixel_budget: int = MAX_OCR_PIXELS,
-        include_native_text: bool = False,
-        recognize_words: bool = False,
-        collect_symbols: bool = False,
-    ) -> None:
-        frozen_setattr(self, "name", name)
-        frozen_setattr(self, "scope", scope)
-        frozen_setattr(self, "scale", scale)
-        frozen_setattr(self, "modes", modes)
-        frozen_setattr(self, "tiles", tiles)
-        frozen_setattr(self, "parallel_tiles", parallel_tiles)
-        frozen_setattr(self, "region_columns", region_columns)
-        frozen_setattr(self, "max_regions", max_regions)
-        frozen_setattr(self, "minimum_confidence", minimum_confidence)
-        frozen_setattr(self, "run_if_characters_below", run_if_characters_below)
-        frozen_setattr(self, "minimum_utility_gain", minimum_utility_gain)
-        frozen_setattr(self, "adaptive_scale", adaptive_scale)
-        frozen_setattr(self, "minimum_characters_for_rescue", minimum_characters_for_rescue)
-        frozen_setattr(self, "character_confidence_threshold", character_confidence_threshold)
-        frozen_setattr(self, "run_if_additions_below", run_if_additions_below)
-        frozen_setattr(self, "seed_with_native", seed_with_native)
-        frozen_setattr(self, "region_first", region_first)
-        frozen_setattr(self, "preprocess", preprocess)
-        frozen_setattr(self, "pixel_budget", pixel_budget)
-        frozen_setattr(self, "include_native_text", include_native_text)
-        frozen_setattr(self, "recognize_words", recognize_words)
-        frozen_setattr(self, "collect_symbols", collect_symbols)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.name == other.name
-            and self.scope == other.scope
-            and self.scale == other.scale
-            and self.modes == other.modes
-            and self.tiles == other.tiles
-            and self.parallel_tiles == other.parallel_tiles
-            and self.region_columns == other.region_columns
-            and self.max_regions == other.max_regions
-            and self.minimum_confidence == other.minimum_confidence
-            and self.run_if_characters_below == other.run_if_characters_below
-            and self.minimum_utility_gain == other.minimum_utility_gain
-            and self.adaptive_scale == other.adaptive_scale
-            and self.minimum_characters_for_rescue == other.minimum_characters_for_rescue
-            and self.character_confidence_threshold == other.character_confidence_threshold
-            and self.run_if_additions_below == other.run_if_additions_below
-            and self.seed_with_native == other.seed_with_native
-            and self.region_first == other.region_first
-            and self.preprocess == other.preprocess
-            and self.pixel_budget == other.pixel_budget
-            and self.include_native_text == other.include_native_text
-            and self.recognize_words == other.recognize_words
-            and self.collect_symbols == other.collect_symbols
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.name,
-                self.scope,
-                self.scale,
-                self.modes,
-                self.tiles,
-                self.parallel_tiles,
-                self.region_columns,
-                self.max_regions,
-                self.minimum_confidence,
-                self.run_if_characters_below,
-                self.minimum_utility_gain,
-                self.adaptive_scale,
-                self.minimum_characters_for_rescue,
-                self.character_confidence_threshold,
-                self.run_if_additions_below,
-                self.seed_with_native,
-                self.region_first,
-                self.preprocess,
-                self.pixel_budget,
-                self.include_native_text,
-                self.recognize_words,
-                self.collect_symbols,
-            )
-        )
+    tiles: int = 1
+    parallel_tiles: int = 1
+    region_columns: int = 2
+    max_regions: int = 3
+    minimum_confidence: float = 20.0
+    run_if_characters_below: int | None = None
+    minimum_utility_gain: float = 1.1
+    adaptive_scale: bool = False
+    minimum_characters_for_rescue: int = 0
+    character_confidence_threshold: float | None = None
+    run_if_additions_below: int | None = None
+    seed_with_native: bool = False
+    region_first: bool = True
+    preprocess: str = "none"
+    pixel_budget: int = MAX_OCR_PIXELS
+    include_native_text: bool = False
+    recognize_words: bool = False
+    collect_symbols: bool = False
 
 
-class WorkPlan(Record):
-    __slots__ = (
-        "route",
-        "reason",
-        "ocr_passes",
-        "verify_hidden_text",
-        "fusion_policy",
-        "allow_direct_image_ocr",
-        "augment_page_candidates",
-    )
-
+class WorkPlan(GeneratedRecord):
     route: PageRoute
-    reason: PagePlanReason
-    ocr_passes: tuple[OcrPass, ...]
-    verify_hidden_text: bool
-    fusion_policy: FusionPolicy
-    allow_direct_image_ocr: bool
-    augment_page_candidates: bool
+    reason: PagePlanReason = PagePlanReason.UNSPECIFIED
+    ocr_passes: tuple[OcrPass, ...] = ()
+    verify_hidden_text: bool = False
+    fusion_policy: FusionPolicy = FusionPolicy.DEFAULT
+    allow_direct_image_ocr: bool = True
+    augment_page_candidates: bool = False
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "route",
-        "reason",
-        "ocr_passes",
-        "verify_hidden_text",
-        "fusion_policy",
-        "allow_direct_image_ocr",
-        "augment_page_candidates",
-    )
-    __match_args__ = (
-        "route",
-        "reason",
-        "ocr_passes",
-        "verify_hidden_text",
-        "fusion_policy",
-        "allow_direct_image_ocr",
-        "augment_page_candidates",
-    )
-
-    def __init__(
-        self,
-        route: PageRoute,
-        reason: PagePlanReason = PagePlanReason.UNSPECIFIED,
-        ocr_passes: tuple[OcrPass, ...] = (),
-        verify_hidden_text: bool = False,
-        fusion_policy: FusionPolicy = FusionPolicy.DEFAULT,
-        allow_direct_image_ocr: bool = True,
-        augment_page_candidates: bool = False,
-    ) -> None:
-        frozen_setattr(self, "route", route)
-        frozen_setattr(self, "reason", reason)
-        frozen_setattr(self, "ocr_passes", ocr_passes)
-        frozen_setattr(self, "verify_hidden_text", verify_hidden_text)
-        frozen_setattr(self, "fusion_policy", fusion_policy)
-        frozen_setattr(self, "allow_direct_image_ocr", allow_direct_image_ocr)
-        frozen_setattr(self, "augment_page_candidates", augment_page_candidates)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.route == other.route
-            and self.reason == other.reason
-            and self.ocr_passes == other.ocr_passes
-            and self.verify_hidden_text == other.verify_hidden_text
-            and self.fusion_policy == other.fusion_policy
-            and self.allow_direct_image_ocr == other.allow_direct_image_ocr
-            and self.augment_page_candidates == other.augment_page_candidates
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.route,
-                self.reason,
-                self.ocr_passes,
-                self.verify_hidden_text,
-                self.fusion_policy,
-                self.allow_direct_image_ocr,
-                self.augment_page_candidates,
-            )
-        )
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         if not isinstance(self.reason, PagePlanReason):
             object.__setattr__(self, "reason", PagePlanReason(self.reason))
 
@@ -600,32 +204,6 @@ class WorkPlan(Record):
         )
 
 
-class RecognitionResult(Record):
-    __slots__ = ("observations", "stroked_vector_alphabet")
-
+class RecognitionResult(GeneratedRecord):
     observations: ObservationBatch
-    stroked_vector_alphabet: tuple[tuple[Any, str], ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("observations", "stroked_vector_alphabet")
-    __match_args__ = ("observations", "stroked_vector_alphabet")
-
-    def __init__(
-        self,
-        observations: ObservationBatch,
-        stroked_vector_alphabet: tuple[tuple[Any, str], ...] = (),
-    ) -> None:
-        frozen_setattr(self, "observations", observations)
-        frozen_setattr(self, "stroked_vector_alphabet", stroked_vector_alphabet)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.observations == other.observations
-            and self.stroked_vector_alphabet == other.stroked_vector_alphabet
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.observations, self.stroked_vector_alphabet))
+    stroked_vector_alphabet: tuple[tuple[Any, str], ...] = ()

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import math
 from copy import replace
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.render_model import RenderOptions
 from core_pdf.impl.render_page import compose_page
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     OCR_PREFLIGHT_PIXELS,
@@ -94,39 +94,10 @@ def region_tasks(
     )
 
 
-class OcrPassTasks(Record):
-    __slots__ = ("ocr_pass", "tasks", "packed_stroked")
-
+class OcrPassTasks(GeneratedRecord):
     ocr_pass: OcrPass
-    tasks: tuple[OcrTask, ...]
-    packed_stroked: PackedStrokedTextRaster | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("ocr_pass", "tasks", "packed_stroked")
-    __match_args__ = ("ocr_pass", "tasks", "packed_stroked")
-
-    def __init__(
-        self,
-        ocr_pass: OcrPass,
-        tasks: tuple[OcrTask, ...] = (),
-        packed_stroked: PackedStrokedTextRaster | None = None,
-    ) -> None:
-        frozen_setattr(self, "ocr_pass", ocr_pass)
-        frozen_setattr(self, "tasks", tasks)
-        frozen_setattr(self, "packed_stroked", packed_stroked)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.ocr_pass == other.ocr_pass
-            and self.tasks == other.tasks
-            and self.packed_stroked == other.packed_stroked
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.ocr_pass, self.tasks, self.packed_stroked))
+    tasks: tuple[OcrTask, ...] = ()
+    packed_stroked: PackedStrokedTextRaster | None = None
 
 
 class OcrSession:
