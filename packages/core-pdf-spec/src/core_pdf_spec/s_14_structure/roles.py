@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import ClassVar, Literal
+from typing import Literal
 
 from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 PDF_1_7_NAMESPACE = "http://iso.org/pdf/ssn"
 PDF_2_0_NAMESPACE = "http://iso.org/pdf2/ssn"
@@ -84,67 +84,16 @@ PDF_2_0_STRUCTURE_TYPES = PDF_1_7_STRUCTURE_TYPES - frozenset(
 ) | frozenset(["DocumentFragment", "Aside", "Title", "FENote", "Sub", "Em", "Strong", "Artifact"])
 
 
-class StructureType(Record):
-    __slots__ = ("name", "namespace")
-
+class StructureType(GeneratedRecord):
     name: str
     namespace: str | None
 
-    __fields__: ClassVar[tuple[str, ...]] = ("name", "namespace")
-    __match_args__ = ("name", "namespace")
 
-    def __init__(self, name: str, namespace: str | None) -> None:
-        frozen_setattr(self, "name", name)
-        frozen_setattr(self, "namespace", namespace)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.name == other.name and self.namespace == other.namespace
-
-    def __hash__(self) -> int:
-        return hash((self.name, self.namespace))
-
-
-class StructureRole(Record):
-    __slots__ = ("name", "namespace", "status", "path")
-
+class StructureRole(GeneratedRecord):
     name: str
     namespace: str | None
     status: Literal["standard", "domain", "unmapped", "cycle"]
     path: tuple[StructureType, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("name", "namespace", "status", "path")
-    __match_args__ = ("name", "namespace", "status", "path")
-
-    def __init__(
-        self,
-        name: str,
-        namespace: str | None,
-        status: Literal["standard", "domain", "unmapped", "cycle"],
-        path: tuple[StructureType, ...],
-    ) -> None:
-        frozen_setattr(self, "name", name)
-        frozen_setattr(self, "namespace", namespace)
-        frozen_setattr(self, "status", status)
-        frozen_setattr(self, "path", path)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.name == other.name
-            and self.namespace == other.namespace
-            and self.status == other.status
-            and self.path == other.path
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.name, self.namespace, self.status, self.path))
 
 
 def is_standard_structure_type(name: str, namespace: str) -> bool:

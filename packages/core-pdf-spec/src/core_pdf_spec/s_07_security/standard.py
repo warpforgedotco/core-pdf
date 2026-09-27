@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from hashlib import md5, sha256, sha384, sha512
 from hmac import compare_digest
 from types import MappingProxyType
-from typing import ClassVar, Literal
+from typing import Literal
 
 from core_pdf_crypto.ciphers import aes_cbc_encrypt, rc4_crypt
 from core_pdf_spec.exceptions import (
@@ -32,7 +32,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
 )
 from core_pdf_spec.types import MISSING
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
 
@@ -59,27 +59,7 @@ PDF_MAC_PERMISSION_BIT = 13
 PDF_MAC_PERMISSION_MASK = 1 << (PDF_MAC_PERMISSION_BIT - 1)
 
 
-class StandardSecurityConfig(Record):
-    __slots__ = (
-        "version",
-        "revision",
-        "permissions",
-        "owner_entry",
-        "user_entry",
-        "length_bits",
-        "document_id",
-        "encrypt_metadata",
-        "stream_filter",
-        "string_filter",
-        "embedded_file_filter",
-        "crypt_filters",
-        "owner_encrypted_key",
-        "user_encrypted_key",
-        "encrypted_permissions",
-        "kdf_salt",
-        "pdf_mac_required",
-    )
-
+class StandardSecurityConfig(GeneratedRecord):
     version: int
     revision: int
     permissions: int
@@ -95,157 +75,13 @@ class StandardSecurityConfig(Record):
     owner_encrypted_key: bytes
     user_encrypted_key: bytes
     encrypted_permissions: bytes
-    kdf_salt: bytes | None
-    pdf_mac_required: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "version",
-        "revision",
-        "permissions",
-        "owner_entry",
-        "user_entry",
-        "length_bits",
-        "document_id",
-        "encrypt_metadata",
-        "stream_filter",
-        "string_filter",
-        "embedded_file_filter",
-        "crypt_filters",
-        "owner_encrypted_key",
-        "user_encrypted_key",
-        "encrypted_permissions",
-        "kdf_salt",
-        "pdf_mac_required",
-    )
-    __match_args__ = (
-        "version",
-        "revision",
-        "permissions",
-        "owner_entry",
-        "user_entry",
-        "length_bits",
-        "document_id",
-        "encrypt_metadata",
-        "stream_filter",
-        "string_filter",
-        "embedded_file_filter",
-        "crypt_filters",
-        "owner_encrypted_key",
-        "user_encrypted_key",
-        "encrypted_permissions",
-        "kdf_salt",
-        "pdf_mac_required",
-    )
-
-    def __init__(
-        self,
-        version: int,
-        revision: int,
-        permissions: int,
-        owner_entry: bytes,
-        user_entry: bytes,
-        length_bits: int,
-        document_id: bytes,
-        encrypt_metadata: bool,
-        stream_filter: str,
-        string_filter: str,
-        embedded_file_filter: str,
-        crypt_filters: Mapping[str, CryptMethod],
-        owner_encrypted_key: bytes,
-        user_encrypted_key: bytes,
-        encrypted_permissions: bytes,
-        kdf_salt: bytes | None = None,
-        pdf_mac_required: bool = False,
-    ) -> None:
-        frozen_setattr(self, "version", version)
-        frozen_setattr(self, "revision", revision)
-        frozen_setattr(self, "permissions", permissions)
-        frozen_setattr(self, "owner_entry", owner_entry)
-        frozen_setattr(self, "user_entry", user_entry)
-        frozen_setattr(self, "length_bits", length_bits)
-        frozen_setattr(self, "document_id", document_id)
-        frozen_setattr(self, "encrypt_metadata", encrypt_metadata)
-        frozen_setattr(self, "stream_filter", stream_filter)
-        frozen_setattr(self, "string_filter", string_filter)
-        frozen_setattr(self, "embedded_file_filter", embedded_file_filter)
-        frozen_setattr(self, "crypt_filters", crypt_filters)
-        frozen_setattr(self, "owner_encrypted_key", owner_encrypted_key)
-        frozen_setattr(self, "user_encrypted_key", user_encrypted_key)
-        frozen_setattr(self, "encrypted_permissions", encrypted_permissions)
-        frozen_setattr(self, "kdf_salt", kdf_salt)
-        frozen_setattr(self, "pdf_mac_required", pdf_mac_required)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.version == other.version
-            and self.revision == other.revision
-            and self.permissions == other.permissions
-            and self.owner_entry == other.owner_entry
-            and self.user_entry == other.user_entry
-            and self.length_bits == other.length_bits
-            and self.document_id == other.document_id
-            and self.encrypt_metadata == other.encrypt_metadata
-            and self.stream_filter == other.stream_filter
-            and self.string_filter == other.string_filter
-            and self.embedded_file_filter == other.embedded_file_filter
-            and self.crypt_filters == other.crypt_filters
-            and self.owner_encrypted_key == other.owner_encrypted_key
-            and self.user_encrypted_key == other.user_encrypted_key
-            and self.encrypted_permissions == other.encrypted_permissions
-            and self.kdf_salt == other.kdf_salt
-            and self.pdf_mac_required == other.pdf_mac_required
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.version,
-                self.revision,
-                self.permissions,
-                self.owner_entry,
-                self.user_entry,
-                self.length_bits,
-                self.document_id,
-                self.encrypt_metadata,
-                self.stream_filter,
-                self.string_filter,
-                self.embedded_file_filter,
-                self.crypt_filters,
-                self.owner_encrypted_key,
-                self.user_encrypted_key,
-                self.encrypted_permissions,
-                self.kdf_salt,
-                self.pdf_mac_required,
-            )
-        )
+    kdf_salt: bytes | None = None
+    pdf_mac_required: bool = False
 
 
-class StandardSecurityHandler(Record):
-    __slots__ = ("config", "file_key")
-
+class StandardSecurityHandler(GeneratedRecord):
     config: StandardSecurityConfig
     file_key: bytes
-
-    __fields__: ClassVar[tuple[str, ...]] = ("config", "file_key")
-    __match_args__ = ("config", "file_key")
-
-    def __init__(self, config: StandardSecurityConfig, file_key: bytes) -> None:
-        frozen_setattr(self, "config", config)
-        frozen_setattr(self, "file_key", file_key)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.config == other.config and self.file_key == other.file_key
-
-    def __hash__(self) -> int:
-        return hash((self.config, self.file_key))
 
     def decrypt(
         self,

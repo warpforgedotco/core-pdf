@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import ClassVar, Literal
+from typing import Literal
 
 from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -18,70 +18,16 @@ from core_pdf_spec.s_08_graphics.color_spec import ColorSpace, parse_color_space
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator, compile_pdf_function
 from core_pdf_spec.types import PdfReference
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 
-class SoftMask(Record):
-    __slots__ = ("subtype", "group", "ctm", "transfer", "backdrop_color", "color_space")
-
+class SoftMask(GeneratedRecord):
     subtype: Literal["Alpha", "Luminosity"]
     group: PdfStream
     ctm: Matrix
-    transfer: PdfFunctionEvaluator | None
-    backdrop_color: tuple[float, ...] | None
-    color_space: ColorSpace | None
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "subtype",
-        "group",
-        "ctm",
-        "transfer",
-        "backdrop_color",
-        "color_space",
-    )
-    __match_args__ = ("subtype", "group", "ctm", "transfer", "backdrop_color", "color_space")
-
-    def __init__(
-        self,
-        subtype: Literal["Alpha", "Luminosity"],
-        group: PdfStream,
-        ctm: Matrix,
-        transfer: PdfFunctionEvaluator | None = None,
-        backdrop_color: tuple[float, ...] | None = None,
-        color_space: ColorSpace | None = None,
-    ) -> None:
-        frozen_setattr(self, "subtype", subtype)
-        frozen_setattr(self, "group", group)
-        frozen_setattr(self, "ctm", ctm)
-        frozen_setattr(self, "transfer", transfer)
-        frozen_setattr(self, "backdrop_color", backdrop_color)
-        frozen_setattr(self, "color_space", color_space)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.subtype == other.subtype
-            and self.group == other.group
-            and self.ctm == other.ctm
-            and self.transfer == other.transfer
-            and self.backdrop_color == other.backdrop_color
-            and self.color_space == other.color_space
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.subtype,
-                self.group,
-                self.ctm,
-                self.transfer,
-                self.backdrop_color,
-                self.color_space,
-            )
-        )
+    transfer: PdfFunctionEvaluator | None = None
+    backdrop_color: tuple[float, ...] | None = None
+    color_space: ColorSpace | None = None
 
 
 def resolve(value: object, resolver: PdfValueResolver) -> PdfObject:

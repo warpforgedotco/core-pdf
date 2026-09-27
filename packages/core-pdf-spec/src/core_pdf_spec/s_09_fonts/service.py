@@ -1,74 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar, Protocol
+from typing import Any, Protocol
 
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.matrix import Matrix
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 
-class DecodedFontGlyph(Record):
-    __slots__ = ("code_bytes", "char_code", "cid", "gid", "unicode", "width_code")
-
+class DecodedFontGlyph(GeneratedRecord):
     code_bytes: bytes
     char_code: int
     cid: int
     gid: int | None
     unicode: str
     width_code: int
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "code_bytes",
-        "char_code",
-        "cid",
-        "gid",
-        "unicode",
-        "width_code",
-    )
-    __match_args__ = ("code_bytes", "char_code", "cid", "gid", "unicode", "width_code")
-
-    def __init__(
-        self,
-        code_bytes: bytes,
-        char_code: int,
-        cid: int,
-        gid: int | None,
-        unicode: str,
-        width_code: int,
-    ) -> None:
-        frozen_setattr(self, "code_bytes", code_bytes)
-        frozen_setattr(self, "char_code", char_code)
-        frozen_setattr(self, "cid", cid)
-        frozen_setattr(self, "gid", gid)
-        frozen_setattr(self, "unicode", unicode)
-        frozen_setattr(self, "width_code", width_code)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.code_bytes == other.code_bytes
-            and self.char_code == other.char_code
-            and self.cid == other.cid
-            and self.gid == other.gid
-            and self.unicode == other.unicode
-            and self.width_code == other.width_code
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.code_bytes,
-                self.char_code,
-                self.cid,
-                self.gid,
-                self.unicode,
-                self.width_code,
-            )
-        )
 
 
 class FontService(Protocol):

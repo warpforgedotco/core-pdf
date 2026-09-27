@@ -10,21 +10,10 @@ from core_pdf_spec.s_08_graphics.pdf_function import (
     PdfFunctionEvaluator,
     compile_pdf_function,
 )
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 
-class ShadingSpec(Record):
-    __slots__ = (
-        "shading_type",
-        "coords",
-        "domain",
-        "extend_start",
-        "extend_end",
-        "color_space",
-        "bbox",
-        "evaluator",
-    )
-
+class ShadingSpec(GeneratedRecord):
     shading_type: int
     coords: tuple[float, ...]
     domain: tuple[float, float]
@@ -34,16 +23,6 @@ class ShadingSpec(Record):
     bbox: tuple[float, float, float, float] | None
     evaluator: PdfFunctionEvaluator
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "shading_type",
-        "coords",
-        "domain",
-        "extend_start",
-        "extend_end",
-        "color_space",
-        "bbox",
-        "evaluator",
-    )
     __repr_fields__: ClassVar[tuple[str, ...]] = (
         "shading_type",
         "coords",
@@ -53,36 +32,6 @@ class ShadingSpec(Record):
         "color_space",
         "bbox",
     )
-    __match_args__ = (
-        "shading_type",
-        "coords",
-        "domain",
-        "extend_start",
-        "extend_end",
-        "color_space",
-        "bbox",
-        "evaluator",
-    )
-
-    def __init__(
-        self,
-        shading_type: int,
-        coords: tuple[float, ...],
-        domain: tuple[float, float],
-        extend_start: bool,
-        extend_end: bool,
-        color_space: object,
-        bbox: tuple[float, float, float, float] | None,
-        evaluator: PdfFunctionEvaluator,
-    ) -> None:
-        frozen_setattr(self, "shading_type", shading_type)
-        frozen_setattr(self, "coords", coords)
-        frozen_setattr(self, "domain", domain)
-        frozen_setattr(self, "extend_start", extend_start)
-        frozen_setattr(self, "extend_end", extend_end)
-        frozen_setattr(self, "color_space", color_space)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "evaluator", evaluator)
 
     def __eq__(self, other: object) -> bool:
         if self is other:

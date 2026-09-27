@@ -6,7 +6,7 @@ import re
 from typing import Any, ClassVar, Self
 
 from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
-from core_records import FrozenFields, PickleFields, ReprFields, frozen_setattr
+from core_records import FrozenFields, PickleFields, RecordType, ReprFields, frozen_setattr
 
 WHITESPACE = b"\x00\t\n\x0c\r "
 DELIMITERS = b"()<>[]/%"
@@ -16,20 +16,7 @@ SEPARATOR_TABLE = bytes([1 if i in WHITESPACE or i in DELIMITERS else 0 for i in
 WS_TABLE = bytes([1 if i in WHITESPACE else 0 for i in range(256)])
 
 
-class LexicalRules(FrozenFields, PickleFields, ReprFields):
-    __slots__ = (
-        "whitespace",
-        "name_escapes",
-        "delimiters",
-        "canonical_identifiers",
-        "whitespace_table",
-        "separator_table",
-        "separator_re",
-        "ignored_re",
-        "split_whitespace_compatible",
-        "content_token_re",
-    )
-
+class LexicalRules(FrozenFields, PickleFields, ReprFields, metaclass=RecordType):
     whitespace: bytes
     name_escapes: bool
     delimiters: bytes
@@ -41,18 +28,6 @@ class LexicalRules(FrozenFields, PickleFields, ReprFields):
     split_whitespace_compatible: bool
     content_token_re: re.Pattern[bytes]
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "whitespace",
-        "name_escapes",
-        "delimiters",
-        "canonical_identifiers",
-        "whitespace_table",
-        "separator_table",
-        "separator_re",
-        "ignored_re",
-        "split_whitespace_compatible",
-        "content_token_re",
-    )
     __repr_fields__: ClassVar[tuple[str, ...]] = (
         "whitespace",
         "name_escapes",
@@ -73,40 +48,6 @@ class LexicalRules(FrozenFields, PickleFields, ReprFields):
         frozen_setattr(self, "delimiters", delimiters)
         frozen_setattr(self, "canonical_identifiers", canonical_identifiers)
         self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.whitespace == other.whitespace
-            and self.name_escapes == other.name_escapes
-            and self.delimiters == other.delimiters
-            and self.canonical_identifiers == other.canonical_identifiers
-            and self.whitespace_table == other.whitespace_table
-            and self.separator_table == other.separator_table
-            and self.separator_re == other.separator_re
-            and self.ignored_re == other.ignored_re
-            and self.split_whitespace_compatible == other.split_whitespace_compatible
-            and self.content_token_re == other.content_token_re
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.whitespace,
-                self.name_escapes,
-                self.delimiters,
-                self.canonical_identifiers,
-                self.whitespace_table,
-                self.separator_table,
-                self.separator_re,
-                self.ignored_re,
-                self.split_whitespace_compatible,
-                self.content_token_re,
-            )
-        )
 
     def __replace__(self, /, **changes: Any) -> Self:
         whitespace = changes.pop("whitespace", self.whitespace)

@@ -4,41 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 from math import isfinite
-from typing import ClassVar
 
 from core_pdf_spec.s_07_syntax.inherited_values import add_inherited_values
 from core_pdf_spec.s_07_syntax.types import InheritedValueMap, PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
 from core_pdf_spec.types import Rectangle
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 PAGE_INHERITED_KEYS = ("MediaBox", "CropBox", "Rotate", "Resources")
 
 
-class PageNode(Record):
-    __slots__ = ("dictionary", "inherited_values")
-
+class PageNode(GeneratedRecord):
     dictionary: PdfDict
     inherited_values: InheritedValueMap
-
-    __fields__: ClassVar[tuple[str, ...]] = ("dictionary", "inherited_values")
-    __match_args__ = ("dictionary", "inherited_values")
-
-    def __init__(self, dictionary: PdfDict, inherited_values: InheritedValueMap) -> None:
-        frozen_setattr(self, "dictionary", dictionary)
-        frozen_setattr(self, "inherited_values", inherited_values)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.dictionary == other.dictionary and self.inherited_values == other.inherited_values
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.dictionary, self.inherited_values))
 
 
 def page_clip(media: Rectangle, crop: Rectangle | None = None) -> Rectangle:

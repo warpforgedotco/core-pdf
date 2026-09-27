@@ -11,7 +11,7 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.types import Rectangle
-from core_records import FrozenFields, PickleFields, ReprFields, frozen_setattr
+from core_records import FrozenFields, PickleFields, RecordType, ReprFields, frozen_setattr
 
 if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -21,23 +21,7 @@ if TYPE_CHECKING:
 StreamKey = tuple[str, int, int]
 
 
-class StreamState(FrozenFields, PickleFields, ReprFields):
-    __slots__ = (
-        "graphics_state",
-        "resources",
-        "text_matrix",
-        "line_matrix",
-        "graphics_stack_floor",
-        "graphics_stack_len",
-        "marked_content_stack_len",
-        "xobject_depth",
-        "compatibility_depth",
-        "pending_clip_rule",
-        "initial_alpha_is_shape",
-        "initial_text_knockout",
-        "in_text_object",
-    )
-
+class StreamState(FrozenFields, PickleFields, ReprFields, metaclass=RecordType):
     graphics_state: GraphicsState
     resources: PdfDict
     text_matrix: Matrix
@@ -52,21 +36,6 @@ class StreamState(FrozenFields, PickleFields, ReprFields):
     initial_text_knockout: bool
     in_text_object: bool
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "graphics_state",
-        "resources",
-        "text_matrix",
-        "line_matrix",
-        "graphics_stack_floor",
-        "graphics_stack_len",
-        "marked_content_stack_len",
-        "xobject_depth",
-        "compatibility_depth",
-        "pending_clip_rule",
-        "initial_alpha_is_shape",
-        "initial_text_knockout",
-        "in_text_object",
-    )
     __match_args__ = (
         "graphics_state",
         "resources",
@@ -109,46 +78,6 @@ class StreamState(FrozenFields, PickleFields, ReprFields):
         frozen_setattr(self, "initial_text_knockout", initial_text_knockout)
         frozen_setattr(self, "in_text_object", in_text_object)
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.graphics_state == other.graphics_state
-            and self.resources == other.resources
-            and self.text_matrix == other.text_matrix
-            and self.line_matrix == other.line_matrix
-            and self.graphics_stack_floor == other.graphics_stack_floor
-            and self.graphics_stack_len == other.graphics_stack_len
-            and self.marked_content_stack_len == other.marked_content_stack_len
-            and self.xobject_depth == other.xobject_depth
-            and self.compatibility_depth == other.compatibility_depth
-            and self.pending_clip_rule == other.pending_clip_rule
-            and self.initial_alpha_is_shape == other.initial_alpha_is_shape
-            and self.initial_text_knockout == other.initial_text_knockout
-            and self.in_text_object == other.in_text_object
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.graphics_state,
-                self.resources,
-                self.text_matrix,
-                self.line_matrix,
-                self.graphics_stack_floor,
-                self.graphics_stack_len,
-                self.marked_content_stack_len,
-                self.xobject_depth,
-                self.compatibility_depth,
-                self.pending_clip_rule,
-                self.initial_alpha_is_shape,
-                self.initial_text_knockout,
-                self.in_text_object,
-            )
-        )
-
     def __replace__(self, /, **changes: Any) -> Self:
         graphics_state = changes.pop("graphics_state", self.graphics_state)
         resources = changes.pop("resources", self.resources)
@@ -184,25 +113,7 @@ class StreamState(FrozenFields, PickleFields, ReprFields):
         )
 
 
-class ContentStreamFrame(ReprFields):
-    __slots__ = (
-        "stream",
-        "resources",
-        "ctm",
-        "depth",
-        "clip_bbox",
-        "group_alpha",
-        "group_isolated",
-        "group_knockout",
-        "form_bbox_operand",
-        "form_bbox",
-        "is_form",
-        "source_key",
-        "stream_key",
-        "lexer",
-        "old_state",
-    )
-
+class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
     stream: PdfStream
     resources: PdfDict
     ctm: Matrix
@@ -219,23 +130,6 @@ class ContentStreamFrame(ReprFields):
     lexer: PdfLexer | None
     old_state: StreamState | None
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "stream",
-        "resources",
-        "ctm",
-        "depth",
-        "clip_bbox",
-        "group_alpha",
-        "group_isolated",
-        "group_knockout",
-        "form_bbox_operand",
-        "form_bbox",
-        "is_form",
-        "source_key",
-        "stream_key",
-        "lexer",
-        "old_state",
-    )
     __match_args__ = ("stream", "resources", "ctm", "depth", "clip_bbox", "group_alpha")
 
     def __init__(
@@ -270,29 +164,6 @@ class ContentStreamFrame(ReprFields):
         self.stream_key = stream_key
         self.lexer = None
         self.old_state = None
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.stream == other.stream
-            and self.resources == other.resources
-            and self.ctm == other.ctm
-            and self.depth == other.depth
-            and self.clip_bbox == other.clip_bbox
-            and self.group_alpha == other.group_alpha
-            and self.group_isolated == other.group_isolated
-            and self.group_knockout == other.group_knockout
-            and self.form_bbox_operand == other.form_bbox_operand
-            and self.form_bbox == other.form_bbox
-            and self.is_form == other.is_form
-            and self.source_key == other.source_key
-            and self.stream_key == other.stream_key
-            and self.lexer == other.lexer
-            and self.old_state == other.old_state
-        )
 
     __hash__ = None  # type: ignore[assignment]
 
