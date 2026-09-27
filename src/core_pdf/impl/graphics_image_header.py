@@ -2,145 +2,61 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf.impl.graphics_color_spec import ColorSpace, parse_color_space
 from core_pdf.impl.pdf_names import lenient_int
-from core_pdf.impl.types import Record, frozen_setattr
 
 
-class ColorSpaceMemo:
-    __slots__ = ("error", "parsed", "value")
-
-    def __init__(self, value: object, parsed: ColorSpace | None = None) -> None:
-        self.value = value
-        self.parsed = parsed
-        self.error: Exception | None = None
-
-    def space(self) -> ColorSpace:
-        parsed = self.parsed
-        if parsed is not None:
-            return parsed
-        if self.error is not None:
-            raise self.error
-        try:
-            parsed = self.parsed = parse_color_space(self.value)
-        except Exception as error:
-            self.error = error
-            raise
-        return parsed
-
-
-class ImageHeader(Record):
+class ImageHeader:
     __slots__ = (
         "width",
         "height",
+        "declared_bits",
         "bits",
         "color_space",
         "decode",
         "mask",
-        "smask",
         "filter",
         "parsed_space",
+        "space_error",
     )
 
-    width: int
-    height: int
-    bits: int
-    color_space: object
-    decode: object
-    mask: object
-    smask: object
-    filter: object
-    parsed_space: ColorSpaceMemo
+    def __init__(self, dictionary: dict[Any, Any]) -> None:
+        self.width = lenient_int(dictionary.get("Width"), 0)
+        self.height = lenient_int(dictionary.get("Height"), 0)
+        declared_bits = lenient_int(dictionary.get("BitsPerComponent", 8), None)
+        self.declared_bits = declared_bits
+        self.bits = 8 if declared_bits is None else declared_bits
+        self.color_space = dictionary.get("ColorSpace")
+        self.decode = dictionary.get("Decode")
+        self.mask = dictionary.get("Mask")
+        self.filter = dictionary.get("Filter")
+        self.parsed_space: ColorSpace | None = None
+        self.space_error: Exception | None = None
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "width",
-        "height",
-        "bits",
-        "color_space",
-        "decode",
-        "mask",
-        "smask",
-        "filter",
-        "parsed_space",
-    )
-    __match_args__ = (
-        "width",
-        "height",
-        "bits",
-        "color_space",
-        "decode",
-        "mask",
-        "smask",
-        "filter",
-        "parsed_space",
-    )
-
-    def __init__(
-        self,
-        width: int,
-        height: int,
-        bits: int,
-        color_space: object,
-        decode: object,
-        mask: object,
-        smask: object,
-        filter: object,  # noqa: A002
-        parsed_space: ColorSpaceMemo,
-    ) -> None:
-        frozen_setattr(self, "width", width)
-        frozen_setattr(self, "height", height)
-        frozen_setattr(self, "bits", bits)
-        frozen_setattr(self, "color_space", color_space)
-        frozen_setattr(self, "decode", decode)
-        frozen_setattr(self, "mask", mask)
-        frozen_setattr(self, "smask", smask)
-        frozen_setattr(self, "filter", filter)
-        frozen_setattr(self, "parsed_space", parsed_space)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.width == other.width
-            and self.height == other.height
-            and self.bits == other.bits
-            and self.color_space == other.color_space
-            and self.decode == other.decode
-            and self.mask == other.mask
-            and self.smask == other.smask
-            and self.filter == other.filter
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.width, self.height, self.bits))
+    def checked_bits(self) -> int:
+        bits = self.declared_bits
+        if bits is None or bits <= 0:
+            raise ValueError("invalid image bits-per-component")
+        return bits
 
     def space(self) -> ColorSpace:
-        return self.parsed_space.space()
+        parsed = self.parsed_space
+        if parsed is not None:
+            return parsed
+        if self.space_error is not None:
+            raise self.space_error
+        try:
+            parsed = self.parsed_space = parse_color_space(self.color_space)
+        except Exception as error:
+            self.space_error = error
+            raise
+        return parsed
 
     @property
     def has_color_key_mask(self) -> bool:
         return isinstance(self.mask, (list, tuple))
 
 
-def read_image_header(
-    dictionary: dict[Any, Any], *, space: ColorSpace | None = None
-) -> ImageHeader:
-    color_space = dictionary.get("ColorSpace")
-    return ImageHeader(
-        lenient_int(dictionary.get("Width"), 0),
-        lenient_int(dictionary.get("Height"), 0),
-        lenient_int(dictionary.get("BitsPerComponent"), 8),
-        color_space,
-        dictionary.get("Decode"),
-        dictionary.get("Mask"),
-        dictionary.get("SMask"),
-        dictionary.get("Filter"),
-        ColorSpaceMemo(color_space, space),
-    )
-
-
-__all__ = ("ColorSpaceMemo", "ImageHeader", "read_image_header")
+__all__ = ("ImageHeader",)

@@ -89,15 +89,6 @@ def describe_color_space(value: object) -> str | None:
         return ":".join((*prefixes, kind))
 
 
-def recover_image_bits_per_component(image_dict: object) -> int:
-    dictionary = image_dict if isinstance(image_dict, dict) else {}
-    raw = dictionary.get("BitsPerComponent", 8)
-    value = lenient_int(raw, None)
-    if value is None or value <= 0:
-        raise ValueError("invalid image bits-per-component")
-    return value
-
-
 def raw_color_space_paints(value: object) -> bool:
     seen: set[int] = set()
     while isinstance(value, (list, tuple)) and value:

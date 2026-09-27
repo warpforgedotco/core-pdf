@@ -12,14 +12,12 @@ from core_pdf.impl.graphics_color_spec import (
     GRAY_RGB_KINDS,
     ColorSpace,
     parse_color_space,
-    recover_image_bits_per_component,
 )
-from core_pdf.impl.graphics_image_header import ImageHeader, read_image_header
+from core_pdf.impl.graphics_image_header import ImageHeader
 from core_pdf.impl.graphics_image_samples import (
     convert_components,
     convert_integer_image,
 )
-from core_pdf.impl.pdf_names import lenient_int
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 ImageDict: TypeAlias = dict[str, object]
@@ -56,9 +54,9 @@ def convert_image_data(
     header: ImageHeader | None = None,
 ) -> ByteBuffer | None:
     if header is None:
-        header = read_image_header(image_dict)
+        header = ImageHeader(image_dict)
     spec = header.space()
-    bits = recover_image_bits_per_component(image_dict)
+    bits = header.checked_bits()
     if bits not in {1, 2, 4, 8, 16} or not spec.component_ranges:
         return None
     fast = simple_device_color_fast_path(raw, spec, header, bits)
@@ -117,7 +115,3 @@ def convert_cmyk(
         uint8_view(raw).reshape(-1, 4).astype(numpy.float64) / 255,
         parse_color_space("DeviceCMYK"),
     ).reshape(-1)
-
-
-def image_dimension(image_dict: ImageDict, key: str) -> int:
-    return lenient_int(image_dict.get(key), 0)

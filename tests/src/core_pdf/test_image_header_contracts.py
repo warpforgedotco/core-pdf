@@ -3,7 +3,7 @@ import zlib
 import pytest
 
 from core_pdf.impl import graphics_image_header
-from core_pdf.impl.graphics_image_header import read_image_header
+from core_pdf.impl.graphics_image_header import ImageHeader
 from core_pdf.impl.graphics_images import decode_pdf_image
 
 
@@ -47,7 +47,7 @@ def test_a_color_space_error_is_raised_again_without_reparsing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = counted_parser(monkeypatch)
-    header = read_image_header({"ColorSpace": ["Indexed", "DeviceRGB", -1, b""]})
+    header = ImageHeader({"ColorSpace": ["Indexed", "DeviceRGB", -1, b""]})
     for ignored in range(2):
         with pytest.raises(ValueError, match="hival"):
             header.space()
@@ -55,7 +55,7 @@ def test_a_color_space_error_is_raised_again_without_reparsing(
 
 
 def test_the_header_reads_dimensions_and_depth_leniently() -> None:
-    header = read_image_header({"Width": "3", "Height": 2.0, "Mask": [0, 1]})
+    header = ImageHeader({"Width": "3", "Height": 2.0, "Mask": [0, 1]})
     assert (header.width, header.height, header.bits) == (3, 0, 8)
     assert header.has_color_key_mask
     assert header.filter is None

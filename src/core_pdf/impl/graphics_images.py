@@ -18,7 +18,7 @@ from core_pdf.impl.graphics_decode_compat import (
     normalize_stream_decode_spec,
 )
 from core_pdf.impl.graphics_filter_registry import FilterDecoder, NativeImageCodec
-from core_pdf.impl.graphics_image_header import ImageHeader, read_image_header
+from core_pdf.impl.graphics_image_header import ImageHeader
 from core_pdf.impl.graphics_image_samples import (
     convert_integer_image,
     convert_integer_samples,
@@ -212,7 +212,7 @@ class PreparedImage(Record):
 
 
 def decode_mask(source: ImageSource) -> DecodedRaster | None:
-    header = read_image_header(source.dictionary)
+    header = ImageHeader(source.dictionary)
     width = header.width
     height = header.height
     if width <= 0 or height <= 0:
@@ -254,13 +254,12 @@ def decode_soft_mask(source: ImageSource, soft_mask: SoftMask) -> ImageRaster | 
 
 
 def decode_matte(
-    source: ImageSource, soft_mask: SoftMask
+    source: ImageSource, soft_mask: SoftMask, source_header: ImageHeader
 ) -> tuple[tuple[float, ...], numpy.ndarray[Any, Any]]:
     dictionary = soft_mask.dictionary
-    header = read_image_header(dictionary)
+    header = ImageHeader(dictionary)
     width = header.width
     height = header.height
-    source_header = read_image_header(source.dictionary)
     if (width, height) != (source_header.width, source_header.height):
         raise ValueError("image matte requires matching soft mask dimensions")
     decoded = decode_image_samples(soft_mask.raw, dictionary, size=(width, height), header=header)
@@ -434,7 +433,7 @@ def decode_image_samples(
     header: ImageHeader | None = None,
 ) -> bytes | memoryview | DecodedImage | None:
     if header is None:
-        header = read_image_header(dictionary)
+        header = ImageHeader(dictionary)
     if size is None:
         width = header.width
         height = header.height
@@ -490,7 +489,7 @@ def decode_pdf_image(
     with suppress(ValueError):
         rendering = image_color_rendering(dictionary, rendering)
     if header is None:
-        header = read_image_header(dictionary)
+        header = ImageHeader(dictionary)
     width = header.width
     height = header.height
     if width <= 0 or height <= 0:
@@ -575,14 +574,14 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
     if soft_mask_source is not None:
         dictionary = dict(dictionary)
         dictionary.pop("Mask", None)
-    header = read_image_header(dictionary)
+    header = ImageHeader(dictionary)
     if soft_mask_source is not None:
         filters = header.filter if isinstance(header.filter, (list, tuple)) else (header.filter,)
         if soft_mask_source.dictionary.get("Matte") is not None and (
             header.bits == 16 or "JPXDecode" in filters
         ):
             try:
-                matte, alpha = decode_matte(source, soft_mask_source)
+                matte, alpha = decode_matte(source, soft_mask_source, header)
             except TypeError, ValueError:
                 return None
     decoded = (

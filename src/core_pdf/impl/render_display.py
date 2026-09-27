@@ -7,7 +7,6 @@ from typing import Any, ClassVar, Self
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl.geometry import finite_rect, rect_tuple, union_bbox
 from core_pdf.impl.glyphs import GlyphStyle
-from core_pdf.impl.graphics_color import image_dimension
 from core_pdf.impl.graphics_color_spec import describe_color_space
 from core_pdf.impl.graphics_filter_registry import declared_filter_names
 from core_pdf.impl.pdf_names import lenient_int
@@ -35,8 +34,8 @@ def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(dictionary, dict):
         return {}
 
-    width = image_dimension(dictionary, "Width")
-    height = image_dimension(dictionary, "Height")
+    width = lenient_int(dictionary.get("Width"), 0)
+    height = lenient_int(dictionary.get("Height"), 0)
     width = max(0, width)
     height = max(0, height)
     image_mask = dictionary.get("ImageMask") is True
