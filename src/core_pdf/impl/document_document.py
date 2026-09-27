@@ -28,7 +28,6 @@ from typing import (
 import numpy
 
 from core_pdf.impl.caches import DocumentCaches
-from core_pdf.impl.document_contracts import resolve_optional_dict
 from core_pdf.impl.document_metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.document_page import PAGE_INHERITED_KEYS, PdfPage
 from core_pdf.impl.document_page_links import goto_action_destination
@@ -46,7 +45,7 @@ from core_pdf.impl.document_standards import (
     find_pdf_header,
     preserve_historical_version,
 )
-from core_pdf.impl.document_structure import StructureTree
+from core_pdf.impl.document_structure import StructureTree, resolve_optional_dict
 from core_pdf.impl.exceptions import (
     PdfDocumentClosedError,
     PdfEmptySourceError,

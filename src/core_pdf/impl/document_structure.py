@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, TypeAlias, overload
 
-from core_pdf.impl.document_contracts import resolve_optional_dict
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.pdf_values import coerce_value
 from core_pdf.impl.recovery_trees import iter_number_tree_items
@@ -21,9 +20,18 @@ from core_pdf_spec.s_14_structure.roles import StructureRole, resolve_structure_
 from core_pdf_spec.standards import recognized_version
 
 if TYPE_CHECKING:
-    from core_pdf.impl.document_contracts import StructureHost
-    from core_pdf.impl.document_document import PageLookup
+    from core_pdf.impl.document_document import PageLookup, PdfDocument
     from core_pdf.impl.document_page import PdfPage
+    from core_pdf.impl.pdf_values import ReferenceResolver
+
+
+def resolve_optional_dict(
+    resolver: ReferenceResolver, value: object, message: str
+) -> PdfDict | None:
+    resolved = resolver.resolve(value)
+    if resolved is None or isinstance(resolved, dict):
+        return resolved
+    raise ValueError(message)
 
 
 class StructureContentItem:
@@ -106,7 +114,7 @@ class StructureNode:
 
     def __init__(
         self,
-        document: StructureHost,
+        document: PdfDocument[Any],
         props: PdfDict,
         *,
         page_lookup: PageLookup[Any] | None = None,
@@ -155,7 +163,7 @@ class StructureElement(StructureNode):
 
     def __init__(
         self,
-        document: StructureHost,
+        document: PdfDocument[Any],
         props: PdfDict,
         *,
         page_lookup: PageLookup[Any] | None = None,
@@ -347,7 +355,7 @@ class StructureTree(StructureNode):
 
     def __init__(
         self,
-        document: StructureHost,
+        document: PdfDocument[Any],
         props: PdfDict,
         *,
         page_lookup: PageLookup[Any] | None = None,
@@ -497,7 +505,7 @@ StructureChild: TypeAlias = StructureElement | StructureContentItem | StructureC
 
 
 def get_kid_page_index(
-    document: StructureHost,
+    document: PdfDocument[Any],
     page: PdfPage | None,
     kid: PdfDict,
     page_lookup: PageLookup[Any] | None = None,
@@ -517,7 +525,7 @@ def get_kid_page_index(
 def make_kids(
     kid: Any,
     page: PdfPage | None,
-    document: StructureHost,
+    document: PdfDocument[Any],
     depth: int = 0,
     *,
     page_lookup: PageLookup[Any] | None = None,

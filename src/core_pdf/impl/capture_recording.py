@@ -32,7 +32,6 @@ from core_pdf.impl.capture_records import (
 from core_pdf.impl.capture_recovery import CaptureRecovery, iter_content_operations
 from core_pdf.impl.capture_text_runs import RunAccumulator, is_garbage_text
 from core_pdf.impl.capture_tolerant_state import CaptureCaches, RecoveringTextState
-from core_pdf.impl.document_contracts import CaptureDocument
 from core_pdf.impl.fonts_decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts_ligatures import detect_ligature_overrides
 from core_pdf.impl.geometry import intersect_bbox, transform_bbox
@@ -81,6 +80,7 @@ from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture_records import LayoutFormId
+    from core_pdf.impl.document_document import PdfDocument
     from core_pdf.impl.recovery_resolver import ObjectResolver
     from core_pdf_spec.s_07_content.inline_images import InlineImage
 
@@ -387,7 +387,7 @@ class CaptureStreamExecutor(ContentStreamExecutor):
 
 
 class TextState(RecoveringTextState):
-    document: CaptureDocument
+    document: PdfDocument[Any]
     name_resolver: ObjectResolver
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
@@ -423,7 +423,7 @@ class TextState(RecoveringTextState):
 
     def __init__(
         self,
-        document: CaptureDocument,
+        document: PdfDocument[Any],
         hidden_layers: frozenset[str] = frozenset(),
         page_clip: Rectangle | None = None,
         *,

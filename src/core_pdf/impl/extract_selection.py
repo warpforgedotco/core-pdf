@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import suppress
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from core_pdf.impl.document_metadata import plain_pdf_value
 from core_pdf.impl.execution import ExtractionScope
@@ -12,7 +12,7 @@ from core_pdf.impl.extract_pipeline import PageExtraction
 from core_pdf.impl.output_model import SCHEMA_VERSION, Document, Page
 
 if TYPE_CHECKING:
-    from core_pdf.impl.document_contracts import ExtractionDocument
+    from core_pdf.impl.document_document import PdfDocument
     from core_pdf.impl.document_page import PdfPage
     from core_pdf.impl.document_records import RawFormField
     from core_pdf.impl.document_structure import PageStructure
@@ -32,7 +32,7 @@ class ExtractionBuilder(Protocol[Extraction]):
 
 
 def prepare_document_pages[Extraction: PageExtraction](
-    document: ExtractionDocument,
+    document: PdfDocument[Any],
     pages: Sequence[PdfPage],
     build: ExtractionBuilder[Extraction],
 ) -> tuple[Extraction, ...]:
@@ -40,7 +40,7 @@ def prepare_document_pages[Extraction: PageExtraction](
 
 
 def iter_document_pages[Extraction: PageExtraction](
-    document: ExtractionDocument,
+    document: PdfDocument[Any],
     pages: Sequence[PdfPage],
     build: ExtractionBuilder[Extraction],
 ) -> Iterator[Extraction]:
@@ -70,7 +70,7 @@ def iter_document_pages[Extraction: PageExtraction](
 
 
 def assemble_document(
-    document: ExtractionDocument,
+    document: PdfDocument[Any],
     extractions: Iterable[PageExtraction],
     context: ExtractionScope,
 ) -> Document:
@@ -90,7 +90,7 @@ def assemble_document(
 
 
 def extract_document(
-    document: ExtractionDocument, context: ExtractionScope, pages: Sequence[PdfPage]
+    document: PdfDocument[Any], context: ExtractionScope, pages: Sequence[PdfPage]
 ) -> Document:
     extractions = iter_document_pages(document, tuple(pages), PageExtraction)
     return assemble_document(document, extractions, context)

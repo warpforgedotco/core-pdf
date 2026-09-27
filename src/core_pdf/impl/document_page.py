@@ -56,13 +56,13 @@ PAGE_INHERITED_KEYS = (
 
 
 if TYPE_CHECKING:
-    from core_pdf.impl.document_contracts import PageHost
+    from core_pdf.impl.document_document import PdfDocument
     from core_pdf.impl.document_records import RawFormField
     from core_pdf.impl.runs import TextRun
 
 
 class PdfPage:
-    document: PageHost
+    document: PdfDocument[Any]
     page_dict: PdfDict
     page_number: int
     contents: CachedPdfObject | None
@@ -70,7 +70,7 @@ class PdfPage:
 
     def __init__(
         self,
-        document: PageHost,
+        document: PdfDocument[Any],
         page_dict: PdfDict,
         page_number: int,
         *,
