@@ -121,7 +121,7 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         depth = frame.depth
         for name, operands in iter_content_operations(
             frame.lexer,
-            recovery=state.recovery,
+            recovery=state.content_recovery,
             is_operator=self.operator_names(handlers).__contains__,
             path_state=state if applies_paths_natively(handlers, state) else None,
         ):
@@ -216,7 +216,7 @@ class TextState(
             caches=caches,
         )
 
-        self.recovery = CaptureRecovery()
+        self.content_recovery = CaptureRecovery()
         self.scale_cache = None
         self.shared_glyph_paint = None
         self.text_layout = None

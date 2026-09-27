@@ -12,6 +12,7 @@ from core_pdf.impl.document_page_tree import resolve_page_tree_node_type
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.output_model import Document
 from core_pdf.impl.output_model import Page as StructuredPage
+from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat.pypdf import (
     PdfPageObject,
@@ -84,7 +85,7 @@ def _pikepdf_info_metadata(pdf: PdfDocument) -> dict[str, Any]:
                     entry.offset,
                     reference_resolver=pdf.resolver.resolve,
                     decipher=pdf.decipher,
-                    recover_dictionary_structure=False,
+                    mode=RecoveryMode(True, False),
                 )
             except PdfParseError:
                 return {}

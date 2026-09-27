@@ -7,7 +7,7 @@ import pytest
 
 import core_pdf.impl
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.recovery_policy import LENIENT, STRICT, RecoveryMode
+from core_pdf.impl.recovery_policy import LENIENT, STRICT, RecoveryMode, recovery_policy
 from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner
 
 ADDITIONS = {
@@ -89,25 +89,20 @@ def test_recovery_classes_only_override_spec_hooks(cls, spec):
 
 
 def test_recovery_modes_name_their_strictness():
-    assert RecoveryMode.for_document(recovery_enabled=True) is RecoveryMode.TOLERANT
-    assert RecoveryMode.for_document(recovery_enabled=False) is RecoveryMode.STRICT
-    assert RecoveryMode.TOLERANT.malformed is LENIENT
-    assert RecoveryMode.STRICT.malformed is STRICT
+    assert recovery_policy(True) is LENIENT
+    assert recovery_policy(False) is STRICT
+    assert RecoveryMode.TOLERANT.dictionaries
+    assert not RecoveryMode.STRICT.dictionaries
     assert XRefScanner.mode is RecoveryMode.TOLERANT
     assert not StrictXRefScanner.mode.objects
 
 
 @pytest.mark.parametrize("objects", [True, False])
 @pytest.mark.parametrize("dictionary_structure", [True, False])
-def test_lexer_keyword_flags_select_a_mode(objects, dictionary_structure):
-    lexer = PdfLexer(
-        b"<< /A 1 >>",
-        recover_malformed_objects=objects,
-        recover_dictionary_structure=dictionary_structure,
-    )
+def test_lexer_mode_recovers_dictionaries_only_with_both_flags(objects, dictionary_structure):
+    lexer = PdfLexer(b"<< /A 1 >>", mode=RecoveryMode(objects, dictionary_structure))
     try:
-        assert lexer.mode == RecoveryMode.for_objects(objects, dictionary_structure)
-        assert lexer.mode.objects is objects
-        assert lexer.mode.dictionary_structure is dictionary_structure
+        assert lexer.mode == RecoveryMode(objects, dictionary_structure)
+        assert lexer.mode.dictionaries is (objects and dictionary_structure)
     finally:
         lexer.close()

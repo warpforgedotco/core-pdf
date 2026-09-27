@@ -161,7 +161,7 @@ class PdfminerTextState(TextState):
 def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
     state = PdfminerTextState(page.document, page_clip=page.effective_page_clip())
     state.lexer_factory = PdfminerContentLexer
-    state.recovery = PdfminerRecovery()
+    state.content_recovery = PdfminerRecovery()
     page.consume_contents(state)
     state.run_accumulator.flush()
     return CapturedProgram(

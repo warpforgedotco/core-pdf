@@ -36,7 +36,7 @@ from core_pdf.impl.output_model import Document as StructuredDocument
 from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.raw_media import ImageRecord
-from core_pdf.impl.recovery_policy import Recovery, RecoveryMode
+from core_pdf.impl.recovery_policy import Recovery, recovery_policy
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_text_strings import parse_text_string
 from core_pdf.impl.recovery_trees import iter_number_tree_items
@@ -228,7 +228,7 @@ class PdfDocument(
 
     @property
     def recovery(self) -> Recovery:
-        return RecoveryMode.for_document(self.recovery_enabled).malformed
+        return recovery_policy(self.recovery_enabled)
 
     def malformed(self, message: str) -> None:
         self.recovery.malformed(message)

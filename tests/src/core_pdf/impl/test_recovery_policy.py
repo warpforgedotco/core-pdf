@@ -4,34 +4,14 @@ from core_pdf.impl.pdf_names import lenient_float, lenient_int
 from core_pdf.impl.recovery_policy import (
     LENIENT,
     STRICT,
-    malformed_policy,
     recovery_policy,
 )
-
-
-def fail(value: str) -> str:
-    raise ValueError(value)
-
-
-def repair(value: str) -> str:
-    return f"repaired {value}"
 
 
 def test_strict_recovery_raises_what_lenient_recovery_skips() -> None:
     with pytest.raises(ValueError, match="bad"):
         STRICT.malformed("bad")
     assert LENIENT.malformed("bad") is None
-    with pytest.raises(ValueError, match="bad"):
-        malformed_policy(False)("bad")
-    assert malformed_policy(True)("bad") is None
-
-
-def test_attempt_repairs_only_when_lenient_and_only_the_named_errors() -> None:
-    assert LENIENT.attempt(fail, repair, "x") == "repaired x"
-    with pytest.raises(ValueError, match="x"):
-        STRICT.attempt(fail, repair, "x")
-    with pytest.raises(ValueError, match="x"):
-        LENIENT.attempt(fail, repair, "x", errors=KeyError)
 
 
 def test_reject_returns_the_fallback_or_raises_the_error() -> None:

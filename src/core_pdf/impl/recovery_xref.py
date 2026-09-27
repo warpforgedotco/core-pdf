@@ -900,4 +900,4 @@ def iter_indirect_object_headers(
 
 
 class StrictXRefScanner(XRefScanner):
-    mode: ClassVar[RecoveryMode] = RecoveryMode.for_objects(False, True)
+    mode: ClassVar[RecoveryMode] = RecoveryMode(False, True)

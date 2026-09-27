@@ -12,7 +12,6 @@ from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.graphics_color_spec import parse_color_space
 from core_pdf.impl.graphics_functions import compile_pdf_function
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.recovery_policy import LENIENT
 from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import ContentSink
@@ -129,7 +128,7 @@ class CaptureCaches:
 
 
 class RecoveringTextState(ContentInterpreter):
-    recovery: CaptureRecovery
+    content_recovery: CaptureRecovery
     normalized_colors: BoundedDict[tuple[ColorSpace, tuple[object, ...]], tuple[float, ...]]
     caches: CaptureCaches
 
@@ -317,8 +316,8 @@ class RecoveringTextState(ContentInterpreter):
             self.normalized_colors.put(cache_key, normalized)
         return normalized
 
-    def reject[T](self, error: Exception, context: str, fallback: T) -> T:
-        return LENIENT.reject(error, context, fallback)
+    def reject[T](self, error: Exception, context: str, fallback: T) -> T:  # noqa: ARG002
+        return fallback
 
     def matrix_fallback(self, value: object, context: str) -> Matrix | None:
         if context == "form" and isinstance(value, (list, tuple)) and len(value) > 6:

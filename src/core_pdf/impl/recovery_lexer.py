@@ -126,11 +126,9 @@ class PdfLexer(SyntaxLexer):
         *,
         reference_resolver: Callable[[PdfReference], object] | None = None,
         decipher: Decipher | None = None,
-        recover_malformed_objects: bool = True,
-        recover_dictionary_structure: bool = True,
         stream_decoder: StreamDecoder | None = None,
         semantic_context: SemanticContext | None = None,
-        mode: RecoveryMode | None = None,
+        mode: RecoveryMode = RecoveryMode.TOLERANT,
     ) -> None:
         self.scanner: ObjectScanner | None = None
         self.scanner_rules: LexicalRules | None = None
@@ -142,11 +140,7 @@ class PdfLexer(SyntaxLexer):
             stream_decoder=decode_stream_data if stream_decoder is None else stream_decoder,
             semantic_context=semantic_context,
         )
-        self.mode = (
-            RecoveryMode.for_objects(recover_malformed_objects, recover_dictionary_structure)
-            if mode is None
-            else mode
-        )
+        self.mode = mode
 
     def close(self) -> None:
         if self.scanner is not None:
@@ -293,14 +287,12 @@ class PdfLexer(SyntaxLexer):
         length = super().dictionary_end_length(pos)
         if length:
             return length
-        mode = self.mode
-        if not (mode.objects and mode.dictionary_structure):
+        if not self.mode.dictionaries:
             return length
         return 1 if self.raw_data[pos] == 62 and pos + 1 >= self.data_len else 0
 
     def handle_dictionary_key_error(self) -> bool:
-        mode = self.mode
-        if not (mode.objects and mode.dictionary_structure):
+        if not self.mode.dictionaries:
             return False
         data = self.raw_data
         pos = self.pos
@@ -320,8 +312,7 @@ class PdfLexer(SyntaxLexer):
 
     def handle_dictionary_entry_error(self, value_start: int) -> bool:
         self.pos = value_start
-        mode = self.mode
-        if not (mode.objects and mode.dictionary_structure):
+        if not self.mode.dictionaries:
             return False
         data = self.raw_data
         pos = value_start
