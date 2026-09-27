@@ -85,6 +85,16 @@ EXTRACT_SAMPLES = (
     ),
 )
 
+COLD_SAMPLES = (
+    Sample(
+        "SCORE-Bench/src/NASA-SNA-8-D-027III-Rev2-CsmLmSpacecraftOperationalDataBook-"
+        "Volume3-MassProperties-Pg54.pdf",
+        "cmaps",
+        310,
+        "open plus first extraction; 29 distinct 52 KB ToUnicode CMaps, parsed once per document",
+    ),
+)
+
 SLICE_PAGES = 3
 SLICE_SAMPLES = (
     Sample(

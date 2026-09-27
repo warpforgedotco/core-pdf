@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import re
 from binascii import unhexlify
+from collections.abc import Iterable
 
 from core_adobe_fonts.cmap import decoder, tokenizer
 from core_adobe_fonts.cmap.decoder import CMapResourceResolver
 from core_adobe_fonts.cmap.ranges import ranges_overlap, validate_codespace_range
 from core_adobe_fonts.cmap.resources import resolve_cmap_resource
 from core_adobe_fonts.cmap.tokenizer import CMapBlock, CMapToken, iter_cmap_tokens
+from core_pdf_cythonized import scan_to_unicode_cmap
 from core_pdf_spec.s_07_syntax_primitives.scanning import read_literal_string
 from core_pdf_spec.s_09_fonts import cmap_tounicode
 from core_pdf_spec.s_09_fonts.cmap_tounicode import (
@@ -369,13 +371,14 @@ def decode_utf16be_text(data: bytes) -> str:
         return buffer.decode("utf-16-be", "replace")
 
 
-def parse_codespace_ranges(program: CMapProgram) -> tuple[tuple[bytes, bytes], ...]:
+def parse_codespace_ranges(
+    blocks: Iterable[list[bytes]],
+) -> tuple[tuple[bytes, bytes], ...]:
     code_space_ranges: list[tuple[bytes, bytes]] = []
     saw_codespace_block = False
     valid_range_count = 0
-    for block in program.blocks(b"begincodespacerange", b"endcodespacerange"):
+    for tokens in blocks:
         saw_codespace_block = True
-        tokens = block.token_values()
         if len(tokens) % 2 != 0:
             tokens = tokens[:-1]
         for i in range(0, len(tokens), 2):
@@ -576,21 +579,41 @@ class ToUnicodeCMap(cmap_tounicode.ToUnicodeCMap):
 
 
 def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
-    mappings: dict[bytes, str] = {}
-    program = CMapProgram.parse(data)
+    scanned = scan_to_unicode_cmap(data if type(data) is bytes else bytes(data))
+    if scanned is None:
+        return parse_to_unicode_program(CMapProgram.parse(data))
+    mappings, codespace_blocks, usecmap_name = scanned
+    return to_unicode_cmap(mappings, codespace_blocks, usecmap_name)
 
+
+def parse_to_unicode_program(program: CMapProgram) -> ParsedToUnicodeCMap:
+    mappings: dict[bytes, str] = {}
     parse_mapping_blocks(program, mappings)
+    return to_unicode_cmap(
+        mappings,
+        (
+            block.token_values()
+            for block in program.blocks(b"begincodespacerange", b"endcodespacerange")
+        ),
+        cmap_metadata(program)[0],
+    )
+
+
+def to_unicode_cmap(
+    mappings: dict[bytes, str],
+    codespace_blocks: Iterable[list[bytes]],
+    usecmap_name: str | None,
+) -> ParsedToUnicodeCMap:
     try:
-        code_space_ranges = parse_codespace_ranges(program)
+        code_space_ranges = parse_codespace_ranges(codespace_blocks)
     except ValueError:
         if not mappings:
             raise
         code_space_ranges = ()
-
     return ParsedToUnicodeCMap(
         code_space_ranges=code_space_ranges,
         mappings=mappings,
-        usecmap_name=cmap_metadata(program)[0],
+        usecmap_name=usecmap_name,
     )
 
 

@@ -6,6 +6,7 @@ from pytest_codspeed import BenchmarkFixture
 
 from core_pdf import PdfDocument
 from tests.benchmarks.corpus import (
+    COLD_SAMPLES,
     EXTRACT_SAMPLES,
     OPEN_SAMPLES,
     SLICE_PAGES,
@@ -34,6 +35,11 @@ def open_document(data: bytes) -> int:
         return len(document.pages)
 
 
+def open_and_extract(data: bytes) -> int:
+    with PdfDocument(data) as document:
+        return len(document.pages[0].extract().blocks)
+
+
 def extract_pages(document: PdfDocument, limit: int) -> int:
     return sum(len(page.extract().blocks) for page in document.pages[:limit])
 
@@ -54,3 +60,8 @@ def test_extract_first_page(benchmark: BenchmarkFixture, sample: Sample) -> None
 def test_extract_page_slice(benchmark: BenchmarkFixture, sample: Sample) -> None:
     with PdfDocument(sample_bytes(sample)) as document:
         assert benchmark(extract_pages, document, SLICE_PAGES) >= 0
+
+
+@pytest.mark.parametrize("sample", COLD_SAMPLES, ids=lambda sample: sample.id)
+def test_extract_first_page_cold(benchmark: BenchmarkFixture, sample: Sample) -> None:
+    assert benchmark(open_and_extract, sample_bytes(sample)) >= 0
