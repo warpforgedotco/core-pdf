@@ -74,7 +74,7 @@ def build_cff_unicode_repair_index(
     if recover_pdf_name(descendant.get("Subtype")) != "CIDFontType0":
         return None
     font_file = recover_font_file(recover_descriptor(descendant.get("FontDescriptor")), "FontFile3")
-    if font_file is None or len(font_file.data) > 750_000:
+    if font_file is None or font_program.source_size > 750_000:
         return None
     mapping = single_code_mapping(to_unicode, cmap)
     if not any(is_repairable_to_unicode_label(value) for _, value in mapping.values()):

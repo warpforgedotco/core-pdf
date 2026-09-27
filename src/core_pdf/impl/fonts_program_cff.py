@@ -57,7 +57,11 @@ def cff_font_matrix(
 
 
 class CFFFont(font.CFFFont, GlyphProgram):
-    __slots__ = ()
+    __slots__ = ("source_size",)
+
+    def __init__(self, data: bytes | memoryview | None, *, source_size: int | None = None) -> None:
+        super().__init__(data)
+        self.source_size = len(self.data) if source_size is None else source_size
 
     def read_header(self) -> int:
         if len(self.data) < 4 or self.data[0] != 1:

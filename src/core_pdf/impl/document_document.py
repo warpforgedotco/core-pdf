@@ -7,6 +7,7 @@ import mmap
 import struct
 import threading
 from array import array
+from bisect import bisect_right
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import AbstractContextManager
 from functools import partial
@@ -107,6 +108,39 @@ from core_pdf_spec.standards import DocumentStandards, PdfVersion, SemanticConte
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_fallback import RasterFontProviderLike
     from core_pdf_spec.s_07_syntax.types import Decipher
+
+
+def regions_containing(
+    data: bytes | mmap.mmap, marker: bytes, starts: Sequence[int], data_len: int
+) -> set[int]:
+    found: set[int] = set()
+    if not starts:
+        return found
+    last = len(starts) - 1
+    position = starts[0]
+    while True:
+        at = data.find(marker, position)
+        if at < 0:
+            return found
+        index = bisect_right(starts, at) - 1
+        end = starts[index + 1] if index < last else data_len
+        if at + len(marker) <= end:
+            found.add(index)
+            position = end
+        else:
+            position = at + 1
+
+
+def xref_stream_candidates(
+    data: bytes | mmap.mmap, starts: Sequence[int], data_len: int
+) -> list[int]:
+    """Indexes of the regions a may_be_xref_stream check would accept, in ascending order."""
+    candidates = regions_containing(data, b"#", starts, data_len)
+    candidates |= regions_containing(data, b"XRef", starts, data_len)
+    candidates |= regions_containing(data, b"/W", starts, data_len) & regions_containing(
+        data, b"/Size", starts, data_len
+    )
+    return sorted(candidates)
 
 
 class FieldResolver(PdfValueResolver, Protocol):
@@ -1806,14 +1840,10 @@ class PdfDocument(Generic[PageT]):
                 if entry.in_use and entry.object_stream is None and 0 <= entry.offset < data_len
             }
         )
-        last = len(starts) - 1
         lexer = PdfLexer(data, semantic_context=self.xref_context)
         try:
-            for index, offset in enumerate(starts):
-                end = starts[index + 1] if index < last else data_len
-                if not self.may_be_xref_stream(data, offset, end):
-                    continue
-                lexer.rewind(offset)
+            for index in xref_stream_candidates(data, starts, data_len):
+                lexer.rewind(starts[index])
                 try:
                     obj = lexer.parse_indirect_object()
                 except Exception:

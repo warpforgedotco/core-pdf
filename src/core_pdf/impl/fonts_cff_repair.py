@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from itertools import chain
 from math import inf
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 
@@ -63,6 +64,30 @@ def feature_from_contours(
     if not contours:
         return EMPTY_FEATURE
 
+    coordinates = numpy.fromiter(
+        chain.from_iterable(chain.from_iterable(contours)), dtype=numpy.float64
+    )
+    if not len(coordinates):
+        return EMPTY_FEATURE
+    if not numpy.isfinite(coordinates).all():
+        return feature_from_points(contours)
+    xs = coordinates[0::2]
+    ys = coordinates[1::2]
+    min_x = float(xs.min())
+    min_y = float(ys.min())
+    width = max(float(xs.max()) - min_x, 1.0)
+    height = max(float(ys.max()) - min_y, 1.0)
+    cell_x = numpy.rint((xs - min_x) / width * 17).astype(numpy.int64)
+    cell_y = numpy.rint((ys - min_y) / height * 23).astype(numpy.int64)
+    keys = numpy.unique((cell_x << 5) | cell_y)
+    cells = tuple(zip((keys >> 5).tolist(), (keys & 31).tolist(), strict=True))
+    bitmap = rasterize_contours(contours, width=18, height=24)
+    return CFFGlyphFeature(cells, round(width / height, 2), len(contours), bitmap)
+
+
+def feature_from_points(
+    contours: tuple[tuple[tuple[float, float], ...], ...] | list[list[tuple[float, float]]],
+) -> CFFGlyphFeature:
     points = [point for contour in contours for point in contour]
     bbox = points_bbox(points)
     if bbox is None:

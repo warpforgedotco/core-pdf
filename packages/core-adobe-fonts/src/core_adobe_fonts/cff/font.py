@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from itertools import islice
 from math import isfinite
+from operator import le
+from struct import unpack
 from typing import NamedTuple
 
 from core_adobe_fonts._vendor.font_data.cff_tables import (
@@ -31,6 +34,9 @@ class CffFontMatrix(NamedTuple):
             self.e * right.a + self.f * right.c + right.e,
             self.e * right.b + self.f * right.d + right.f,
         )
+
+
+INDEX_OFFSET_FORMATS = {1: "B", 2: "H", 4: "I"}
 
 
 STANDARD_GLYPH_SIDS = {name: sid for sid, name in enumerate(CFF_STANDARD_STRINGS)}
@@ -176,19 +182,26 @@ class CFFFont:
         offsets_end = pos + (count + 1) * off_size
         if offsets_end > len(data):
             raise ValueError("invalid CFF INDEX")
-        offsets = [
-            int.from_bytes(data[pos + i * off_size : pos + (i + 1) * off_size], "big")
-            for i in range(count + 1)
-        ]
-        pos = offsets_end
-        if offsets[0] != 1 or any(b < a for a, b in zip(offsets, offsets[1:])):
+        raw = data[pos:offsets_end]
+        if off_size == 3:
+            offsets = [
+                (high << 16) | (middle << 8) | low
+                for high, middle, low in zip(raw[0::3], raw[1::3], raw[2::3], strict=True)
+            ]
+        else:
+            offsets = list(unpack(f">{count + 1}{INDEX_OFFSET_FORMATS[off_size]}", raw))
+        following = islice(offsets, 1, None)
+        if offsets[0] != 1 or not all(map(le, offsets, following, strict=False)):
             raise ValueError("invalid CFF INDEX")
-        base = pos
+        base = offsets_end
         end = base + offsets[-1] - 1
         if end > len(data):
             raise ValueError("invalid CFF INDEX")
+        items = bytes(data[base - 1 : end])
         return (
-            [bytes(data[base + offsets[i] - 1 : base + offsets[i + 1] - 1]) for i in range(count)],
+            list(
+                map(items.__getitem__, map(slice, offsets, islice(offsets, 1, None), strict=False))
+            ),
             end,
         )
 

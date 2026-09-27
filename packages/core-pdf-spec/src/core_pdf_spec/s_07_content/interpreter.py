@@ -108,6 +108,7 @@ class ContentInterpreter:
         self.marked_content_stack: list[MarkedContentEntry] = []
         self.type3_uncolored = False
         self.resources: PdfDict = {}
+        self.color_space_cache: dict[int, tuple[object, ColorSpace]] = {}
         self.operator_overrides: dict[str, OperationHandler] = {}
         self.default_handlers: dict[str, OperationHandler] = {
             name: getattr(self, handler) for name, handler in CONTENT_OPERATOR_HANDLERS.items()
@@ -881,18 +882,32 @@ class ContentInterpreter:
             return self.reject(
                 PdfParseError("color space operand must be a name"), "color-space", DEVICE_GRAY
             )
-        value = (
-            name
-            if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}
-            else self.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
-        )
+        if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}:
+            return self.parse_named_color_space(name, name)
+        raw = self.lookup_page_resource("ColorSpace", name)
+        cache = self.color_space_cache if type(raw) is PdfReference else None
+        if cache is not None:
+            cached = cache.get(id(raw))
+            if cached is not None and cached[0] is raw:
+                return cached[1]
+        value: object = self.resolver.deep_resolve(raw)
         if value is None:
             value = self.reject(PdfParseError("missing color space resource"), "color-space", name)
-        return self.parse_named_color_space(value, name)
+            return self.parse_named_color_space(value, name)
+        try:
+            space = self.parse_color_space_value(value)
+        except ValueError, TypeError:
+            return self.parse_named_color_space(value, name)
+        if cache is not None:
+            cache[id(raw)] = (raw, space)
+        return space
+
+    def parse_color_space_value(self, value: object) -> ColorSpace:
+        return parse_color_space(value)
 
     def parse_named_color_space(self, value: object, name: str) -> ColorSpace:
         try:
-            return parse_color_space(value)
+            return self.parse_color_space_value(value)
         except (ValueError, TypeError) as error:
             return self.reject(parse_error_from(error), "color-space", ColorSpace(name, ()))
 

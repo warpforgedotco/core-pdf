@@ -56,14 +56,14 @@ def cff_font(inputs: FontProgramInputs) -> CFFFont | None:
     subtype = recover_pdf_name(font_file.dictionary.get("Subtype"))
     if inputs.descendant is None and subtype not in {"Type1C", "OpenType"}:
         return None
-    font_data = font_file.data
+    font_data = source = font_file.data
     if subtype == "OpenType":
         cff_table = extract_cff_table(font_data)
         if cff_table is None:
             return None
         font_data = cff_table
     try:
-        return CFFFont(font_data)
+        return CFFFont(font_data, source_size=len(source))
     except ValueError:
         return None
 

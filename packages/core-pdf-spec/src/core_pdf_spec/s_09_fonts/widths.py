@@ -4,7 +4,11 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 from core_adobe_fonts.cmap.decoder import MAX_CID, MIN_CID
-from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_integer, require_pdf_number
+from core_pdf_spec.s_07_syntax_primitives.coercion import (
+    require_pdf_integer,
+    require_pdf_number,
+    require_pdf_numbers,
+)
 from core_pdf_spec.s_09_fonts.dictionaries import (
     font_descriptor,
     get_descendant,
@@ -20,7 +24,7 @@ class CompactCIDWidthMap(Mapping[int, float]):
 
     def __init__(self, start: int, widths: tuple[int | float, ...]) -> None:
         self.start = start
-        self.widths = tuple(float(width) for width in widths)
+        self.widths = tuple(map(float, widths))
 
     def __getitem__(self, key: int) -> float:
         index = key - self.start
@@ -51,9 +55,7 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
     if len(value) == 2 and type(value[0]) is int and isinstance(value[1], (list, tuple)):
         first, entries = value
         if 0 <= first <= MAX_CID and first + len(entries) <= (MAX_CID + 1):
-            return CompactCIDWidthMap(
-                first, tuple(require_pdf_number(entry, "invalid CID width") for entry in entries)
-            )
+            return CompactCIDWidthMap(first, require_pdf_numbers(entries, "invalid CID width"))
     widths: dict[int, float] = {}
     index = 0
     while index < len(value):
@@ -64,8 +66,13 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
         if isinstance(item, (list, tuple)):
             if first + len(item) > (MAX_CID + 1):
                 raise ValueError("invalid CID width range")
-            for offset, width in enumerate(item):
-                widths[first + offset] = require_pdf_number(width, "invalid CID width")
+            widths.update(
+                zip(
+                    range(first, first + len(item)),
+                    require_pdf_numbers(item, "invalid CID width"),
+                    strict=True,
+                )
+            )
             index += 2
         else:
             last = require_pdf_integer(item, "invalid CID width range")

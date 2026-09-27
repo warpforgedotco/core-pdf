@@ -159,8 +159,7 @@ def merge_collinear_segments(
         return sorted_segs.astype(numpy.float32, copy=False)
 
     merged: list[list[float]] = []
-    for values in sorted_segs:
-        current = [float(value) for value in values]
+    for current in sorted_segs.tolist():
         if merged:
             previous = merged[-1]
             if (
