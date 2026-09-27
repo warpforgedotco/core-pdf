@@ -50,7 +50,7 @@ class Point(GeneratedRecord):
     scale: ClassVar[int] = 3
 
 
-class Named(Point):
+class Named(Point, metaclass=RecordType):
     name: str = "n"
 
 
@@ -86,9 +86,14 @@ class Empty(GeneratedRecord):
 
 
 def test_generated_record_is_a_record() -> None:
-    assert Point.__mro__[1:6] == (GeneratedRecord, Record, FrozenFields, PickleFields, ReprFields)
-    assert type(Point) is RecordType
+    assert Point.__mro__[1:6] == (Record, FrozenFields, PickleFields, ReprFields, ReplaceFields)
     assert type(GeneratedRecord) is RecordType
+
+
+def test_generated_records_are_plain_classes() -> None:
+    assert type(Point) is type
+    assert type(Named) is type
+    assert type(Mutable) is type
 
 
 def test_the_generated_surface_matches_the_hand_written_one() -> None:
@@ -261,14 +266,14 @@ def test_mutable_records_assign_and_are_unhashable() -> None:
 def test_a_mutable_record_cannot_extend_a_frozen_one() -> None:
     with pytest.raises(TypeError, match="cannot inherit a frozen"):
 
-        class Thawed(Point, frozen=False):  # ty: ignore[invalid-frozen-dataclass-subclass]
+        class Thawed(Point, metaclass=RecordType, frozen=False):  # ty: ignore[invalid-frozen-dataclass-subclass]
             extra: int = 0
 
 
 def test_a_required_field_cannot_follow_a_default() -> None:
     with pytest.raises(TypeError, match="non-default field 'z'"):
 
-        class Broken(Point):
+        class Broken(Point, metaclass=RecordType):
             z: int  # ty: ignore[dataclass-field-order]
 
 

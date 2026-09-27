@@ -28,7 +28,7 @@ from core_pdf.impl.fonts_widths import recover_descendant
 from core_pdf.impl.glyph_outlines import GlyphOutlineArrays
 from core_pdf.impl.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import RecordType, Rectangle
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
 from core_pdf_spec.standards import SemanticContext
@@ -60,7 +60,7 @@ STRING_GLYPH_CACHE_MAX_BYTES = 8
 STRING_GLYPH_CACHE_MAX_ENTRIES = 8192
 
 
-class DecodedGlyph(DecodedFontGlyph):
+class DecodedGlyph(DecodedFontGlyph, metaclass=RecordType):
     unicode_source: str
     alternates: tuple[str, ...]
     bitmap_code: int

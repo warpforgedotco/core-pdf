@@ -24,6 +24,30 @@ __all__ = (
 
 frozen_setattr = object.__setattr__
 
+RECORD_KEYWORDS = frozenset({"init", "frozen", "eq", "hash"})
+
+
+def plain_keywords(kwargs: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in kwargs.items() if key not in RECORD_KEYWORDS}
+
+
+def specialise_inherited(cls: type, name: str) -> None:
+    if name in cls.__dict__ or not any("__field_specs__" in base.__dict__ for base in cls.__mro__):
+        return
+    if not specialises(cls, name, set()):
+        return
+    fields: tuple[str, ...] = tuple(getattr(cls, "__fields__"))
+    if name == "__repr__":
+        names = getattr(cls, "__repr_fields__", None)
+        fields = fields if names is None else tuple(names)
+    elif name == "__replace__" and not takes_fields_in_order(
+        inherited_attribute(cls, "__init__"), fields
+    ):
+        return
+    method = pending_method(name, fields)
+    method.owner = cls
+    setattr(cls, name, method)
+
 
 class FrozenFields:
     __slots__ = ()
@@ -40,6 +64,10 @@ class PickleFields:
 
     __fields__: ClassVar[tuple[str, ...]]
 
+    def __init_subclass__(cls, /, **kwargs: Any) -> None:
+        super().__init_subclass__(**plain_keywords(kwargs))
+        specialise_inherited(cls, "__getstate__")
+
     def __getstate__(self) -> list[Any]:
         return [getattr(self, name) for name in self.__fields__]
 
@@ -54,6 +82,10 @@ class ReprFields:
     __fields__: ClassVar[tuple[str, ...]]
     __repr_fields__: ClassVar[tuple[str, ...] | None] = None
 
+    def __init_subclass__(cls, /, **kwargs: Any) -> None:
+        super().__init_subclass__(**plain_keywords(kwargs))
+        specialise_inherited(cls, "__repr__")
+
     def __repr__(self) -> str:
         names = self.__repr_fields__ if self.__repr_fields__ is not None else self.__fields__
         fields = ", ".join([f"{name}={getattr(self, name)!r}" for name in names])
@@ -64,6 +96,10 @@ class ReplaceFields:
     __slots__ = ()
 
     __fields__: ClassVar[tuple[str, ...]]
+
+    def __init_subclass__(cls, /, **kwargs: Any) -> None:
+        super().__init_subclass__(**plain_keywords(kwargs))
+        specialise_inherited(cls, "__replace__")
 
     def __replace__(self, /, **changes: Any) -> Self:
         values = [changes.pop(name, getattr(self, name)) for name in self.__fields__]
@@ -374,22 +410,6 @@ def build_init(specs: FieldSpecs, frozen: bool, cls: type) -> FunctionType:
     return function
 
 
-def install_mixin_methods(cls: type, fields: tuple[str, ...], explicit: set[str]) -> None:
-    methods: list[Pending] = []
-    if specialises(cls, "__repr__", explicit):
-        names = getattr(cls, "__repr_fields__", None)
-        methods.append(pending_method("__repr__", fields if names is None else names))
-    if specialises(cls, "__replace__", explicit) and takes_fields_in_order(
-        inherited_attribute(cls, "__init__"), fields
-    ):
-        methods.append(pending_method("__replace__", fields))
-    if specialises(cls, "__getstate__", explicit):
-        methods.append(pending_method("__getstate__", fields))
-    for method in methods:
-        method.owner = cls
-        setattr(cls, method.name, method)
-
-
 @dataclass_transform(frozen_default=True, eq_default=True)
 class RecordType(type):
     def __new__(
@@ -404,14 +424,13 @@ class RecordType(type):
         eq: bool = True,
         hash: bool | None = None,
         **kwargs: Any,
-    ) -> RecordType:
+    ) -> type:
+        if namespace.get("__module__") == __name__ and name == "GeneratedRecord":
+            return super().__new__(mcs, name, bases, namespace, **kwargs)
+        bases = tuple(Record if isinstance(base, RecordType) else base for base in bases)
         own = own_annotations(namespace)
         if not own:
-            cls = super().__new__(mcs, name, bases, namespace, **kwargs)
-            fields = getattr(cls, "__fields__", None)
-            if fields is not None:
-                install_mixin_methods(cls, fields, set(namespace))
-            return cls
+            return type(name, bases, namespace, **kwargs)
         specs = inherited_specs(bases)
         for field, annotation in own.items():
             inherited = specs.get(field, (MISSING, annotation))[0]
@@ -445,9 +464,7 @@ class RecordType(type):
         namespace["__fields__"] = fields
         namespace["__field_specs__"] = specs
         namespace.setdefault("__match_args__", fields)
-        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
-        install_mixin_methods(cls, fields, explicit)
-        return cls
+        return type(name, bases, namespace, **kwargs)
 
 
 class GeneratedRecord(Record, metaclass=RecordType):

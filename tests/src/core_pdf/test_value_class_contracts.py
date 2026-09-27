@@ -13,8 +13,6 @@ from typing import Any, ClassVar, Protocol
 
 import pytest
 
-from core_records import RecordType
-
 
 class ValueClass(Protocol):
     __fields__: ClassVar[tuple[str, ...]]
@@ -154,7 +152,7 @@ def buildable() -> dict[str, type[ValueClass]]:
 
 VALUE_CLASSES = value_classes()
 BUILDABLE = buildable()
-GENERATED = {name: cls for name, cls in VALUE_CLASSES.items() if isinstance(cls, RecordType)}
+GENERATED = {name: cls for name, cls in VALUE_CLASSES.items() if "__field_specs__" in cls.__dict__}
 
 
 def is_frozen(cls: type[ValueClass]) -> bool:

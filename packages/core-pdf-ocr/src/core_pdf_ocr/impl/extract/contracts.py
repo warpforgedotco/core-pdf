@@ -16,7 +16,7 @@ from core_pdf.impl.extract_contracts import (
 from core_pdf.impl.extract_contracts import (
     PageEvidence as NativePageEvidence,
 )
-from core_pdf.impl.types import GeneratedRecord, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, RecordType, frozen_setattr
 
 PSM_AUTO = 3
 PSM_SPARSE_TEXT = 11
@@ -93,7 +93,7 @@ class StrokedVectorTextEvidence(GeneratedRecord):
     candidate_paths: int = 0
 
 
-class PageEvidence(NativePageEvidence):
+class PageEvidence(NativePageEvidence, metaclass=RecordType):
     vector_complexity: int
     image_filters: tuple[str, ...]
     uncovered_vector_area: float | None
