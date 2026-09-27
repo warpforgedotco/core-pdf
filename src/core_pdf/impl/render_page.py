@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from math import isfinite
-from typing import Any, ClassVar, Protocol, Self
+from typing import Any, Protocol, Self
 
 import numpy
 
@@ -30,7 +30,7 @@ from core_pdf.impl.render_model import (
     RenderOptions,
 )
 from core_pdf.impl.render_target import RasterTarget
-from core_pdf.impl.types import ReprFields
+from core_pdf.impl.types import RecordType, ReprFields
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.standards import SemanticContext
 
@@ -72,18 +72,7 @@ def pixel_dimension(length: float, scale: float) -> int:
     return max(1, int(round(pixels)))
 
 
-class RenderedPage(ReprFields):
-    __slots__ = (
-        "page_number",
-        "width",
-        "height",
-        "rotate",
-        "display_list",
-        "metadata",
-        "semantic_context",
-        "user_unit",
-    )
-
+class RenderedPage(ReprFields, metaclass=RecordType, frozen=False):
     page_number: int
     width: float
     height: float
@@ -93,16 +82,6 @@ class RenderedPage(ReprFields):
     semantic_context: SemanticContext | None
     user_unit: float
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "page_number",
-        "width",
-        "height",
-        "rotate",
-        "display_list",
-        "metadata",
-        "semantic_context",
-        "user_unit",
-    )
     __match_args__ = ("page_number", "width", "height", "rotate", "display_list", "metadata")
 
     def __init__(
@@ -125,22 +104,6 @@ class RenderedPage(ReprFields):
         self.metadata = {} if metadata is None else metadata
         self.semantic_context = semantic_context
         self.user_unit = user_unit
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.page_number == other.page_number
-            and self.width == other.width
-            and self.height == other.height
-            and self.rotate == other.rotate
-            and self.display_list == other.display_list
-            and self.metadata == other.metadata
-            and self.semantic_context == other.semantic_context
-            and self.user_unit == other.user_unit
-        )
 
     __hash__ = None  # type: ignore[assignment]
 

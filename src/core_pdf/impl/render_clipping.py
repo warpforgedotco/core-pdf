@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 from collections.abc import Iterable
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy
 
@@ -15,7 +15,7 @@ from core_pdf.impl.render_paths import (
     fill_path_crossing_spans,
     intersect_box,
 )
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 
 PixelSpan = tuple[int, int]
 RowSpans = tuple[PixelSpan, ...]
@@ -25,53 +25,12 @@ RowSpanArrays = tuple[
 EMPTY_CLIP_BOX = (0.0, 0.0, 0.0, 0.0)
 
 
-class ClipRegion(Record):
-    __slots__ = ("box", "pixel_box", "rectangular", "rows", "rows_origin")
-
+class ClipRegion(GeneratedRecord):
     box: tuple[float, float, float, float] | None
     pixel_box: tuple[int, int, int, int] | None
     rectangular: bool
     rows: tuple[RowSpans, ...] | None
-    rows_origin: int
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "box",
-        "pixel_box",
-        "rectangular",
-        "rows",
-        "rows_origin",
-    )
-    __match_args__ = ("box", "pixel_box", "rectangular", "rows", "rows_origin")
-
-    def __init__(
-        self,
-        box: tuple[float, float, float, float] | None,
-        pixel_box: tuple[int, int, int, int] | None,
-        rectangular: bool,
-        rows: tuple[RowSpans, ...] | None,
-        rows_origin: int = 0,
-    ) -> None:
-        frozen_setattr(self, "box", box)
-        frozen_setattr(self, "pixel_box", pixel_box)
-        frozen_setattr(self, "rectangular", rectangular)
-        frozen_setattr(self, "rows", rows)
-        frozen_setattr(self, "rows_origin", rows_origin)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.box == other.box
-            and self.pixel_box == other.pixel_box
-            and self.rectangular == other.rectangular
-            and self.rows == other.rows
-            and self.rows_origin == other.rows_origin
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.box, self.pixel_box, self.rectangular, self.rows, self.rows_origin))
+    rows_origin: int = 0
 
     @property
     def empty(self) -> bool:

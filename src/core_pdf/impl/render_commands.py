@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy
 
@@ -20,7 +20,7 @@ from core_pdf.impl.glyphs import GlyphObservation, Matrix6
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import PathPaintKind
 from core_pdf.impl.runs import TextRun
-from core_pdf.impl.types import Rectangle, ReprFields
+from core_pdf.impl.types import RecordType, Rectangle, ReprFields
 from core_pdf_cythonized import translated_outline_edges
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
@@ -98,23 +98,12 @@ def append_glyph_paint(
     return True
 
 
-class TextObjectState(ReprFields):
-    __slots__ = ("active", "group_open", "group_pending", "clipping_subpaths", "object_id")
-
+class TextObjectState(ReprFields, metaclass=RecordType, frozen=False):
     active: bool
     group_open: bool
     group_pending: bool
     clipping_subpaths: list[CapturedSubpath]
     object_id: int | None
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "active",
-        "group_open",
-        "group_pending",
-        "clipping_subpaths",
-        "object_id",
-    )
-    __match_args__ = ("active", "group_open", "group_pending", "clipping_subpaths", "object_id")
 
     def __init__(
         self,
@@ -129,19 +118,6 @@ class TextObjectState(ReprFields):
         self.group_pending = group_pending
         self.clipping_subpaths = [] if clipping_subpaths is None else clipping_subpaths
         self.object_id = object_id
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.active == other.active
-            and self.group_open == other.group_open
-            and self.group_pending == other.group_pending
-            and self.clipping_subpaths == other.clipping_subpaths
-            and self.object_id == other.object_id
-        )
 
     __hash__ = None  # type: ignore[assignment]
 

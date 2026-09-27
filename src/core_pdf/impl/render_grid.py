@@ -4,67 +4,22 @@ from __future__ import annotations
 
 import math
 from math import ceil, floor
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy
 
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 
 type FloatArray = numpy.ndarray[Any, numpy.dtype[numpy.floating[Any]]]
 
 
-class DeviceGrid(Record):
-    __slots__ = ("crop_x0", "crop_y0", "crop_y1", "scale", "width", "height")
-
+class DeviceGrid(GeneratedRecord):
     crop_x0: float
     crop_y0: float
     crop_y1: float
     scale: float
     width: int
     height: int
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "crop_x0",
-        "crop_y0",
-        "crop_y1",
-        "scale",
-        "width",
-        "height",
-    )
-    __match_args__ = ("crop_x0", "crop_y0", "crop_y1", "scale", "width", "height")
-
-    def __init__(
-        self,
-        crop_x0: float,
-        crop_y0: float,
-        crop_y1: float,
-        scale: float,
-        width: int,
-        height: int,
-    ) -> None:
-        frozen_setattr(self, "crop_x0", crop_x0)
-        frozen_setattr(self, "crop_y0", crop_y0)
-        frozen_setattr(self, "crop_y1", crop_y1)
-        frozen_setattr(self, "scale", scale)
-        frozen_setattr(self, "width", width)
-        frozen_setattr(self, "height", height)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.crop_x0 == other.crop_x0
-            and self.crop_y0 == other.crop_y0
-            and self.crop_y1 == other.crop_y1
-            and self.scale == other.scale
-            and self.width == other.width
-            and self.height == other.height
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.crop_x0, self.crop_y0, self.crop_y1, self.scale, self.width, self.height))
 
     def page_box_to_pixels(
         self, x0: float, y0: float, x1: float, y1: float
