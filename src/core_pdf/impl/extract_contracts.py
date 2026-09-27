@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 import numpy
 
 from core_pdf.impl.array_views import make_column, readonly, validate_selection_mask
 from core_pdf.impl.capture_program import PageProgram
+from core_pdf.impl.geometry import interval_overlap, rect_tuple
 from core_pdf.impl.output_model import Table, TextLine
+from core_pdf.impl.runs import TextRun
 from core_pdf.impl.types import Record, frozen_setattr
 
 if TYPE_CHECKING:
@@ -532,6 +534,108 @@ class GlyphEvidence(Record):
         return self.glyph_count / max(1, characters)
 
 
+class RunSelection(Record):
+    __slots__ = (
+        "runs",
+        "native_characters",
+        "visible_native_characters",
+        "suspicious_characters",
+        "text_quality",
+        "all_text_quality",
+        "glyphs",
+        "painted_native_characters",
+        "trusted_hidden_text",
+    )
+
+    runs: tuple[TextRun, ...]
+    native_characters: int
+    visible_native_characters: int
+    suspicious_characters: int
+    text_quality: TextQualityStats
+    all_text_quality: TextQualityStats
+    glyphs: GlyphEvidence
+    painted_native_characters: int
+    trusted_hidden_text: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "runs",
+        "native_characters",
+        "visible_native_characters",
+        "suspicious_characters",
+        "text_quality",
+        "all_text_quality",
+        "glyphs",
+        "painted_native_characters",
+        "trusted_hidden_text",
+    )
+    __match_args__ = (
+        "runs",
+        "native_characters",
+        "visible_native_characters",
+        "suspicious_characters",
+        "text_quality",
+        "all_text_quality",
+        "glyphs",
+        "painted_native_characters",
+        "trusted_hidden_text",
+    )
+
+    def __init__(
+        self,
+        runs: tuple[TextRun, ...],
+        *,
+        native_characters: int,
+        visible_native_characters: int,
+        suspicious_characters: int,
+        text_quality: TextQualityStats,
+        all_text_quality: TextQualityStats,
+        glyphs: GlyphEvidence,
+        painted_native_characters: int,
+        trusted_hidden_text: bool,
+    ) -> None:
+        frozen_setattr(self, "runs", runs)
+        frozen_setattr(self, "native_characters", native_characters)
+        frozen_setattr(self, "visible_native_characters", visible_native_characters)
+        frozen_setattr(self, "suspicious_characters", suspicious_characters)
+        frozen_setattr(self, "text_quality", text_quality)
+        frozen_setattr(self, "all_text_quality", all_text_quality)
+        frozen_setattr(self, "glyphs", glyphs)
+        frozen_setattr(self, "painted_native_characters", painted_native_characters)
+        frozen_setattr(self, "trusted_hidden_text", trusted_hidden_text)
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.runs == other.runs
+            and self.native_characters == other.native_characters
+            and self.visible_native_characters == other.visible_native_characters
+            and self.suspicious_characters == other.suspicious_characters
+            and self.text_quality == other.text_quality
+            and self.all_text_quality == other.all_text_quality
+            and self.glyphs == other.glyphs
+            and self.painted_native_characters == other.painted_native_characters
+            and self.trusted_hidden_text == other.trusted_hidden_text
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.runs,
+                self.native_characters,
+                self.visible_native_characters,
+                self.suspicious_characters,
+                self.text_quality,
+                self.all_text_quality,
+                self.glyphs,
+                self.painted_native_characters,
+                self.trusted_hidden_text,
+            )
+        )
+
+
 class PageEvidence(Record):
     __slots__ = (
         "page_area",
@@ -677,6 +781,92 @@ class PageEvidence(Record):
                 self.trusted_hidden_text,
             )
         )
+
+    @classmethod
+    def measure(
+        cls,
+        page_width: float,
+        page_height: float,
+        observations: ObservationBatch,
+        program: PageProgram,
+        selection: RunSelection,
+    ) -> Self:
+        drawings = program.drawings
+        inline_images = program.inline_images
+        page_area = max(1.0, page_width * page_height)
+        visible = observations.visible
+        boxes = observations.bbox
+        box_areas = numpy.maximum(0.0, boxes[:, 2] - boxes[:, 0])
+        box_heights = numpy.maximum(0.0, boxes[:, 3] - boxes[:, 1])
+        numpy.multiply(box_areas, box_heights, out=box_areas)
+        coverage_areas = numpy.multiply(box_areas, visible)
+        text_coverage = min(
+            1.0,
+            float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
+        )
+        visible_image_areas: list[float] = []
+        visible_image_boxes: list[tuple[float, float, float, float]] = []
+        for drawing in drawings:
+            if drawing.kind != "image":
+                continue
+            box = rect_tuple(drawing.rect)
+            if box is None:
+                continue
+            width = interval_overlap(0.0, page_width, box[0], box[2])
+            height = interval_overlap(0.0, page_height, box[1], box[3])
+            if width > 0.0 and height > 0.0:
+                visible_image_areas.append(width * height)
+                visible_image_boxes.append(
+                    (
+                        max(0.0, box[0]),
+                        max(0.0, box[1]),
+                        min(page_width, box[2]),
+                        min(page_height, box[3]),
+                    )
+                )
+        image_count = len(inline_images) + sum(
+            area >= page_area * 0.001 for area in visible_image_areas
+        )
+        full_page_image = any(
+            width >= page_width * FULL_PAGE_IMAGE_COVERAGE
+            and height >= page_height * FULL_PAGE_IMAGE_COVERAGE
+            for width, height in (
+                (
+                    max(0.0, box[2] - box[0]),
+                    max(0.0, box[3] - box[1]),
+                )
+                for box in visible_image_boxes
+            )
+        )
+        return cls(
+            page_area=page_area,
+            native_characters=selection.native_characters,
+            visible_native_characters=selection.visible_native_characters,
+            suspicious_characters=selection.suspicious_characters,
+            image_count=image_count,
+            image_area_ratio=min(1.0, sum(visible_image_areas) / page_area),
+            image_boxes=tuple(
+                box
+                for box, area in zip(
+                    visible_image_boxes,
+                    visible_image_areas,
+                    strict=True,
+                )
+                if area >= page_area * 0.001
+            ),
+            text_coverage=text_coverage,
+            full_page_image=full_page_image,
+            text_quality=selection.text_quality,
+            all_text_quality=selection.all_text_quality,
+            glyphs=selection.glyphs,
+            painted_native_characters=selection.painted_native_characters,
+            trusted_hidden_text=selection.trusted_hidden_text,
+        )
+
+    def extended[Evidence: PageEvidence](self, cls: type[Evidence], **extra: Any) -> Evidence:
+        values = {name: getattr(self, name) for name in self.__fields__}
+        values.update(extra)
+        return cls(**values)
 
     @property
     def suspicious_ratio(self) -> float:
@@ -845,6 +1035,11 @@ class PageAnalysis(Record):
                 self.evidence,
             )
         )
+
+    def extended[Analysis: PageAnalysis](self, cls: type[Analysis], **changes: Any) -> Analysis:
+        values = {name: getattr(self, name) for name in self.__fields__}
+        values.update(changes)
+        return cls(**values)
 
 
 class PageFrame(Record):

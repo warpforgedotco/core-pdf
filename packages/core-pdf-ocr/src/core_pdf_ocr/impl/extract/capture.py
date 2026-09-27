@@ -393,8 +393,8 @@ def enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
         for image in program.inline_images
         for filter_name in declared_filter_names(image.dictionary.get("Filter"))
     )
-    evidence = PageEvidence(
-        **{name: getattr(native.evidence, name) for name in native.evidence.__fields__},
+    evidence = native.evidence.extended(
+        PageEvidence,
         vector_complexity=vector_complexity(program.drawings, program.lines),
         image_filters=image_filters,
         uncovered_vector_area=uncovered_vector_area(
@@ -403,17 +403,7 @@ def enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
             page_area=native.evidence.page_area,
         ),
     )
-    captured = PageAnalysis(
-        page=native.page,
-        width=native.width,
-        height=native.height,
-        rotation=native.rotation,
-        fields=native.fields,
-        annotations=native.annotations,
-        program=program,
-        observations=native.observations,
-        evidence=evidence,
-    )
+    captured = native.extended(PageAnalysis, evidence=evidence)
     if not program.runs and requires_high_resolution_vector_ocr(captured):
         decoded = decode_newstroke_drawings(program.drawings)
         if decoded.trusted:

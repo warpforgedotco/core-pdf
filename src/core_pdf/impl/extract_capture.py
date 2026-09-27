@@ -15,19 +15,17 @@ import numpy
 from core_pdf.impl.capture_program import EXTRACTION_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture_records import LayoutFormId
 from core_pdf.impl.extract_contracts import (
-    FULL_PAGE_IMAGE_COVERAGE,
     GlyphEvidence,
     ObservationBatch,
     ObservationSource,
     PageAnalysis,
     PageEvidence,
+    RunSelection,
     TextQualityStats,
 )
 from core_pdf.impl.extract_quality import analyze_text
 from core_pdf.impl.geometry import (
     bbox_union,
-    interval_overlap,
-    rect_tuple,
 )
 from core_pdf.impl.glyphs import (
     GlyphClusterLike,
@@ -460,17 +458,11 @@ def capture_runs(
     return extractable_runs(structured_runs)
 
 
-def capture_from_program(
-    page: Any,
+def select_runs(
+    raw_runs: tuple[TextRun, ...],
     program: PageProgram,
-    *,
-    structure: Any = STRUCTURE_UNSET,
-    fields: tuple[Any, ...] | None = None,
-    annotations: tuple[Any, ...] | None = None,
-    runs: tuple[TextRun, ...] | None = None,
     glyph_evidence: GlyphEvidence | None = None,
-) -> PageAnalysis:
-    raw_runs = runs if runs is not None else capture_runs(page, program, structure)
+) -> RunSelection:
     painted_mask = numpy.fromiter(
         (run.visible for run in raw_runs),
         dtype=numpy.bool_,
@@ -505,64 +497,46 @@ def capture_from_program(
         glyphs=glyph_evidence,
     )
     if trusted_hidden_text:
-        runs = promoted_hidden_runs(raw_runs)
-        visible_native_characters = native_characters
-        visible_text_quality = all_text_quality
-    else:
-        runs = raw_runs
-        visible_native_characters = painted_native_characters
-        visible_text_quality = painted_text_quality
-    observations = observations_from_runs(runs)
-    drawings = program.drawings
-    inline_images = program.inline_images
+        return RunSelection(
+            promoted_hidden_runs(raw_runs),
+            native_characters=native_characters,
+            visible_native_characters=native_characters,
+            suspicious_characters=suspicious_characters,
+            text_quality=all_text_quality,
+            all_text_quality=all_text_quality,
+            glyphs=glyph_evidence,
+            painted_native_characters=painted_native_characters,
+            trusted_hidden_text=True,
+        )
+    return RunSelection(
+        raw_runs,
+        native_characters=native_characters,
+        visible_native_characters=painted_native_characters,
+        suspicious_characters=suspicious_characters,
+        text_quality=painted_text_quality,
+        all_text_quality=all_text_quality,
+        glyphs=glyph_evidence,
+        painted_native_characters=painted_native_characters,
+        trusted_hidden_text=False,
+    )
+
+
+def capture_from_program(
+    page: Any,
+    program: PageProgram,
+    *,
+    structure: Any = STRUCTURE_UNSET,
+    fields: tuple[Any, ...] | None = None,
+    annotations: tuple[Any, ...] | None = None,
+    runs: tuple[TextRun, ...] | None = None,
+    glyph_evidence: GlyphEvidence | None = None,
+) -> PageAnalysis:
+    raw_runs = runs if runs is not None else capture_runs(page, program, structure)
+    selection = select_runs(raw_runs, program, glyph_evidence)
+    observations = observations_from_runs(selection.runs)
     page_width = float(page.width)
     page_height = float(page.height)
     page_rotation = int(getattr(page, "rotation", 0) or 0)
-    page_area = max(1.0, page_width * page_height)
-    visible = observations.visible
-    boxes = observations.bbox
-    box_areas = numpy.maximum(0.0, boxes[:, 2] - boxes[:, 0])
-    box_heights = numpy.maximum(0.0, boxes[:, 3] - boxes[:, 1])
-    numpy.multiply(box_areas, box_heights, out=box_areas)
-    coverage_areas = numpy.multiply(box_areas, visible)
-    text_coverage = min(
-        1.0,
-        float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
-    )
-    visible_image_areas: list[float] = []
-    visible_image_boxes: list[tuple[float, float, float, float]] = []
-    for drawing in drawings:
-        if drawing.kind != "image":
-            continue
-        box = rect_tuple(drawing.rect)
-        if box is None:
-            continue
-        width = interval_overlap(0.0, page_width, box[0], box[2])
-        height = interval_overlap(0.0, page_height, box[1], box[3])
-        if width > 0.0 and height > 0.0:
-            visible_image_areas.append(width * height)
-            visible_image_boxes.append(
-                (
-                    max(0.0, box[0]),
-                    max(0.0, box[1]),
-                    min(page_width, box[2]),
-                    min(page_height, box[3]),
-                )
-            )
-    image_count = len(inline_images) + sum(
-        area >= page_area * 0.001 for area in visible_image_areas
-    )
-    full_page_image = any(
-        width >= page_width * FULL_PAGE_IMAGE_COVERAGE
-        and height >= page_height * FULL_PAGE_IMAGE_COVERAGE
-        for width, height in (
-            (
-                max(0.0, box[2] - box[0]),
-                max(0.0, box[3] - box[1]),
-            )
-            for box in visible_image_boxes
-        )
-    )
     return PageAnalysis(
         page=page,
         width=page_width,
@@ -572,30 +546,7 @@ def capture_from_program(
         annotations=annotations or (),
         program=program,
         observations=observations,
-        evidence=PageEvidence(
-            page_area=page_area,
-            native_characters=native_characters,
-            visible_native_characters=visible_native_characters,
-            suspicious_characters=suspicious_characters,
-            image_count=image_count,
-            image_area_ratio=min(1.0, sum(visible_image_areas) / page_area),
-            image_boxes=tuple(
-                box
-                for box, area in zip(
-                    visible_image_boxes,
-                    visible_image_areas,
-                    strict=True,
-                )
-                if area >= page_area * 0.001
-            ),
-            text_coverage=text_coverage,
-            full_page_image=full_page_image,
-            text_quality=visible_text_quality,
-            all_text_quality=all_text_quality,
-            glyphs=glyph_evidence,
-            painted_native_characters=painted_native_characters,
-            trusted_hidden_text=trusted_hidden_text,
-        ),
+        evidence=PageEvidence.measure(page_width, page_height, observations, program, selection),
     )
 
 
