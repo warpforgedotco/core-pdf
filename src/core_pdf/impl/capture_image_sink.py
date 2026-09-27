@@ -7,30 +7,20 @@ from typing import TYPE_CHECKING
 import numpy
 
 from core_pdf.impl.capture_host import CaptureHost
-from core_pdf.impl.capture_records import (
-    CapturedDrawing,
-    CapturedInlineImage,
-)
+from core_pdf.impl.capture_records import CapturedDrawing, CapturedInlineImage
 from core_pdf.impl.graphics_color_spec import raw_color_space_paints
 from core_pdf.impl.graphics_images import decode_soft_mask
 from core_pdf.impl.graphics_soft_masks import image_overrides_graphics_soft_mask
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import (
-    PdfName,
-)
+from core_pdf.impl.types import PdfName
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf_spec.s_08_graphics.color import color_space_paints
-from core_pdf_spec.s_08_graphics.color_rendering import (
-    DEFAULT_COLOR_RENDERING,
-    ColorRendering,
-)
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
-from core_pdf_spec.s_08_graphics.image_spec import (
-    image_source_from_stream as resolve_image_source,
-)
+from core_pdf_spec.s_08_graphics.image_spec import image_source_from_stream as resolve_image_source
 
 if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.inline_images import InlineImage

@@ -13,16 +13,9 @@ from core_pdf.impl.capture_records import (
     CapturedTextBoundary,
     marker_drawing,
 )
-from core_pdf.impl.geometry import (
-    intersect_bbox,
-    transform_bbox,
-)
-from core_pdf.impl.types import (
-    Rectangle,
-)
-from core_pdf_spec.s_07_content.streams import (
-    ContentStreamFrame,
-)
+from core_pdf.impl.geometry import intersect_bbox, transform_bbox
+from core_pdf.impl.types import Rectangle
+from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 
 if TYPE_CHECKING:
     pass

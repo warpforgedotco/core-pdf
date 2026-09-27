@@ -6,27 +6,16 @@ from dataclasses import dataclass
 from math import hypot
 from typing import TYPE_CHECKING
 
-from core_pdf.impl.capture_glyphs import (
-    GlyphCapture,
-    GlyphPaint,
-    capture_glyphs,
-    glyph_style,
-)
+from core_pdf.impl.capture_glyphs import GlyphCapture, GlyphPaint, capture_glyphs, glyph_style
 from core_pdf.impl.capture_host import CaptureHost
-from core_pdf.impl.capture_records import (
-    CapturedTextBoundary,
-)
-from core_pdf.impl.capture_text_runs import (
-    is_garbage_text,
-)
+from core_pdf.impl.capture_records import CapturedTextBoundary
+from core_pdf.impl.capture_text_runs import is_garbage_text
 from core_pdf.impl.fonts_decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.glyphs import GlyphObservation, GlyphStyle
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.text import normalize_extracted_text
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
-from core_pdf_spec.s_07_content.model import (
-    MarkedContentEntry as SemanticMarkedContentEntry,
-)
+from core_pdf_spec.s_07_content.model import MarkedContentEntry as SemanticMarkedContentEntry
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 

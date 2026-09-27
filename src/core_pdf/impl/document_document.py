@@ -20,19 +20,14 @@ from core_pdf.impl.document_page import PdfPage
 from core_pdf.impl.document_page_tree import MAX_PAGE_TREE_DEPTH, PageTreeRecovery
 from core_pdf.impl.document_security import SecuritySetupMixin, check_security_aliases
 from core_pdf.impl.document_source import DocumentLifecycle, DocumentOperation, load_source
-from core_pdf.impl.document_standards import (
-    discover_profile_claims,
-)
+from core_pdf.impl.document_standards import discover_profile_claims
 from core_pdf.impl.document_structure import StructureTree
 from core_pdf.impl.document_xref_recovery import (
     TRAILER_METADATA_KEYS,
     XRefRecovery,
     object_headers_present,
 )
-from core_pdf.impl.exceptions import (
-    PdfEmptySourceError,
-    PdfParseError,
-)
+from core_pdf.impl.exceptions import PdfEmptySourceError, PdfParseError
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_selection import extract_document
 from core_pdf.impl.fonts_fallback import RasterFontRepository
@@ -44,24 +39,12 @@ from core_pdf.impl.recovery_policy import Recovery, RecoveryMode
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_text_strings import parse_text_string
 from core_pdf.impl.recovery_trees import iter_number_tree_items
-from core_pdf.impl.types import (
-    ImageRecord,
-    PageScoped,
-    PdfName,
-    PdfSource,
-)
+from core_pdf.impl.types import ImageRecord, PageScoped, PdfName, PdfSource
 from core_pdf_spec.s_07_document.document_labels import PageLabelStyle
-from core_pdf_spec.s_07_document.document_labels import (
-    format_page_label as format_spec_page_label,
-)
+from core_pdf_spec.s_07_document.document_labels import format_page_label as format_spec_page_label
 from core_pdf_spec.s_07_document.page import PageNode as PageNode
-from core_pdf_spec.s_07_syntax.types import (
-    Decipher,
-    PdfDict,
-)
-from core_pdf_spec.s_07_syntax.xref import (
-    PdfXRefEntry,
-)
+from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
+from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
 from core_pdf_spec.standards import DocumentStandards, SemanticContext
 
 if TYPE_CHECKING:

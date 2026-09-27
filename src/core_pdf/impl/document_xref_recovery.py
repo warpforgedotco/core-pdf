@@ -24,20 +24,12 @@ from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer, reader_rules_for
 from core_pdf.impl.recovery_resolver import ObjectResolver
-from core_pdf.impl.recovery_xref import (
-    StrictXRefScanner,
-    XRefScanner,
-    iter_indirect_object_headers,
-)
+from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner, iter_indirect_object_headers
 from core_pdf.impl.types import MISSING, PdfReference
 from core_pdf_cythonized import object_headers_match
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, ResolvedObjectCache
-from core_pdf_spec.s_07_syntax.xref import (
-    PdfXRefEntry,
-    iter_xref_revisions,
-    merge_xref_sections,
-)
+from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, iter_xref_revisions, merge_xref_sections
 from core_pdf_spec.standards import SemanticContext
 
 

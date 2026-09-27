@@ -23,10 +23,7 @@ from core_pdf_spec.s_07_content.model import GraphicsState
 from core_pdf_spec.s_07_content.model import ShadingPattern as PdfShadingPattern
 from core_pdf_spec.s_07_content.model import TilingPattern as PdfTilingPattern
 from core_pdf_spec.s_08_graphics.color import color_space_paints
-from core_pdf_spec.s_08_graphics.color_rendering import (
-    ColorRendering,
-    override_color_rendering,
-)
+from core_pdf_spec.s_08_graphics.color_rendering import ColorRendering, override_color_rendering
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
 
 if TYPE_CHECKING:
