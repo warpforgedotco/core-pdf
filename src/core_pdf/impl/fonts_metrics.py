@@ -10,12 +10,13 @@ from core_adobe_fonts.afm.core14 import FONT_DATA as PDF_FONT_DATA
 from core_adobe_fonts.afm.core14 import Core14FontMetrics
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
-from core_pdf.impl.fonts_widths import recover_descendant
+from core_pdf.impl.fonts_widths import parse_font_widths, recover_descendant
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_float_strict,
     parse_int_strict,
     require_pdf_number,
 )
+from core_pdf_spec.s_09_fonts.metrics import glyph_advance_vector as pdf_glyph_advance_vector
 from core_pdf_spec.s_09_fonts.metrics import standard_14_widths as pdf_standard_14_widths
 
 LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
@@ -154,3 +155,98 @@ def font_is_vertical(
         return parse_int_strict(wmode, "invalid font WMode") == 1
     except ValueError:
         return False
+
+
+class FontMetricsModel:
+    __slots__ = (
+        "widths",
+        "default_width",
+        "default_vertical_displacement_y",
+        "default_vertical_origin_y",
+        "vertical_metrics",
+        "is_vertical",
+        "ascent",
+        "descent",
+    )
+
+    widths: Mapping[int, float]
+    default_width: float
+    default_vertical_displacement_y: float
+    default_vertical_origin_y: float
+    vertical_metrics: dict[int, tuple[float, float, float]]
+    is_vertical: bool
+    ascent: float
+    descent: float
+
+    def __init__(
+        self,
+        font: dict[str, Any],
+        subtype: str | None,
+        *,
+        base_encoding: str | None,
+        cmap: CMapDecoder | None,
+        encoding_decode_table: tuple[str, ...],
+        base_font_name: str | None,
+        is_cid_font: bool,
+        is_type3: bool,
+    ) -> None:
+        font_metrics = parse_font_widths(font, subtype)
+        widths = font_metrics.widths
+        default_width = font_metrics.default_width
+        is_vertical = font_is_vertical(font, subtype, base_encoding, base_font_name, cmap)
+        ascent, descent = parse_font_metrics(font, subtype, base_font_name, widths)
+        if is_type3:
+            widths = adjust_type3_widths(font, widths)
+        if not widths and not is_cid_font and not is_type3:
+            builtin = standard_14_widths(base_font_name, encoding_decode_table)
+            if builtin is not None:
+                widths = builtin
+                if font.get("MissingWidth") is None:
+                    default_width = 0.0
+        self.widths = widths
+        self.default_width = default_width
+        self.default_vertical_displacement_y = font_metrics.default_vertical_displacement_y
+        self.default_vertical_origin_y = font_metrics.default_vertical_origin_y
+        self.vertical_metrics = font_metrics.vertical_metrics
+        self.is_vertical = is_vertical
+        self.ascent = ascent
+        self.descent = descent
+
+    def glyph_width(self, code: int) -> float:
+        return self.widths.get(code, self.default_width)
+
+    def vertical_glyph_metric(self, code: int) -> tuple[float, float, float]:
+        metric = self.vertical_metrics.get(code)
+        if metric is None:
+            metric = (
+                self.default_vertical_displacement_y,
+                self.glyph_width(code) / 2.0,
+                self.default_vertical_origin_y,
+            )
+        return metric
+
+    def vertical_glyph_position(self, code: int, *, font_size: float) -> tuple[float, float]:
+        metric = self.vertical_glyph_metric(code)
+        scale = font_size / 1000.0
+        return (-metric[1] * scale, -metric[2] * scale)
+
+    def glyph_advance_vector(
+        self,
+        code: int,
+        *,
+        font_size: float,
+        char_space: float,
+        word_space: float,
+        horizontal_scale: float,
+        encoded_space: bool,
+    ) -> tuple[float, float]:
+        width = self.vertical_glyph_metric(code)[0] if self.is_vertical else self.glyph_width(code)
+        return pdf_glyph_advance_vector(
+            width,
+            vertical=self.is_vertical,
+            font_size=font_size,
+            char_space=char_space,
+            word_space=word_space,
+            horizontal_scale=horizontal_scale,
+            encoded_space=encoded_space,
+        )

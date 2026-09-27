@@ -114,8 +114,8 @@ def test_text_advance_equals_ordered_sum_of_glyph_advances(
     vertical, font_size, horizontal_scale, spacing
 ):
     font = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
-    font.is_vertical = vertical
-    font.vertical_metrics = {65: (-700, 200, 800)}
+    font.metrics.is_vertical = vertical
+    font.metrics.vertical_metrics = {65: (-700, 200, 800)}
     data = b"A B"
     glyphs = font.decode_glyphs(data)
     parameters = {
@@ -270,7 +270,7 @@ def test_a_cff_repair_that_changes_a_mapping_clears_cached_strings() -> None:
             return dict(self.answer)
 
     repairs = Repairs()
-    font.cff_unicode_repair_index = repairs  # ty: ignore[invalid-assignment]
+    font.unicode.cff_unicode_repair_index = repairs  # ty: ignore[invalid-assignment]
     assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x41")] == ["�"]
     assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x41\x00\x42")] == ["�", "B"]
     repairs.answer = {b"\x00\x41": "A"}

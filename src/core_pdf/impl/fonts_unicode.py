@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unicodedata
 from collections import Counter, defaultdict
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from functools import cache
 from typing import Any, ClassVar
 
@@ -12,18 +12,21 @@ from core_adobe_fonts.cmap.ranges import (
     code_in_ranges,
     iter_codespace_range,
 )
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_cff_repair import CFFUnicodeRepairIndex, is_repairable_to_unicode_label
 from core_pdf.impl.fonts_cmap_resources import (
     CID_COLLECTION_UNICODE_OVERRIDES,
     CID_COLLECTION_UNICODE_SOURCES,
     CMapUnicodeSource,
+    predefined_cmap_unicode,
     resolve_cmap_decoder,
     resolve_cmap_resource,
     unicode_candidate_preference,
     unicode_scalar_from_cmap_code,
 )
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
-from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap, unicode_scalar_or_replacement
+from core_pdf.impl.fonts_encoding import FontEncoding
 from core_pdf.impl.fonts_helpers import slot_setter
 from core_pdf.impl.fonts_program_base import GlyphProgram
 from core_pdf.impl.fonts_program_cff import CFFFont
@@ -253,9 +256,6 @@ def resolve_cid_unicode_map(
     return CIDUnicodeMap(registry, ordering, vertical)
 
 
-__all__ = ("CIDUnicodeMap", "resolve_cid_unicode_map")
-
-
 def has_untrusted_unicode_semantics(text: str) -> bool:
     if not text:
         return True
@@ -335,3 +335,273 @@ def replace_unicode_from_glyph_names(
             out = list(text)
         out[index] = mapped
     return text if out is None else "".join(out)
+
+
+def parse_to_unicode(font: dict[str, Any]) -> ToUnicodeCMap | None:
+    to_unicode_obj = font.get("ToUnicode")
+    if not isinstance(to_unicode_obj, PdfStream):
+        return None
+    try:
+        return ToUnicodeCMap(
+            to_unicode_obj.data,
+            usecmap_resolver=resolve_cmap_resource,
+        )
+    except PdfParseError, ValueError:
+        return None
+
+
+def drop_code_entries(cache: dict[Any, Any], codes: Collection[bytes]) -> None:
+    for key in [key for key in cache if key[0] in codes]:
+        del cache[key]
+
+
+NO_CHANGED_CODES: frozenset[bytes] = frozenset()
+
+
+class UnicodeResolver:
+    __slots__ = (
+        "to_unicode",
+        "encoding",
+        "program",
+        "is_cid_font",
+        "is_vertical",
+        "ligature_overrides",
+        "cff_unicode_repair_index",
+        "cff_unicode_repairs",
+        "unicode_choice_cache",
+    )
+
+    to_unicode: ToUnicodeCMap | None
+    encoding: FontEncoding
+    program: GlyphProgram
+    is_cid_font: bool
+    is_vertical: bool
+    ligature_overrides: dict[int, str]
+    cff_unicode_repair_index: CFFUnicodeRepairIndex | None
+    cff_unicode_repairs: dict[bytes, str]
+    unicode_choice_cache: dict[tuple[bytes, int, int | None], UnicodeChoice]
+
+    def __init__(
+        self,
+        to_unicode: ToUnicodeCMap | None,
+        encoding: FontEncoding,
+        program: GlyphProgram,
+        *,
+        is_cid_font: bool,
+        is_vertical: bool,
+        ligature_overrides: dict[int, str],
+        cff_unicode_repair_index: CFFUnicodeRepairIndex | None,
+    ) -> None:
+        self.to_unicode = to_unicode
+        self.encoding = encoding
+        self.program = program
+        self.is_cid_font = is_cid_font
+        self.is_vertical = is_vertical
+        self.ligature_overrides = ligature_overrides
+        self.cff_unicode_repair_index = cff_unicode_repair_index
+        self.cff_unicode_repairs = {}
+        self.unicode_choice_cache = {}
+
+    def observe_codes(self, entries: Iterable[tuple[bytes, int]]) -> Collection[bytes]:
+        repair_index = self.cff_unicode_repair_index
+        if repair_index is None:
+            return NO_CHANGED_CODES
+        to_unicode = self.to_unicode
+        mappings = to_unicode.mappings if to_unicode is not None else {}
+        repairs = repair_index.repairs_for_codes(
+            code_bytes
+            for code_bytes, ignored_cid in entries
+            if (mapped := mappings.get(code_bytes)) is not None
+            and has_invalid_unicode_mapping(mapped)
+        )
+        if not repairs:
+            return NO_CHANGED_CODES
+        current = self.cff_unicode_repairs
+        changed = {code for code, text in repairs.items() if current.get(code) != text}
+        if changed:
+            drop_code_entries(self.unicode_choice_cache, changed)
+            current.update(repairs)
+        return changed
+
+    def unicode_choice_for_code(
+        self, code_bytes: bytes, fallback_code: int, gid: int | None = None
+    ) -> UnicodeChoice:
+        key = (code_bytes, fallback_code, gid)
+        cache = self.unicode_choice_cache
+        choice = cache.get(key)
+        if choice is None:
+            choice = cache[key] = self.resolve_unicode_choice_for_code(
+                code_bytes, fallback_code, gid
+            )
+        return choice
+
+    def resolve_unicode_choice_for_code(
+        self, code_bytes: bytes, fallback_code: int, gid: int | None
+    ) -> UnicodeChoice:
+        alternates: list[str] = []
+        to_unicode_text = None
+        if self.to_unicode is not None:
+            to_unicode_text = self.to_unicode.mappings.get(code_bytes)
+            if to_unicode_text is not None:
+                alternates.append(to_unicode_text)
+
+        if to_unicode_text is not None and not has_invalid_unicode_mapping(to_unicode_text):
+            visual_punctuation = self.visual_punctuation_for_code(
+                to_unicode_text,
+                fallback_code=fallback_code,
+            )
+            if visual_punctuation is not None:
+                return UnicodeChoice(
+                    visual_punctuation,
+                    UnicodeSource.TRUETYPE_GLYPH_SHAPE,
+                    dedupe_alternates(alternates, visual_punctuation),
+                )
+            return UnicodeChoice(
+                to_unicode_text,
+                UnicodeSource.TO_UNICODE,
+                dedupe_alternates(alternates, to_unicode_text),
+            )
+
+        replacement = self.cff_unicode_repairs.get(code_bytes)
+        if replacement is not None:
+            return UnicodeChoice(
+                replacement,
+                UnicodeSource.CFF_GLYPH_REPAIR,
+                dedupe_alternates(alternates, replacement),
+            )
+
+        if gid is not None:
+            tt_text = self.program.unicode_for_gid(gid)
+            if tt_text == to_unicode_text == "\ufffd":
+                return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
+            if tt_text and not has_untrusted_unicode_semantics(tt_text):
+                return UnicodeChoice(
+                    tt_text,
+                    UnicodeSource.TRUETYPE_CMAP,
+                    dedupe_alternates(alternates, tt_text),
+                )
+
+        encoding = self.encoding
+        if fallback_code != 0:
+            predefined_text = predefined_cmap_unicode(encoding.base_encoding, code_bytes)
+            if predefined_text is not None:
+                return UnicodeChoice(
+                    predefined_text,
+                    UnicodeSource.PREDEFINED_CMAP,
+                    dedupe_alternates(alternates, predefined_text),
+                )
+
+        if (
+            not self.is_cid_font
+            and len(code_bytes) == 1
+            and code_bytes[0] not in encoding.differences
+        ):
+            encoding_table = encoding.encoding_decode_table
+            encoding_text = encoding_table[code_bytes[0]]
+            if encoding_text and not has_invalid_unicode_mapping(encoding_text):
+                return UnicodeChoice(
+                    encoding_text,
+                    UnicodeSource.ENCODING,
+                    dedupe_alternates(alternates, encoding_text),
+                )
+
+        registry = encoding.cid_registry
+        ordering = encoding.cid_ordering
+        cid_unicode_map = (
+            resolve_cid_unicode_map(registry, ordering, vertical=self.is_vertical)
+            if registry is not None and ordering is not None
+            else None
+        )
+        if cid_unicode_map is not None:
+            cid_text = cid_unicode_map.get(fallback_code)
+            if cid_text is not None:
+                return UnicodeChoice(
+                    cid_text,
+                    UnicodeSource.CID_COLLECTION,
+                    dedupe_alternates(alternates, cid_text),
+                )
+
+        if to_unicode_text is not None and "\ufffd" in to_unicode_text:
+            return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
+
+        if fallback_code == 0:
+            return UnicodeChoice(
+                "\u0000", UnicodeSource.FALLBACK_NUL, dedupe_alternates(alternates, "\u0000")
+            )
+        text = unicode_scalar_or_replacement(fallback_code)
+        source = UnicodeSource.IDENTITY if text != "\ufffd" else UnicodeSource.REPLACEMENT
+        return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
+
+    def visual_punctuation_for_code(self, text: str, *, fallback_code: int) -> str | None:
+        if len(text) != 1 or not unicodedata.category(text).startswith("M"):
+            return None
+        bbox = self.program.code_bbox(fallback_code)
+        if bbox is None:
+            return None
+        x_min, y_min, x_max, y_max = bbox
+        width = x_max - x_min
+        height = y_max - y_min
+        if width < 450.0 or height <= 0.0 or width / height < 2.5:
+            return None
+        return "–"
+
+    def apply_simple_unicode_overrides(
+        self, choice: UnicodeChoice, code_bytes: bytes
+    ) -> UnicodeChoice:
+        text = choice.text
+        encoding = self.encoding
+        if encoding.glyph_decode_table is not None:
+            glyph_decode_table = encoding.glyph_decode_table
+            if len(code_bytes) == 1:
+                mapped = glyph_decode_table[code_bytes[0]]
+                if not text:
+                    if encoding.glyph_decode_table_authoritative or mapped:
+                        text = mapped
+                elif (
+                    len(text) == 1
+                    and mapped
+                    and text != mapped
+                    and (
+                        choice.source in UNRESOLVED_UNICODE_SOURCES
+                        or should_prefer_glyph_name_mapping(
+                            text,
+                            mapped,
+                            authoritative=encoding.glyph_decode_table_authoritative,
+                        )
+                    )
+                ):
+                    text = mapped
+            else:
+                text = replace_unicode_from_glyph_names(
+                    text,
+                    code_bytes,
+                    glyph_decode_table,
+                    authoritative=encoding.glyph_decode_table_authoritative,
+                    fallback_mapping=choice.source in UNRESOLVED_UNICODE_SOURCES,
+                )
+        if self.ligature_overrides:
+            lo = self.ligature_overrides
+            text = "".join(lo.get(ord(ch), ch) for ch in text)
+        if text == choice.text:
+            return choice
+        return UnicodeChoice(
+            text,
+            UnicodeSource.GLYPH_NAME,
+            dedupe_alternates((choice.text, *choice.alternates), text),
+        )
+
+    def apply_ligature_overrides(self, choice: UnicodeChoice) -> UnicodeChoice:
+        if not self.ligature_overrides:
+            return choice
+        lo = self.ligature_overrides
+        text = "".join(lo.get(ord(ch), ch) for ch in choice.text)
+        if text == choice.text:
+            return choice
+        return UnicodeChoice(
+            text,
+            UnicodeSource.LIGATURE_OVERRIDE,
+            dedupe_alternates((choice.text, *choice.alternates), text),
+        )
+
+
+__all__ = ("CIDUnicodeMap", "UnicodeResolver", "resolve_cid_unicode_map")

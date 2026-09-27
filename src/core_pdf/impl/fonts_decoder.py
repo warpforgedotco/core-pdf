@@ -3,70 +3,38 @@
 from __future__ import annotations
 
 import typing
-import unicodedata
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, ClassVar
 
 from core_adobe_fonts.cmap.ranges import (
     code_in_ranges,
 )
 from core_pdf.impl.caches import BoundedDict
-from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_cff_repair import CFFUnicodeRepairIndex
-from core_pdf.impl.fonts_cmap_resources import (
-    predefined_cmap_unicode,
-    resolve_cmap_decoder,
-    resolve_cmap_resource,
-)
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
-from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap, unicode_scalar_or_replacement
-from core_pdf.impl.fonts_encoding import build_glyph_decode_table
-from core_pdf.impl.fonts_fallback import fallback_glyph_outline
+from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts_encoding import FontEncoding
+from core_pdf.impl.fonts_glyph_geometry import GlyphGeometry
 from core_pdf.impl.fonts_helpers import (
     LEGITIMATE_MULTI_CHAR_GLYPHS,
-    build_decode_table,
-    build_simple_encoding_glyph_names,
-    recover_differences,
     slot_setter,
-    unicode_for_glyph_name,
 )
-from core_pdf.impl.fonts_metrics import (
-    adjust_type3_widths,
-    font_is_vertical,
-    parse_font_metrics,
-    standard_14_widths,
-)
+from core_pdf.impl.fonts_metrics import FontMetricsModel
 from core_pdf.impl.fonts_program import load_glyph_program
 from core_pdf.impl.fonts_program_base import GlyphProgram
-from core_pdf.impl.fonts_program_type1 import parse_type1_font_program_encoding
 from core_pdf.impl.fonts_unicode import (
-    UNRESOLVED_UNICODE_SOURCES,
     UnicodeChoice,
+    UnicodeResolver,
     build_cff_unicode_repair_index,
-    dedupe_alternates,
-    has_invalid_unicode_mapping,
-    has_untrusted_unicode_semantics,
-    replace_unicode_from_glyph_names,
-    resolve_cid_unicode_map,
-    should_prefer_glyph_name_mapping,
+    drop_code_entries,
+    parse_to_unicode,
 )
-from core_pdf.impl.fonts_widths import (
-    parse_font_widths,
-    recover_descendant,
-)
-from core_pdf.impl.glyph_outlines import GlyphOutlineArrays, outline_arrays
+from core_pdf.impl.fonts_widths import recover_descendant
+from core_pdf.impl.glyph_outlines import GlyphOutlineArrays
 from core_pdf.impl.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import (
-    PdfString,
-    Rectangle,
-)
-from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_08_graphics.matrix import Matrix
-from core_pdf_spec.s_09_fonts.helpers import (
-    BASE_ENCODING_GLYPH_NAMES,
-)
-from core_pdf_spec.s_09_fonts.metrics import glyph_advance_vector as pdf_glyph_advance_vector
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
 from core_pdf_spec.standards import SemanticContext
 
@@ -237,119 +205,47 @@ class FontDecoder:
         "font",
         "semantic_context",
         "ligature_overrides",
-        "to_unicode",
-        "cmap",
-        "cid_registry",
-        "cid_ordering",
-        "base_encoding",
-        "differences",
-        "encoding_differences",
-        "simple_encoding_glyph_names",
-        "encoding_decode_table",
+        "raster_font_provider",
         "is_cid_font",
         "is_type3",
-        "byte_decode_table",
-        "widths",
-        "default_width",
-        "default_vertical_displacement_y",
-        "default_vertical_origin_y",
-        "vertical_metrics",
-        "is_vertical",
-        "ascent",
-        "descent",
         "font_name",
-        "glyph_decode_table",
-        "glyph_decode_table_authoritative",
-        "cff_unicode_repair_index",
-        "cff_unicode_repairs",
+        "encoding",
+        "metrics",
+        "unicode",
+        "geometry",
+        "byte_decode_table",
         "simple_glyph_cache",
         "cid_glyph_cache",
-        "font_program",
-        "raster_font_provider",
-        "glyph_bbox_cache",
-        "glyph_outline_array_cache",
-        "glyph_id_cache",
-        "unicode_choice_cache",
         "string_glyph_cache",
+        "glyph_width",
+        "glyph_bbox",
+        "glyph_bitmap",
+        "glyph_outline_arrays",
+        "vertical_glyph_metric",
+        "vertical_glyph_position",
     )
 
     font: dict[str, Any]
     semantic_context: SemanticContext | None
     ligature_overrides: dict[int, str]
-    to_unicode: ToUnicodeCMap | None
-    cmap: CMapDecoder | None
-    cid_registry: str | None
-    cid_ordering: str | None
-    base_encoding: str | None
-    differences: dict[int, str]
-    encoding_differences: dict[int, str]
-    simple_encoding_glyph_names: tuple[str, ...]
-    encoding_decode_table: tuple[str, ...]
+    raster_font_provider: RasterFontProviderLike | None
     is_cid_font: bool
     is_type3: bool
-    byte_decode_table: tuple[str, ...] | None
-    widths: Mapping[int, float]
-    default_width: float
-    default_vertical_displacement_y: float
-    default_vertical_origin_y: float
-    vertical_metrics: dict[int, tuple[float, float, float]]
-    is_vertical: bool
-    ascent: float
-    descent: float
     font_name: str | None
-    glyph_decode_table: tuple[str, ...] | None
-    glyph_decode_table_authoritative: bool
-    cff_unicode_repair_index: CFFUnicodeRepairIndex | None
-    cff_unicode_repairs: dict[bytes, str]
+    encoding: FontEncoding
+    metrics: FontMetricsModel
+    unicode: UnicodeResolver
+    geometry: GlyphGeometry
+    byte_decode_table: tuple[str, ...] | None
     simple_glyph_cache: dict[int, DecodedGlyph]
     cid_glyph_cache: dict[tuple[bytes, int], DecodedGlyph]
-    font_program: GlyphProgram
-    raster_font_provider: RasterFontProviderLike | None
-    glyph_bbox_cache: dict[int, Rectangle | None]
-    glyph_outline_array_cache: dict[tuple[int, int | None, str], GlyphOutlineArrays | None]
-    glyph_id_cache: dict[int, int | None]
-    unicode_choice_cache: dict[tuple[bytes, int, int | None], UnicodeChoice]
     string_glyph_cache: BoundedDict[bytes, tuple[DecodedGlyph, ...]]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "font",
-        "semantic_context",
-        "ligature_overrides",
-        "to_unicode",
-        "cmap",
-        "cid_registry",
-        "cid_ordering",
-        "base_encoding",
-        "differences",
-        "encoding_differences",
-        "simple_encoding_glyph_names",
-        "encoding_decode_table",
-        "is_cid_font",
-        "is_type3",
-        "byte_decode_table",
-        "widths",
-        "default_width",
-        "default_vertical_displacement_y",
-        "default_vertical_origin_y",
-        "vertical_metrics",
-        "is_vertical",
-        "ascent",
-        "descent",
-        "font_name",
-        "glyph_decode_table",
-        "glyph_decode_table_authoritative",
-        "cff_unicode_repair_index",
-        "cff_unicode_repairs",
-        "simple_glyph_cache",
-        "cid_glyph_cache",
-        "font_program",
-        "raster_font_provider",
-        "glyph_bbox_cache",
-        "glyph_outline_array_cache",
-        "glyph_id_cache",
-        "unicode_choice_cache",
-        "string_glyph_cache",
-    )
+    glyph_width: Callable[[int], float]
+    glyph_bbox: Callable[[int], Rectangle | None]
+    glyph_bitmap: Callable[..., tuple[int, ...]]
+    glyph_outline_arrays: Callable[..., GlyphOutlineArrays | None]
+    vertical_glyph_metric: Callable[[int], tuple[float, float, float]]
+    vertical_glyph_position: Callable[..., tuple[float, float]]
 
     def __init__(
         self,
@@ -366,208 +262,154 @@ class FontDecoder:
         self.initialize()
 
     def initialize(self) -> None:
-        self.glyph_bbox_cache = {}
-        self.glyph_outline_array_cache = {}
-        self.glyph_id_cache = {}
-        self.unicode_choice_cache = {}
         font = self.font
         subtype = font.get("Subtype")
         if subtype is not None:
             subtype = recover_pdf_name(subtype)
-
-        self.font_program = load_glyph_program(font)
-
-        to_unicode_obj = font.get("ToUnicode")
-        to_unicode = None
-        if isinstance(to_unicode_obj, PdfStream):
-            try:
-                to_unicode = ToUnicodeCMap(
-                    to_unicode_obj.data,
-                    usecmap_resolver=resolve_cmap_resource,
-                )
-            except PdfParseError, ValueError:
-                to_unicode = None
-
-        (
-            cmap,
-            base_encoding,
-            differences,
-            builtin_encoding,
-            builtin_encoding_authoritative,
-        ) = self.parse_encoding(font)
-        font_metrics = parse_font_widths(font, subtype)
-        widths = font_metrics.widths
-        default_width = font_metrics.default_width
+        program = load_glyph_program(font)
+        to_unicode = parse_to_unicode(font)
         is_cid_font = subtype == "Type0" and recover_descendant(font) is not None
-
-        base_font_name = resolve_base_font_name(font, subtype)
-        is_vertical = font_is_vertical(font, subtype, base_encoding, base_font_name, cmap)
-
-        ascent, descent = parse_font_metrics(font, subtype, base_font_name, widths)
-
         is_type3 = subtype == "Type3"
-        if is_type3:
-            widths = adjust_type3_widths(font, widths)
-
-        simple_encoding_glyph_names = build_simple_encoding_glyph_names(
-            base_encoding if base_encoding in BASE_ENCODING_GLYPH_NAMES else "StandardEncoding",
-            builtin_encoding,
-            differences,
-            authoritative_builtin=builtin_encoding_authoritative,
-            context=self.semantic_context,
+        base_font_name = resolve_base_font_name(font, subtype)
+        encoding = FontEncoding(
+            font,
+            program,
+            is_cid_font=is_cid_font,
+            is_type3=is_type3,
+            base_font_name=base_font_name,
+            semantic_context=self.semantic_context,
         )
-        if builtin_encoding_authoritative:
-            encoding_decode_table = tuple(
-                unicode_for_glyph_name(name) or "" for name in simple_encoding_glyph_names
-            )
-        else:
-            key = base_encoding or ("Type3" if is_type3 else "")
-            encoding_decode_table = build_decode_table(
-                key, differences, context=self.semantic_context
-            )
-
-        byte_decode_table: tuple[str, ...] | None = None
-        if to_unicode is None and not is_cid_font:
-            byte_decode_table = encoding_decode_table
-
-        if not widths and not is_cid_font and not is_type3:
-            builtin = standard_14_widths(base_font_name, encoding_decode_table)
-            if builtin is not None:
-                widths = builtin
-                if font.get("MissingWidth") is None:
-                    default_width = 0.0
-
-        self.to_unicode = to_unicode
-        self.cmap = cmap
-        self.cid_registry, self.cid_ordering = self.cid_system_info(font)
-        self.base_encoding = base_encoding
-        self.differences = differences
-        self.encoding_differences = (
-            {**builtin_encoding, **differences} if builtin_encoding else differences
+        metrics = FontMetricsModel(
+            font,
+            subtype,
+            base_encoding=encoding.base_encoding,
+            cmap=encoding.cmap,
+            encoding_decode_table=encoding.encoding_decode_table,
+            base_font_name=base_font_name,
+            is_cid_font=is_cid_font,
+            is_type3=is_type3,
         )
-        self.simple_encoding_glyph_names = simple_encoding_glyph_names
-        self.encoding_decode_table = encoding_decode_table
+        geometry = GlyphGeometry(
+            program,
+            encoding,
+            metrics,
+            font_name=base_font_name,
+            raster_font_provider=self.raster_font_provider,
+        )
         self.is_cid_font = is_cid_font
         self.is_type3 = is_type3
-        self.byte_decode_table = byte_decode_table
-        self.widths = widths
-        self.default_width = default_width
-        self.default_vertical_displacement_y = font_metrics.default_vertical_displacement_y
-        self.default_vertical_origin_y = font_metrics.default_vertical_origin_y
-        self.vertical_metrics = font_metrics.vertical_metrics
-        self.is_vertical = is_vertical
-        self.ascent = ascent
-        self.descent = descent
         self.font_name = base_font_name
-        glyph_decode = build_glyph_decode_table(base_font_name, differences)
-        if glyph_decode is None:
-            self.glyph_decode_table = None
-            self.glyph_decode_table_authoritative = False
-        else:
-            self.glyph_decode_table, self.glyph_decode_table_authoritative = glyph_decode
-        self.cff_unicode_repair_index = build_cff_unicode_repair_index(
-            font, self.font_program, to_unicode, cmap
+        self.encoding = encoding
+        self.metrics = metrics
+        self.geometry = geometry
+        self.unicode = UnicodeResolver(
+            to_unicode,
+            encoding,
+            program,
+            is_cid_font=is_cid_font,
+            is_vertical=metrics.is_vertical,
+            ligature_overrides=self.ligature_overrides,
+            cff_unicode_repair_index=build_cff_unicode_repair_index(
+                font, program, to_unicode, encoding.cmap
+            ),
         )
-        self.cff_unicode_repairs = {}
+        self.byte_decode_table = (
+            encoding.encoding_decode_table if to_unicode is None and not is_cid_font else None
+        )
         self.simple_glyph_cache = {}
         self.cid_glyph_cache = {}
         self.string_glyph_cache = BoundedDict(STRING_GLYPH_CACHE_MAX_ENTRIES)
+        self.glyph_width = metrics.glyph_width
+        self.vertical_glyph_metric = metrics.vertical_glyph_metric
+        self.vertical_glyph_position = metrics.vertical_glyph_position
+        self.glyph_bbox = geometry.glyph_bbox
+        self.glyph_bitmap = geometry.glyph_bitmap
+        self.glyph_outline_arrays = geometry.glyph_outline_arrays
 
-    @staticmethod
-    def cid_system_info_string(value: object) -> str | None:
-        if isinstance(value, PdfString):
-            return value.data.decode("latin-1")
-        normalized = recover_pdf_name(value)
-        if normalized is not None:
-            return normalized
-        if isinstance(value, bytes):
-            return value.decode("latin-1")
-        return None
+    @property
+    def font_program(self) -> GlyphProgram:
+        return self.geometry.program
 
-    @classmethod
-    def cid_system_info(
-        cls,
-        font: dict[str, Any],
-    ) -> tuple[str | None, str | None]:
-        descendant = recover_descendant(font)
-        system_info = descendant.get("CIDSystemInfo") if descendant else None
-        if not isinstance(system_info, dict):
-            system_info = font.get("CIDSystemInfo")
-        if not isinstance(system_info, dict):
-            return None, None
-        registry = cls.cid_system_info_string(system_info.get("Registry"))
-        ordering = cls.cid_system_info_string(system_info.get("Ordering"))
-        return registry, ordering
+    @property
+    def to_unicode(self) -> ToUnicodeCMap | None:
+        return self.unicode.to_unicode
 
-    def parse_encoding(
-        self, font: dict[str, Any]
-    ) -> tuple[CMapDecoder | None, str | None, dict[int, str], dict[int, str], bool]:
-        cmap = None
-        base_encoding = None
-        base_encoding_explicit = False
-        differences: dict[int, str] = {}
-        subtype = recover_pdf_name(font.get("Subtype"))
-        encoding_obj = font.get("Encoding")
-        match encoding_obj:
-            case PdfStream():
-                try:
-                    cmap = CMapDecoder(
-                        encoding_obj.data,
-                        usecmap_resolver=resolve_cmap_resource,
-                    )
-                except PdfParseError, ValueError:
-                    cmap = None
-            case dict():
-                base_encoding = recover_pdf_name(encoding_obj.get("BaseEncoding"))
-                if base_encoding is None:
-                    base_encoding = (
-                        "WinAnsiEncoding" if subtype == "TrueType" else "StandardEncoding"
-                    )
-                else:
-                    base_encoding_explicit = True
-                differences_obj = encoding_obj.get("Differences")
-                if differences_obj is not None and not isinstance(differences_obj, (list, tuple)):
-                    differences_obj = None
-                differences = recover_differences(
-                    list(differences_obj)
-                    if isinstance(differences_obj, tuple)
-                    else differences_obj,
-                    recover_pdf_name,
-                )
-            case _:
-                base_encoding = recover_pdf_name(encoding_obj)
-                base_encoding_explicit = base_encoding is not None
-                cmap = self.named_cmap(base_encoding)
-        if base_encoding is None and subtype == "Type3":
-            base_encoding = "StandardEncoding"
-        builtin: dict[int, str] = {}
-        builtin_authoritative = False
-        if subtype in ("Type1", "MMType1") and not base_encoding_explicit:
-            builtin, builtin_authoritative = self.builtin_font_encoding(font)
-        if base_encoding is None and subtype in ("Type1", "MMType1"):
-            base_encoding = "StandardEncoding"
-        return cmap, base_encoding, differences, builtin, builtin_authoritative
+    @property
+    def cff_unicode_repair_index(self) -> CFFUnicodeRepairIndex | None:
+        return self.unicode.cff_unicode_repair_index
 
-    def builtin_font_encoding(self, font: dict[str, Any]) -> tuple[dict[int, str], bool]:
-        builtin = self.font_program.font_builtin_encoding()
-        if builtin is not None:
-            return builtin
-        descriptor = font.get("FontDescriptor")
-        if not isinstance(descriptor, dict):
-            return {}, False
-        font_file = descriptor.get("FontFile")
-        if isinstance(font_file, PdfStream):
-            try:
-                encoding = parse_type1_font_program_encoding(font_file.data)
-                return encoding, bool(encoding)
-            except PdfParseError, ValueError:
-                return {}, False
-        return {}, False
+    @property
+    def cmap(self) -> CMapDecoder | None:
+        return self.encoding.cmap
 
-    def named_cmap(self, base_encoding: str | None) -> CMapDecoder | None:
-        if base_encoding is None:
-            return None
-        return resolve_cmap_decoder(base_encoding)
+    @property
+    def base_encoding(self) -> str | None:
+        return self.encoding.base_encoding
+
+    @property
+    def differences(self) -> dict[int, str]:
+        return self.encoding.differences
+
+    @property
+    def encoding_differences(self) -> dict[int, str]:
+        return self.encoding.encoding_differences
+
+    @property
+    def cid_registry(self) -> str | None:
+        return self.encoding.cid_registry
+
+    @property
+    def cid_ordering(self) -> str | None:
+        return self.encoding.cid_ordering
+
+    @property
+    def widths(self) -> Mapping[int, float]:
+        return self.metrics.widths
+
+    @widths.setter
+    def widths(self, widths: Mapping[int, float]) -> None:
+        self.metrics.widths = widths
+
+    @property
+    def default_width(self) -> float:
+        return self.metrics.default_width
+
+    @property
+    def default_vertical_displacement_y(self) -> float:
+        return self.metrics.default_vertical_displacement_y
+
+    @property
+    def default_vertical_origin_y(self) -> float:
+        return self.metrics.default_vertical_origin_y
+
+    @property
+    def vertical_metrics(self) -> dict[int, tuple[float, float, float]]:
+        return self.metrics.vertical_metrics
+
+    @property
+    def is_vertical(self) -> bool:
+        return self.metrics.is_vertical
+
+    @property
+    def ascent(self) -> float:
+        return self.metrics.ascent
+
+    @property
+    def descent(self) -> float:
+        return self.metrics.descent
+
+    @property
+    def font_matrix(self) -> Matrix:
+        try:
+            return Matrix.from_operand(self.font.get("FontMatrix"))
+        except ValueError:
+            return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
+
+    def glyph_name(self, code: int) -> str:
+        return self.encoding.glyph_name(code)
+
+    def glyph_id_for_code(self, code: int) -> int | None:
+        return self.geometry.glyph_id_for_code(code)
 
     def decode(self, data: bytes) -> str:
         if not data:
@@ -576,8 +418,8 @@ class FontDecoder:
         if (
             table is not None
             and not self.is_cid_font
-            and self.to_unicode is None
-            and self.glyph_decode_table is None
+            and self.unicode.to_unicode is None
+            and self.encoding.glyph_decode_table is None
             and not self.ligature_overrides
         ):
             return "".join(table[byte] for byte in data)
@@ -604,195 +446,38 @@ class FontDecoder:
             glyphs = self.decode_simple_glyphs(data)
         return tuple(glyphs)
 
-    def unicode_choice_for_code(
-        self, code_bytes: bytes, fallback_code: int, gid: int | None = None
-    ) -> UnicodeChoice:
-        key = (code_bytes, fallback_code, gid)
-        cache = self.unicode_choice_cache
-        choice = cache.get(key)
-        if choice is None:
-            choice = cache[key] = self.resolve_unicode_choice_for_code(
-                code_bytes, fallback_code, gid
-            )
-        return choice
-
-    def resolve_unicode_choice_for_code(
-        self, code_bytes: bytes, fallback_code: int, gid: int | None
-    ) -> UnicodeChoice:
-        alternates: list[str] = []
-        to_unicode_text = None
-        if self.to_unicode is not None:
-            to_unicode_text = self.to_unicode.mappings.get(code_bytes)
-            if to_unicode_text is not None:
-                alternates.append(to_unicode_text)
-
-        if to_unicode_text is not None and not has_invalid_unicode_mapping(to_unicode_text):
-            visual_punctuation = self.visual_punctuation_for_code(
-                to_unicode_text,
-                fallback_code=fallback_code,
-            )
-            if visual_punctuation is not None:
-                return UnicodeChoice(
-                    visual_punctuation,
-                    UnicodeSource.TRUETYPE_GLYPH_SHAPE,
-                    dedupe_alternates(alternates, visual_punctuation),
-                )
-            return UnicodeChoice(
-                to_unicode_text,
-                UnicodeSource.TO_UNICODE,
-                dedupe_alternates(alternates, to_unicode_text),
-            )
-
-        replacement = self.cff_unicode_repairs.get(code_bytes)
-        if replacement is not None:
-            return UnicodeChoice(
-                replacement,
-                UnicodeSource.CFF_GLYPH_REPAIR,
-                dedupe_alternates(alternates, replacement),
-            )
-
-        if gid is not None:
-            tt_text = self.font_program.unicode_for_gid(gid)
-            if tt_text == to_unicode_text == "\ufffd":
-                return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
-            if tt_text and not has_untrusted_unicode_semantics(tt_text):
-                return UnicodeChoice(
-                    tt_text,
-                    UnicodeSource.TRUETYPE_CMAP,
-                    dedupe_alternates(alternates, tt_text),
-                )
-
-        if fallback_code != 0:
-            predefined_text = predefined_cmap_unicode(self.base_encoding, code_bytes)
-            if predefined_text is not None:
-                return UnicodeChoice(
-                    predefined_text,
-                    UnicodeSource.PREDEFINED_CMAP,
-                    dedupe_alternates(alternates, predefined_text),
-                )
-
-        if not self.is_cid_font and len(code_bytes) == 1 and code_bytes[0] not in self.differences:
-            encoding_table = self.encoding_decode_table
-            encoding_text = encoding_table[code_bytes[0]]
-            if encoding_text and not has_invalid_unicode_mapping(encoding_text):
-                return UnicodeChoice(
-                    encoding_text,
-                    UnicodeSource.ENCODING,
-                    dedupe_alternates(alternates, encoding_text),
-                )
-
-        registry = self.cid_registry
-        ordering = self.cid_ordering
-        cid_unicode_map = (
-            resolve_cid_unicode_map(registry, ordering, vertical=self.is_vertical)
-            if registry is not None and ordering is not None
-            else None
-        )
-        if cid_unicode_map is not None:
-            cid_text = cid_unicode_map.get(fallback_code)
-            if cid_text is not None:
-                return UnicodeChoice(
-                    cid_text,
-                    UnicodeSource.CID_COLLECTION,
-                    dedupe_alternates(alternates, cid_text),
-                )
-
-        if to_unicode_text is not None and "\ufffd" in to_unicode_text:
-            return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
-
-        if fallback_code == 0:
-            return UnicodeChoice(
-                "\u0000", UnicodeSource.FALLBACK_NUL, dedupe_alternates(alternates, "\u0000")
-            )
-        text = unicode_scalar_or_replacement(fallback_code)
-        source = UnicodeSource.IDENTITY if text != "\ufffd" else UnicodeSource.REPLACEMENT
-        return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
-
-    def visual_punctuation_for_code(self, text: str, *, fallback_code: int) -> str | None:
-        if len(text) != 1 or not unicodedata.category(text).startswith("M"):
-            return None
-        bbox = self.font_program.code_bbox(fallback_code)
-        if bbox is None:
-            return None
-        x_min, y_min, x_max, y_max = bbox
-        width = x_max - x_min
-        height = y_max - y_min
-        if width < 450.0 or height <= 0.0 or width / height < 2.5:
-            return None
-        return "–"
-
-    def apply_simple_unicode_overrides(
-        self, choice: UnicodeChoice, code_bytes: bytes
-    ) -> UnicodeChoice:
-        text = choice.text
-        if self.glyph_decode_table is not None:
-            glyph_decode_table = self.glyph_decode_table
-            if len(code_bytes) == 1:
-                mapped = glyph_decode_table[code_bytes[0]]
-                if not text:
-                    if self.glyph_decode_table_authoritative or mapped:
-                        text = mapped
-                elif (
-                    len(text) == 1
-                    and mapped
-                    and text != mapped
-                    and (
-                        choice.source in UNRESOLVED_UNICODE_SOURCES
-                        or should_prefer_glyph_name_mapping(
-                            text,
-                            mapped,
-                            authoritative=self.glyph_decode_table_authoritative,
-                        )
-                    )
-                ):
-                    text = mapped
-            else:
-                text = replace_unicode_from_glyph_names(
-                    text,
-                    code_bytes,
-                    glyph_decode_table,
-                    authoritative=self.glyph_decode_table_authoritative,
-                    fallback_mapping=choice.source in UNRESOLVED_UNICODE_SOURCES,
-                )
-        if self.ligature_overrides:
-            lo = self.ligature_overrides
-            text = "".join(lo.get(ord(ch), ch) for ch in text)
-        if text == choice.text:
-            return choice
-        return UnicodeChoice(
-            text,
-            UnicodeSource.GLYPH_NAME,
-            dedupe_alternates((choice.text, *choice.alternates), text),
-        )
-
     def decode_simple_glyphs(self, data: bytes | bytearray | memoryview) -> list[DecodedGlyph]:
         glyphs: list[DecodedGlyph] = []
         cache = self.simple_glyph_cache
         append = glyphs.append
+        unicode = self.unicode
+        to_unicode = unicode.to_unicode
+        differences = self.encoding.differences
+        glyph_id_for_code = self.geometry.glyph_id_for_code
+        unicode_choice_for_code = unicode.unicode_choice_for_code
+        apply_simple_unicode_overrides = unicode.apply_simple_unicode_overrides
         table = self.byte_decode_table
-        if table is None and self.to_unicode is None:
-            table = self.encoding_decode_table
+        if table is None and to_unicode is None:
+            table = self.encoding.encoding_decode_table
         for code in data:
             cached = cache.get(code)
             if cached is not None:
                 append(cached)
                 continue
             chunk = SINGLE_BYTES[code]
-            gid = self.glyph_id_for_code(code)
-            if self.to_unicode is not None:
-                choice = self.unicode_choice_for_code(chunk, code, gid)
+            gid = glyph_id_for_code(code)
+            if to_unicode is not None:
+                choice = unicode_choice_for_code(chunk, code, gid)
             elif table is not None:
                 text = table[code]
-                undefined = not text or (
-                    code in self.differences and len(text) == 1 and ord(text) < 32
-                )
+                undefined = not text or (code in differences and len(text) == 1 and ord(text) < 32)
                 choice = UnicodeChoice(
                     "\ufffd" if undefined else text,
                     UnicodeSource.UNDEFINED if undefined else UnicodeSource.ENCODING,
                 )
             else:
-                choice = self.unicode_choice_for_code(chunk, code, gid)
-            choice = self.apply_simple_unicode_overrides(choice, chunk)
+                choice = unicode_choice_for_code(chunk, code, gid)
+            choice = apply_simple_unicode_overrides(choice, chunk)
             glyph = DecodedGlyph(
                 chunk,
                 code,
@@ -810,32 +495,17 @@ class FontDecoder:
         return glyphs
 
     def decode_cid_glyphs(self, data: bytes) -> list[DecodedGlyph]:
-        entries = self.cmap.decode_entries(data) if self.cmap is not None else []
+        cmap = self.encoding.cmap
+        entries = cmap.decode_entries(data) if cmap is not None else []
+        unicode = self.unicode
         if not entries:
-            chunks = split_code_bytes(data, self.to_unicode)
+            chunks = split_code_bytes(data, unicode.to_unicode)
             entries = [(chunk, int.from_bytes(chunk, "big") if chunk else 0) for chunk in chunks]
-        repair_index = self.cff_unicode_repair_index
-        if repair_index is not None:
-            to_unicode = self.to_unicode
-            mappings = to_unicode.mappings if to_unicode is not None else {}
-            repairs = repair_index.repairs_for_codes(
-                code_bytes
-                for code_bytes, ignored_cid in entries
-                if (mapped := mappings.get(code_bytes)) is not None
-                and has_invalid_unicode_mapping(mapped)
-            )
-            if repairs:
-                current = self.cff_unicode_repairs
-                changed = {code for code, text in repairs.items() if current.get(code) != text}
-                if changed:
-                    cache = self.unicode_choice_cache
-                    for key in [key for key in cache if key[0] in changed]:
-                        del cache[key]
-                    glyph_cache = self.cid_glyph_cache
-                    for glyph_key in [key for key in glyph_cache if key[0] in changed]:
-                        del glyph_cache[glyph_key]
-                    self.string_glyph_cache.clear()
-                    current.update(repairs)
+        if unicode.cff_unicode_repair_index is not None:
+            changed = unicode.observe_codes(entries)
+            if changed:
+                drop_code_entries(self.cid_glyph_cache, changed)
+                self.string_glyph_cache.clear()
         decoded_cache = self.cid_glyph_cache
         glyphs: list[DecodedGlyph] = []
         append = glyphs.append
@@ -849,22 +519,18 @@ class FontDecoder:
 
     def build_cid_glyph(self, code_bytes: bytes, cid: int) -> DecodedGlyph:
         char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0
-        gid = self.glyph_id_for_code(cid)
-        if gid is not None and gid != 0 and not self.glyph_exists(gid):
-            notdef_cid = self.cmap.mapped_notdef(code_bytes) if self.cmap else None
+        geometry = self.geometry
+        gid = geometry.glyph_id_for_code(cid)
+        if gid is not None and gid != 0 and not geometry.glyph_exists(gid):
+            cmap = self.encoding.cmap
+            notdef_cid = cmap.mapped_notdef(code_bytes) if cmap else None
             if notdef_cid is not None:
                 cid = notdef_cid
-                gid = self.glyph_id_for_code(cid)
-        choice = self.unicode_choice_for_code(code_bytes, cid, gid)
-        if self.ligature_overrides:
-            lo = self.ligature_overrides
-            text = "".join(lo.get(ord(ch), ch) for ch in choice.text)
-            if text != choice.text:
-                choice = UnicodeChoice(
-                    text,
-                    UnicodeSource.LIGATURE_OVERRIDE,
-                    dedupe_alternates((choice.text, *choice.alternates), text),
-                )
+                gid = geometry.glyph_id_for_code(cid)
+        unicode = self.unicode
+        choice = unicode.apply_ligature_overrides(
+            unicode.unicode_choice_for_code(code_bytes, cid, gid)
+        )
         return DecodedGlyph(
             code_bytes,
             char_code,
@@ -878,105 +544,6 @@ class FontDecoder:
             choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
         )
 
-    def glyph_exists(self, gid: int) -> bool:
-        return self.font_program.has_glyph_id(gid)
-
-    def glyph_id_for_code(self, code: int) -> int | None:
-        cache = self.glyph_id_cache
-        try:
-            return cache[code]
-        except KeyError:
-            gid = cache[code] = self.resolve_glyph_id_for_code(code)
-            return gid
-
-    def resolve_glyph_id_for_code(self, code: int) -> int | None:
-        return self.font_program.glyph_id_for_code(code, self)
-
-    @property
-    def font_matrix(self) -> Matrix:
-        try:
-            return Matrix.from_operand(self.font.get("FontMatrix"))
-        except ValueError:
-            return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-
-    def glyph_name(self, code: int) -> str:
-        if 0 <= code < 256:
-            return self.simple_encoding_glyph_names[code]
-        return ".notdef"
-
-    def glyph_bbox(self, code: int) -> Rectangle | None:
-        cache = self.glyph_bbox_cache
-        try:
-            return cache[code]
-        except KeyError:
-            box = cache[code] = self.glyph_bbox_uncached(code)
-            return box
-
-    def glyph_bbox_uncached(self, code: int) -> Rectangle | None:
-        if code < 0:
-            return None
-        return self.font_program.glyph_bbox_for_code(code, self.glyph_id_for_code(code), self)
-
-    def vertical_glyph_metric(self, code: int) -> tuple[float, float, float]:
-        metric = self.vertical_metrics.get(code)
-        if metric is None:
-            metric = (
-                self.default_vertical_displacement_y,
-                self.glyph_width(code) / 2.0,
-                self.default_vertical_origin_y,
-            )
-        return metric
-
-    def vertical_glyph_position(self, code: int, *, font_size: float) -> tuple[float, float]:
-        metric = self.vertical_glyph_metric(code)
-        scale = font_size / 1000.0
-        return (-metric[1] * scale, -metric[2] * scale)
-
-    def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
-        if code < 0:
-            return ()
-        glyph_id = self.glyph_id_for_code(code)
-        return (
-            self.font_program.glyph_bitmap_for_gid(glyph_id, width=width, height=height)
-            if glyph_id is not None
-            else ()
-        )
-
-    def glyph_outline_arrays(
-        self, code: int, gid: int | None = None, text: str = ""
-    ) -> GlyphOutlineArrays | None:
-        if code < 0:
-            return None
-        cache = self.glyph_outline_array_cache
-        key = (code, gid, text)
-        try:
-            return cache[key]
-        except KeyError:
-            arrays = cache[key] = outline_arrays(self.glyph_outline_uncached(code, gid, text))
-            return arrays
-
-    def glyph_outline_uncached(
-        self, code: int, gid: int | None, text: str
-    ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        glyph_id = gid if gid is not None else self.glyph_id_for_code(code)
-        if glyph_id is None:
-            return ()
-        return self.font_program.glyph_outline_for(glyph_id, text, self)
-
-    def fallback_glyph_outline(self, text: str) -> tuple[tuple[tuple[float, float], ...], ...]:
-        return fallback_glyph_outline(
-            self.font_name,
-            text,
-            is_cid_font=self.is_cid_font,
-            is_vertical=self.is_vertical,
-            cid_registry=self.cid_registry,
-            cid_ordering=self.cid_ordering,
-            provider=self.raster_font_provider,
-        )
-
-    def glyph_width(self, code: int) -> float:
-        return self.widths.get(code, self.default_width)
-
     def glyph_advance_vector(
         self,
         code: int,
@@ -987,10 +554,8 @@ class FontDecoder:
         horizontal_scale: float,
         encoded_space: bool,
     ) -> tuple[float, float]:
-        width = self.vertical_glyph_metric(code)[0] if self.is_vertical else self.glyph_width(code)
-        return pdf_glyph_advance_vector(
-            width,
-            vertical=self.is_vertical,
+        return self.metrics.glyph_advance_vector(
+            code,
             font_size=font_size,
             char_space=char_space,
             word_space=word_space,
@@ -1013,17 +578,18 @@ class FontDecoder:
         if glyphs is None:
             glyphs = self.decode_glyphs(bytes(data))
 
-        if self.is_vertical:
+        metrics = self.metrics
+        if metrics.is_vertical:
             total_y = 0.0
-            vertical_glyph_metric = self.vertical_glyph_metric
+            vertical_glyph_metric = metrics.vertical_glyph_metric
             for glyph in glyphs:
                 spacing = char_space + (word_space if glyph.code_bytes == b" " else 0.0)
                 total_y += vertical_glyph_metric(glyph.width_code)[0] * font_size / 1000.0 + spacing
             return (0.0, total_y)
 
         total_x = 0.0
-        default_width = self.default_width
-        width_for = self.widths.get
+        default_width = metrics.default_width
+        width_for = metrics.widths.get
         for glyph in glyphs:
             width = width_for(glyph.width_code, default_width)
             spacing = char_space + (word_space if glyph.code_bytes == b" " else 0.0)

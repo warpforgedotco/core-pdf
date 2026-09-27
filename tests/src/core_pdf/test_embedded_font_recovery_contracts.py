@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 
 from core_pdf.impl import fonts_decoder as decoder
-from core_pdf.impl import fonts_program
+from core_pdf.impl import fonts_encoding, fonts_program
 from core_pdf.impl.fonts_ligatures import detect_ligature_overrides
 from core_pdf.impl.types import PdfName
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -122,7 +122,7 @@ def test_cid_system_info_normalizes_names_and_strings(value, descendant):
     font: dict[str, Any] = {"CIDSystemInfo": {"Registry": value, "Ordering": b"Identity"}}
     if descendant:
         font = {"DescendantFonts": [font]}
-    assert decoder.FontDecoder.cid_system_info(font) == (
+    assert fonts_encoding.cid_system_info(font) == (
         "Adobe" if value not in (1, None) else None,
         "Identity",
     )

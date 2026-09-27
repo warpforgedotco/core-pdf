@@ -19,7 +19,7 @@ class GlyphNaming(Protocol):
     def glyph_name(self, code: int) -> str: ...
 
 
-class GlyphFallback(Protocol):
+class GlyphBoxMetrics(Protocol):
     @property
     def ascent(self) -> float: ...
 
@@ -28,6 +28,8 @@ class GlyphFallback(Protocol):
 
     def glyph_width(self, code: int) -> float: ...
 
+
+class GlyphOutlineFallback(Protocol):
     def fallback_glyph_outline(self, text: str) -> GlyphContours: ...
 
 
@@ -69,11 +71,13 @@ class GlyphProgram:
         return None
 
     def glyph_bbox_for_code(
-        self, code: int, glyph_id: int | None, fallback: GlyphFallback
+        self, code: int, glyph_id: int | None, metrics: GlyphBoxMetrics
     ) -> GlyphBox | None:
         return self.glyph_bbox_for_gid(glyph_id) if glyph_id is not None else None
 
-    def glyph_outline_for(self, glyph_id: int, text: str, fallback: GlyphFallback) -> GlyphContours:
+    def glyph_outline_for(
+        self, glyph_id: int, text: str, fallback: GlyphOutlineFallback
+    ) -> GlyphContours:
         return self.normalized_glyph_contours(glyph_id)
 
 
@@ -93,12 +97,14 @@ class NullProgram(GlyphProgram):
         return None
 
     def glyph_bbox_for_code(
-        self, code: int, glyph_id: int | None, fallback: GlyphFallback
+        self, code: int, glyph_id: int | None, metrics: GlyphBoxMetrics
     ) -> GlyphBox | None:
-        width = fallback.glyph_width(code)
-        return None if width <= 0 else (0.0, fallback.descent, width, fallback.ascent)
+        width = metrics.glyph_width(code)
+        return None if width <= 0 else (0.0, metrics.descent, width, metrics.ascent)
 
-    def glyph_outline_for(self, glyph_id: int, text: str, fallback: GlyphFallback) -> GlyphContours:
+    def glyph_outline_for(
+        self, glyph_id: int, text: str, fallback: GlyphOutlineFallback
+    ) -> GlyphContours:
         return fallback.fallback_glyph_outline(text)
 
 
