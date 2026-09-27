@@ -1,6 +1,6 @@
 [project]
 name = "core-records"
-version = "0.1.0"
+version = "0.2.0"
 description = "Frozen, picklable, printable, replaceable value-class mixins for the core-pdf workspace"
 readme = "README.md"
 license = "AGPL-3.0-only"

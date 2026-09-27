@@ -16,11 +16,11 @@ dependencies = [
     "numpy>=2.5.1",
     "imagecodecs>=2026.6.26",
     "defusedxml>=0.7.1",
-    "core-pdf-spec>=0.14.0,<0.15.0",
-    "core-jbig2>=0.3.1,<0.4.0",
-    "core-adobe-fonts>=0.2.2,<0.3.0",
+    "core-pdf-spec>=0.14.1,<0.15.0",
+    "core-jbig2>=0.3.2,<0.4.0",
+    "core-adobe-fonts>=0.2.3,<0.3.0",
     "core-pdf-cythonized>=0.1.0,<0.2.0",
-    "core-records>=0.1.0,<0.2.0",
+    "core-records>=0.2.0,<0.3.0",
 ]
 
 [project.scripts]
@@ -46,8 +46,8 @@ members = [
 [tool.uv.sources]
 core-pdf-cythonized = { workspace = true }
 core-records = { workspace = true }
-core-jbig2 = { workspace = true }
 core-pdf-spec = { workspace = true }
+core-jbig2 = { workspace = true }
 core-adobe-fonts = { workspace = true }
 
 [project.urls]

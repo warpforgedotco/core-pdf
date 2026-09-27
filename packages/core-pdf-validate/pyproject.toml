@@ -1,6 +1,6 @@
 [project]
 name = "core-pdf-validate"
-version = "0.1.0"
+version = "0.1.1"
 description = "Optional external PDF standards validation"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -12,7 +12,7 @@ requires-python = ">=3.14"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
     "core-pdf>=0.0.7,<0.1.0",
-    "core-records>=0.1.0,<0.2.0",
+    "core-records>=0.2.0,<0.3.0",
     "defusedxml>=0.7.1",
 ]
 
