@@ -7,7 +7,7 @@ from copy import replace
 
 import numpy
 
-from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
 from core_pdf.impl.extract_table_detection import (
     TableAnalysis,
     detect_tables,
@@ -18,7 +18,7 @@ from core_pdf.impl.output_model import Table, TableCell
 from core_pdf.impl.spatial import band_rows
 from core_pdf.impl.text import text_word_tokens
 from core_pdf.impl.types import Rectangle
-from core_pdf_ocr.impl.extract.contracts import ObservationSource, PageAnalysis
+from core_pdf_ocr.impl.extract.contracts import PageAnalysis
 
 CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$")
 CHART_DUPLICATE_OVERLAP = 0.5

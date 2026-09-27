@@ -5,11 +5,10 @@ import pytest
 
 from core_pdf.impl.capture_program import CapturedProgram, PageProgram
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, CapturedSubpath
-from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import (
-    ObservationSource,
     PageAnalysis,
     StrokedVectorTextEvidence,
 )

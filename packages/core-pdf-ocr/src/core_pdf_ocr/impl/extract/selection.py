@@ -10,11 +10,12 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar
 
 from core_pdf.impl.execution import ExtractionScope
-from core_pdf.impl.extract_contracts import ObservationBatch, bbox_tuple
+from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.extract_selection import (
     assemble_document,
     prepare_document_pages,
 )
+from core_pdf.impl.geometry import bbox_tuple
 from core_pdf.impl.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.output_model import Document
 from core_pdf.impl.types import Record, frozen_setattr

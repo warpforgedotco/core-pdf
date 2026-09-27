@@ -18,19 +18,19 @@ from core_pdf.impl.extract_contracts import (
     ObservationSource,
     ParsedBlock,
     ParsedLine,
-    bbox_tuple,
 )
-from core_pdf.impl.geometry import horizontal_overlap_ratio, interval_overlap
+from core_pdf.impl.geometry import bbox_tuple, horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl.layout_lines import LayoutLine
 from core_pdf.impl.output_model import TextLine, TextSpan
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.spatial import band_rows, cluster_1d, interval_overlap_pairs
 from core_pdf.impl.text import (
+    TextWord,
     collapse_ws,
     reconcile_text_words,
     text_word_tokens,
 )
-from core_pdf.impl.types import Record, ReplaceFields, ReprFields, TextWord, frozen_setattr
+from core_pdf.impl.types import Record, ReplaceFields, ReprFields, frozen_setattr
 
 NATIVE_SOURCE = int(ObservationSource.NATIVE)
 

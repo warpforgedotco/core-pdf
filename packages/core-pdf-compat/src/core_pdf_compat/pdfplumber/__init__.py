@@ -25,11 +25,10 @@ from core_pdf.impl.graphics_codec_backends import PNG_SIGNATURE, png_chunk
 from core_pdf.impl.output_model import Table as StructuredTable
 from core_pdf.impl.output_model import TableCell
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.raw_media import DrawingRecord, ImageRecord
 from core_pdf.impl.render_paths import intersect_box
 from core_pdf.impl.types import (
-    DrawingRecord,
     FrozenFields,
-    ImageRecord,
     PdfReference,
     ReplaceFields,
     ReprFields,

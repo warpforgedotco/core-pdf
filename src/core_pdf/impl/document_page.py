@@ -26,16 +26,12 @@ from core_pdf.impl.extract_pipeline import extract_page
 from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.graphics_images import decode_image
 from core_pdf.impl.output_model import Page as StructuredPage
+from core_pdf.impl.raw_media import DrawingRecord, ImageMetadata, ImageRecord
 from core_pdf.impl.recovery_resolver import resolve_resource_dict
 from core_pdf.impl.render_model import RenderOptions
 from core_pdf.impl.render_page import compose_page
 from core_pdf.impl.scalars import clamp01
-from core_pdf.impl.types import (
-    DrawingRecord,
-    ImageMetadata,
-    ImageRecord,
-    PdfReference,
-)
+from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_document.page import page_clip, page_rotation, page_user_unit
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf_spec.s_07_syntax.stream import PdfStream

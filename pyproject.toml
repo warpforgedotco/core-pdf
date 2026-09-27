@@ -381,6 +381,7 @@ forbidden_modules = [
     "core_pdf.impl.extract_quality",
     "core_pdf.impl.extract_selection",
     "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_core",
     "core_pdf.impl.extract_table_detection",
 ]
 
@@ -391,6 +392,7 @@ source_modules = [
     "core_pdf.impl.layout_lines",
     "core_pdf.impl.layout_reconstruction",
     "core_pdf.impl.layout_text_rules",
+    "core_pdf.impl.layout_wordlists",
     "core_pdf.impl.output_model",
     "core_pdf.impl.output_serialize",
 ]
@@ -404,6 +406,7 @@ forbidden_modules = [
     "core_pdf.impl.extract_quality",
     "core_pdf.impl.extract_selection",
     "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_core",
     "core_pdf.impl.extract_table_detection",
     "core_pdf.impl.render_blend",
     "core_pdf.impl.render_clipping",
@@ -509,10 +512,12 @@ forbidden_modules = [
     "core_pdf.impl.extract_quality",
     "core_pdf.impl.extract_selection",
     "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_core",
     "core_pdf.impl.extract_table_detection",
     "core_pdf.impl.layout_lines",
     "core_pdf.impl.layout_reconstruction",
     "core_pdf.impl.layout_text_rules",
+    "core_pdf.impl.layout_wordlists",
     "core_pdf.impl.render_blend",
     "core_pdf.impl.render_clipping",
     "core_pdf.impl.render_commands",
@@ -604,6 +609,7 @@ source_modules = [
     "core_pdf.impl.page_selection",
     "core_pdf.impl.pdf_names",
     "core_pdf.impl.pdf_values",
+    "core_pdf.impl.raw_media",
     "core_pdf.impl.runs",
     "core_pdf.impl.spatial",
     "core_pdf.impl.scalars",
@@ -693,10 +699,12 @@ forbidden_modules = [
     "core_pdf.impl.extract_quality",
     "core_pdf.impl.extract_selection",
     "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_core",
     "core_pdf.impl.extract_table_detection",
     "core_pdf.impl.layout_lines",
     "core_pdf.impl.layout_reconstruction",
     "core_pdf.impl.layout_text_rules",
+    "core_pdf.impl.layout_wordlists",
     "core_pdf.impl.output_model",
     "core_pdf.impl.output_serialize",
     "core_pdf.impl.render_blend",
@@ -730,6 +738,7 @@ forbidden_modules = [
     "core_pdf.impl.glyphs",
     "core_pdf.impl.page_selection",
     "core_pdf.impl.pdf_values",
+    "core_pdf.impl.raw_media",
     "core_pdf.impl.runs",
     "core_pdf.impl.spatial",
     "core_pdf.impl.text",
@@ -744,6 +753,7 @@ source_modules = [
     "core_pdf.impl.glyphs",
     "core_pdf.impl.page_selection",
     "core_pdf.impl.pdf_values",
+    "core_pdf.impl.raw_media",
     "core_pdf.impl.runs",
     "core_pdf.impl.spatial",
     "core_pdf.impl.text",
@@ -825,6 +835,7 @@ forbidden_modules = [
     "core_pdf.impl.glyphs",
     "core_pdf.impl.page_selection",
     "core_pdf.impl.pdf_values",
+    "core_pdf.impl.raw_media",
     "core_pdf.impl.runs",
     "core_pdf.impl.spatial",
     "core_pdf.impl.text",
@@ -933,6 +944,7 @@ forbidden_modules = [
     "core_pdf.impl.extract_quality",
     "core_pdf.impl.extract_selection",
     "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_core",
     "core_pdf.impl.extract_table_detection",
     "core_pdf.impl.render_blend",
     "core_pdf.impl.render_clipping",
@@ -948,6 +960,7 @@ forbidden_modules = [
     "core_pdf.impl.layout_lines",
     "core_pdf.impl.layout_reconstruction",
     "core_pdf.impl.layout_text_rules",
+    "core_pdf.impl.layout_wordlists",
 ]
 
 [[tool.importlinter.contracts]]
@@ -990,6 +1003,7 @@ forbidden_modules = [
     "core_pdf.impl.extract_quality",
     "core_pdf.impl.extract_selection",
     "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_core",
     "core_pdf.impl.extract_table_detection",
     "core_pdf.impl.render_blend",
     "core_pdf.impl.render_clipping",
@@ -1005,6 +1019,7 @@ forbidden_modules = [
     "core_pdf.impl.layout_lines",
     "core_pdf.impl.layout_reconstruction",
     "core_pdf.impl.layout_text_rules",
+    "core_pdf.impl.layout_wordlists",
 ]
 
 [[tool.importlinter.contracts]]
@@ -1070,6 +1085,7 @@ forbidden_modules = [
     "core_pdf.impl.extract_quality",
     "core_pdf.impl.extract_selection",
     "core_pdf.impl.extract_table_cleanup",
+    "core_pdf.impl.extract_table_core",
     "core_pdf.impl.extract_table_detection",
     "core_pdf.impl.render_blend",
     "core_pdf.impl.render_clipping",
@@ -1085,6 +1101,7 @@ forbidden_modules = [
     "core_pdf.impl.layout_lines",
     "core_pdf.impl.layout_reconstruction",
     "core_pdf.impl.layout_text_rules",
+    "core_pdf.impl.layout_wordlists",
 ]
 
 

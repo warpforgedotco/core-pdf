@@ -35,11 +35,12 @@ from core_pdf.impl.memo import DocumentCaches
 from core_pdf.impl.output_model import Document as StructuredDocument
 from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.raw_media import ImageRecord
 from core_pdf.impl.recovery_policy import Recovery, RecoveryMode
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_text_strings import parse_text_string
 from core_pdf.impl.recovery_trees import iter_number_tree_items
-from core_pdf.impl.types import ImageRecord, PageScoped, PdfName, PdfSource
+from core_pdf.impl.types import PageScoped, PdfName, PdfSource
 from core_pdf_spec.s_07_document.document_labels import PageLabelStyle
 from core_pdf_spec.s_07_document.document_labels import format_page_label as format_spec_page_label
 from core_pdf_spec.s_07_document.page import PageNode as PageNode

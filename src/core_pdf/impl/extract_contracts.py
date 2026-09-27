@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy
 
-from core_pdf.impl.array_views import readonly
+from core_pdf.impl.array_views import make_column, readonly, validate_selection_mask
 from core_pdf.impl.capture_program import PageProgram
 from core_pdf.impl.output_model import (
     TextLine,
@@ -25,37 +25,12 @@ ByteArray = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 BoolArray = numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
 
 
-def make_column(
-    values: Iterable[Any] | None,
-    dtype: Any,
-    default: Callable[[], numpy.ndarray[Any, Any]] | None = None,
-) -> numpy.ndarray[Any, Any]:
-    if values is None:
-        if default is None:
-            raise ValueError("observation column is required")
-        return default()
-    return numpy.array(
-        values if isinstance(values, (list, tuple, range, numpy.ndarray)) else tuple(values),
-        dtype=dtype,
-    )
-
-
-def validate_selection_mask(mask: BoolArray, size: int) -> None:
-    if mask.dtype != numpy.bool_:
-        raise TypeError("observation selection mask must have boolean dtype")
-    if mask.shape != (size,):
-        raise ValueError("observation selection mask must have shape (n,)")
-
-
-def bbox_tuple(row: Any) -> tuple[float, float, float, float]:
-    return (float(row[0]), float(row[1]), float(row[2]), float(row[3]))
-
-
 FULL_PAGE_IMAGE_COVERAGE = 0.90
 
 
 class ObservationSource(IntEnum):
     NATIVE = 0
+    OCR = 1
     STRUCTURE = 2
 
 

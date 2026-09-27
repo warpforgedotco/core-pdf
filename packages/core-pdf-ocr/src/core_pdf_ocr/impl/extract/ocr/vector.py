@@ -10,8 +10,8 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.array_views import finite_median
-from core_pdf.impl.extract_contracts import ObservationBatch, bbox_tuple
-from core_pdf.impl.geometry import rect_tuple
+from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
+from core_pdf.impl.geometry import bbox_tuple, rect_tuple
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import (
     PathPaintItem,
@@ -19,7 +19,7 @@ from core_pdf.impl.render_model import (
 )
 from core_pdf.impl.render_page import RenderedPage
 from core_pdf.impl.spatial import BoxIndex
-from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, ObservationSource, PageAnalysis
+from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.atlas import rasterize_packed_stroked_paths
 from core_pdf_ocr.impl.extract.ocr.raster import fit_raster_scale
 from core_pdf_ocr.impl.extract.ocr.strokes import (

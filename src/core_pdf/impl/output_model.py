@@ -9,8 +9,8 @@ from typing import Any, ClassVar, NoReturn, Self, TypeAlias
 
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.page_selection import PageSelection
-from core_pdf.impl.text import reconcile_text_words
-from core_pdf.impl.types import Record, Rectangle, TextWord, frozen_setattr
+from core_pdf.impl.text import TextWord, reconcile_text_words
+from core_pdf.impl.types import Record, Rectangle, frozen_setattr
 
 SCHEMA_VERSION = "5.0"
 

@@ -8,8 +8,7 @@ from functools import partial
 import numpy
 
 from core_pdf.impl import extract_block_layout as native_layout
-from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf_ocr.impl.extract.contracts import ObservationSource
+from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
 
 SOURCE_LABELS = {
     int(ObservationSource.NATIVE): "native",

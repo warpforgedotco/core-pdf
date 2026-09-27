@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import IntEnum, StrEnum
+from enum import StrEnum
 from typing import Any, ClassVar
 
 from core_pdf.impl.extract_contracts import (
@@ -37,12 +37,6 @@ HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE = 80.0
 HIDDEN_TEXT_VERIFY_MIN_MATCHED_TOKENS = 24
 HIDDEN_TEXT_VERIFY_MIN_TOKEN_OVERLAP = 0.72
 HIDDEN_TEXT_VERIFY_MIN_SPATIAL_OVERLAP = 0.55
-
-
-class ObservationSource(IntEnum):
-    NATIVE = 0
-    OCR = 1
-    STRUCTURE = 2
 
 
 class PageRoute(StrEnum):

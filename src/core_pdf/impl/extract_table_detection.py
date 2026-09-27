@@ -23,18 +23,16 @@ from core_pdf.impl.extract_grids import (
     table_from_component,
 )
 from core_pdf.impl.extract_table_cleanup import (
-    TableFacts,
     annotate_table_associations,
-    cell_text,
     clean_stream_table,
     merge_adjacent_tables,
-    numeric_cell,
     split_semantic_table,
     table_character_spaced_prose,
     table_is_single_column_prose,
     table_quality,
     table_with_bands,
 )
+from core_pdf.impl.extract_table_core import TableFacts, cell_text, numeric_cell
 from core_pdf.impl.geometry import bbox_union, interval_overlap, overlap_ratio_min
 from core_pdf.impl.output_model import Table, TableCell
 from core_pdf.impl.spatial import DisjointSet, cluster_1d

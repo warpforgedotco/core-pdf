@@ -48,6 +48,10 @@ def rect_tuple(value: object) -> Rectangle | None:
         return None
 
 
+def bbox_tuple(row: Any) -> tuple[float, float, float, float]:
+    return (float(row[0]), float(row[1]), float(row[2]), float(row[3]))
+
+
 def interval_overlap(a0: float, a1: float, b0: float, b1: float) -> float:
     overlap = min(a1, b1) - max(a0, b0)
     return max(0.0, overlap)
@@ -185,6 +189,7 @@ __all__ = (
     "bbox_contains",
     "bbox_intersection_area",
     "bbox_intersects",
+    "bbox_tuple",
     "bbox_union",
     "finite_rect",
     "flip_rect_vertical",

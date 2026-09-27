@@ -20,7 +20,7 @@ from core_pdf.impl.output_model import (
     TextSpan,
     TextView,
 )
-from core_pdf.impl.types import TextWord
+from core_pdf.impl.text import TextWord
 
 
 def test_word_projection_stamps_ownership_without_mutating_shared_lines() -> None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy
 
-from core_pdf.impl.extract_contracts import bbox_tuple
 from core_pdf.impl.extract_grids import (
     axis_segments,
     grid_components,
@@ -13,6 +12,7 @@ from core_pdf.impl.extract_grids import (
 from core_pdf.impl.geometry import (
     bbox_area,
     bbox_intersection_area,
+    bbox_tuple,
     bbox_union,
     rect_tuple,
 )

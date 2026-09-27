@@ -4,8 +4,87 @@ from __future__ import annotations
 
 import re
 from copy import replace
+from typing import ClassVar
 
-from core_pdf.impl.types import TextWord
+from core_pdf.impl.types import Record, Rectangle, frozen_setattr
+
+
+class TextWord(Record):
+    __slots__ = ("text", "bbox", "line_index", "word_index", "block_index", "page_number", "source")
+
+    text: str
+    bbox: Rectangle | None
+    line_index: int
+    word_index: int
+    block_index: int
+    page_number: int | None
+    source: str
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "text",
+        "bbox",
+        "line_index",
+        "word_index",
+        "block_index",
+        "page_number",
+        "source",
+    )
+    __match_args__ = (
+        "text",
+        "bbox",
+        "line_index",
+        "word_index",
+        "block_index",
+        "page_number",
+        "source",
+    )
+
+    def __init__(
+        self,
+        text: str,
+        bbox: Rectangle | None = None,
+        line_index: int = 0,
+        word_index: int = 0,
+        block_index: int = 0,
+        page_number: int | None = None,
+        source: str = "unknown",
+    ) -> None:
+        frozen_setattr(self, "text", text)
+        frozen_setattr(self, "bbox", bbox)
+        frozen_setattr(self, "line_index", line_index)
+        frozen_setattr(self, "word_index", word_index)
+        frozen_setattr(self, "block_index", block_index)
+        frozen_setattr(self, "page_number", page_number)
+        frozen_setattr(self, "source", source)
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.text == other.text
+            and self.bbox == other.bbox
+            and self.line_index == other.line_index
+            and self.word_index == other.word_index
+            and self.block_index == other.block_index
+            and self.page_number == other.page_number
+            and self.source == other.source
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.text,
+                self.bbox,
+                self.line_index,
+                self.word_index,
+                self.block_index,
+                self.page_number,
+                self.source,
+            )
+        )
+
 
 NORMALIZE_TEXT_TABLE = dict.fromkeys(range(0xD800, 0xE000))
 SURROGATE_RE = re.compile("[\ud800-\udfff]")

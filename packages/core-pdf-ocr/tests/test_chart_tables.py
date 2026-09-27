@@ -2,9 +2,8 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
 from core_pdf_ocr.impl.extract import table_detection
-from core_pdf_ocr.impl.extract.contracts import ObservationSource
 
 
 def make_observations(texts, boxes=None, source=ObservationSource.OCR):

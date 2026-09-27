@@ -7,10 +7,9 @@ from statistics import fmean
 import numpy
 
 from core_pdf.impl.array_views import finite_median
-from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
 from core_pdf.impl.render_model import RasterImage
 from core_pdf.impl.spatial import band_rows, cluster_1d
-from core_pdf_ocr.impl.extract.contracts import ObservationSource
 from core_pdf_ocr.impl.extract.ocr.types import OcrTask, pixel_box_to_page_box
 
 GRID_DARK_THRESHOLD = 160
