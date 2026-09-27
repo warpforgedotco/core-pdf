@@ -68,6 +68,18 @@ def image_color_space_paints(dictionary: dict[Any, Any]) -> bool:
     return raw_color_space_paints(dictionary.get("ColorSpace"))
 
 
+def samples_equal(left: object, right: object) -> bool:
+    if isinstance(left, numpy.ndarray) or isinstance(right, numpy.ndarray):
+        return (
+            isinstance(left, numpy.ndarray)
+            and isinstance(right, numpy.ndarray)
+            and left.dtype == right.dtype
+            and left.shape == right.shape
+            and bool(numpy.array_equal(left, right))
+        )
+    return bool(left == right)
+
+
 class DecodedRaster(Record):
     __slots__ = ("data", "width", "height", "channels")
 
@@ -97,14 +109,14 @@ class DecodedRaster(Record):
         if other.__class__ is not self.__class__:
             return NotImplemented
         return (
-            self.data == other.data
-            and self.width == other.width
+            self.width == other.width
             and self.height == other.height
             and self.channels == other.channels
+            and samples_equal(self.data, other.data)
         )
 
     def __hash__(self) -> int:
-        return hash((self.data, self.width, self.height, self.channels))
+        return hash((self.width, self.height, self.channels))
 
 
 class ImageRaster(Record):
@@ -126,10 +138,10 @@ class ImageRaster(Record):
             return True
         if other.__class__ is not self.__class__:
             return NotImplemented
-        return self.array == other.array and self.color_model == other.color_model
+        return self.color_model == other.color_model and samples_equal(self.array, other.array)
 
     def __hash__(self) -> int:
-        return hash((self.array, self.color_model))
+        return hash((self.array.shape, self.array.dtype.str, self.color_model))
 
     def _post_init(self) -> None:
         array = numpy.asarray(self.array, dtype=numpy.uint8)
@@ -630,10 +642,10 @@ class DecodedImage(Record):
             return True
         if other.__class__ is not self.__class__:
             return NotImplemented
-        return self.array == other.array and self.source == other.source
+        return self.source == other.source and samples_equal(self.array, other.array)
 
     def __hash__(self) -> int:
-        return hash((self.array, self.source))
+        return hash((self.array.shape, self.array.dtype.str, self.source))
 
     def _post_init(self) -> None:
         if self.array.ndim not in {2, 3}:
