@@ -71,6 +71,18 @@
   "tei": "b1fe8d7e2ac0ee12f6e6a43ac6c45d8fd7d83bfa78869ea8d3e723d4a1c1bd11",
   "tei-first-page": "b1fe8d7e2ac0ee12f6e6a43ac6c45d8fd7d83bfa78869ea8d3e723d4a1c1bd11"
  },
+ "synthetic": {
+  "csv": "38818844ce78b5aba6abb3cc15a8c57df8ac3e51c984b5aba8636fe55e8dae63",
+  "csv-first-page": "ad48447315fbbc2b8bb7c00d6cdb441d89fc9bb5dc8e35daab63c9d8b9f97233",
+  "html": "d21d2832ae450bbf4837491a52819c3e96f41716fdf483f7ca0999d4839e9232",
+  "json": "def0127eab5345bc5b6080e1654ccca78673099efdeeef98ddaa200f818ffc15",
+  "json-compact": "771c76c14f7fb416d2f472e32c9d2695c48b710779e058a04dc9f30719111b10",
+  "markdown": "bd1f6623dea2a1df1a33be9a7bd23d52d97808242679bb45c76bff145f1212b1",
+  "page-html": "c0b59bda4fee9532260eca5c4dfc0aced01ba7aac4f93edc9acee28e29388540",
+  "page-markdown": "06de40e275753d61f3a563746d79eee95e98db335855db4cc19b68c9ae43fb2a",
+  "tei": "6b74b2e9efdef4dfcdf197c32ea3ea38aaeaa6af13118cc204d29ecd5fe5dbeb",
+  "tei-first-page": "541f06b3d1ba112f2925d2ec3234ac77867439ab13d53ea7d01cb195733e8480"
+ },
  "x-ray/tests/assets/rect_ordering_6.19.pdf": {
   "csv": "6b6b3771c7e8987d32223899e8915fa7f6103d89d340146cfb9a0109f80889ef",
   "csv-first-page": "6b6b3771c7e8987d32223899e8915fa7f6103d89d340146cfb9a0109f80889ef",
