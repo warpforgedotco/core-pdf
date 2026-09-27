@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numpy
 
-from core_pdf.impl.caches import MISSING, BoundedDict, IdentityCache
+from core_pdf.impl.caches import MISSING, IdentityCache
 from core_pdf.impl.capture_glyphs import (
     GlyphCapture,
     GlyphPaint,
@@ -41,12 +41,7 @@ from core_pdf.impl.capture_text_runs import (
     RunAccumulator,
     is_garbage_text,
 )
-from core_pdf.impl.capture_tolerant_state import (
-    COLOR_CACHE_LIMIT,
-    SOFT_MASK_CACHE_LIMIT,
-    RecoveringTextState,
-    soft_mask_cache_limit,
-)
+from core_pdf.impl.capture_tolerant_state import CaptureCaches, RecoveringTextState
 from core_pdf.impl.fonts_decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts_ligatures import detect_ligature_overrides
 from core_pdf.impl.geometry import (
@@ -87,7 +82,6 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, pa
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
-    BlackPointCompensation,
     ColorRendering,
     override_color_rendering,
 )
@@ -348,15 +342,6 @@ class TextState(RecoveringTextState):
     capture_marked_entries: dict[int, MarkedContentEntry]
     capture_frames: dict[int, tuple[Rectangle | None, LayoutFormId, bool]]
     capture_patterns: IdentityCache[PatternPaint | None]
-    capture_image_sources: IdentityCache[tuple[ImageSource, float | None]]
-    capture_shadings: IdentityCache[dict]
-    capture_colors: BoundedDict[
-        tuple[int, tuple[float, ...], str | None, BlackPointCompensation],
-        tuple[object, tuple[float, ...]],
-    ]
-    capture_soft_masks: IdentityCache[CapturedSoftMask | None]
-    capture_mask_resources: IdentityCache[PdfDict]
-    capture_active_mask_groups: set[int]
     scale_cache: tuple[Matrix, float] | None
     shared_glyph_paint: GlyphPaint | None
     text_layout: TextLayout | None
@@ -370,6 +355,7 @@ class TextState(RecoveringTextState):
         page_clip: Rectangle | None = None,
         *,
         options: CaptureOptions = DEFAULT_CAPTURE,
+        caches: CaptureCaches | None = None,
     ):
         self.document = document
         self.name_resolver = document.resolver
@@ -399,14 +385,6 @@ class TextState(RecoveringTextState):
         self.capture_marked_entries = {}
         self.capture_frames = {}
         self.capture_patterns = IdentityCache()
-        self.capture_image_sources = IdentityCache()
-        self.capture_shadings = IdentityCache()
-        self.capture_colors = BoundedDict(COLOR_CACHE_LIMIT)
-        self.capture_soft_masks = IdentityCache(SOFT_MASK_CACHE_LIMIT)
-        self.capture_mask_resources = IdentityCache()
-        self.capture_active_mask_groups = set()
-        self.capture_font_decoders = {}
-        self.capture_font_companions = IdentityCache()
 
         def font_provider(font: PdfDict, resources: PdfDict) -> FontDecoder:
             return FontDecoder(
@@ -426,11 +404,10 @@ class TextState(RecoveringTextState):
             font_provider=font_provider,
             lexer_factory=PdfLexer,
             semantic_context=getattr(document.resolver, "semantic_context", None),
+            caches=caches,
         )
 
         self.recovery = CaptureRecovery()
-        self.normalized_colors = BoundedDict(COLOR_CACHE_LIMIT)
-        self.parsed_soft_masks = IdentityCache(soft_mask_cache_limit)
         self.scale_cache = None
         self.shared_glyph_paint = None
         self.text_layout = None
@@ -480,7 +457,7 @@ class TextState(RecoveringTextState):
     def resolve_soft_mask(self, value: object) -> PdfSoftMask | None:
         mask = super().resolve_soft_mask(value)
         if mask is not None:
-            scopes = self.capture_mask_resources
+            scopes = self.caches.capture_mask_resources
             if scopes.get(mask, default=MISSING) is MISSING:
                 scopes.put(mask, self.resources)
         return mask
@@ -964,7 +941,7 @@ class TextState(RecoveringTextState):
 
     def captured_image_source(self, xobj: PdfStream) -> tuple[ImageSource, float | None]:
         rendering = self.graphics.color_rendering
-        cache = self.capture_image_sources
+        cache = self.caches.capture_image_sources
         cached = cache.get(xobj, rendering)
         if cached is not None:
             return cached
@@ -1283,16 +1260,18 @@ class TextState(RecoveringTextState):
         intent = graphics.render_intent
         black_point = graphics.black_point_compensation
         key = (id(spec), color, intent, black_point)
-        previous = self.capture_colors.get(key)
+        caches = self.caches
+        previous = caches.capture_colors.get(key)
         if previous is not None:
             return previous[1]
         converted = color_operands_to_srgb(spec, list(color), rendering=graphics.color_rendering)
         result = converted if converted is not None else color
-        self.capture_colors.put(key, (spec, result))
+        caches.capture_colors.put(key, (spec, result))
         return result
 
     def capture_shading_dictionary(self, dictionary: dict) -> dict:
-        cached = self.capture_shadings.get(dictionary)
+        shadings = self.caches.capture_shadings
+        cached = shadings.get(dictionary)
         if cached is not None:
             return cached
         captured = {
@@ -1301,24 +1280,15 @@ class TextState(RecoveringTextState):
             else value
             for key, value in dictionary.items()
         }
-        return self.capture_shadings.put(dictionary, captured)
+        return shadings.put(dictionary, captured)
 
     def nested_capture_state(self) -> TextState:
-        nested = TextState(
+        return TextState(
             self.document,
             hidden_layers=self.hidden_layers,
             options=self.options,
+            caches=self.caches,
         )
-        nested.parsed_soft_masks = self.parsed_soft_masks
-        nested.capture_soft_masks = self.capture_soft_masks
-        nested.capture_mask_resources = self.capture_mask_resources
-        nested.capture_active_mask_groups = self.capture_active_mask_groups
-        nested.capture_image_sources = self.capture_image_sources
-        nested.capture_font_decoders = self.capture_font_decoders
-        nested.capture_font_companions = self.capture_font_companions
-        nested.capture_colors = self.capture_colors
-        nested.capture_shadings = self.capture_shadings
-        return nested
 
     def capture_pattern(self, pattern: object) -> PatternPaint | None:
         if pattern is None:
@@ -1406,7 +1376,8 @@ class TextState(RecoveringTextState):
         if mask is None or not self.options.render_details:
             return None
         key = tuple(state_key(getattr(self.graphics, name)) for name in MASK_KEYED_FIELDS)
-        cached = self.capture_soft_masks.get(mask, key, default=MISSING)
+        caches = self.caches
+        cached = caches.capture_soft_masks.get(mask, key, default=MISSING)
         if cached is not MISSING:
             return cached
         graphics = copy(self.graphics)
@@ -1414,18 +1385,18 @@ class TextState(RecoveringTextState):
         graphics.soft_mask = None
         graphics.fill_opacity = graphics.stroke_opacity = 1.0
         graphics.blend_mode = None
-        self.capture_soft_masks.put(mask, None, key)
+        caches.capture_soft_masks.put(mask, None, key)
         group_key = id(mask.group)
-        if mask.subtype != "Alpha" or group_key in self.capture_active_mask_groups:
+        if mask.subtype != "Alpha" or group_key in caches.capture_active_mask_groups:
             return None
-        if len(self.capture_active_mask_groups) >= 10:
+        if len(caches.capture_active_mask_groups) >= 10:
             return None
-        self.capture_active_mask_groups.add(group_key)
+        caches.capture_active_mask_groups.add(group_key)
         nested: TextState | None = None
         try:
             nested = self.nested_capture_state()
             nested.graphics = copy(graphics)
-            scope = self.capture_mask_resources.get(mask, default=MISSING)
+            scope = caches.capture_mask_resources.get(mask, default=MISSING)
             nested.resources = self.resources if scope is MISSING else scope
             frame = nested.append_form_xobject(mask.group, 0)
             if frame is None:
@@ -1434,13 +1405,13 @@ class TextState(RecoveringTextState):
             nested.run_accumulator.flush()
             if not nested.text_boundaries:
                 return None
-            return self.capture_soft_masks.put(
+            return caches.capture_soft_masks.put(
                 mask, CapturedSoftMask(nested.captured_program(), mask.transfer), key
             )
         except PdfParseError, TypeError, ValueError, ArithmeticError:
             return None
         finally:
-            self.capture_active_mask_groups.remove(group_key)
+            caches.capture_active_mask_groups.remove(group_key)
             if nested is not None:
                 nested.release()
 
