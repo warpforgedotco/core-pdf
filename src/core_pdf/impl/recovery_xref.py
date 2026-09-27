@@ -15,6 +15,7 @@ from core_pdf.impl.graphics_stream_decoding import decode_stream_data
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer, matches_keyword_with_one_substitution
 from core_pdf.impl.recovery_objects import PdfObjectStream
+from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.types import PdfByteBuffer
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -153,7 +154,7 @@ def canonical_xref_entries(
 
 
 class XRefScanner(SyntaxXRefScanner):
-    recover_malformed_objects: ClassVar[bool] = True
+    mode: ClassVar[RecoveryMode] = RecoveryMode.TOLERANT
 
     @staticmethod
     def skip_ws(
@@ -210,7 +211,7 @@ class XRefScanner(SyntaxXRefScanner):
     def lexer(cls, data: PdfByteBuffer, semantic_context: SemanticContext | None) -> PdfLexer:
         return PdfLexer(
             data,
-            recover_malformed_objects=cls.recover_malformed_objects,
+            mode=cls.mode,
             semantic_context=semantic_context,
         )
 
@@ -899,4 +900,4 @@ def iter_indirect_object_headers(
 
 
 class StrictXRefScanner(XRefScanner):
-    recover_malformed_objects: ClassVar[bool] = False
+    mode: ClassVar[RecoveryMode] = RecoveryMode.for_objects(False, True)

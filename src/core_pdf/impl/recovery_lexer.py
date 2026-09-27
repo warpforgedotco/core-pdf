@@ -11,6 +11,7 @@ from typing import Any
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
+from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.types import PdfByteBuffer, PdfName, PdfReference, PdfString
 from core_pdf_cythonized import ObjectScanner
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecoder
@@ -113,8 +114,7 @@ def reader_rules_for(context: SemanticContext | None) -> LexicalRules:
 
 class PdfLexer(SyntaxLexer):
     __slots__ = (
-        "recover_malformed_objects",
-        "recover_dictionary_structure",
+        "mode",
         "scanner",
         "scanner_rules",
         "copied_data",
@@ -130,6 +130,7 @@ class PdfLexer(SyntaxLexer):
         recover_dictionary_structure: bool = True,
         stream_decoder: StreamDecoder | None = None,
         semantic_context: SemanticContext | None = None,
+        mode: RecoveryMode | None = None,
     ) -> None:
         self.scanner: ObjectScanner | None = None
         self.scanner_rules: LexicalRules | None = None
@@ -141,8 +142,11 @@ class PdfLexer(SyntaxLexer):
             stream_decoder=decode_stream_data if stream_decoder is None else stream_decoder,
             semantic_context=semantic_context,
         )
-        self.recover_malformed_objects = recover_malformed_objects
-        self.recover_dictionary_structure = recover_dictionary_structure
+        self.mode = (
+            RecoveryMode.for_objects(recover_malformed_objects, recover_dictionary_structure)
+            if mode is None
+            else mode
+        )
 
     def close(self) -> None:
         if self.scanner is not None:
@@ -220,7 +224,7 @@ class PdfLexer(SyntaxLexer):
         return value
 
     def handle_invalid_hex_string(self, filtered: bytes) -> bytes:
-        if not self.recover_malformed_objects:
+        if not self.mode.objects:
             raise PdfParseError("invalid hex string") from None
         recovered = bytes(byte for byte in filtered if HEX_VALUE[byte] != 255)
         if not recovered:
@@ -287,12 +291,16 @@ class PdfLexer(SyntaxLexer):
 
     def dictionary_end_length(self, pos: int) -> int:
         length = super().dictionary_end_length(pos)
-        if length or not (self.recover_malformed_objects and self.recover_dictionary_structure):
+        if length:
+            return length
+        mode = self.mode
+        if not (mode.objects and mode.dictionary_structure):
             return length
         return 1 if self.raw_data[pos] == 62 and pos + 1 >= self.data_len else 0
 
     def handle_dictionary_key_error(self) -> bool:
-        if not (self.recover_malformed_objects and self.recover_dictionary_structure):
+        mode = self.mode
+        if not (mode.objects and mode.dictionary_structure):
             return False
         data = self.raw_data
         pos = self.pos
@@ -312,7 +320,8 @@ class PdfLexer(SyntaxLexer):
 
     def handle_dictionary_entry_error(self, value_start: int) -> bool:
         self.pos = value_start
-        if not (self.recover_malformed_objects and self.recover_dictionary_structure):
+        mode = self.mode
+        if not (mode.objects and mode.dictionary_structure):
             return False
         data = self.raw_data
         pos = value_start
