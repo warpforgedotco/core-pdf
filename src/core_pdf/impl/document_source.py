@@ -7,15 +7,12 @@ import mmap
 from contextlib import AbstractContextManager
 from os import PathLike
 from types import TracebackType
-from typing import TYPE_CHECKING, BinaryIO, Self
+from typing import BinaryIO, Self
 
 from core_pdf.impl.document_contracts import DocumentState
 from core_pdf.impl.exceptions import PdfDocumentClosedError, PdfEmptySourceError, PdfSourceError
 from core_pdf.impl.fonts_fallback import RasterFontRepository
 from core_pdf.impl.types import PdfByteBuffer, PdfSource
-
-if TYPE_CHECKING:
-    pass
 
 
 class DocumentOperation(AbstractContextManager["DocumentOperation"]):
