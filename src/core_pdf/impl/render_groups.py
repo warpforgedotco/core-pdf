@@ -10,14 +10,8 @@ import numpy
 from core_pdf.impl.array_views import uint8_image_view
 from core_pdf.impl.capture_records import CapturedPath
 from core_pdf.impl.render_compositing import RasterCompositing
-from core_pdf.impl.render_model import (
-    RasterGroup,
-    SoftMaskPlane,
-)
-from core_pdf.impl.render_raster_state import (
-    ElementaryScratch,
-    PixelBox,
-)
+from core_pdf.impl.render_model import RasterGroup, SoftMaskPlane
+from core_pdf.impl.render_raster_state import ElementaryScratch, PixelBox
 
 
 class RasterGroups(RasterCompositing):

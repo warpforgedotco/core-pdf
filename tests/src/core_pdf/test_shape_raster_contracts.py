@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl import render_target as render_target
+from core_pdf.impl import render_fills
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render_clipping import ClipState
 from core_pdf.impl.render_target import RasterTarget
@@ -49,7 +49,7 @@ def in_clip(x, y, kind):
 def test_circle_routes_follow_pixel_center_geometry(
     monkeypatch, threshold, clip_kind, alpha, cx, cy, radius
 ):
-    monkeypatch.setattr(render_target, "RASTER_CIRCLE_MIN_PIXEL_AREA", threshold)
+    monkeypatch.setattr(render_fills, "RASTER_CIRCLE_MIN_PIXEL_AREA", threshold)
     target, actual = make_target(clip_kind)
     color = (200, 30, 50, alpha)
     target.fill_circle(cx, cy, radius, color)

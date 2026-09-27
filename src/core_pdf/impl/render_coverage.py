@@ -6,10 +6,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.array_views import (
-    UInt8Array,
-    uint8_image_view,
-)
+from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.render_raster_state import RasterState
 from core_pdf.impl.scalars import clamp01
 from core_pdf_cythonized import accumulate_source_plane

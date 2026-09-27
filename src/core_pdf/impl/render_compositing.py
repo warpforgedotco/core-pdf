@@ -23,10 +23,7 @@ from core_pdf.impl.render_model import (
     SoftMaskPlane,
     is_plain_fill,
 )
-from core_pdf.impl.render_raster_state import (
-    EMPTY_PIXEL_BOX,
-    PixelBox,
-)
+from core_pdf.impl.render_raster_state import EMPTY_PIXEL_BOX, PixelBox
 from core_pdf.impl.scalars import clamp01
 from core_pdf_cythonized import (
     composite_elementary_knockout,
