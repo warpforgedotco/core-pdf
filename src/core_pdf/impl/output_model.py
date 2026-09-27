@@ -49,7 +49,7 @@ class FrozenMetadataFields:
 
     __frozen_fields__: ClassVar[tuple[str, ...]] = ("metadata",)
 
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         for name in self.__frozen_fields__:
             object.__setattr__(self, name, freeze(getattr(self, name)))
 
@@ -191,7 +191,7 @@ class Table(FrozenMetadataFields, GeneratedRecord):
         frozen_setattr(self, "row_bands", row_bands)
         frozen_setattr(self, "column_bands", column_bands)
         frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        self._post_init()
+        self.__post_init__()
 
     node_kind: ClassVar[str] = "table"
 
@@ -235,7 +235,7 @@ class Figure(FrozenMetadataFields, GeneratedRecord):
         frozen_setattr(self, "bbox", bbox)
         frozen_setattr(self, "kind", kind)
         frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        self._post_init()
+        self.__post_init__()
 
     node_kind: ClassVar[str] = "figure"
 
@@ -252,25 +252,12 @@ class Link(GeneratedRecord):
 
 
 class Annotation(FrozenMetadataFields, GeneratedRecord):
-    subtype: str | None
-    bbox: Rectangle | None
-    contents: str
-    destination: Any
+    subtype: str | None = None
+    bbox: Rectangle | None = None
+    contents: str = ""
+    destination: Any = None
 
     __frozen_fields__: ClassVar[tuple[str, ...]] = ("destination",)
-
-    def __init__(
-        self,
-        subtype: str | None = None,
-        bbox: Rectangle | None = None,
-        contents: str = "",
-        destination: Any = None,
-    ) -> None:
-        frozen_setattr(self, "subtype", subtype)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "contents", contents)
-        frozen_setattr(self, "destination", destination)
-        self._post_init()
 
 
 class FormField(GeneratedRecord):
@@ -298,69 +285,26 @@ class TextSpan(TextStyleFields, GeneratedRecord):
 
 class TextLine(TextStyleFields, GeneratedRecord):
     text: str
-    break_before: int
-    bbox: Rectangle | None
-    advance_bbox: Rectangle | None
-    ink_bbox: Rectangle | None
-    kind: str
-    source: str
-    confidence: float | None
-    baseline: Rectangle | None
-    contributing_sources: tuple[str, ...]
-    bold: bool
-    italic: bool
-    underline: bool
-    strikeout: bool
-    mark: bool
-    superscript: bool
-    subscript: bool
-    spans: tuple[TextSpan, ...]
-    words: tuple[TextWord, ...]
+    break_before: int = 1
+    bbox: Rectangle | None = None
+    advance_bbox: Rectangle | None = None
+    ink_bbox: Rectangle | None = None
+    kind: str = "text-line"
+    source: str = UNKNOWN
+    confidence: float | None = None
+    baseline: Rectangle | None = None
+    contributing_sources: tuple[str, ...] = ()
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
+    strikeout: bool = False
+    mark: bool = False
+    superscript: bool = False
+    subscript: bool = False
+    spans: tuple[TextSpan, ...] = ()
+    words: tuple[TextWord, ...] = ()
 
-    def __init__(
-        self,
-        text: str,
-        break_before: int = 1,
-        bbox: Rectangle | None = None,
-        advance_bbox: Rectangle | None = None,
-        ink_bbox: Rectangle | None = None,
-        kind: str = "text-line",
-        source: str = UNKNOWN,
-        confidence: float | None = None,
-        baseline: Rectangle | None = None,
-        contributing_sources: tuple[str, ...] = (),
-        bold: bool = False,
-        italic: bool = False,
-        underline: bool = False,
-        strikeout: bool = False,
-        mark: bool = False,
-        superscript: bool = False,
-        subscript: bool = False,
-        spans: tuple[TextSpan, ...] = (),
-        words: tuple[TextWord, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "break_before", break_before)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "advance_bbox", advance_bbox)
-        frozen_setattr(self, "ink_bbox", ink_bbox)
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "source", source)
-        frozen_setattr(self, "confidence", confidence)
-        frozen_setattr(self, "baseline", baseline)
-        frozen_setattr(self, "contributing_sources", contributing_sources)
-        frozen_setattr(self, "bold", bold)
-        frozen_setattr(self, "italic", italic)
-        frozen_setattr(self, "underline", underline)
-        frozen_setattr(self, "strikeout", strikeout)
-        frozen_setattr(self, "mark", mark)
-        frozen_setattr(self, "superscript", superscript)
-        frozen_setattr(self, "subscript", subscript)
-        frozen_setattr(self, "spans", spans)
-        frozen_setattr(self, "words", words)
-        self._post_init()
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         object.__setattr__(self, "words", reconcile_text_words(self.text, self.words))
         if self.spans and "".join(span.text for span in self.spans) != self.text:
             object.__setattr__(self, "spans", ())
@@ -631,7 +575,7 @@ class Page(ViewCache, GeneratedRecord):
         frozen_setattr(self, "cropbox", cropbox)
         frozen_setattr(self, "user_unit", user_unit)
         frozen_setattr(self, "_elements", ())
-        self._post_init()
+        self.__post_init__()
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -729,7 +673,7 @@ class Page(ViewCache, GeneratedRecord):
             user_unit=user_unit,
         )
 
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         object.__setattr__(
             self,
             "_elements",
@@ -814,12 +758,12 @@ class Document(FrozenMetadataFields, ViewCache, GeneratedRecord):
         frozen_setattr(self, "metadata", {} if metadata is None else metadata)
         frozen_setattr(self, "diagnostics", diagnostics)
         frozen_setattr(self, "schema_version", schema_version)
-        self._post_init()
+        self.__post_init__()
 
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         if self.schema_version != SCHEMA_VERSION:
             raise ValueError(f"unsupported structured schema version: {self.schema_version}")
-        super()._post_init()
+        super().__post_init__()
 
     @property
     def text_view(self) -> DocumentTextView:

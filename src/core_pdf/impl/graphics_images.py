@@ -30,7 +30,7 @@ from core_pdf.impl.graphics_stream_decoding import (
     decode_stream_data,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import GeneratedRecord, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_cythonized import interleave_soft_mask
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterError
@@ -99,11 +99,6 @@ class ImageRaster(GeneratedRecord):
     array: numpy.ndarray[Any, Any]
     color_model: str
 
-    def __init__(self, array: numpy.ndarray[Any, Any], color_model: str) -> None:
-        frozen_setattr(self, "array", array)
-        frozen_setattr(self, "color_model", color_model)
-        self._post_init()
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -114,7 +109,7 @@ class ImageRaster(GeneratedRecord):
     def __hash__(self) -> int:
         return hash((self.array.shape, self.array.dtype.str, self.color_model))
 
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         array = numpy.asarray(self.array, dtype=numpy.uint8)
         if array.ndim == 2:
             array = array[:, :, None]
@@ -150,21 +145,10 @@ class ImageRaster(GeneratedRecord):
 
 class PreparedImage(GeneratedRecord):
     raster: ImageRaster
-    soft_mask: ImageRaster | None
-    is_stencil: bool
+    soft_mask: ImageRaster | None = None
+    is_stencil: bool = False
 
-    def __init__(
-        self,
-        raster: ImageRaster,
-        soft_mask: ImageRaster | None = None,
-        is_stencil: bool = False,
-    ) -> None:
-        frozen_setattr(self, "raster", raster)
-        frozen_setattr(self, "soft_mask", soft_mask)
-        frozen_setattr(self, "is_stencil", is_stencil)
-        self._post_init()
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         soft_mask = self.soft_mask
         if soft_mask is not None and (soft_mask.color_model != "gray" or soft_mask.has_alpha):
             raise ValueError("prepared image soft mask must be grayscale without alpha")
@@ -589,11 +573,6 @@ class DecodedImage(GeneratedRecord):
     array: numpy.ndarray[Any, Any]
     source: str
 
-    def __init__(self, array: numpy.ndarray[Any, Any], source: str) -> None:
-        frozen_setattr(self, "array", array)
-        frozen_setattr(self, "source", source)
-        self._post_init()
-
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
@@ -604,7 +583,7 @@ class DecodedImage(GeneratedRecord):
     def __hash__(self) -> int:
         return hash((self.array.shape, self.array.dtype.str, self.source))
 
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         if self.array.ndim not in {2, 3}:
             raise ValueError("decoded image must have two or three dimensions")
         if self.array.dtype not in (numpy.uint8, numpy.uint16):
