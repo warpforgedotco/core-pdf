@@ -332,6 +332,22 @@ def build_init(cls: type, specs: FieldSpecs, frozen: bool) -> FunctionType:
     return function
 
 
+def mixin_methods(
+    cls: type, fields: tuple[str, ...], explicit: set[str], generated: dict[str, FunctionType]
+) -> dict[str, FunctionType]:
+    methods: dict[str, FunctionType] = {}
+    if specialises(cls, "__repr__", explicit):
+        names = getattr(cls, "__repr_fields__", None)
+        methods["__repr__"] = specialise(cls, "__repr__", fields if names is None else names)
+    if specialises(cls, "__replace__", explicit) and takes_fields_in_order(
+        generated.get("__init__", getattr(cls, "__init__", None)), fields
+    ):
+        methods["__replace__"] = specialise(cls, "__replace__", fields)
+    if specialises(cls, "__getstate__", explicit):
+        methods["__getstate__"] = specialise(cls, "__getstate__", fields)
+    return methods
+
+
 @dataclass_transform(frozen_default=True, eq_default=True)
 class RecordType(type):
     def __new__(
@@ -348,8 +364,13 @@ class RecordType(type):
         **kwargs: Any,
     ) -> RecordType:
         own = own_annotations(namespace)
-        if not own and not any(isinstance(base, RecordType) for base in bases):
-            return super().__new__(mcs, name, bases, namespace, **kwargs)
+        if not own:
+            cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+            fields = getattr(cls, "__fields__", None)
+            if fields is not None:
+                for attribute, function in mixin_methods(cls, fields, set(namespace), {}).items():
+                    setattr(cls, attribute, function)
+            return cls
         specs = inherited_specs(bases)
         for field, annotation in own.items():
             inherited = specs.get(field, (MISSING, annotation))[0]
@@ -384,15 +405,7 @@ class RecordType(type):
             generated["__eq__"] = specialise(cls, "__eq__", fields)
         if generate_hash:
             generated["__hash__"] = specialise(cls, "__hash__", fields)
-        if specialises(cls, "__repr__", explicit):
-            names = getattr(cls, "__repr_fields__", None)
-            generated["__repr__"] = specialise(cls, "__repr__", fields if names is None else names)
-        if specialises(cls, "__replace__", explicit) and takes_fields_in_order(
-            generated.get("__init__", getattr(cls, "__init__", None)), fields
-        ):
-            generated["__replace__"] = specialise(cls, "__replace__", fields)
-        if specialises(cls, "__getstate__", explicit):
-            generated["__getstate__"] = specialise(cls, "__getstate__", fields)
+        generated.update(mixin_methods(cls, fields, explicit, generated))
         for attribute, function in generated.items():
             setattr(cls, attribute, function)
         return cls

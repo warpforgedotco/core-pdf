@@ -372,3 +372,23 @@ def test_the_generated_initialiser_ends_with_post_init() -> None:
     assert Normalised((3, 1, 2)).items == (1, 2, 3)
     assert Filled([]).items == [0]
     assert Filled([5]).items == [5]
+
+
+def test_a_subclass_without_fields_inherits_everything() -> None:
+    class Plain(Custom, init=False):
+        __slots__ = ()
+
+    assert "__init__" not in Plain.__dict__
+    assert "__eq__" not in Plain.__dict__
+    assert "__setattr__" not in Plain.__dict__
+    assert Plain("3").value == 3
+    assert Plain("3") != Custom("3")
+    assert repr(Plain("3")) == "Custom<3>"
+
+    class Loose(Mutable, init=False, frozen=False):
+        pass
+
+    loose = Loose(1, [])
+    loose.value = 2
+    assert loose.value == 2
+    assert repr(loose) == f"{Loose.__qualname__}(value=2, items=[])"

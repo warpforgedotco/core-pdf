@@ -21,6 +21,10 @@ class body wins. Class keywords select the variations: `frozen=False` for a muta
 record (no guards, unhashable when compared by value), `init=False` to inherit the
 parent's `__init__`, `eq=False` to keep identity equality, and `hash=False` for an
 equality-compared record that stays unhashable.
+A subclass that declares no fields of its own is an ordinary subclass: it keeps
+the `__init__`, equality, hash and mutability it inherits and only gets its own
+`__repr__`, `__replace__` and `__getstate__`; give it `init=False` (and
+`frozen=False` under a mutable record) so type checkers see the same.
 `RecordType` is marked with `typing.dataclass_transform`, so type checkers see the
 generated `__init__` and the frozen fields.
 
