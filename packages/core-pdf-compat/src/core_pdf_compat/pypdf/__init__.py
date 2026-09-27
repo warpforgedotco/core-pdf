@@ -91,7 +91,7 @@ class StructuredState(ClosingMixin):
 
     def page_count(self) -> int:
         pdf = self.source_pdf
-        return len(pdf.pages) if pdf.page_count() else 0
+        return len(pdf.pages) if pdf.declared_page_count() else 0
 
     @property
     def form_fields(self) -> tuple[Any, ...]:

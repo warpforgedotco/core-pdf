@@ -176,6 +176,9 @@ class PdfDocument(
         self.recovery.malformed(message)
 
     def page_count(self) -> int:
+        return len(self.pages)
+
+    def declared_page_count(self) -> int:
         if not self.page_tree_was_recovered:
             try:
                 count = self.resolver.resolve(self.page_tree_root().get("Count"))
