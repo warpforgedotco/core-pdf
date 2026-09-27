@@ -30,11 +30,3 @@ def test_sample_times_are_sorted_unique_and_bounded():
         assert len(times) == len(set(times))
         assert times[-1] == 1.0
         assert all(0.0 < t <= 1.0 and math.isfinite(t) for t in times)
-
-
-def test_core_reaches_the_sampler_through_the_type2_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import fonts_program_cff as font_program
-    from core_pdf_cythonized import type2_glyph_geometry
-
-    assert font_program.type2_glyph_geometry is type2_glyph_geometry

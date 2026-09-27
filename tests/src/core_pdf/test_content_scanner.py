@@ -7,14 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from core_pdf.impl.capture_recovery import iter_content_operations
+from core_pdf.impl.types import PdfName
+from core_pdf_spec.s_07_syntax.lexer import PdfLexer
+
 GOLDEN_PATH = Path(__file__).parent / "content_scanner_golden.pkl.gz"
 GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
-
-core_pdf = pytest.importorskip("core_pdf")
-
-from core_pdf.impl.capture_recovery import iter_content_operations  # noqa: E402
-from core_pdf.impl.types import PdfName  # noqa: E402
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer  # noqa: E402
 
 
 def normalize(value):

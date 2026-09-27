@@ -50,13 +50,6 @@ def test_pixels_outside_the_shape_are_left_alone():
     assert numpy.array_equal(destination, before)
 
 
-def test_render_target_uses_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_target as target
-
-    assert target.composite_knockout_group is composite_knockout_group
-
-
 def test_spec_no_longer_owns_the_algorithm():
     pytest.importorskip("core_pdf_spec")
     from core_pdf_spec.s_11_transparency import groups

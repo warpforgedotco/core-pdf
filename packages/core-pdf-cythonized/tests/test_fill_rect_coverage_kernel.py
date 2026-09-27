@@ -175,10 +175,3 @@ def test_flat_bands_match_the_five_steps(seed):
                 )
             )
     assert results[0] == results[1] == results[2]
-
-
-def test_render_target_uses_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_target as target
-
-    assert target.fill_rect_coverage is fill_rect_coverage

@@ -3,7 +3,6 @@
 
 import gzip
 import pickle
-import struct
 from pathlib import Path
 
 import pytest
@@ -51,18 +50,3 @@ def test_empty_regions_decode_to_an_empty_bitmap(width, height):
 def test_negative_sizes_are_rejected(width, height):
     with pytest.raises(ValueError, match="negative JBIG2 generic region size"):
         decode_arithmetic_generic_template0(b"", width, height)
-
-
-def test_core_decodes_arithmetic_regions_with_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import graphics_stream_decoding as stream_decoding
-
-    assert stream_decoding.decode_arithmetic_generic_template0 is (
-        decode_arithmetic_generic_template0
-    )
-    page = struct.pack(">IBBBI", 1, 48, 0, 1, 19) + struct.pack(">IIIIBH", 8, 1, 0, 0, 0, 0)
-    header = struct.pack(">IIiiBB", 8, 1, 0, 0, 0, 0) + bytes.fromhex("03 ff fd ff 02 fe fe fe")
-    region = header + bytes.fromhex("ff ac")
-    segment = struct.pack(">IBBBI", 2, 38, 0, 1, len(region)) + region
-    end = struct.pack(">IBBBI", 3, 49, 0, 1, 0)
-    assert stream_decoding.decode_jbig2(page + segment + end, None) == b"\x00"

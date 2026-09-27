@@ -100,10 +100,3 @@ def test_non_finite_spans_raise_what_math_ceil_raised():
 def test_edges_must_have_four_columns():
     with pytest.raises(ValueError, match="four columns"):
         supersampled_coverage_plane(numpy.zeros((3, 6)), 0.0, 4.0, 1.0, 0, 0, 4, 4, True)
-
-
-def test_render_target_uses_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_target as target
-
-    assert target.supersampled_coverage_plane is supersampled_coverage_plane

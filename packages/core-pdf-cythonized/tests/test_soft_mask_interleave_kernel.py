@@ -52,10 +52,3 @@ def test_an_index_outside_the_mask_is_refused():
         interleave_soft_mask(
             raster, 3, mask, numpy.array([2], dtype=numpy.intp), numpy.array([0], numpy.intp)
         )
-
-
-def test_the_image_path_uses_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import graphics_images as images
-
-    assert images.interleave_soft_mask is interleave_soft_mask

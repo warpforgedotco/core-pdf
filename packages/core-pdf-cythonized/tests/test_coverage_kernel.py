@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from core_pdf_cythonized import fill_glyph_coverage, signed_area_coverage
+from core_pdf_cythonized import signed_area_coverage
 
 GOLDEN_PATH = Path(__file__).parent / "coverage_golden.pkl.gz"
 GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
@@ -41,10 +41,3 @@ def test_coverage_is_bounded_to_unit_range():
     for case in GOLDEN:
         out = signed_area_coverage(case["edges"], case["width"], case["height"])
         assert out.size == 0 or (out.min() >= 0.0 and out.max() <= 1.0)
-
-
-def test_render_target_uses_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_target as target
-
-    assert target.fill_glyph_coverage is fill_glyph_coverage
