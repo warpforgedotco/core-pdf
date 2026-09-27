@@ -5,12 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.fonts_cmap_resources import resolve_cmap_decoder, resolve_cmap_resource
-from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
-from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode
+from core_pdf.impl.fonts_cmap import CMapDecoder, resolve_cmap_decoder, resolve_cmap_resource
 from core_pdf.impl.fonts_helpers import (
     build_decode_table,
     build_simple_encoding_glyph_names,
+    glyph_name_to_unicode,
     recover_differences,
     recover_strip_subset_tag,
     unicode_for_glyph_name,

@@ -10,8 +10,7 @@ from core_adobe_fonts.cmap.ranges import (
     code_in_ranges,
 )
 from core_pdf.impl.caches import BoundedDict
-from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
-from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts_cmap import CMapDecoder, ToUnicodeCMap
 from core_pdf.impl.fonts_encoding import FontEncoding
 from core_pdf.impl.fonts_glyph_geometry import GlyphGeometry, GlyphOutlineArrays
 from core_pdf.impl.fonts_helpers import LEGITIMATE_MULTI_CHAR_GLYPHS

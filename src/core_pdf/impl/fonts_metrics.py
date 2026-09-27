@@ -8,7 +8,7 @@ from typing import Any
 
 from core_adobe_fonts.afm.core14 import FONT_DATA as PDF_FONT_DATA
 from core_adobe_fonts.afm.core14 import Core14FontMetrics
-from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
+from core_pdf.impl.fonts_cmap import CMapDecoder
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.fonts_widths import (
     effective_descriptor,

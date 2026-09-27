@@ -8,10 +8,9 @@ from typing import Any
 from core_adobe_fonts.afm.core14 import FONT_DATA as CORE14_FONT_DATA
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_pdf.impl.capture_recovery import iter_content_operations
-from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts_cmap import ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder
-from core_pdf.impl.fonts_glyphs import TEX_GLYPH_ALIASES
-from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
+from core_pdf.impl.fonts_helpers import TEX_GLYPH_ALIASES, recover_strip_subset_tag
 from core_pdf.impl.fonts_metrics import LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.fonts_widths import parse_font_widths
 from core_pdf.impl.pdf_values import recover_pdf_name

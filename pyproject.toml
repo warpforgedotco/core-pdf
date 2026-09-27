@@ -180,7 +180,7 @@ line-length = 100
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_content/streams.py" = ["ARG002"]
 "src/core_pdf/impl/recovery_lexer.py" = ["ARG002"]
 "src/core_pdf/impl/recovery_resolver.py" = ["ARG002"]
-"src/core_pdf/impl/fonts_cmap_tounicode.py" = ["ARG002"]
+"src/core_pdf/impl/fonts_cmap.py" = ["ARG002"]
 # Glyph programs share one hook signature; the defaults and the null program
 # ignore the parts a program type does not need.
 "src/core_pdf/impl/fonts_program_base.py" = ["ARG002"]
@@ -454,14 +454,11 @@ forbidden_modules = [
     "core_pdf.impl.capture_text_runs",
     "core_pdf.impl.capture_tolerant_state",
     "core_pdf.impl.fonts_cff_repair",
-    "core_pdf.impl.fonts_cmap_resources",
-    "core_pdf.impl.fonts_cmap_tokenizer",
-    "core_pdf.impl.fonts_cmap_tounicode",
+    "core_pdf.impl.fonts_cmap",
     "core_pdf.impl.fonts_decoder",
     "core_pdf.impl.fonts_encoding",
     "core_pdf.impl.fonts_fallback",
     "core_pdf.impl.fonts_glyph_geometry",
-    "core_pdf.impl.fonts_glyphs",
     "core_pdf.impl.fonts_helpers",
     "core_pdf.impl.fonts_ligatures",
     "core_pdf.impl.fonts_metrics",
@@ -611,14 +608,11 @@ forbidden_modules = [
     "core_pdf.impl.capture_text_runs",
     "core_pdf.impl.capture_tolerant_state",
     "core_pdf.impl.fonts_cff_repair",
-    "core_pdf.impl.fonts_cmap_resources",
-    "core_pdf.impl.fonts_cmap_tokenizer",
-    "core_pdf.impl.fonts_cmap_tounicode",
+    "core_pdf.impl.fonts_cmap",
     "core_pdf.impl.fonts_decoder",
     "core_pdf.impl.fonts_encoding",
     "core_pdf.impl.fonts_fallback",
     "core_pdf.impl.fonts_glyph_geometry",
-    "core_pdf.impl.fonts_glyphs",
     "core_pdf.impl.fonts_helpers",
     "core_pdf.impl.fonts_ligatures",
     "core_pdf.impl.fonts_metrics",
@@ -802,14 +796,11 @@ name = "Font and graphics adapters stay below capture and document composition"
 type = "forbidden"
 source_modules = [
     "core_pdf.impl.fonts_cff_repair",
-    "core_pdf.impl.fonts_cmap_resources",
-    "core_pdf.impl.fonts_cmap_tokenizer",
-    "core_pdf.impl.fonts_cmap_tounicode",
+    "core_pdf.impl.fonts_cmap",
     "core_pdf.impl.fonts_decoder",
     "core_pdf.impl.fonts_encoding",
     "core_pdf.impl.fonts_fallback",
     "core_pdf.impl.fonts_glyph_geometry",
-    "core_pdf.impl.fonts_glyphs",
     "core_pdf.impl.fonts_helpers",
     "core_pdf.impl.fonts_ligatures",
     "core_pdf.impl.fonts_metrics",
@@ -954,14 +945,11 @@ forbidden_modules = [
     "core_pdf.impl.capture_text_runs",
     "core_pdf.impl.capture_tolerant_state",
     "core_pdf.impl.fonts_cff_repair",
-    "core_pdf.impl.fonts_cmap_resources",
-    "core_pdf.impl.fonts_cmap_tokenizer",
-    "core_pdf.impl.fonts_cmap_tounicode",
+    "core_pdf.impl.fonts_cmap",
     "core_pdf.impl.fonts_decoder",
     "core_pdf.impl.fonts_encoding",
     "core_pdf.impl.fonts_fallback",
     "core_pdf.impl.fonts_glyph_geometry",
-    "core_pdf.impl.fonts_glyphs",
     "core_pdf.impl.fonts_helpers",
     "core_pdf.impl.fonts_ligatures",
     "core_pdf.impl.fonts_metrics",

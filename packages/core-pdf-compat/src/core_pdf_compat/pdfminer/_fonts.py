@@ -6,7 +6,7 @@ from typing import Any
 
 from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
 from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.fonts_cmap_resources import resolve_cmap_decoder
+from core_pdf.impl.fonts_cmap import resolve_cmap_decoder
 from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.geometry import bbox_union
