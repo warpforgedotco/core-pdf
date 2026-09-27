@@ -23,7 +23,7 @@ def every_edge_row(
             crossings.append((x0 + offset * (x1 - x0), 1 if y1 > y0 else -1))
     spans: list[tuple[int, int]] = []
     for start_x, end_x in fill_path_crossing_spans(crossings, fill_rule):
-        span = clip.page_x_to_pixel_span(start_x, end_x)
+        span = clip.grid.x_span(start_x, end_x)
         if span is not None:
             spans.append(span)
     return tuple(spans)

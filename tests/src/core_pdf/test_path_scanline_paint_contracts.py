@@ -4,6 +4,7 @@ import pytest
 from core_pdf.impl import render_fills
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_target import RasterTarget
 
 
@@ -11,7 +12,7 @@ def make_target(clip_kind):
     width, height = 48, 20
     pixels = bytearray(width * height * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(height, width, 4)
-    clip = ClipState(crop_x0=0, crop_y1=height, scale=1, width=width, height=height)
+    clip = ClipState(DeviceGrid(0, 0, height, 1, width, height))
     if clip_kind != "none":
         points: list[tuple[float, float]] = (
             [(2, 2), (40, 2), (40, 16), (2, 16)]
@@ -23,12 +24,6 @@ def make_target(clip_kind):
         pixels,
         None,
         clip=clip,
-        width=width,
-        height=height,
-        scale=1,
-        crop_x0=0,
-        crop_y0=0,
-        crop_y1=height,
         page_view=view,
     ), view
 

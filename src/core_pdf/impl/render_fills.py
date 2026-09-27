@@ -309,7 +309,7 @@ class RasterFills(RasterGroups):
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
         fill_rect = self.fill_rect
-        page_box_to_pixels = clip.page_box_to_pixels
+        page_box_to_pixels = self.grid.page_box_to_pixels
         scale = self.scale
         bitmap_type = type(bitmap)
         if box is None or (bitmap_type is not list and bitmap_type is not tuple) or not bitmap:
@@ -421,7 +421,7 @@ class RasterFills(RasterGroups):
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
         current_clip = clip.current_clip
-        page_box_to_pixels = clip.page_box_to_pixels
+        page_box_to_pixels = self.grid.page_box_to_pixels
         pixels = self.pixels
         scale = self.scale
         width = self.width
@@ -441,10 +441,8 @@ class RasterFills(RasterGroups):
         rectangular_clip = not clip_regions or clip_paths_are_axis_aligned_rects()
         if normal_fast and rgba[3] >= 255 and rectangular_clip:
             if (ix1 - ix0) * (iy1 - iy0) > RASTER_CIRCLE_MIN_PIXEL_AREA:
-                x_coords = numpy.arange(ix0, ix1, dtype=numpy.float64)
-                y_coords = numpy.arange(iy0, iy1, dtype=numpy.float64)
-                circle_page_xs = crop_x0 + (x_coords + 0.5) / scale
-                circle_page_ys = crop_y1 - (y_coords + 0.5) / scale
+                circle_page_xs = self.grid.x_centers(ix0, ix1)
+                circle_page_ys = self.grid.y_centers(iy0, iy1)
                 inside = (circle_page_xs[None, :] - cx) ** 2 + (
                     circle_page_ys[:, None] - cy
                 ) ** 2 <= radius2
@@ -610,7 +608,7 @@ class RasterFills(RasterGroups):
         blend_normal_solid_span = self.blend_normal_solid_span
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
-        page_box_to_pixels = self.clip.page_box_to_pixels
+        page_box_to_pixels = self.grid.page_box_to_pixels
         scale = self.scale
         width = self.width
         x0, y0, x1, y1 = bbox

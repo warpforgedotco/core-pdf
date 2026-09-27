@@ -8,6 +8,7 @@ from core_pdf.impl.capture_records import CapturedPath, CapturedSoftMask, Captur
 from core_pdf.impl.render_clipping import ClipState
 from core_pdf.impl.render_commands import translated_command
 from core_pdf.impl.render_display import DisplayList
+from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_model import DisplayListItem, PathPaintItem
 from core_pdf.impl.render_target import RasterTarget
 
@@ -29,13 +30,7 @@ def render(item):
     target = RasterTarget(
         pixels,
         None,
-        clip=ClipState(crop_x0=0, crop_y1=12, scale=1, width=12, height=12),
-        width=12,
-        height=12,
-        scale=1,
-        crop_x0=0,
-        crop_y0=0,
-        crop_y1=12,
+        clip=ClipState(DeviceGrid(0, 0, 12, 1, 12, 12)),
         page_view=view,
     )
     target.paint_item(item)

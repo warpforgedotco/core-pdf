@@ -24,6 +24,7 @@ from core_pdf.impl.render_display import (
     DisplayList,
     display_item_box,
 )
+from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_model import (
     DisplayItem,
     DisplayListItem,
@@ -268,23 +269,10 @@ class RenderedPage(ReprFields):
         page_group_alpha = self.metadata.get("group_alpha")
         if not is_pdf_number(page_group_alpha):
             page_group_alpha = None
-        clip_state = ClipState(
-            crop_x0=crop_x0,
-            crop_y1=crop_y1,
-            scale=device_scale,
-            width=width,
-            height=height,
-        )
         raster_target = RasterTarget(
             pixels,
             page_group_alpha,
-            clip=clip_state,
-            width=width,
-            height=height,
-            scale=device_scale,
-            crop_x0=crop_x0,
-            crop_y0=crop_y0,
-            crop_y1=crop_y1,
+            clip=ClipState(DeviceGrid(crop_x0, crop_y0, crop_y1, device_scale, width, height)),
             page_view=page_pixels,
             semantic_context=self.semantic_context,
         )

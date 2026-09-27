@@ -85,12 +85,6 @@ class RasterTarget(RasterShading):
         group_alpha: float | None,
         *,
         clip: ClipState,
-        width: int,
-        height: int,
-        scale: float,
-        crop_x0: float,
-        crop_y0: float,
-        crop_y1: float,
         page_view: UInt8Array,
         semantic_context: SemanticContext | None = None,
         resources: RenderResources | None = None,
@@ -100,15 +94,17 @@ class RasterTarget(RasterShading):
         self.sync_group_mirrors()
         self.paint_alpha_is_shape = False
         self.shape_alpha = 1.0
+        grid = clip.grid
         self.clip = clip
-        self.width = width
-        self.height = height
-        self.scale = scale
-        self.crop_x0 = crop_x0
-        self.crop_y1 = crop_y1
+        self.grid = grid
+        self.width = grid.width
+        self.height = grid.height
+        self.scale = grid.scale
+        self.crop_x0 = grid.crop_x0
+        self.crop_y1 = grid.crop_y1
         self.page_pixels = page_view
         self.page_buffer = pixels
-        self.crop_y0 = crop_y0
+        self.crop_y0 = grid.crop_y0
         self.clip_stack = []
         self.clip_floor = 0
         self.group_floor = 1
@@ -127,19 +123,7 @@ class RasterTarget(RasterShading):
         sibling = RasterTarget(
             pixels,
             None,
-            clip=ClipState(
-                crop_x0=self.crop_x0,
-                crop_y1=self.crop_y1,
-                scale=self.scale,
-                width=self.width,
-                height=self.height,
-            ),
-            width=self.width,
-            height=self.height,
-            scale=self.scale,
-            crop_x0=self.crop_x0,
-            crop_y0=self.crop_y0,
-            crop_y1=self.crop_y1,
+            clip=ClipState(self.grid),
             page_view=view,
             semantic_context=self.semantic_context,
             resources=self.resources,

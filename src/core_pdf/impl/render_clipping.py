@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import math
 from bisect import bisect_left
 from collections.abc import Iterable
-from math import ceil, floor
 from typing import Any, ClassVar
 
 import numpy
 
 from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_records import CapturedPath
+from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_paths import (
     fill_path_crossing_spans,
     intersect_box,
@@ -107,6 +106,7 @@ class ClipState:
         "last_region",
         "last_clipped",
         "span_arrays",
+        "grid",
         "crop_x0",
         "crop_y1",
         "scale",
@@ -114,26 +114,19 @@ class ClipState:
         "height",
     )
 
-    def __init__(
-        self,
-        *,
-        crop_x0: float,
-        crop_y1: float,
-        scale: float,
-        width: int,
-        height: int,
-    ) -> None:
+    def __init__(self, grid: DeviceGrid) -> None:
         self.regions: list[ClipRegion] = []
         self.last_box: tuple[float, float, float, float] | None = None
         self.last_region: ClipRegion | None = None
         self.last_clipped: (
             tuple[tuple[float, float, float, float], tuple[int, int, int, int]] | None
         ) = None
-        self.crop_x0 = crop_x0
-        self.crop_y1 = crop_y1
-        self.scale = scale
-        self.width = width
-        self.height = height
+        self.grid = grid
+        self.crop_x0 = grid.crop_x0
+        self.crop_y1 = grid.crop_y1
+        self.scale = grid.scale
+        self.width = grid.width
+        self.height = grid.height
         self.span_arrays: IdentityCache[RowSpanArrays] = IdentityCache()
 
     def row_span_arrays(self, region: ClipRegion) -> RowSpanArrays:
@@ -147,37 +140,6 @@ class ClipState:
             [value for row in rows for span in row for value in span], dtype=numpy.int64
         )
         return self.span_arrays.put(region, (offsets, spans))
-
-    def page_box_to_pixels(
-        self, x0: float, y0: float, x1: float, y1: float
-    ) -> tuple[int, int, int, int] | None:
-        width = self.width
-        height = self.height
-        crop_x0 = self.crop_x0
-        crop_y1 = self.crop_y1
-        scale = self.scale
-        ix0 = floor((x0 - crop_x0) * scale)
-        ix0 = width if ix0 > width else max(ix0, 0)
-        ix1 = ceil((x1 - crop_x0) * scale)
-        ix1 = width if ix1 > width else max(ix1, 0)
-        iy0 = floor((crop_y1 - y1) * scale)
-        iy0 = height if iy0 > height else max(iy0, 0)
-        iy1 = ceil((crop_y1 - y0) * scale)
-        iy1 = height if iy1 > height else max(iy1, 0)
-        if ix1 <= ix0 or iy1 <= iy0:
-            return None
-        return ix0, iy0, ix1, iy1
-
-    def page_x_to_pixel_span(self, start_x: float, end_x: float) -> tuple[int, int] | None:
-        if end_x <= start_x:
-            return None
-        start = math.ceil((start_x - self.crop_x0) * self.scale - 0.5)
-        end = math.ceil((end_x - self.crop_x0) * self.scale - 0.5)
-        start = max(0, min(self.width, start))
-        end = max(0, min(self.width, end))
-        if end <= start:
-            return None
-        return start, end
 
     @property
     def depth(self) -> int:
@@ -234,6 +196,7 @@ class ClipState:
     ) -> list[RowSpans]:
         crop_y1 = self.crop_y1
         scale = self.scale
+        x_span = self.grid.x_span
         descending = scale > 0
         tops: list[tuple[float, int]] = []
         lows: list[float] = []
@@ -272,7 +235,7 @@ class ClipState:
             candidates = live
             spans: list[PixelSpan] = []
             for start_x, end_x in fill_path_crossing_spans(crossings, fill_rule):
-                span = self.page_x_to_pixel_span(start_x, end_x)
+                span = x_span(start_x, end_x)
                 if span is not None:
                     spans.append(span)
             rows.append(tuple(spans))
@@ -295,13 +258,13 @@ class ClipState:
             box = EMPTY_CLIP_BOX
             pixel_box = None
         else:
-            pixel_box = self.page_box_to_pixels(*box)
+            pixel_box = self.grid.page_box_to_pixels(*box)
 
         if rect is not None and (parent is None or parent.rectangular):
             self.regions.append(ClipRegion(box, pixel_box, True, None))
             return
 
-        rect_pixel_box = self.page_box_to_pixels(*rect) if rect is not None else None
+        rect_pixel_box = self.grid.page_box_to_pixels(*rect) if rect is not None else None
         edges = tuple(path.fill_edges()) if rect is None else ()
         row_start, row_stop = (0, 0) if pixel_box is None else (pixel_box[1], pixel_box[3])
         path_rows = (
@@ -341,7 +304,7 @@ class ClipState:
                 box if region is None or region.box is None else intersect_box(box, region.box)
             )
             if clipped is not None:
-                pixel_box = self.page_box_to_pixels(*clipped)
+                pixel_box = self.grid.page_box_to_pixels(*clipped)
                 if pixel_box is not None:
                     result = (clipped, pixel_box)
         self.last_clipped = result

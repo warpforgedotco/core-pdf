@@ -8,6 +8,7 @@ import pytest
 from core_pdf import PdfDocument
 from core_pdf.impl import render_target as raster
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
+from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_model import LineCap
 from core_pdf.impl.render_paths import circle_path, dash_subpath, intersect_box
 from core_pdf.impl.render_target import RasterTarget
@@ -100,19 +101,11 @@ def make_target(
     else:
         pixels = bytearray(rng.randrange(256) for _ in range(width * height * 4))
     view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(height, width, 4)
-    clip = raster.ClipState(
-        crop_x0=0, crop_y1=height / scale, scale=scale, width=width, height=height
-    )
+    clip = raster.ClipState(DeviceGrid(0, 0, height / scale, scale, width, height))
     return RasterTarget(
         pixels,
         None,
         clip=clip,
-        width=width,
-        height=height,
-        scale=scale,
-        crop_x0=0,
-        crop_y0=0,
-        crop_y1=height / scale,
         page_view=view,
     )
 

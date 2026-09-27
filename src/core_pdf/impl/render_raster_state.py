@@ -10,6 +10,7 @@ import numpy
 from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.capture_records import CapturedPath
 from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_model import DisplayItem, RasterGroup
 from core_pdf.impl.render_resources import RenderResources
 from core_pdf_spec.standards import SemanticContext
@@ -43,6 +44,7 @@ class RasterState:
         "paint_alpha_is_shape",
         "shape_alpha",
         "clip",
+        "grid",
         "width",
         "height",
         "scale",
@@ -71,6 +73,7 @@ class RasterState:
     paint_alpha_is_shape: bool
     shape_alpha: float
     clip: ClipState
+    grid: DeviceGrid
     width: int
     height: int
     scale: float

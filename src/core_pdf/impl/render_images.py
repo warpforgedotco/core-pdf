@@ -155,10 +155,9 @@ class RasterImages(RasterStrokes):
         blit_opaque_sampled_tiles = self.blit_opaque_sampled_tiles
         clip_regions = clip.regions
         clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
-        crop_x0 = self.crop_x0
-        crop_y1 = self.crop_y1
         current_clip = clip.current_clip
-        scale = self.scale
+        x_centers = self.grid.x_centers
+        y_centers = self.grid.y_centers
         if len(quad) < 3:
             return False
         p00 = quad[0]
@@ -216,7 +215,7 @@ class RasterImages(RasterStrokes):
         ):
             inv_ux = 1.0 / ux
             inv_vy = 1.0 / vy
-            page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
+            page_x = x_centers(ix0, ix1)
             source_u = (page_x - p00[0]) * inv_ux
             source_samples = uint8_view(converted)
             valid_x = (source_u >= 0.0) & (source_u <= 1.0)
@@ -225,7 +224,7 @@ class RasterImages(RasterStrokes):
                 0,
                 width_px - 1,
             )
-            axis_page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
+            axis_page_y = y_centers(iy0, iy1)
             source_y_array = ((1.0 - (axis_page_y - p00[1]) * inv_vy) * height_px).astype(
                 numpy.intp
             )
@@ -266,8 +265,8 @@ class RasterImages(RasterStrokes):
             if u_from_x:
                 inv_ux = 1.0 / ux
                 inv_vy = 1.0 / vy
-                page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
-                page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
+                page_x = x_centers(ix0, ix1)
+                page_y = y_centers(iy0, iy1)
                 source_u = (page_x - p00[0]) * inv_ux
                 source_v = (page_y - p00[1]) * inv_vy
                 valid_x = (source_u >= 0.0) & (source_u <= 1.0)
@@ -285,8 +284,8 @@ class RasterImages(RasterStrokes):
             else:
                 inv_uy = 1.0 / uy
                 inv_vx = 1.0 / vx
-                page_x = crop_x0 + (numpy.arange(ix0, ix1) + 0.5) / scale
-                page_y = crop_y1 - (numpy.arange(iy0, iy1) + 0.5) / scale
+                page_x = x_centers(ix0, ix1)
+                page_y = y_centers(iy0, iy1)
                 source_v = (page_x - p00[0]) * inv_vx
                 source_u = (page_y - p00[1]) * inv_uy
                 valid_x = (source_v >= 0.0) & (source_v <= 1.0)
@@ -328,11 +327,11 @@ class RasterImages(RasterStrokes):
         tile_rows = max(1, AFFINE_BLIT_SCRATCH_BYTES // (160 * tile_columns))
         for row_start in range(iy0, iy1, tile_rows):
             row_end = min(iy1, row_start + tile_rows)
-            page_y = crop_y1 - (numpy.arange(row_start, row_end) + 0.5) / scale
+            page_y = y_centers(row_start, row_end)
             rel_y = page_y[:, None] - p00[1]
             for column_start in range(ix0, ix1, tile_columns):
                 column_end = min(ix1, column_start + tile_columns)
-                page_x = crop_x0 + (numpy.arange(column_start, column_end) + 0.5) / scale
+                page_x = x_centers(column_start, column_end)
                 rel_x = page_x[None, :] - p00[0]
                 source_u = (rel_x * vy - rel_y * vx) * inv_det
                 source_v = (ux * rel_y - uy * rel_x) * inv_det

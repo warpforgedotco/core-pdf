@@ -56,7 +56,7 @@ class RasterShading(RasterImages):
     __slots__ = ()
 
     def raster_page_box(self) -> tuple[float, float, float, float]:
-        return (self.crop_x0, self.crop_y0, self.crop_x0 + self.width / self.scale, self.crop_y1)
+        return self.grid.page_box()
 
     def shading_box(
         self,
