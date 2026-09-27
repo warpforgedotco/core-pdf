@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from typing import Any
 
 import numpy
 
@@ -13,7 +12,7 @@ from core_pdf.impl.geometry import normalize_rect, rect_tuple
 from core_pdf.impl.graphics_shading import PreparedShading, prepare_shading
 from core_pdf.impl.render_blend import kernel_blend_code, scale_rgba_alpha
 from core_pdf.impl.render_images import RasterImages
-from core_pdf.impl.render_model import PathPaintItem
+from core_pdf.impl.render_model import PathPaintItem, ShadingItem
 from core_pdf.impl.render_paths import intersect_box
 from core_pdf.impl.render_patterns import (
     cell_paints_nothing,
@@ -25,7 +24,7 @@ from core_pdf.impl.render_resources import RenderResources
 from core_pdf.impl.scalars import clamp01
 from core_pdf_cythonized import shading_blend, shading_values
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
+from core_pdf_spec.s_08_graphics.color_rendering import ColorRendering
 
 
 def shading_rgba(
@@ -60,12 +59,12 @@ class RasterShading(RasterImages):
 
     def shading_box(
         self,
-        data: dict[str, Any],
+        item: ShadingItem,
         shading: PreparedShading,
     ) -> tuple[float, float, float, float]:
         box = shading.bbox
         if box is None:
-            box = rect_tuple(data.get("bbox"))
+            box = rect_tuple(item.bbox)
         if box is None:
             box = self.raster_page_box()
         return normalize_rect(box)
@@ -75,18 +74,16 @@ class RasterShading(RasterImages):
     ) -> PreparedShading | None:
         return prepared_shading(self.resources, dictionary, rendering)
 
-    def paint_shading(self, data: dict[str, Any], blend_mode: str | None) -> None:
-        shading = self.prepared_shading(
-            data.get("dictionary"), data.get("color_rendering", DEFAULT_COLOR_RENDERING)
-        )
+    def paint_shading(self, item: ShadingItem, blend_mode: str | None) -> None:
+        shading = self.prepared_shading(item.dictionary, item.color_rendering)
         if shading is None:
             return
-        clipped_box = self.clip.clipped_pixel_box(self.shading_box(data, shading))
+        clipped_box = self.clip.clipped_pixel_box(self.shading_box(item, shading))
         if clipped_box is None:
             return
         ix0, iy0, ix1, iy1 = clipped_box[1]
-        soft_mask_alpha = data.get("soft_mask_alpha")
-        fill_opacity = data.get("fill_opacity")
+        soft_mask_alpha = item.soft_mask_alpha
+        fill_opacity = item.fill_opacity
         shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
         mode = kernel_blend_code(self.resolved_blend(blend_mode))
         domain = shading.domain
@@ -254,7 +251,7 @@ class RasterShading(RasterImages):
                     "soft_mask_alpha": data.soft_mask_alpha,
                     "color_rendering": pattern.color_rendering,
                 }
-                self.paint_shading(shading_data, blend_mode)
+                self.paint_shading(ShadingItem.from_data(data.seqno, shading_data), blend_mode)
                 return True
             return self.paint_tiling_pattern(pattern, data, blend_mode)
         finally:

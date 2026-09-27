@@ -17,6 +17,7 @@ from core_pdf.impl.render_model import (
     ImagePaintItem,
     PathPaintItem,
     PathPaintKind,
+    display_item,
     is_plain_fill,
     path_paint_fields,
 )
@@ -27,9 +28,6 @@ PATH_PAINT_KINDS = {
     name: PathPaintKind(index) for index, name in enumerate(("fill", "stroke", "fillstroke"))
 }
 MAX_COALESCED_STROKE_SUBPATHS = 256
-RASTER_CONTROL_KINDS = frozenset(
-    {"state-push", "state-pop", "clip", "group-begin", "group-end", "scope-begin", "scope-end"}
-)
 
 
 def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -348,7 +346,7 @@ class DisplayList:
             )
             return
         self.track_group_boundary(kind, data)
-        self.items.append(DisplayListItem(kind=kind, seqno=seqno, data=data))
+        self.items.append(display_item(kind, seqno, data))
 
     def append_captured_drawing(self, drawing: CapturedDrawing) -> None:
         if not drawing.paints:
@@ -435,35 +433,6 @@ class DisplayList:
             path=drawing.path,
             items=drawing.items,
         )
-
-
-def display_item_box(
-    item: DisplayItem, *, scale: float = 1.0
-) -> tuple[float, float, float, float] | None:
-    if type(item) is ImagePaintItem:
-        return rect_tuple(item.bbox)
-    if type(item) is PathPaintItem:
-        value = item.bbox
-        if value is None and type(item.path) is CapturedPath:
-            value = item.path.bbox()
-        box = rect_tuple(value)
-        if box is None:
-            return None
-        if item.paint_kind in {PathPaintKind.STROKE, PathPaintKind.FILL_STROKE}:
-            pad = max(0.5 / scale, item.line_width * 0.5)
-            box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
-        return box
-    generic_item = item
-    data = generic_item.data
-    if generic_item.kind in {"text", "glyph"}:
-        value = data.get("bbox")
-    elif generic_item.kind in {"annotation", "widget"}:
-        value = data.get("rect")
-    elif generic_item.kind == "shading":
-        value = data.get("bbox") or data.get("rect")
-    else:
-        return None
-    return rect_tuple(value)
 
 
 __all__ = (

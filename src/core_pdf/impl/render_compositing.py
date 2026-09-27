@@ -12,10 +12,8 @@ from core_pdf.impl.render_blend import (
     BlendOp,
     blend_op,
     blend_visible_pixels,
-    color_rgba,
     composite_blended_group_numpy,
     declared_blend,
-    scale_rgba_alpha,
 )
 from core_pdf.impl.render_coverage import RasterCoverage
 from core_pdf.impl.render_model import (
@@ -164,9 +162,7 @@ class RasterCompositing(RasterCoverage):
             return False
         if item.path.axis_aligned_rect() is not None:
             return False
-        rgba = color_rgba(item.fill, item.fill_opacity)
-        if is_pdf_number(item.soft_mask_alpha):
-            rgba = scale_rgba_alpha(rgba, item.soft_mask_alpha)
+        rgba = item.fill_rgba()
         if len(edge_array) == 0:
             return True
         clipped = self.clip.clipped_pixel_box(bbox)

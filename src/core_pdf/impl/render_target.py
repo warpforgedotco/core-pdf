@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from copy import replace
+from typing import Any
 
 import numpy
 
@@ -17,14 +18,21 @@ from core_pdf.impl.render_blend import (
     scale_rgba_alpha,
 )
 from core_pdf.impl.render_clipping import ClipState
-from core_pdf.impl.render_commands import append_captured_program, translated_command
+from core_pdf.impl.render_commands import append_captured_program
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import (
+    ClipItem,
+    ControlItem,
     DisplayItem,
+    GlyphBitmapItem,
+    GroupBeginItem,
     ImagePaintItem,
+    PaintItemBase,
     PathPaintItem,
     PathPaintKind,
     RasterGroup,
+    ScopeBeginItem,
+    ShadingItem,
     SoftMaskPlane,
 )
 from core_pdf.impl.render_resources import RenderResources
@@ -33,13 +41,6 @@ from core_pdf.impl.render_strokes import paint_stroke_once
 from core_pdf_cythonized import alpha_channel
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.standards import SemanticContext
-
-
-def graphics_soft_mask(item: DisplayItem) -> CapturedSoftMask | None:
-    if isinstance(item, (PathPaintItem, ImagePaintItem)):
-        return item.graphics_soft_mask
-    mask: CapturedSoftMask | None = item.data.get("graphics_soft_mask")
-    return mask
 
 
 def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskPlane | None:
@@ -145,22 +146,18 @@ class RasterTarget(RasterShading):
         self.push_scope(clip_path.translated(*translation) if clip_path is not None else None)
         try:
             for item in items:
-                self.paint_item(translated_command(item, *translation, parent_blend_mode))
+                self.paint_item(item.translated(*translation, parent_blend_mode))
         finally:
             self.pop_scope()
 
     def paint_item(self, item: DisplayItem) -> None:
-        if isinstance(item, (PathPaintItem, ImagePaintItem)) or item.kind in {"glyph", "shading"}:
+        if isinstance(item, PaintItemBase):
             previous_shape_state = self.paint_alpha_is_shape, self.shape_alpha
-            self.paint_alpha_is_shape = (
-                item.alpha_is_shape
-                if isinstance(item, (PathPaintItem, ImagePaintItem))
-                else item.data.get("alpha_is_shape") is True
-            )
+            self.paint_alpha_is_shape = item.alpha_is_shape
             self.shape_alpha = 1.0
             try:
                 knockout = self.buffer_stack[-1].knockout
-                mask = graphics_soft_mask(item)
+                mask = item.graphics_soft_mask
                 mask_alpha = resolve_soft_mask(self, mask) if mask is not None else None
                 fillstroke = (
                     isinstance(item, PathPaintItem) and item.paint_kind is PathPaintKind.FILL_STROKE
@@ -200,18 +197,21 @@ class RasterTarget(RasterShading):
         self.paint_display_item(item)
 
     def paint_display_item(self, item: DisplayItem) -> None:
-        if isinstance(item, PathPaintItem):
-            self.paint_typed_path(item)
-            return
-        if isinstance(item, ImagePaintItem):
-            self.blit_image(item)
-            return
-        data = item.data
-        blend_mode = declared_blend(data.get("blend_mode"))
+        handler = PAINT_HANDLERS.get(type(item))
+        if handler is not None:
+            handler(self, item)
+
+    def paint_scope_begin(self, item: ScopeBeginItem) -> None:
+        path = item.path
+        self.push_scope(path if isinstance(path, CapturedPath) else None)
+
+    def paint_clip(self, item: ClipItem) -> None:
+        path = item.path
+        if isinstance(path, CapturedPath) and path.has_segments():
+            self.clip.push(path, item.fill_rule or "nonzero")
+
+    def paint_control(self, item: ControlItem) -> None:
         match item.kind:
-            case "scope-begin":
-                path = data.get("path")
-                self.push_scope(path if isinstance(path, CapturedPath) else None)
             case "scope-end":
                 self.pop_scope()
             case "state-push":
@@ -221,63 +221,56 @@ class RasterTarget(RasterShading):
                     self.clip.restore(self.clip_stack.pop())
                 else:
                     self.clip.restore(self.clip_floor)
-            case "clip":
-                path = data.get("path")
-                if isinstance(path, CapturedPath) and path.has_segments():
-                    self.clip.push(path, data.get("fill_rule") or "nonzero")
-            case "group-begin":
-                opacity = data.get("fill_opacity")
-                mask = data.get("soft_mask_alpha")
-                if is_pdf_number(mask):
-                    opacity = (float(opacity) if is_pdf_number(opacity) else 1.0) * float(mask)
-                isolated = data.get("group_isolated", True)
-                knockout = data.get("group_knockout", False)
-                group_mask_alpha = (
-                    resolve_soft_mask(self, graphics_mask)
-                    if (graphics_mask := data.get("graphics_soft_mask")) is not None
-                    else None
-                )
-                region = self.knockout_group_region(item) if not isolated and knockout else None
-                if not isolated and (not knockout or region is not None):
-                    self.push_scratch_group(
-                        opacity,
-                        data.get("blend_mode"),
-                        track_shape=data.get("group_track_shape", False),
-                        mask_alpha=group_mask_alpha,
-                        alpha_is_shape=data.get("alpha_is_shape", False),
-                        region=region,
-                    )
-                else:
-                    self.push_group(
-                        bytearray(self.width * self.height * 4),
-                        opacity,
-                        data.get("blend_mode"),
-                        isolated=isolated,
-                        knockout=knockout,
-                        alpha_is_shape=data.get("alpha_is_shape", False),
-                        track_shape=data.get("group_track_shape", False),
-                        mask_alpha=group_mask_alpha,
-                    )
             case "group-end" if len(self.buffer_stack) > self.group_floor:
                 self.composite_group(self.pop_group())
-            case "glyph" if data.get("visible") is not False:
-                rgba = color_rgba(data.get("fill_color"), data.get("fill_opacity"))
-                if is_pdf_number(mask := data.get("soft_mask_alpha")):
-                    rgba = scale_rgba_alpha(rgba, mask)
-                self.set_shape_alpha(rgba[3] / 255.0)
-                self.draw_glyph_bitmap(
-                    data.get("bbox"),
-                    data.get("bitmap"),
-                    rgba,
-                    blend_mode,
-                    data.get("bitmap_width"),
-                    data.get("bitmap_height"),
-                )
-            case "shading":
-                self.set_shape_alpha(
-                    resolve_constant_alpha(data.get("fill_opacity"), data.get("soft_mask_alpha"))
-                )
-                self.paint_shading(data, blend_mode)
+
+    def paint_group_begin(self, item: GroupBeginItem) -> None:
+        opacity = item.opacity()
+        isolated = item.isolated
+        knockout = item.knockout
+        graphics_mask = item.graphics_soft_mask
+        group_mask_alpha = (
+            resolve_soft_mask(self, graphics_mask) if graphics_mask is not None else None
+        )
+        region = self.knockout_group_region(item) if not isolated and knockout else None
+        if not isolated and (not knockout or region is not None):
+            self.push_scratch_group(
+                opacity,
+                item.blend_mode,
+                track_shape=item.track_shape,
+                mask_alpha=group_mask_alpha,
+                alpha_is_shape=item.alpha_is_shape,
+                region=region,
+            )
+        else:
+            self.push_group(
+                bytearray(self.width * self.height * 4),
+                opacity,
+                item.blend_mode,
+                isolated=isolated,
+                knockout=knockout,
+                alpha_is_shape=item.alpha_is_shape,
+                track_shape=item.track_shape,
+                mask_alpha=group_mask_alpha,
+            )
+
+    def paint_glyph_bitmap(self, item: GlyphBitmapItem) -> None:
+        if item.visible is False:
+            return
+        rgba = item.fill_rgba()
+        self.set_shape_alpha(rgba[3] / 255.0)
+        self.draw_glyph_bitmap(
+            item.bbox,
+            item.bitmap,
+            rgba,
+            declared_blend(item.blend_mode),
+            item.bitmap_width,
+            item.bitmap_height,
+        )
+
+    def paint_shading_item(self, item: ShadingItem) -> None:
+        self.set_shape_alpha(resolve_constant_alpha(item.fill_opacity, item.soft_mask_alpha))
+        self.paint_shading(item, declared_blend(item.blend_mode))
 
     def paint_typed_path(self, item: PathPaintItem) -> None:
         path = item.path
@@ -295,9 +288,7 @@ class RasterTarget(RasterShading):
                 self.composite_group(self.pop_group())
             return
         if paint_kind is not PathPaintKind.STROKE:
-            rgba = color_rgba(item.fill, item.fill_opacity)
-            if is_pdf_number(soft_mask_alpha):
-                rgba = scale_rgba_alpha(rgba, soft_mask_alpha)
+            rgba = item.fill_rgba()
             self.set_shape_alpha(rgba[3] / 255.0)
             if item.fill_pattern is None or not self.paint_fill_pattern(item, blend_mode):
                 edge_array = item.edge_array
@@ -335,3 +326,15 @@ class RasterTarget(RasterShading):
                 item.line_cap,
                 item.line_join,
             )
+
+
+PAINT_HANDLERS: dict[type, Callable[[RasterTarget, Any], None]] = {
+    PathPaintItem: RasterTarget.paint_typed_path,
+    ImagePaintItem: RasterTarget.blit_image,
+    GlyphBitmapItem: RasterTarget.paint_glyph_bitmap,
+    ShadingItem: RasterTarget.paint_shading_item,
+    ScopeBeginItem: RasterTarget.paint_scope_begin,
+    ClipItem: RasterTarget.paint_clip,
+    GroupBeginItem: RasterTarget.paint_group_begin,
+    ControlItem: RasterTarget.paint_control,
+}

@@ -6,10 +6,9 @@ import pytest
 from core_pdf.impl.capture_program import CapturedProgram
 from core_pdf.impl.capture_records import CapturedPath, CapturedSoftMask, CapturedSubpath
 from core_pdf.impl.render_clipping import ClipState
-from core_pdf.impl.render_commands import translated_command
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_grid import DeviceGrid
-from core_pdf.impl.render_model import DisplayListItem, PathPaintItem
+from core_pdf.impl.render_model import ClipItem, PathPaintItem, ShadingItem, display_item
 from core_pdf.impl.render_target import RasterTarget
 
 
@@ -41,7 +40,7 @@ def render(item):
 def test_translated_cached_edges_match_path_geometry_and_raster(tx, ty):
     original = triangle_item()
     original_edges = original.edge_array.copy()
-    placed = translated_command(original, tx, ty)
+    placed = original.translated(tx, ty)
     assert isinstance(placed, PathPaintItem)
     np.testing.assert_array_equal(placed.edge_array, np.asarray(placed.path.fill_edges()))
     actual = render(placed)
@@ -60,7 +59,7 @@ def test_path_translation_preserves_mask_program_and_explicit_blend(own_blend, t
     original = replace(
         triangle_item(), edge_array=None, blend_mode=own_blend, graphics_soft_mask=mask
     )
-    placed = translated_command(original, tx, ty, "Screen")
+    placed = original.translated(tx, ty, "Screen")
     assert isinstance(placed, PathPaintItem)
     assert placed.blend_mode == (own_blend or "Screen")
     assert placed.edge_array is None
@@ -86,13 +85,14 @@ def test_shading_translation_moves_centres_and_bounds_without_changing_radii(
     shading_type, coords, expected, container
 ):
     dictionary = {"ShadingType": shading_type, "Coords": container(coords), "BBox": (0, 0, 5, 6)}
-    original = DisplayListItem("shading", 9, {"dictionary": dictionary, "rect": (0, 0, 5, 6)})
-    placed = translated_command(original, 10, 20, "Multiply")
-    assert isinstance(placed, DisplayListItem)
-    assert placed.data["dictionary"]["Coords"] == expected
-    assert placed.data["dictionary"]["BBox"] == (10, 20, 15, 26)
-    assert placed.data["rect"] == (10, 20, 15, 26)
-    assert placed.data["blend_mode"] == "Multiply"
+    original = display_item("shading", 9, {"dictionary": dictionary, "rect": (0, 0, 5, 6)})
+    placed = original.translated(10, 20, "Multiply")
+    assert isinstance(placed, ShadingItem)
+    assert placed.dictionary["Coords"] == expected
+    assert placed.dictionary["BBox"] == (10, 20, 15, 26)
+    assert placed.rect == (10, 20, 15, 26)
+    assert placed.blend_mode == "Multiply"
+    assert list(placed.to_data()) == ["dictionary", "rect", "blend_mode"]
     assert dictionary["Coords"] == container(coords)
     assert dictionary["BBox"] == (0, 0, 5, 6)
 
@@ -100,13 +100,14 @@ def test_shading_translation_moves_centres_and_bounds_without_changing_radii(
 def test_generic_clip_translation_retains_shared_mask_capture_and_source_path():
     path = triangle_item().path
     mask = CapturedSoftMask(CapturedProgram())
-    original = DisplayListItem("clip", 1, {"path": path, "bbox": None, "graphics_soft_mask": mask})
-    placed = translated_command(original, 2, 3)
-    assert isinstance(placed, DisplayListItem)
-    assert placed.data["path"].bbox() == (3, 4, 6, 7)
-    assert placed.data["bbox"] is None
-    assert placed.data["graphics_soft_mask"].offset == (2, 3)
-    assert placed.data["graphics_soft_mask"].program is mask.program
+    original = display_item("clip", 1, {"path": path, "bbox": None, "graphics_soft_mask": mask})
+    placed = original.translated(2, 3)
+    assert isinstance(placed, ClipItem)
+    assert placed.path.bbox() == (3, 4, 6, 7)
+    data = placed.to_data()
+    assert data["bbox"] is None
+    assert data["graphics_soft_mask"].offset == (2, 3)
+    assert data["graphics_soft_mask"].program is mask.program
     assert path.bbox() == (1, 1, 4, 4)
 
 

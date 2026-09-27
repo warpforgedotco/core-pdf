@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from copy import replace
 from typing import Any
 
 import numpy
@@ -12,21 +11,13 @@ from core_pdf.impl.capture_records import (
     CapturedDrawing,
     CapturedInlineImage,
     CapturedPath,
-    CapturedSoftMask,
     CapturedSubpath,
     CapturedTextBoundary,
 )
 from core_pdf.impl.glyph_outlines import GlyphOutlineArrays
 from core_pdf.impl.glyphs import GlyphObservation, Matrix6
 from core_pdf.impl.render_display import DisplayList
-from core_pdf.impl.render_model import (
-    DisplayItem,
-    DisplayListItem,
-    ImagePaintItem,
-    PathPaintItem,
-    PathPaintKind,
-)
-from core_pdf.impl.render_paths import translate_rect
+from core_pdf.impl.render_model import PathPaintKind
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.types import Rectangle
 from core_pdf_cythonized import translated_outline_edges
@@ -316,63 +307,3 @@ def append_captured_program(
                 raw_data=inline_image.data,
             )
     finish_text(len(commands))
-
-
-def translated_soft_mask(
-    mask: CapturedSoftMask | None, tx: float, ty: float
-) -> CapturedSoftMask | None:
-    if mask is None or (tx == 0 and ty == 0):
-        return mask
-    return replace(mask, offset=(mask.offset[0] + tx, mask.offset[1] + ty))
-
-
-def translated_command(
-    item: DisplayItem, tx: float, ty: float, parent_blend_mode: str | None = None
-) -> DisplayItem:
-    if isinstance(item, PathPaintItem):
-        return replace(
-            item,
-            bbox=translate_rect(item.bbox, tx, ty),
-            path=item.path.translated(tx, ty) if isinstance(item.path, CapturedPath) else item.path,
-            edge_array=(
-                item.edge_array + numpy.array((tx, ty, tx, ty))
-                if item.edge_array is not None
-                else None
-            ),
-            blend_mode=item.blend_mode or parent_blend_mode,
-            graphics_soft_mask=translated_soft_mask(item.graphics_soft_mask, tx, ty),
-        )
-    if isinstance(item, ImagePaintItem):
-        return replace(
-            item,
-            bbox=translate_rect(item.bbox, tx, ty),
-            quad=tuple((x + tx, y + ty) for x, y in item.quad) if item.quad else None,
-            image_clip=translate_rect(item.image_clip, tx, ty),
-            blend_mode=item.blend_mode or parent_blend_mode,
-            graphics_soft_mask=translated_soft_mask(item.graphics_soft_mask, tx, ty),
-        )
-    data: dict[str, Any] = dict(item.data)
-    if (mask := data.get("graphics_soft_mask")) is not None:
-        data["graphics_soft_mask"] = translated_soft_mask(mask, tx, ty)
-    for key in ("bbox", "rect"):
-        if key in data:
-            data[key] = translate_rect(data[key], tx, ty)
-    path = data.get("path")
-    if isinstance(path, CapturedPath):
-        data["path"] = path.translated(tx, ty)
-    if item.kind == "shading" and isinstance(data.get("dictionary"), dict):
-        dictionary = dict(data["dictionary"])
-        coords = dictionary.get("Coords")
-        if isinstance(coords, (list, tuple)):
-            coords = list(coords)
-            indexes = (0, 2) if dictionary.get("ShadingType") == 2 else (0, 3)
-            for index in indexes:
-                if len(coords) > index + 1:
-                    coords[index] += tx
-                    coords[index + 1] += ty
-            dictionary["Coords"] = coords
-        if "BBox" in dictionary:
-            dictionary["BBox"] = translate_rect(dictionary["BBox"], tx, ty)
-        data["dictionary"] = dictionary
-    data["blend_mode"] = data.get("blend_mode") or parent_blend_mode
-    return DisplayListItem(item.kind, item.seqno, data)

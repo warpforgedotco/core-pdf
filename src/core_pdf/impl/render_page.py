@@ -20,16 +20,12 @@ from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.render_clipping import ClipState
 from core_pdf.impl.render_commands import append_captured_program
 from core_pdf.impl.render_display import (
-    RASTER_CONTROL_KINDS,
     DisplayList,
-    display_item_box,
 )
 from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_model import (
     DisplayItem,
     DisplayListItem,
-    ImagePaintItem,
-    PathPaintItem,
     RasterImage,
     RenderOptions,
 )
@@ -182,10 +178,8 @@ class RenderedPage(ReprFields):
         for item in self.display_list.items:
             if type(item) is DisplayListItem and item.kind == "text":
                 continue
-            box = display_item_box(item, scale=scale)
-            always_render = box is None or (
-                type(item) is DisplayListItem and item.kind in RASTER_CONTROL_KINDS
-            )
+            box = item.page_box(scale)
+            always_render = box is None
             outside_crop = box is not None and (
                 box[2] <= crop[0] or box[0] >= crop[2] or box[3] <= crop[1] or box[1] >= crop[3]
             )
@@ -306,11 +300,7 @@ class RenderedPage(ReprFields):
                 {
                     "kind": item.kind,
                     "seqno": item.seqno,
-                    "data": (
-                        item.to_data()
-                        if isinstance(item, (PathPaintItem, ImagePaintItem))
-                        else dict(item.data)
-                    ),
+                    "data": item.to_data(),
                 }
                 for item in self.display_list.items
             ],

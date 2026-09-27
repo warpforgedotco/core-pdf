@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from core_pdf.impl.capture_records import (
@@ -14,7 +14,16 @@ from core_pdf.impl.graphics_device_profiles import cmyk_floats_to_srgb
 from core_pdf.impl.render_blend import BlendOp, blend_op, color_component
 from core_pdf.impl.render_commands import append_captured_program
 from core_pdf.impl.render_display import DisplayList
-from core_pdf.impl.render_model import DisplayItem, ImagePaintItem, PathPaintItem
+from core_pdf.impl.render_model import (
+    ClipItem,
+    ControlItem,
+    DisplayItem,
+    GlyphBitmapItem,
+    GroupBeginItem,
+    ImagePaintItem,
+    PathPaintItem,
+    ScopeBeginItem,
+)
 from core_pdf.impl.render_resources import RenderResources
 from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
@@ -44,9 +53,24 @@ def tiling_cell(
     return cache.put(pattern, (display, cell_clip), preserve_object_boundaries)
 
 
-NON_PAINTING_KINDS = frozenset(
-    {"scope-begin", "scope-end", "state-push", "state-pop", "clip", "group-begin", "group-end"}
-)
+def path_cell_extent(item: PathPaintItem) -> tuple[object, float]:
+    path = item.path
+    box = item.bbox
+    if box is None and type(path) is CapturedPath:
+        box = path.bbox()
+    return box, 10.0 * abs(float(item.line_width or 0.0))
+
+
+def box_cell_extent(item: ImagePaintItem | GlyphBitmapItem) -> tuple[object, float]:
+    return item.bbox, 0.0
+
+
+CELL_EXTENTS: dict[type, Callable[[Any], tuple[object, float]]] = {
+    PathPaintItem: path_cell_extent,
+    ImagePaintItem: box_cell_extent,
+    GlyphBitmapItem: box_cell_extent,
+}
+NON_PAINTING_ITEMS = frozenset({ClipItem, ControlItem, GroupBeginItem, ScopeBeginItem})
 
 
 def cell_paints_nothing(
@@ -62,22 +86,13 @@ def cell_paints_nothing(
     right += margin
     top += margin
     for item in items:
-        if isinstance(item, PathPaintItem):
-            path = item.path
-            box = item.bbox
-            if box is None and type(path) is CapturedPath:
-                box = path.bbox()
-            spread = 10.0 * abs(float(item.line_width or 0.0))
-        elif isinstance(item, ImagePaintItem):
-            box = item.bbox
-            spread = 0.0
-        elif item.kind in NON_PAINTING_KINDS:
+        item_type = type(item)
+        if item_type in NON_PAINTING_ITEMS:
             continue
-        elif item.kind == "glyph":
-            box = item.data.get("bbox")
-            spread = 0.0
-        else:
+        cell_extent = CELL_EXTENTS.get(item_type)
+        if cell_extent is None:
             return False
+        box, spread = cell_extent(item)
         extent = rect_tuple(box)
         if extent is None:
             return False

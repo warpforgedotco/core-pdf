@@ -4,7 +4,7 @@ import pytest
 from core_pdf.impl import render_patterns as patterns
 from core_pdf.impl.capture_program import CapturedProgram
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, TilingPattern
-from core_pdf.impl.render_model import DisplayListItem, PathPaintItem, PathPaintKind
+from core_pdf.impl.render_model import PathPaintItem, PathPaintKind, ShadingItem, display_item
 from core_pdf.impl.render_resources import RenderResources
 from core_pdf_cythonized import shading_t
 from tests.src.core_pdf.raster_support import make_target
@@ -65,15 +65,18 @@ def test_shading_color_clamps_channels_and_fills_missing_components(
 def test_axial_gradient_pixels_respect_extension_flags(extend):
     target = make_target()
     target.paint_shading(
-        {
-            "dictionary": {
-                "ShadingType": 2,
-                "ColorSpace": "DeviceGray",
-                "Coords": [1, 0, 3, 0],
-                "Extend": [extend, extend],
-                "Function": {"FunctionType": 2, "Domain": [0, 1], "C0": [0], "C1": [1], "N": 1},
-            }
-        },
+        ShadingItem.from_data(
+            0,
+            {
+                "dictionary": {
+                    "ShadingType": 2,
+                    "ColorSpace": "DeviceGray",
+                    "Coords": [1, 0, 3, 0],
+                    "Extend": [extend, extend],
+                    "Function": {"FunctionType": 2, "Domain": [0, 1], "C0": [0], "C1": [1], "N": 1},
+                }
+            },
+        ),
         None,
     )
     pixels = numpy.frombuffer(target.pixels, dtype=numpy.uint8).reshape(1, 4, 4)
@@ -89,7 +92,7 @@ def test_axial_gradient_pixels_respect_extension_flags(extend):
 @pytest.mark.parametrize("dictionary", [None, {}, {"ShadingType": 1}])
 def test_unsupported_shading_leaves_raster_untouched(dictionary):
     target = make_target()
-    target.paint_shading({"dictionary": dictionary}, None)
+    target.paint_shading(ShadingItem.from_data(0, {"dictionary": dictionary}), None)
     assert target.pixels == bytearray(16)
 
 
@@ -160,11 +163,11 @@ def unit_cell_clip():
 
 def test_a_cell_whose_content_lies_outside_its_clip_paints_nothing():
     items = [
-        DisplayListItem("scope-begin", 0),
-        DisplayListItem("clip", 0, {"bbox": (-2434.8, -26661.5, -2414.8, -26641.5)}),
+        display_item("scope-begin", 0),
+        display_item("clip", 0, {"bbox": (-2434.8, -26661.5, -2414.8, -26641.5)}),
         cell_item((-2434.8, -26661.5, -2414.8, -26641.5)),
-        DisplayListItem("glyph", 0, {"bbox": (50.0, 50.0, 52.0, 52.0)}),
-        DisplayListItem("scope-end", 0),
+        display_item("glyph", 0, {"bbox": (50.0, 50.0, 52.0, 52.0)}),
+        display_item("scope-end", 0),
     ]
     assert patterns.cell_paints_nothing(items, unit_cell_clip(), 1.0)
 
@@ -188,4 +191,4 @@ def test_content_that_can_reach_the_clip_is_painted(item):
     [("shading", {"bbox": (100.0, 100.0, 101.0, 101.0)}), ("glyph", {}), ("annotation", {})],
 )
 def test_an_item_of_unknown_extent_is_assumed_to_paint(kind, data):
-    assert not patterns.cell_paints_nothing([DisplayListItem(kind, 0, data)], unit_cell_clip(), 1.0)
+    assert not patterns.cell_paints_nothing([display_item(kind, 0, data)], unit_cell_clip(), 1.0)
