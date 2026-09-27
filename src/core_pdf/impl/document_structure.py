@@ -20,7 +20,8 @@ from core_pdf_spec.s_14_structure.roles import StructureRole, resolve_structure_
 from core_pdf_spec.standards import recognized_version
 
 if TYPE_CHECKING:
-    from core_pdf.impl.document_document import PageLookup, PdfDocument
+    from core_pdf.impl.document_contracts import StructureHost
+    from core_pdf.impl.document_navigation import PageLookup
     from core_pdf.impl.document_page import PdfPage
 
 
@@ -104,7 +105,7 @@ class StructureNode:
 
     def __init__(
         self,
-        document: PdfDocument[Any],
+        document: StructureHost,
         props: PdfDict,
         *,
         page_lookup: PageLookup[Any] | None = None,
@@ -153,7 +154,7 @@ class StructureElement(StructureNode):
 
     def __init__(
         self,
-        document: PdfDocument[Any],
+        document: StructureHost,
         props: PdfDict,
         *,
         page_lookup: PageLookup[Any] | None = None,
@@ -345,7 +346,7 @@ class StructureTree(StructureNode):
 
     def __init__(
         self,
-        document: PdfDocument[Any],
+        document: StructureHost,
         props: PdfDict,
         *,
         page_lookup: PageLookup[Any] | None = None,
@@ -496,7 +497,7 @@ StructureChild: TypeAlias = StructureElement | StructureContentItem | StructureC
 
 
 def get_kid_page_index(
-    document: PdfDocument[Any],
+    document: StructureHost,
     page: PdfPage | None,
     kid: PdfDict,
     page_lookup: PageLookup[Any] | None = None,
@@ -516,7 +517,7 @@ def get_kid_page_index(
 def make_kids(
     kid: Any,
     page: PdfPage | None,
-    document: PdfDocument[Any],
+    document: StructureHost,
     depth: int = 0,
     *,
     page_lookup: PageLookup[Any] | None = None,

@@ -21,7 +21,7 @@ class RecordingState(TextState):
 @pytest.fixture
 def state():
     resolver = ObjectResolver(b"", {})
-    instance = RecordingState(SimpleNamespace(resolver=resolver))
+    instance = RecordingState(SimpleNamespace(resolver=resolver))  # ty: ignore[invalid-argument-type]
     instance.errors = []
     yield instance
     resolver.close()

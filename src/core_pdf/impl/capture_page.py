@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
 
 from core_pdf.impl.capture_program import (
     DEFAULT_CAPTURE,
@@ -12,10 +11,11 @@ from core_pdf.impl.capture_program import (
     PageProgram,
 )
 from core_pdf.impl.capture_recording import TextState
+from core_pdf.impl.document_contracts import CapturePage, ResolverHost
 from core_pdf.impl.document_records import RawAnnotation, RawFormField
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.geometry import normalize_rect, transform_bbox
-from core_pdf.impl.recovery_resolver import resolve_resource_dict
+from core_pdf.impl.recovery_resolver import ObjectResolver, resolve_resource_dict
 from core_pdf_spec.s_07_document.annotation_appearance import (
     ANNOTATION_FLAG_HIDDEN,
     ANNOTATION_FLAG_NO_VIEW,
@@ -28,7 +28,7 @@ from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 SKIPPED_SUBTYPES = frozenset({"Popup", "Link"})
 
 
-def inheritable(document: Any, node: object, key: str) -> object:
+def inheritable(document: ResolverHost, node: object, key: str) -> object:
     for _ in range(50):
         if not isinstance(node, dict):
             return None
@@ -43,7 +43,7 @@ def inheritable(document: Any, node: object, key: str) -> object:
 
 
 def select_appearance_stream(
-    resolver: Any, appearance: object, appearance_state: object
+    resolver: ObjectResolver, appearance: object, appearance_state: object
 ) -> PdfStream | None:
     try:
         return normal_appearance_stream(resolver, appearance, appearance_state)
@@ -60,7 +60,7 @@ def select_appearance_stream(
         return None
 
 
-def should_render(document: Any, annot: dict) -> bool:
+def should_render(document: ResolverHost, annot: dict) -> bool:
     subtype = document.resolver.name_at(annot, "Subtype") or ""
     if subtype in SKIPPED_SUBTYPES:
         return False
@@ -76,11 +76,11 @@ def should_render(document: Any, annot: dict) -> bool:
 
 
 def capture_annotation_appearances(
-    page: Any,
+    page: CapturePage,
     state: TextState,
     *,
-    fields: Iterable[Any] | None = None,
-    annotations: Iterable[Any] | None = None,
+    fields: Iterable[RawFormField] | None = None,
+    annotations: Iterable[RawAnnotation] | None = None,
 ) -> tuple[AppearanceProgram, ...]:
     document = page.document
     try:
@@ -171,7 +171,7 @@ def capture_annotation_appearances(
 
 
 def capture_page_program(
-    page: Any,
+    page: CapturePage,
     *,
     hidden_layers: frozenset[str] | None = None,
     fields: Iterable[RawFormField] | None = None,

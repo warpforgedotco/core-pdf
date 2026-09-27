@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
 CaptureMarks: TypeAlias = tuple[int, int, int, int, int, int]
 NO_MARKS: CaptureMarks = (0, 0, 0, 0, 0, 0)
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from core_pdf.impl.capture_text_runs import RunAccumulator
     from core_pdf.impl.capture_text_sink import MarkedContentEntry, TextLayout
     from core_pdf.impl.capture_tolerant_state import RecoveringTextState
+    from core_pdf.impl.document_contracts import CaptureDocument
     from core_pdf.impl.glyphs import GlyphObservation
     from core_pdf.impl.recovery_resolver import ObjectResolver
     from core_pdf.impl.runs import TextRun
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
     from core_pdf_spec.s_08_graphics.matrix import Matrix
 
     class CaptureHost(RecoveringTextState):
-        document: Any
+        document: CaptureDocument
         name_resolver: ObjectResolver
         runs: list[TextRun]
         glyphs: list[GlyphObservation]

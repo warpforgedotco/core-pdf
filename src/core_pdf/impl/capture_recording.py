@@ -28,6 +28,7 @@ from core_pdf.impl.capture_text_sink import (
     detect_rotation_from_linear,
 )
 from core_pdf.impl.capture_tolerant_state import CaptureCaches, RecoveringTextState
+from core_pdf.impl.document_contracts import CaptureDocument
 from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_ligatures import detect_ligature_overrides
 from core_pdf.impl.recovery_lexer import PdfLexer
@@ -158,7 +159,7 @@ class TextState(
 
     def __init__(
         self,
-        document: Any,
+        document: CaptureDocument,
         hidden_layers: frozenset[str] = frozenset(),
         page_clip: Rectangle | None = None,
         *,
