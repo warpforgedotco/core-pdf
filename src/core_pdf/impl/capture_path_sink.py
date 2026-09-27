@@ -63,21 +63,15 @@ class PathCaptureMixin(CaptureHost):
         if not self.is_graphics_visible():
             return
         graphics = self.graphics
-        fill_space = graphics.fill_space
-        stroke_space = graphics.stroke_space
-        fills = kind != "stroke" and not (
-            fill_space.kind == "Pattern" and graphics.fill_pattern is None
-        )
-        strokes = kind != "fill" and not (
-            stroke_space.kind == "Pattern" and graphics.stroke_pattern is None
-        )
+        fills = kind != "stroke" and not self.initial_pattern(stroke=False)
+        strokes = kind != "fill" and not self.initial_pattern(stroke=True)
         if not fills and not strokes:
             return
         painted: PaintedDrawingKind = (
             "fillstroke" if fills and strokes else "fill" if fills else "stroke"
         )
-        fill_paints = color_space_paints(fill_space)
-        stroke_paints = color_space_paints(stroke_space)
+        fill_paints = color_space_paints(graphics.fill_space)
+        stroke_paints = color_space_paints(graphics.stroke_space)
 
         ctm = graphics.ctm
         line_width = self.transformed_line_width()

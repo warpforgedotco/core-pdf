@@ -34,7 +34,8 @@ class ScopeCaptureMixin(CaptureHost):
             self.sequence += 1
 
     def enter_stream(self, state: object, frame: ContentStreamFrame) -> None:
-        self.capture_text_frames[id(frame)] = (self.capture_text_open, False)
+        previous_text_open = self.capture_text_open
+        self.capture_text_frames[id(frame)] = (previous_text_open, False)
         self.capture_text_open = False
         self.capture_frames[id(frame)] = (
             self.layout_form_bbox,
@@ -77,7 +78,6 @@ class ScopeCaptureMixin(CaptureHost):
             self.sequence += 1
             self.group_alpha = None
         self.text_boundaries.append(CapturedTextBoundary(self.sequence, "stream-begin"))
-        previous_text_open, _ = self.capture_text_frames[id(frame)]
         self.capture_text_frames[id(frame)] = (previous_text_open, True)
         layout_bbox = None
         raw_bbox = frame.form_bbox_operand
