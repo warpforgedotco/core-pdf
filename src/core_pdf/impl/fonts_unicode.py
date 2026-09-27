@@ -27,7 +27,6 @@ from core_pdf.impl.fonts_cmap_resources import (
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap, unicode_scalar_or_replacement
 from core_pdf.impl.fonts_encoding import FontEncoding
-from core_pdf.impl.fonts_helpers import slot_setter
 from core_pdf.impl.fonts_program_base import GlyphProgram
 from core_pdf.impl.fonts_program_cff import CFFFont
 from core_pdf.impl.fonts_widths import (
@@ -93,21 +92,7 @@ UNRESOLVED_UNICODE_SOURCES = frozenset(
 class UnicodeChoice(GeneratedRecord):
     text: str
     source: UnicodeSource
-    alternates: tuple[str, ...]
-
-    def __init__(self, text: str, source: UnicodeSource, alternates: tuple[str, ...] = ()) -> None:
-        _unicodechoice_set_text(self, text)
-        _unicodechoice_set_source(self, source)
-        _unicodechoice_set_alternates(self, alternates)
-
-
-_unicodechoice_set_text = slot_setter(UnicodeChoice, "text")
-
-
-_unicodechoice_set_source = slot_setter(UnicodeChoice, "source")
-
-
-_unicodechoice_set_alternates = slot_setter(UnicodeChoice, "alternates")
+    alternates: tuple[str, ...] = ()
 
 
 def dedupe_alternates(values: Iterable[str], selected: str) -> tuple[str, ...]:

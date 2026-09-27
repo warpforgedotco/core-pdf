@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typing
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import Any
 
 from core_adobe_fonts.cmap.ranges import (
     code_in_ranges,
@@ -14,10 +14,7 @@ from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts_encoding import FontEncoding
 from core_pdf.impl.fonts_glyph_geometry import GlyphGeometry
-from core_pdf.impl.fonts_helpers import (
-    LEGITIMATE_MULTI_CHAR_GLYPHS,
-    slot_setter,
-)
+from core_pdf.impl.fonts_helpers import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.fonts_metrics import FontMetricsModel
 from core_pdf.impl.fonts_program import load_glyph_program
 from core_pdf.impl.fonts_unicode import (
@@ -64,107 +61,10 @@ STRING_GLYPH_CACHE_MAX_ENTRIES = 8192
 
 
 class DecodedGlyph(DecodedFontGlyph):
-    __slots__ = ("unicode_source", "alternates", "bitmap_code", "split_unicode")
-
     unicode_source: str
     alternates: tuple[str, ...]
     bitmap_code: int
-    split_unicode: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "code_bytes",
-        "char_code",
-        "cid",
-        "gid",
-        "unicode",
-        "width_code",
-        "unicode_source",
-        "alternates",
-        "bitmap_code",
-        "split_unicode",
-    )
-    __match_args__ = (
-        "code_bytes",
-        "char_code",
-        "cid",
-        "gid",
-        "unicode",
-        "width_code",
-        "unicode_source",
-        "alternates",
-        "bitmap_code",
-        "split_unicode",
-    )
-
-    def __init__(
-        self,
-        code_bytes: bytes,
-        char_code: int,
-        cid: int,
-        gid: int | None,
-        unicode: str,
-        width_code: int,
-        unicode_source: str,
-        alternates: tuple[str, ...],
-        bitmap_code: int,
-        split_unicode: bool = False,
-    ) -> None:
-        _set_code_bytes(self, code_bytes)
-        _set_char_code(self, char_code)
-        _set_cid(self, cid)
-        _set_gid(self, gid)
-        _set_unicode(self, unicode)
-        _set_width_code(self, width_code)
-        _set_unicode_source(self, unicode_source)
-        _set_alternates(self, alternates)
-        _set_bitmap_code(self, bitmap_code)
-        _set_split_unicode(self, split_unicode)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.code_bytes == other.code_bytes
-            and self.char_code == other.char_code
-            and self.cid == other.cid
-            and self.gid == other.gid
-            and self.unicode == other.unicode
-            and self.width_code == other.width_code
-            and self.unicode_source == other.unicode_source
-            and self.alternates == other.alternates
-            and self.bitmap_code == other.bitmap_code
-            and self.split_unicode == other.split_unicode
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.code_bytes,
-                self.char_code,
-                self.cid,
-                self.gid,
-                self.unicode,
-                self.width_code,
-                self.unicode_source,
-                self.alternates,
-                self.bitmap_code,
-                self.split_unicode,
-            )
-        )
-
-
-_set_code_bytes = slot_setter(DecodedGlyph, "code_bytes")
-_set_char_code = slot_setter(DecodedGlyph, "char_code")
-_set_cid = slot_setter(DecodedGlyph, "cid")
-_set_gid = slot_setter(DecodedGlyph, "gid")
-_set_unicode = slot_setter(DecodedGlyph, "unicode")
-_set_width_code = slot_setter(DecodedGlyph, "width_code")
-_set_unicode_source = slot_setter(DecodedGlyph, "unicode_source")
-_set_alternates = slot_setter(DecodedGlyph, "alternates")
-_set_bitmap_code = slot_setter(DecodedGlyph, "bitmap_code")
-_set_split_unicode = slot_setter(DecodedGlyph, "split_unicode")
+    split_unicode: bool = False
 
 
 SINGLE_BYTES = tuple(bytes((value,)) for value in range(256))
