@@ -16,7 +16,7 @@ from core_pdf.impl.capture_records import (
     CapturedSubpath,
     CapturedTextBoundary,
 )
-from core_pdf.impl.fonts_decoder import GlyphOutlineArrays
+from core_pdf.impl.glyph_outlines import GlyphOutlineArrays
 from core_pdf.impl.glyphs import GlyphObservation, Matrix6
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import (

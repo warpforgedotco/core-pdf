@@ -520,6 +520,7 @@ forbidden_modules = [
     "core_pdf.impl.caches",
     "core_pdf.impl.memo",
     "core_pdf.impl.execution",
+    "core_pdf.impl.glyph_outlines",
     "core_pdf.impl.scalars",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",
@@ -591,6 +592,7 @@ source_modules = [
     "core_pdf.impl.exceptions",
     "core_pdf.impl.execution",
     "core_pdf.impl.geometry",
+    "core_pdf.impl.glyph_outlines",
     "core_pdf.impl.glyphs",
     "core_pdf.impl.page_selection",
     "core_pdf.impl.pdf_names",
@@ -704,6 +706,7 @@ source_modules = [
     "core_pdf.impl.caches",
     "core_pdf.impl.memo",
     "core_pdf.impl.execution",
+    "core_pdf.impl.glyph_outlines",
     "core_pdf.impl.scalars",
 ]
 forbidden_modules = [
@@ -802,6 +805,7 @@ forbidden_modules = [
     "core_pdf.impl.execution",
     "core_pdf.impl.scalars",
     "core_pdf.impl.geometry",
+    "core_pdf.impl.glyph_outlines",
     "core_pdf.impl.glyphs",
     "core_pdf.impl.page_selection",
     "core_pdf.impl.pdf_values",
