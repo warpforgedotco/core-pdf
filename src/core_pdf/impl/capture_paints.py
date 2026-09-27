@@ -200,12 +200,12 @@ class PaintResolutionMixin(CaptureHost):
         cached = caches.capture_soft_masks.get_key(mask, key, MISSING)
         if not isinstance(cached, MissingObject):
             return cached
-        caches.capture_soft_masks.put_key(mask, key, None)
         group_key = id(mask.group)
         if mask.subtype != "Alpha" or group_key in caches.capture_active_mask_groups:
             return None
         if len(caches.capture_active_mask_groups) >= 10:
             return None
+        caches.capture_soft_masks.put_key(mask, key, None)
         graphics = copy(self.graphics)
         graphics.ctm = mask.ctm
         graphics.soft_mask = None
