@@ -25,3 +25,6 @@ def flatten_path_commands(
 def path_bounds(
     xs: numpy.ndarray[Any, Any], ys: numpy.ndarray[Any, Any], spans: list[tuple[int, int, bool]]
 ) -> tuple[Rectangle | None, bool]: ...
+def fill_edge_rows(
+    xs: Any, ys: Any, spans: list[tuple[int, int, bool]]
+) -> numpy.ndarray[Any, numpy.dtype[numpy.float64]]: ...

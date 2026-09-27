@@ -292,3 +292,40 @@ def path_bounds(const double[::1] xs, const double[::1] ys, list spans):
         have_box = add_subpath_box(&xs[0], &ys[0], start, end, have_box, box)
     bbox = (box[0], box[1], box[2], box[3]) if have_box else None
     return bbox, has_segments
+
+
+def fill_edge_rows(const double[::1] xs, const double[::1] ys, list spans):
+    """The fill edges of flattened subpaths, one (x0, y0, x1, y1) row each.
+
+    Every subpath of two or more points contributes its consecutive edges and a
+    closing edge back to its first point; the closing edge is dropped when it
+    has no length, and no other edge is.
+    """
+    if xs.shape[0] != ys.shape[0]:
+        raise ValueError("xs and ys differ in length")
+    cdef Py_ssize_t count = xs.shape[0]
+    cdef Py_ssize_t start, end, index, total = 0, row = 0
+    for start, end, _ in spans:
+        if end - start < 2:
+            continue
+        if start < 0 or end > count:
+            raise ValueError("span runs past the points")
+        total += end - start
+    rows = numpy.empty((total, 4), dtype=numpy.float64)
+    cdef double[:, ::1] out = rows
+    for start, end, _ in spans:
+        if end - start < 2:
+            continue
+        for index in range(start, end - 1):
+            out[row, 0] = xs[index]
+            out[row, 1] = ys[index]
+            out[row, 2] = xs[index + 1]
+            out[row, 3] = ys[index + 1]
+            row += 1
+        if xs[end - 1] != xs[start] or ys[end - 1] != ys[start]:
+            out[row, 0] = xs[end - 1]
+            out[row, 1] = ys[end - 1]
+            out[row, 2] = xs[start]
+            out[row, 3] = ys[start]
+            row += 1
+    return rows if row == total else rows[:row].copy()
