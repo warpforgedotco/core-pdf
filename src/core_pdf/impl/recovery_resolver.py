@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, overload
 
+import core_pdf_spec.s_07_syntax.lexer
+import core_pdf_spec.s_07_syntax.objects
+import core_pdf_spec.s_07_syntax.resolver
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
 from core_pdf.impl.pdf_values import (
@@ -17,12 +20,9 @@ from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.recovery_objects import PdfObjectStream
 from core_pdf.impl.recovery_xref import iter_indirect_object_headers
 from core_pdf.impl.types import MISSING, PdfReference, PdfString
-from core_pdf_spec.s_07_filters.pipeline import decode_stream_data as decode_spec_stream_data
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
-from core_pdf_spec.s_07_syntax.objects import PdfObjectStream as SyntaxObjectStream
+from core_pdf_spec.s_07_filters import pipeline
+from core_pdf_spec.s_07_syntax import resources
 from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
-from core_pdf_spec.s_07_syntax.resolver import ObjectResolver as SyntaxResolver
-from core_pdf_spec.s_07_syntax.resources import resolve_resource_dict as resolve_spec_resources
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject, PdfValueResolver
 from core_pdf_spec.s_07_syntax.xref import (
@@ -34,7 +34,7 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules
 LEXER_POOL_LIMIT = 8
 
 
-class ObjectResolver(SyntaxResolver):
+class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
     __slots__ = ("lexer_pool", "parsed_objects", "parsed_rules")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -63,7 +63,11 @@ class ObjectResolver(SyntaxResolver):
         return PdfObjectStream(stream, semantic_context=self.semantic_context)
 
     def load_indirect_object(
-        self, lexer: SyntaxLexer, offset: int, *, expected_reference: PdfReference
+        self,
+        lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer,
+        offset: int,
+        *,
+        expected_reference: PdfReference,
     ) -> object:
         if (
             self.parsed_objects
@@ -94,7 +98,7 @@ class ObjectResolver(SyntaxResolver):
         stream = super().resolve_stream(stream)
         return (
             stream.replace(decoder=decode_stream_data)
-            if stream.decoder is decode_spec_stream_data
+            if stream.decoder is pipeline.decode_stream_data
             else stream
         )
 
@@ -115,7 +119,7 @@ class ObjectResolver(SyntaxResolver):
             lexer.semantic_context = self.semantic_context
         return lexer
 
-    def release_lexer(self, lexer: SyntaxLexer) -> None:
+    def release_lexer(self, lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer) -> None:
         if type(lexer) is PdfLexer and lexer.raw_data.obj is self.data.obj:
             with self.lock:
                 if len(self.lexer_pool) < LEXER_POOL_LIMIT:
@@ -123,14 +127,16 @@ class ObjectResolver(SyntaxResolver):
                     return
         lexer.close()
 
-    def detach_parsed_caches(self) -> tuple[SyntaxObjectStream, ...]:
+    def detach_parsed_caches(self) -> tuple[core_pdf_spec.s_07_syntax.objects.PdfObjectStream, ...]:
         with self.lock:
             lexers, self.lexer_pool[:] = list(self.lexer_pool), []
         for lexer in lexers:
             lexer.close()
         return super().detach_parsed_caches()
 
-    def recover_indirect_object(self, lexer: SyntaxLexer, offset: int) -> object:
+    def recover_indirect_object(
+        self, lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer, offset: int
+    ) -> object:
         data = lexer.raw_data
         search_start = max(0, offset - 128)
         search_end = min(len(data), offset + 128)
@@ -229,6 +235,6 @@ class ObjectResolver(SyntaxResolver):
 
 def resolve_resource_dict(value: object, resolver: PdfValueResolver) -> PdfDict | None:
     try:
-        return resolve_spec_resources(value, resolver)
+        return resources.resolve_resource_dict(value, resolver)
     except PdfParseError:
         return None

@@ -2,8 +2,8 @@ from io import BytesIO
 
 import pytest
 
-from core_pdf_compat import pikepdf as compat_pikepdf
-from core_pdf_compat import pypdf as compat_pypdf
+import core_pdf_compat.pikepdf
+import core_pdf_compat.pypdf
 
 reference_pypdf = pytest.importorskip("pypdf")
 reference_pikepdf = pytest.importorskip("pikepdf")
@@ -27,7 +27,7 @@ pytestmark = pytest.mark.compat_differential
     ],
 )
 def test_rectangle_accessors_match_reference(box, attribute):
-    actual = compat_pypdf.Rectangle(*box)
+    actual = core_pdf_compat.pypdf.Rectangle(*box)
     expected = reference_pypdf.generic.RectangleObject(box)
     assert getattr(actual, attribute) == getattr(expected, attribute)
     assert tuple(actual) == tuple(expected)
@@ -50,4 +50,4 @@ def test_synthetic_page_collection_mutation_matches_reference(text_pdf_bytes, op
             assert len(source.pages) == 1
             return [tuple(float(value) for value in page.mediabox) for page in target.pages]
 
-    assert snapshot(compat_pikepdf) == snapshot(reference_pikepdf)
+    assert snapshot(core_pdf_compat.pikepdf) == snapshot(reference_pikepdf)

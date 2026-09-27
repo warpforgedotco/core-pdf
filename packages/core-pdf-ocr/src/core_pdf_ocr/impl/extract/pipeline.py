@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from copy import replace
 from typing import TYPE_CHECKING, ClassVar, cast
 
+from core_pdf.impl import extract_pipeline
 from core_pdf.impl.exceptions import ExtractionScope
 from core_pdf.impl.extract_capture import STRUCTURE_UNSET
 from core_pdf.impl.extract_contracts import ObservationBatch, PageState
@@ -14,9 +15,6 @@ from core_pdf.impl.extract_pipeline import (
     DetectTables,
     LayoutBlocks,
     PagePipeline,
-)
-from core_pdf.impl.extract_pipeline import (
-    PageExtraction as NativePageExtraction,
 )
 from core_pdf.impl.output_model import Page
 from core_pdf_ocr.impl.extract.block_layout import OCR_LAYOUT_HOOKS
@@ -38,7 +36,11 @@ class FuseRecognition:
     __slots__ = ()
 
     def __call__(
-        self, state: PageState, extraction: NativePageExtraction, context: ExtractionScope, /
+        self,
+        state: PageState,
+        extraction: extract_pipeline.PageExtraction,
+        context: ExtractionScope,
+        /,
     ) -> PageState:
         ocr_extraction = cast(PageExtraction, extraction)
         return replace(
@@ -55,7 +57,11 @@ class RemoveDuplicateTables:
     __slots__ = ()
 
     def __call__(
-        self, state: PageState, _extraction: NativePageExtraction, _context: ExtractionScope, /
+        self,
+        state: PageState,
+        _extraction: extract_pipeline.PageExtraction,
+        _context: ExtractionScope,
+        /,
     ) -> PageState:
         return replace(state, tables=remove_duplicate_tables(state.tables))
 
@@ -68,7 +74,7 @@ OCR_PIPELINE = (
 )
 
 
-class PageExtraction(NativePageExtraction):
+class PageExtraction(extract_pipeline.PageExtraction):
     capture_page_fn = staticmethod(capture_page)
     pipeline: ClassVar[PagePipeline] = OCR_PIPELINE
 

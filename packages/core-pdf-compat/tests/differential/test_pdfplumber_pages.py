@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 reference = pytest.importorskip("pdfplumber")
 pytestmark = pytest.mark.compat_differential
@@ -28,7 +28,7 @@ def test_page_bbox_operations_match_reference(
     bbox: tuple[int, int, int, int],
 ) -> None:
     with (
-        compat.open(BytesIO(text_pdf_bytes)) as actual,
+        core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as actual,
         reference.open(BytesIO(text_pdf_bytes)) as expected,
     ):
         native_chars = deepcopy(actual.pages[0].chars)
@@ -53,7 +53,7 @@ def test_deduplication_keeps_distinct_attributes_and_nontext_objects(
     extra_attrs: tuple[str, ...],
 ) -> None:
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(text_pdf_bytes)) as pdf:
             page = pdf.pages[0]
             first = page.chars[0]
@@ -83,7 +83,7 @@ def test_serializing_filtered_attributes_does_not_mutate_cached_page_objects(
     document_level: bool,
     filters: dict[str, list[str]],
 ) -> None:
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(text_pdf_bytes)) as pdf:
             page = pdf.pages[0]
             before = deepcopy(page.chars)
@@ -96,7 +96,7 @@ def test_serializing_filtered_attributes_does_not_mutate_cached_page_objects(
 
 def test_nested_relative_crop_respects_parent_selection(text_pdf_bytes: bytes) -> None:
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(text_pdf_bytes)) as pdf:
             page = pdf.pages[0].crop((20, 80, 100, 120))
             cropped = page.crop((2, 5, 30, 25), relative=True)
@@ -113,7 +113,7 @@ def test_deduplication_defaults_and_transitive_position_clusters(
     variant: str,
 ) -> None:
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(text_pdf_bytes)) as pdf:
             page = pdf.pages[0]
             char = page.chars[0]

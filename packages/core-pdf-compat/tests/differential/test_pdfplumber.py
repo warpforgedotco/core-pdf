@@ -14,7 +14,7 @@ pytestmark = pytest.mark.compat_differential
 
 @pytest.mark.parametrize("pdf_path", differential_pdfs("pdfplumber"), ids=pdf_id)
 def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
-    from core_pdf_compat import pdfplumber as compat_pdfplumber
+    import core_pdf_compat.pdfplumber
 
     def snapshot(open_pdf: Any) -> tuple[tuple[str, list[dict[str, Any]], float, float], ...]:
         with open_pdf(pdf_path) as pdf:
@@ -24,7 +24,7 @@ def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
             )
 
     pair = call_pair(
-        lambda: snapshot(real_pdfplumber.open), lambda: snapshot(compat_pdfplumber.open)
+        lambda: snapshot(real_pdfplumber.open), lambda: snapshot(core_pdf_compat.pdfplumber.open)
     )
     if pair is not None:
         expected_pages, actual_pages = pair
@@ -39,14 +39,14 @@ def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
 def test_pdfminer_selection_preserves_lazy_file_lifetime(
     monkeypatch: pytest.MonkeyPatch, completion: str
 ) -> None:
-    import core_pdf_compat as compat
-    from core_pdf_compat import pdfminer as compat_pdfminer
+    import core_pdf_compat
+    import core_pdf_compat.pdfminer
 
     real_extract_pages = pytest.importorskip("pdfminer.high_level").extract_pages
     pdf_path = FIXTURES_ROOT / "pdfplumber/tests/pdfs/pdffill-demo.pdf"
-    assert compat.extract_pages is compat_pdfminer.extract_pages
-    assert compat.LAParams is compat_pdfminer.LAParams
-    assert compat_pdfminer.LTTextContainer is compat_pdfminer.LTTextBox
+    assert core_pdf_compat.extract_pages is core_pdf_compat.pdfminer.extract_pages
+    assert core_pdf_compat.LAParams is core_pdf_compat.pdfminer.LAParams
+    assert core_pdf_compat.pdfminer.LTTextContainer is core_pdf_compat.pdfminer.LTTextBox
 
     def snapshot(extract_pages: Any) -> tuple[str, tuple[float, ...]]:
         handles: list[Any] = []
@@ -68,8 +68,8 @@ def test_pdfminer_selection_preserves_lazy_file_lifetime(
                 assert all(not handle.closed for handle in handles)
                 restored = pickle.loads(pickle.dumps(page))
                 assert type(restored) is type(page)
-                if extract_pages is compat_pdfminer.extract_pages:
-                    assert type(restored).__module__ == compat_pdfminer.__name__
+                if extract_pages is core_pdf_compat.pdfminer.extract_pages:
+                    assert type(restored).__module__ == core_pdf_compat.pdfminer.__name__
                     assert restored.pageid == 2
                 if completion == "close":
                     pages.close()
@@ -84,4 +84,4 @@ def test_pdfminer_selection_preserves_lazy_file_lifetime(
             tuple(restored.bbox),
         )
 
-    assert snapshot(compat_pdfminer.extract_pages) == snapshot(real_extract_pages)
+    assert snapshot(core_pdf_compat.pdfminer.extract_pages) == snapshot(real_extract_pages)

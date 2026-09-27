@@ -1,7 +1,7 @@
 import numpy
 import pytest
 
-from core_pdf.impl import render_target as patterns
+from core_pdf.impl import render_target
 from core_pdf.impl.capture_program import CapturedProgram
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, TilingPattern
 from core_pdf.impl.render_model import PathPaintItem, PathPaintKind, ShadingItem, display_item
@@ -58,7 +58,7 @@ def test_radial_projection_selects_valid_circle_solution(coords, point, expected
 def test_shading_color_clamps_channels_and_fills_missing_components(
     model, components, opacity, expected
 ):
-    assert patterns.shading_color_rgba(model, components, opacity) == expected
+    assert render_target.shading_color_rgba(model, components, opacity) == expected
 
 
 @pytest.mark.parametrize("extend", [False, True])
@@ -103,7 +103,7 @@ def test_tiling_blend_optimization_requires_only_normal_paints(mode, expected):
     drawing = CapturedDrawing(0, None, None, blend_mode=mode)
     pattern = TilingPattern((0, 0, 2, 2), 2, 2, CapturedProgram(drawings=(drawing,)))
     active = set()
-    assert patterns.tiling_pattern_uses_normal_blends(pattern, active) is expected
+    assert render_target.tiling_pattern_uses_normal_blends(pattern, active) is expected
     assert active == set()
 
 
@@ -112,23 +112,23 @@ def test_nested_tiling_blends_and_cycles_disable_isolated_optimization():
     nested = TilingPattern((0, 0, 2, 2), 2, 2, CapturedProgram(drawings=(nested_drawing,)))
     outer_drawing = CapturedDrawing(0, None, None, fill_pattern=nested)
     outer = TilingPattern((0, 0, 2, 2), 2, 2, CapturedProgram(drawings=(outer_drawing,)))
-    assert not patterns.tiling_pattern_uses_normal_blends(outer)
+    assert not render_target.tiling_pattern_uses_normal_blends(outer)
     nested_drawing.blend_mode = None
-    assert patterns.tiling_pattern_uses_normal_blends(outer)
+    assert render_target.tiling_pattern_uses_normal_blends(outer)
     nested_drawing.stroke_pattern = outer
     active = set()
-    assert not patterns.tiling_pattern_uses_normal_blends(outer, active)
+    assert not render_target.tiling_pattern_uses_normal_blends(outer, active)
     assert active == set()
 
 
 def test_tiling_cell_cache_reuses_display_and_clip_for_same_pattern():
     resources = RenderResources()
     pattern = TilingPattern((0, 0, 2, 2), 2, 2, CapturedProgram())
-    first = patterns.tiling_cell(resources, pattern, 4, 1, preserve_object_boundaries=False)
-    second = patterns.tiling_cell(resources, pattern, 4, 1, preserve_object_boundaries=False)
+    first = render_target.tiling_cell(resources, pattern, 4, 1, preserve_object_boundaries=False)
+    second = render_target.tiling_cell(resources, pattern, 4, 1, preserve_object_boundaries=False)
     assert first[0] is second[0]
     assert first[1] is second[1]
-    grouped = patterns.tiling_cell(resources, pattern, 4, 1, preserve_object_boundaries=True)
+    grouped = render_target.tiling_cell(resources, pattern, 4, 1, preserve_object_boundaries=True)
     assert grouped[0] is not first[0]
     assert len(resources.tiling_cells) == 2
 
@@ -169,7 +169,7 @@ def test_a_cell_whose_content_lies_outside_its_clip_paints_nothing():
         display_item("glyph", 0, {"bbox": (50.0, 50.0, 52.0, 52.0)}),
         display_item("scope-end", 0),
     ]
-    assert patterns.cell_paints_nothing(items, unit_cell_clip(), 1.0)
+    assert render_target.cell_paints_nothing(items, unit_cell_clip(), 1.0)
 
 
 @pytest.mark.parametrize(
@@ -183,7 +183,7 @@ def test_a_cell_whose_content_lies_outside_its_clip_paints_nothing():
     ],
 )
 def test_content_that_can_reach_the_clip_is_painted(item):
-    assert not patterns.cell_paints_nothing([item], unit_cell_clip(), 1.0)
+    assert not render_target.cell_paints_nothing([item], unit_cell_clip(), 1.0)
 
 
 @pytest.mark.parametrize(
@@ -191,4 +191,6 @@ def test_content_that_can_reach_the_clip_is_painted(item):
     [("shading", {"bbox": (100.0, 100.0, 101.0, 101.0)}), ("glyph", {}), ("annotation", {})],
 )
 def test_an_item_of_unknown_extent_is_assumed_to_paint(kind, data):
-    assert not patterns.cell_paints_nothing([display_item(kind, 0, data)], unit_cell_clip(), 1.0)
+    assert not render_target.cell_paints_nothing(
+        [display_item(kind, 0, data)], unit_cell_clip(), 1.0
+    )

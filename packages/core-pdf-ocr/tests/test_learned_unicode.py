@@ -3,7 +3,7 @@ from copy import replace
 import pytest
 
 from core_pdf.impl.capture_program import CaptureOptions
-from core_pdf.impl.extract_contracts import PageAnalysis as NativePageAnalysis
+from core_pdf.impl.extract_contracts import PageAnalysis
 from core_pdf.impl.glyphs import GlyphCluster, GlyphObservation
 from core_pdf.impl.runs import TextRun
 from core_pdf_ocr.impl.extract import capture
@@ -260,18 +260,19 @@ def test_public_capture_entry_point_passes_selection_options(
 ) -> None:
     from types import SimpleNamespace
 
+    from core_pdf.impl import extract_capture
     from core_pdf.impl.capture_program import PageProgram
 
     page = SimpleNamespace(width=100, height=200, rotation=0)
-    native = capture.native_capture_from_program(page, PageProgram(), structure=None)
+    native = extract_capture.capture_from_program(page, PageProgram(), structure=None)
     supplied: dict[str, object] = {}
 
-    def native_capture(target: object, **options: object) -> NativePageAnalysis:
+    def native_capture(target: object, **options: object) -> PageAnalysis:
         assert target is page
         supplied.update(options)
         return native
 
-    monkeypatch.setattr(capture, "native_capture_page", native_capture)
+    monkeypatch.setattr(extract_capture, "capture_page", native_capture)
     result = capture.capture_page(
         page, structure=None, hidden_layers=frozenset({"layer"}), fields=(), annotations=()
     )

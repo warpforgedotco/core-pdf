@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 reference = pytest.importorskip("pdfplumber")
 pytestmark = pytest.mark.compat_differential
@@ -32,7 +32,7 @@ def test_search_matches_reference_textmap_spans_and_options(
 ):
     from pdfplumber.utils.text import TextMap
 
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         page = pdf.pages[0]
         template = page.chars[0]
         chars: list[dict[str, Any]] = [
@@ -62,12 +62,12 @@ def test_search_matches_reference_textmap_spans_and_options(
 
 @pytest.mark.parametrize("options", [{"regex": False}, {"case": False}])
 def test_compiled_pattern_rejects_conflicting_options(text_pdf_bytes, options):
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         with pytest.raises(ValueError):
             pdf.pages[0].search(re.compile("Hello"), **options)
 
 
 def test_compiled_pattern_with_no_match_returns_empty_result(text_pdf_bytes):
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         pattern: Any = re.compile("absent")
         assert pdf.pages[0].search(pattern) == []

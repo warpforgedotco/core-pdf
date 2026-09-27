@@ -1,7 +1,7 @@
-import numpy as np
+import numpy
 import pytest
 
-from core_pdf.impl import render_paths as paths
+from core_pdf.impl import render_paths
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
 from core_pdf_cythonized import signed_area_coverage
 
@@ -22,7 +22,7 @@ def test_dashes_follow_length_and_phase_on_each_axis(pattern, phase, expected, a
         return (value, 0) if axis == 0 else (0, value)
 
     path = CapturedSubpath([point(0), point(10)])
-    result = paths.dash_subpath(path, (pattern, phase))
+    result = render_paths.dash_subpath(path, (pattern, phase))
     assert [(piece.points[0][axis], piece.points[-1][axis]) for piece in result] == expected
     assert all(not piece.closed for piece in result)
     assert path.points == [point(0), point(10)]
@@ -31,19 +31,19 @@ def test_dashes_follow_length_and_phase_on_each_axis(pattern, phase, expected, a
 @pytest.mark.parametrize("pattern", [[], [0], [0, 0], [-1, 0]])
 def test_empty_or_zero_dash_pattern_preserves_original_subpath(pattern):
     path = CapturedSubpath([(0, 0), (10, 0)])
-    assert paths.dash_subpath(path, (pattern, 5))[0] is path
+    assert render_paths.dash_subpath(path, (pattern, 5))[0] is path
 
 
 @pytest.mark.parametrize("points", [[], [(0, 0)], [(0, 0), (0, 0)]])
 def test_degenerate_dashed_subpaths_have_no_stroked_segments(points):
-    assert paths.dash_subpath(CapturedSubpath(points), ([2, 1], 0)) == []
+    assert render_paths.dash_subpath(CapturedSubpath(points), ([2, 1], 0)) == []
 
 
 @pytest.mark.parametrize("closed_duplicate", [False, True])
 def test_solid_dash_covering_closed_path_retains_closure(closed_duplicate):
     points = [(0, 0), (4, 0), (4, 4), (0, 4)]
     path = CapturedSubpath(points + ([points[0]] if closed_duplicate else []), closed=True)
-    (piece,) = paths.dash_subpath(path, ([20, 1], 0))
+    (piece,) = render_paths.dash_subpath(path, ([20, 1], 0))
     assert piece.closed
     assert piece.points == points + [points[0]]
 
@@ -54,7 +54,9 @@ def test_collinear_vertices_do_not_restart_dash_phase(phase):
     divided = CapturedSubpath([(0, 0), (1, 0), (1, 0), (4, 0), (7, 0), (10, 0)])
 
     def intervals(path):
-        return [(p.points[0], p.points[-1]) for p in paths.dash_subpath(path, ([2, 1], phase))]
+        return [
+            (p.points[0], p.points[-1]) for p in render_paths.dash_subpath(path, ([2, 1], phase))
+        ]
 
     assert intervals(simple) == intervals(divided)
 
@@ -77,7 +79,7 @@ def test_rectangle_coverage_equals_pixel_intersection_area(box, reverse):
     points = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
     if reverse:
         points.reverse()
-    edges = np.array([(*a, *b) for a, b in zip(points, points[1:] + points[:1])])
+    edges = numpy.array([(*a, *b) for a, b in zip(points, points[1:] + points[:1])])
     actual = signed_area_coverage(edges, 3, 3)
     expected = [
         [
@@ -86,19 +88,19 @@ def test_rectangle_coverage_equals_pixel_intersection_area(box, reverse):
         ]
         for y in range(3)
     ]
-    np.testing.assert_allclose(actual, expected, atol=1e-12, rtol=0)
+    numpy.testing.assert_allclose(actual, expected, atol=1e-12, rtol=0)
 
 
 @pytest.mark.parametrize(("width", "height"), [(0, 3), (3, 0), (-1, 3), (3, -1), (3, 3)])
 def test_empty_edge_coverage_respects_target_shape(width, height):
-    actual = signed_area_coverage(np.empty((0, 4)), width, height)
+    actual = signed_area_coverage(numpy.empty((0, 4)), width, height)
     assert actual.shape == (max(height, 0), max(width, 0))
     assert not actual.any()
 
 
 def test_closed_dash_crossing_seam_remains_one_continuous_piece():
     path = CapturedSubpath([(0, 0), (4, 0), (4, 4), (0, 4)], closed=True)
-    pieces = paths.dash_subpath(path, ([6, 2], 2))
+    pieces = render_paths.dash_subpath(path, ([6, 2], 2))
     assert [piece.points for piece in pieces] == [
         [(0, 2), (0, 0), (4, 0)],
         [(4, 2), (4, 4), (0, 4)],
@@ -107,7 +109,7 @@ def test_closed_dash_crossing_seam_remains_one_continuous_piece():
 
 @pytest.mark.parametrize("radius", [0, 1, 4])
 def test_circle_path_preserves_center_and_radius(radius):
-    path = paths.circle_path(3, 5, radius)
+    path = render_paths.circle_path(3, 5, radius)
     (subpath,) = path.subpaths
     assert subpath.closed
     assert len(subpath.points) == 32
@@ -118,9 +120,9 @@ def test_circle_path_preserves_center_and_radius(radius):
 @pytest.mark.parametrize("opacity", [0, 128, 255])
 def test_a_butt_capped_line_keeps_its_shape_whatever_its_opacity(opacity):
     pixels = bytearray(8 * 8 * 4)
-    target = np.frombuffer(pixels, dtype=np.uint8).reshape(8, 8, 4)
-    shape = np.zeros((8, 8), dtype=np.uint8)
-    alpha = paths.rasterize_unclipped_line_normal(
+    target = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(8, 8, 4)
+    shape = numpy.zeros((8, 8), dtype=numpy.uint8)
+    alpha = render_paths.rasterize_unclipped_line_normal(
         target,
         0,
         8,
@@ -141,22 +143,22 @@ def test_a_butt_capped_line_keeps_its_shape_whatever_its_opacity(opacity):
         assert alpha is not None
         assert alpha[3, 3] == opacity
     assert shape[3, 3] == 255
-    np.testing.assert_array_equal(shape, shape[::-1])
-    np.testing.assert_array_equal(shape, shape[:, ::-1])
+    numpy.testing.assert_array_equal(shape, shape[::-1])
+    numpy.testing.assert_array_equal(shape, shape[:, ::-1])
     if alpha is not None:
-        np.testing.assert_array_equal(target[:, :, 3], alpha)
+        numpy.testing.assert_array_equal(target[:, :, 3], alpha)
     if opacity == 0:
         assert not target.any()
     else:
-        np.testing.assert_array_equal(target[3, 3], [200, 100, 50, opacity])
+        numpy.testing.assert_array_equal(target[3, 3], [200, 100, 50, opacity])
     assert not shape[:, :2].any()
 
 
 @pytest.mark.parametrize("box", [(0, 0, 0, 8), (0, 0, 8, 0)])
 def test_line_rasterization_with_empty_pixel_box_is_a_noop(box):
-    target = np.zeros((8, 8, 4), dtype=np.uint8)
+    target = numpy.zeros((8, 8, 4), dtype=numpy.uint8)
     assert (
-        paths.rasterize_unclipped_line_normal(
+        render_paths.rasterize_unclipped_line_normal(
             target, 0, 8, 1, 2, 4, 6, 4, 2, (200, 100, 50, 255), box
         )
         is None
@@ -165,8 +167,8 @@ def test_line_rasterization_with_empty_pixel_box_is_a_noop(box):
 
 
 def test_a_deferred_outline_builds_the_same_subpaths_as_an_eager_one():
-    xs = np.array([0.0, 4.0, 4.0, 0.0, 1.0, 3.0, 2.0])
-    ys = np.array([0.0, 0.0, 4.0, 4.0, 1.0, 1.0, 3.0])
+    xs = numpy.array([0.0, 4.0, 4.0, 0.0, 1.0, 3.0, 2.0])
+    ys = numpy.array([0.0, 0.0, 4.0, 4.0, 1.0, 1.0, 3.0])
     spans = [(0, 4, True), (4, 7, True)]
     deferred = CapturedPath.deferred_outline(xs, ys, spans)
     eager = CapturedPath(
@@ -183,13 +185,15 @@ def test_a_deferred_outline_builds_the_same_subpaths_as_an_eager_one():
 
 
 def test_a_deferred_outline_is_an_ordinary_captured_path():
-    path = CapturedPath.deferred_outline(np.array([0.0, 1.0]), np.array([0.0, 1.0]), [(0, 2, True)])
+    path = CapturedPath.deferred_outline(
+        numpy.array([0.0, 1.0]), numpy.array([0.0, 1.0]), [(0, 2, True)]
+    )
     assert type(path) is CapturedPath
 
 
 def test_axis_aligned_rect_answers_a_deferred_outline_without_building_points():
-    xs = np.array([0.0, 4.0, 4.0, 0.0, 1.0, 3.0, 2.0])
-    ys = np.array([0.0, 0.0, 4.0, 4.0, 1.0, 1.0, 3.0])
+    xs = numpy.array([0.0, 4.0, 4.0, 0.0, 1.0, 3.0, 2.0])
+    ys = numpy.array([0.0, 0.0, 4.0, 4.0, 1.0, 1.0, 3.0])
     two = CapturedPath.deferred_outline(xs, ys, [(0, 4, True), (4, 7, True)])
     assert two.axis_aligned_rect() is None
     assert two._deferred is not None
@@ -200,21 +204,23 @@ def test_axis_aligned_rect_answers_a_deferred_outline_without_building_points():
 
 
 def test_a_deferred_outline_that_really_is_a_rectangle_is_still_recognized():
-    xs = np.array([1.0, 5.0, 5.0, 1.0])
-    ys = np.array([2.0, 2.0, 7.0, 7.0])
+    xs = numpy.array([1.0, 5.0, 5.0, 1.0])
+    ys = numpy.array([2.0, 2.0, 7.0, 7.0])
     path = CapturedPath.deferred_outline(xs, ys, [(0, 4, True)])
     assert path.axis_aligned_rect() == (1.0, 2.0, 5.0, 7.0)
 
 
 def test_a_four_point_deferred_outline_that_is_not_a_rectangle_is_rejected():
-    xs = np.array([0.0, 4.0, 5.0, 1.0])
-    ys = np.array([0.0, 0.0, 4.0, 4.0])
+    xs = numpy.array([0.0, 4.0, 5.0, 1.0])
+    ys = numpy.array([0.0, 0.0, 4.0, 4.0])
     path = CapturedPath.deferred_outline(xs, ys, [(0, 4, True)])
     assert path.axis_aligned_rect() is None
 
 
 def test_reading_subpaths_is_what_clears_the_deferred_state():
-    path = CapturedPath.deferred_outline(np.array([0.0, 1.0]), np.array([0.0, 1.0]), [(0, 2, True)])
+    path = CapturedPath.deferred_outline(
+        numpy.array([0.0, 1.0]), numpy.array([0.0, 1.0]), [(0, 2, True)]
+    )
     assert path._deferred is not None
     built = path.subpaths
     assert path._deferred is None
@@ -225,7 +231,9 @@ def test_reading_subpaths_is_what_clears_the_deferred_state():
 
 
 def test_an_unknown_attribute_still_raises():
-    path = CapturedPath.deferred_outline(np.array([0.0, 1.0]), np.array([0.0, 1.0]), [(0, 2, True)])
+    path = CapturedPath.deferred_outline(
+        numpy.array([0.0, 1.0]), numpy.array([0.0, 1.0]), [(0, 2, True)]
+    )
     with pytest.raises(AttributeError):
         getattr(path, "no_such_attribute")
     assert not hasattr(path, "no_such_attribute")

@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl import render_paths as paths
+from core_pdf.impl import render_paths
 
 
 @pytest.mark.parametrize(
@@ -21,7 +21,7 @@ def test_crossing_spans_distinguish_holes_overlaps_and_shared_boundaries(
     crossings, nonzero, evenodd, rule, reverse
 ):
     values = list(reversed(crossings)) if reverse else list(crossings)
-    spans = paths.fill_path_crossing_spans(values, rule)
+    spans = render_paths.fill_path_crossing_spans(values, rule)
     occupied = [x for x in range(10) if any(start <= x + 0.5 < end for start, end in spans)]
     assert occupied == (nonzero if rule == "nonzero" else evenodd)
     assert all(start < end for start, end in spans)

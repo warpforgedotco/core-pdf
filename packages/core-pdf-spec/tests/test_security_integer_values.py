@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from core_pdf_spec.exceptions import PdfDecryptionError, PdfUnsupportedError
-from core_pdf_spec.s_07_security import document as security_document
+from core_pdf_spec.s_07_security import document
 from core_pdf_spec.s_07_security.standard import (
     StandardSecurityHandler,
     create_standard_security_handler,
@@ -89,7 +89,7 @@ def test_handler_factory_runs_after_id_validation() -> None:
         raise AssertionError("authentication preceded ID validation")
 
     with pytest.raises(PdfUnsupportedError, match="Invalid trailer ID array"):
-        security_document.initialize_document_security(
+        document.initialize_document_security(
             b"", trailer, resolver, "user-aes128", handler_factory=unexpected_factory
         )
     assert resolver.decipher is None
@@ -112,9 +112,9 @@ def test_mac_failure_after_factory_never_installs_the_decipher(
         events.append("mac")
         raise PdfDecryptionError("Invalid PDF MAC")
 
-    monkeypatch.setattr(security_document, "validate_pdf_mac_if_present", failed_mac)
+    monkeypatch.setattr(document, "validate_pdf_mac_if_present", failed_mac)
     with pytest.raises(PdfDecryptionError, match="Invalid PDF MAC"):
-        security_document.initialize_document_security(
+        document.initialize_document_security(
             b"", trailer, resolver, "user-aes128", handler_factory=factory
         )
     assert events == ["authenticate", "mac"]

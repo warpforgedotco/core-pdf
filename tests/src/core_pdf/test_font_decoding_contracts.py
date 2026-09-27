@@ -2,8 +2,8 @@ from collections.abc import Iterable
 
 import pytest
 
-import core_pdf.impl.fonts_decoder as decoder_module
 from core_pdf import PdfDocument
+from core_pdf.impl import fonts_decoder
 from core_pdf.impl.fonts_cmap import CMapDecoder, ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder, split_code_bytes
 from core_pdf.impl.fonts_program_base import NULL_PROGRAM
@@ -223,13 +223,13 @@ def test_a_short_string_is_decoded_once_and_shared() -> None:
 
 def test_long_strings_are_not_kept() -> None:
     font = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
-    text = b"A" * (decoder_module.STRING_GLYPH_CACHE_MAX_BYTES + 1)
+    text = b"A" * (fonts_decoder.STRING_GLYPH_CACHE_MAX_BYTES + 1)
     assert "".join(glyph.unicode for glyph in font.decode_glyphs(text)) == text.decode()
     assert text not in font.string_glyph_cache
 
 
 def test_the_string_cache_is_cleared_when_full(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(decoder_module, "STRING_GLYPH_CACHE_MAX_ENTRIES", 2)
+    monkeypatch.setattr(fonts_decoder, "STRING_GLYPH_CACHE_MAX_ENTRIES", 2)
     font = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
     for text in (b"A", b"B", b"C"):
         assert font.decode_glyphs(text)[0].unicode == text.decode()

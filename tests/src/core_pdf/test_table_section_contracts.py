@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl import extract_table_cleanup as cleanup
+from core_pdf.impl import extract_table_cleanup
 from core_pdf.impl.extract_table_core import TableCandidate
 from core_pdf.impl.output_model import Table, TableAssociatedText, TableCell
 
@@ -35,7 +35,8 @@ def test_section_split_retains_cells_and_assigns_title_caption_to_ends(boundary,
     texts[boundary] = ["Next", "Section"]
     original = make_table(texts, geometry=geometry)
     first, second = (
-        segment.table for segment in cleanup.split_semantic_table(TableCandidate(original))
+        segment.table
+        for segment in extract_table_cleanup.split_semantic_table(TableCandidate(original))
     )
     assert first.rows == original.rows[:boundary]
     assert second.rows == original.rows[boundary:]
@@ -60,7 +61,7 @@ def test_section_split_retains_cells_and_assigns_title_caption_to_ends(boundary,
 def test_tables_without_section_headers_keep_identity(row_count, numeric):
     text = ["1", "2"] if numeric else ["ordinary", "words"]
     original = make_table([text] * row_count)
-    (result,) = cleanup.split_semantic_table(TableCandidate(original))
+    (result,) = extract_table_cleanup.split_semantic_table(TableCandidate(original))
     assert result.table is original
 
 
@@ -68,7 +69,7 @@ def test_repeated_identical_headers_in_long_table_do_not_create_sections():
     texts = [[str(i), str(i + 10)] for i in range(10)]
     texts[2] = texts[6] = ["Name", "Value"]
     original = make_table(texts)
-    (result,) = cleanup.split_semantic_table(TableCandidate(original))
+    (result,) = extract_table_cleanup.split_semantic_table(TableCandidate(original))
     assert result.table is original
 
 
@@ -88,7 +89,7 @@ def test_semantic_headers_require_labels_or_a_spanning_title(texts, spans, expec
         TableCell(0, i, text, column_span=span)
         for i, (text, span) in enumerate(zip(texts, spans, strict=True))
     )
-    assert cleanup.semantic_header_row(row) is expected
+    assert extract_table_cleanup.semantic_header_row(row) is expected
 
 
 @pytest.mark.parametrize(
@@ -108,7 +109,7 @@ def test_stream_prose_detection_distinguishes_word_grids_and_numeric_tables(
     rows, columns, text, expected
 ):
     table = make_table([[text] * columns for _ in range(rows)])
-    assert cleanup.stream_table_reads_like_prose(TableCandidate(table)) is expected
+    assert extract_table_cleanup.stream_table_reads_like_prose(TableCandidate(table)) is expected
 
 
 @pytest.mark.parametrize("source", ["stream", "grid"])
@@ -116,6 +117,6 @@ def test_stream_prose_detection_distinguishes_word_grids_and_numeric_tables(
 @pytest.mark.parametrize("text", ["a b c d", "1234"])
 def test_character_spaced_prose_requires_wide_stream_grid(source, columns, text):
     table = make_table([[text] * columns] * 4, source=source)
-    assert cleanup.table_character_spaced_prose(TableCandidate(table)) is (
+    assert extract_table_cleanup.table_character_spaced_prose(TableCandidate(table)) is (
         source == "stream" and columns == 8 and text == "a b c d"
     )

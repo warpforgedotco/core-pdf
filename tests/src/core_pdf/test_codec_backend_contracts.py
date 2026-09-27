@@ -1,8 +1,8 @@
-import numpy as np
+import numpy
 import pytest
 
-from core_pdf.impl import graphics_stream_decoding as codecs
-from core_pdf_spec.s_07_filters import predictors as strict
+from core_pdf.impl import graphics_stream_decoding
+from core_pdf_spec.s_07_filters import predictors
 from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 
 
@@ -20,40 +20,44 @@ from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupporte
 def test_normalized_samples_use_declared_precision_and_contiguous_layout(
     dtype, values, expected, channels
 ):
-    source = np.asarray([values, values], dtype=dtype)[:, ::-1]
+    source = numpy.asarray([values, values], dtype=dtype)[:, ::-1]
     if channels:
         source = source[:, :, None]
-    result = codecs.normalize_imagecodecs_array(source, name="test", allow_float=True)
-    wanted = np.asarray([expected[::-1], expected[::-1]], dtype=np.uint8)
+    result = graphics_stream_decoding.normalize_imagecodecs_array(
+        source, name="test", allow_float=True
+    )
+    wanted = numpy.asarray([expected[::-1], expected[::-1]], dtype=numpy.uint8)
     if channels:
         wanted = wanted[:, :, None]
-    np.testing.assert_array_equal(result, wanted)
-    assert result.dtype == np.uint8
+    numpy.testing.assert_array_equal(result, wanted)
+    assert result.dtype == numpy.uint8
     assert result.flags.c_contiguous
 
 
 def test_uint16_precision_can_be_preserved_without_aliasing_strided_storage():
-    source = np.arange(12, dtype=np.uint16).reshape(3, 4)[:, ::2]
-    result = codecs.normalize_imagecodecs_array(source, name="test", preserve_uint16=True)
-    np.testing.assert_array_equal(result, source)
-    assert result.dtype == np.uint16
+    source = numpy.arange(12, dtype=numpy.uint16).reshape(3, 4)[:, ::2]
+    result = graphics_stream_decoding.normalize_imagecodecs_array(
+        source, name="test", preserve_uint16=True
+    )
+    numpy.testing.assert_array_equal(result, source)
+    assert result.dtype == numpy.uint16
     assert result.flags.c_contiguous
 
 
 @pytest.mark.parametrize(
     "source",
     [
-        np.zeros(3),
-        np.zeros((1, 1, 1, 1)),
-        np.zeros((1, 1), dtype=bool),
-        np.zeros((1, 1), dtype=complex),
-        np.zeros((1, 1, 0), dtype=np.uint8),
-        np.zeros((1, 1), dtype=np.float32),
+        numpy.zeros(3),
+        numpy.zeros((1, 1, 1, 1)),
+        numpy.zeros((1, 1), dtype=bool),
+        numpy.zeros((1, 1), dtype=complex),
+        numpy.zeros((1, 1, 0), dtype=numpy.uint8),
+        numpy.zeros((1, 1), dtype=numpy.float32),
     ],
 )
 def test_unsupported_decoded_shapes_and_types_fail_clearly(source):
     with pytest.raises(FilterUnsupportedError, match="test decoder returned"):
-        codecs.normalize_imagecodecs_array(source, name="test")
+        graphics_stream_decoding.normalize_imagecodecs_array(source, name="test")
 
 
 @pytest.mark.parametrize(
@@ -67,7 +71,9 @@ def test_unsupported_decoded_shapes_and_types_fail_clearly(source):
 def test_codec_failures_distinguish_invalid_and_unsupported_streams(data, valid, error):
     cause = RuntimeError("backend failed")
     with pytest.raises(error) as failure:
-        codecs.raise_codec_error(data, cause, check=lambda value: valid, name="test")
+        graphics_stream_decoding.raise_codec_error(
+            data, cause, check=lambda value: valid, name="test"
+        )
     assert failure.value.__cause__ is cause
 
 
@@ -76,7 +82,7 @@ def test_failed_signature_probe_still_reports_parse_error():
         raise RuntimeError("probe failed")
 
     with pytest.raises(FilterParseError):
-        codecs.raise_codec_error(b"bad", RuntimeError(), check=probe, name="test")
+        graphics_stream_decoding.raise_codec_error(b"bad", RuntimeError(), check=probe, name="test")
 
 
 @pytest.mark.parametrize(
@@ -84,12 +90,12 @@ def test_failed_signature_probe_still_reports_parse_error():
     [(None, 3), ("", 3), ("bad", 3), ("0", 1), ("-2", 1), ("2", 2), ("99", 4)],
 )
 def test_jpx_thread_setting_respects_default_and_hard_bound(monkeypatch, setting, expected):
-    monkeypatch.setattr(codecs.os, "cpu_count", lambda: 3)
+    monkeypatch.setattr(graphics_stream_decoding.os, "cpu_count", lambda: 3)
     if setting is None:
         monkeypatch.delenv("CORE_PDF_JPX_THREADS", raising=False)
     else:
         monkeypatch.setenv("CORE_PDF_JPX_THREADS", setting)
-    assert codecs.jpx_thread_count() == expected
+    assert graphics_stream_decoding.jpx_thread_count() == expected
 
 
 @pytest.mark.parametrize("bits", [1, 2, 4, 8, 16])
@@ -98,7 +104,7 @@ def test_png_prediction_backend_preserves_exact_sample_bytes(bits, colors):
     columns = 8
     row_length = columns * colors * bits // 8
     raw = bytes((index * 37 + 19) % 256 for index in range(row_length))
-    result = codecs.png_predict_codec(
+    result = graphics_stream_decoding.png_predict_codec(
         b"\0" + raw + b"\2" + bytes(row_length),
         columns=columns,
         colors=colors,
@@ -123,7 +129,9 @@ def test_png_prediction_backend_preserves_exact_sample_bytes(bits, colors):
 )
 def test_png_backend_declines_inapplicable_layouts(columns, colors, bits, data):
     assert (
-        codecs.png_predict_codec(data, columns=columns, colors=colors, bits_per_component=bits)
+        graphics_stream_decoding.png_predict_codec(
+            data, columns=columns, colors=colors, bits_per_component=bits
+        )
         is None
     )
 
@@ -131,18 +139,18 @@ def test_png_backend_declines_inapplicable_layouts(columns, colors, bits, data):
 @pytest.mark.parametrize("bits", [8, 16])
 @pytest.mark.parametrize("colors", [1, 3, 4])
 def test_tiff_prediction_accumulates_per_channel_and_restarts_each_row(bits, colors):
-    dtype = np.dtype("u1" if bits == 8 else ">u2")
+    dtype = numpy.dtype("u1" if bits == 8 else ">u2")
     maximum = (1 << bits) - 1
     row = [maximum] * colors + [2] * colors + [3] * colors
-    encoded = np.asarray(row * 2, dtype=dtype).tobytes()
+    encoded = numpy.asarray(row * 2, dtype=dtype).tobytes()
 
     def decoder(data, columns, colors):
-        return codecs.tiff_predict_codec(
+        return graphics_stream_decoding.tiff_predict_codec(
             data, columns=columns, colors=colors, bits_per_component=bits
         )
 
     actual = decoder(encoded + b"x", 3, colors)
-    expected = np.asarray(
+    expected = numpy.asarray(
         ([maximum] * colors + [1] * colors + [4] * colors) * 2, dtype=dtype
     ).tobytes()
     assert actual == expected
@@ -152,7 +160,10 @@ def test_tiff_prediction_accumulates_per_channel_and_restarts_each_row(bits, col
 @pytest.mark.parametrize(("data", "columns"), [(b"", 3), (b"x", 3), (b"abc", 0)])
 def test_tiff_prediction_ignores_incomplete_rows(bits, data, columns):
     assert (
-        codecs.tiff_predict_codec(data, columns=columns, colors=1, bits_per_component=bits) == b""
+        graphics_stream_decoding.tiff_predict_codec(
+            data, columns=columns, colors=1, bits_per_component=bits
+        )
+        == b""
     )
 
 
@@ -173,14 +184,14 @@ def test_subbyte_tiff_prediction_preserves_channel_and_padded_row_boundaries(bit
     row = [mask] * colors + [1] * ((columns - 1) * colors)
     expected = [((mask + column) & mask) for column in range(columns) for _ in range(colors)]
     encoded = pack_rows([row, row], bits)
-    assert codecs.tiff_predict_bits_codec(encoded, columns, colors, bits) == pack_rows(
-        [expected, expected], bits
-    )
+    assert graphics_stream_decoding.tiff_predict_bits_codec(
+        encoded, columns, colors, bits
+    ) == pack_rows([expected, expected], bits)
 
 
 @pytest.mark.parametrize("bits", [1, 2, 4])
 def test_subbyte_tiff_prediction_returns_empty_for_missing_row(bits):
-    assert codecs.tiff_predict_bits_codec(b"", 8, 1, bits) == b""
+    assert graphics_stream_decoding.tiff_predict_bits_codec(b"", 8, 1, bits) == b""
 
 
 def test_prediction_codecs_report_unavailability_instead_of_raising(
@@ -190,11 +201,11 @@ def test_prediction_codecs_report_unavailability_instead_of_raising(
     def explode(*args: object, **kwargs: object) -> object:
         raise RuntimeError("codec unavailable")
 
-    monkeypatch.setattr(codecs.imagecodecs, "png_decode", explode)
-    monkeypatch.setattr(codecs.imagecodecs, "delta_decode", explode)
+    monkeypatch.setattr(graphics_stream_decoding.imagecodecs, "png_decode", explode)
+    monkeypatch.setattr(graphics_stream_decoding.imagecodecs, "delta_decode", explode)
     options = {"columns": 2, "colors": 1, "bits_per_component": 8}
-    assert codecs.png_predict_codec(b"\x00\x05\x07", **options) is None
-    assert codecs.tiff_predict_codec(b"\x05\x07", **options) is None
+    assert graphics_stream_decoding.png_predict_codec(b"\x00\x05\x07", **options) is None
+    assert graphics_stream_decoding.tiff_predict_codec(b"\x05\x07", **options) is None
 
 
 @pytest.mark.parametrize("bits", [1, 2, 4, 8, 16])
@@ -202,7 +213,9 @@ def test_prediction_codecs_report_unavailability_instead_of_raising(
 @pytest.mark.parametrize("columns", [1, 7])
 def test_prediction_backends_agree_with_the_pure_python_kernels(bits, colors, columns):
     row_bytes = max(1, (columns * colors * bits + 7) // 8)
-    rng = np.random.default_rng(seed=bits * 100 + colors * 10 + columns)
-    data = rng.integers(0, 256, size=row_bytes * 4, dtype=np.uint8).tobytes()
+    rng = numpy.random.default_rng(seed=bits * 100 + colors * 10 + columns)
+    data = rng.integers(0, 256, size=row_bytes * 4, dtype=numpy.uint8).tobytes()
     options = {"columns": columns, "colors": colors, "bits_per_component": bits}
-    assert codecs.tiff_predict_codec(data, **options) == strict.tiff_predict(data, **options)
+    assert graphics_stream_decoding.tiff_predict_codec(data, **options) == predictors.tiff_predict(
+        data, **options
+    )

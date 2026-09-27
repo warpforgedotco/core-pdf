@@ -12,7 +12,6 @@ from typing import Any, NoReturn
 import imagecodecs
 import numpy
 
-import core_pdf_spec.s_07_filters.codecs as strict
 from core_jbig2.bitmap import compose_packed_bitmap_data
 from core_jbig2.codec import (
     GENERIC_TEMPLATE_0_DEFAULT_AT,
@@ -45,20 +44,18 @@ from core_pdf.impl.graphics_filter_registry import (
     TolerantFilter,
 )
 from core_pdf_cythonized import decode_arithmetic_generic_template0
-from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
+from core_pdf_spec.s_07_filters import codecs, decode_spec, jbig2, predictors
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import (
     FilterParseError,
     FilterUnsupportedError,
     PredictorError,
 )
-from core_pdf_spec.s_07_filters.jbig2 import decode_jbig2 as decode_strict_jbig2
 from core_pdf_spec.s_07_filters.predictors import (
     SUPPORTED_PREDICTOR_BITS,
     png_predict,
     tiff_predict,
 )
-from core_pdf_spec.s_07_filters.predictors import apply_predictor as strict_apply_predictor
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_null
 from core_pdf_spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
@@ -497,7 +494,7 @@ def decode_crypt(data: bytes, parms: object) -> bytes:
 
 def decode_jbig2(data: bytes, parms: object) -> bytes:
     params = filter_params(parms)
-    return decode_strict_jbig2(data, params, decoder_type=RecoveryJBIG2PageDecoder)
+    return jbig2.decode_jbig2(data, params, decoder_type=RecoveryJBIG2PageDecoder)
 
 
 def png_predict_tolerant(
@@ -527,7 +524,7 @@ def png_predict_tolerant(
     )
 
 
-def png_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -> bytes:
+def png_predictor_tolerant(data: bytes | memoryview, params: decode_spec.FilterParams) -> bytes:
     return png_predict_tolerant(
         data,
         columns=params.columns,
@@ -537,7 +534,7 @@ def png_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) ->
     )
 
 
-def tiff_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -> bytes:
+def tiff_predictor_tolerant(data: bytes | memoryview, params: decode_spec.FilterParams) -> bytes:
     columns = params.columns
     colors = params.colors
     bits_per_component = params.bits_per_component
@@ -551,7 +548,7 @@ def tiff_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -
 
 def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
     params = filter_params(parms)
-    return strict_apply_predictor(
+    return predictors.apply_predictor(
         data, params, png=png_predictor_tolerant, tiff=tiff_predictor_tolerant
     )
 
@@ -577,8 +574,8 @@ def apply_ascii_hex(data: bytes, parms: object) -> bytes:
 
 def apply_run_length(data: bytes, parms: object) -> bytes:
     try:
-        return strict.apply_run_length(data, parms)
-    except strict.IncompleteRunLengthError as exc:
+        return codecs.apply_run_length(data, parms)
+    except codecs.IncompleteRunLengthError as exc:
         return exc.decoded
 
 
@@ -588,7 +585,7 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
         clean = clean[2:]
     if b"~>" not in clean:
         clean += b"~>"
-    return strict.apply_ascii85(clean, parms)
+    return codecs.apply_ascii85(clean, parms)
 
 
 def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
@@ -599,8 +596,8 @@ def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
         except Exception as exc:
             raise ValueError("invalid LZW stream") from exc
     try:
-        return strict.apply_lzw(data, params)
-    except strict.IncompleteLzwError as exc:
+        return codecs.apply_lzw(data, params)
+    except codecs.IncompleteLzwError as exc:
         return exc.decoded
 
 

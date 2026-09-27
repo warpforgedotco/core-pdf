@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import struct
-import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from copy import replace
 from functools import partial
+from xml.etree import ElementTree
 
 from defusedxml.common import DefusedXmlException
-from defusedxml.ElementTree import fromstring as defused_fromstring
+from defusedxml.ElementTree import fromstring
 
 from core_pdf.impl.exceptions import PdfError, PdfParseError
 from core_pdf.impl.recovery_resolver import ObjectResolver
@@ -387,7 +387,7 @@ def discover_profile_claims(
         stream = catalog_metadata_stream(resolver, catalog) if catalog is not None else None
         if stream is not None and stream.data:
             claims.extend(xmp_claims(stream.data, diagnostics))
-    except PdfError, RecursionError, ValueError, ET.ParseError, DefusedXmlException:
+    except PdfError, RecursionError, ValueError, ElementTree.ParseError, DefusedXmlException:
         diagnostics.append(
             StandardsDiagnostic(
                 "invalid-xmp", "Cannot read profile claims from XMP", "catalog/Metadata"
@@ -412,7 +412,7 @@ def discover_profile_claims(
 
 
 def xmp_claims(raw: bytes, diagnostics: list[StandardsDiagnostic]) -> list[ProfileClaim]:
-    root = defused_fromstring(raw)
+    root = fromstring(raw)
     groups: dict[str, list[tuple[str, str]]] = {}
     claims: list[ProfileClaim] = []
     if root.tag == f"{{{RDF}}}RDF":

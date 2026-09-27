@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
+import core_pdf_compat.pdfplumber
 from core_pdf.impl.output_model import Table, TableCell
-from core_pdf_compat import pdfplumber as compat
 
 
 def table(label, box, cell_boxes):
@@ -30,7 +30,7 @@ def test_matching_column_tables_merge_with_geometry_or_original_row_order(
         first_boxes[0] = None
     first = table(["low", "lowest"], (0, 10, 100, 30), first_boxes)
     second = table(["high"], (1, 80, 101, 90), second_boxes)
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         calls = []
 
         def extract(self, **kwargs):
@@ -60,7 +60,7 @@ def test_tables_with_different_or_missing_column_bounds_remain_separate(
 ):
     first = table(["one"], (0, 10, 100, 30), [None])
     second = table(["two"], box, [None])
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         monkeypatch.setattr(
             type(pdf._document),
             "extract",
@@ -79,7 +79,7 @@ def test_thin_table_body_extension_requires_more_than_500_nonfooter_characters(
     text_pdf_bytes, monkeypatch, body_count, footer
 ):
     native = table(["cell"], (0, 10, 200, 15), [None])
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         monkeypatch.setattr(
             type(pdf._document),
             "extract",
@@ -103,7 +103,7 @@ def test_ragged_table_columns_preserve_missing_cells_and_row_identity():
             (TableCell(1, 0, "C", bbox=(0, 5, 5, 10)),),
         ),
     )
-    result = compat.Table(native)
+    result = core_pdf_compat.pdfplumber.Table(native)
     assert result.extract() == [["A", "B"], ["C", ""]]
     assert list(result.columns[1]) == [(5, 0, 10, 5), None]
     assert len(result.rows[0]) == 2

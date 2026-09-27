@@ -9,7 +9,7 @@ from asn1crypto import cms
 from core_pdf_crypto.errors import UnsupportedAlgorithmError
 from core_pdf_crypto.pdf_mac import validate_authenticated_data
 from core_pdf_spec.exceptions import PdfDecryptionError, PdfUnsupportedError
-from core_pdf_spec.s_07_security import pdf_mac as mac
+from core_pdf_spec.s_07_security import pdf_mac
 from core_pdf_spec.s_07_security.document import initialize_document_security
 from core_pdf_spec.s_07_security.standard import create_standard_security_handler
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
@@ -81,7 +81,7 @@ def test_tampered_file_never_installs_decipher(fixture, change):
 @pytest.mark.parametrize("location", ["AttachedToSig", "Unknown"])
 def test_unsupported_mac_locations_remain_distinct(location):
     with pytest.raises(PdfUnsupportedError):
-        mac.validate_standalone_pdf_mac(b"", {"MACLocation": PdfName.of(location)}, b"", b"")
+        pdf_mac.validate_standalone_pdf_mac(b"", {"MACLocation": PdfName.of(location)}, b"", b"")
 
 
 @pytest.mark.parametrize(
@@ -90,7 +90,7 @@ def test_unsupported_mac_locations_remain_distinct(location):
 )
 def test_byte_range_must_cover_exactly_the_file(byte_range):
     with pytest.raises(ValueError, match="ByteRange"):
-        mac.extract_standalone_token(
+        pdf_mac.extract_standalone_token(
             b"a<00>b", {"ByteRange": byte_range, "MAC": PdfString(b"\0", is_literal=False)}
         )
 
@@ -121,7 +121,7 @@ def test_malformed_authenticated_data_is_rejected(fixture, change):
             entry["user_password"],
         )
         assert handler.config.kdf_salt is not None
-        byte_range, token = mac.extract_standalone_token(raw, section.trailer["AuthCode"])
+        byte_range, token = pdf_mac.extract_standalone_token(raw, section.trailer["AuthCode"])
         auth = cms.ContentInfo.load(token)["content"]
         if change == "version":
             auth["version"] = "v1"

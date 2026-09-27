@@ -15,6 +15,7 @@ from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import coerce_to_bytes
+from core_pdf_spec.s_08_graphics import color_spec
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_spec import (
     ColorParams,
@@ -22,9 +23,6 @@ from core_pdf_spec.s_08_graphics.color_spec import (
     DeviceNAttributes,
     DeviceNProcess,
     parse_device_n_attributes,
-)
-from core_pdf_spec.s_08_graphics.color_spec import (
-    parse_color_space as parse_pdf_color_space,
 )
 
 GRAY_RGB_KINDS = frozenset({"DeviceGray", "DeviceRGB"})
@@ -155,11 +153,11 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
     try:
         direct = recover_pdf_name(value)
         if direct in NAMED_KINDS:
-            return parse_pdf_color_space(direct)
+            return color_spec.parse_color_space(direct)
         if isinstance(value, (list, tuple)) and value:
             kind = recover_pdf_name(value[0])
             if len(value) == 1 and kind in NAMED_KINDS:
-                return parse_pdf_color_space(kind)
+                return color_spec.parse_color_space(kind)
             if kind == "Indexed" and len(value) >= 4:
                 hival = lenient_int(value[2], None)
                 if type(value[2]) is bool or hival is None or hival < 0:
@@ -269,7 +267,7 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                     devicen_attributes=attributes,
                 )
         try:
-            return parse_pdf_color_space(value)
+            return color_spec.parse_color_space(value)
         except TypeError, ValueError:
             name = recover_pdf_name(value)
             if name is None and isinstance(value, (list, tuple)) and value:

@@ -14,14 +14,16 @@ from core_pdf_spec.types import (
     PdfString,
     Rectangle,
 )
-from core_records import FrozenFields as FrozenFields
-from core_records import GeneratedRecord as GeneratedRecord
-from core_records import PickleFields as PickleFields
-from core_records import Record as Record
-from core_records import RecordType as RecordType
-from core_records import ReplaceFields as ReplaceFields
-from core_records import ReprFields as ReprFields
-from core_records import frozen_setattr as frozen_setattr
+from core_records import (
+    FrozenFields,
+    GeneratedRecord,
+    PickleFields,
+    Record,
+    RecordType,
+    ReplaceFields,
+    ReprFields,
+    frozen_setattr,
+)
 
 
 class BinaryReader(Protocol):
@@ -69,6 +71,8 @@ class PageScoped[RecordT](GeneratedRecord):
 
 __all__ = (
     "BinaryReader",
+    "FrozenFields",
+    "GeneratedRecord",
     "MISSING",
     "MissingObject",
     "PageScoped",
@@ -78,6 +82,12 @@ __all__ = (
     "PdfReference",
     "PdfSource",
     "PdfString",
+    "PickleFields",
+    "Record",
+    "RecordType",
     "Rectangle",
+    "ReplaceFields",
+    "ReprFields",
     "SeekableBinaryReader",
+    "frozen_setattr",
 )

@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl import document_structure as structure
+from core_pdf.impl import document_structure
 from core_pdf.impl.document_document import PageLookup, PdfDocument
 from core_pdf.impl.document_structure import (
     PageStructure,
@@ -240,7 +240,7 @@ def test_structure_kids_keep_nested_order_page_and_stream_reference(document):
         [3, {"Type": PdfName(b"MCR"), "MCID": 4, "Pg": PdfReference(3, 0), "Stm": stream}],
         {"S": PdfName(b"P")},
     ]
-    result = list(structure.make_kids(kids, page, document))
+    result = list(document_structure.make_kids(kids, page, document))
     for item, mcid in zip(result[:3], (2, 3, 4), strict=True):
         assert isinstance(item, StructureContentItem)
         assert item.mcid == mcid
@@ -250,7 +250,7 @@ def test_structure_kids_keep_nested_order_page_and_stream_reference(document):
     assert marked.stream is stream
     assert isinstance(result[3], StructureElement)
     assert result[3].role == "P"
-    assert next(structure.make_kids(8, None, document)).page_index is None
+    assert next(document_structure.make_kids(8, None, document)).page_index is None
 
 
 @pytest.mark.parametrize("recovery", [False, True])
@@ -268,24 +268,35 @@ def test_structure_kids_keep_nested_order_page_and_stream_reference(document):
 def test_invalid_children_raise_in_strict_mode_and_skip_in_recovery(document, recovery, kid):
     document.xref_was_recovered = recovery
     if recovery:
-        result = list(structure.make_kids([kid, 7], None, document))
+        result = list(document_structure.make_kids([kid, 7], None, document))
         assert len(result) == 1
         item = result[0]
         assert isinstance(item, StructureContentItem)
         assert item.mcid == 7
     else:
         with pytest.raises(ValueError):
-            list(structure.make_kids(kid, None, document))
+            list(document_structure.make_kids(kid, None, document))
 
 
 @pytest.mark.parametrize("recovery", [False, True])
 def test_structure_depth_limit_applies_to_nested_children(document, recovery):
     document.xref_was_recovered = recovery
     if recovery:
-        assert list(structure.make_kids(0, None, document, structure.MAX_STRUCTURE_DEPTH + 1)) == []
+        assert (
+            list(
+                document_structure.make_kids(
+                    0, None, document, document_structure.MAX_STRUCTURE_DEPTH + 1
+                )
+            )
+            == []
+        )
     else:
         with pytest.raises(ValueError, match="depth"):
-            list(structure.make_kids(0, None, document, structure.MAX_STRUCTURE_DEPTH + 1))
+            list(
+                document_structure.make_kids(
+                    0, None, document, document_structure.MAX_STRUCTURE_DEPTH + 1
+                )
+            )
 
 
 @pytest.mark.parametrize("indirect", [False, True])
@@ -294,7 +305,7 @@ def test_object_reference_children_resolve_annotation_dictionary(document, indir
     reference = PdfReference(99, 0)
     document.resolver.objects[key_for(99, 0)] = annotation
     kid = {"Type": PdfName(b"OBJR"), "Obj": reference if indirect else annotation}
-    result = list(structure.make_kids(kid, document.pages[0], document))
+    result = list(document_structure.make_kids(kid, document.pages[0], document))
     assert len(result) == 1
     assert isinstance(result[0], StructureContentObject)
     assert result[0].props is annotation
@@ -305,7 +316,7 @@ def test_indirect_children_and_page_parents_share_resolved_dictionary(document):
     parent: PdfDict = {"S": PdfName(b"P")}
     reference = PdfReference(99, 0)
     document.resolver.objects[key_for(99, 0)] = parent
-    child = next(structure.make_kids(reference, None, document))
+    child = next(document_structure.make_kids(reference, None, document))
     assert isinstance(child, StructureElement)
     assert child.props is parent
     view = PageStructure(document.pages[0], [reference, reference, parent])
@@ -396,11 +407,14 @@ def test_page_search_can_find_ancestor_instead_of_immediate_parent(document):
 
 
 def test_child_page_lookup_rejects_foreign_reference_and_allows_absent_page(document):
-    assert structure.get_kid_page_index(document, None, {}) is None
+    assert document_structure.get_kid_page_index(document, None, {}) is None
     lookup = PageLookup(document)
-    assert structure.get_kid_page_index(document, None, {"Pg": PdfReference(3, 0)}, lookup) == 0
+    assert (
+        document_structure.get_kid_page_index(document, None, {"Pg": PdfReference(3, 0)}, lookup)
+        == 0
+    )
     with pytest.raises(ValueError, match="page reference"):
-        structure.get_kid_page_index(document, None, {"Pg": 7})
+        document_structure.get_kid_page_index(document, None, {"Pg": 7})
 
 
 def test_element_page_reuses_explicit_lookup_page_wrapper(document):

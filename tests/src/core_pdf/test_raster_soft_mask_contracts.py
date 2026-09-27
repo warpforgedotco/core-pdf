@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
+import numpy
 import pytest
 
 from core_pdf.impl.capture_program import CapturedProgram
@@ -47,14 +47,14 @@ def test_mask_pixels_ignore_destination_clip_and_backdrop(
     mask = CapturedSoftMask(mask_program(), transfer if invert else None, offset)
     result = resolve_soft_mask(target, mask)
     assert result is not None
-    expected = np.zeros((4, 4), dtype=np.float32)
+    expected = numpy.zeros((4, 4), dtype=numpy.float32)
     x, y = offset
     expected[2 - y : 4 - y, x : x + 2] = 1
     plane = result[...]
-    np.testing.assert_array_equal(plane, 1 - expected if invert else expected)
-    assert plane.dtype == np.float32
+    numpy.testing.assert_array_equal(plane, 1 - expected if invert else expected)
+    assert plane.dtype == numpy.float32
     assert not result.alpha.flags.writeable
-    np.testing.assert_array_equal(result[1:3, 2:4], plane[1:3, 2:4])
+    numpy.testing.assert_array_equal(result[1:3, 2:4], plane[1:3, 2:4])
     assert bytes(target.pixels) == original_pixels
     assert target.clip.depth == 1
     assert not target.resources.active_soft_masks
@@ -72,7 +72,7 @@ def test_sibling_reuses_mask_cache_without_sharing_paint_state() -> None:
     assert resolve_soft_mask(sibling, mask) is result
     assert sibling.resources is target.resources
     sibling.blend_px(0, (255, 0, 0, 255), None)
-    np.testing.assert_array_equal(pixels[0, 0], [255, 0, 0, 255])
+    numpy.testing.assert_array_equal(pixels[0, 0], [255, 0, 0, 255])
     assert not any(target.pixels)
 
 
@@ -90,7 +90,7 @@ def test_transfer_runs_only_on_alphas_the_mask_holds() -> None:
     assert result is not None
     assert samples == [0.0, 1.0]
     assert sorted(set(result[...].ravel().tolist())) == [0.25, 0.75]
-    assert np.count_nonzero(result[...] == np.float32(0.75)) == 4
+    assert numpy.count_nonzero(result[...] == numpy.float32(0.75)) == 4
 
 
 def test_transfer_failure_is_cached_and_does_not_poison_other_masks() -> None:
@@ -110,7 +110,7 @@ def test_transfer_failure_is_cached_and_does_not_poison_other_masks() -> None:
     assert calls == 1
     valid = resolve_soft_mask(target, CapturedSoftMask(program))
     assert valid is not None
-    assert np.count_nonzero(valid[...]) == 4
+    assert numpy.count_nonzero(valid[...]) == 4
     assert not target.resources.active_soft_masks
 
 
@@ -130,11 +130,11 @@ def state(text_pdf_bytes: bytes) -> Iterator[TextState]:
 
 @pytest.fixture
 def parses(monkeypatch: pytest.MonkeyPatch) -> list[object]:
-    from core_pdf.impl import capture_tolerant_state as tolerant_state
+    from core_pdf.impl import capture_tolerant_state
 
     reached: list[object] = []
     monkeypatch.setattr(
-        tolerant_state,
+        capture_tolerant_state,
         "parse_soft_mask",
         lambda value, resolver, *, ctm, compile_function: reached.append(value),
     )
@@ -145,11 +145,11 @@ def test_a_repeated_soft_mask_is_parsed_once_per_distinct_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from core_pdf import PdfDocument
-    from core_pdf.impl import capture_tolerant_state as tolerant_state
+    from core_pdf.impl import capture_tolerant_state
 
     calls = 0
     produced: list[int] = []
-    original = tolerant_state.RecoveringTextState.resolve_soft_mask
+    original = capture_tolerant_state.RecoveringTextState.resolve_soft_mask
 
     def counting(self: RecoveringTextState, value: object) -> SoftMask | None:
         nonlocal calls
@@ -159,7 +159,7 @@ def test_a_repeated_soft_mask_is_parsed_once_per_distinct_state(
             produced.append(id(mask))
         return mask
 
-    monkeypatch.setattr(tolerant_state.RecoveringTextState, "resolve_soft_mask", counting)
+    monkeypatch.setattr(capture_tolerant_state.RecoveringTextState, "resolve_soft_mask", counting)
     with PdfDocument(REPEATED_SOFT_MASK_PDF.read_bytes()) as document:
         document.pages[0].extract()
 
@@ -211,8 +211,8 @@ def test_a_nested_capture_shares_the_parse_cache(state: TextState) -> None:
     assert state.nested_capture_state().caches.parsed_soft_masks is state.caches.parsed_soft_masks
 
 
-def make_plane(megabytes: float) -> np.ndarray:
-    return np.zeros(int(megabytes * 1e6 // 4), dtype=np.float32)
+def make_plane(megabytes: float) -> numpy.ndarray:
+    return numpy.zeros(int(megabytes * 1e6 // 4), dtype=numpy.float32)
 
 
 def plane_key(index: int) -> tuple[int, int, tuple[float, float]]:

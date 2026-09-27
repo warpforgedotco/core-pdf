@@ -5,13 +5,13 @@ from typing import Any
 
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 
 @pytest.mark.parametrize("precision", [None, 0, 2])
 @pytest.mark.parametrize("object_types", [None, ["char"], []])
 def test_csv_quotes_text_and_selects_objects(text_pdf_bytes, precision, object_types):
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         objects: dict[str, list[dict[str, Any]]] = {
             "char": [{"object_type": "char", "text": 'a,"b"\nc', "x0": 1.2345}],
             "rect": [{"object_type": "rect", "x0": 9.8765, "metadata": {"nested": 1}}],
@@ -47,7 +47,7 @@ def test_csv_quotes_text_and_selects_objects(text_pdf_bytes, precision, object_t
     ],
 )
 def test_csv_attribute_selection_preserves_source(text_pdf_bytes, options, expected):
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         obj = {"object_type": "char", "text": "Hello", "x0": 1.25}
         original = obj.copy()
         pdf.pages[0]._objects = {"char": [obj]}

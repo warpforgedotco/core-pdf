@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl import graphics_stream_decoding as recovery
+from core_pdf.impl import graphics_stream_decoding
 from core_pdf.impl.graphics_decode_compat import FilterParams
 from core_pdf_spec.s_07_filters.errors import FilterError, FilterParseError
 
@@ -22,7 +22,7 @@ from core_pdf_spec.s_07_filters.errors import FilterError, FilterParseError
     ],
 )
 def test_ascii_hex_ignores_invalid_bytes_and_pads_only_the_final_nibble(encoded, expected):
-    assert recovery.apply_ascii_hex(encoded, None) == expected
+    assert graphics_stream_decoding.apply_ascii_hex(encoded, None) == expected
 
 
 @pytest.mark.parametrize(
@@ -40,7 +40,7 @@ def test_ascii_hex_ignores_invalid_bytes_and_pads_only_the_final_nibble(encoded,
     ],
 )
 def test_run_length_retains_available_literals_and_complete_repeats(encoded, expected):
-    assert recovery.apply_run_length(encoded, None) == expected
+    assert graphics_stream_decoding.apply_run_length(encoded, None) == expected
 
 
 @pytest.mark.parametrize("payload", [b"", b"a", b"ab", b"abc", b"\x00" * 4, b"hello world"])
@@ -53,7 +53,10 @@ def test_ascii85_accepts_optional_adobe_start_and_missing_end(payload, markers, 
     elif markers == "pdf":
         encoded += b"~>"
     encoded = b"\x00 \t\r\n" + encoded
-    assert recovery.apply_ascii85(memoryview(encoded) if view else encoded, None) == payload
+    assert (
+        graphics_stream_decoding.apply_ascii85(memoryview(encoded) if view else encoded, None)
+        == payload
+    )
 
 
 def pack_codes(codes):
@@ -68,12 +71,14 @@ def pack_codes(codes):
 def test_lzw_backend_routes_decode_literal_and_dictionary_codes(
     monkeypatch, native, early_change, normalized
 ):
-    monkeypatch.setattr(recovery.imagecodecs, "LZW", SimpleNamespace(available=native))
+    monkeypatch.setattr(
+        graphics_stream_decoding.imagecodecs, "LZW", SimpleNamespace(available=native)
+    )
     encoded = pack_codes([256, 65, 258, 259, 256, 66, 257])
     params = (
         FilterParams(early_change=early_change) if normalized else {"EarlyChange": early_change}
     )
-    assert recovery.apply_lzw(encoded, params) == b"AAAAAAB"
+    assert graphics_stream_decoding.apply_lzw(encoded, params) == b"AAAAAAB"
 
 
 @pytest.mark.parametrize("early_change", [0, 1])
@@ -83,8 +88,13 @@ def test_lzw_backend_routes_decode_literal_and_dictionary_codes(
 def test_python_lzw_recovery_returns_only_the_decoded_prefix(
     monkeypatch, early_change, codes, expected
 ):
-    monkeypatch.setattr(recovery.imagecodecs, "LZW", SimpleNamespace(available=False))
-    assert recovery.apply_lzw(pack_codes(codes), {"EarlyChange": early_change}) == expected
+    monkeypatch.setattr(
+        graphics_stream_decoding.imagecodecs, "LZW", SimpleNamespace(available=False)
+    )
+    assert (
+        graphics_stream_decoding.apply_lzw(pack_codes(codes), {"EarlyChange": early_change})
+        == expected
+    )
 
 
 def test_lzw_backend_failure_preserves_cause(monkeypatch):
@@ -93,10 +103,12 @@ def test_lzw_backend_failure_preserves_cause(monkeypatch):
     def fail(data):
         raise failure
 
-    monkeypatch.setattr(recovery.imagecodecs, "LZW", SimpleNamespace(available=True))
-    monkeypatch.setattr(recovery.imagecodecs, "lzw_decode", fail)
+    monkeypatch.setattr(
+        graphics_stream_decoding.imagecodecs, "LZW", SimpleNamespace(available=True)
+    )
+    monkeypatch.setattr(graphics_stream_decoding.imagecodecs, "lzw_decode", fail)
     with pytest.raises(ValueError, match="invalid LZW stream") as caught:
-        recovery.apply_lzw(b"invalid", None)
+        graphics_stream_decoding.apply_lzw(b"invalid", None)
     assert caught.value.__cause__ is failure
 
 
@@ -108,16 +120,16 @@ def test_flate_recovers_real_raw_zlib_and_gzip_streams(wbits, truncated):
     encoded = encoder.compress(payload) + encoder.flush()
     if truncated:
         encoded = encoded[:-1]
-    assert recovery.apply_flate(encoded, None) == payload
+    assert graphics_stream_decoding.apply_flate(encoded, None) == payload
 
 
 @pytest.mark.parametrize("encoded", [b"", b"\x03", b"\x00"])
 def test_short_incomplete_raw_deflate_is_not_accepted_as_an_empty_stream(encoded):
-    assert recovery.recover_flate(encoded, -15) is None
+    assert graphics_stream_decoding.recover_flate(encoded, -15) is None
 
 
 def test_empty_flate_input_is_recoverable():
-    assert recovery.apply_flate(b"", None) == b""
+    assert graphics_stream_decoding.apply_flate(b"", None) == b""
 
 
 @pytest.mark.parametrize(
@@ -148,47 +160,47 @@ def test_content_probe_ignores_nested_operators_and_respects_scan_limits(encoded
         data = memoryview(encoded)
     elif view == "slice":
         data = memoryview(b"q " + encoded + b" Q")[2:-2]
-    assert recovery.looks_like_pdf_content_stream(data) is expected
+    assert graphics_stream_decoding.looks_like_pdf_content_stream(data) is expected
 
 
 @pytest.mark.parametrize("encoded", [b"q 1 0 0 1 0 0 cm Q", b"BT (hello) Tj ET"])
 def test_mislabeled_flate_preserves_actual_content(encoded):
-    assert recovery.apply_flate(encoded, None) == encoded
+    assert graphics_stream_decoding.apply_flate(encoded, None) == encoded
 
 
 @pytest.mark.parametrize("encoded", [b"\xff", b"(q)", b"/BT", b"[q]", b"<< /X Q >>"])
 def test_mislabeled_flate_rejects_data_with_only_nested_operators(encoded):
     with pytest.raises(FilterParseError, match="invalid FlateDecode stream"):
-        recovery.apply_flate(encoded, None)
+        graphics_stream_decoding.apply_flate(encoded, None)
 
 
 @pytest.mark.parametrize("wbits", [-15, 15, 47])
 def test_incomplete_single_byte_headers_never_count_as_recovered_streams(wbits):
     for byte in range(256):
-        assert recovery.recover_flate(bytes([byte]), wbits) is None, (wbits, byte)
+        assert graphics_stream_decoding.recover_flate(bytes([byte]), wbits) is None, (wbits, byte)
 
 
 @pytest.mark.parametrize("wbits", [-15, 15, 31])
 def test_complete_empty_compressed_streams_remain_valid(wbits):
     encoder = zlib.compressobj(wbits=wbits)
     encoded = encoder.flush()
-    assert recovery.apply_flate(encoded, None) == b""
+    assert graphics_stream_decoding.apply_flate(encoded, None) == b""
 
 
 def test_flate_can_recover_a_valid_body_with_a_broken_checksum():
     payload = b"BT (recoverable) Tj ET" * 10
     encoded = zlib.compress(payload)[:-4] + bytes(4)
-    assert recovery.recover_flate(encoded) == payload
+    assert graphics_stream_decoding.recover_flate(encoded) == payload
 
 
 def test_flate_does_not_recover_a_corrupt_body_despite_a_valid_header():
-    assert recovery.recover_flate(b"\x78\x9c" + b"\xff" * 8 + bytes(4)) is None
+    assert graphics_stream_decoding.recover_flate(b"\x78\x9c" + b"\xff" * 8 + bytes(4)) is None
 
 
 @pytest.mark.parametrize("encoded", [b"!", b"!z", b"v", b"uuuuu"])
 def test_ascii85_recovery_does_not_hide_invalid_digits_or_groups(encoded):
     with pytest.raises(ValueError):
-        recovery.apply_ascii85(encoded, None)
+        graphics_stream_decoding.apply_ascii85(encoded, None)
 
 
 PREDICTED = {"Predictor": 12, "Columns": 2}
@@ -196,22 +208,22 @@ PREDICTED = {"Predictor": 12, "Columns": 2}
 
 def test_a_passed_through_content_stream_skips_the_predictor_only_alone():
     content = b"q 1 0 0 1 0 0 cm Q"
-    assert recovery.inflate(content) == (content, True)
+    assert graphics_stream_decoding.inflate(content) == (content, True)
     alone = {"Filter": "FlateDecode", "DecodeParms": PREDICTED}
-    assert recovery.decode_stream_data(content, alone) == content
+    assert graphics_stream_decoding.decode_stream_data(content, alone) == content
     chained = {"Filter": ["ASCIIHexDecode", "FlateDecode"], "DecodeParms": [None, PREDICTED]}
     with pytest.raises(FilterError):
-        recovery.decode_stream_data(content.hex().encode(), chained)
+        graphics_stream_decoding.decode_stream_data(content.hex().encode(), chained)
 
 
 def test_inflated_data_is_never_passed_through():
     payload = b"q 1 0 0 1 0 0 cm Q"
-    assert recovery.inflate(zlib.compress(payload)) == (payload, False)
-    assert recovery.inflate(b"") == (b"", False)
+    assert graphics_stream_decoding.inflate(zlib.compress(payload)) == (payload, False)
+    assert graphics_stream_decoding.inflate(b"") == (b"", False)
 
 
 def test_decode_parms_are_read_once_for_the_filters_that_read_them():
-    spec = recovery.normalize_stream_decode_spec(
+    spec = graphics_stream_decoding.normalize_stream_decode_spec(
         {
             "Filter": ["FlateDecode", "DCTDecode", "Crypt", "LZWDecode"],
             "DecodeParms": [

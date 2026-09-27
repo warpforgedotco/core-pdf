@@ -7,7 +7,7 @@ from typing import Any, TypeAlias
 
 import numpy
 
-from core_jbig2.bitmap import uint8_view as uint8_view
+from core_jbig2.bitmap import uint8_view
 
 ByteBuffer: TypeAlias = bytes | bytearray | memoryview | numpy.ndarray[Any, Any]
 UInt8Array = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]

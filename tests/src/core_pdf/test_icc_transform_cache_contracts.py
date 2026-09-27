@@ -4,10 +4,10 @@
 from typing import Any
 
 import imagecodecs
-import numpy as np
+import numpy
 import pytest
 
-from core_pdf.impl import graphics_icc_profiles as icc_profiles
+from core_pdf.impl import graphics_icc_profiles
 from core_pdf.impl.graphics_icc_profiles import (
     MEMO_ROWS,
     IccProfileError,
@@ -35,17 +35,19 @@ def rgb() -> IccTransform:
 @pytest.fixture
 def lcms_rows(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     counted: list[int] = []
-    original = icc_profiles.imagecodecs.cms_transform
+    original = graphics_icc_profiles.imagecodecs.cms_transform
 
-    def counting(data: np.ndarray, *args: Any, **kwargs: Any) -> Any:
+    def counting(data: numpy.ndarray, *args: Any, **kwargs: Any) -> Any:
         counted.append(data.shape[0])
         return original(data, *args, **kwargs)
 
-    monkeypatch.setattr(icc_profiles.imagecodecs, "cms_transform", counting)
+    monkeypatch.setattr(graphics_icc_profiles.imagecodecs, "cms_transform", counting)
     return counted
 
 
-def direct(transform: IccTransform, samples: np.ndarray, rendering: ColorRendering) -> np.ndarray:
+def direct(
+    transform: IccTransform, samples: numpy.ndarray, rendering: ColorRendering
+) -> numpy.ndarray:
     intent, flags = cms_options(rendering)
     return cms_transform(transform.profile, transform.color_space, intent, flags, samples)
 
@@ -55,53 +57,53 @@ def test_kept_colours_are_the_direct_bytes(
     rgb: IccTransform, intent: RenderingIntent, lcms_rows: list[int]
 ) -> None:
     rendering = ColorRendering(intent=intent)
-    rng = np.random.default_rng(7)
+    rng = numpy.random.default_rng(7)
     for rows in (1, 3, 16, MEMO_ROWS):
-        samples = rng.integers(0, 65536, size=(rows, 3), dtype=np.uint16)
+        samples = rng.integers(0, 65536, size=(rows, 3), dtype=numpy.uint16)
         first = rgb.apply_uint16(samples, rendering=rendering)
         calls = len(lcms_rows)
         again = rgb.apply_uint16(samples.copy(), rendering=rendering)
         assert len(lcms_rows) == calls
         expected = direct(rgb, samples, rendering)
-        np.testing.assert_array_equal(first, expected)
-        np.testing.assert_array_equal(again, expected)
-        assert first.dtype == np.uint8
+        numpy.testing.assert_array_equal(first, expected)
+        numpy.testing.assert_array_equal(again, expected)
+        assert first.dtype == numpy.uint8
         assert first.shape == (rows, 3)
 
 
 def test_only_new_rows_reach_lcms(rgb: IccTransform, lcms_rows: list[int]) -> None:
-    rng = np.random.default_rng(3)
-    known = rng.integers(0, 65536, size=(40, 3), dtype=np.uint16)
-    fresh = rng.integers(0, 65536, size=(5, 3), dtype=np.uint16)
+    rng = numpy.random.default_rng(3)
+    known = rng.integers(0, 65536, size=(40, 3), dtype=numpy.uint16)
+    fresh = rng.integers(0, 65536, size=(5, 3), dtype=numpy.uint16)
     rgb.apply_uint16(known)
-    mixed = np.concatenate([known[:20], fresh, known[20:], fresh[:2]])
+    mixed = numpy.concatenate([known[:20], fresh, known[20:], fresh[:2]])
     lcms_rows.clear()
-    np.testing.assert_array_equal(
+    numpy.testing.assert_array_equal(
         rgb.apply_uint16(mixed), direct(rgb, mixed, DEFAULT_COLOR_RENDERING)
     )
     assert lcms_rows[0] == 7
 
 
 def test_a_result_is_the_callers_to_write_into(rgb: IccTransform) -> None:
-    samples = np.array([[1000, 20000, 60000]], dtype=np.uint16)
+    samples = numpy.array([[1000, 20000, 60000]], dtype=numpy.uint16)
     first = rgb.apply_uint16(samples)
     expected = first.copy()
     first[:] = 0
-    np.testing.assert_array_equal(rgb.apply_uint16(samples), expected)
+    numpy.testing.assert_array_equal(rgb.apply_uint16(samples), expected)
 
 
 def test_strided_samples_convert_as_their_values(rgb: IccTransform) -> None:
-    wide = np.array([[1000, 0, 20000, 0, 60000, 0]], dtype=np.uint16)
+    wide = numpy.array([[1000, 0, 20000, 0, 60000, 0]], dtype=numpy.uint16)
     strided = wide[:, ::2]
     assert not strided.flags["C_CONTIGUOUS"]
-    np.testing.assert_array_equal(
+    numpy.testing.assert_array_equal(
         rgb.apply_uint16(strided),
-        direct(rgb, np.ascontiguousarray(strided), DEFAULT_COLOR_RENDERING),
+        direct(rgb, numpy.ascontiguousarray(strided), DEFAULT_COLOR_RENDERING),
     )
 
 
 def test_large_images_bypass_the_memo(rgb: IccTransform) -> None:
-    samples = np.zeros((MEMO_ROWS + 1, 3), dtype=np.uint16)
+    samples = numpy.zeros((MEMO_ROWS + 1, 3), dtype=numpy.uint16)
     rgb.apply_uint16(samples)
     rgb.apply_uint16(samples)
     assert not any(row_memos.values())
@@ -115,8 +117,8 @@ def test_failures_are_raised_every_time(monkeypatch: pytest.MonkeyPatch, rgb: Ic
         calls += 1
         raise imagecodecs.CmsError("no")
 
-    monkeypatch.setattr(icc_profiles.imagecodecs, "cms_transform", refuse)
-    samples = np.array([[1, 2, 3]], dtype=np.uint16)
+    monkeypatch.setattr(graphics_icc_profiles.imagecodecs, "cms_transform", refuse)
+    samples = numpy.array([[1, 2, 3]], dtype=numpy.uint16)
     for _ in range(2):
         with pytest.raises(IccProfileError):
             rgb.apply_uint16(samples)
@@ -126,16 +128,16 @@ def test_failures_are_raised_every_time(monkeypatch: pytest.MonkeyPatch, rgb: Ic
 def test_a_large_conversion_split_across_threads_is_the_same_array(
     rgb: IccTransform, monkeypatch: pytest.MonkeyPatch, lcms_rows: list[int]
 ) -> None:
-    rng = np.random.default_rng(11)
-    samples = rng.integers(0, 65536, size=(1001, 3), dtype=np.uint16)
+    rng = numpy.random.default_rng(11)
+    samples = rng.integers(0, 65536, size=(1001, 3), dtype=numpy.uint16)
     intent, flags = cms_options(DEFAULT_COLOR_RENDERING)
     monkeypatch.setenv("CORE_PDF_CMS_THREADS", "1")
     serial = cms_transform(rgb.profile, rgb.color_space, intent, flags, samples)
-    monkeypatch.setattr(icc_profiles, "PARALLEL_ROWS", 8)
+    monkeypatch.setattr(graphics_icc_profiles, "PARALLEL_ROWS", 8)
     monkeypatch.setenv("CORE_PDF_CMS_THREADS", "3")
     lcms_rows.clear()
     split = cms_transform(rgb.profile, rgb.color_space, intent, flags, samples)
     assert sorted(lcms_rows) == [333, 334, 334]
-    np.testing.assert_array_equal(split, serial)
-    assert split.dtype == np.uint8
+    numpy.testing.assert_array_equal(split, serial)
+    assert split.dtype == numpy.uint8
     assert split.shape == (1001, 3)

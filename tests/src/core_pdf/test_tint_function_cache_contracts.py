@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from core_pdf.impl import graphics_image_samples as image_samples
+from core_pdf.impl import graphics_image_samples
 from core_pdf.impl.graphics_image_samples import tint_function, tint_function_key
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.types import PdfName, PdfReference
@@ -21,8 +21,8 @@ def calculator(program: bytes, **extra: object) -> PdfStream:
 
 @pytest.fixture(autouse=True)
 def empty_cache() -> None:
-    image_samples.TINT_FUNCTION_CACHE.clear()
-    image_samples.TINT_FUNCTION_OBJECTS.clear()
+    graphics_image_samples.TINT_FUNCTION_CACHE.clear()
+    graphics_image_samples.TINT_FUNCTION_OBJECTS.clear()
 
 
 def test_equal_streams_share_one_compiled_function() -> None:
@@ -41,9 +41,9 @@ def test_different_programs_do_not_share() -> None:
 
 def test_a_repeated_input_is_not_evaluated_again(monkeypatch: pytest.MonkeyPatch) -> None:
     runs: list[tuple[float, ...]] = []
-    compile_function = image_samples.compile_pdf_function
+    compile_function = graphics_image_samples.compile_pdf_function
 
-    def counting(tint_fn: object) -> image_samples.TintFunction:
+    def counting(tint_fn: object) -> graphics_image_samples.TintFunction:
         compiled = compile_function(tint_fn)
 
         def run(*inputs: float) -> tuple[float, ...]:
@@ -52,7 +52,7 @@ def test_a_repeated_input_is_not_evaluated_again(monkeypatch: pytest.MonkeyPatch
 
         return run
 
-    monkeypatch.setattr(image_samples, "compile_pdf_function", counting)
+    monkeypatch.setattr(graphics_image_samples, "compile_pdf_function", counting)
     function = tint_function(calculator(b"{ 2 mul }"))
     assert function(0.25) == function(0.25) == (0.5,)
     assert runs == [(0.25,)]
@@ -85,7 +85,7 @@ def test_the_same_object_is_found_without_its_key(monkeypatch: pytest.MonkeyPatc
     assert tint_function(other) is function
     keys: list[object] = []
     monkeypatch.setattr(
-        image_samples, "tint_function_key", lambda tint_fn: keys.append(tint_fn) or None
+        graphics_image_samples, "tint_function_key", lambda tint_fn: keys.append(tint_fn) or None
     )
     assert tint_function(stream) is function
     assert tint_function(other) is function

@@ -1,6 +1,6 @@
 from copy import replace
 
-import numpy as np
+import numpy
 import pytest
 
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
@@ -92,7 +92,7 @@ def test_array_outlines_match_transformed_contour_paths(contours, matrix):
         sub.points for sub in array_path.subpaths
     ]
     assert scalar_box == array_box
-    np.testing.assert_array_equal(edges, np.asarray(scalar_path.fill_edges()))
+    numpy.testing.assert_array_equal(edges, numpy.asarray(scalar_path.fill_edges()))
     assert all(sub.closed for sub in array_path.subpaths)
 
 

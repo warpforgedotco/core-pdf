@@ -54,16 +54,15 @@ from core_pdf.impl.types import (
 )
 from core_pdf_cythonized import flatten_path_commands
 from core_pdf_spec.exceptions import PdfParseError
+from core_pdf_spec.s_07_content import model
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES, GraphicsState, PdfPath
-from core_pdf_spec.s_07_content.model import MarkedContentEntry as SemanticMarkedContentEntry
-from core_pdf_spec.s_07_content.model import ShadingPattern as PdfShadingPattern
-from core_pdf_spec.s_07_content.model import TilingPattern as PdfTilingPattern
 from core_pdf_spec.s_07_content.operations import OperationHandler
 from core_pdf_spec.s_07_content.streams import ContentStreamExecutor, ContentStreamFrame
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
+from core_pdf_spec.s_08_graphics import image_spec
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
@@ -72,10 +71,9 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
 )
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
-from core_pdf_spec.s_08_graphics.image_spec import image_source_from_stream as resolve_image_source
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
-from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
+from core_pdf_spec.s_11_transparency.soft_masks import SoftMask
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture_records import LayoutFormId
@@ -236,7 +234,7 @@ def image_source_from_stream(
     *,
     color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[ImageSource, float | None]:
-    source = resolve_image_source(
+    source = image_spec.image_source_from_stream(
         stream,
         resolver,
         semantic_context=getattr(resolver, "semantic_context", None),
@@ -910,7 +908,7 @@ class TextState(RecoveringTextState):
             self.capture_marked_entries[key] = captured
         return captured
 
-    def end_marked_content(self, state: object, entry: SemanticMarkedContentEntry) -> None:
+    def end_marked_content(self, state: object, entry: model.MarkedContentEntry) -> None:
         captured = self.capture_marked_entries.pop(id(entry), None)
         if captured is not None:
             self.emit_actual_text_span(captured)
@@ -1257,7 +1255,7 @@ class TextState(RecoveringTextState):
                 return True
         return False
 
-    def resolve_soft_mask(self, value: object) -> PdfSoftMask | None:
+    def resolve_soft_mask(self, value: object) -> SoftMask | None:
         mask = super().resolve_soft_mask(value)
         if mask is not None:
             scopes = self.caches.capture_mask_resources
@@ -1323,17 +1321,17 @@ class TextState(RecoveringTextState):
             return None
         rendering = self.graphics.color_rendering
         initial_alpha_is_shape = (
-            pattern.alpha_is_shape if isinstance(pattern, PdfTilingPattern) else False
+            pattern.alpha_is_shape if isinstance(pattern, model.TilingPattern) else False
         )
         initial_text_knockout = (
-            pattern.text_knockout if isinstance(pattern, PdfTilingPattern) else True
+            pattern.text_knockout if isinstance(pattern, model.TilingPattern) else True
         )
         cache_key = (id(pattern), rendering, initial_alpha_is_shape, initial_text_knockout)
         cached = self.capture_patterns.get_key(pattern, cache_key, MISSING)
         if not isinstance(cached, MissingObject):
             return cached
         result: PatternPaint | None = None
-        if isinstance(pattern, PdfShadingPattern):
+        if isinstance(pattern, model.ShadingPattern):
             if pattern.extgstate is not None:
                 values = {
                     str(key): self.resolver.resolve(value)
@@ -1345,7 +1343,7 @@ class TextState(RecoveringTextState):
             result = ShadingPattern(
                 self.capture_shading_dictionary(pattern.dictionary), color_rendering=rendering
             )
-        elif isinstance(pattern, PdfTilingPattern):
+        elif isinstance(pattern, model.TilingPattern):
             nested = self.nested_capture_state()
             try:
                 result = self.capture_tiling_pattern(
@@ -1358,7 +1356,7 @@ class TextState(RecoveringTextState):
     def capture_tiling_pattern(
         self,
         nested: TextState,
-        pattern: PdfTilingPattern,
+        pattern: model.TilingPattern,
         rendering: ColorRendering,
         initial_alpha_is_shape: bool,
         initial_text_knockout: bool,

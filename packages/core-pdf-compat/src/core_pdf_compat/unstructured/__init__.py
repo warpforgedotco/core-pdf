@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from . import _classification as _classification
 from ._elements import (
     Address,
     Element,

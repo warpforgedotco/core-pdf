@@ -1,10 +1,14 @@
 from importlib import resources
 
-from core_adobe_fonts.cmap import resources as cmap_resources
+from core_adobe_fonts.cmap.resources import (
+    RESOURCE_PACKAGE,
+    cmap_directories,
+    resolve_cmap_resource,
+)
 
 
 def walked(name: str) -> bytes | None:
-    root = resources.files(cmap_resources.RESOURCE_PACKAGE).joinpath("cmaps")
+    root = resources.files(RESOURCE_PACKAGE).joinpath("cmaps")
     if not root.is_dir():
         return None
     deprecated = None
@@ -23,20 +27,16 @@ def walked(name: str) -> bytes | None:
 
 
 def test_every_packaged_name_resolves_as_the_walk_resolved_it() -> None:
-    names = {
-        entry.name
-        for directory in cmap_resources.cmap_directories()
-        for entry in directory.iterdir()
-    }
+    names = {entry.name for directory in cmap_directories() for entry in directory.iterdir()}
     assert names
     for name in sorted(names | {"NoSuchCMap"}):
-        assert cmap_resources.resolve_cmap_resource(name) == walked(name), name
+        assert resolve_cmap_resource(name) == walked(name), name
 
 
 def test_the_directories_are_listed_once() -> None:
-    assert cmap_resources.cmap_directories() is cmap_resources.cmap_directories()
+    assert cmap_directories() is cmap_directories()
 
 
 def test_unsafe_names_are_refused() -> None:
     for name in ("", ".", "..", "a/b", "a\\\\b"):
-        assert cmap_resources.resolve_cmap_resource(name) is None
+        assert resolve_cmap_resource(name) is None

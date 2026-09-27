@@ -5,7 +5,7 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf.impl import render_target as raster
+from core_pdf.impl import render_target
 from core_pdf.impl.graphics_shading import prepare_shading
 from core_pdf.impl.render_model import ShadingItem
 from core_pdf.impl.render_target import RasterTarget
@@ -52,7 +52,7 @@ def reference_paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: s
                 value = domain[0] + unit_t * domain_span
                 rgba = cache.get(value)
                 if rgba is None:
-                    rgba = cache[value] = raster.shading_rgba(
+                    rgba = cache[value] = render_target.shading_rgba(
                         shading.color_model,
                         shading.evaluator(value),
                         fill_opacity,
@@ -227,7 +227,7 @@ def test_a_colour_failing_part_way_paints_what_the_loop_painted(
     from core_pdf.impl.types import PdfName
 
     shading = {PdfName.of(k.encode()): v for k, v in SHADING.items()}
-    original = raster.shading_rgba
+    original = render_target.shading_rgba
     seen: list[object] = []
 
     def failing(model: str, components: Any, *rest: Any) -> Any:
@@ -236,7 +236,7 @@ def test_a_colour_failing_part_way_paints_what_the_loop_painted(
             raise ArithmeticError("no colour")
         return original(model, components, *rest)
 
-    monkeypatch.setattr(raster, "shading_rgba", failing)
+    monkeypatch.setattr(render_target, "shading_rgba", failing)
     outcomes = []
     for paint in (RasterTarget.paint_shading, reference_paint_shading):
         seen.clear()
@@ -301,13 +301,13 @@ def test_a_shading_painted_again_is_prepared_once(monkeypatch: pytest.MonkeyPatc
 
     shading = {PdfName.of(k.encode()): v for k, v in SHADING.items()}
     prepared: list[object] = []
-    original = raster.prepare_shading
+    original = render_target.prepare_shading
 
     def counting(dictionary: object, **options: Any) -> Any:
         prepared.append(dictionary)
         return original(dictionary, **options)
 
-    monkeypatch.setattr(raster, "prepare_shading", counting)
+    monkeypatch.setattr(render_target, "prepare_shading", counting)
     target = make_backdrop_target(12, 3, planes=False)
     for _ in range(3):
         target.paint_shading(ShadingItem.from_data(0, {"dictionary": shading}), None)

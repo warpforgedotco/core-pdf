@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl import extract_capture, extract_contracts
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedLines
 from core_pdf.impl.extract_capture import (
@@ -19,21 +20,9 @@ from core_pdf.impl.extract_capture import (
     promoted_hidden_runs,
     run_uses_actual_text,
 )
-from core_pdf.impl.extract_capture import (
-    capture_from_program as native_capture_from_program,
-)
-from core_pdf.impl.extract_capture import (
-    capture_page as native_capture_page,
-)
-from core_pdf.impl.extract_capture import (
-    glyph_evidence_fields as native_glyph_evidence_fields,
-)
 from core_pdf.impl.extract_contracts import (
     GlyphEvidence,
     ObservationBatch,
-)
-from core_pdf.impl.extract_contracts import (
-    PageAnalysis as NativePageAnalysis,
 )
 from core_pdf.impl.geometry import bbox_area, bbox_union, rect_tuple
 from core_pdf.impl.glyphs import GlyphObservation, UnicodeSource
@@ -368,7 +357,7 @@ def glyph_evidence_fields(
     runs: tuple[TextRun, ...],
     replacements: Mapping[int, str],
 ) -> GlyphEvidence:
-    return native_glyph_evidence_fields(
+    return extract_capture.glyph_evidence_fields(
         (
             (glyph.text, glyph.unicode_source, glyph.confidence)
             if (replacement := replacements.get(id(glyph))) is None
@@ -381,7 +370,7 @@ def glyph_evidence_fields(
     )
 
 
-def enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
+def enrich_capture(native: extract_contracts.PageAnalysis) -> PageAnalysis:
     program = native.program
     image_filters = tuple(
         filter_name
@@ -447,7 +436,7 @@ def capture_from_program(
             replacements,
         )
     return enrich_capture(
-        native_capture_from_program(
+        extract_capture.capture_from_program(
             page,
             program,
             structure=structure,
@@ -469,7 +458,7 @@ def capture_page(
     options: CaptureOptions = DEFAULT_CAPTURE,
 ) -> PageAnalysis:
     return enrich_capture(
-        native_capture_page(
+        extract_capture.capture_page(
             page,
             structure=structure,
             hidden_layers=hidden_layers,

@@ -1,4 +1,4 @@
-import numpy as np
+import numpy
 import pytest
 
 from core_pdf.impl import render_target
@@ -6,18 +6,18 @@ from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
 from tests.src.core_pdf.raster_support import make_target
 
 
-def expected_coverage(clipped: bool) -> np.ndarray:
-    length = np.hypot(9, 7)
-    tangent = np.array([9, 7]) / length
-    normal = np.array([-7, 9]) / length
-    counts = np.zeros((16, 16))
+def expected_coverage(clipped: bool) -> numpy.ndarray:
+    length = numpy.hypot(9, 7)
+    tangent = numpy.array([9, 7]) / length
+    normal = numpy.array([-7, 9]) / length
+    counts = numpy.zeros((16, 16))
     for row in range(16):
         for column in range(16):
             if clipped and not (4 <= row < 12 and 5 <= column < 12):
                 continue
             for sy in (0.125, 0.375, 0.625, 0.875):
                 for sx in (0.125, 0.375, 0.625, 0.875):
-                    relative = np.array([column + sx - 3, 16 - row - sy - 4])
+                    relative = numpy.array([column + sx - 3, 16 - row - sy - 4])
                     along = float(relative @ tangent)
                     across = float(relative @ normal)
                     inside = -1e-12 <= along <= length + 1e-12 and abs(across) <= 1.5
@@ -50,27 +50,31 @@ def test_line_routes_preserve_pixels_alpha_and_shape(
             (200, 50, 10, alpha),
             blend_mode="Normal" if route == "blend" else None,
         )
-        pixels = np.frombuffer(target.pixels, dtype=np.uint8).reshape(16, 16, 4).copy()
+        pixels = numpy.frombuffer(target.pixels, dtype=numpy.uint8).reshape(16, 16, 4).copy()
         group = target.pop_group()
         assert group.source_alpha is not None
         assert group.source_shape is not None
-        np.testing.assert_allclose(group.source_shape, np.rint(255 * coverage) / 255, atol=1e-7)
-        np.testing.assert_allclose(group.source_alpha, np.rint(alpha * coverage) / 255, atol=1e-7)
-        assert np.count_nonzero(group.source_shape) > 0
+        numpy.testing.assert_allclose(
+            group.source_shape, numpy.rint(255 * coverage) / 255, atol=1e-7
+        )
+        numpy.testing.assert_allclose(
+            group.source_alpha, numpy.rint(alpha * coverage) / 255, atol=1e-7
+        )
+        assert numpy.count_nonzero(group.source_shape) > 0
         if alpha == 0:
-            assert not np.any(pixels)
-            assert not np.any(group.source_alpha)
+            assert not numpy.any(pixels)
+            assert not numpy.any(group.source_alpha)
         else:
-            assert np.count_nonzero(pixels[..., 3]) > 0
+            assert numpy.count_nonzero(pixels[..., 3]) > 0
         if clipped:
-            outside = np.ones((16, 16), dtype=bool)
+            outside = numpy.ones((16, 16), dtype=bool)
             outside[4:12, 5:12] = False
-            assert not np.any(pixels[outside])
-            assert not np.any(group.source_shape[outside])
+            assert not numpy.any(pixels[outside])
+            assert not numpy.any(group.source_shape[outside])
         results.append((pixels, group.source_alpha, group.source_shape))
     for actual in results[1:]:
         for expected_plane, actual_plane in zip(results[0], actual, strict=True):
-            np.testing.assert_allclose(actual_plane, expected_plane, atol=1e-7, rtol=0)
+            numpy.testing.assert_allclose(actual_plane, expected_plane, atol=1e-7, rtol=0)
 
 
 @pytest.mark.parametrize("cap", [0, 1, 2])

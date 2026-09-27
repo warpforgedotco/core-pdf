@@ -21,14 +21,13 @@ from core_pdf_spec.s_07_content.operations import (
     OperationHandler,
 )
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SpecLexer
+from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf_spec.s_08_graphics.color_rendering import BlackPointCompensation
 from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
-from core_pdf_spec.s_09_fonts.service import FontProvider
-from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
+from core_pdf_spec.s_09_fonts.service import FontProvider, FontService
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfReference, PdfString
@@ -104,7 +103,7 @@ class CaptureCaches:
     capture_mask_resources: IdentityCache[PdfDict]
     capture_active_mask_groups: set[int]
     capture_image_sources: IdentityCache[tuple[ImageSource, float | None]]
-    capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]
+    capture_font_decoders: dict[object, list[tuple[object, object, FontService]]]
     capture_font_companions: FontCompanionsCache
     capture_colors: BoundedDict[
         tuple[int, tuple[float, ...], str | None, BlackPointCompensation],
@@ -134,7 +133,7 @@ class RecoveringTextState(ContentInterpreter):
         resolver: PdfValueResolver,
         sink: ContentSink,
         font_provider: FontProvider,
-        lexer_factory: Callable[[bytes | memoryview], SpecLexer] = SpecLexer,
+        lexer_factory: Callable[[bytes | memoryview], PdfLexer] = PdfLexer,
         *,
         semantic_context: SemanticContext | None = None,
         caches: CaptureCaches | None = None,
@@ -177,7 +176,7 @@ class RecoveringTextState(ContentInterpreter):
         handler = self.operation_table().get(name)
         return handler(operands, depth) if handler is not None else None
 
-    def decoder_for(self, font_reference: object, font: object, resources: PdfDict) -> FontDecoder:
+    def decoder_for(self, font_reference: object, font: object, resources: PdfDict) -> FontService:
         if isinstance(font_reference, PdfReference):
             font_key: object = (font_reference.object_number, font_reference.generation_number)
         else:
@@ -187,7 +186,7 @@ class RecoveringTextState(ContentInterpreter):
             if owner_resources is resources and owner_font is font:
                 return decoder
 
-        document_decoders: dict[object, FontDecoder] | None = getattr(
+        document_decoders: dict[object, FontService] | None = getattr(
             getattr(self, "document", None), "font_decoders", None
         )
         signature = None

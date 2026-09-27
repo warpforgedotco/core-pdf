@@ -6,10 +6,8 @@ from collections.abc import Callable, Iterator
 from typing import Protocol, overload
 
 from core_pdf.impl.types import PdfReference, PdfString, RecordType, ReplaceFields, ReprFields
+from core_pdf_spec.s_07_syntax_primitives import text_string
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name, parse_float, parse_int
-from core_pdf_spec.s_07_syntax_primitives.text_string import (
-    decode_pdf_text_string as decode_spec_text_string,
-)
 from core_pdf_spec.types import PdfName
 
 
@@ -52,7 +50,7 @@ def decode_pdf_text_string(data: bytes | memoryview) -> str:
             return data[2:].decode("utf-16-le")
         except UnicodeDecodeError as exc:
             raise ValueError("invalid UTF-16LE data") from exc
-    return decode_spec_text_string(data)
+    return text_string.decode_pdf_text_string(data)
 
 
 def parse_text_string(value: object) -> str | None:

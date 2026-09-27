@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 reference = pytest.importorskip("pdfplumber")
 pytestmark = pytest.mark.compat_differential
@@ -29,7 +29,7 @@ def test_rendered_and_saved_image_dimensions_match_reference(
     cropped: bool,
 ) -> None:
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(text_pdf_bytes)) as pdf:
             page = pdf.pages[0]
             if cropped:
@@ -55,7 +55,7 @@ def test_image_resolution_controls_are_mutually_exclusive(
     text_pdf_bytes: bytes,
     options: dict[str, Any],
 ) -> None:
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(text_pdf_bytes)) as pdf:
             with pytest.raises(ValueError):
                 pdf.pages[0].to_image(**options)
@@ -64,7 +64,7 @@ def test_image_resolution_controls_are_mutually_exclusive(
 def test_copying_cropped_image_preserves_size_and_independent_annotations(
     text_pdf_bytes: bytes,
 ) -> None:
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         image = pdf.pages[0].crop((10, 20, 110, 170)).to_image()
         copied = image.copy()
         assert (copied.width, copied.height) == (image.width, image.height)
@@ -95,7 +95,7 @@ def test_image_cropbox_and_mediabox_sizes(
     source = BytesIO()
     writer.write(source)
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(source.getvalue())) as pdf:
             image = pdf.pages[0].to_image(resolution=resolution, force_mediabox=force_mediabox)
             snapshots.append(image.original.size)
@@ -128,7 +128,7 @@ def test_annotations_preserve_outline_geometry(
     points: tuple[tuple[int, int], ...],
 ) -> None:
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(text_pdf_bytes)) as pdf:
             image = pdf.pages[0].to_image()
             options: dict[str, Any] = {"stroke": "blue"}
@@ -155,7 +155,7 @@ def test_annotation_batches_share_canvas_and_save_to_path(
 ) -> None:
     from types import SimpleNamespace
 
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         page = pdf.pages[0]
         raster = SimpleNamespace(
             data=bytes([255]) * 200 * 200 * channels,
@@ -164,7 +164,7 @@ def test_annotation_batches_share_canvas_and_save_to_path(
             channels=channels,
             dpi=72,
         )
-        image = compat.PageImage(page, raster)
+        image = core_pdf_compat.pdfplumber.PageImage(page, raster)
         assert image.draw_vlines((10, 20), stroke="blue") is image
         assert image.draw_hlines((10, 20), stroke="blue") is image
         assert image.draw_circles(((50, 50),), radius=5, stroke="blue") is image
@@ -186,7 +186,7 @@ def test_annotation_batches_share_canvas_and_save_to_path(
 def test_outline_and_table_debug_helpers_draw_requested_regions(text_pdf_bytes: bytes) -> None:
     from types import SimpleNamespace
 
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         page = pdf.pages[0]
         explicit = [{"x0": 20, "top": 20, "x1": 40, "bottom": 40}]
         image = page.to_image()
@@ -205,8 +205,8 @@ def test_outline_and_table_debug_helpers_draw_requested_regions(text_pdf_bytes: 
 def test_image_save_rejects_unsupported_channel_layout(text_pdf_bytes: bytes) -> None:
     from types import SimpleNamespace
 
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
-        image = compat.PageImage(
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
+        image = core_pdf_compat.pdfplumber.PageImage(
             pdf.pages[0], SimpleNamespace(data=b"\xff", width=1, height=1, channels=1, dpi=72)
         )
         with pytest.raises(ValueError, match="RGB or RGBA"):
@@ -217,7 +217,7 @@ def test_image_save_rejects_unsupported_channel_layout(text_pdf_bytes: bytes) ->
 def test_rgb_annotation_values_use_byte_intensities(
     text_pdf_bytes: bytes, stroke: tuple[int, int, int]
 ) -> None:
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(text_pdf_bytes)) as pdf:
             image = pdf.pages[0].to_image().draw_rect((20, 20, 80, 60), stroke=stroke, fill=None)
             output = BytesIO()
@@ -234,7 +234,7 @@ def test_debug_tablefinder_draws_edges_and_detected_cells(
 ) -> None:
     from types import SimpleNamespace
 
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         page = pdf.pages[0]
         settings = {"vertical_strategy": "lines"}
         seen = []
@@ -259,7 +259,7 @@ def test_debug_tablefinder_draws_edges_and_detected_cells(
 def test_show_displays_the_same_annotated_pixels_as_save(text_pdf_bytes, monkeypatch):
     shown = []
     monkeypatch.setattr(Image.Image, "show", lambda image: shown.append(image.copy()))
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         image = pdf.pages[0].crop((10, 20, 110, 170)).to_image()
         image.draw_rect((20, 30, 50, 60), fill="red", stroke="blue")
         output = BytesIO()
@@ -277,7 +277,7 @@ def test_show_propagates_viewer_errors_without_mutating_annotations(text_pdf_byt
         raise OSError("viewer failed")
 
     monkeypatch.setattr(Image.Image, "show", fail)
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         image = pdf.pages[0].to_image().draw_line(((0, 0), (10, 10)))
         before = image._repr_png_()
         with pytest.raises(OSError, match="viewer failed"):

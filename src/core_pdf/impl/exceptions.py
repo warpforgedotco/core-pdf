@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from core_pdf_spec.exceptions import PdfDecryptionError as PdfDecryptionError
-from core_pdf_spec.exceptions import PdfError as PdfError
-from core_pdf_spec.exceptions import PdfParseError as PdfParseError
-from core_pdf_spec.exceptions import PdfPasswordError as PdfPasswordError
-from core_pdf_spec.exceptions import PdfUnsupportedError as PdfUnsupportedError
+from core_pdf_spec.exceptions import (
+    PdfDecryptionError,
+    PdfError,
+    PdfParseError,
+    PdfPasswordError,
+    PdfUnsupportedError,
+)
 
 
 class ExtractionCancelled(RuntimeError):
@@ -47,3 +49,19 @@ class PdfRasterTooLargeError(PdfError, ValueError):
 
 class PdfDocumentClosedError(PdfError, ValueError):
     pass
+
+
+__all__ = (
+    "ExtractionCancelled",
+    "ExtractionScope",
+    "PdfContractError",
+    "PdfDecryptionError",
+    "PdfDocumentClosedError",
+    "PdfEmptySourceError",
+    "PdfError",
+    "PdfParseError",
+    "PdfPasswordError",
+    "PdfRasterTooLargeError",
+    "PdfSourceError",
+    "PdfUnsupportedError",
+)

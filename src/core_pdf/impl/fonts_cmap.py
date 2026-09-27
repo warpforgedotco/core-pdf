@@ -5,15 +5,13 @@ from __future__ import annotations
 import re
 from binascii import unhexlify
 
-from core_adobe_fonts.cmap.decoder import CMapDecoder as PdfCMapDecoder
+from core_adobe_fonts.cmap import decoder, tokenizer
 from core_adobe_fonts.cmap.decoder import CMapResourceResolver
 from core_adobe_fonts.cmap.ranges import ranges_overlap, validate_codespace_range
 from core_adobe_fonts.cmap.resources import resolve_cmap_resource
 from core_adobe_fonts.cmap.tokenizer import CMapBlock, CMapToken, iter_cmap_tokens
-from core_adobe_fonts.cmap.tokenizer import CMapProgram as PdfCMapProgram
-from core_adobe_fonts.cmap.tokenizer import decode_cmap_hex_token as decode_spec_cmap_hex_token
-from core_adobe_fonts.cmap.tokenizer import decode_cmap_token as decode_spec_cmap_token
 from core_pdf_spec.s_07_syntax_primitives.scanning import read_literal_string
+from core_pdf_spec.s_09_fonts import cmap_tounicode
 from core_pdf_spec.s_09_fonts.cmap_tounicode import (
     CMapMappingBlock,
     ParsedToUnicodeCMap,
@@ -21,7 +19,6 @@ from core_pdf_spec.s_09_fonts.cmap_tounicode import (
     cmap_source_range,
     decode_utf16be,
 )
-from core_pdf_spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap as PdfToUnicodeCMap
 from core_pdf_spec.s_09_fonts.font_program_truetype import is_unicode_scalar
 
 RESOURCE_PACKAGE = "core_adobe_fonts.cmap.data"
@@ -517,7 +514,7 @@ def parse_cidrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) ->
             )
 
 
-class ToUnicodeCMap(PdfToUnicodeCMap):
+class ToUnicodeCMap(cmap_tounicode.ToUnicodeCMap):
     __slots__ = ()
 
     max_inheritance_depth = 16
@@ -529,7 +526,7 @@ class ToUnicodeCMap(PdfToUnicodeCMap):
     def validate_mappings(self) -> None:
         pass
 
-    def reject_parent(self, reason: str) -> PdfToUnicodeCMap | None:  # noqa: ARG002
+    def reject_parent(self, reason: str) -> cmap_tounicode.ToUnicodeCMap | None:  # noqa: ARG002
         return None
 
     def decode(self, data: bytes, *, preserve_nulls: bool = False) -> str:
@@ -640,14 +637,14 @@ def collect_cmap_tokens(data: bytes, *, group_arrays: bool) -> tuple[CMapToken, 
 def decode_cmap_hex_token(token: bytes) -> bytes:
     if not token.startswith(b"<") or not token.endswith(b">"):
         token = b"<" + token[1:-1] + b">"
-    return decode_spec_cmap_hex_token(token)
+    return tokenizer.decode_cmap_hex_token(token)
 
 
 def decode_cmap_token(token: bytes) -> bytes:
     if token.startswith(b"<"):
         return decode_cmap_hex_token(token)
     if not token.startswith(b"("):
-        return decode_spec_cmap_token(token)
+        return tokenizer.decode_cmap_token(token)
     raw = memoryview(LEGACY_EOL_PAIR.sub(b"\r\n", token))
     if len(raw) < 2:
         raise ValueError("invalid PDF literal string")
@@ -657,7 +654,7 @@ def decode_cmap_token(token: bytes) -> bytes:
     return value
 
 
-class CMapProgram(PdfCMapProgram):
+class CMapProgram(tokenizer.CMapProgram):
     __slots__ = ()
 
     @classmethod
@@ -682,8 +679,8 @@ class CMapProgram(PdfCMapProgram):
         pass
 
 
-def cmap_metadata(data: bytes | PdfCMapProgram) -> tuple[str | None, int | None]:
-    program = data if isinstance(data, PdfCMapProgram) else CMapProgram.parse(data)
+def cmap_metadata(data: bytes | tokenizer.CMapProgram) -> tuple[str | None, int | None]:
+    program = data if isinstance(data, tokenizer.CMapProgram) else CMapProgram.parse(data)
     words = [token.value for token in program.tokens if token.kind == "word"]
     usecmap_name: str | None = None
     wmode: int | None = None
@@ -721,7 +718,7 @@ def cmap_tokens(
     )
 
 
-class CMapDecoder(PdfCMapDecoder):
+class CMapDecoder(decoder.CMapDecoder):
     __slots__ = ()
 
     max_inheritance_depth = 5
@@ -731,7 +728,7 @@ class CMapDecoder(PdfCMapDecoder):
         return CMapProgram.parse(data)
 
     @staticmethod
-    def program_metadata(program: PdfCMapProgram) -> tuple[str | None, int | None]:
+    def program_metadata(program: tokenizer.CMapProgram) -> tuple[str | None, int | None]:
         return cmap_metadata(program)
 
     def validate_mappings(self) -> None:
@@ -751,7 +748,7 @@ class CMapDecoder(PdfCMapDecoder):
         usecmap_resolver: CMapResourceResolver | None,
         depth: int,
         ancestor_names: tuple[str, ...] = (),
-    ) -> PdfCMapDecoder | None:
+    ) -> decoder.CMapDecoder | None:
         if name in {"OneByteIdentityH", "OneByteIdentityV"}:
             return CMapDecoder.identity(byte_width=1, wmode=int(name.endswith("V")))
         if name in ancestor_names:

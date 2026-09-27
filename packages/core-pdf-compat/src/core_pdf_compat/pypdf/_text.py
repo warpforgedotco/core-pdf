@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from contextlib import suppress
 from typing import Any
 
-from core_adobe_fonts.afm.core14 import FONT_DATA as CORE14_FONT_DATA
+from core_adobe_fonts.afm.core14 import FONT_DATA
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_pdf.impl.capture_recovery import iter_content_operations
 from core_pdf.impl.fonts_cmap import ToUnicodeCMap
@@ -292,7 +292,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         if encoding is not None:
             return False
         base_font = recover_strip_subset_tag(recover_pdf_name(font.get("BaseFont") or "") or "")
-        return base_font in CORE14_FONT_DATA
+        return base_font in FONT_DATA
 
     def legacy_encoding(
         self, font: dict[object, object], decoder: FontDecoder

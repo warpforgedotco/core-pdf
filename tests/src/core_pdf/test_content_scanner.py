@@ -121,7 +121,7 @@ def test_comments_between_operations_are_skipped():
 
 
 def test_the_tokenizer_uses_the_kernel():
-    from core_pdf.impl import capture_recovery as recovery
+    from core_pdf.impl import capture_recovery
     from core_pdf_cythonized import ContentScanner
 
-    assert recovery.ContentScanner is ContentScanner
+    assert capture_recovery.ContentScanner is ContentScanner

@@ -10,7 +10,7 @@ from pypdf.generic import (
     RectangleObject,
 )
 
-from core_pdf_compat import pdfminer as compat
+import core_pdf_compat.pdfminer
 
 reference = pytest.importorskip("pdfminer.high_level")
 pytestmark = pytest.mark.compat_differential
@@ -84,7 +84,7 @@ def test_form_bounds_and_characters_match_reference_after_page_transform(
 
     snapshots = [
         snapshot(next(library.extract_pages(BytesIO(output.getvalue()))))
-        for library in (reference, compat)
+        for library in (reference, core_pdf_compat.pdfminer)
     ]
     assert snapshots[1] == snapshots[0]
     assert snapshots[0][3]

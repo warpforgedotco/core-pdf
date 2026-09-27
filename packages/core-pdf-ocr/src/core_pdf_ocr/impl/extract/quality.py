@@ -7,12 +7,7 @@ from typing import NamedTuple
 
 import numpy
 
-from core_pdf.impl.extract_capture import (
-    TextAnalysis as TextAnalysis,
-)
-from core_pdf.impl.extract_capture import (
-    analyze_text as analyze_text,
-)
+from core_pdf.impl.extract_capture import TextAnalysis, analyze_text
 from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.types import GeneratedRecord, frozen_setattr
 
@@ -122,3 +117,14 @@ def make_candidate(
         symbols=symbols if symbols is not None else ObservationBatch.empty(),
         recognition_status=recognition_status,
     )
+
+
+__all__ = (
+    "Candidate",
+    "CandidateMetrics",
+    "TextAnalysis",
+    "TextUtility",
+    "analyze_text",
+    "make_candidate",
+    "text_utility_stats",
+)

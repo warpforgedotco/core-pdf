@@ -55,7 +55,7 @@ from core_pdf.impl.exceptions import (
 )
 from core_pdf.impl.extract_selection import extract_document
 from core_pdf.impl.fonts_fallback import RasterFontRepository
-from core_pdf.impl.output_model import Document as StructuredDocument
+from core_pdf.impl.output_model import Document
 from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.pdf_values import parse_text_string, recover_pdf_name
 from core_pdf.impl.raw_media import ImageRecord
@@ -74,11 +74,10 @@ from core_pdf.impl.types import (
     PdfString,
 )
 from core_pdf_cythonized import object_headers_match
+from core_pdf_spec.s_07_document import document_labels
 from core_pdf_spec.s_07_document.document_labels import PageLabelStyle
-from core_pdf_spec.s_07_document.document_labels import format_page_label as format_spec_page_label
 from core_pdf_spec.s_07_document.fields import field_children, qualified_field_name
-from core_pdf_spec.s_07_document.page import PageNode as PageNode
-from core_pdf_spec.s_07_document.page import iter_page_nodes
+from core_pdf_spec.s_07_document.page import PageNode, iter_page_nodes
 from core_pdf_spec.s_07_security.document import initialize_document_security
 from core_pdf_spec.s_07_security.standard import (
     StandardSecurityHandler,
@@ -599,7 +598,7 @@ PageT = TypeVar("PageT", bound=PdfPage, default=PdfPage)
 
 
 class DocumentAdapter(Protocol):
-    def apply(self, document: StructuredDocument, /) -> StructuredDocument: ...
+    def apply(self, document: Document, /) -> Document: ...
 
 
 class PdfDocument(Generic[PageT]):
@@ -823,7 +822,7 @@ class PdfDocument(Generic[PageT]):
         *,
         pages: PageSelection | None = None,
         adapters: Iterable[DocumentAdapter] = (),
-    ) -> StructuredDocument:
+    ) -> Document:
         with self.acquire_operation() as operation:
             selected_pages = tuple(page for _index, page in self.iter_selected_pages(pages))
             context = ExtractionScope(cancelled=lambda: operation.cancelled)
@@ -832,15 +831,13 @@ class PdfDocument(Generic[PageT]):
             result = adapter.apply(result)
         return result
 
-    def run_extract_document(
-        self, context: ExtractionScope, pages: Sequence[PdfPage]
-    ) -> StructuredDocument:
+    def run_extract_document(self, context: ExtractionScope, pages: Sequence[PdfPage]) -> Document:
         return extract_document(self, context, pages)
 
     @property
-    def structured_document(self) -> StructuredDocument:
+    def structured_document(self) -> Document:
         if self.page_count() == 0:
-            return StructuredDocument(metadata=self.metadata)
+            return Document(metadata=self.metadata)
         return self.extract()
 
     def extract_images(
@@ -2226,4 +2223,4 @@ def format_page_label(spec: PdfDict, page_offset: int, resolve: Callable[[object
     }
     if style is not None and style in PageLabelStyle:
         normalized["S"] = PdfName.of(style)
-    return format_spec_page_label(normalized, page_offset, lambda value: value)
+    return document_labels.format_page_label(normalized, page_offset, lambda value: value)

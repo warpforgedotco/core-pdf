@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl import layout_text_rules as rules
+from core_pdf.impl import layout_text_rules
 from core_pdf.impl.runs import TextRun
 
 
@@ -25,7 +25,7 @@ def make_run(text, x=0, y=0, width=10, height=10, font=10, rotation=0):
     ],
 )
 def test_numeric_label_splitting_preserves_plain_identifiers(text, expected):
-    assert rules.split_glued_numeric_label_boundaries(text) == expected
+    assert layout_text_rules.split_glued_numeric_label_boundaries(text) == expected
 
 
 @pytest.mark.parametrize(
@@ -39,24 +39,24 @@ def test_numeric_label_splitting_preserves_plain_identifiers(text, expected):
     ],
 )
 def test_cleanup_removes_nontext_marks_but_preserves_layout_whitespace(text, expected):
-    assert rules.strip_private_use_chars(text) == expected
+    assert layout_text_rules.strip_private_use_chars(text) == expected
 
 
 @pytest.mark.parametrize(
     ("text", "expected"), [("", ""), ("a b", "a b"), (" a       b  \t c ", " a b \t c ")]
 )
 def test_space_collapse_preserves_single_spaces_and_tabs(text, expected):
-    assert rules.collapse_repeated_spaces(text) == expected
+    assert layout_text_rules.collapse_repeated_spaces(text) == expected
 
 
 @pytest.mark.parametrize(("rotation", "expected"), [(0, 30), (90, 20), (180, 30), (270, 20)])
 def test_baseline_midpoint_uses_rotated_axis(rotation, expected):
-    assert rules.baseline_midpoint((10, 20, 30, 40), rotation) == expected
+    assert layout_text_rules.baseline_midpoint((10, 20, 30, 40), rotation) == expected
 
 
 @pytest.mark.parametrize(("text", "expected"), [("", False), ("abc", False), ("a√b", True)])
 def test_formula_detection_uses_recognized_markers(text, expected):
-    assert rules.formula_like_runs([make_run(" "), make_run(text)]) is expected
+    assert layout_text_rules.formula_like_runs([make_run(" "), make_run(text)]) is expected
 
 
 @pytest.mark.parametrize("intervening", [False, True])
@@ -66,7 +66,7 @@ def test_stacked_fraction_reordering_preserves_every_run_once(intervening):
     middle = make_run("+", x=20)
     runs = [denominator, middle, numerator] if intervening else [denominator, numerator]
     original = list(runs)
-    reordered = rules.reorder_stacked_formula_numerators(runs)
+    reordered = layout_text_rules.reorder_stacked_formula_numerators(runs)
     assert reordered == (
         [numerator, denominator, middle] if intervening else [numerator, denominator]
     )
@@ -77,7 +77,7 @@ def test_stacked_fraction_reordering_preserves_every_run_once(intervening):
 @pytest.mark.parametrize("text", ["word", "123", "t", "2"])
 def test_unmatched_numerators_and_ordinary_text_retain_order(text):
     runs = [make_run("ordinary"), make_run(text, y=3)]
-    assert rules.reorder_stacked_formula_numerators(runs) == runs
+    assert layout_text_rules.reorder_stacked_formula_numerators(runs) == runs
 
 
 @pytest.mark.parametrize(
@@ -104,7 +104,7 @@ def test_unmatched_numerators_and_ordinary_text_retain_order(text):
 def test_stacked_denominator_requires_formula_text_and_compatible_geometry(
     denominator, numerator, expected
 ):
-    assert rules.stacked_formula_denominator(denominator, numerator) is expected
+    assert layout_text_rules.stacked_formula_denominator(denominator, numerator) is expected
 
 
 @pytest.mark.parametrize(
@@ -113,7 +113,7 @@ def test_stacked_denominator_requires_formula_text_and_compatible_geometry(
 )
 def test_time_symbol_numerator_requires_following_punctuation(following, expected):
     assert (
-        rules.stacked_formula_denominator(
+        layout_text_rules.stacked_formula_denominator(
             make_run("T"),
             make_run("t", y=3),
             following=make_run(following) if following is not None else None,
@@ -127,14 +127,14 @@ def test_time_symbol_numerator_requires_following_punctuation(following, expecte
     [("²", True), (" ₂³ ", True), ("2", False), ("", False), (" ", False), ("²a", False)],
 )
 def test_script_digits_require_only_script_characters(text, expected):
-    assert rules.script_digit_text(text) is expected
+    assert layout_text_rules.script_digit_text(text) is expected
 
 
 @pytest.mark.parametrize(
     ("text", "expected"), [("™", True), (" ® ", True), ("", False), ("a", False), ("™™", False)]
 )
 def test_inline_marker_is_a_single_supported_symbol(text, expected):
-    assert rules.inline_marker_text(text) is expected
+    assert layout_text_rules.inline_marker_text(text) is expected
 
 
 @pytest.mark.parametrize(
@@ -152,7 +152,7 @@ def test_voltage_suffix_join_requires_numeric_prefix_and_close_unit(
     previous, current, gap, expected
 ):
     assert (
-        rules.compact_unit_suffix_should_join(
+        layout_text_rules.compact_unit_suffix_should_join(
             previous, current, x_gap=gap, height=10, space_width=2
         )
         is expected
@@ -163,7 +163,7 @@ def test_voltage_suffix_join_requires_numeric_prefix_and_close_unit(
     ("text", "expected"), [("", False), ("H ", True), ("h", False), ("H2", False)]
 )
 def test_chemical_prefix_requires_trailing_uppercase_letter(text, expected):
-    assert rules.chemical_subscript_prefix_text(text) is expected
+    assert layout_text_rules.chemical_subscript_prefix_text(text) is expected
 
 
 @pytest.mark.parametrize(
@@ -171,7 +171,7 @@ def test_chemical_prefix_requires_trailing_uppercase_letter(text, expected):
     [("page 12", True), (" Page12 ", True), ("page", False), ("body page 12", False)],
 )
 def test_footer_text_requires_complete_page_label(text, expected):
-    assert rules.is_tiny_page_footer(text) is expected
+    assert layout_text_rules.is_tiny_page_footer(text) is expected
 
 
 @pytest.mark.parametrize(
@@ -221,5 +221,5 @@ def test_footer_geometry_distinguishes_tiny_labels_from_body_text(
         make_run(digit_text, x=digit_x, width=digit_width, font=digit_font),
         make_run(" "),
     ]
-    assert rules.trailing_tiny_page_label_run_indexes(runs) == expected
-    assert rules.trailing_tiny_page_label_run_indexes(runs[:2]) == set()
+    assert layout_text_rules.trailing_tiny_page_label_run_indexes(runs) == expected
+    assert layout_text_rules.trailing_tiny_page_label_run_indexes(runs[:2]) == set()

@@ -7,11 +7,11 @@ from os import PathLike
 from typing import Any, overload
 
 from core_pdf import PdfDocument
+from core_pdf.impl import output_model
 from core_pdf.impl.document_document import resolve_page_tree_node_type
 from core_pdf.impl.document_metadata import resolve_info_metadata
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.output_model import Document
-from core_pdf.impl.output_model import Page as StructuredPage
 from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat.pypdf import (
@@ -96,7 +96,7 @@ class Page(PdfPageObject):
     def __init__(
         self,
         document: StructuredState,
-        page: StructuredPage,
+        page: output_model.Page,
         media_box: tuple[Decimal, Decimal, Decimal, Decimal] | None = None,
     ) -> None:
         super().__init__(document, page)
@@ -340,7 +340,7 @@ class Pdf(PdfReader):
         pdf = PdfDocument.open(stream, password=password or "")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         try:
             pages = tuple(
-                StructuredPage(
+                output_model.Page(
                     page_number=index,
                     width=page.width or 612.0,
                     height=page.height or 792.0,

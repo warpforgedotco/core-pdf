@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
+from core_adobe_fonts.type1 import program
 from core_adobe_fonts.type1.program import binary_entries, eexec_ciphertext
-from core_adobe_fonts.type1.program import parse_type1_font_program_encoding as parse_encoding
 from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import (
@@ -154,4 +154,4 @@ class Type1FontProgram(GlyphProgram):
 
 
 def parse_type1_font_program_encoding(font_program: bytes | memoryview) -> dict[int, str]:
-    return parse_encoding(font_program, skip_out_of_range=True)
+    return program.parse_type1_font_program_encoding(font_program, skip_out_of_range=True)

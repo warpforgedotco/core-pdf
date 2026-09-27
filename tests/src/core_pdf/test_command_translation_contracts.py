@@ -1,6 +1,6 @@
 from copy import replace
 
-import numpy as np
+import numpy
 import pytest
 
 from core_pdf.impl.capture_program import CapturedProgram
@@ -13,7 +13,7 @@ from core_pdf.impl.render_target import RasterTarget
 
 def triangle_item():
     path = CapturedPath([CapturedSubpath([(1, 1), (4, 1), (2, 4)], closed=True)])
-    edges = np.asarray(path.fill_edges(), dtype=np.float64)
+    edges = numpy.asarray(path.fill_edges(), dtype=numpy.float64)
     edges.flags.writeable = False
     display = DisplayList(12, 12)
     display.append("fill", 7, path=path, bbox=path.bbox(), edge_array=edges, fill=(1, 0, 0))
@@ -24,7 +24,7 @@ def triangle_item():
 
 def render(item):
     pixels = bytearray(12 * 12 * 4)
-    view = np.frombuffer(pixels, dtype=np.uint8).reshape(12, 12, 4)
+    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(12, 12, 4)
     target = RasterTarget(
         pixels,
         None,
@@ -41,12 +41,12 @@ def test_translated_cached_edges_match_path_geometry_and_raster(tx, ty):
     original_edges = original.edge_array.copy()
     placed = original.translated(tx, ty)
     assert isinstance(placed, PathPaintItem)
-    np.testing.assert_array_equal(placed.edge_array, np.asarray(placed.path.fill_edges()))
+    numpy.testing.assert_array_equal(placed.edge_array, numpy.asarray(placed.path.fill_edges()))
     actual = render(placed)
     expected = render(replace(placed, edge_array=None))
     assert expected[:, :, 3].any()
-    np.testing.assert_array_equal(actual, expected)
-    np.testing.assert_array_equal(original.edge_array, original_edges)
+    numpy.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(original.edge_array, original_edges)
     assert original.path.bbox() == (1, 1, 4, 4)
     assert placed.bbox == (1 + tx, 1 + ty, 4 + tx, 4 + ty)
 

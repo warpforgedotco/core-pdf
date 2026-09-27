@@ -1,20 +1,20 @@
-import numpy as np
+import numpy
 import pytest
 
-from core_pdf.impl import graphics_images as images
+from core_pdf.impl import graphics_images
 from core_pdf.impl.graphics_images import DecodedImage, DecodedRaster, ImageRaster, PreparedImage
 
 
-@pytest.mark.parametrize("dtype", [np.uint8, np.uint16])
+@pytest.mark.parametrize("dtype", [numpy.uint8, numpy.uint16])
 @pytest.mark.parametrize(("space", "channels"), [("DeviceGray", 1), ("DeviceRGB", 3)])
 @pytest.mark.parametrize("selector", [0, 1, 2])
 @pytest.mark.parametrize("level", [0, 1, 2])
 def test_jpx_opacity_selector_distinguishes_ignored_straight_and_premultiplied(
     dtype, space, channels, selector, level
 ):
-    maximum = np.iinfo(dtype).max
+    maximum = numpy.iinfo(dtype).max
     value = [0, (maximum + 1) // 2, maximum][level]
-    samples = DecodedImage(np.array([[[value] * (channels + 1)]], dtype=dtype), "jpx")
+    samples = DecodedImage(numpy.array([[[value] * (channels + 1)]], dtype=dtype), "jpx")
     dictionary = {
         "Width": 1,
         "Height": 1,
@@ -22,7 +22,7 @@ def test_jpx_opacity_selector_distinguishes_ignored_straight_and_premultiplied(
         "ColorSpace": space,
         "SMaskInData": selector,
     }
-    result = images.canonical_image_array(samples, dictionary)
+    result = graphics_images.canonical_image_array(samples, dictionary)
     assert result is not None
     array, count = result
     ordinary = round(value * 255 / maximum)
@@ -43,8 +43,8 @@ def test_jpx_opacity_selector_distinguishes_ignored_straight_and_premultiplied(
     ],
 )
 def test_inconsistent_jpx_component_layout_is_rejected(shape, space, selector):
-    result = images.canonical_image_array(
-        DecodedImage(np.zeros(shape, dtype=np.uint8), "jpx"),
+    result = graphics_images.canonical_image_array(
+        DecodedImage(numpy.zeros(shape, dtype=numpy.uint8), "jpx"),
         {"Filter": "JPXDecode", "ColorSpace": space, "SMaskInData": selector},
     )
     assert result is None
@@ -52,8 +52,8 @@ def test_inconsistent_jpx_component_layout_is_rejected(shape, space, selector):
 
 @pytest.mark.parametrize("selector", [-1, 3, None, "invalid"])
 def test_invalid_jpx_opacity_selector_uses_reader_default(selector):
-    sample = DecodedImage(np.array([[[20, 40]]], dtype=np.uint8), "jpx")
-    result = images.canonical_image_array(
+    sample = DecodedImage(numpy.array([[[20, 40]]], dtype=numpy.uint8), "jpx")
+    result = graphics_images.canonical_image_array(
         sample, {"Filter": "JPXDecode", "ColorSpace": "DeviceGray", "SMaskInData": selector}
     )
     assert result is not None
@@ -66,53 +66,53 @@ def test_invalid_jpx_opacity_selector_uses_reader_default(selector):
     ("shape", "space"),
     [((1, 2), "DeviceGray"), ((1, 2, 1), "DeviceGray"), ((1, 2, 3), "DeviceRGB")],
 )
-@pytest.mark.parametrize("dtype", [np.uint8, np.uint16])
+@pytest.mark.parametrize("dtype", [numpy.uint8, numpy.uint16])
 def test_native_image_precision_normalizes_endpoints(shape, space, dtype):
-    maximum = np.iinfo(dtype).max
-    sample = np.resize(np.array([0, maximum], dtype=dtype), shape)
-    result = images.canonical_image_array(
+    maximum = numpy.iinfo(dtype).max
+    sample = numpy.resize(numpy.array([0, maximum], dtype=dtype), shape)
+    result = graphics_images.canonical_image_array(
         DecodedImage(sample, "jpeg"), {"Width": 2, "Height": 1, "ColorSpace": space}
     )
     assert result is not None
     array, channels = result
     assert channels == (1 if space == "DeviceGray" else 3)
-    np.testing.assert_array_equal(array, np.where(sample.reshape(-1) == 0, 0, 255))
+    numpy.testing.assert_array_equal(array, numpy.where(sample.reshape(-1) == 0, 0, 255))
 
 
 @pytest.mark.parametrize("version", [None, "1.7", "2.0", "3.0"])
 @pytest.mark.parametrize("explicit_space", [False, True])
-@pytest.mark.parametrize("dtype", [np.uint8, np.uint16])
+@pytest.mark.parametrize("dtype", [numpy.uint8, numpy.uint16])
 def test_jpx_decode_obeys_document_version_and_explicit_color_space(version, explicit_space, dtype):
     from core_pdf_spec.standards import PdfVersion, SemanticContext
 
-    maximum = np.iinfo(dtype).max
-    sample = DecodedImage(np.array([[0, maximum]], dtype=dtype), "jpx")
+    maximum = numpy.iinfo(dtype).max
+    sample = DecodedImage(numpy.array([[0, maximum]], dtype=dtype), "jpx")
     dictionary = {"Width": 2, "Height": 1, "Filter": "JPXDecode", "Decode": [1, 0]}
     if explicit_space:
         dictionary["ColorSpace"] = "DeviceGray"
     context = SemanticContext(PdfVersion.parse(version)) if version else None
-    result = images.canonical_image_array(sample, dictionary, semantic_context=context)
+    result = graphics_images.canonical_image_array(sample, dictionary, semantic_context=context)
     assert result is not None
     array, channels = result
     assert channels == 1
     assert array.tolist() == ([255, 0] if version == "2.0" and explicit_space else [0, 255])
 
 
-@pytest.mark.parametrize("dtype", [np.float32, np.int8, np.uint32])
+@pytest.mark.parametrize("dtype", [numpy.float32, numpy.int8, numpy.uint32])
 def test_native_decoded_samples_reject_unsupported_precision(dtype):
     with pytest.raises(ValueError, match="must be uint8 or uint16"):
-        DecodedImage(np.zeros((1, 1), dtype=dtype), "jpx")
+        DecodedImage(numpy.zeros((1, 1), dtype=dtype), "jpx")
 
 
 @pytest.mark.parametrize("shape", [(1,), (1, 1, 1, 1)])
 def test_native_decoded_samples_reject_unsupported_dimensions(shape):
     with pytest.raises(ValueError, match="two or three dimensions"):
-        DecodedImage(np.zeros(shape, dtype=np.uint8), "jpx")
+        DecodedImage(numpy.zeros(shape, dtype=numpy.uint8), "jpx")
 
 
 def test_native_decoded_samples_require_contiguous_storage():
     with pytest.raises(ValueError, match="must be C-contiguous"):
-        DecodedImage(np.zeros((2, 2), dtype=np.uint8)[:, ::-1], "jpx")
+        DecodedImage(numpy.zeros((2, 2), dtype=numpy.uint8)[:, ::-1], "jpx")
 
 
 def image_records(array, other):
@@ -128,7 +128,7 @@ def image_records(array, other):
 
 
 def test_image_records_compare_and_hash_their_samples_by_value():
-    array = np.arange(4, dtype=np.uint8).reshape(2, 2)
+    array = numpy.arange(4, dtype=numpy.uint8).reshape(2, 2)
     for left, right in image_records(array, array.copy()):
         assert left == right
         assert hash(left) == hash(right)
@@ -138,15 +138,15 @@ def test_image_records_compare_and_hash_their_samples_by_value():
 @pytest.mark.parametrize(
     "other",
     [
-        np.arange(1, 5, dtype=np.uint8).reshape(2, 2),
-        np.arange(4, dtype=np.uint16).reshape(2, 2),
-        np.arange(4, dtype=np.uint8).reshape(1, 4),
+        numpy.arange(1, 5, dtype=numpy.uint8).reshape(2, 2),
+        numpy.arange(4, dtype=numpy.uint16).reshape(2, 2),
+        numpy.arange(4, dtype=numpy.uint8).reshape(1, 4),
     ],
 )
 def test_image_records_differ_when_samples_dtype_or_shape_differ(other):
-    array = np.arange(4, dtype=np.uint8).reshape(2, 2)
+    array = numpy.arange(4, dtype=numpy.uint8).reshape(2, 2)
     for left, right in image_records(array, other):
-        if isinstance(left, (ImageRaster, PreparedImage)) and other.dtype != np.uint8:
+        if isinstance(left, (ImageRaster, PreparedImage)) and other.dtype != numpy.uint8:
             assert left == right
             continue
         assert left != right
@@ -155,5 +155,7 @@ def test_image_records_differ_when_samples_dtype_or_shape_differ(other):
 def test_decoded_raster_bytes_compare_by_content_and_never_equal_an_array():
     data = bytes(range(4))
     assert DecodedRaster(data, 2, 2, 1) == DecodedRaster(memoryview(data), 2, 2, 1)
-    assert DecodedRaster(data, 2, 2, 1) != DecodedRaster(np.frombuffer(data, np.uint8), 2, 2, 1)
+    assert DecodedRaster(data, 2, 2, 1) != DecodedRaster(
+        numpy.frombuffer(data, numpy.uint8), 2, 2, 1
+    )
     assert DecodedRaster(data, 2, 2, 1) != DecodedRaster(data, 4, 1, 1)

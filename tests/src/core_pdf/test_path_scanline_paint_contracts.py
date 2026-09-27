@@ -1,4 +1,4 @@
-import numpy as np
+import numpy
 import pytest
 
 from core_pdf.impl import render_target
@@ -10,7 +10,7 @@ from core_pdf.impl.render_target import RasterTarget
 def make_target(clip_kind):
     width, height = 48, 20
     pixels = bytearray(width * height * 4)
-    view = np.frombuffer(pixels, dtype=np.uint8).reshape(height, width, 4)
+    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(height, width, 4)
     clip = ClipState(DeviceGrid(0, 0, height, 1, width, height))
     if clip_kind != "none":
         points: list[tuple[float, float]] = (
@@ -52,7 +52,7 @@ def test_scanline_holes_and_clipping_match_geometry(
     segments = [(x0, y0, x1, y1, min(y0, y1), max(y0, y1)) for x0, y0, x1, y1 in edges]
     color = (200, 30, 50, alpha)
     target.fill_path_scanlines(segments, (0, 0, 48, 20), color, mode, fill_rule)
-    expected = np.zeros_like(actual)
+    expected = numpy.zeros_like(actual)
     if alpha:
         for row in range(20):
             for column in range(48):
@@ -62,7 +62,7 @@ def test_scanline_holes_and_clipping_match_geometry(
                 hole = inner and (opposite_inner or fill_rule == "evenodd")
                 if outer and not hole and in_clip(x, y, clip_kind):
                     expected[row, column] = color
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize("fill_rule", ["nonzero", "evenodd"])
@@ -72,11 +72,11 @@ def test_scanline_spans_use_pixel_centers_and_crop_bounds(fill_rule, extent):
     left, right = extent
     segments = [(left, 0, left, 20, 0, 20), (right, 20, right, 0, 0, 20)]
     target.fill_path_scanlines(segments, (0, 0, 48, 20), (20, 30, 40, 255), None, fill_rule)
-    expected = np.zeros_like(actual)
+    expected = numpy.zeros_like(actual)
     for column in range(48):
         if left <= column + 0.5 < right:
             expected[:, column] = (20, 30, 40, 255)
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize("cached_edges", [False, True])
@@ -104,9 +104,9 @@ def test_sampled_and_analytic_fills_match_fractional_rectangle_geometry(
         (200, 30, 50, alpha),
         mode,
         fill_rule,
-        edge_array=np.asarray(path.fill_edges()) if cached_edges else None,
+        edge_array=numpy.asarray(path.fill_edges()) if cached_edges else None,
     )
-    expected = np.zeros_like(actual)
+    expected = numpy.zeros_like(actual)
     for row in range(20):
         for column in range(48):
             if not in_clip(column + 0.5, 19.5 - row, clip_kind):
@@ -124,7 +124,7 @@ def test_sampled_and_analytic_fills_match_fractional_rectangle_geometry(
             opacity = round(alpha * covered / 16)
             if opacity:
                 expected[row, column] = (200, 30, 50, opacity)
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize("cached_edges", [False, True])
@@ -144,9 +144,9 @@ def test_black_polygon_shortcut_preserves_integer_holes(
         path,
         (0, 0, 0, 255),
         fill_rule=fill_rule,
-        edge_array=np.asarray(path.fill_edges()) if cached_edges else None,
+        edge_array=numpy.asarray(path.fill_edges()) if cached_edges else None,
     )
-    expected = np.zeros_like(actual)
+    expected = numpy.zeros_like(actual)
     for row in range(20):
         for column in range(48):
             x, y = column + 0.5, 19.5 - row
@@ -154,7 +154,7 @@ def test_black_polygon_shortcut_preserves_integer_holes(
             hole = 10 <= x < 30 and 5 <= y < 14 and (opposite_inner or fill_rule == "evenodd")
             if outer_inside and not hole and in_clip(x, y, clip_kind):
                 expected[row, column] = (0, 0, 0, 255)
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize("alpha", [0, 128, 255])
@@ -165,21 +165,21 @@ def test_scanline_fill_tracks_group_coverage_without_changing_page_buffer(alpha,
     target.push_group(bytearray(page.nbytes), 1, None, isolated=isolated, knockout=False)
     segments = [(1, 1, 1, 19, 1, 19), (46, 19, 46, 1, 1, 19)]
     target.fill_path_scanlines(segments, (0, 0, 48, 20), (200, 30, 50, alpha), mode, "nonzero")
-    expected = np.zeros_like(page)
+    expected = numpy.zeros_like(page)
     if alpha:
         expected[1:19, 1:46] = (200, 30, 50, alpha)
-    np.testing.assert_array_equal(
-        np.frombuffer(target.pixels, dtype=np.uint8).reshape(page.shape), expected
+    numpy.testing.assert_array_equal(
+        numpy.frombuffer(target.pixels, dtype=numpy.uint8).reshape(page.shape), expected
     )
     assert not page.any()
-    coverage = np.zeros((20, 48), dtype=np.uint8)
+    coverage = numpy.zeros((20, 48), dtype=numpy.uint8)
     coverage[1:19, 1:46] = alpha
     if isolated:
         assert target.group_source_alpha is None
     else:
-        np.testing.assert_allclose(target.group_source_alpha, coverage / 255, rtol=1e-7)
+        numpy.testing.assert_allclose(target.group_source_alpha, coverage / 255, rtol=1e-7)
     target.composite_group(target.pop_group())
-    np.testing.assert_array_equal(page, expected)
+    numpy.testing.assert_array_equal(page, expected)
 
 
 @pytest.mark.parametrize("extent", [(10, 30), (10.5, 30.5), (10.1, 30.2), (4.5, 35.5)])
@@ -188,11 +188,11 @@ def test_opaque_black_fast_fill_uses_the_same_pixel_centers_as_the_scanline_path
     left, right = extent
     edges = [(left, 0.0, left, 20.0), (right, 20.0, right, 0.0)]
     assert target.fast_fill_path(edges, (left, 0.0, right, 20.0))
-    expected = np.zeros_like(actual)
+    expected = numpy.zeros_like(actual)
     for column in range(48):
         if left <= column + 0.5 < right:
             expected[:, column] = (0, 0, 0, 255)
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize("extent", [(5.1, 5.2), (4.5, 5.5)])

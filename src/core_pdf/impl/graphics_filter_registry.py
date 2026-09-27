@@ -9,18 +9,14 @@ import numpy
 
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import GeneratedRecord
+from core_pdf_spec.s_07_filters import registry
 from core_pdf_spec.s_07_filters.registry import (
-    FILTER_DESCRIPTORS as PDF_FILTER_DESCRIPTORS,
-)
-from core_pdf_spec.s_07_filters.registry import (
-    FilterDecoder as FilterDecoder,
-)
-from core_pdf_spec.s_07_filters.registry import (
+    FilterDecoder,
     FilterDescriptor,
 )
 
 FILTER_DESCRIPTORS = (
-    *PDF_FILTER_DESCRIPTORS,
+    *registry.FILTER_DESCRIPTORS,
     FilterDescriptor("Identity", None),
     FilterDescriptor("None", None),
 )

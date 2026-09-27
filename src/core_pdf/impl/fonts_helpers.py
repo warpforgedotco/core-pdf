@@ -11,6 +11,7 @@ from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_adobe_fonts.agl.mapping import glyph_component_to_unicode
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf_spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
+from core_pdf_spec.s_09_fonts import helpers
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
@@ -19,9 +20,6 @@ from core_pdf_spec.s_09_fonts.data.base_encodings import (
 from core_pdf_spec.s_09_fonts.helpers import (
     BASE_ENCODING_GLYPH_NAMES,
     get_base_encoding_glyph_names,
-)
-from core_pdf_spec.s_09_fonts.helpers import (
-    build_simple_encoding_glyph_names as spec_simple_encoding_glyph_names,
 )
 from core_pdf_spec.standards import SemanticContext, recognized_version
 
@@ -404,7 +402,7 @@ def build_simple_encoding_glyph_names(
     authoritative_builtin: bool,
     context: SemanticContext | None = None,
 ) -> tuple[str, ...]:
-    return spec_simple_encoding_glyph_names(
+    return helpers.build_simple_encoding_glyph_names(
         base_encoding,
         {
             int(code): name or ".notdef"

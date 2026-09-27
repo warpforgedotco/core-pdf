@@ -1,9 +1,9 @@
 import zlib
 
-import numpy as np
+import numpy
 import pytest
 
-from core_pdf.impl import graphics_images as images
+from core_pdf.impl import graphics_images
 from core_pdf.impl.graphics_image_samples import ImageHeader
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
@@ -11,14 +11,14 @@ from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 @pytest.mark.parametrize(("model", "channels"), [("gray", 1), ("gray", 2), ("rgb", 3), ("rgb", 4)])
 @pytest.mark.parametrize("strided", [False, True])
 def test_canonical_raster_retains_samples_and_exposes_readonly_layout(model, channels, strided):
-    source = np.arange(4 * 3 * channels, dtype=np.uint8).reshape(4, 3, channels)
+    source = numpy.arange(4 * 3 * channels, dtype=numpy.uint8).reshape(4, 3, channels)
     if strided:
         source = source[::-1]
-    raster = images.ImageRaster(source, model)
+    raster = graphics_images.ImageRaster(source, model)
     assert (raster.width, raster.height, raster.channels) == (3, 4, channels)
     assert raster.stride == 3 * channels
     assert raster.has_alpha is (channels in {2, 4})
-    np.testing.assert_array_equal(raster.array, source)
+    numpy.testing.assert_array_equal(raster.array, source)
     assert raster.array.flags.c_contiguous
     assert not raster.array.flags.writeable
     with pytest.raises(ValueError):
@@ -26,7 +26,7 @@ def test_canonical_raster_retains_samples_and_exposes_readonly_layout(model, cha
 
 
 def test_two_dimensional_gray_samples_gain_a_channel_axis():
-    raster = images.ImageRaster(np.array([[1, 2], [3, 4]], dtype=np.uint8), "gray")
+    raster = graphics_images.ImageRaster(numpy.array([[1, 2], [3, 4]], dtype=numpy.uint8), "gray")
     assert raster.array.tolist() == [[[1], [2]], [[3], [4]]]
 
 
@@ -42,15 +42,15 @@ def test_two_dimensional_gray_samples_gain_a_channel_axis():
 )
 def test_invalid_raster_layouts_are_rejected(shape, model):
     with pytest.raises(ValueError, match="image raster"):
-        images.ImageRaster(np.zeros(shape, dtype=np.uint8), model)
+        graphics_images.ImageRaster(numpy.zeros(shape, dtype=numpy.uint8), model)
 
 
 @pytest.mark.parametrize(("model", "channels"), [("gray", 2), ("rgb", 3), ("rgb", 4)])
 def test_prepared_soft_mask_requires_gray_without_intrinsic_alpha(model, channels):
-    raster = images.ImageRaster(np.zeros((1, 1, 3), dtype=np.uint8), "rgb")
-    mask = images.ImageRaster(np.zeros((1, 1, channels), dtype=np.uint8), model)
+    raster = graphics_images.ImageRaster(numpy.zeros((1, 1, 3), dtype=numpy.uint8), "rgb")
+    mask = graphics_images.ImageRaster(numpy.zeros((1, 1, channels), dtype=numpy.uint8), model)
     with pytest.raises(ValueError, match="soft mask must be grayscale"):
-        images.PreparedImage(raster, mask)
+        graphics_images.PreparedImage(raster, mask)
 
 
 @pytest.mark.parametrize("decode", [None, [0, 1], [1, 0], [], ["invalid", 0]])
@@ -61,13 +61,13 @@ def test_packed_stencil_rows_ignore_padding_and_honor_decode_direction(decode, c
     if compressed:
         dictionary["Filter"] = "FlateDecode"
         raw = zlib.compress(raw)
-    prepared = images.prepare_image(ImageSource(raw, dictionary))
+    prepared = graphics_images.prepare_image(ImageSource(raw, dictionary))
     assert prepared is not None
     assert prepared.is_stencil
-    alpha = np.array([[0, 255] * 4 + [0, 0], [255, 0] * 4 + [255, 255]], dtype=np.uint8)
+    alpha = numpy.array([[0, 255] * 4 + [0, 0], [255, 0] * 4 + [255, 255]], dtype=numpy.uint8)
     if decode == [1, 0]:
         alpha = 255 - alpha
-    np.testing.assert_array_equal(prepared.raster.array[:, :, 1], alpha)
+    numpy.testing.assert_array_equal(prepared.raster.array[:, :, 1], alpha)
     assert not prepared.raster.array[:, :, 0].any()
 
 
@@ -77,7 +77,7 @@ def test_packed_stencil_rows_ignore_padding_and_honor_decode_direction(decode, c
 )
 def test_invalid_stencil_geometry_or_encoding_is_dropped(width, height, raw, filter_name):
     assert (
-        images.prepare_image(
+        graphics_images.prepare_image(
             ImageSource(
                 raw, {"ImageMask": True, "Width": width, "Height": height, "Filter": filter_name}
             )
@@ -96,9 +96,9 @@ def test_matte_alpha_decodes_original_sample_precision(bits, raw, decode):
     mask = SoftMask(
         raw, {"Width": 2, "Height": 1, "BitsPerComponent": bits, "Matte": [0.5], "Decode": decode}
     )
-    matte, alpha = images.decode_matte(source, mask, ImageHeader(source.dictionary))
+    matte, alpha = graphics_images.decode_matte(source, mask, ImageHeader(source.dictionary))
     assert matte == (0.5,)
-    np.testing.assert_array_equal(alpha, [1, 0] if decode == (1, 0) else [0, 1])
+    numpy.testing.assert_array_equal(alpha, [1, 0] if decode == (1, 0) else [0, 1])
 
 
 @pytest.mark.parametrize(
@@ -108,7 +108,9 @@ def test_invalid_matte_dimensions_and_decode_are_rejected(changes):
     source = ImageSource(b"", {"Width": 2, "Height": 1})
     dictionary = {"Width": 2, "Height": 1, "BitsPerComponent": 8, "Matte": [0.5], **changes}
     with pytest.raises(ValueError, match="matte requires matching|soft mask Decode"):
-        images.decode_matte(source, SoftMask(b"\0\xff", dictionary), ImageHeader(source.dictionary))
+        graphics_images.decode_matte(
+            source, SoftMask(b"\0\xff", dictionary), ImageHeader(source.dictionary)
+        )
 
 
 @pytest.mark.parametrize(("model", "channels"), [("DeviceGray", 1), ("DeviceRGB", 3)])
@@ -125,12 +127,14 @@ def test_soft_mask_replaces_color_key_without_mutating_source_dictionary(
         dictionary,
         soft_mask=SoftMask(b"\0\xff", {"Width": 1, "Height": 2}),
     )
-    prepared = images.prepare_image(source)
+    prepared = graphics_images.prepare_image(source)
     assert prepared is not None
     assert prepared.soft_mask is not None
     assert prepared.raster.has_alpha
-    np.testing.assert_array_equal(prepared.raster.array[:, :, -1], [[0, 0], [255, 255]])
-    np.testing.assert_array_equal(prepared.raster.array[:, :, :-1], np.full((2, 2, channels), 50))
+    numpy.testing.assert_array_equal(prepared.raster.array[:, :, -1], [[0, 0], [255, 255]])
+    numpy.testing.assert_array_equal(
+        prepared.raster.array[:, :, :-1], numpy.full((2, 2, channels), 50)
+    )
     assert (prepared.soft_mask.width, prepared.soft_mask.height) == (1, 2)
     assert dictionary == original
 
@@ -145,7 +149,7 @@ def test_unusable_soft_mask_does_not_discard_valid_color_samples(mask_dictionary
         {"Width": 1, "Height": 1, "ColorSpace": "DeviceGray"},
         soft_mask=SoftMask(b"bad", mask_dictionary),
     )
-    prepared = images.prepare_image(source)
+    prepared = graphics_images.prepare_image(source)
     assert prepared is not None
     assert prepared.soft_mask is None
     assert prepared.raster.array.tolist() == [[[50]]]
@@ -166,6 +170,6 @@ def test_declared_filter_runs_when_encoded_length_matches_sample_count(value):
             "Filter": "FlateDecode",
         },
     )
-    raster = images.decode_image(source)
+    raster = graphics_images.decode_image(source)
     assert raster is not None
     assert raster.array.reshape(-1).tolist() == list(samples)

@@ -1,7 +1,7 @@
 import numpy
 import pytest
 
-from core_pdf.impl import extract_block_layout as native_layout
+from core_pdf.impl import extract_block_layout
 from core_pdf.impl.extract_contracts import ObservationBatch, PageFrame
 from core_pdf_ocr.impl.extract import block_layout
 
@@ -49,7 +49,7 @@ def test_ocr_group_order_orders_group_text_and_words() -> None:
         ("left", "right"), ((0, 0, 20, 10), (30, 0, 60, 10)), source=1
     )
     indexes = block_layout.group_order(observations, numpy.array([1, 0]))
-    text, words = native_layout.group_text_and_words(observations, indexes)
+    text, words = extract_block_layout.group_text_and_words(observations, indexes)
     assert text == "left right"
     assert tuple(word.text for word in words) == ("left", "right")
 
@@ -58,7 +58,7 @@ def test_layout_preserves_ocr_source_labels_and_evidence() -> None:
     observations = ObservationBatch.from_columns(
         ("Hello", "world"), ((10, 10, 35, 20), (40, 10, 70, 20)), source=1, confidence=(99, 99)
     )
-    blocks, ambiguous = native_layout.layout_blocks_with_evidence(
+    blocks, ambiguous = extract_block_layout.layout_blocks_with_evidence(
         observations, frame=PageFrame(100.0, 100.0), hooks=block_layout.OCR_LAYOUT_HOOKS
     )
     assert len(blocks) == 1

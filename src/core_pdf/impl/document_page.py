@@ -17,7 +17,7 @@ from core_pdf.impl.exceptions import ExtractionScope, PdfParseError
 from core_pdf.impl.extract_pipeline import extract_page
 from core_pdf.impl.geometry import clamp01, rect_tuple
 from core_pdf.impl.graphics_images import decode_image
-from core_pdf.impl.output_model import Page as StructuredPage
+from core_pdf.impl.output_model import Page
 from core_pdf.impl.pdf_values import parse_text_string
 from core_pdf.impl.raw_media import DrawingRecord, ImageMetadata, ImageRecord
 from core_pdf.impl.recovery_resolver import resolve_resource_dict
@@ -382,15 +382,15 @@ class PdfPage:
         return list(self.get_page_program().runs)
 
     @property
-    def structured_view(self) -> StructuredPage:
+    def structured_view(self) -> Page:
         return self.extract()
 
-    def extract(self) -> StructuredPage:
+    def extract(self) -> Page:
         with self.document.acquire_operation() as operation:
             context = ExtractionScope(cancelled=lambda: operation.cancelled)
             return self.run_extract_page(context)
 
-    def run_extract_page(self, context: ExtractionScope) -> StructuredPage:
+    def run_extract_page(self, context: ExtractionScope) -> Page:
         return extract_page(self, context)
 
     @staticmethod

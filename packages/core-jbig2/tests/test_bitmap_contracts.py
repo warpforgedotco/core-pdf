@@ -4,7 +4,7 @@
 import numpy
 import pytest
 
-from core_jbig2 import bitmap as kernels
+from core_jbig2 import bitmap
 
 
 def compose_pixels(rows, width, x, y, image_width, image_height, stride, initial, operator):
@@ -36,13 +36,13 @@ def test_scalar_numpy_and_dispatch_match_pixel_composition(operator, width, posi
         rows, width, x, y, image_width, image_height, stride, initial, operator
     )
     scalar, bulk, dispatched = (bytearray(initial) for _ in range(3))
-    kernels.compose_packed_bitmap_scalar(
+    bitmap.compose_packed_bitmap_scalar(
         rows, width, x, y, image_width, image_height, stride, scalar, operator
     )
-    kernels.compose_packed_bitmap_numpy(
+    bitmap.compose_packed_bitmap_numpy(
         packed, 4, row_bytes, width, x, y, image_width, image_height, stride, bulk, operator
     )
-    kernels.compose_packed_bitmap_data(
+    bitmap.compose_packed_bitmap_data(
         packed, 4, width, x, y, image_width, image_height, stride, dispatched, operator
     )
     assert scalar == expected
@@ -71,7 +71,7 @@ def test_composition_normalizes_buffers_and_ignores_incomplete_rows(width, repre
         case "uint16":
             source = numpy.frombuffer(data, dtype=numpy.uint8).astype(numpy.uint16)
     output = bytearray(row_bytes * 4)
-    kernels.compose_packed_bitmap_data(source, 4, width, 0, 0, width, 4, row_bytes, output, 0)
+    bitmap.compose_packed_bitmap_data(source, 4, width, 0, 0, width, 4, row_bytes, output, 0)
     rows = [data[:row_bytes], data[row_bytes : row_bytes * 2]]
     assert output == compose_pixels(rows, width, 0, 0, width, 4, row_bytes, bytes(len(output)), 0)
 
@@ -79,12 +79,12 @@ def test_composition_normalizes_buffers_and_ignores_incomplete_rows(width, repre
 @pytest.mark.parametrize(("count", "width", "data"), [(0, 8, b"x"), (1, 0, b"x"), (1, 16, b"x")])
 def test_empty_or_incomplete_bitmap_preserves_destination(count, width, data):
     output = bytearray(b"ab")
-    kernels.compose_packed_bitmap_data(data, count, width, 0, 0, 8, 2, 1, output, 0)
+    bitmap.compose_packed_bitmap_data(data, count, width, 0, 0, 8, 2, 1, output, 0)
     assert output == b"ab"
 
 
 def test_matrix_view_shares_storage():
     source = numpy.array([[1, 2], [3, 4]], dtype=numpy.uint8)
-    matrix = kernels.uint8_matrix_view(source, 2, 2)
+    matrix = bitmap.uint8_matrix_view(source, 2, 2)
     matrix[0, 0] = 7
     assert source[0, 0] == 7

@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl import layout_text_rules as rules
+from core_pdf.impl import layout_text_rules
 
 
 @pytest.mark.parametrize(
@@ -17,7 +17,7 @@ from core_pdf.impl import layout_text_rules as rules
     ],
 )
 def test_estimated_spacing_requires_alphabetic_boundary_characters(previous, current, expected):
-    assert rules.should_use_estimated_word_spacing(previous, current) is expected
+    assert layout_text_rules.should_use_estimated_word_spacing(previous, current) is expected
 
 
 @pytest.mark.parametrize(
@@ -31,8 +31,8 @@ def test_estimated_spacing_requires_alphabetic_boundary_characters(previous, cur
     ],
 )
 def test_alpha_tokens_stop_at_nonletters(text, leading, trailing):
-    assert rules.leading_alpha_token(text) == leading
-    assert rules.trailing_alpha_token(text) == trailing
+    assert layout_text_rules.leading_alpha_token(text) == leading
+    assert layout_text_rules.trailing_alpha_token(text) == trailing
 
 
 @pytest.mark.parametrize(
@@ -49,8 +49,8 @@ def test_alpha_tokens_stop_at_nonletters(text, leading, trailing):
 def test_phrase_spacing_uses_frequency_only_for_short_previous_tokens(
     monkeypatch, previous, current, rank, expected
 ):
-    monkeypatch.setattr(rules, "word_rank", lambda word: rank)
-    assert rules.should_insert_phrase_continuation_space(previous, current) is expected
+    monkeypatch.setattr(layout_text_rules, "word_rank", lambda word: rank)
+    assert layout_text_rules.should_insert_phrase_continuation_space(previous, current) is expected
 
 
 @pytest.mark.parametrize(
@@ -75,9 +75,9 @@ def test_phrase_spacing_uses_frequency_only_for_short_previous_tokens(
 def test_split_word_join_requires_visibility_case_and_close_geometry(
     monkeypatch, previous, current, gap, prev_visible, visible, short, expected
 ):
-    monkeypatch.setattr(rules, "word_rank", {"hello": 10}.get)
+    monkeypatch.setattr(layout_text_rules, "word_rank", {"hello": 10}.get)
     assert (
-        rules.should_join_plausible_split_word(
+        layout_text_rules.should_join_plausible_split_word(
             previous,
             current,
             x_gap=gap,
@@ -110,9 +110,9 @@ def test_split_word_join_compares_whole_word_and_fragment_frequencies(
     monkeypatch, previous, current, joined, tail, head, expected
 ):
     ranks = {previous + current: joined, previous: tail, current: head}
-    monkeypatch.setattr(rules, "word_rank", ranks.get)
+    monkeypatch.setattr(layout_text_rules, "word_rank", ranks.get)
     assert (
-        rules.should_join_plausible_split_word(
+        layout_text_rules.should_join_plausible_split_word(
             previous,
             current,
             x_gap=0,
@@ -140,7 +140,7 @@ def test_digit_fragments_join_only_at_digit_boundaries_with_small_gaps(
     previous, current, gap, expected
 ):
     assert (
-        rules.digit_fragments_are_tightly_joined(
+        layout_text_rules.digit_fragments_are_tightly_joined(
             previous, current, x_gap=gap, height=10, space_width=5
         )
         is expected
@@ -168,9 +168,9 @@ def test_digit_fragments_join_only_at_digit_boundaries_with_small_gaps(
 def test_tight_word_space_uses_frequent_words_or_short_uppercase_prefixes(
     monkeypatch, previous, current, gap, expected
 ):
-    monkeypatch.setattr(rules, "word_rank", {"the": 1}.get)
+    monkeypatch.setattr(layout_text_rules, "word_rank", {"the": 1}.get)
     assert (
-        rules.should_insert_tight_word_space(
+        layout_text_rules.should_insert_tight_word_space(
             prev_text=previous, text=current, x_gap=gap, height=10, space_width=5
         )
         is expected
@@ -198,7 +198,7 @@ def test_hidden_overlap_spacing_preserves_digits_and_uses_case_transitions(
     previous, current, gap, prev_visible, visible, expected
 ):
     assert (
-        rules.should_insert_hidden_text_overlap_space(
+        layout_text_rules.should_insert_hidden_text_overlap_space(
             prev_text=previous,
             text=current,
             x_gap=gap,

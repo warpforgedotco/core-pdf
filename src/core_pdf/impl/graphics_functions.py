@@ -5,12 +5,12 @@ from __future__ import annotations
 import math
 from typing import Any
 
-import core_pdf_spec.s_08_graphics.pdf_function as strict
 from core_pdf.impl.pdf_values import lenient_float, lenient_int
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float
+from core_pdf_spec.s_08_graphics import pdf_function
 from core_pdf_spec.s_08_graphics.pdf_function import (
     PdfFunctionEvaluator,
 )
@@ -194,4 +194,4 @@ def compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             label = "sampled" if kind == 0 else "calculator"
             raise ValueError(f"invalid {label} PDF function") from error
         prepared = prepared.replace(raw_data=decoded, spec=None, decoder=None)
-    return strict.compile_pdf_function(prepared, compile_nested=compile_pdf_function)
+    return pdf_function.compile_pdf_function(prepared, compile_nested=compile_pdf_function)

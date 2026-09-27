@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 
 class Element:
@@ -26,7 +26,7 @@ def test_structure_projection_filters_root_page_ownership_and_preserves_fields(
 ):
     child = Element("Span", 0)
     root = Element("P", owner, (child, 7, SimpleNamespace(type="MCR")))
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         monkeypatch.setattr(type(pdf._document), "structure", property(lambda self: (root, 42)))
         result = pdf.pages[0].structure_tree
         if owner == 1:
@@ -83,7 +83,7 @@ def test_structure_projection_recovers_only_the_malformed_boundary(
         if boundary == "children"
         else (BrokenPage(),)
     )
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         monkeypatch.setattr(type(pdf._document), "structure", property(lambda self: tree))
         result = pdf.pages[0].structure_tree
         if boundary == "root":
@@ -97,7 +97,7 @@ def test_structure_projection_recovers_only_the_malformed_boundary(
 
 @pytest.mark.parametrize("tree", [None, (), (None, 3, "ignored")])
 def test_missing_or_nonstructural_tree_has_no_projected_nodes(text_pdf_bytes, monkeypatch, tree):
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         monkeypatch.setattr(type(pdf._document), "structure", property(lambda self: tree))
         assert pdf.structure_tree == []
 
@@ -109,7 +109,7 @@ def test_unexpected_structure_failure_is_not_silently_converted_to_an_empty_tree
         def __iter__(self):
             raise RuntimeError("unexpected failure")
 
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         monkeypatch.setattr(type(pdf._document), "structure", property(lambda self: Broken()))
         with pytest.raises(RuntimeError, match="unexpected failure"):
             _ = pdf.pages[0].structure_tree
