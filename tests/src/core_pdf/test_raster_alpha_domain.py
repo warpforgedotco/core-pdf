@@ -1,11 +1,9 @@
-import numpy as np
+import numpy
 import pytest
 
-from core_pdf.impl import render_fills
-from core_pdf.impl import render_target as raster
+from core_pdf.impl import render_target
 from core_pdf.impl.render_blend import blend_op
-from core_pdf.impl.render_clipping import ClipState
-from core_pdf.impl.render_grid import DeviceGrid
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 
 
 def rounded_ratio(numerator: int, denominator: int) -> int:
@@ -18,12 +16,12 @@ def rounded_ratio(numerator: int, denominator: int) -> int:
 @pytest.mark.parametrize("route", ["generic", "span", "numpy-span"])
 def test_every_byte_alpha_pair_matches_integer_source_over(monkeypatch, route):
     monkeypatch.setattr(
-        render_fills, "RASTER_NUMPY_SPAN_MIN_PIXELS", 1 if route == "numpy-span" else 1000
+        render_target, "RASTER_NUMPY_SPAN_MIN_PIXELS", 1 if route == "numpy-span" else 1000
     )
     pixels = bytearray(256 * 4)
-    view = np.frombuffer(pixels, dtype=np.uint8).reshape(1, 256, 4)
+    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(1, 256, 4)
     clip = ClipState(DeviceGrid(0, 0, 1, 1, 256, 1))
-    target = raster.RasterTarget(
+    target = render_target.RasterTarget(
         pixels,
         None,
         clip=clip,
@@ -33,7 +31,7 @@ def test_every_byte_alpha_pair_matches_integer_source_over(monkeypatch, route):
     destination = (13, 211, 67)
     for source_alpha in range(256):
         view[0, :, :3] = destination
-        view[0, :, 3] = np.arange(256, dtype=np.uint8)
+        view[0, :, 3] = numpy.arange(256, dtype=numpy.uint8)
         rgba = (*source, source_alpha)
         if route in {"span", "numpy-span"}:
             target.blend_normal_solid_span(0, 0, 256, rgba)
@@ -55,11 +53,11 @@ def test_every_byte_alpha_pair_matches_integer_source_over(monkeypatch, route):
                 for src, dst in zip(source, destination, strict=True)
             )
             expected.append((*colors, rounded_ratio(denominator, 255)))
-        expected_array = np.asarray(expected)
-        assert np.max(np.abs(view[0, :, :3].astype(int) - expected_array[:, :3])) <= 1
-        np.testing.assert_array_equal(view[0, :, 3], expected_array[:, 3])
+        expected_array = numpy.asarray(expected)
+        assert numpy.max(numpy.abs(view[0, :, :3].astype(int) - expected_array[:, :3])) <= 1
+        numpy.testing.assert_array_equal(view[0, :, 3], expected_array[:, 3])
         if source_alpha == 0:
-            np.testing.assert_array_equal(view[0], expected_array)
+            numpy.testing.assert_array_equal(view[0], expected_array)
 
 
 @pytest.mark.parametrize("mode", ["multiply", "screen", "colordodge", "colorburn"])
@@ -73,9 +71,9 @@ def test_non_normal_pixel_blending_matches_rational_composition(
     source = (200, 100, 50)
     destination = (90, 160, 240)
     pixels = bytearray((*destination, destination_alpha))
-    view = np.frombuffer(pixels, dtype=np.uint8).reshape(1, 1, 4)
+    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(1, 1, 4)
     clip = ClipState(DeviceGrid(0, 0, 1, 1, 1, 1))
-    target = raster.RasterTarget(
+    target = render_target.RasterTarget(
         pixels,
         None,
         clip=clip,
@@ -105,9 +103,9 @@ def test_non_normal_pixel_blending_matches_rational_composition(
 @pytest.mark.parametrize("alpha", [0, 128, 255])
 def test_pixel_blending_tracks_shape_independently_from_paint_alpha(alpha):
     pixels = bytearray(4)
-    view = np.frombuffer(pixels, dtype=np.uint8).reshape(1, 1, 4)
+    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(1, 1, 4)
     clip = ClipState(DeviceGrid(0, 0, 1, 1, 1, 1))
-    target = raster.RasterTarget(
+    target = render_target.RasterTarget(
         pixels,
         None,
         clip=clip,

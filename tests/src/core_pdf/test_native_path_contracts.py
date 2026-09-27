@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl import capture_recording as recording
+from core_pdf.impl import capture_recording
 from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 ADDRESS = re.compile(r"0x[0-9a-f]+")
@@ -45,15 +45,15 @@ def test_native_paths_capture_as_the_handlers_do(
 ) -> None:
     data = one_page_pdf(content, width=100, height=100)
     applied: list[bool] = []
-    original = recording.applies_paths_natively
+    original = capture_recording.applies_paths_natively
 
     def recorded(handlers: Any, state: object) -> bool:
         result = original(handlers, state)
         applied.append(result)
         return result
 
-    monkeypatch.setattr(recording, "applies_paths_natively", recorded)
+    monkeypatch.setattr(capture_recording, "applies_paths_natively", recorded)
     native = captured(data)
     assert any(applied)
-    monkeypatch.setattr(recording, "applies_paths_natively", lambda *_: False)
+    monkeypatch.setattr(capture_recording, "applies_paths_natively", lambda *_: False)
     assert captured(data) == native

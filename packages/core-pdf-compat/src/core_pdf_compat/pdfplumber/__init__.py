@@ -15,16 +15,16 @@ from types import SimpleNamespace
 from typing import Any, ClassVar, TypeAlias, cast
 
 from core_pdf import PdfDocument
+from core_pdf.impl import output_model
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.geometry import (
     bbox_contains,
     bbox_union,
     flip_rect_vertical,
 )
-from core_pdf.impl.graphics_codec_backends import PNG_SIGNATURE, png_chunk
-from core_pdf.impl.output_model import Table as StructuredTable
+from core_pdf.impl.graphics_stream_decoding import PNG_SIGNATURE, png_chunk
 from core_pdf.impl.output_model import TableCell
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.raw_media import DrawingRecord, ImageRecord
 from core_pdf.impl.render_paths import intersect_box
 from core_pdf.impl.types import (
@@ -994,7 +994,7 @@ class Page:
                 and len(getattr(settings, f"explicit_{axis}_lines") or []) < 2
             ):
                 raise ValueError(f"explicit {axis} strategy requires at least two lines")
-        tables: tuple[StructuredTable | _CompatNativeTable, ...] = self._structured().tables
+        tables: tuple[output_model.Table | _CompatNativeTable, ...] = self._structured().tables
         if tables:
             if len(tables) == 1:
                 table_box = tables[0].bbox
@@ -1398,7 +1398,7 @@ class Column(CellGroup):
 
 
 class Table:
-    def __init__(self, native: StructuredTable | _CompatNativeTable) -> None:
+    def __init__(self, native: output_model.Table | _CompatNativeTable) -> None:
         self._native = native
         self.page: Page | None = None
 

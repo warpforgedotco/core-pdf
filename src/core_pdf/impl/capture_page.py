@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any
 
 from core_pdf.impl.capture_program import (
     DEFAULT_CAPTURE,
@@ -11,7 +12,6 @@ from core_pdf.impl.capture_program import (
     PageProgram,
 )
 from core_pdf.impl.capture_recording import TextState
-from core_pdf.impl.document_contracts import CapturePage, ResolverHost
 from core_pdf.impl.document_records import RawAnnotation, RawFormField
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.geometry import normalize_rect, transform_bbox
@@ -25,10 +25,14 @@ from core_pdf_spec.s_07_document.annotation_appearance import (
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
+if TYPE_CHECKING:
+    from core_pdf.impl.document_document import PdfDocument
+    from core_pdf.impl.document_page import PdfPage
+
 SKIPPED_SUBTYPES = frozenset({"Popup", "Link"})
 
 
-def inheritable(document: ResolverHost, node: object, key: str) -> object:
+def inheritable(document: PdfDocument[Any], node: object, key: str) -> object:
     for _ in range(50):
         if not isinstance(node, dict):
             return None
@@ -60,7 +64,7 @@ def select_appearance_stream(
         return None
 
 
-def should_render(document: ResolverHost, annot: dict) -> bool:
+def should_render(document: PdfDocument[Any], annot: dict) -> bool:
     subtype = document.resolver.name_at(annot, "Subtype") or ""
     if subtype in SKIPPED_SUBTYPES:
         return False
@@ -76,7 +80,7 @@ def should_render(document: ResolverHost, annot: dict) -> bool:
 
 
 def capture_annotation_appearances(
-    page: CapturePage,
+    page: PdfPage,
     state: TextState,
     *,
     fields: Iterable[RawFormField] | None = None,
@@ -171,7 +175,7 @@ def capture_annotation_appearances(
 
 
 def capture_page_program(
-    page: CapturePage,
+    page: PdfPage,
     *,
     hidden_layers: frozenset[str] | None = None,
     fields: Iterable[RawFormField] | None = None,

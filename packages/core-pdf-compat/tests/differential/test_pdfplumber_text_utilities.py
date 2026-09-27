@@ -2,7 +2,7 @@ from io import BytesIO
 
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 reference = pytest.importorskip("pdfplumber")
 pytestmark = pytest.mark.compat_differential
@@ -35,7 +35,7 @@ def test_text_utilities_honor_word_options(namespace, options):
     ]
     utilities = [
         library.utils if namespace == "utils" else library.utils.text
-        for library in (reference, compat)
+        for library in (reference, core_pdf_compat.pdfplumber)
     ]
     expected = utilities[0].extract_text(chars, **options)
     assert expected
@@ -43,9 +43,12 @@ def test_text_utilities_honor_word_options(namespace, options):
 
 
 def test_page_and_utility_text_agree_on_same_captured_characters(text_pdf_bytes):
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         page = pdf.pages[0]
         for options in ({}, {"x_tolerance": 0}, {"x_tolerance": 100}):
             expected = page.extract_text(**options)
-            assert compat.utils.extract_text(page.chars, **options) == expected
-            assert compat.utils.text.extract_text(page.chars, **options) == expected
+            assert core_pdf_compat.pdfplumber.utils.extract_text(page.chars, **options) == expected
+            assert (
+                core_pdf_compat.pdfplumber.utils.text.extract_text(page.chars, **options)
+                == expected
+            )

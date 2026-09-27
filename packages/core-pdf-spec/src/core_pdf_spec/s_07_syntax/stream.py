@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypeAlias
 
-from core_pdf_spec.s_07_filters import decode_spec as stream_decode_spec
+from core_pdf_spec.s_07_filters import decode_spec
 from core_pdf_spec.types import MISSING, MissingObject
 
 if TYPE_CHECKING:
     from core_pdf_spec.s_07_syntax.types import PdfDict
 
 PdfStreamDictionary: TypeAlias = "PdfDict"
-PdfStreamDecodeSpec: TypeAlias = "stream_decode_spec.StreamDecodeSpec | PdfDict | None"
+PdfStreamDecodeSpec: TypeAlias = "decode_spec.StreamDecodeSpec | PdfDict | None"
 
 
 __all__ = ("PdfStream",)
@@ -27,7 +27,7 @@ class PdfStream:
     dictionary: PdfStreamDictionary
     raw_data: bytes | memoryview
     spec: PdfStreamDecodeSpec
-    decoder: stream_decode_spec.StreamDecoder
+    decoder: decode_spec.StreamDecoder
 
     def __init__(
         self,
@@ -35,13 +35,13 @@ class PdfStream:
         raw_data: bytes | memoryview = b"",
         spec: object | None = None,
         *,
-        decoder: stream_decode_spec.StreamDecoder | None = None,
+        decoder: decode_spec.StreamDecoder | None = None,
     ) -> None:
         if dictionary is not None and not isinstance(dictionary, dict):
             raise ValueError("invalid stream dictionary")
         if not isinstance(raw_data, (bytes, memoryview)):
             raise ValueError("invalid stream data")
-        if spec is not None and not isinstance(spec, (stream_decode_spec.StreamDecodeSpec, dict)):
+        if spec is not None and not isinstance(spec, (decode_spec.StreamDecodeSpec, dict)):
             raise ValueError("invalid stream decode spec")
         self.dictionary = dictionary if dictionary is not None else {}
         self.raw_data = raw_data
@@ -58,7 +58,7 @@ class PdfStream:
         dictionary: PdfStreamDictionary | None | MissingObject = MISSING,
         raw_data: bytes | memoryview | MissingObject = MISSING,
         spec: PdfStreamDecodeSpec | MissingObject = MISSING,
-        decoder: stream_decode_spec.StreamDecoder | None | MissingObject = MISSING,
+        decoder: decode_spec.StreamDecoder | None | MissingObject = MISSING,
     ) -> PdfStream:
         next_dictionary = self.dictionary if isinstance(dictionary, MissingObject) else dictionary
         if isinstance(spec, MissingObject):

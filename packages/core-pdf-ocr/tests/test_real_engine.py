@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from core_pdf import PdfDocument as NativePdfDocument
-from core_pdf.impl.execution import ExtractionCancelled, ExtractionScope
+import core_pdf
+from core_pdf.impl.exceptions import ExtractionCancelled, ExtractionScope
 from core_pdf.impl.render_model import RasterImage
 from core_pdf_ocr import PdfDocument
 from core_pdf_ocr.impl.extract.ocr import tesseract
@@ -64,7 +64,7 @@ def test_public_extraction_recognizes_image_only_pages_and_releases_engine(
     owned_engines: list[Any],
 ) -> None:
     source = (FIXTURES / name).read_bytes()
-    with NativePdfDocument(source) as native:
+    with core_pdf.PdfDocument(source) as native:
         assert not native.extract().to_markdown().strip()
     with PdfDocument(source) as document:
         result = document.extract()

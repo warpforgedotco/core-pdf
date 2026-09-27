@@ -5,7 +5,7 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf.impl.execution import ExtractionScope
+from core_pdf.impl.exceptions import ExtractionScope
 from core_pdf.impl.extract_contracts import ObservationBatch, PageFrame, PageState
 from core_pdf.impl.extract_pipeline import (
     NATIVE_PIPELINE,

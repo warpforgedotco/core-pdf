@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner
 from core_pdf.impl.types import PdfByteBuffer, PdfReference

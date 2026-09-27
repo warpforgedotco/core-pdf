@@ -3,8 +3,8 @@ import zlib
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl import recovery_xref as xref
-from core_pdf.impl.document_xref_recovery import object_headers_present
+from core_pdf.impl import recovery_xref
+from core_pdf.impl.document_document import object_headers_present
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -21,8 +21,8 @@ def test_fixed_and_loose_xref_entries_agree_and_consume_line(ending, separator, 
     loose = separator.join([b"123", b"7", marker]) + ending
     expected = (123, 7, marker == b"n")
     for line in (fixed, loose):
-        assert xref.parse_xref_entry_line(line) == expected
-        assert xref.parse_xref_entry_at(b"prefix" + line, 6) == (*expected, 6 + len(line))
+        assert recovery_xref.parse_xref_entry_line(line) == expected
+        assert recovery_xref.parse_xref_entry_at(b"prefix" + line, 6) == (*expected, 6 + len(line))
 
 
 @pytest.mark.parametrize(
@@ -32,10 +32,10 @@ def test_fixed_and_loose_xref_entries_reject_same_invalid_numbers(fields):
     offset, generation = fields
     for line in (f"{offset} {generation} n\n", f"{offset:0>10} {generation:0>5} n\n"):
         with pytest.raises(PdfParseError):
-            xref.parse_xref_entry_at(line.encode(), 0)
+            recovery_xref.parse_xref_entry_at(line.encode(), 0)
     if offset == "-1":
         with pytest.raises(PdfParseError):
-            xref.parse_xref_entry_at(b"-000000001 00000 n\n", 0)
+            recovery_xref.parse_xref_entry_at(b"-000000001 00000 n\n", 0)
 
 
 @pytest.mark.parametrize(
@@ -43,12 +43,12 @@ def test_fixed_and_loose_xref_entries_reject_same_invalid_numbers(fields):
 )
 def test_xref_entries_reject_bad_fields_and_delimiters(line):
     with pytest.raises(PdfParseError):
-        xref.parse_xref_entry_at(line, 0)
+        recovery_xref.parse_xref_entry_at(line, 0)
 
 
 @pytest.mark.parametrize("offset", [0, 12])
 def test_missing_entry_marker_is_inferred_from_offset(offset):
-    assert xref.parse_xref_entry_line(f"{offset} 0".encode()) == (offset, 0, offset != 0)
+    assert recovery_xref.parse_xref_entry_line(f"{offset} 0".encode()) == (offset, 0, offset != 0)
 
 
 def entry_values(entries):
@@ -77,7 +77,7 @@ def test_xref_stream_recovers_only_complete_rows_and_missing_fields(widths, trun
     if truncated:
         data = data[:-1]
     dictionary = {"Size": 2, "W": widths}
-    entries, trailer = xref.XRefScanner.parse_stream(PdfStream(dictionary, data))
+    entries, trailer = recovery_xref.XRefScanner.parse_stream(PdfStream(dictionary, data))
     expected = {
         key_for(index, row[2]): (row[1] if widths[1] else 0, row[2], True, None, None)
         for index, row in enumerate(rows[:1] if truncated else rows)
@@ -88,7 +88,7 @@ def test_xref_stream_recovers_only_complete_rows_and_missing_fields(widths, trun
 
 @pytest.mark.parametrize("index", [[1, 2], [1, 2, 99], (1, 2)])
 def test_xref_stream_repairs_size_and_ignores_incomplete_index_pair(index):
-    entries, _ = xref.XRefScanner.parse_stream(
+    entries, _ = recovery_xref.XRefScanner.parse_stream(
         PdfStream({"Size": 2, "W": [1, 1, 1], "Index": index}, b"\1\x10\0\1\x20\0")
     )
     assert entry_values(entries) == {
@@ -115,13 +115,13 @@ def test_xref_stream_repairs_size_and_ignores_incomplete_index_pair(index):
 def test_xref_stream_rejects_invalid_shape_before_decoding(field, value):
     dictionary = {"Size": 1, "W": [1, 1, 1], field: value}
     with pytest.raises(PdfParseError):
-        xref.XRefScanner.parse_stream(PdfStream(dictionary, b"\1\0\0"))
+        recovery_xref.XRefScanner.parse_stream(PdfStream(dictionary, b"\1\0\0"))
 
 
 @pytest.mark.parametrize("size", [None, 0, -1, True, 1, 4])
 def test_trailer_size_repair_preserves_input_and_valid_identity(size):
     trailer: PdfDict = {"Size": size, "Root": PdfReference(1)}
-    result = xref.XRefScanner.validate_trailer_size(trailer, 2)
+    result = recovery_xref.XRefScanner.validate_trailer_size(trailer, 2)
     assert trailer["Size"] is size
     assert result == {"Size": 4 if size == 4 else 3, "Root": PdfReference(1)}
     assert (result is trailer) == (size == 4)
@@ -139,7 +139,7 @@ def test_table_recovery_reconciles_subsection_counts_and_missing_trailer_keyword
         + trailer_keyword
         + b"<< /Size 1 >>"
     )
-    entries, trailer = xref.XRefScanner.parse_table_section(data, 0)
+    entries, trailer = recovery_xref.XRefScanner.parse_table_section(data, 0)
     assert entry_values(entries) == {
         key_for(2): (12, 0, True, None, None),
         key_for(3, 1): (24, 1, True, None, None),
@@ -150,7 +150,7 @@ def test_table_recovery_reconciles_subsection_counts_and_missing_trailer_keyword
 @pytest.mark.parametrize("subsection", [b"-1 2", b"0 -1", b"x 1", b"1", b"1 2 3", b"0\x0b1"])
 def test_table_recovery_rejects_invalid_subsection_headers(subsection):
     with pytest.raises(PdfParseError):
-        xref.XRefScanner.parse_table_section(
+        recovery_xref.XRefScanner.parse_table_section(
             b"xref\n" + subsection + b"\ntrailer\n<< /Size 1 >>", 0
         )
 
@@ -158,14 +158,14 @@ def test_table_recovery_rejects_invalid_subsection_headers(subsection):
 @pytest.mark.parametrize("marker", [b"%%EOF", b"%%EOX", b"%%XOF", b"%%EXF"])
 def test_eof_discovery_accepts_one_substitution_and_prefers_delimited_marker(marker):
     data = b"header\n" + marker + b"\ntrailing garbage"
-    assert xref.find_eof_marker(data) == 7
+    assert recovery_xref.find_eof_marker(data) == 7
 
 
 @pytest.mark.parametrize(
     "suffix", [b"\n%%EOF", b"\r\n%%EOF", b" % comment\n%%EOF", b"%comment\n%%EOF", b""]
 )
 def test_startxref_allows_comments_and_missing_eof(suffix):
-    assert xref.XRefScanner.find_startxref(b"startxref\n123" + suffix) == 123
+    assert recovery_xref.XRefScanner.find_startxref(b"startxref\n123" + suffix) == 123
 
 
 @pytest.mark.parametrize(
@@ -181,18 +181,18 @@ def test_startxref_allows_comments_and_missing_eof(suffix):
     ],
 )
 def test_startxref_ignores_invalid_markers_and_numbers(data):
-    assert xref.XRefScanner.find_startxref(data) is None
+    assert recovery_xref.XRefScanner.find_startxref(data) is None
 
 
 @pytest.mark.parametrize("start", [0, 3, 10])
 def test_nearby_section_recovery_returns_actual_table_offset(start):
     data = b"junk\nxref\n0 1\n0 65535 f\ntrailer\n<< /Size 1 >>"
-    result = xref.XRefScanner.recover_section_at(data, start)
+    result = recovery_xref.XRefScanner.recover_section_at(data, start)
     assert result.offset == 5
     assert result.kind == "table"
     assert entry_values(result.entries) == {key_for(0, 65535): (0, 65535, False, None, None)}
     with pytest.raises(PdfParseError):
-        xref.XRefScanner.recover_section_at(data, start, stream_only=True)
+        recovery_xref.XRefScanner.recover_section_at(data, start, stream_only=True)
 
 
 @pytest.mark.parametrize("separator", [b"\n", b"\r\n", b" \t\n"])
@@ -209,9 +209,9 @@ def test_stream_salvage_preserves_rows_across_length_and_compression_forms(
     if length:
         dictionary += b" /Length " + str(len(payload)).encode()
     data = b"1 0 obj " + dictionary + b" >> stream" + separator + payload + b"\nendstream\nendobj"
-    stream = xref.XRefScanner.parse_xref_stream_salvage(data, 0)
+    stream = recovery_xref.XRefScanner.parse_xref_stream_salvage(data, 0)
     assert stream is not None
-    entries, _ = xref.XRefScanner.parse_stream(stream)
+    entries, _ = recovery_xref.XRefScanner.parse_stream(stream)
     assert entry_values(entries) == {
         key_for(0): (16, 0, True, None, None),
         key_for(1): (32, 0, True, None, None),
@@ -235,7 +235,7 @@ def test_stream_salvage_preserves_rows_across_length_and_compression_forms(
     ],
 )
 def test_stream_salvage_declines_unrecognizable_or_unterminated_objects(data):
-    assert xref.XRefScanner.parse_xref_stream_salvage(data, 0) is None
+    assert recovery_xref.XRefScanner.parse_xref_stream_salvage(data, 0) is None
 
 
 @pytest.mark.parametrize("generation", [0, 65535])
@@ -250,12 +250,12 @@ def test_object_scan_ignores_fake_headers_inside_valid_stream_payload(generation
     )
     offset = len(data)
     data += f"2 {generation} obj 42 endobj".encode()
-    entries = xref.XRefScanner.brute_force_scan(data)
+    entries = recovery_xref.XRefScanner.brute_force_scan(data)
     assert entry_values(entries) == {
         key_for(1): (0, 0, True, None, None),
         key_for(2, generation): (offset, generation, True, None, None),
     }
-    assert list(xref.XRefScanner.brute_force_scan(data, max_entries=1)) == [key_for(1)]
+    assert list(recovery_xref.XRefScanner.brute_force_scan(data, max_entries=1)) == [key_for(1)]
 
 
 @pytest.mark.parametrize("generation", [0, 7])
@@ -273,7 +273,9 @@ def test_recovered_object_stream_entries_preserve_parser_indexes(generation, exi
     if existing:
         entries[key_for(20)] = preserved
     initial_count = len(entries)
-    xref.XRefScanner.recover_object_stream_entries(entries, {container_key: (100, stream)}, limit)
+    recovery_xref.XRefScanner.recover_object_stream_entries(
+        entries, {container_key: (100, stream)}, limit
+    )
     assert len(entries) == max(initial_count, min(limit, 4))
     parser = PdfObjectStream(stream)
     try:
@@ -318,7 +320,7 @@ def test_object_stream_recovery_skips_unusable_containers(kind):
     else:
         stream.dictionary = {"N": -1, "First": 0}
     entries = {key_for(1): entry}
-    xref.XRefScanner.recover_object_stream_entries(entries, parsed)
+    recovery_xref.XRefScanner.recover_object_stream_entries(entries, parsed)
     assert entries == {key_for(1): entry}
 
 
@@ -337,14 +339,14 @@ def test_bounded_header_discovery_agrees_for_buffer_representations(representati
     expected = [(0, 1, 0), (second, 2, 0)] if allow_prefix else [(second, 2, 0)]
     assert (
         list(
-            xref.iter_indirect_object_headers(
+            recovery_xref.iter_indirect_object_headers(
                 source, 4, len(data), allow_prefix_before_start=allow_prefix
             )
         )
         == expected
     )
-    assert list(xref.iter_indirect_object_headers(source, -5, second)) == [(0, 1, 0)]
-    assert list(xref.iter_indirect_object_headers(source, len(data), len(data) + 20)) == []
+    assert list(recovery_xref.iter_indirect_object_headers(source, -5, second)) == [(0, 1, 0)]
+    assert list(recovery_xref.iter_indirect_object_headers(source, len(data), len(data) + 20)) == []
 
 
 @pytest.mark.parametrize(
@@ -352,8 +354,8 @@ def test_bounded_header_discovery_agrees_for_buffer_representations(representati
 )
 def test_header_discovery_rejects_malformed_prefixes_and_keyword_suffixes(data):
     marker = data.find(b"obj")
-    assert xref.parse_object_marker_prefix(data, marker) is None
-    assert xref.find_previous_object_marker(data, len(data)) is None
+    assert recovery_xref.parse_object_marker_prefix(data, marker) is None
+    assert recovery_xref.find_previous_object_marker(data, len(data)) is None
 
 
 @pytest.mark.parametrize(
@@ -368,7 +370,7 @@ def test_header_discovery_rejects_malformed_prefixes_and_keyword_suffixes(data):
     ],
 )
 def test_eof_recovery_keeps_raw_fallback_but_prefers_delimited_exact_marker(data, expected):
-    assert xref.find_eof_marker(data) == expected
+    assert recovery_xref.find_eof_marker(data) == expected
 
 
 @pytest.mark.parametrize("delimiter", [b"<<", b"[", b"(", b"/", b"%", b"{"])

@@ -5,16 +5,15 @@ from collections.abc import Mapping
 from contextlib import suppress
 from typing import Any
 
-from core_adobe_fonts.afm.core14 import FONT_DATA as CORE14_FONT_DATA
+from core_adobe_fonts.afm.core14 import FONT_DATA
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_pdf.impl.capture_recovery import iter_content_operations
-from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts_cmap import ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder
-from core_pdf.impl.fonts_glyphs import TEX_GLYPH_ALIASES
-from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
+from core_pdf.impl.fonts_helpers import TEX_GLYPH_ALIASES, recover_strip_subset_tag
 from core_pdf.impl.fonts_metrics import LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.fonts_widths import parse_font_widths
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.types import PdfName, PdfString, RecordType, ReplaceFields, ReprFields
 from core_pdf_compat._text_state import (
@@ -293,7 +292,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         if encoding is not None:
             return False
         base_font = recover_strip_subset_tag(recover_pdf_name(font.get("BaseFont") or "") or "")
-        return base_font in CORE14_FONT_DATA
+        return base_font in FONT_DATA
 
     def legacy_encoding(
         self, font: dict[object, object], decoder: FontDecoder

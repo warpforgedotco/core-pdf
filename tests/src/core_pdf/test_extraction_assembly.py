@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.execution import ExtractionCancelled, ExtractionScope
+from core_pdf.impl.exceptions import ExtractionCancelled, ExtractionScope
 from core_pdf.impl.extract_selection import assemble_document
 from core_pdf.impl.output_model import Diagnostic, Page
 

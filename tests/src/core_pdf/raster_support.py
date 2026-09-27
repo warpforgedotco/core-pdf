@@ -1,8 +1,7 @@
 import numpy
 
 from core_pdf import PdfDocument
-from core_pdf.impl.render_clipping import ClipState
-from core_pdf.impl.render_grid import DeviceGrid
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 from core_pdf.impl.render_model import PixelWindow
 from core_pdf.impl.render_target import RasterTarget
 

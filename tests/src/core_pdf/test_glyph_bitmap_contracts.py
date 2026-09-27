@@ -1,14 +1,13 @@
-import numpy as np
+import numpy
 import pytest
 
-from core_pdf.impl.render_clipping import ClipState
-from core_pdf.impl.render_grid import DeviceGrid
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 from core_pdf.impl.render_target import RasterTarget
 
 
 def make_target():
     pixels = bytearray(12 * 12 * 4)
-    view = np.frombuffer(pixels, dtype=np.uint8).reshape(12, 12, 4)
+    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(12, 12, 4)
     return RasterTarget(
         pixels,
         None,
@@ -40,7 +39,7 @@ def test_bitmap_paint_agrees_with_declared_cell_geometry(alpha, offset, rows):
                     ),
                     color,
                 )
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)
     assert not actual[8:, :, 3].any()
 
 
@@ -72,4 +71,4 @@ def test_inferred_bitmap_dimensions_match_explicit_dimensions():
     explicit.draw_glyph_bitmap(
         (2, 4, 8, 8), rows, (200, 30, 50, 255), bitmap_width=3, bitmap_height=2
     )
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)

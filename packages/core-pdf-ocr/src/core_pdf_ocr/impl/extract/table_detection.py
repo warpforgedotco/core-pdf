@@ -8,8 +8,8 @@ from typing import cast
 
 import numpy
 
+from core_pdf.impl import extract_contracts
 from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
-from core_pdf.impl.extract_contracts import PageAnalysis as NativePageAnalysis
 from core_pdf.impl.extract_table_core import TableCandidate, TableContext
 from core_pdf.impl.extract_table_detection import TableDetector
 from core_pdf.impl.geometry import bbox_union, finite_rect, overlap_ratio_min_exact
@@ -23,7 +23,7 @@ CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$"
 CHART_DUPLICATE_OVERLAP = 0.5
 
 
-def vector_text_untrusted(capture: NativePageAnalysis) -> bool:
+def vector_text_untrusted(capture: extract_contracts.PageAnalysis) -> bool:
     evidence = cast(PageEvidence, capture.evidence)
     return not (evidence.vector_text_trusted or evidence.stroked_vector_text.trusted)
 

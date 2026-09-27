@@ -1,16 +1,15 @@
-import numpy as np
+import numpy
 import pytest
 
-from core_pdf.impl import render_fills
+from core_pdf.impl import render_target
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
-from core_pdf.impl.render_clipping import ClipState
-from core_pdf.impl.render_grid import DeviceGrid
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 from core_pdf.impl.render_target import RasterTarget
 
 
 def make_target(clip_kind):
     pixels = bytearray(12 * 12 * 4)
-    view = np.frombuffer(pixels, dtype=np.uint8).reshape(12, 12, 4)
+    view = numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(12, 12, 4)
     clip = ClipState(DeviceGrid(0, 0, 12, 1, 12, 12))
     if clip_kind != "none":
         points: list[tuple[float, float]] = (
@@ -44,17 +43,17 @@ def in_clip(x, y, kind):
 def test_circle_routes_follow_pixel_center_geometry(
     monkeypatch, threshold, clip_kind, alpha, cx, cy, radius
 ):
-    monkeypatch.setattr(render_fills, "RASTER_CIRCLE_MIN_PIXEL_AREA", threshold)
+    monkeypatch.setattr(render_target, "RASTER_CIRCLE_MIN_PIXEL_AREA", threshold)
     target, actual = make_target(clip_kind)
     color = (200, 30, 50, alpha)
     target.fill_circle(cx, cy, radius, color)
-    expected = np.zeros_like(actual)
+    expected = numpy.zeros_like(actual)
     for row in range(12):
         for column in range(12):
             x, y = column + 0.5, 11.5 - row
             if (x - cx) ** 2 + (y - cy) ** 2 <= radius**2 and in_clip(x, y, clip_kind):
                 expected[row, column] = color
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize("clip_kind", ["none", "rect", "triangle"])
@@ -66,11 +65,11 @@ def test_integer_rectangles_respect_clips_and_blend_into_transparent_backdrop(
     target, actual = make_target(clip_kind)
     color = (200, 30, 50, alpha)
     target.fill_rect((1, 1, 9, 9), color, mode)
-    expected = np.zeros_like(actual)
+    expected = numpy.zeros_like(actual)
     if alpha:
         for row in range(12):
             for column in range(12):
                 x, y = column + 0.5, 11.5 - row
                 if 1 <= x < 9 and 1 <= y < 9 and in_clip(x, y, clip_kind):
                     expected[row, column] = color
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)

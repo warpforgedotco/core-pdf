@@ -6,9 +6,9 @@ import contextlib
 from collections.abc import Mapping
 from typing import Any
 
-from core_adobe_fonts.afm.core14 import FONT_DATA as PDF_FONT_DATA
+from core_adobe_fonts.afm import core14
 from core_adobe_fonts.afm.core14 import Core14FontMetrics
-from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
+from core_pdf.impl.fonts_cmap import CMapDecoder
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.fonts_widths import (
     effective_descriptor,
@@ -20,8 +20,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
     require_pdf_number,
 )
-from core_pdf_spec.s_09_fonts.metrics import glyph_advance_vector as pdf_glyph_advance_vector
-from core_pdf_spec.s_09_fonts.metrics import standard_14_widths as pdf_standard_14_widths
+from core_pdf_spec.s_09_fonts import metrics
 
 LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
 
@@ -35,7 +34,7 @@ def standard_14_widths(
         else None
     )
     canonical = METRIC_RECORD_NAMES.get(base_font_name, base_font_name) if base_font_name else None
-    return pdf_standard_14_widths(canonical, literal)
+    return metrics.standard_14_widths(canonical, literal)
 
 
 def parse_font_metrics(
@@ -126,7 +125,7 @@ METRIC_RECORD_NAMES: dict[str, str] = {
     "ZapfDingbats": "ZapfDingbats",
 }
 FONT_DATA: dict[str, Core14FontMetrics] = {
-    name: PDF_FONT_DATA[record] for name, record in METRIC_RECORD_NAMES.items()
+    name: core14.FONT_DATA[record] for name, record in METRIC_RECORD_NAMES.items()
 }
 
 
@@ -240,7 +239,7 @@ class FontMetricsModel:
         encoded_space: bool,
     ) -> tuple[float, float]:
         width = self.vertical_glyph_metric(code)[0] if self.is_vertical else self.glyph_width(code)
-        return pdf_glyph_advance_vector(
+        return metrics.glyph_advance_vector(
             width,
             vertical=self.is_vertical,
             font_size=font_size,

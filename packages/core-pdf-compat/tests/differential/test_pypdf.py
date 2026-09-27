@@ -11,7 +11,7 @@ pytestmark = pytest.mark.compat_differential
 
 @pytest.mark.parametrize("pdf_path", differential_pdfs("pypdf"), ids=pdf_id)
 def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
-    from core_pdf_compat import pypdf as compat_pypdf
+    import core_pdf_compat.pypdf
 
     def snapshot(reader_type: Any) -> tuple[tuple[str, tuple[float, ...], int], ...]:
         with reader_type(pdf_path, strict=False) as reader:
@@ -20,7 +20,7 @@ def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
             )
 
     pair = call_pair(
-        lambda: snapshot(real_pypdf.PdfReader), lambda: snapshot(compat_pypdf.PdfReader)
+        lambda: snapshot(real_pypdf.PdfReader), lambda: snapshot(core_pdf_compat.pypdf.PdfReader)
     )
     if pair is not None:
         assert pair[1] == pair[0]

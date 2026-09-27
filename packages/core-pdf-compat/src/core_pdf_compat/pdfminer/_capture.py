@@ -3,18 +3,18 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import core_pdf_spec.s_07_syntax.lexer
 from core_pdf import PdfPage
 from core_pdf.impl.capture_glyphs import GlyphPaint
 from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
 from core_pdf.impl.capture_recording import TextState
 from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.exceptions import PdfError, PdfParseError
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.types import PdfString, Rectangle
 from core_pdf_spec.s_07_content.operations import ContentOperands
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.s_07_syntax.types import PdfDict
 
 from ._fonts import (
@@ -53,7 +53,7 @@ class PdfminerContentLexer(PdfLexer):
 class PdfminerRecovery(CaptureRecovery):
     def resume(
         self,
-        lexer: SyntaxLexer,
+        lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer,
         error: PdfParseError,
         kind: str,
         start: int,

@@ -12,7 +12,7 @@ from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
 from core_pdf.impl.capture_program import PageProgram
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.fonts_cmap import ToUnicodeCMap
 from core_pdf.impl.geometry import (
     bbox_intersects,
     flip_rect_vertical,

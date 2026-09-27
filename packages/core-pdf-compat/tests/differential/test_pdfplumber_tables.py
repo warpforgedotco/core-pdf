@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 reference = pytest.importorskip("pdfplumber")
 pytestmark = pytest.mark.compat_differential
@@ -45,7 +45,7 @@ def test_explicit_grid_has_one_row_per_horizontal_interval(
     }
     source = blank_page_pdf if content == "blank" else text_pdf_bytes
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(source)) as pdf:
             page = pdf.pages[0]
             tables = page.find_tables(settings)
@@ -67,7 +67,7 @@ def test_default_line_strategy_does_not_invent_tables_from_prose(
     content: str,
 ) -> None:
     source = blank_page_pdf if content == "blank" else text_pdf_bytes
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(source)) as pdf:
             page = pdf.pages[0]
             assert page.find_tables() == []
@@ -89,12 +89,12 @@ def test_default_line_strategy_does_not_invent_tables_from_prose(
     ],
 )
 def test_table_settings_resolve_defaults_and_axis_fallbacks(settings: Any) -> None:
-    from pdfplumber.table import TableSettings as ReferenceSettings
+    import pdfplumber.table
 
     from core_pdf_compat.pdfplumber.table import TableSettings
 
     actual = TableSettings.resolve(settings)
-    expected = ReferenceSettings.resolve(settings)
+    expected = pdfplumber.table.TableSettings.resolve(settings)
     assert actual.__dict__ == expected.__dict__
     assert TableSettings.resolve(actual) is actual
 
@@ -112,18 +112,24 @@ def test_table_settings_resolve_defaults_and_axis_fallbacks(settings: Any) -> No
     ],
 )
 def test_table_settings_reject_negative_measurements(name: str) -> None:
-    from pdfplumber.table import TableSettings as ReferenceSettings
+    import pdfplumber.table
 
-    for settings_class in (ReferenceSettings, compat.TableSettings):
+    for settings_class in (
+        pdfplumber.table.TableSettings,
+        core_pdf_compat.pdfplumber.TableSettings,
+    ):
         with pytest.raises(ValueError):
             settings_class.resolve({name: -1})
 
 
 @pytest.mark.parametrize("settings", ["lines", 1, []])
 def test_table_settings_reject_invalid_shapes(settings: Any) -> None:
-    from pdfplumber.table import TableSettings as ReferenceSettings
+    import pdfplumber.table
 
-    for settings_class in (ReferenceSettings, compat.TableSettings):
+    for settings_class in (
+        pdfplumber.table.TableSettings,
+        core_pdf_compat.pdfplumber.TableSettings,
+    ):
         with pytest.raises(ValueError):
             settings_class.resolve(settings)
 
@@ -144,11 +150,13 @@ def test_explicit_table_strategy_validates_both_axes_at_finding_time(
     blank_page_pdf: bytes,
     settings: dict[str, Any],
 ) -> None:
-    from pdfplumber.table import TableSettings as ReferenceSettings
+    import pdfplumber.table
 
-    assert ReferenceSettings.resolve(settings).vertical_strategy == "explicit"
-    assert compat.TableSettings.resolve(settings).vertical_strategy == "explicit"
-    for library in (reference, compat):
+    assert pdfplumber.table.TableSettings.resolve(settings).vertical_strategy == "explicit"
+    assert (
+        core_pdf_compat.pdfplumber.TableSettings.resolve(settings).vertical_strategy == "explicit"
+    )
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(blank_page_pdf)) as pdf:
             missing_lines = any(
                 settings.get(f"{axis}_strategy") == "explicit"
@@ -163,9 +171,12 @@ def test_explicit_table_strategy_validates_both_axes_at_finding_time(
 
 @pytest.mark.parametrize("settings", [{"strategy": "lines"}, {"unknown": True}])
 def test_unknown_table_settings_are_rejected_as_arguments(settings: dict[str, Any]) -> None:
-    from pdfplumber.table import TableSettings as ReferenceSettings
+    import pdfplumber.table
 
-    for settings_class in (ReferenceSettings, compat.TableSettings):
+    for settings_class in (
+        pdfplumber.table.TableSettings,
+        core_pdf_compat.pdfplumber.TableSettings,
+    ):
         with pytest.raises(TypeError):
             settings_class.resolve(settings)
 
@@ -190,7 +201,7 @@ def test_tablefinder_merges_fragments_before_minimum_length_filter(blank_page_pd
         for start, end in [(10, 13), (14, 17), (18, 21)]
     ]
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(blank_page_pdf)) as pdf:
             page = pdf.pages[0]
             page._objects = {"line": deepcopy(lines)}

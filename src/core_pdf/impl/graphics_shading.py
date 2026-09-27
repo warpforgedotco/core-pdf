@@ -17,7 +17,7 @@ from core_pdf.impl.graphics_functions import (
     compile_pdf_function,
     number_array,
 )
-from core_pdf.impl.pdf_names import lenient_int
+from core_pdf.impl.pdf_values import lenient_int
 from core_pdf.impl.types import GeneratedRecord
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.color_spec import ColorSpace

@@ -5,7 +5,7 @@ import numpy
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl import render_display as display
+from core_pdf.impl import render_display
 from core_pdf.impl.render_display import plain_fill_members_box
 from core_pdf.impl.render_model import DisplayItem, DisplayListItem, PathPaintItem, PathPaintKind
 from core_pdf.impl.render_target import RasterTarget
@@ -98,7 +98,7 @@ def test_a_region_set_up_group_renders_as_a_page_sized_one(
     bounded = rendered()
     assert regions
     assert all(region is not None for region in regions)
-    monkeypatch.setattr(display, "plain_fill_members_box", lambda *_: (False, None))
+    monkeypatch.setattr(render_display, "plain_fill_members_box", lambda *_: (False, None))
     assert rendered() == bounded
 
 

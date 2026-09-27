@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 reference = pytest.importorskip("pdfplumber")
 pytestmark = pytest.mark.compat_differential
@@ -48,7 +48,7 @@ def test_word_options_match_reference_and_preserve_source_identity(
         "return_chars": True,
     }
     expected = reference.utils.extract_words(chars, **options)
-    actual = compat.extract_words(chars, **options)
+    actual = core_pdf_compat.pdfplumber.extract_words(chars, **options)
     assert actual == expected
     assert chars == before
     assert all(any(char is source for source in chars) for word in actual for char in word["chars"])
@@ -66,12 +66,14 @@ def test_word_options_match_reference_and_preserve_source_identity(
 )
 def test_word_group_boundaries_match_reference(upright, options):
     chars = make_chars(upright)
-    assert compat.extract_words(chars, **options) == reference.utils.extract_words(chars, **options)
+    assert core_pdf_compat.pdfplumber.extract_words(
+        chars, **options
+    ) == reference.utils.extract_words(chars, **options)
 
 
 @pytest.mark.parametrize("upright", [False, True])
 def test_page_word_projection_matches_utils_with_controlled_characters(text_pdf_bytes, upright):
-    with compat.open(text_pdf_bytes) as pdf:
+    with core_pdf_compat.pdfplumber.open(text_pdf_bytes) as pdf:
         page = pdf.pages[0]
         chars: list[dict[str, Any]] = make_chars(upright)
         page._objects = {"char": chars}
@@ -81,7 +83,7 @@ def test_page_word_projection_matches_utils_with_controlled_characters(text_pdf_
 
 
 def test_empty_word_input_is_empty_in_both_implementations():
-    assert compat.extract_words([]) == reference.utils.extract_words([]) == []
+    assert core_pdf_compat.pdfplumber.extract_words([]) == reference.utils.extract_words([]) == []
 
 
 @pytest.mark.parametrize("upright", [False, True])
@@ -97,4 +99,6 @@ def test_reverse_reading_directions_match_reference(upright, reverse_input, spli
         "split_at_punctuation": split,
         "return_chars": True,
     }
-    assert compat.extract_words(chars, **options) == reference.utils.extract_words(chars, **options)
+    assert core_pdf_compat.pdfplumber.extract_words(
+        chars, **options
+    ) == reference.utils.extract_words(chars, **options)

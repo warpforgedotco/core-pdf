@@ -7,7 +7,7 @@ from core_pdf.impl.graphics_color_spec import (
     parse_color_space,
     raw_color_space_paints,
 )
-from core_pdf.impl.graphics_image_header import ImageHeader
+from core_pdf.impl.graphics_image_samples import ImageHeader
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color_spec import ColorSpace, DeviceNAttributes
 

@@ -1,4 +1,4 @@
-import numpy as np
+import numpy
 import pytest
 
 from core_pdf.impl.graphics_color import color_operands_to_srgb, convert_image_data
@@ -27,14 +27,14 @@ from core_pdf.impl.graphics_image_samples import (
 def test_equivalent_eight_and_sixteen_bit_components(space, reverse_decode):
     spec = parse_color_space(space)
     count = len(spec.component_ranges)
-    samples = np.tile(np.array([0, 64, 128, 255], dtype=np.uint8)[:, None], (1, count))
+    samples = numpy.tile(numpy.array([0, 64, 128, 255], dtype=numpy.uint8)[:, None], (1, count))
     dictionary = {"ColorSpace": space, "Width": 4, "Height": 1, "BitsPerComponent": 8}
     if reverse_decode:
         dictionary["Decode"] = [n for low, high in spec.component_ranges for n in (high, low)]
     actual = convert_image_data(samples.reshape(-1), dictionary)
-    high = convert_integer_samples(samples.astype(np.uint16) * 257, dictionary)
+    high = convert_integer_samples(samples.astype(numpy.uint16) * 257, dictionary)
     assert actual is not None
-    np.testing.assert_array_equal(np.asarray(actual).reshape(4, -1), high)
+    numpy.testing.assert_array_equal(numpy.asarray(actual).reshape(4, -1), high)
 
 
 @pytest.mark.parametrize("function", [None, {}, lambda t: (t, t), lambda t: float("nan")])
@@ -56,7 +56,7 @@ def test_unusable_tint_has_same_subtractive_recovery_everywhere(function, tint):
                 "Decode": [tint, tint],
             },
         )
-        np.testing.assert_array_equal(image, [expected] * 3)
+        numpy.testing.assert_array_equal(image, [expected] * 3)
 
 
 @pytest.mark.parametrize("bits", [1, 2, 4, 8, 16])
@@ -73,7 +73,7 @@ def test_indexed_decode_selects_palette_before_alternate_conversion(bits):
             "Decode": [1, 0],
         },
     )
-    np.testing.assert_array_equal(actual, [0, 255, 0])
+    numpy.testing.assert_array_equal(actual, [0, 255, 0])
     assert color_operands_to_srgb(parse_color_space(space), [1]) == (0, 1, 0)
 
 
@@ -97,7 +97,7 @@ def test_device_passthrough_preserves_buffer_identity(space, raw):
 
 def test_colour_key_mask_uses_low_sixteen_bits_before_decode():
     result = convert_integer_samples(
-        np.array([[256], [257]], dtype=np.uint16),
+        numpy.array([[256], [257]], dtype=numpy.uint16),
         {
             "ColorSpace": "DeviceGray",
             "Decode": [1, 0],
@@ -110,7 +110,7 @@ def test_colour_key_mask_uses_low_sixteen_bits_before_decode():
 
 def test_soft_mask_precedes_colour_key_mask():
     result = convert_integer_samples(
-        np.array([[0]], dtype=np.uint16),
+        numpy.array([[0]], dtype=numpy.uint16),
         {
             "ColorSpace": "DeviceGray",
             "Mask": [0, 0],
@@ -123,62 +123,62 @@ def test_soft_mask_precedes_colour_key_mask():
 @pytest.mark.parametrize("fallback", [False, True])
 @pytest.mark.parametrize("inks", [(0, 0, 0, 0), (19, 64, 201, 128), (255, 255, 255, 255)])
 def test_device_cmyk_vector_and_image_share_profile_and_fallback(monkeypatch, fallback, inks):
-    from core_pdf.impl import graphics_device_profiles as device_profiles
+    from core_pdf.impl import graphics_device_profiles
 
-    device_profiles.cmyk_byte_tuple_to_srgb.cache_clear()
+    graphics_device_profiles.cmyk_byte_tuple_to_srgb.cache_clear()
     try:
         if fallback:
-            monkeypatch.setattr(device_profiles, "default_cmyk_transform", lambda: None)
-        vector = device_profiles.cmyk_floats_to_srgb(*(ink / 255 for ink in inks))
+            monkeypatch.setattr(graphics_device_profiles, "default_cmyk_transform", lambda: None)
+        vector = graphics_device_profiles.cmyk_floats_to_srgb(*(ink / 255 for ink in inks))
         image = convert_integer_samples(
-            np.array([inks], dtype=np.uint16) * 257, {"ColorSpace": "DeviceCMYK"}
+            numpy.array([inks], dtype=numpy.uint16) * 257, {"ColorSpace": "DeviceCMYK"}
         )
-        np.testing.assert_array_equal(image[0], vector)
+        numpy.testing.assert_array_equal(image[0], vector)
         if fallback:
-            expected = np.rint(255 * (1 - np.array(inks[:3]) / 255) * (1 - inks[3] / 255))
-            np.testing.assert_array_equal(vector, expected)
+            expected = numpy.rint(255 * (1 - numpy.array(inks[:3]) / 255) * (1 - inks[3] / 255))
+            numpy.testing.assert_array_equal(vector, expected)
     finally:
-        device_profiles.cmyk_byte_tuple_to_srgb.cache_clear()
+        graphics_device_profiles.cmyk_byte_tuple_to_srgb.cache_clear()
 
 
 @pytest.mark.parametrize("components", [1, 2, 3, 4])
 @pytest.mark.parametrize("distinct_values", [1, 2, 3, 256])
 @pytest.mark.parametrize("rows", [0, 1, 2, 17, 1000])
 def test_distinct_component_rows_matches_the_row_sort(rows, distinct_values, components):
-    rng = np.random.default_rng(17)
-    values = rng.integers(0, distinct_values, (rows, components)).astype(np.float64)
-    expected_distinct, expected_inverse = np.unique(values, axis=0, return_inverse=True)
+    rng = numpy.random.default_rng(17)
+    values = rng.integers(0, distinct_values, (rows, components)).astype(numpy.float64)
+    expected_distinct, expected_inverse = numpy.unique(values, axis=0, return_inverse=True)
     distinct, inverse = distinct_component_rows(values)
     assert distinct.shape == expected_distinct.shape
-    assert np.array_equal(distinct, expected_distinct)
+    assert numpy.array_equal(distinct, expected_distinct)
     assert inverse.shape == expected_inverse.shape
-    assert np.array_equal(inverse, expected_inverse)
-    assert np.array_equal(distinct[inverse], values)
+    assert numpy.array_equal(inverse, expected_inverse)
+    assert numpy.array_equal(distinct[inverse], values)
 
 
 def test_distinct_component_rows_keeps_the_row_sort_for_wide_spaces():
-    values = np.array([[1.0, 2.0], [1.0, 1.0], [1.0, 2.0]])
+    values = numpy.array([[1.0, 2.0], [1.0, 1.0], [1.0, 2.0]])
     distinct, inverse = distinct_component_rows(values)
-    assert np.array_equal(distinct, np.array([[1.0, 1.0], [1.0, 2.0]]))
-    assert np.array_equal(inverse, np.array([1, 0, 1]))
+    assert numpy.array_equal(distinct, numpy.array([[1.0, 1.0], [1.0, 2.0]]))
+    assert numpy.array_equal(inverse, numpy.array([1, 0, 1]))
 
 
 def test_distinct_component_rows_handles_signed_zero_and_extremes():
-    values = np.array([[-0.0], [0.0], [1e308], [1e-308], [-0.0]])
-    expected_distinct, expected_inverse = np.unique(values, axis=0, return_inverse=True)
+    values = numpy.array([[-0.0], [0.0], [1e308], [1e-308], [-0.0]])
+    expected_distinct, expected_inverse = numpy.unique(values, axis=0, return_inverse=True)
     distinct, inverse = distinct_component_rows(values)
-    assert np.array_equal(distinct, expected_distinct)
-    assert np.array_equal(inverse, expected_inverse)
+    assert numpy.array_equal(distinct, expected_distinct)
+    assert numpy.array_equal(inverse, expected_inverse)
 
 
 def test_distinct_component_rows_collapses_nan_rows():
-    values = np.array([[np.nan], [1.0], [np.nan], [2.0]])
+    values = numpy.array([[numpy.nan], [1.0], [numpy.nan], [2.0]])
     distinct, inverse = distinct_component_rows(values)
     assert distinct.shape == (3, 1)
-    assert np.array_equal(inverse, np.array([2, 0, 2, 1]))
-    assert np.isnan(distinct[2, 0])
-    assert np.isnan(distinct[inverse][0, 0])
-    assert np.isnan(distinct[inverse][2, 0])
+    assert numpy.array_equal(inverse, numpy.array([2, 0, 2, 1]))
+    assert numpy.isnan(distinct[2, 0])
+    assert numpy.isnan(distinct[inverse][0, 0])
+    assert numpy.isnan(distinct[inverse][2, 0])
 
 
 @pytest.mark.parametrize(
@@ -199,8 +199,8 @@ def test_one_component_images_convert_by_code_exactly_as_by_pixel(space, bits, r
     spec = parse_color_space(space)
     maximum = (1 << bits) - 1
     top = 3 if spec.kind == "Indexed" else maximum
-    rng = np.random.default_rng(bits)
-    samples = rng.integers(0, top + 1, size=maximum + 2 + 5000, dtype=np.uint16)
+    rng = numpy.random.default_rng(bits)
+    samples = rng.integers(0, top + 1, size=maximum + 2 + 5000, dtype=numpy.uint16)
     dictionary = {"ColorSpace": space, "BitsPerComponent": bits}
     pairs = ((0.0, float(maximum)),) if spec.kind == "Indexed" else spec.component_ranges
     if reverse_decode and spec.kind != "Indexed":
@@ -210,14 +210,14 @@ def test_one_component_images_convert_by_code_exactly_as_by_pixel(space, bits, r
         decode_sample_values(samples.reshape(-1, 1), pairs, maximum), spec
     )
     actual = convert_integer_samples(samples, dictionary, bits_per_component=bits)
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)
 
 
 def test_a_sample_above_its_bit_depth_still_decodes_by_code() -> None:
     from core_pdf.impl.graphics_image_samples import convert_components
     from core_pdf_spec.s_08_graphics.color_kernels import decode_sample_values
 
-    samples = np.full(300, 3, dtype=np.uint16)
+    samples = numpy.full(300, 3, dtype=numpy.uint16)
     samples[::7] = 900
     dictionary = {"ColorSpace": "DeviceGray", "BitsPerComponent": 8}
     expected = convert_components(
@@ -225,7 +225,7 @@ def test_a_sample_above_its_bit_depth_still_decodes_by_code() -> None:
         parse_color_space("DeviceGray"),
     )
     actual = convert_integer_samples(samples, dictionary, bits_per_component=8)
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize(
@@ -246,12 +246,12 @@ def test_multi_component_images_convert_by_row_exactly_as_by_pixel(space, palett
 
     spec = parse_color_space(space)
     count = len(spec.component_ranges)
-    rng = np.random.default_rng(count * 7 + (palette or 1))
+    rng = numpy.random.default_rng(count * 7 + (palette or 1))
     rows = (1 << 16) + 4000
     if palette is None:
-        samples = rng.integers(0, 256, size=(rows, count), dtype=np.uint16)
+        samples = rng.integers(0, 256, size=(rows, count), dtype=numpy.uint16)
     else:
-        colours = rng.integers(0, 256, size=(palette, count), dtype=np.uint16)
+        colours = rng.integers(0, 256, size=(palette, count), dtype=numpy.uint16)
         samples = colours[rng.integers(0, palette, size=rows)]
     dictionary = {"ColorSpace": space, "BitsPerComponent": 8}
     pairs = spec.component_ranges
@@ -260,4 +260,4 @@ def test_multi_component_images_convert_by_row_exactly_as_by_pixel(space, palett
         dictionary["Decode"] = [n for low, high in pairs for n in (low, high)]
     expected = convert_components(decode_sample_values(samples, pairs, 255), spec)
     actual = convert_integer_samples(samples, dictionary, bits_per_component=8)
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)

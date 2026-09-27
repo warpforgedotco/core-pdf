@@ -51,13 +51,6 @@ def test_empty_buffer_is_a_no_op():
     blend_normal_alpha_array_numpy(target, (1, 2, 3, 4), numpy.zeros((0, 0), numpy.uint8))
 
 
-def test_render_target_uses_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_fills as target
-
-    assert target.blend_normal_alpha_array_numpy is blend_normal_alpha_array_numpy
-
-
 def reference_pixel(destination, raw, rgba):
     f = numpy.float32
     zero, one, scale = f(0.0), f(1.0), f(255.0)

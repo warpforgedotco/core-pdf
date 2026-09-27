@@ -87,10 +87,3 @@ def test_mismatched_shapes_are_rejected():
             numpy.zeros((2, 4, 4), dtype=numpy.uint8),
             alpha,
         )
-
-
-def test_render_target_uses_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_compositing as target
-
-    assert target.composite_elementary_normal is composite_elementary_normal

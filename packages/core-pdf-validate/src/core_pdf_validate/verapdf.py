@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import ClassVar, Literal
 from xml.etree import ElementTree
 
-from defusedxml import ElementTree as SafeElementTree
+import defusedxml.ElementTree
 from defusedxml.common import DefusedXmlException
 
 from core_pdf_validate.models import (
@@ -125,7 +125,7 @@ def parse_report(
         )
 
     try:
-        root = SafeElementTree.fromstring(raw, forbid_dtd=True)
+        root = defusedxml.ElementTree.fromstring(raw, forbid_dtd=True)
         if root.tag != "report":
             raise ValueError("Unknown XML report root or namespace")
         releases = one(root, "buildInformation").findall("releaseDetails")

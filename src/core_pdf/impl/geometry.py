@@ -10,6 +10,10 @@ from core_pdf.impl.types import Rectangle
 from core_pdf_spec.s_08_graphics.geometry import points_bbox, transform_bbox
 
 
+def clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
 def float_value(value: object) -> float:
     if isinstance(value, (int, float, str, bytes, bytearray)):
         return float(value)

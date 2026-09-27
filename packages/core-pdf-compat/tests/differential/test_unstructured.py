@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from core_pdf_compat import unstructured as compat_unstructured
+import core_pdf_compat.unstructured
 from core_pdf_compat.unstructured import _classification
 
 from .support import call_pair, differential_pdfs, pdf_id
@@ -28,7 +28,7 @@ def require_nlp_pipelines() -> None:
 def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
     pair = call_pair(
         lambda: real_partition(filename=str(pdf_path), strategy="fast"),
-        lambda: compat_unstructured.partition_pdf(pdf_path),
+        lambda: core_pdf_compat.unstructured.partition_pdf(pdf_path),
     )
     if pair is None:
         return
@@ -40,4 +40,4 @@ def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
     assert restored == actual
     for original, copy in zip(actual, restored, strict=True):
         assert type(copy) is type(original)
-        assert type(copy).__module__ == compat_unstructured.__name__
+        assert type(copy).__module__ == core_pdf_compat.unstructured.__name__

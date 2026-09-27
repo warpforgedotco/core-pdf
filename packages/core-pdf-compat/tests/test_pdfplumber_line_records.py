@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 
 @pytest.mark.parametrize("return_chars", [False, True])
@@ -21,7 +21,7 @@ def test_default_line_text_and_character_projection(characters, expected, return
         {"text": text, "x0": x, "x1": x + 5, "top": 10, "bottom": 20, "doctop": 110, "size": 10}
         for text, x in characters
     ]
-    lines = compat._lines(reversed(chars), return_chars=return_chars)
+    lines = core_pdf_compat.pdfplumber._lines(reversed(chars), return_chars=return_chars)
     assert len(lines) == 1
     assert lines[0]["text"] == expected
     assert (lines[0]["x0"], lines[0]["top"], lines[0]["x1"], lines[0]["bottom"]) == (
@@ -61,15 +61,15 @@ def test_line_grouping_thresholds_and_blank_only_groups(size, tops, expected):
         }
         for text, x, top in [("A", 0, tops[0]), ("B", 5, tops[1]), (" ", 0, 100)]
     ]
-    assert [line["text"] for line in compat._lines(chars)] == expected
-    assert compat._lines([]) == []
-    assert compat._lines([chars[-1]]) == []
+    assert [line["text"] for line in core_pdf_compat.pdfplumber._lines(chars)] == expected
+    assert core_pdf_compat.pdfplumber._lines([]) == []
+    assert core_pdf_compat.pdfplumber._lines([chars[-1]]) == []
 
 
 def test_closing_a_page_drops_the_documents_merged_objects(text_pdf_bytes) -> None:
     from io import BytesIO
 
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         merged = pdf.objects
         assert merged["char"]
         pdf.pages[0].close()

@@ -4,9 +4,8 @@ from typing import Any
 
 import pytest
 
-import core_pdf.impl.capture_page as capture_page_module
 from core_pdf import PdfDocument
-from core_pdf.impl import extract_selection as selection
+from core_pdf.impl import capture_page, extract_selection
 from core_pdf.impl.extract_pipeline import PageExtraction
 from tests.src.core_pdf.pdf_bytes import MULTI_PAGE_COUNT, multi_page_pdf
 
@@ -48,12 +47,12 @@ def test_a_page_capture_state_is_freed_without_the_cycle_collector(
 ) -> None:
     states: list[weakref.ref[Any]] = []
 
-    class TrackedTextState(capture_page_module.TextState):
+    class TrackedTextState(capture_page.TextState):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             states.append(weakref.ref(self))
 
-    monkeypatch.setattr(capture_page_module, "TextState", TrackedTextState)
+    monkeypatch.setattr(capture_page, "TextState", TrackedTextState)
     gc.disable()
     try:
         with PdfDocument(multi_page_pdf(1)) as document:
@@ -79,7 +78,7 @@ def test_document_extraction_assembles_each_page_before_capturing_the_next(
             events.append(("assemble", int(self.page.page_number)))
             return super().assembled_page(context)
 
-    monkeypatch.setattr(selection, "PageExtraction", RecordingExtraction)
+    monkeypatch.setattr(extract_selection, "PageExtraction", RecordingExtraction)
     with PdfDocument(multi_page_pdf()) as document:
         result = document.extract()
     assert events == [
@@ -93,17 +92,17 @@ def test_document_extraction_assembles_each_page_before_capturing_the_next(
 def test_a_tagged_document_builds_its_structure_tree_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import core_pdf.impl.document_document as document_module
+    from core_pdf.impl import document_document
 
     built: list[int] = []
-    original = document_module.StructureTree
+    original = document_document.StructureTree
 
     class CountedTree(original):  # type: ignore[misc, valid-type]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             built.append(1)
             super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr(document_module, "StructureTree", CountedTree)
+    monkeypatch.setattr(document_document, "StructureTree", CountedTree)
     with PdfDocument(multi_page_pdf(tagged=True)) as document:
         texts = [page.extract().text.strip() for page in document.pages]
         assert document.structure is document.structure

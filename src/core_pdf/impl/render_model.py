@@ -12,10 +12,9 @@ import numpy
 
 from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.capture_records import CapturedPath, CapturedSoftMask, PatternPaint
-from core_pdf.impl.geometry import rect_tuple
+from core_pdf.impl.geometry import clamp01, rect_tuple
 from core_pdf.impl.render_blend import color_rgba, declared_blend, scale_rgba_alpha
 from core_pdf.impl.render_paths import stroke_half_width, translate_rect
-from core_pdf.impl.scalars import clamp01
 from core_pdf.impl.types import (
     GeneratedRecord,
     RecordType,

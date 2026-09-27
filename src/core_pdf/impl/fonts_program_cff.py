@@ -4,16 +4,13 @@ from collections.abc import Callable
 from math import isfinite
 from typing import Any
 
+from core_adobe_fonts.cff import font
 from core_adobe_fonts.cff.font import (
     CFF_EXPERT_ENCODING_CODES,
     CFF_STANDARD_STRING_COUNT,
     DEFAULT_CFF_FONT_MATRIX,
     STANDARD_GLYPH_SIDS,
     CffFontMatrix,
-)
-from core_adobe_fonts.cff.font import CFFFont as PdfCFFFont
-from core_adobe_fonts.cff.font import (
-    cff_font_matrix as pdf_cff_font_matrix,
 )
 from core_pdf._vendor.fontTools.cffLib import (
     cffExpertSubsetStrings,
@@ -54,12 +51,12 @@ def cff_font_matrix(
     font_dict: dict[int | tuple[int, int], list[float]],
 ) -> CffFontMatrix | None:
     try:
-        return pdf_cff_font_matrix(font_dict)
+        return font.cff_font_matrix(font_dict)
     except TypeError, ValueError:
         return None
 
 
-class CFFFont(PdfCFFFont, GlyphProgram):
+class CFFFont(font.CFFFont, GlyphProgram):
     __slots__ = ()
 
     def read_header(self) -> int:

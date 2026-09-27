@@ -1,8 +1,8 @@
 import pytest
 
+import core_pdf_spec.s_07_syntax.lexer
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 
 HEADERS = [
     b"12 0 obj<</A 1>>",
@@ -24,7 +24,11 @@ HEADERS = [
 def read(data: bytes, *, words: bool) -> object:
     lexer = PdfLexer(data)
     try:
-        header = SyntaxLexer.read_indirect_header(lexer) if words else lexer.read_indirect_header()
+        header = (
+            core_pdf_spec.s_07_syntax.lexer.PdfLexer.read_indirect_header(lexer)
+            if words
+            else lexer.read_indirect_header()
+        )
     except (PdfParseError, ValueError) as error:
         return f"raised {type(error).__name__}: {error}"
     finally:

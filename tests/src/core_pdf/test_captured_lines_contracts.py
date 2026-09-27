@@ -6,8 +6,8 @@ import pickle
 
 import pytest
 
-from core_pdf.impl.capture_path_sink import StrokeLineRows, flatten_path
 from core_pdf.impl.capture_program import CapturedProgram, PageProgram
+from core_pdf.impl.capture_recording import StrokeLineRows, flatten_path
 from core_pdf.impl.capture_records import (
     EMPTY_LINES,
     CapturedLine,

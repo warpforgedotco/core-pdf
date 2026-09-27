@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core_pdf.impl.recovery_text_strings import decode_pdf_text_string
+from core_pdf.impl.pdf_values import decode_pdf_text_string
 from core_pdf.impl.types import PdfName, PdfString, RecordType, Rectangle, ReplaceFields
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject

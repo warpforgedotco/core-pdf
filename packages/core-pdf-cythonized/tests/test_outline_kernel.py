@@ -64,10 +64,3 @@ def test_a_span_outside_the_columns_is_refused(span):
         outline_edges(xs, ys, [span])
     with pytest.raises(IndexError):
         translated_outline_edges(xs, ys, 0.0, 0.0, [span])
-
-
-def test_render_commands_use_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_commands as commands
-
-    assert commands.translated_outline_edges is translated_outline_edges

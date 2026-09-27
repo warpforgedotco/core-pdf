@@ -12,11 +12,12 @@ import numpy
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer, matches_keyword_with_one_substitution
 from core_pdf.impl.recovery_objects import PdfObjectStream
 from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.types import PdfByteBuffer
+from core_pdf_spec.s_07_syntax import xref
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import (
@@ -30,7 +31,6 @@ from core_pdf_spec.s_07_syntax.xref import (
     key_for,
     new_xref_entry,
 )
-from core_pdf_spec.s_07_syntax.xref import XRefScanner as SyntaxXRefScanner
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
@@ -153,14 +153,14 @@ def canonical_xref_entries(
     return canonical_table_entries(data, pos, start_obj, count)
 
 
-class XRefScanner(SyntaxXRefScanner):
+class XRefScanner(xref.XRefScanner):
     mode: ClassVar[RecoveryMode] = RecoveryMode.TOLERANT
 
     @staticmethod
     def skip_ws(
         data: PdfByteBuffer, pos: int, *, semantic_context: SemanticContext | None = None
     ) -> int:
-        return SyntaxXRefScanner.skip_ws(data, pos)
+        return xref.XRefScanner.skip_ws(data, pos)
 
     @staticmethod
     def skip_ignored(
@@ -170,11 +170,11 @@ class XRefScanner(SyntaxXRefScanner):
         *,
         semantic_context: SemanticContext | None = None,
     ) -> int:
-        return SyntaxXRefScanner.skip_ignored(data, pos, stop)
+        return xref.XRefScanner.skip_ignored(data, pos, stop)
 
     @staticmethod
     def read_line(data: PdfByteBuffer, pos: int) -> tuple[bytes, int]:
-        line, next_pos = SyntaxXRefScanner.read_line(data, pos)
+        line, next_pos = xref.XRefScanner.read_line(data, pos)
         line_end = pos + len(line)
         if (
             line_end < len(data)

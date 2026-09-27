@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 reference = pytest.importorskip("pdfplumber")
 pytestmark = pytest.mark.compat_differential
@@ -35,9 +35,9 @@ def test_move_preserves_size_and_optional_coordinates(
         for key in ("doctop", "y0", "y1"):
             del obj[key]
     original = deepcopy(obj)
-    assert compat.utils.move_object(obj, axis, delta) == reference.utils.move_object(
+    assert core_pdf_compat.pdfplumber.utils.move_object(
         obj, axis, delta
-    )
+    ) == reference.utils.move_object(obj, axis, delta)
     assert obj == original
 
 
@@ -52,9 +52,9 @@ def test_resize_updates_dimensions_and_vertical_coordinates(
     if not pdf_coordinates:
         del obj["y0"], obj["y1"]
     original = deepcopy(obj)
-    assert compat.utils.resize_object(obj, key, value) == reference.utils.resize_object(
+    assert core_pdf_compat.pdfplumber.utils.resize_object(
         obj, key, value
-    )
+    ) == reference.utils.resize_object(obj, key, value)
     assert obj == original
 
 
@@ -63,9 +63,9 @@ def test_resize_updates_dimensions_and_vertical_coordinates(
 def test_snap_moves_whole_objects_in_cluster_order(attr: str, tolerance: float) -> None:
     objects = [rectangle(50, 60), rectangle(10, 20), rectangle(12, 22), rectangle(10, 20)]
     original = deepcopy(objects)
-    assert compat.utils.snap_objects(objects, attr, tolerance) == reference.utils.snap_objects(
+    assert core_pdf_compat.pdfplumber.utils.snap_objects(
         objects, attr, tolerance
-    )
+    ) == reference.utils.snap_objects(objects, attr, tolerance)
     assert objects == original
 
 
@@ -77,20 +77,20 @@ def test_snap_moves_whole_objects_in_cluster_order(attr: str, tolerance: float) 
 def test_bbox_selection_and_clipping(method: str, bbox: tuple[int, int, int, int]) -> None:
     objects = [rectangle(), rectangle(50, 60)]
     original = deepcopy(objects)
-    assert getattr(compat.utils, method)(objects, bbox) == getattr(reference.utils, method)(
-        objects, bbox
-    )
+    assert getattr(core_pdf_compat.pdfplumber.utils, method)(objects, bbox) == getattr(
+        reference.utils, method
+    )(objects, bbox)
     assert objects == original
 
 
 @pytest.mark.parametrize("tolerance", [0, 2])
 @pytest.mark.parametrize("values", [[], [1], [5, 1, 2, 2, 10, 12]])
 def test_numeric_clusters_match_reference(values: list[int], tolerance: float) -> None:
-    assert compat.utils.cluster_list(iter(values), tolerance) == reference.utils.cluster_list(
-        values, tolerance
-    )
+    assert core_pdf_compat.pdfplumber.utils.cluster_list(
+        iter(values), tolerance
+    ) == reference.utils.cluster_list(values, tolerance)
     objects = [{"position": value, "index": i} for i, value in enumerate(values)]
-    assert compat.utils.cluster_objects(
+    assert core_pdf_compat.pdfplumber.utils.cluster_objects(
         objects, "position", tolerance
     ) == reference.utils.cluster_objects(objects, "position", tolerance)
 
@@ -107,9 +107,9 @@ def test_edge_filter_honors_type_orientation_and_minimum_length(
         {**rectangle(), "orientation": "h", "width": 0.5, "object_type": "line"},
     ]
     options = {"orientation": orientation, "edge_type": edge_type, "min_length": 1}
-    assert compat.utils.filter_edges(edges, **options) == reference.utils.filter_edges(
+    assert core_pdf_compat.pdfplumber.utils.filter_edges(
         edges, **options
-    )
+    ) == reference.utils.filter_edges(edges, **options)
 
 
 @pytest.mark.parametrize("orientation", ["h", "v"])
@@ -141,14 +141,16 @@ def test_merge_snaps_and_joins_without_mutating_edges(orientation, snap, join):
         "join_x_tolerance": join,
         "join_y_tolerance": join,
     }
-    assert compat.merge_edges(iter(edges), **options) == merge_edges(edges, **options)
+    assert core_pdf_compat.pdfplumber.merge_edges(iter(edges), **options) == merge_edges(
+        edges, **options
+    )
     assert edges == original
 
 
 def test_merge_defaults_and_empty_iterators():
-    assert compat.merge_edges(iter(())) == []
+    assert core_pdf_compat.pdfplumber.merge_edges(iter(())) == []
     with pytest.raises(TypeError):
         options: dict[str, Any] = {"unsupported": True}
-        compat.merge_edges([], **options)
+        core_pdf_compat.pdfplumber.merge_edges([], **options)
     with pytest.raises(ValueError, match="orientation"):
-        compat.merge_edges([{"orientation": "diagonal"}])
+        core_pdf_compat.pdfplumber.merge_edges([{"orientation": "diagonal"}])

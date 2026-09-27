@@ -15,7 +15,7 @@ from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.types import PdfByteBuffer, PdfName, PdfReference, PdfString
 from core_pdf_cythonized import ObjectScanner
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecoder
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
+from core_pdf_spec.s_07_syntax import lexer
 from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
 from core_pdf_spec.s_07_syntax_primitives.numbers import is_integer_token, parse_integer_token
 from core_pdf_spec.s_07_syntax_primitives.scanning import (
@@ -112,7 +112,7 @@ def reader_rules_for(context: SemanticContext | None) -> LexicalRules:
     return reader_lexical_rules(rules) if reader_rules is None else reader_rules
 
 
-class PdfLexer(SyntaxLexer):
+class PdfLexer(lexer.PdfLexer):
     __slots__ = (
         "mode",
         "scanner",

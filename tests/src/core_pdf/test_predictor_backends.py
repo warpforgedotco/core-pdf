@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl import graphics_stream_decoding as reader
+from core_pdf.impl import graphics_stream_decoding
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 
 
@@ -16,8 +16,8 @@ def test_png_codec_and_fallback(
     def codec(*args: Any, **kwargs: Any) -> bytes | None:
         return outcome
 
-    monkeypatch.setattr(reader, "png_predict_codec", codec)
-    assert reader.png_predict_tolerant(
+    monkeypatch.setattr(graphics_stream_decoding, "png_predict_codec", codec)
+    assert graphics_stream_decoding.png_predict_tolerant(
         buffer_type(b"\x00\x05\x07"), columns=2, colors=1, bits_per_component=8
     ) == (outcome if outcome is not None else b"\x05\x07")
 
@@ -25,17 +25,23 @@ def test_png_codec_and_fallback(
 def test_png_fallback_preserves_empty_truncated_and_damaged_row_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(reader, "png_predict_codec", lambda *args, **kwargs: None)
+    monkeypatch.setattr(graphics_stream_decoding, "png_predict_codec", lambda *args, **kwargs: None)
     options = {"columns": 2, "colors": 1, "bits_per_component": 8}
-    assert reader.png_predict_tolerant(b"", **options) == b""
-    assert reader.png_predict_tolerant(b"\x00\x05\x07\x00", **options) == b"\x05\x07"
+    assert graphics_stream_decoding.png_predict_tolerant(b"", **options) == b""
     assert (
-        reader.png_predict_tolerant(
+        graphics_stream_decoding.png_predict_tolerant(b"\x00\x05\x07\x00", **options) == b"\x05\x07"
+    )
+    assert (
+        graphics_stream_decoding.png_predict_tolerant(
             b"\x00\x05\x07\x09\x00\x00", damaged_rows_before_error=1, **options
         )
         == b"\x05\x07"
     )
     with pytest.raises(FilterParseError, match="truncated PNG"):
-        reader.apply_predictor(b"\x00\x05\x07\x00", {"Predictor": 12, "Columns": 2})
-    with pytest.raises(reader.PredictorError, match="invalid PNG predictor bits"):
-        reader.png_predict_tolerant(b"", columns=2, colors=1, bits_per_component=3)
+        graphics_stream_decoding.apply_predictor(
+            b"\x00\x05\x07\x00", {"Predictor": 12, "Columns": 2}
+        )
+    with pytest.raises(graphics_stream_decoding.PredictorError, match="invalid PNG predictor bits"):
+        graphics_stream_decoding.png_predict_tolerant(
+            b"", columns=2, colors=1, bits_per_component=3
+        )

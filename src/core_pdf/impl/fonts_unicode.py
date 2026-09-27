@@ -14,18 +14,19 @@ from core_adobe_fonts.cmap.ranges import (
 )
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_cff_repair import CFFUnicodeRepairIndex, is_repairable_to_unicode_label
-from core_pdf.impl.fonts_cmap_resources import (
+from core_pdf.impl.fonts_cmap import (
     CID_COLLECTION_UNICODE_OVERRIDES,
     CID_COLLECTION_UNICODE_SOURCES,
+    CMapDecoder,
     CMapUnicodeSource,
+    ToUnicodeCMap,
     predefined_cmap_unicode,
     resolve_cmap_decoder,
     resolve_cmap_resource,
     unicode_candidate_preference,
     unicode_scalar_from_cmap_code,
+    unicode_scalar_or_replacement,
 )
-from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
-from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap, unicode_scalar_or_replacement
 from core_pdf.impl.fonts_encoding import FontEncoding
 from core_pdf.impl.fonts_program import recover_descriptor, recover_font_file
 from core_pdf.impl.fonts_program_base import GlyphProgram
@@ -34,7 +35,7 @@ from core_pdf.impl.fonts_widths import (
     recover_descendant,
 )
 from core_pdf.impl.glyphs import UnicodeSource
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import (
     GeneratedRecord,
 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from core_pdf.impl import layout_text_rules as rules
+from core_pdf.impl import layout_text_rules
 from core_pdf.impl.runs import (
     EMPTY_LAYOUT_LINE_TEXT,
     LayoutLineText,
@@ -58,9 +58,9 @@ def reconstruct_layout_line_text(
         return LayoutLineText(text, (line_text_segment(run, text, ""),))
 
     angle = runs[0].rotation_angle
-    if angle == 0 and rules.runs_are_left_to_right(runs):
+    if angle == 0 and layout_text_rules.runs_are_left_to_right(runs):
         sorted_runs = runs
-    elif rules.runs_are_right_to_left(runs):
+    elif layout_text_rules.runs_are_right_to_left(runs):
         sorted_runs = sorted(runs, key=lambda r: (r.order, r.stream_order))
     elif angle == 90:
         sorted_runs = sorted(runs, key=lambda r: (r.y0, r.order))
@@ -68,12 +68,12 @@ def reconstruct_layout_line_text(
         sorted_runs = sorted(runs, key=lambda r: (-r.y1, r.order))
     else:
         sorted_runs = sorted(runs, key=lambda r: (r.x0, r.order))
-        if rules.has_interleaved_horizontal_overlap(sorted_runs):
+        if layout_text_rules.has_interleaved_horizontal_overlap(sorted_runs):
             sorted_runs = sorted(runs, key=lambda r: (r.order, r.stream_order))
 
-    is_formula_like_line = rules.formula_like_runs(sorted_runs)
+    is_formula_like_line = layout_text_rules.formula_like_runs(sorted_runs)
     if angle == 0 and is_formula_like_line:
-        sorted_runs = rules.reorder_stacked_formula_numerators(sorted_runs)
+        sorted_runs = layout_text_rules.reorder_stacked_formula_numerators(sorted_runs)
 
     digit_text_runs = 0
     all_text_runs_upper = True if is_all_caps_text is None else is_all_caps_text
@@ -100,7 +100,7 @@ def reconstruct_layout_line_text(
         len(non_space_runs) >= 3 and alnum_text_runs >= 3 and len(sorted_runs) >= 5
     )
     is_all_caps_line = len(sorted_runs) >= 2 and all_text_runs_upper
-    is_tracked_glyph_line = rules.is_tracked_glyph_run_line(non_space_runs)
+    is_tracked_glyph_line = layout_text_rules.is_tracked_glyph_run_line(non_space_runs)
 
     if angle in {90, 270} and len(non_space_runs) >= 8:
         return reconstruct_rotated_table_line(sorted_runs)
@@ -146,13 +146,15 @@ def render_single_run_text(run: TextRun) -> str:
     text = run.text
     if not text:
         return ""
-    if not text.isprintable() and any(rules.is_private_use_or_control(ch) for ch in text):
-        text = rules.strip_private_use_chars(text)
+    if not text.isprintable() and any(
+        layout_text_rules.is_private_use_or_control(ch) for ch in text
+    ):
+        text = layout_text_rules.strip_private_use_chars(text)
         if not text:
             return ""
-    if run.font_size <= 5.0 and rules.is_tiny_page_footer(text):
+    if run.font_size <= 5.0 and layout_text_rules.is_tiny_page_footer(text):
         return ""
-    return rules.collapse_repeated_spaces(text)
+    return layout_text_rules.collapse_repeated_spaces(text)
 
 
 def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText:
@@ -172,8 +174,10 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
             continue
         if not run.has_text:
             continue
-        if not text.isprintable() and any(rules.is_private_use_or_control(ch) for ch in text):
-            text = rules.strip_private_use_chars(text)
+        if not text.isprintable() and any(
+            layout_text_rules.is_private_use_or_control(ch) for ch in text
+        ):
+            text = layout_text_rules.strip_private_use_chars(text)
         text = text.strip()
         if text:
             separator = ""
@@ -190,7 +194,7 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
             parts.append(text)
             segments.append(line_text_segment(run, text, separator))
             previous_run = run
-    combined = rules.split_glued_numeric_label_boundaries("".join(parts))
+    combined = layout_text_rules.split_glued_numeric_label_boundaries("".join(parts))
     if not combined:
         return EMPTY_LAYOUT_LINE_TEXT
     return LayoutLineText(combined, tuple(segments))
@@ -251,7 +255,7 @@ class GlyphLineBuilder:
     ) -> None:
         self.runs = runs
         self.text_runs_sorted_by_x0: list[TextRun] | None = None
-        self.page_label_indexes = rules.trailing_tiny_page_label_run_indexes(runs)
+        self.page_label_indexes = layout_text_rules.trailing_tiny_page_label_run_indexes(runs)
         self.is_table_like_line = is_table_like_line
         self.is_all_caps_line = is_all_caps_line
         self.has_explicit_spaces = (
@@ -263,21 +267,25 @@ class GlyphLineBuilder:
         self.is_formula_like_line = is_formula_like_line
         self.suppress_tiny_page_footer = suppress_tiny_page_footer
         self.tracked_word_gap = (
-            rules.tracked_glyph_word_gap_threshold(runs) if is_tracked_glyph_line else None
+            layout_text_rules.tracked_glyph_word_gap_threshold(runs)
+            if is_tracked_glyph_line
+            else None
         )
         non_space_runs = [run for run in runs if run.has_text]
-        self.explicit_spaces_control_glyph_gaps = rules.explicit_spaces_should_control_glyph_gaps(
-            non_space_runs,
-            explicit_space_count=sum(1 for run in runs if run.text_is_space),
+        self.explicit_spaces_control_glyph_gaps = (
+            layout_text_rules.explicit_spaces_should_control_glyph_gaps(
+                non_space_runs,
+                explicit_space_count=sum(1 for run in runs if run.text_is_space),
+            )
         )
         self.next_non_space_texts: list[str] = []
         self.next_non_space_x0s: list[float] = []
         self.estimated_char_width = (
             None
             if is_table_like_line or is_tracked_glyph_line or self.has_explicit_spaces
-            else rules.estimated_char_width_for_suspect_line(runs)
+            else layout_text_rules.estimated_char_width_for_suspect_line(runs)
         )
-        self.column_gap_threshold = rules.column_gap_threshold_for_runs(runs)
+        self.column_gap_threshold = layout_text_rules.column_gap_threshold_for_runs(runs)
         if self.has_explicit_spaces:
             self.prepare_explicit_space_context()
 
@@ -339,9 +347,9 @@ class GlyphLineBuilder:
                     recent_emitted_runs[position] = (kept_box, kept_text, reach)
 
         combined = "".join(parts)
-        if self.suppress_tiny_page_footer and rules.is_tiny_page_footer(combined):
+        if self.suppress_tiny_page_footer and layout_text_rules.is_tiny_page_footer(combined):
             return EMPTY_LAYOUT_LINE_TEXT
-        text = rules.collapse_repeated_spaces(combined)
+        text = layout_text_rules.collapse_repeated_spaces(combined)
         if not text:
             return EMPTY_LAYOUT_LINE_TEXT
         return LayoutLineText(text, tuple(segments))
@@ -403,11 +411,13 @@ class GlyphLineBuilder:
             if run.stripped_text.casefold() == "page":
                 return ""
             text = run.stripped_text
-        if not text.isprintable() and any(rules.is_private_use_or_control(ch) for ch in text):
-            text = rules.strip_private_use_chars(text)
+        if not text.isprintable() and any(
+            layout_text_rules.is_private_use_or_control(ch) for ch in text
+        ):
+            text = layout_text_rules.strip_private_use_chars(text)
             if not text:
                 return ""
-        if run.font_size <= 5.0 and rules.is_tiny_page_footer(text):
+        if run.font_size <= 5.0 and layout_text_rules.is_tiny_page_footer(text):
             return ""
         stripped = run.stripped_text
         if stripped != "TM" and not (
@@ -451,7 +461,9 @@ class GlyphLineBuilder:
         if not is_short_digit_run(run, max_length=3):
             return False
         previous = self.previous_non_space_run(index)
-        if previous is None or not rules.chemical_subscript_prefix_text(previous.stripped_text):
+        if previous is None or not layout_text_rules.chemical_subscript_prefix_text(
+            previous.stripped_text
+        ):
             return False
         return self.is_shifted_script_run(
             run,
@@ -496,12 +508,12 @@ class GlyphLineBuilder:
         context_font_size = max(candidate.font_size for candidate in context_runs)
         if context_font_size <= 0.0 or run.font_size >= context_font_size * font_size_ratio:
             return False
-        run_baseline = rules.baseline_midpoint(run.baseline, 0)
+        run_baseline = layout_text_rules.baseline_midpoint(run.baseline, 0)
         baseline_shift = max(
             (
-                rules.baseline_midpoint(candidate.baseline, 0) - run_baseline
+                layout_text_rules.baseline_midpoint(candidate.baseline, 0) - run_baseline
                 if baseline_drops
-                else run_baseline - rules.baseline_midpoint(candidate.baseline, 0)
+                else run_baseline - layout_text_rules.baseline_midpoint(candidate.baseline, 0)
             )
             for candidate in context_runs
             if candidate.baseline is not None
@@ -534,9 +546,9 @@ class GlyphLineBuilder:
         if previous_baseline is None:
             return False
         previous_height = previous.height
-        baseline_drop = rules.baseline_midpoint(previous_baseline, 0) - rules.baseline_midpoint(
-            run_baseline, 0
-        )
+        baseline_drop = layout_text_rules.baseline_midpoint(
+            previous_baseline, 0
+        ) - layout_text_rules.baseline_midpoint(run_baseline, 0)
         if not is_superscript_metrics(previous_height, run.height, baseline_drop):
             return False
         attach_gap = max(run.space_width * 0.5, previous_height * 0.2, 2.0)
@@ -722,20 +734,20 @@ class GlyphLineBuilder:
             prev_stripped = prev_text.strip()
             tight_fragment_gap = max(1.8, min(space_width, height) * 0.25)
             if (
-                rules.should_use_estimated_word_spacing(prev_stripped, stripped)
+                layout_text_rules.should_use_estimated_word_spacing(prev_stripped, stripped)
                 and x_gap > tight_fragment_gap
             ):
                 spacing_gap = x0 - (prev_x0 + len(prev_stripped) * estimated_char_width)
         baseline_delta = self.atom_baseline_delta(previous, atom)
-        if rules.inline_marker_text(text):
+        if layout_text_rules.inline_marker_text(text):
             return ""
         if self.is_formula_like_line and self.is_formula_numeric_atom(previous, atom):
             return " "
         if self.is_formula_like_line and self.is_formula_fraction_denominator(previous, atom):
             return "/"
-        if rules.script_digit_text(prev_text) and text[:1] in ")]},.;:":
+        if layout_text_rules.script_digit_text(prev_text) and text[:1] in ")]},.;:":
             return ""
-        if rules.script_digit_text(text):
+        if layout_text_rules.script_digit_text(text):
             return ""
         if self.is_formula_like_line and self.is_formula_script_atom(previous, atom):
             return " "
@@ -779,7 +791,9 @@ class GlyphLineBuilder:
             and x_gap >= -max(0.6, height * 0.08)
         ):
             return " "
-        if not (prev_run.visible and run.visible) and rules.should_insert_tight_word_space(
+        if not (
+            prev_run.visible and run.visible
+        ) and layout_text_rules.should_insert_tight_word_space(
             prev_text=prev_stripped,
             text=stripped,
             x_gap=spacing_gap,
@@ -787,7 +801,7 @@ class GlyphLineBuilder:
             space_width=space_width,
         ):
             return " "
-        if rules.should_insert_hidden_text_overlap_space(
+        if layout_text_rules.should_insert_hidden_text_overlap_space(
             prev_text=prev_stripped,
             text=stripped,
             x_gap=spacing_gap,
@@ -826,7 +840,7 @@ class GlyphLineBuilder:
             and first_char.islower()
             and spacing_gap >= max(0.25, min(space_width, height) * 0.08)
             and spacing_gap <= max(0.5, height * 0.04)
-            and rules.should_insert_phrase_continuation_space(prev_stripped, stripped)
+            and layout_text_rules.should_insert_phrase_continuation_space(prev_stripped, stripped)
             and len(stripped.split(" ", 1)[0]) >= 3
         ):
             return " "
@@ -864,7 +878,7 @@ class GlyphLineBuilder:
             or (
                 prev_last_char.isdigit()
                 and first_char.isdigit()
-                and not rules.digit_fragments_are_tightly_joined(
+                and not layout_text_rules.digit_fragments_are_tightly_joined(
                     prev_stripped,
                     stripped,
                     x_gap=spacing_gap,
@@ -877,7 +891,7 @@ class GlyphLineBuilder:
         ):
             if prev_run is run and x_gap <= max(0.5, min(space_width, height) * 0.2):
                 return ""
-            if rules.compact_unit_suffix_should_join(
+            if layout_text_rules.compact_unit_suffix_should_join(
                 prev_stripped,
                 stripped,
                 x_gap=spacing_gap,
@@ -949,8 +963,10 @@ class GlyphLineBuilder:
             return False
         if previous.baseline is None or atom.baseline is None:
             return False
-        previous_baseline = rules.baseline_midpoint(previous.baseline, previous.run.rotation_angle)
-        atom_baseline = rules.baseline_midpoint(atom.baseline, atom.run.rotation_angle)
+        previous_baseline = layout_text_rules.baseline_midpoint(
+            previous.baseline, previous.run.rotation_angle
+        )
+        atom_baseline = layout_text_rules.baseline_midpoint(atom.baseline, atom.run.rotation_angle)
         lower_by = previous_baseline - atom_baseline
         if lower_by < max(2.0, previous_height * 0.35):
             return False
@@ -989,7 +1005,7 @@ class GlyphLineBuilder:
             return False
         if self.is_table_like_line and spacing_gap > max(1.8, min(space_width, height) * 0.25):
             return False
-        return rules.should_join_plausible_split_word(
+        return layout_text_rules.should_join_plausible_split_word(
             prev_text,
             text,
             x_gap=spacing_gap,

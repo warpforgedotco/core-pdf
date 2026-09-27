@@ -7,7 +7,7 @@ from typing import Any
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf_compat.pdfminer._extract import extract_document_pages
 from core_pdf_compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
 from core_pdf_compat.pdfminer._projection import UNSTRUCTURED_POLICY

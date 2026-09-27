@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 from typing import TypeAlias, TypedDict
+from xml.etree import ElementTree
 
 from defusedxml.common import DefusedXmlException
-from defusedxml.ElementTree import fromstring as defused_fromstring
+from defusedxml.ElementTree import fromstring
 
 from core_pdf.impl.document_standards import local_name, resolve_catalog
 from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.pdf_values import coerce_value
+from core_pdf.impl.pdf_values import coerce_value, decode_pdf_text_string, recover_pdf_name
 from core_pdf.impl.recovery_policy import Recovery, recovery_policy
-from core_pdf.impl.recovery_text_strings import decode_pdf_text_string
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_document.metadata import catalog_metadata_stream, info_dictionary
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -106,7 +104,7 @@ def plain_pdf_value(value: object) -> PlainValue:
     return str(value)
 
 
-def xml_node_shell(node: ET.Element) -> XmpNodeRecord:
+def xml_node_shell(node: ElementTree.Element) -> XmpNodeRecord:
     attrs = {str(local_name(key)): value for key, value in node.attrib.items()}
     text = (node.text or "").strip()
     result: XmpNodeRecord = {"tag": local_name(node.tag)}
@@ -117,9 +115,9 @@ def xml_node_shell(node: ET.Element) -> XmpNodeRecord:
     return result
 
 
-def xml_node_to_value(node: ET.Element) -> XmpNodeRecord:
+def xml_node_to_value(node: ElementTree.Element) -> XmpNodeRecord:
     root = xml_node_shell(node)
-    stack: list[tuple[ET.Element, XmpNodeRecord]] = [(node, root)]
+    stack: list[tuple[ElementTree.Element, XmpNodeRecord]] = [(node, root)]
     while stack:
         current, result = stack.pop()
         child_nodes = list(current)
@@ -137,8 +135,8 @@ def parse_xmp_metadata(stream: object) -> XmpNodeRecord | None:
     if not raw:
         return None
     try:
-        root = defused_fromstring(raw)
-    except ET.ParseError, DefusedXmlException:
+        root = fromstring(raw)
+    except ElementTree.ParseError, DefusedXmlException:
         return {"parse_error": "invalid XMP metadata"}
 
     packet: XmpNodeRecord = {

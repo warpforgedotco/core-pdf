@@ -5,16 +5,11 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
+from core_pdf.impl import extract_contracts
 from core_pdf.impl.extract_contracts import (
     GlyphEvidence,
     ObservationBatch,
     TextQualityStats,
-)
-from core_pdf.impl.extract_contracts import (
-    PageAnalysis as NativePageAnalysis,
-)
-from core_pdf.impl.extract_contracts import (
-    PageEvidence as NativePageEvidence,
 )
 from core_pdf.impl.types import GeneratedRecord, RecordType, frozen_setattr
 
@@ -93,7 +88,7 @@ class StrokedVectorTextEvidence(GeneratedRecord):
     candidate_paths: int = 0
 
 
-class PageEvidence(NativePageEvidence, metaclass=RecordType):
+class PageEvidence(extract_contracts.PageEvidence, metaclass=RecordType):
     vector_complexity: int
     image_filters: tuple[str, ...]
     uncovered_vector_area: float | None
@@ -153,7 +148,7 @@ class PageEvidence(NativePageEvidence, metaclass=RecordType):
         )
 
 
-class PageAnalysis(NativePageAnalysis):
+class PageAnalysis(extract_contracts.PageAnalysis):
     __slots__ = ()
 
     evidence: PageEvidence

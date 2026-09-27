@@ -3,8 +3,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl import fonts_decoder as decoder
-from core_pdf.impl import fonts_encoding, fonts_program
+from core_pdf.impl import fonts_decoder, fonts_encoding, fonts_program
 from core_pdf.impl.fonts_ligatures import detect_ligature_overrides
 from core_pdf.impl.types import PdfName
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -72,7 +71,7 @@ def test_base_font_name_precedes_descendant_then_parent_descriptor(base, child_d
     }
     if base is not None:
         font["BaseFont"] = PdfName(base.encode())
-    assert decoder.resolve_base_font_name(font, "Type0") == (
+    assert fonts_decoder.resolve_base_font_name(font, "Type0") == (
         base or ("Child" if child_descriptor else "Parent")
     )
 
@@ -90,7 +89,7 @@ def test_base_font_name_precedes_descendant_then_parent_descriptor(base, child_d
 )
 @pytest.mark.parametrize("subtype", ["Type1", "TrueType", "Type3"])
 def test_simple_font_decoding_preserves_ascii_across_encoding_defaults(encoding, subtype):
-    font = decoder.FontDecoder({"Subtype": PdfName(subtype.encode()), "Encoding": encoding})
+    font = fonts_decoder.FontDecoder({"Subtype": PdfName(subtype.encode()), "Encoding": encoding})
     assert font.decode(b"AB") == "AB"
     assert font.decode(b"") == ""
     glyphs = font.decode_glyphs(memoryview(b"AB"))
@@ -99,7 +98,7 @@ def test_simple_font_decoding_preserves_ascii_across_encoding_defaults(encoding,
 
 @pytest.mark.parametrize("overrides", [None, {0xFB01: "fi"}, {ord("x"): "y"}])
 def test_cid_unicode_mapping_and_ligature_overrides_preserve_source_code(overrides):
-    font = decoder.FontDecoder(
+    font = fonts_decoder.FontDecoder(
         {
             "Subtype": PdfName(b"Type0"),
             "Encoding": PdfName(b"Identity-H"),

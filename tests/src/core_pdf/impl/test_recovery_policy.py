@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.pdf_names import lenient_float, lenient_int
+from core_pdf.impl.pdf_values import lenient_float, lenient_int
 from core_pdf.impl.recovery_policy import (
     LENIENT,
     STRICT,

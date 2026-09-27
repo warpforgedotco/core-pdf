@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
+import core_pdf_spec.s_07_syntax.lexer
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SyntaxLexer
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
@@ -30,8 +30,8 @@ CONTEXTS = (
 
 class Reference(PdfLexer):
     __slots__ = ()
-    parse_dictionary = SyntaxLexer.parse_dictionary
-    parse_array = SyntaxLexer.parse_array
+    parse_dictionary = core_pdf_spec.s_07_syntax.lexer.PdfLexer.parse_dictionary
+    parse_array = core_pdf_spec.s_07_syntax.lexer.PdfLexer.parse_array
 
 
 def xor_decipher(object_number, generation, value, dictionary):

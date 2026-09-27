@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from contextlib import suppress
 from typing import Any
 
+import core_pdf_spec.s_09_fonts.widths
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_float,
     parse_float_strict,
@@ -17,7 +18,6 @@ from core_pdf_spec.s_09_fonts.widths import (
     CompactCIDWidthMap,
     FontMetrics,
 )
-from core_pdf_spec.s_09_fonts.widths import parse_font_widths as pdf_font_widths
 
 
 def recover_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
@@ -159,7 +159,9 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     if font.get("MissingWidth") is not None:
         return recover_font_widths(font, subtype)
     try:
-        return pdf_font_widths(font, subtype, default_width=1000.0)
+        return core_pdf_spec.s_09_fonts.widths.parse_font_widths(
+            font, subtype, default_width=1000.0
+        )
     except ValueError, TypeError, IndexError:
         return recover_font_widths(font, subtype)
 

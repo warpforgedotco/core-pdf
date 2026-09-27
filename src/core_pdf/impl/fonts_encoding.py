@@ -5,12 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.fonts_cmap_resources import resolve_cmap_decoder, resolve_cmap_resource
-from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
-from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode
+from core_pdf.impl.fonts_cmap import CMapDecoder, resolve_cmap_decoder, resolve_cmap_resource
 from core_pdf.impl.fonts_helpers import (
     build_decode_table,
     build_simple_encoding_glyph_names,
+    glyph_name_to_unicode,
     recover_differences,
     recover_strip_subset_tag,
     unicode_for_glyph_name,
@@ -19,7 +18,7 @@ from core_pdf.impl.fonts_program import recover_descriptor, recover_font_file
 from core_pdf.impl.fonts_program_base import GlyphProgram
 from core_pdf.impl.fonts_program_type1 import parse_type1_font_program_encoding
 from core_pdf.impl.fonts_widths import recover_descendant
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import PdfString
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_09_fonts.helpers import BASE_ENCODING_GLYPH_NAMES

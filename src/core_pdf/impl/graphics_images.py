@@ -9,31 +9,26 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.array_views import readonly
-from core_pdf.impl.graphics_color import (
-    convert_cmyk,
-    convert_image_data,
-)
+from core_pdf.impl.graphics_color import convert_cmyk, convert_image_data
 from core_pdf.impl.graphics_color_spec import ColorSpace, parse_color_space, raw_color_space_paints
-from core_pdf.impl.graphics_decode_compat import (
-    normalize_stream_decode_spec,
-)
+from core_pdf.impl.graphics_decode_compat import normalize_stream_decode_spec
 from core_pdf.impl.graphics_filter_registry import FilterDecoder, NativeImageCodec
-from core_pdf.impl.graphics_image_header import ImageHeader
 from core_pdf.impl.graphics_image_samples import (
+    ImageHeader,
     convert_integer_image,
     convert_integer_samples,
 )
-from core_pdf.impl.graphics_soft_masks import image_has_color_key_mask
 from core_pdf.impl.graphics_stream_decoding import (
     TOLERANT_FILTER_BY_NAME,
     decode_one_filter,
     decode_stream_data,
 )
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import GeneratedRecord
 from core_pdf_cythonized import interleave_soft_mask
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterError
+from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color_kernels import (
     decode_sample_values,
     unpack_image_samples,
@@ -48,6 +43,30 @@ from core_pdf_spec.s_08_graphics.image_spec import (
     image_smask_in_data,
 )
 from core_pdf_spec.standards import SemanticContext
+
+
+def image_has_color_key_mask(dictionary: dict[Any, Any]) -> bool:
+    return isinstance(dictionary.get("Mask"), (list, tuple))
+
+
+def image_encodes_opacity(dictionary: dict[Any, Any]) -> bool:
+    try:
+        return image_smask_in_data(dictionary) != 0
+    except ValueError:
+        return False
+
+
+def image_color_key_mask_is_shape(dictionary: dict[Any, Any]) -> bool:
+    return image_has_color_key_mask(dictionary) and not image_encodes_opacity(dictionary)
+
+
+def image_overrides_graphics_soft_mask(source: ImageSource) -> bool:
+    return (
+        source.soft_mask is not None
+        or isinstance(source.dictionary.get("Mask"), PdfStream)
+        or image_has_color_key_mask(source.dictionary)
+        or image_encodes_opacity(source.dictionary)
+    )
 
 
 def decode_array_applies(dictionary: dict[Any, Any], context: SemanticContext | None) -> bool:
@@ -490,18 +509,6 @@ def decode_pdf_image(
     return DecodedRaster(converted, width, height, channels)
 
 
-__all__ = (
-    "DecodedRaster",
-    "ImageRaster",
-    "ImageSource",
-    "PreparedImage",
-    "SoftMask",
-    "decode_image",
-    "decode_pdf_image",
-    "prepare_image",
-)
-
-
 def prepare_image(source: ImageSource) -> PreparedImage | None:
     if not image_color_space_paints(source.dictionary):
         return None
@@ -701,3 +708,15 @@ def image_decode_is_identity(dictionary: object) -> bool:
         if float(lower) != 0.0 or float(upper) != 1.0:
             return False
     return True
+
+
+__all__ = (
+    "DecodedRaster",
+    "ImageRaster",
+    "ImageSource",
+    "PreparedImage",
+    "SoftMask",
+    "decode_image",
+    "decode_pdf_image",
+    "prepare_image",
+)

@@ -7,7 +7,7 @@ import pytest
 
 from core_pdf.impl.capture_program import CapturedProgram, PageProgram
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, CapturedSubpath
-from core_pdf.impl.execution import ExtractionScope
+from core_pdf.impl.exceptions import ExtractionScope
 from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf_ocr import PdfDocument, cli
 from core_pdf_ocr.impl.extract import pipeline
@@ -90,8 +90,6 @@ def test_stroked_profile_is_lazily_built_and_reused(ocr_capture) -> None:
 
 
 def test_page_pipeline_dispatches_recognition_with_exact_context(ocr_capture, monkeypatch) -> None:
-    from core_pdf_ocr.impl.extract.ocr import pipeline as recognition_pipeline
-
     context = ExtractionScope()
     recognition = RecognitionResult(ObservationBatch.empty())
     operation = OcrPass("page", OcrPassScope.PAGE, 1, (6,))
@@ -105,7 +103,7 @@ def test_page_pipeline_dispatches_recognition_with_exact_context(ocr_capture, mo
         assert stroked_profile is None
         return recognition
 
-    monkeypatch.setattr(recognition_pipeline, "recognize_page", recognize)
+    monkeypatch.setattr("core_pdf_ocr.impl.extract.ocr.pipeline.recognize_page", recognize)
     assert extraction.recognize(context) is recognition
 
 

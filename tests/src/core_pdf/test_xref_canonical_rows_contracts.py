@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl import recovery_xref as xref
+from core_pdf.impl import recovery_xref
 from core_pdf.impl.exceptions import PdfParseError
 
 
@@ -26,7 +26,7 @@ TABLES = [
 
 def read(data: bytes, count: int) -> object:
     try:
-        entries, pos, maximum = xref.XRefScanner.read_subsection(
+        entries, pos, maximum = recovery_xref.XRefScanner.read_subsection(
             data + b"\ntrailer\n<<>>", 0, 4, count
         )
     except PdfParseError as error:
@@ -43,11 +43,11 @@ def test_canonical_rows_read_as_the_per_row_parse(
     data: bytes, count: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fast = read(data, count)
-    monkeypatch.setattr(xref, "canonical_xref_entries", lambda *_: None)
+    monkeypatch.setattr(recovery_xref, "canonical_xref_entries", lambda *_: None)
     assert fast == read(data, count)
 
 
 def test_a_canonical_table_takes_the_row_block() -> None:
     data = row(0, 65535, b"f") + row(17, 0, b"n") + row(81, 0, b"n") + b"trailer"
-    assert xref.canonical_xref_entries(data, 0, 0, 2) is not None
-    assert xref.canonical_xref_entries(data, 0, 0, 3) is None
+    assert recovery_xref.canonical_xref_entries(data, 0, 0, 2) is not None
+    assert recovery_xref.canonical_xref_entries(data, 0, 0, 3) is None

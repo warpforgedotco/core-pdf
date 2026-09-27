@@ -3,7 +3,7 @@ import random
 
 import pytest
 
-from core_pdf.impl.render_grid import DeviceGrid
+from core_pdf.impl.render_clipping import DeviceGrid
 
 
 def by_formula(grid: DeviceGrid, x0: float, y0: float, x1: float, y1: float) -> object:

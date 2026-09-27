@@ -9,8 +9,7 @@ from core_pdf.impl.fonts_program_truetype import (
     TrueTypeFontProgram,
     cached_truetype_program,
 )
-from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.pdf_values import ReferenceResolver
+from core_pdf.impl.pdf_values import ReferenceResolver, recover_pdf_name
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     is_pdf_number,

@@ -5,7 +5,7 @@ import numpy
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl import fonts_program_truetype as font_program
+from core_pdf.impl import fonts_program_truetype
 from core_pdf.impl.fonts_raster_kernel import scale_contours
 from core_pdf_cythonized import truetype_contours
 
@@ -23,13 +23,13 @@ FIXTURES = [
 
 def embedded_programs(path: str, monkeypatch: pytest.MonkeyPatch) -> list[bytes]:
     programs: list[bytes] = []
-    original = font_program.parse_truetype_program
+    original = fonts_program_truetype.parse_truetype_program
 
     def captured(data: bytes) -> Any:
         programs.append(data)
         return original(data)
 
-    monkeypatch.setattr(font_program, "parse_truetype_program", captured)
+    monkeypatch.setattr(fonts_program_truetype, "parse_truetype_program", captured)
     with open(path, "rb") as handle, PdfDocument(handle.read()) as document:
         for index in range(min(2, len(document.pages))):
             document.pages[index].render().rasterize(scale=0.25)
@@ -39,7 +39,7 @@ def embedded_programs(path: str, monkeypatch: pytest.MonkeyPatch) -> list[bytes]
 
 def fonttools_drawn(font: Any, gid: int, scale: float) -> Any:
     try:
-        contours = font_program.fonttools_contours(font, gid)
+        contours = fonts_program_truetype.fonttools_contours(font, gid)
     except Exception:  # noqa: BLE001
         return ()
     return contours if scale == 1.0 else scale_contours(contours, scale)
@@ -53,9 +53,9 @@ def test_every_glyph_is_drawn_as_fonttools_draws_it(
     assert programs
     drawn = declined = 0
     for data in programs:
-        font = font_program.parse_truetype_program(data)
-        access = font_program.FontToolsOutlineAccess(font)
-        tables = font_program.truetype_tables(font)
+        font = fonts_program_truetype.parse_truetype_program(data)
+        access = fonts_program_truetype.FontToolsOutlineAccess(font)
+        tables = fonts_program_truetype.truetype_tables(font)
         if tables is None:
             continue
         glyf, loca, lsb, count = tables

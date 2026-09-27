@@ -103,32 +103,28 @@ def test_adobe_resources_load_with_parent_inheritance() -> None:
 
 
 def test_resource_loader_preserves_cycle_tracking(monkeypatch: pytest.MonkeyPatch) -> None:
-    from core_adobe_fonts.cmap import resources as cmap_resources
-
     requests: list[str] = []
 
     def resource(name: str) -> bytes:
         requests.append(name)
         return b"/Loop usecmap"
 
-    monkeypatch.setattr(cmap_resources, "resolve_cmap_resource", resource)
+    monkeypatch.setattr("core_adobe_fonts.cmap.resources.resolve_cmap_resource", resource)
     with pytest.raises(ValueError, match="cyclic"):
-        cmap_resources.resolve_cmap_decoder("Loop")
+        resolve_cmap_decoder("Loop")
     assert requests == ["Loop", "Loop"]
 
 
 def test_resource_loader_keeps_inheritance_and_local_writing_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from core_adobe_fonts.cmap import resources as cmap_resources
-
     resources = {
         "Grandparent": CODESPACE + b"/WMode 1 def 1 begincidchar <01> 7 endcidchar",
         "Parent": b"/Grandparent usecmap 1 begincidchar <02> 8 endcidchar",
         "Child": b"/Parent usecmap /WMode 0 def 1 begincidchar <01> 9 endcidchar",
     }
-    monkeypatch.setattr(cmap_resources, "resolve_cmap_resource", resources.get)
-    cmap = cmap_resources.resolve_cmap_decoder("Child")
+    monkeypatch.setattr("core_adobe_fonts.cmap.resources.resolve_cmap_resource", resources.get)
+    cmap = resolve_cmap_decoder("Child")
     assert cmap is not None
     assert cmap.wmode == 0
     assert cmap.decode_entries(b"\x01\x02") == [(b"\x01", 9), (b"\x02", 8)]

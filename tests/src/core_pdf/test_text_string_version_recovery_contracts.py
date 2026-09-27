@@ -4,11 +4,9 @@ from collections.abc import Callable
 
 import pytest
 
+from core_pdf.impl.pdf_values import decode_pdf_text_string
 from core_pdf.impl.recovery_resolver import ObjectResolver
-from core_pdf.impl.recovery_text_strings import decode_pdf_text_string
-from core_pdf_spec.s_07_syntax_primitives.text_string import (
-    decode_pdf_text_string as decode_spec_text_string,
-)
+from core_pdf_spec.s_07_syntax_primitives import text_string
 from core_pdf_spec.standards import PdfVersion, SemanticContext, recognized_version
 
 VERSIONS = (
@@ -50,7 +48,7 @@ def version_guarded_decode(data: bytes, context: SemanticContext | None) -> str:
         or (version < PdfVersion(1, 3) and not data.startswith(b"\xfe\xff") and 0xA0 in data)
     ):
         context = None
-    return decode_spec_text_string(data, context=context)
+    return text_string.decode_pdf_text_string(data, context=context)
 
 
 def outcome[T](decode: Callable[[T], str], data: T) -> tuple[str, str]:

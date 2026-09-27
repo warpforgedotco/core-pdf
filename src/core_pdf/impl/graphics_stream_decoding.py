@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import binascii
+import os
+import struct
 import zlib
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NoReturn
 
 import imagecodecs
 import numpy
 
-import core_pdf_spec.s_07_filters.codecs as strict
 from core_jbig2.bitmap import compose_packed_bitmap_data
 from core_jbig2.codec import (
     GENERIC_TEMPLATE_0_DEFAULT_AT,
@@ -24,11 +25,6 @@ from core_jbig2.codec import (
     JBIG2Region,
     Jbig2UnsupportedError,
     compose_packed_bitmap_region,
-)
-from core_pdf.impl import graphics_codec_backends as codec_backends
-from core_pdf.impl.graphics_codec_backends import (
-    png_predict_codec,
-    tiff_predict_codec,
 )
 from core_pdf.impl.graphics_decode_compat import (
     FilterParams,
@@ -48,21 +44,17 @@ from core_pdf.impl.graphics_filter_registry import (
     TolerantFilter,
 )
 from core_pdf_cythonized import decode_arithmetic_generic_template0
-from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
+from core_pdf_spec.s_07_filters import codecs, decode_spec, jbig2, predictors
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import (
     FilterParseError,
     FilterUnsupportedError,
     PredictorError,
 )
-from core_pdf_spec.s_07_filters.jbig2 import decode_jbig2 as decode_strict_jbig2
 from core_pdf_spec.s_07_filters.predictors import (
     SUPPORTED_PREDICTOR_BITS,
     png_predict,
     tiff_predict,
-)
-from core_pdf_spec.s_07_filters.predictors import (
-    apply_predictor as strict_apply_predictor,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_null
 from core_pdf_spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
@@ -78,6 +70,255 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     WHITESPACE,
     WS_TABLE,
 )
+
+
+def thread_count(env_name: str) -> int:
+    configured = os.environ.get(env_name)
+    if configured:
+        try:
+            return min(4, max(1, int(configured)))
+        except ValueError:
+            pass
+    return max(1, min(4, os.cpu_count() or 1))
+
+
+def raise_codec_error(
+    data: bytes | memoryview,
+    exc: BaseException,
+    *,
+    check: Callable[[bytes | memoryview], object],
+    name: str,
+) -> NoReturn:
+    if not data:
+        raise FilterParseError(f"invalid {name} stream") from exc
+    try:
+        valid = bool(check(data))
+    except Exception:
+        valid = False
+    if not valid:
+        raise FilterParseError(f"invalid {name} stream") from exc
+    raise FilterUnsupportedError(f"unsupported {name} stream") from exc
+
+
+def normalize_imagecodecs_array(
+    decoded: object,
+    *,
+    name: str,
+    allow_float: bool = False,
+    preserve_uint16: bool = False,
+) -> numpy.ndarray:
+    array = numpy.asarray(decoded)
+    if array.ndim not in {2, 3}:
+        raise FilterUnsupportedError(f"{name} decoder returned an unsupported shape")
+    if array.dtype.kind not in ({"u", "i", "f"} if allow_float else {"u", "i"}):
+        raise FilterUnsupportedError(f"{name} decoder returned an unsupported dtype")
+    if array.ndim == 3 and array.shape[2] <= 0:
+        raise FilterUnsupportedError(f"{name} decoder returned zero channels")
+    if preserve_uint16 and array.dtype == numpy.uint16:
+        return numpy.ascontiguousarray(array)
+    if array.dtype != numpy.uint8:
+        if array.dtype.kind == "f":
+            array = numpy.clip(numpy.rint(array), 0, 255).astype(numpy.uint8, copy=False)
+        else:
+            item_bits = max(8, array.dtype.itemsize * 8)
+            shift = max(0, item_bits - 8)
+            clipped = numpy.clip(array, 0, None)
+            array = (
+                clipped.astype(numpy.uint64, copy=False) >> shift if shift else clipped
+            ).astype(numpy.uint8, copy=False)
+    return numpy.ascontiguousarray(array)
+
+
+def decode_jpeg_image(
+    data: bytes | memoryview, *, out: numpy.ndarray | None = None
+) -> numpy.ndarray:
+    try:
+        decoded = imagecodecs.jpeg_decode(data, out=out)
+    except Exception as exc:  # pragma: no cover
+        raise_codec_error(data, exc, check=imagecodecs.jpeg_check, name="JPEG")
+    return normalize_imagecodecs_array(decoded, name="JPEG")
+
+
+def decode_jpx_image(
+    data: bytes | memoryview,
+    *,
+    out: numpy.ndarray | None = None,
+    preserve_precision: bool = False,
+) -> numpy.ndarray:
+    try:
+        decoded = imagecodecs.jpeg2k_decode(
+            data,
+            out=out,
+            numthreads=jpx_thread_count(),
+        )
+    except Exception as exc:  # pragma: no cover
+        raise_codec_error(data, exc, check=imagecodecs.jpeg2k_check, name="JPX")
+    return normalize_imagecodecs_array(
+        decoded, name="JPX", allow_float=True, preserve_uint16=preserve_precision
+    )
+
+
+def jpx_thread_count() -> int:
+    return thread_count("CORE_PDF_JPX_THREADS")
+
+
+def decode_ccitt_fax_array(
+    data: bytes | memoryview,
+    *,
+    width: int,
+    height: int,
+    group4: bool,
+    t4options: int = 0,
+    out: numpy.ndarray | None = None,
+) -> numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]:
+    decoder_check = imagecodecs.ccittfax4_check if group4 else imagecodecs.ccittfax3_check
+    try:
+        if group4:
+            decoded = imagecodecs.ccittfax4_decode(
+                data,
+                height=height,
+                width=width,
+                out=out,
+            )
+        else:
+            decoded = imagecodecs.ccittfax3_decode(
+                data,
+                height=height,
+                width=width,
+                t4options=t4options,
+                out=out,
+            )
+    except Exception as exc:  # pragma: no cover
+        raise_codec_error(data, exc, check=decoder_check, name="CCITT")
+    array = numpy.asarray(decoded)
+    if array.ndim != 2 or array.shape[1] != width or array.dtype != numpy.uint8:
+        raise FilterUnsupportedError("CCITT decoder returned an unsupported image")
+    return array
+
+
+PNG_COLOR_TYPES = {1: 0, 3: 2, 4: 6}
+
+
+PNG_MAX_DIMENSION = 1_000_000
+
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def png_chunk(tag: bytes, payload: bytes) -> bytes:
+    return (
+        struct.pack(">I", len(payload))
+        + tag
+        + payload
+        + struct.pack(">I", zlib.crc32(tag + payload))
+    )
+
+
+def png_predict_codec(
+    data: bytes | memoryview,
+    *,
+    columns: int,
+    colors: int,
+    bits_per_component: int,
+) -> bytes | None:
+    try:
+        color_type = PNG_COLOR_TYPES.get(colors)
+        if color_type is None:
+            return None
+        if bits_per_component not in (8, 16) and (
+            color_type != 0 or (columns * bits_per_component) % 8
+        ):
+            return None
+        if not 1 <= columns <= PNG_MAX_DIMENSION:
+            return None
+        row_length = max(1, (colors * columns * bits_per_component + 7) // 8)
+        rows = len(data) // (row_length + 1)
+        if not 1 <= rows <= PNG_MAX_DIMENSION:
+            return None
+        body = memoryview(data)[: rows * (row_length + 1)]
+        header = struct.pack(">IIBBBBB", columns, rows, bits_per_component, color_type, 0, 0, 0)
+        png = b"".join(
+            (
+                PNG_SIGNATURE,
+                png_chunk(b"IHDR", header),
+                png_chunk(b"IDAT", zlib.compress(body, 0)),
+                png_chunk(b"IEND", b""),
+            )
+        )
+        decoded = numpy.asarray(imagecodecs.png_decode(png))
+        if bits_per_component == 16:
+            return decoded.astype(">u2", copy=False).tobytes()
+        if bits_per_component == 8:
+            return decoded.tobytes()
+        bits = bits_per_component
+        samples = decoded.reshape(rows, columns) // (255 // ((1 << bits) - 1))
+        per_byte = 8 // bits
+        grouped = samples.reshape(rows, -1, per_byte)
+        packed = numpy.zeros(grouped.shape[:2], dtype=numpy.uint8)
+        for sample_index in range(per_byte):
+            packed |= grouped[:, :, sample_index] << (bits * (per_byte - 1 - sample_index))
+        return packed.tobytes()
+    except Exception:
+        return None
+
+
+def tiff_predict_words_codec(
+    data: bytes | memoryview, columns: int, colors: int, dtype: str, sample_bytes: int
+) -> bytes:
+    bytes_per_row = colors * columns * sample_bytes
+    if bytes_per_row <= 0:
+        return b""
+    complete = (len(data) // bytes_per_row) * bytes_per_row
+    if complete == 0:
+        return b""
+    rows = numpy.frombuffer(data, dtype=dtype, count=complete // sample_bytes).reshape(
+        -1,
+        columns,
+        colors,
+    )
+    return numpy.asarray(imagecodecs.delta_decode(rows, axis=1)).tobytes()
+
+
+def tiff_predict_codec(
+    data: bytes | memoryview, *, columns: int, colors: int, bits_per_component: int
+) -> bytes | None:
+    try:
+        if bits_per_component == 8:
+            return tiff_predict_words_codec(data, columns, colors, "u1", 1)
+        if bits_per_component == 16:
+            return tiff_predict_words_codec(data, columns, colors, ">u2", 2)
+        if bits_per_component in {1, 2, 4}:
+            return tiff_predict_bits_codec(data, columns, colors, bits_per_component)
+    except Exception:
+        return None
+    return None
+
+
+def tiff_predict_bits_codec(
+    data: bytes | memoryview, columns: int, colors: int, bits: int
+) -> bytes:
+    sample_count = colors * columns
+    row_byte_length = max(1, (sample_count * bits + 7) // 8)
+    complete_rows = len(data) // row_byte_length
+    if complete_rows == 0:
+        return b""
+    encoded = numpy.frombuffer(
+        data,
+        dtype=numpy.uint8,
+        count=complete_rows * row_byte_length,
+    )
+    samples = numpy.asarray(
+        imagecodecs.packints_decode(encoded, numpy.uint8, bits, runlen=sample_count)
+    ).reshape(complete_rows, columns, colors)
+    accumulated = numpy.asarray(imagecodecs.delta_decode(samples, axis=1))
+    decoded = accumulated & numpy.uint8((1 << bits) - 1)
+    flat = decoded.reshape(complete_rows, sample_count)
+    samples_per_byte = 8 // bits
+    padding = (-sample_count) % samples_per_byte
+    if padding:
+        flat = numpy.pad(flat, ((0, 0), (0, padding)))
+    packed = imagecodecs.packints_encode(numpy.ascontiguousarray(flat), bits)
+    return numpy.asarray(packed).tobytes()
 
 
 def coerce_decoder_bytes(result: object) -> bytes:
@@ -211,21 +452,6 @@ class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
             compose_packed_bitmap_region(region, bitmap, self.image, self.page_info)
 
 
-def decode_jpeg_image(
-    data: bytes | memoryview, *, out: numpy.ndarray[Any, Any] | None = None
-) -> numpy.ndarray[Any, Any]:
-    return codec_backends.decode_jpeg_image(data, out=out)
-
-
-def decode_jpx_image(
-    data: bytes | memoryview,
-    *,
-    out: numpy.ndarray[Any, Any] | None = None,
-    preserve_precision: bool = False,
-) -> numpy.ndarray[Any, Any]:
-    return codec_backends.decode_jpx_image(data, out=out, preserve_precision=preserve_precision)
-
-
 def decode_jpeg(data: bytes, parms: object) -> bytes:
     return decode_jpeg_image(data).tobytes()
 
@@ -237,7 +463,7 @@ def decode_jpx(data: bytes, parms: object) -> bytes:
 def decode_ccitt_fax_image(
     data: bytes | memoryview, parms: FilterParams, *, out: numpy.ndarray[Any, Any] | None = None
 ) -> numpy.ndarray[Any, Any]:
-    array = codec_backends.decode_ccitt_fax_image(
+    array = decode_ccitt_fax_array(
         data,
         width=parms.columns if parms.has_columns else 1728,
         height=parms.rows,
@@ -268,7 +494,7 @@ def decode_crypt(data: bytes, parms: object) -> bytes:
 
 def decode_jbig2(data: bytes, parms: object) -> bytes:
     params = filter_params(parms)
-    return decode_strict_jbig2(data, params, decoder_type=RecoveryJBIG2PageDecoder)
+    return jbig2.decode_jbig2(data, params, decoder_type=RecoveryJBIG2PageDecoder)
 
 
 def png_predict_tolerant(
@@ -298,7 +524,7 @@ def png_predict_tolerant(
     )
 
 
-def png_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -> bytes:
+def png_predictor_tolerant(data: bytes | memoryview, params: decode_spec.FilterParams) -> bytes:
     return png_predict_tolerant(
         data,
         columns=params.columns,
@@ -308,7 +534,7 @@ def png_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) ->
     )
 
 
-def tiff_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -> bytes:
+def tiff_predictor_tolerant(data: bytes | memoryview, params: decode_spec.FilterParams) -> bytes:
     columns = params.columns
     colors = params.colors
     bits_per_component = params.bits_per_component
@@ -322,13 +548,17 @@ def tiff_predictor_tolerant(data: bytes | memoryview, params: PdfFilterParams) -
 
 def apply_predictor(data: bytes | memoryview, parms: object) -> bytes:
     params = filter_params(parms)
-    return strict_apply_predictor(
+    return predictors.apply_predictor(
         data, params, png=png_predictor_tolerant, tiff=tiff_predictor_tolerant
     )
 
 
 ASCII_HEX_DIGITS = b"0123456789ABCDEFabcdef"
+
+
 ASCII_HEX_INVALID_BYTES = bytes(byte for byte in range(256) if byte not in ASCII_HEX_DIGITS)
+
+
 MIN_TRUNCATED_RAW_FLATE_BYTES = 8
 
 
@@ -344,8 +574,8 @@ def apply_ascii_hex(data: bytes, parms: object) -> bytes:
 
 def apply_run_length(data: bytes, parms: object) -> bytes:
     try:
-        return strict.apply_run_length(data, parms)
-    except strict.IncompleteRunLengthError as exc:
+        return codecs.apply_run_length(data, parms)
+    except codecs.IncompleteRunLengthError as exc:
         return exc.decoded
 
 
@@ -355,7 +585,7 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
         clean = clean[2:]
     if b"~>" not in clean:
         clean += b"~>"
-    return strict.apply_ascii85(clean, parms)
+    return codecs.apply_ascii85(clean, parms)
 
 
 def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
@@ -366,8 +596,8 @@ def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
         except Exception as exc:
             raise ValueError("invalid LZW stream") from exc
     try:
-        return strict.apply_lzw(data, params)
-    except strict.IncompleteLzwError as exc:
+        return codecs.apply_lzw(data, params)
+    except codecs.IncompleteLzwError as exc:
         return exc.decoded
 
 
@@ -550,6 +780,7 @@ def decode_native_samples(
 
 NATIVE_SAMPLES = NativeImageCodec(RAW_SAMPLE_IMAGE, decode_native_samples)
 
+
 TOLERANT_FILTERS: dict[FilterDecoder, TolerantFilter] = {
     tolerant.decoder: tolerant
     for tolerant in (
@@ -575,6 +806,7 @@ TOLERANT_FILTERS: dict[FilterDecoder, TolerantFilter] = {
         TolerantFilter("jbig2", decode_jbig2),
     )
 }
+
 
 TOLERANT_FILTER_BY_NAME: dict[str, TolerantFilter] = {
     descriptor.name: TOLERANT_FILTERS[descriptor.decoder]

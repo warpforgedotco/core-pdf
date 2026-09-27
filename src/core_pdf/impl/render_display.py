@@ -9,7 +9,7 @@ from core_pdf.impl.geometry import finite_rect, rect_tuple, union_bbox
 from core_pdf.impl.glyphs import GlyphStyle
 from core_pdf.impl.graphics_color_spec import describe_color_space
 from core_pdf.impl.graphics_filter_registry import declared_filter_names
-from core_pdf.impl.pdf_names import lenient_int
+from core_pdf.impl.pdf_values import lenient_int
 from core_pdf.impl.render_model import (
     DisplayItem,
     DisplayListItem,

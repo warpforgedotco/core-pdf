@@ -16,7 +16,7 @@ from core_pdf._vendor.fontTools.pens.recordingPen import (
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.caches import BoundedDict
-from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode
+from core_pdf.impl.fonts_helpers import glyph_name_to_unicode
 from core_pdf.impl.fonts_program_base import GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts_raster_kernel import (
     Contours,

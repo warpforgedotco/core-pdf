@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from math import isfinite
-from typing import Any, Protocol, Self
+from typing import TYPE_CHECKING, Any, Self
 
 import numpy
 
@@ -17,12 +17,11 @@ from core_pdf.impl.capture_records import (
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.geometry import rect_tuple
-from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 from core_pdf.impl.render_commands import append_captured_program
 from core_pdf.impl.render_display import (
     DisplayList,
 )
-from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_model import (
     DisplayItem,
     DisplayListItem,
@@ -34,26 +33,8 @@ from core_pdf.impl.types import RecordType, ReprFields
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.standards import SemanticContext
 
-
-class RenderablePage(Protocol):
-    @property
-    def width(self) -> float: ...
-
-    @property
-    def height(self) -> float: ...
-
-    @property
-    def media_box(self) -> tuple[float, float, float, float] | None: ...
-
-    def get_page_program(
-        self, *, fields: Iterable[Any] | None = None, annotations: Iterable[Any] | None = None
-    ) -> PageProgram: ...
-
-    def get_fields(self) -> Iterable[Any]: ...
-
-    def get_annotations(self) -> Iterable[Any]: ...
-
-    def resolve_transparency_group_alpha(self) -> float | None: ...
+if TYPE_CHECKING:
+    from core_pdf.impl.document_page import PdfPage
 
 
 def raster_scale(value: float) -> float:
@@ -272,7 +253,7 @@ class RenderedPage(ReprFields, metaclass=RecordType, frozen=False):
 
 
 def compose_page(
-    page: RenderablePage,
+    page: PdfPage,
     options: RenderOptions | None = None,
     *,
     page_program: PageProgram | None = None,

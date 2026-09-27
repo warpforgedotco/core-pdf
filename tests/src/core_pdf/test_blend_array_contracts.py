@@ -1,7 +1,7 @@
-import numpy as np
+import numpy
 import pytest
 
-from core_pdf.impl import render_blend as blend
+from core_pdf.impl import render_blend
 from core_pdf_cythonized import blend_normal_alpha_array_numpy, composite_normal_group
 
 
@@ -32,30 +32,30 @@ def source_over(destination, source, mode=None):
 @pytest.mark.parametrize("source_alpha", [0, 64, 128, 255])
 @pytest.mark.parametrize("destination_alpha", [0, 128, 255])
 def test_solid_blend_writes_through_strided_views(mode, source_alpha, destination_alpha):
-    backing = np.full((3, 5, 4), 17, dtype=np.uint8)
+    backing = numpy.full((3, 5, 4), 17, dtype=numpy.uint8)
     target = backing[:, 1:4:2]
     destination = (51, 102, 153, destination_alpha)
     target[:] = destination
     source = (204, 85, 34, source_alpha)
-    blend.blend_solid_array_numpy(target, source, mode)
+    render_blend.blend_solid_array_numpy(target, source, mode)
     expected = source_over(destination, source, mode)
-    np.testing.assert_array_equal(target, np.broadcast_to(expected, target.shape))
-    np.testing.assert_array_equal(backing[:, ::2], 17)
+    numpy.testing.assert_array_equal(target, numpy.broadcast_to(expected, target.shape))
+    numpy.testing.assert_array_equal(backing[:, ::2], 17)
 
 
 @pytest.mark.parametrize("source_alpha", [0, 64, 128, 255])
 @pytest.mark.parametrize("destination_alpha", [0, 128, 255])
 def test_normal_fast_path_matches_source_over_on_strided_views(source_alpha, destination_alpha):
-    backing = np.full((3, 5, 4), 17, dtype=np.uint8)
+    backing = numpy.full((3, 5, 4), 17, dtype=numpy.uint8)
     target = backing[:, 1:4:2]
     destination = (51, 102, 153, destination_alpha)
     target[:] = destination
     source = (204, 85, 34, source_alpha)
-    blend.blend_normal_solid_array_numpy(target, source)
-    np.testing.assert_array_equal(
-        target, np.broadcast_to(source_over(destination, source), target.shape)
+    render_blend.blend_normal_solid_array_numpy(target, source)
+    numpy.testing.assert_array_equal(
+        target, numpy.broadcast_to(source_over(destination, source), target.shape)
     )
-    np.testing.assert_array_equal(backing[:, ::2], 17)
+    numpy.testing.assert_array_equal(backing[:, ::2], 17)
 
 
 @pytest.mark.parametrize("mode", [None, "Multiply", "Screen"])
@@ -65,11 +65,11 @@ def test_normal_fast_path_matches_source_over_on_strided_views(source_alpha, des
 def test_group_blending_rounds_each_alpha_stage_and_preserves_unpainted_pixels(
     mode, source_scale, target_scale
 ):
-    backing = np.full((2, 6, 4), 17, dtype=np.uint8)
+    backing = numpy.full((2, 6, 4), 17, dtype=numpy.uint8)
     target = backing[:, ::2]
     target[:] = [(51, 102, 153, 0), (51, 102, 153, 128), (51, 102, 153, 255)]
-    source = np.array(
-        [[(204, 85, 34, 0), (204, 85, 34, 129), (204, 85, 34, 255)]] * 2, dtype=np.uint8
+    source = numpy.array(
+        [[(204, 85, 34, 0), (204, 85, 34, 129), (204, 85, 34, 255)]] * 2, dtype=numpy.uint8
     )
     expected = target.copy()
     for row in range(2):
@@ -81,9 +81,9 @@ def test_group_blending_rounds_each_alpha_stage_and_preserves_unpainted_pixels(
             expected[row, col] = source_over(
                 tuple(int(v) for v in target[row, col]), (204, 85, 34, alpha), mode
             )
-    blend.composite_blended_group_numpy(target, source, source_scale, target_scale, mode)
-    np.testing.assert_array_equal(target, expected)
-    np.testing.assert_array_equal(backing[:, 1::2], 17)
+    render_blend.composite_blended_group_numpy(target, source, source_scale, target_scale, mode)
+    numpy.testing.assert_array_equal(target, expected)
+    numpy.testing.assert_array_equal(backing[:, 1::2], 17)
     assert source[0, 1, 3] == 129
 
 
@@ -93,47 +93,47 @@ def test_group_blending_rounds_each_alpha_stage_and_preserves_unpainted_pixels(
 def test_normal_group_routes_match_general_compositing(
     source_scale, target_scale, destination_alpha
 ):
-    destination = np.array([[(51, 102, 153, destination_alpha)] * 3] * 2, dtype=np.uint8)
-    source = np.array(
-        [[(204, 85, 34, 0), (204, 85, 34, 129), (204, 85, 34, 255)]] * 2, dtype=np.uint8
+    destination = numpy.array([[(51, 102, 153, destination_alpha)] * 3] * 2, dtype=numpy.uint8)
+    source = numpy.array(
+        [[(204, 85, 34, 0), (204, 85, 34, 129), (204, 85, 34, 255)]] * 2, dtype=numpy.uint8
     )
     expected = destination.copy()
-    blend.composite_blended_group_numpy(expected, source, source_scale, target_scale, None)
+    render_blend.composite_blended_group_numpy(expected, source, source_scale, target_scale, None)
     composite_normal_group(destination, source, source_scale, target_scale)
-    np.testing.assert_array_equal(destination, expected)
+    numpy.testing.assert_array_equal(destination, expected)
 
 
 def test_normal_group_onto_an_empty_backdrop_writes_only_visible_pixels_through_a_view():
-    backing = np.full((2, 6, 4), 17, dtype=np.uint8)
+    backing = numpy.full((2, 6, 4), 17, dtype=numpy.uint8)
     destination = backing[:, ::2]
     destination[:] = (51, 102, 153, 0)
-    source = np.array(
-        [[(204, 85, 34, 0), (204, 85, 34, 129), (204, 85, 34, 255)]] * 2, dtype=np.uint8
+    source = numpy.array(
+        [[(204, 85, 34, 0), (204, 85, 34, 129), (204, 85, 34, 255)]] * 2, dtype=numpy.uint8
     )
     expected = destination.copy()
-    blend.composite_blended_group_numpy(expected, source, 1.0, 1.0, None)
+    render_blend.composite_blended_group_numpy(expected, source, 1.0, 1.0, None)
     composite_normal_group(destination, source, 1.0)
-    np.testing.assert_array_equal(destination, expected)
-    np.testing.assert_array_equal(destination[:, 0], [(51, 102, 153, 0)] * 2)
-    np.testing.assert_array_equal(backing[:, 1::2], 17)
+    numpy.testing.assert_array_equal(destination, expected)
+    numpy.testing.assert_array_equal(destination[:, 0], [(51, 102, 153, 0)] * 2)
+    numpy.testing.assert_array_equal(backing[:, 1::2], 17)
 
 
 @pytest.mark.parametrize("coverage", [0, 64, 128, 255])
 def test_coverage_alpha_is_capped_by_source_opacity_and_zero_coverage_preserves_rgb(coverage):
-    target = np.array([[(51, 102, 153, 0), (51, 102, 153, 255)]], dtype=np.uint8)
-    expected = np.array(
+    target = numpy.array([[(51, 102, 153, 0), (51, 102, 153, 255)]], dtype=numpy.uint8)
+    expected = numpy.array(
         [
             [
                 source_over((51, 102, 153, alpha), (204, 85, 34, min(coverage, 128)))
                 for alpha in (0, 255)
             ]
         ],
-        dtype=np.uint8,
+        dtype=numpy.uint8,
     )
     blend_normal_alpha_array_numpy(
-        target, (204, 85, 34, 128), np.full((1, 2), coverage, dtype=np.uint8)
+        target, (204, 85, 34, 128), numpy.full((1, 2), coverage, dtype=numpy.uint8)
     )
-    np.testing.assert_array_equal(target, expected)
+    numpy.testing.assert_array_equal(target, expected)
 
 
 @pytest.mark.parametrize(
@@ -147,20 +147,24 @@ def test_coverage_alpha_is_capped_by_source_opacity_and_zero_coverage_preserves_
     ],
 )
 def test_cached_colors_convert_as_uncached_ones(color, opacity):
-    blend.COLOR_RGBA_CACHE.clear()
-    first = blend.color_rgba(color, opacity)
-    assert first == blend.convert_color_rgba(color, opacity)
-    assert blend.color_rgba(color, opacity) is first
+    render_blend.COLOR_RGBA_CACHE.clear()
+    first = render_blend.color_rgba(color, opacity)
+    assert first == render_blend.convert_color_rgba(color, opacity)
+    assert render_blend.color_rgba(color, opacity) is first
 
 
 def test_color_cache_keeps_opacity_types_apart():
-    blend.COLOR_RGBA_CACHE.clear()
-    assert blend.color_rgba((0.5, 0.5, 0.5), False)[3] == 255
-    assert blend.color_rgba((0.5, 0.5, 0.5), 0)[3] == 0
+    render_blend.COLOR_RGBA_CACHE.clear()
+    assert render_blend.color_rgba((0.5, 0.5, 0.5), False)[3] == 255
+    assert render_blend.color_rgba((0.5, 0.5, 0.5), 0)[3] == 0
 
 
 def test_colors_that_are_not_float_tuples_are_not_cached():
-    blend.COLOR_RGBA_CACHE.clear()
-    assert blend.color_rgba([0.5, 0.5, 0.5], 1.0) == blend.convert_color_rgba([0.5, 0.5, 0.5], 1.0)
-    assert blend.color_rgba((1, 0, 0), 1.0) == blend.convert_color_rgba((1, 0, 0), 1.0)
-    assert not blend.COLOR_RGBA_CACHE
+    render_blend.COLOR_RGBA_CACHE.clear()
+    assert render_blend.color_rgba([0.5, 0.5, 0.5], 1.0) == render_blend.convert_color_rgba(
+        [0.5, 0.5, 0.5], 1.0
+    )
+    assert render_blend.color_rgba((1, 0, 0), 1.0) == render_blend.convert_color_rgba(
+        (1, 0, 0), 1.0
+    )
+    assert not render_blend.COLOR_RGBA_CACHE

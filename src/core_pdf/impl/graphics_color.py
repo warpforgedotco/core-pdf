@@ -13,8 +13,8 @@ from core_pdf.impl.graphics_color_spec import (
     ColorSpace,
     parse_color_space,
 )
-from core_pdf.impl.graphics_image_header import ImageHeader
 from core_pdf.impl.graphics_image_samples import (
+    ImageHeader,
     convert_components,
     convert_integer_image,
 )

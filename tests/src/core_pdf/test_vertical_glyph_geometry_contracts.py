@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 
-from core_pdf.impl.capture_glyph_geometry import GlyphGeometry, vertical_glyph_geometry
+from core_pdf.impl.capture_glyphs import GlyphGeometry, vertical_glyph_geometry
 from core_pdf.impl.types import Rectangle
 
 BASIS = (100.0, 700.0, 12.0, 0.0, 0.0, 12.0)

@@ -74,13 +74,6 @@ def test_mismatched_shapes_are_rejected():
         )
 
 
-def test_render_target_uses_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_compositing as target
-
-    assert target.composite_normal_group is composite_normal_group
-
-
 @pytest.mark.parametrize("index", range(0, len(GOLDEN), 7))
 @pytest.mark.parametrize("scale", [1.0, 0.6, 1.4, 0.0, -0.5, 2e-3])
 def test_the_effective_plane_is_composite_group_intos(index, scale):

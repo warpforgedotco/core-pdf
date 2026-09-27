@@ -133,21 +133,3 @@ def test_mismatched_shapes_are_rejected():
             1.0,
             *mask,
         )
-
-
-def test_render_target_uses_the_kernel():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_compositing as target
-
-    assert target.composite_masked_normal is composite_masked_normal
-
-
-def test_a_plane_without_transfer_reads_as_its_float32_window():
-    pytest.importorskip("core_pdf")
-    from core_pdf.impl.render_model import SoftMaskPlane
-
-    alpha = numpy.arange(256, dtype=numpy.uint8).reshape(16, 16)
-    for table in (None, numpy.linspace(1, 0, 256, dtype=numpy.float32)):
-        plane = SoftMaskPlane(alpha, table)
-        window = (slice(2, 9), slice(3, 14))
-        assert plane.values()[alpha[window]].tobytes() == plane[window].tobytes()

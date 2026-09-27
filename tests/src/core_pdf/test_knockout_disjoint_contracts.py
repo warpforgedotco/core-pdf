@@ -15,7 +15,7 @@ from core_pdf.impl.render_model import (
     display_item,
 )
 from core_pdf.impl.render_target import RasterTarget
-from tests.src.core_pdf.raster_support import make_target as make_real_target
+from tests.src.core_pdf import raster_support
 
 
 def make_target() -> RasterTarget:
@@ -147,7 +147,7 @@ def grouped(target: RasterTarget, items: list[Any], monkeypatch: pytest.MonkeyPa
 
 
 def knockout_target() -> RasterTarget:
-    target = make_real_target(width=40, height=40)
+    target = raster_support.make_target(width=40, height=40)
     target.push_group(bytearray(40 * 40 * 4), None, None, isolated=True, knockout=True)
     return target
 

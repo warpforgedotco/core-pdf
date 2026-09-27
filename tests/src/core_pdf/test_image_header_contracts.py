@@ -2,20 +2,20 @@ import zlib
 
 import pytest
 
-from core_pdf.impl import graphics_image_header
-from core_pdf.impl.graphics_image_header import ImageHeader
+from core_pdf.impl import graphics_image_samples
+from core_pdf.impl.graphics_image_samples import ImageHeader
 from core_pdf.impl.graphics_images import decode_pdf_image
 
 
 def counted_parser(monkeypatch: pytest.MonkeyPatch) -> list[object]:
     calls: list[object] = []
-    original = graphics_image_header.parse_color_space
+    original = graphics_image_samples.parse_color_space
 
     def parse(value: object, active: set[int] | None = None) -> object:
         calls.append(value)
         return original(value, active)
 
-    monkeypatch.setattr(graphics_image_header, "parse_color_space", parse)
+    monkeypatch.setattr(graphics_image_samples, "parse_color_space", parse)
     return calls
 
 

@@ -3,8 +3,7 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.document_document import PdfDocument
-from core_pdf.impl.document_security import check_security_aliases
+from core_pdf.impl.document_document import PdfDocument, check_security_aliases
 from core_pdf.impl.exceptions import (
     PdfDocumentClosedError,
     PdfEmptySourceError,

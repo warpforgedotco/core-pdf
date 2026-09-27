@@ -30,12 +30,8 @@ from core_pdf.impl.graphics_icc_profiles import (
     parse_icc_transform,
     srgb_profile,
 )
-from core_pdf.impl.pdf_names import lenient_float
-from core_pdf_cythonized import (
-    code_presence,
-    distinct_uint16_rows,
-    gather_uint8_rows,
-)
+from core_pdf.impl.pdf_values import lenient_float, lenient_int
+from core_pdf_cythonized import code_presence, distinct_uint16_rows, gather_uint8_rows
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -59,6 +55,57 @@ from core_pdf_spec.s_11_transparency.images import unblend_matte_components
 from core_pdf_spec.types import PdfName
 
 
+class ImageHeader:
+    __slots__ = (
+        "width",
+        "height",
+        "declared_bits",
+        "bits",
+        "color_space",
+        "decode",
+        "mask",
+        "filter",
+        "parsed_space",
+        "space_error",
+    )
+
+    def __init__(self, dictionary: dict[Any, Any]) -> None:
+        self.width = lenient_int(dictionary.get("Width"), 0)
+        self.height = lenient_int(dictionary.get("Height"), 0)
+        declared_bits = lenient_int(dictionary.get("BitsPerComponent", 8), None)
+        self.declared_bits = declared_bits
+        self.bits = 8 if declared_bits is None else declared_bits
+        self.color_space = dictionary.get("ColorSpace")
+        self.decode = dictionary.get("Decode")
+        self.mask = dictionary.get("Mask")
+        self.filter = dictionary.get("Filter")
+        self.parsed_space: ColorSpace | None = None
+        self.space_error: Exception | None = None
+
+    def checked_bits(self) -> int:
+        bits = self.declared_bits
+        if bits is None or bits <= 0:
+            raise ValueError("invalid image bits-per-component")
+        return bits
+
+    def space(self) -> ColorSpace:
+        parsed = self.parsed_space
+        if parsed is not None:
+            return parsed
+        if self.space_error is not None:
+            raise self.space_error
+        try:
+            parsed = self.parsed_space = parse_color_space(self.color_space)
+        except Exception as error:
+            self.space_error = error
+            raise
+        return parsed
+
+    @property
+    def has_color_key_mask(self) -> bool:
+        return isinstance(self.mask, (list, tuple))
+
+
 def quantize(values: numpy.ndarray[Any, Any], maximum: int = 255) -> numpy.ndarray:
     return numpy.rint(numpy.clip(values, 0, 1) * maximum).astype(
         numpy.uint8 if maximum == 255 else numpy.uint16
@@ -76,10 +123,19 @@ def distinct_component_rows(
 
 type TintFunction = Callable[..., tuple[float, ...]]
 
+
 TINT_FUNCTION_CACHE_LIMIT = 64
+
+
 TINT_FUNCTION_CACHE: BoundedDict[object, TintFunction] = BoundedDict(TINT_FUNCTION_CACHE_LIMIT)
+
+
 TINT_FUNCTION_OBJECTS_LIMIT = 256
+
+
 TINT_FUNCTION_OBJECTS: IdentityCache[TintFunction] = IdentityCache(TINT_FUNCTION_OBJECTS_LIMIT)
+
+
 TINT_OUTPUT_CACHE_LIMIT = 4096
 
 
@@ -274,6 +330,7 @@ def convert_cie_components(
 
 type ColorConverter = Callable[[numpy.ndarray, ColorSpace, ConversionContext], numpy.ndarray | None]
 
+
 COLOR_CONVERTERS: dict[str, ColorConverter] = {
     **dict.fromkeys(GRAY_RGB_KINDS, convert_device_components),
     "DeviceCMYK": convert_cmyk_components,
@@ -436,6 +493,8 @@ def convert_integer_image(
 
 
 ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
+
+
 SRGB_MATRIX = numpy.asarray(
     (
         (3.2404542, -1.5371385, -0.4985314),
@@ -444,6 +503,8 @@ SRGB_MATRIX = numpy.asarray(
     ),
     dtype=numpy.float32,
 )
+
+
 D50_TO_D65_MATRIX = numpy.asarray(
     (
         (0.955473, -0.023098, 0.063259),
@@ -452,6 +513,8 @@ D50_TO_D65_MATRIX = numpy.asarray(
     ),
     dtype=numpy.float32,
 )
+
+
 D50_XYZ_TO_SRGB_MATRIX = (SRGB_MATRIX @ D50_TO_D65_MATRIX).astype(numpy.float32)
 
 

@@ -1,7 +1,7 @@
-import numpy as np
+import numpy
 import pytest
 
-from core_pdf.impl import render_target as target_module
+from core_pdf.impl import render_target
 from core_pdf.impl.capture_records import CapturedPath
 from core_pdf.impl.render_model import display_item
 from core_pdf.impl.render_target import RasterTarget
@@ -22,8 +22,10 @@ from tests.src.core_pdf.raster_support import make_target
 @pytest.mark.parametrize("clipped", [False, True])
 def test_normal_blend_matches_optimized_sampler(quad, opacity, mask_kind, clipped):
     results = []
-    source = np.array([[[255, 0, 0], [0, 255, 0]], [[0, 0, 255], [255, 255, 255]]], dtype=np.uint8)
-    mask = np.array([[0, 128], [255, 64]], dtype=np.uint8)
+    source = numpy.array(
+        [[[255, 0, 0], [0, 255, 0]], [[0, 0, 255], [255, 255, 255]]], dtype=numpy.uint8
+    )
+    mask = numpy.array([[0, 128], [255, 64]], dtype=numpy.uint8)
     for blend in (None, "Normal"):
         target = make_target(4, 4)
         target.pixels[:] = bytes([20, 40, 60, 255]) * 16
@@ -42,13 +44,13 @@ def test_normal_blend_matches_optimized_sampler(quad, opacity, mask_kind, clippe
             source_alpha=mask if mask_kind == "alpha" else None,
             soft_mask=mask if mask_kind == "soft" else None,
         )
-        results.append(np.frombuffer(target.pixels, dtype=np.uint8).astype(int))
+        results.append(numpy.frombuffer(target.pixels, dtype=numpy.uint8).astype(int))
     if mask_kind is None and opacity in {0, 1}:
-        np.testing.assert_array_equal(results[0], results[1])
+        numpy.testing.assert_array_equal(results[0], results[1])
     else:
-        np.testing.assert_allclose(results[0], results[1], atol=1, rtol=0)
+        numpy.testing.assert_allclose(results[0], results[1], atol=1, rtol=0)
     if opacity == 0:
-        np.testing.assert_array_equal(results[0].reshape(-1, 4), [[20, 40, 60, 255]] * 16)
+        numpy.testing.assert_array_equal(results[0].reshape(-1, 4), [[20, 40, 60, 255]] * 16)
 
 
 @pytest.mark.parametrize("isolated", [False, True])
@@ -64,8 +66,8 @@ def test_group_compositing_applies_opacity_once(isolated, knockout, opacity):
     assert target.pixels is original_buffer
     assert len(target.buffer_stack) == 1
     expected = [10 + 245 * opacity, 20 * (1 - opacity), 30 * (1 - opacity), 255]
-    pixels = np.frombuffer(target.pixels, dtype=np.uint8).reshape(4, 4)
-    np.testing.assert_allclose(pixels, [expected] * 4, atol=1, rtol=0)
+    pixels = numpy.frombuffer(target.pixels, dtype=numpy.uint8).reshape(4, 4)
+    numpy.testing.assert_allclose(pixels, [expected] * 4, atol=1, rtol=0)
 
 
 @pytest.mark.parametrize("failure", ["prepare", "paint", "composite"])
@@ -78,9 +80,9 @@ def test_paint_failure_restores_shape_and_group_state(monkeypatch, failure):
         raise RuntimeError("injected rendering failure")
 
     monkeypatch.setattr(
-        target_module,
+        render_target,
         "resolve_soft_mask",
-        fail if failure == "prepare" else lambda *a: np.ones((2, 2), dtype=np.float32),
+        fail if failure == "prepare" else lambda *a: numpy.ones((2, 2), dtype=numpy.float32),
     )
     if failure == "paint":
         monkeypatch.setattr(RasterTarget, "paint_display_item", fail)
@@ -154,10 +156,10 @@ def test_tiling_patterns_repeat_inside_the_path_clip(nested, blend):
     target = make_target(4, 4)
     target.pixels[:] = bytes([200, 200, 200, 255]) * 16
     target.paint_items(display.items)
-    actual = np.frombuffer(target.pixels, dtype=np.uint8).reshape(4, 4, 4)
-    expected = np.full((4, 4, 4), [200, 200, 200, 255], dtype=np.uint8)
+    actual = numpy.frombuffer(target.pixels, dtype=numpy.uint8).reshape(4, 4, 4)
+    expected = numpy.full((4, 4, 4), [200, 200, 200, 255], dtype=numpy.uint8)
     expected[1:3, 1:3] = [255 if blend is None else 200, 0, 0, 255]
-    np.testing.assert_array_equal(actual, expected)
+    numpy.testing.assert_array_equal(actual, expected)
     assert len(target.buffer_stack) == 1
     assert target.clip.depth == 0
     assert target.scope_stack == []

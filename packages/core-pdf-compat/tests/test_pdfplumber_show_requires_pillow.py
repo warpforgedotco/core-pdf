@@ -3,7 +3,7 @@ from io import BytesIO
 
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 
 @pytest.fixture
@@ -13,7 +13,7 @@ def pillow_absent(monkeypatch):
 
 
 def test_show_without_pillow_names_the_extra(text_pdf_bytes, pillow_absent):
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         image = pdf.pages[0].to_image()
         with pytest.raises(ImportError, match=r"core-pdf-compat\[pdfplumber\]") as raised:
             image.show()
@@ -21,7 +21,7 @@ def test_show_without_pillow_names_the_extra(text_pdf_bytes, pillow_absent):
 
 
 def test_rendering_does_not_require_pillow(text_pdf_bytes, pillow_absent):
-    with compat.open(BytesIO(text_pdf_bytes)) as pdf:
+    with core_pdf_compat.pdfplumber.open(BytesIO(text_pdf_bytes)) as pdf:
         image = pdf.pages[0].to_image()
         image.draw_rect((20, 30, 50, 60), fill="red", stroke="blue")
         output = BytesIO()

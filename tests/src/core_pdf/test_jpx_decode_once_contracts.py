@@ -5,8 +5,7 @@ import imagecodecs
 import numpy
 import pytest
 
-from core_pdf.impl import graphics_codec_backends as codec_backends
-from core_pdf.impl import graphics_images
+from core_pdf.impl import graphics_images, graphics_stream_decoding
 from core_pdf.impl.graphics_images import decode_image_samples
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
 from core_pdf.impl.types import PdfName
@@ -29,13 +28,13 @@ def test_a_declined_image_is_decoded_once(monkeypatch: pytest.MonkeyPatch) -> No
     data, dictionary = jpx_image([PdfName.of(b"CalRGB"), {}])
     expected = decode_stream_data(data, dictionary)
     calls: list[int] = []
-    original = codec_backends.decode_jpx_image
+    original = graphics_stream_decoding.decode_jpx_image
 
     def counted(*args: Any, **kwargs: Any) -> Any:
         calls.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(codec_backends, "decode_jpx_image", counted)
+    monkeypatch.setattr(graphics_stream_decoding, "decode_jpx_image", counted)
     samples = decode_image_samples(data, dictionary)
     assert samples == expected
     assert type(samples) is bytes

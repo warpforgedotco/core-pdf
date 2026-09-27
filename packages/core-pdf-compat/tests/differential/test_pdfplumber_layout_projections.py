@@ -2,7 +2,7 @@ from io import BytesIO
 
 import pytest
 
-from core_pdf_compat import pdfplumber as compat
+import core_pdf_compat.pdfplumber
 
 reference = pytest.importorskip("pdfplumber")
 pytestmark = pytest.mark.compat_differential
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.compat_differential
 )
 def test_layout_object_text_and_bounds_match_reference(text_pdf_bytes, laparams, property_name):
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(text_pdf_bytes), laparams=laparams) as pdf:
             page = pdf.pages[0]
             snapshots.append(
@@ -47,7 +47,7 @@ def test_optional_page_boxes_match_reference(text_pdf_bytes, box_name, present):
     stream = BytesIO()
     writer.write(stream)
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(stream.getvalue())) as pdf:
             snapshots.append(getattr(pdf.pages[0], box_name, None))
     assert snapshots[1] == snapshots[0]
@@ -87,7 +87,7 @@ def test_annotation_and_hyperlink_geometry_match_reference(text_pdf_bytes, cropp
     output = BytesIO()
     writer.write(output)
     snapshots = []
-    for library in (reference, compat):
+    for library in (reference, core_pdf_compat.pdfplumber):
         with library.open(BytesIO(output.getvalue())) as pdf:
             page = pdf.pages[0]
             if cropped:
