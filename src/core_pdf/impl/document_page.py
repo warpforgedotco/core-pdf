@@ -31,7 +31,6 @@ from core_pdf.impl.recovery_resolver import resolve_resource_dict
 from core_pdf.impl.render_model import RenderOptions
 from core_pdf.impl.render_page import compose_page
 from core_pdf.impl.scalars import clamp01
-from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_document.page import page_clip, page_rotation, page_user_unit
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -139,9 +138,7 @@ class PdfPage:
                 continue
             contents = self.document.resolver.resolve_str(annot.get("Contents")) or ""
             dest = annot.get("Dest")
-            action: object = annot.get("A")
-            if isinstance(action, PdfReference):
-                action = self.document.resolver.resolve(action)
+            action = resolve_annotation_dict(self.document.resolver, annot.get("A"))
             if dest is None:
                 dest = goto_action_destination(self.document.resolver, action)
 
@@ -152,7 +149,7 @@ class PdfPage:
                     contents=contents,
                     dict_=annot,
                     dest=dest,
-                    action=action if isinstance(action, dict) else None,
+                    action=action,
                 )
             )
         return results
@@ -163,7 +160,6 @@ class PdfPage:
             return []
 
         resolver = self.document.resolver
-        resolve = self.document.resolve
         records: list[RawLink] = []
         for annot in annots:
             subtype = resolver.name_at(annot, "Subtype")
@@ -176,12 +172,10 @@ class PdfPage:
             if rect is None:
                 continue
 
-            action: object = annot.get("A")
-            if isinstance(action, PdfReference):
-                action = resolve(action)
+            action = resolve_annotation_dict(resolver, annot.get("A"))
             link_type = None
             url = None
-            if isinstance(action, dict):
+            if action is not None:
                 link_type = resolver.name_at(action, "S")
                 url = link_target(resolver, action, link_type)
 

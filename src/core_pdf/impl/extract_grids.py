@@ -304,14 +304,12 @@ def table_from_component(
                 float(x_edges[column + 1]),
                 float(y_edges[row]),
             )
+            indexes = cell_observations.get((row, column))
             cells.append(
                 TableCell(
                     row=row,
                     column=column,
-                    text=cell_text(
-                        observations,
-                        cell_observations[(row, column)],
-                    ),
+                    text=cell_text(observations, indexes) if indexes else "",
                     bbox=bbox,
                 )
             )

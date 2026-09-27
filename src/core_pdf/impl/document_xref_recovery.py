@@ -7,8 +7,6 @@ import struct
 from array import array
 from collections.abc import Callable, Iterator
 from functools import partial
-from itertools import compress, repeat
-from operator import and_, is_, itemgetter, not_, truth
 from typing import Any
 
 import numpy
@@ -152,28 +150,17 @@ class XRefRecovery(DocumentState):
         header_offset = self.pdf_header_offset()
         recovered_xref: dict[int, PdfXRefEntry] | None = None
         repaired = False
-        keys = list(self.xref)
-        entries = list(self.xref.values())
-        offsets = list(map(ENTRY_OFFSET, entries))
-        selected = list(
-            map(
-                and_,
-                map(
-                    and_,
-                    map(truth, map(ENTRY_IN_USE, entries)),
-                    map(is_, map(ENTRY_OBJECT_STREAM, entries), repeat(None), strict=False),
-                    strict=True,
-                ),
-                map((0).__le__, offsets),
-                strict=True,
-            )
+        selected = [
+            (key, entry)
+            for key, entry in self.xref.items()
+            if entry.in_use and entry.object_stream is None and entry.offset >= 0
+        ]
+        matched = object_headers_present(
+            self.raw_data, [key for key, _ in selected], [entry.offset for _, entry in selected]
         )
-        keys = list(compress(keys, selected))
-        entries = list(compress(entries, selected))
-        matched = object_headers_present(self.raw_data, keys, list(compress(offsets, selected)))
-        for index in compress(range(len(keys)), map(not_, matched)):
-            key = keys[index]
-            entry = entries[index]
+        for (key, entry), present in zip(selected, matched, strict=True):
+            if present:
+                continue
             if self.xref_entry_header_nearby(key, entry):
                 continue
             if header_offset:
@@ -551,15 +538,6 @@ class XRefRecovery(DocumentState):
 HUGE_OBJECT_NUMBER = 1 << 63
 
 
-ENTRY_OFFSET = itemgetter(0)
-
-
-ENTRY_IN_USE = itemgetter(2)
-
-
-ENTRY_OBJECT_STREAM = itemgetter(3)
-
-
 def object_headers_present(data: Any, keys: list[int], offsets: list[int]) -> list[bool]:
     data_len = len(data)
     try:
@@ -600,9 +578,6 @@ TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
 
 
 __all__ = (
-    "ENTRY_IN_USE",
-    "ENTRY_OBJECT_STREAM",
-    "ENTRY_OFFSET",
     "HUGE_OBJECT_NUMBER",
     "TRAILER_METADATA_KEYS",
     "XRefRecovery",

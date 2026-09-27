@@ -14,7 +14,7 @@ from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.capture_records import CapturedPath, CapturedSoftMask, PatternPaint
 from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.render_blend import color_rgba, declared_blend, scale_rgba_alpha
-from core_pdf.impl.render_paths import translate_rect
+from core_pdf.impl.render_paths import stroke_half_width, translate_rect
 from core_pdf.impl.scalars import clamp01
 from core_pdf.impl.types import (
     GeneratedRecord,
@@ -222,7 +222,7 @@ class PathPaintItem(
         if box is None:
             return None
         if self.paint_kind in {PathPaintKind.STROKE, PathPaintKind.FILL_STROKE}:
-            pad = max(0.5 / scale, self.line_width * 0.5)
+            pad = stroke_half_width(scale, self.line_width)
             box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
         return box
 

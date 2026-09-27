@@ -12,7 +12,11 @@ from core_pdf.impl.fonts_program_truetype import (
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.pdf_values import ReferenceResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
+from core_pdf_spec.s_07_syntax_primitives.coercion import (
+    is_pdf_number,
+    parse_float_strict,
+    parse_int_strict,
+)
 
 
 def get_font_file(document: ReferenceResolver, font_obj: object) -> PdfStream | None:
@@ -181,7 +185,7 @@ def detect_ligature_overrides(
             width_index = pdf_code - first_char_int
             if 0 <= width_index < len(lig_widths_raw):
                 width_value = lig_widths_raw[width_index]
-                if type(width_value) in (int, float):
+                if is_pdf_number(width_value):
                     lig_width = float(width_value)
 
         if lig_width and 0.85 <= lig_width / ft_width <= 0.98:

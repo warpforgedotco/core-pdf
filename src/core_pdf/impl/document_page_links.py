@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from core_pdf.impl.recovery_text_strings import parse_text_string
-from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 
 
 def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDict | None:
-    if isinstance(value, PdfReference):
-        value = resolver.resolve(value)
+    value = resolver.resolve(value)
     return value if isinstance(value, dict) else None
 
 

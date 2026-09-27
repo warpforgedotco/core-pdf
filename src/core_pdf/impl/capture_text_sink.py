@@ -126,18 +126,6 @@ class TextLayout:
 
 
 class GlyphCaptureMixin(CaptureHost):
-    def is_text_visible(self, text: str) -> bool:
-        if not text:
-            return False
-        if self.text_paint_mode(check_colorants=False) in NON_PAINTING_RENDER_MODES:
-            return False
-        first_code = ord(text[0])
-        if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and is_garbage_text(text):
-            return False
-        if self.graphics.font_size < 0.1:
-            return False
-        return self.is_graphics_visible()
-
     def update_pending_run(self, new_run: TextRun) -> None:
         if not self.is_clipped_away(new_run.x0, new_run.y0, new_run.x1, new_run.y1):
             self.run_accumulator.append(new_run)

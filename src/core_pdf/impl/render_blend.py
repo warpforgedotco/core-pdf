@@ -299,7 +299,7 @@ def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
 
 def convert_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
     alpha = 255
-    if type(opacity) in {int, float}:
+    if is_pdf_number(opacity):
         alpha = color_component(opacity, 255)
     if isinstance(color, (list, tuple)) and color:
         if len(color) == 1:

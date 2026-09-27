@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, TypeAlias, overload
 
+from core_pdf.impl.document_contracts import resolve_optional_dict
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.pdf_values import coerce_value
 from core_pdf.impl.recovery_trees import iter_number_tree_items
@@ -309,12 +310,12 @@ class StructureElement(StructureNode):
     def parent(self) -> StructureElement | StructureTree | None:
         if self.parent_value is not MISSING:
             return self.parent_value
-        parent = self.document.resolver.resolve(self.props.get("P"))
+        parent = resolve_optional_dict(
+            self.document.resolver, self.props.get("P"), "invalid structure parent entry"
+        )
         if parent is None:
             self.parent_value = None
             return None
-        if not isinstance(parent, dict):
-            raise ValueError("invalid structure parent entry")
         if self.document.resolver.name_at(parent, "Type") == "StructTreeRoot":
             tree = self.document.structure
             if tree is not None and self.page_lookup is not None:
@@ -367,13 +368,13 @@ class StructureTree(StructureNode):
     def role_map(self) -> dict[str, str]:
         if self.role_map_value is not None:
             return self.role_map_value
-        resolved = self.document.resolver.resolve(self.props.get("RoleMap"))
+        resolved = resolve_optional_dict(
+            self.document.resolver, self.props.get("RoleMap"), "invalid role map dictionary"
+        )
         role_map: dict[str, str] = {}
         if resolved is None:
             self.role_map_value = role_map
             return role_map
-        if not isinstance(resolved, dict):
-            raise ValueError("invalid role map dictionary")
         role_map = parse_role_map(
             ((structure_key_name(key), value) for key, value in resolved.items()),
             self.document.resolver.resolve_name_or_text,
@@ -385,13 +386,13 @@ class StructureTree(StructureNode):
     def parent_tree(self) -> ParentTree:
         if self.parent_tree_value is not None:
             return self.parent_tree_value
-        resolved = self.document.resolver.resolve(self.props.get("ParentTree"))
+        resolved = resolve_optional_dict(
+            self.document.resolver, self.props.get("ParentTree"), "invalid parent tree dictionary"
+        )
         results: ParentTree = {}
         if resolved is None:
             self.parent_tree_value = results
             return results
-        if not isinstance(resolved, dict):
-            raise ValueError("invalid parent tree dictionary")
         results.update(
             iter_number_tree_items(
                 resolved,
@@ -460,8 +461,7 @@ class PageStructure(Sequence[StructureElement | None]):
             return None
         if isinstance(obj, StructureElement):
             return obj
-        if isinstance(obj, PdfReference):
-            obj = self.page.document.resolver.resolve(obj)
+        obj = self.page.document.resolver.resolve(obj)
         if not isinstance(obj, dict):
             raise ValueError("invalid page structure parent entry")
         marker = id(obj)

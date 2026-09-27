@@ -10,6 +10,7 @@ from core_pdf.impl.fonts_helpers import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.fonts_raster_kernel import (
     rasterize_contours,
 )
+from core_pdf.impl.geometry import points_bbox
 from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
 
 if TYPE_CHECKING:
@@ -63,11 +64,10 @@ def feature_from_contours(
         return EMPTY_FEATURE
 
     points = [point for contour in contours for point in contour]
-    if not points:
+    bbox = points_bbox(points)
+    if bbox is None:
         return EMPTY_FEATURE
-    xs, ys = zip(*points, strict=True)
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
+    min_x, min_y, max_x, max_y = bbox
     width = max(max_x - min_x, 1.0)
     height = max(max_y - min_y, 1.0)
     cells: set[tuple[int, int]] = set()

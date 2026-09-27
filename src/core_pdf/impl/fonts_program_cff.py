@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from math import inf, isfinite
+from math import isfinite
 from typing import Any
 
 from core_adobe_fonts.cff.font import (
@@ -32,7 +32,7 @@ from core_pdf.impl.fonts_raster_kernel import (
     Contours,
     transform_contours,
 )
-from core_pdf.impl.geometry import points_bbox
+from core_pdf.impl.geometry import points_bbox, union_bbox
 from core_pdf.impl.types import Rectangle
 from core_pdf_cythonized import type2_glyph_geometry
 from core_pdf_spec.s_08_graphics.matrix import Matrix
@@ -480,16 +480,10 @@ def type2_glyph_geometry_impl(
         return contours, bbox
 
     base_code, accent_code, dx, dy = seac
-    min_x, min_y, max_x, max_y = bbox if bbox is not None else (inf, inf, -inf, -inf)
-    has_points = bbox is not None
     for component in seac_resolver(base_code, accent_code, dx, dy):
         if not component:
             continue
         if retain_contours:
             contours.append(list(component))
-        min_x = min(min_x, *(point[0] for point in component))
-        min_y = min(min_y, *(point[1] for point in component))
-        max_x = max(max_x, *(point[0] for point in component))
-        max_y = max(max_y, *(point[1] for point in component))
-        has_points = True
-    return contours, (min_x, min_y, max_x, max_y) if has_points else None
+        bbox = union_bbox(bbox, points_bbox(component))
+    return contours, bbox

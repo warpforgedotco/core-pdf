@@ -130,8 +130,7 @@ class SecuritySetupMixin(DocumentState):
         header = self._standards
         context = header.context if legacy_name_context(header.context) else None
         self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=context)
-        self.scan_xref()
-        self.resolver.xref = self.xref
+        self.rescan_xref()
         if legacy_name_context(context):
             selected = bootstrap_security_context(
                 header, self.raw_data, self.xref, self.trailer_dict
@@ -139,8 +138,7 @@ class SecuritySetupMixin(DocumentState):
             if not legacy_name_context(selected):
                 check_security_aliases(self.trailer_dict, self.resolver)
                 self.resolver.semantic_context = selected
-                self.scan_xref()
-                self.resolver.xref = self.xref
+                self.rescan_xref()
 
         for attempt in range(2):
             self.init_security(password)
@@ -175,8 +173,11 @@ class SecuritySetupMixin(DocumentState):
             self.resolver.close()
             self.decipher = None
             self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=selected)
-            self.scan_xref()
-            self.resolver.xref = self.xref
+            self.rescan_xref()
+
+    def rescan_xref(self) -> None:
+        self.scan_xref()
+        self.resolver.xref = self.xref
 
     def init_security(self, password: str) -> None:
         trailer = self.trailer_dict

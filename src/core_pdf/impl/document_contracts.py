@@ -161,6 +161,15 @@ class ExtractionDocument(LayeredDocument, StructureHost, Protocol):
     def get_metadata(self) -> MetadataRecord: ...
 
 
+def resolve_optional_dict(
+    resolver: ReferenceResolver, value: object, message: str
+) -> PdfDict | None:
+    resolved = resolver.resolve(value)
+    if resolved is None or isinstance(resolved, dict):
+        return resolved
+    raise ValueError(message)
+
+
 __all__ = (
     "CaptureDocument",
     "CapturePage",
@@ -170,4 +179,5 @@ __all__ = (
     "PageHost",
     "ResolverHost",
     "StructureHost",
+    "resolve_optional_dict",
 )

@@ -403,6 +403,9 @@ class TextView(ViewCache, GeneratedRecord):
 
     @property
     def text(self) -> str:
+        return self.cached_view("text", self.build_text)
+
+    def build_text(self) -> str:
         parts: list[str] = []
         for element in self.elements:
             if isinstance(element, Block):
@@ -785,7 +788,7 @@ class Document(FrozenMetadataFields, ViewCache, GeneratedRecord):
 
     @property
     def text(self) -> str:
-        return self.text_view.text
+        return self.cached_view("text", lambda: self.text_view.text)
 
     @property
     def words(self) -> tuple[TextWord, ...]:

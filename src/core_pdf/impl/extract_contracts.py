@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, Protocol, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self
 
 import numpy
 
@@ -61,19 +61,24 @@ class ObservationBatch(GeneratedRecord):
     line_break_before: BoolArray
     references: tuple[TextReference | None, ...]
 
+    array_columns: ClassVar[tuple[tuple[str, Any], ...]] = (
+        ("bbox", numpy.float32),
+        ("source", numpy.uint8),
+        ("confidence", numpy.float32),
+        ("sequence", numpy.int64),
+        ("visible", numpy.bool_),
+        ("rotation", numpy.int64),
+        ("font_size", numpy.float32),
+        ("line_break_before", numpy.bool_),
+    )
+
     def __post_init__(self) -> None:
         size = len(self.text)
         if len(self.references) != size:
             raise ValueError("observation references must match the text column")
-        columns = (
-            ("bbox", self.bbox, (size, 4), numpy.float32),
-            ("source", self.source, (size,), numpy.uint8),
-            ("confidence", self.confidence, (size,), numpy.float32),
-            ("sequence", self.sequence, (size,), numpy.int64),
-            ("visible", self.visible, (size,), numpy.bool_),
-            ("rotation", self.rotation, (size,), numpy.int64),
-            ("font_size", self.font_size, (size,), numpy.float32),
-            ("line_break_before", self.line_break_before, (size,), numpy.bool_),
+        columns = tuple(
+            (name, getattr(self, name), (size, 4) if name == "bbox" else (size,), dtype)
+            for name, dtype in self.array_columns
         )
         for name, column, shape, dtype in columns:
             if column.shape != shape:
@@ -87,17 +92,23 @@ class ObservationBatch(GeneratedRecord):
         return len(self.text)
 
     @classmethod
+    def from_arrays(
+        cls,
+        text: tuple[str, ...],
+        arrays: Iterable[numpy.ndarray[Any, Any]],
+        references: tuple[Any | None, ...],
+    ) -> ObservationBatch:
+        parts: list[Any] = [text, *arrays, references]
+        return cls(*parts)
+
+    @classmethod
     def empty(cls) -> ObservationBatch:
-        return cls(
+        return cls.from_arrays(
             (),
-            numpy.empty((0, 4), dtype=numpy.float32),
-            numpy.empty(0, dtype=numpy.uint8),
-            numpy.empty(0, dtype=numpy.float32),
-            numpy.empty(0, dtype=numpy.int64),
-            numpy.empty(0, dtype=numpy.bool_),
-            numpy.empty(0, dtype=numpy.int64),
-            numpy.empty(0, dtype=numpy.float32),
-            numpy.empty(0, dtype=numpy.bool_),
+            (
+                numpy.empty((0, 4) if name == "bbox" else 0, dtype=dtype)
+                for name, dtype in cls.array_columns
+            ),
             (),
         )
 
@@ -165,16 +176,9 @@ class ObservationBatch(GeneratedRecord):
             return self if not len(self) else ObservationBatch.empty()
         if numpy.array_equal(indexes, numpy.arange(len(self))):
             return self
-        return ObservationBatch(
+        return ObservationBatch.from_arrays(
             tuple(self.text[int(index)] for index in indexes),
-            self.bbox[indexes],
-            self.source[indexes],
-            self.confidence[indexes],
-            self.sequence[indexes],
-            self.visible[indexes],
-            self.rotation[indexes],
-            self.font_size[indexes],
-            self.line_break_before[indexes],
+            (getattr(self, name)[indexes] for name, _ in self.array_columns),
             tuple(self.references[int(index)] for index in indexes),
         )
 
@@ -194,16 +198,12 @@ class ObservationBatch(GeneratedRecord):
             return cls.empty()
         if len(batches) == 1:
             return batches[0]
-        return cls(
+        return cls.from_arrays(
             tuple(text for batch in batches for text in batch.text),
-            numpy.concatenate(tuple(batch.bbox for batch in batches)),
-            numpy.concatenate(tuple(batch.source for batch in batches)),
-            numpy.concatenate(tuple(batch.confidence for batch in batches)),
-            numpy.concatenate(tuple(batch.sequence for batch in batches)),
-            numpy.concatenate(tuple(batch.visible for batch in batches)),
-            numpy.concatenate(tuple(batch.rotation for batch in batches)),
-            numpy.concatenate(tuple(batch.font_size for batch in batches)),
-            numpy.concatenate(tuple(batch.line_break_before for batch in batches)),
+            (
+                numpy.concatenate(tuple(getattr(batch, name) for batch in batches))
+                for name, _ in cls.array_columns
+            ),
             tuple(reference for batch in batches for reference in batch.references),
         )
 
@@ -235,16 +235,12 @@ class ObservationBatch(GeneratedRecord):
             result[split:] = secondary_column[indexes]
             return result
 
-        return cls(
+        return cls.from_arrays(
             (*primary.text, *(secondary.text[int(index)] for index in indexes)),
-            combine(primary.bbox, secondary.bbox),
-            combine(primary.source, secondary.source),
-            combine(primary.confidence, secondary.confidence),
-            combine(primary.sequence, secondary.sequence),
-            combine(primary.visible, secondary.visible),
-            combine(primary.rotation, secondary.rotation),
-            combine(primary.font_size, secondary.font_size),
-            combine(primary.line_break_before, secondary.line_break_before),
+            (
+                combine(getattr(primary, name), getattr(secondary, name))
+                for name, _ in cls.array_columns
+            ),
             (*primary.references, *(secondary.references[int(index)] for index in indexes)),
         )
 

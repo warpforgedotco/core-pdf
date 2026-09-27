@@ -187,7 +187,6 @@ class RasterFills(RasterGroups):
             return
         (x0, y0, x1, y1), (ix0, iy0, ix1, iy1) = clipped_box
         rectangular_clip = self.clip.clip_paths_are_axis_aligned_rects()
-        pixels = self.pixels
         scale = self.scale
         left = (x0 - self.crop_x0) * scale
         right = (x1 - self.crop_x0) * scale
@@ -223,21 +222,6 @@ class RasterFills(RasterGroups):
                 self.shape_alpha,
             )
             self.extend_paint_window(rows, columns)
-            return
-        if rgba[3] == 255 and blend_mode is None and rectangular_clip:
-            span = ix1 - ix0
-            if span <= 0:
-                return
-            if pixels is self.page_buffer:
-                self.page_pixels[iy0:iy1, ix0:ix1] = rgba
-                self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
-                return
-            target_pixels = self.pixel_array
-            blend_normal_solid_array_numpy(
-                target_pixels[iy0:iy1, ix0:ix1],
-                rgba,
-            )
-            self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
             return
         normal_fast = blend_mode is None
         normal_target = self.pixel_array if normal_fast else None
@@ -502,9 +486,6 @@ class RasterFills(RasterGroups):
         clip_row_visible_spans = self.clip.clip_row_visible_spans
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
-        page_buffer = self.page_buffer
-        page_pixels = self.page_pixels
-        pixels = self.pixels
         scale = self.scale
         width = self.width
         ix0, iy0, ix1, iy1 = pixel_box
@@ -566,10 +547,7 @@ class RasterFills(RasterGroups):
                     if visible_end <= visible_start:
                         continue
                     if simple_opaque:
-                        if pixels is page_buffer:
-                            page_pixels[py, visible_start:visible_end] = rgba
-                        else:
-                            self.pixel_array[py, visible_start:visible_end] = rgba
+                        self.pixel_array[py, visible_start:visible_end] = rgba
                         self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
                         continue
                     if rectangular_clip and normal_fast:
@@ -631,9 +609,9 @@ class RasterFills(RasterGroups):
                 pending_index < edge_count and edge_bounds[pending_order[pending_index]][5] > scan_y
             ):
                 edge_index = pending_order[pending_index]
-                heapq.heappush(active_heap, (edge_bounds[edge_index][4], edge_index))
+                heapq.heappush(active_heap, (-edge_bounds[edge_index][4], edge_index))
                 pending_index += 1
-            while active_heap and active_heap[0][0] > scan_y:
+            while active_heap and -active_heap[0][0] > scan_y:
                 heapq.heappop(active_heap)
             intersections: list[tuple[float, int]] = []
             for _low, edge_index in active_heap:

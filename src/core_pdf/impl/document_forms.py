@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from core_pdf.impl.document_contracts import DocumentState
+from core_pdf.impl.document_contracts import DocumentState, resolve_optional_dict
 from core_pdf.impl.document_fields import collect_field_records
 from core_pdf.impl.document_page import PdfPage
 from core_pdf.impl.document_records import RawEmbeddedFile, RawFormField
@@ -135,11 +135,11 @@ class DocumentForms[PageT: PdfPage](DocumentState[PageT]):
         names = self.resolver.dict_at(self.catalog(), "Names")
         if names is None:
             return []
-        embedded_tree = self.resolver.resolve(names.get("EmbeddedFiles"))
+        embedded_tree = resolve_optional_dict(
+            self.resolver, names.get("EmbeddedFiles"), "invalid EmbeddedFiles name tree"
+        )
         if embedded_tree is None:
             return []
-        if not isinstance(embedded_tree, dict):
-            raise ValueError("invalid EmbeddedFiles name tree")
 
         recovery = self.recovery
         records: list[RawEmbeddedFile] = []

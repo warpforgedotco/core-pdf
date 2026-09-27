@@ -13,7 +13,7 @@ import numpy
 from core_pdf.impl.extract_contracts import ParsedBlock, ParsedLine
 from core_pdf.impl.extract_layout_rules import LAYOUT_RULES
 from core_pdf.impl.extract_xy_cut import row_order_indexes
-from core_pdf.impl.geometry import horizontal_overlap_ratio, interval_overlap
+from core_pdf.impl.geometry import array_bbox, horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl.spatial import cluster_1d, interval_overlap_pairs
 
 
@@ -28,13 +28,7 @@ def line_bbox(line: ParsedLine) -> tuple[float, float, float, float]:
 
 
 def block_bbox(lines: tuple[ParsedLine, ...]) -> tuple[float, float, float, float]:
-    boxes = numpy.asarray(tuple(line_bbox(line) for line in lines), dtype=numpy.float32)
-    return (
-        float(numpy.min(boxes[:, 0])),
-        float(numpy.min(boxes[:, 1])),
-        float(numpy.max(boxes[:, 2])),
-        float(numpy.max(boxes[:, 3])),
-    )
+    return array_bbox(numpy.asarray(tuple(line_bbox(line) for line in lines), dtype=numpy.float32))
 
 
 def sparse_block_candidate_pairs(

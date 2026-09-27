@@ -7,7 +7,7 @@ from typing import Literal, Protocol, TypeAlias
 from core_pdf.impl.document_records import RawFormField
 from core_pdf.impl.recovery_policy import MalformedFn
 from core_pdf.impl.recovery_text_strings import parse_text_string
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf.impl.types import PdfName, PdfString
 from core_pdf_spec.s_07_document.fields import (
     field_children,
     qualified_field_name,
@@ -32,7 +32,7 @@ def field_value_text(resolver: FieldResolver, value: object) -> str:
     stack: list[object] = [value]
     while stack:
         current = stack.pop()
-        current = resolver.resolve(current) if isinstance(current, PdfReference) else current
+        current = resolver.resolve(current)
         match current:
             case None:
                 continue

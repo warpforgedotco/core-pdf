@@ -200,22 +200,22 @@ class PaintResolutionMixin(CaptureHost):
         cached = caches.capture_soft_masks.get_key(mask, key, MISSING)
         if not isinstance(cached, MissingObject):
             return cached
-        graphics = copy(self.graphics)
-        graphics.ctm = mask.ctm
-        graphics.soft_mask = None
-        graphics.fill_opacity = graphics.stroke_opacity = 1.0
-        graphics.blend_mode = None
-        caches.capture_soft_masks.put_key(mask, key, None)
         group_key = id(mask.group)
         if mask.subtype != "Alpha" or group_key in caches.capture_active_mask_groups:
             return None
         if len(caches.capture_active_mask_groups) >= 10:
             return None
+        caches.capture_soft_masks.put_key(mask, key, None)
+        graphics = copy(self.graphics)
+        graphics.ctm = mask.ctm
+        graphics.soft_mask = None
+        graphics.fill_opacity = graphics.stroke_opacity = 1.0
+        graphics.blend_mode = None
         caches.capture_active_mask_groups.add(group_key)
         nested: CaptureHost | None = None
         try:
             nested = self.nested_capture_state()
-            nested.graphics = copy(graphics)
+            nested.graphics = graphics
             scope = caches.capture_mask_resources.get_key(mask, id(mask), MISSING)
             nested.resources = self.resources if isinstance(scope, MissingObject) else scope
             frame = nested.append_form_xobject(mask.group, 0)

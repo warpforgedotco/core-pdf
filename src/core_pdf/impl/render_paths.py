@@ -97,6 +97,10 @@ def dash_subpath(
     return pieces
 
 
+def stroke_half_width(scale: float, line_width: float) -> float:
+    return max(0.5 / scale, line_width * 0.5)
+
+
 def rasterize_unclipped_line_normal(
     target_pixels: numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]],
     crop_x0: float,
@@ -120,7 +124,7 @@ def rasterize_unclipped_line_normal(
         return None
 
     segment_length = segment_length_squared**0.5
-    half = max(0.5 / scale, line_width * 0.5)
+    half = stroke_half_width(scale, line_width)
     cap_extension = 0.0
     ix0, iy0, ix1, iy1 = pixel_box
     samples = 4
