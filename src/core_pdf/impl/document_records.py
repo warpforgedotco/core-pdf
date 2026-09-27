@@ -2,90 +2,33 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
-
 from core_pdf.impl.recovery_text_strings import decode_pdf_text_string
-from core_pdf.impl.types import PdfName, PdfString, Rectangle, ReplaceFields
+from core_pdf.impl.types import PdfName, PdfString, RecordType, Rectangle, ReplaceFields
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 
 
-class RawOutlineItem(ReplaceFields):
-    __slots__ = ("title", "level", "dest", "page_index", "count")
-
+class RawOutlineItem(ReplaceFields, metaclass=RecordType, frozen=False, eq=False):
     title: str
     level: int
     dest: PdfObject | str | None
     page_index: int | None
     count: int
 
-    __fields__: ClassVar[tuple[str, ...]] = ("title", "level", "dest", "page_index", "count")
-    __match_args__ = ("title", "level", "dest", "page_index", "count")
 
-    def __init__(
-        self,
-        title: str,
-        level: int,
-        dest: PdfObject | str | None,
-        page_index: int | None,
-        count: int,
-    ) -> None:
-        self.title = title
-        self.level = level
-        self.dest = dest
-        self.page_index = page_index
-        self.count = count
-
-
-class RawNamedDestination(ReplaceFields):
-    __slots__ = ("page_index", "type", "args", "raw")
-
+class RawNamedDestination(ReplaceFields, metaclass=RecordType, frozen=False, eq=False):
     page_index: int | None
     type: str | None
     args: PdfArray
     raw: PdfObject | str
 
-    __fields__: ClassVar[tuple[str, ...]] = ("page_index", "type", "args", "raw")
-    __match_args__ = ("page_index", "type", "args", "raw")
 
-    def __init__(
-        self,
-        page_index: int | None,
-        type: str | None,
-        args: PdfArray,
-        raw: PdfObject | str,
-    ) -> None:
-        self.page_index = page_index
-        self.type = type
-        self.args = args
-        self.raw = raw
-
-
-class RawEmbeddedFile(ReplaceFields):
-    __slots__ = ("name", "filename", "filespec", "stream", "data")
-
+class RawEmbeddedFile(ReplaceFields, metaclass=RecordType, frozen=False, eq=False):
     name: str
     filename: str
     filespec: PdfDict
     stream: PdfStream
     data: bytes
-
-    __fields__: ClassVar[tuple[str, ...]] = ("name", "filename", "filespec", "stream", "data")
-    __match_args__ = ("name", "filename", "filespec", "stream", "data")
-
-    def __init__(
-        self,
-        name: str,
-        filename: str,
-        filespec: PdfDict,
-        stream: PdfStream,
-        data: bytes,
-    ) -> None:
-        self.name = name
-        self.filename = filename
-        self.filespec = filespec
-        self.stream = stream
-        self.data = data
 
 
 class RawAnnotation:

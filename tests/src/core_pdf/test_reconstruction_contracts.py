@@ -14,7 +14,7 @@ def test_replace_rejects_unknown_field_names():
 
 
 def test_replace_preserves_the_runtime_class():
-    class Subclass(TextRun):
+    class Subclass(TextRun, init=False, frozen=False):
         __slots__ = ()
 
     original = Subclass("x", 0.0, 0.0, 10.0, 10.0, 0.0, 0.0, 10.0, 2.0, 0, 0, 0)

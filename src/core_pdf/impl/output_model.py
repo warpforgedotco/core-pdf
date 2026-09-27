@@ -5,12 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 from copy import replace
 from enum import StrEnum
-from typing import Any, ClassVar, NoReturn, Self, TypeAlias
+from operator import attrgetter
+from typing import Any, ClassVar, NoReturn, Protocol, Self, TypeAlias
 
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.page_selection import PageSelection
-from core_pdf.impl.text import reconcile_text_words
-from core_pdf.impl.types import Record, Rectangle, TextWord, frozen_setattr
+from core_pdf.impl.text import TextWord, reconcile_text_words
+from core_pdf.impl.types import GeneratedRecord, Rectangle, frozen_setattr
 
 SCHEMA_VERSION = "5.0"
 
@@ -41,6 +42,58 @@ def freeze(value: Any) -> Any:
     if isinstance(value, set):
         return frozenset(freeze(item) for item in value)
     return value
+
+
+class FrozenMetadataFields:
+    __slots__ = ()
+
+    __frozen_fields__: ClassVar[tuple[str, ...]] = ("metadata",)
+
+    def __post_init__(self) -> None:
+        for name in self.__frozen_fields__:
+            object.__setattr__(self, name, freeze(getattr(self, name)))
+
+
+TEXT_STYLE_FIELDS = ("bold", "italic", "underline", "strikeout", "mark", "superscript", "subscript")
+text_style_values = attrgetter(*TEXT_STYLE_FIELDS)
+
+
+class TextStyleFields:
+    __slots__ = ()
+
+    bold: bool
+    italic: bool
+    underline: bool
+    strikeout: bool
+    mark: bool
+    superscript: bool
+    subscript: bool
+
+    def style_values(self) -> tuple[bool, ...]:
+        values: tuple[bool, ...] = text_style_values(self)
+        return values
+
+    def style_dict(self) -> dict[str, bool]:
+        return dict(zip(TEXT_STYLE_FIELDS, self.style_values(), strict=True))
+
+
+class PageElementLike(Protocol):
+    @property
+    def order(self) -> int: ...
+
+    @property
+    def bbox(self) -> Rectangle | None: ...
+
+    @property
+    def node_kind(self) -> str: ...
+
+    @property
+    def provenance(self) -> tuple[str, ...]: ...
+
+
+def metadata_provenance(metadata: object) -> tuple[str, ...]:
+    source = metadata.get("source") if isinstance(metadata, Mapping) else None
+    return (str(source),) if source else ()
 
 
 class ViewCache:
@@ -77,186 +130,36 @@ class BlockKind(StrEnum):
     UNKNOWN = "unknown"
 
 
-class TableCell(Record):
-    __slots__ = ("row", "column", "text", "row_span", "column_span", "bbox")
-
+class TableCell(GeneratedRecord):
     row: int
     column: int
     text: str
-    row_span: int
-    column_span: int
-    bbox: Rectangle | None
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "row",
-        "column",
-        "text",
-        "row_span",
-        "column_span",
-        "bbox",
-    )
-    __match_args__ = ("row", "column", "text", "row_span", "column_span", "bbox")
-
-    def __init__(
-        self,
-        row: int,
-        column: int,
-        text: str,
-        row_span: int = 1,
-        column_span: int = 1,
-        bbox: Rectangle | None = None,
-    ) -> None:
-        frozen_setattr(self, "row", row)
-        frozen_setattr(self, "column", column)
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "row_span", row_span)
-        frozen_setattr(self, "column_span", column_span)
-        frozen_setattr(self, "bbox", bbox)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.row == other.row
-            and self.column == other.column
-            and self.text == other.text
-            and self.row_span == other.row_span
-            and self.column_span == other.column_span
-            and self.bbox == other.bbox
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.row, self.column, self.text, self.row_span, self.column_span, self.bbox))
+    row_span: int = 1
+    column_span: int = 1
+    bbox: Rectangle | None = None
 
 
-class TableRowBand(Record):
-    __slots__ = ("index", "bbox", "kind", "confidence")
-
+class TableRowBand(GeneratedRecord):
     index: int
-    bbox: Rectangle | None
-    kind: str
-    confidence: float | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("index", "bbox", "kind", "confidence")
-    __match_args__ = ("index", "bbox", "kind", "confidence")
-
-    def __init__(
-        self,
-        index: int,
-        bbox: Rectangle | None = None,
-        kind: str = "body",
-        confidence: float | None = None,
-    ) -> None:
-        frozen_setattr(self, "index", index)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "confidence", confidence)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.index == other.index
-            and self.bbox == other.bbox
-            and self.kind == other.kind
-            and self.confidence == other.confidence
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.index, self.bbox, self.kind, self.confidence))
+    bbox: Rectangle | None = None
+    kind: str = "body"
+    confidence: float | None = None
 
 
-class TableColumnBand(Record):
-    __slots__ = ("index", "bbox", "confidence")
-
+class TableColumnBand(GeneratedRecord):
     index: int
-    bbox: Rectangle | None
-    confidence: float | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("index", "bbox", "confidence")
-    __match_args__ = ("index", "bbox", "confidence")
-
-    def __init__(
-        self,
-        index: int,
-        bbox: Rectangle | None = None,
-        confidence: float | None = None,
-    ) -> None:
-        frozen_setattr(self, "index", index)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "confidence", confidence)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.index == other.index
-            and self.bbox == other.bbox
-            and self.confidence == other.confidence
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.index, self.bbox, self.confidence))
+    bbox: Rectangle | None = None
+    confidence: float | None = None
 
 
-class TableAssociatedText(Record):
-    __slots__ = ("text", "bbox", "kind", "confidence")
-
+class TableAssociatedText(GeneratedRecord):
     text: str
-    bbox: Rectangle | None
-    kind: str
-    confidence: float | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("text", "bbox", "kind", "confidence")
-    __match_args__ = ("text", "bbox", "kind", "confidence")
-
-    def __init__(
-        self,
-        text: str,
-        bbox: Rectangle | None = None,
-        kind: str = "caption",
-        confidence: float | None = None,
-    ) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "confidence", confidence)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.bbox == other.bbox
-            and self.kind == other.kind
-            and self.confidence == other.confidence
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.text, self.bbox, self.kind, self.confidence))
+    bbox: Rectangle | None = None
+    kind: str = "caption"
+    confidence: float | None = None
 
 
-class Table(Record):
-    __slots__ = (
-        "order",
-        "rows",
-        "bbox",
-        "confidence",
-        "title",
-        "caption",
-        "row_bands",
-        "column_bands",
-        "metadata",
-    )
-
+class Table(FrozenMetadataFields, GeneratedRecord):
     order: int
     rows: tuple[tuple[TableCell, ...], ...]
     bbox: Rectangle | None
@@ -266,29 +169,6 @@ class Table(Record):
     row_bands: tuple[TableRowBand, ...]
     column_bands: tuple[TableColumnBand, ...]
     metadata: Mapping[str, Any]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "order",
-        "rows",
-        "bbox",
-        "confidence",
-        "title",
-        "caption",
-        "row_bands",
-        "column_bands",
-        "metadata",
-    )
-    __match_args__ = (
-        "order",
-        "rows",
-        "bbox",
-        "confidence",
-        "title",
-        "caption",
-        "row_bands",
-        "column_bands",
-        "metadata",
-    )
 
     def __init__(
         self,
@@ -311,42 +191,13 @@ class Table(Record):
         frozen_setattr(self, "row_bands", row_bands)
         frozen_setattr(self, "column_bands", column_bands)
         frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        self._post_init()
+        self.__post_init__()
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.order == other.order
-            and self.rows == other.rows
-            and self.bbox == other.bbox
-            and self.confidence == other.confidence
-            and self.title == other.title
-            and self.caption == other.caption
-            and self.row_bands == other.row_bands
-            and self.column_bands == other.column_bands
-            and self.metadata == other.metadata
-        )
+    node_kind: ClassVar[str] = "table"
 
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.order,
-                self.rows,
-                self.bbox,
-                self.confidence,
-                self.title,
-                self.caption,
-                self.row_bands,
-                self.column_bands,
-                self.metadata,
-            )
-        )
-
-    def _post_init(self) -> None:
-        object.__setattr__(self, "metadata", freeze(self.metadata))
+    @property
+    def provenance(self) -> tuple[str, ...]:
+        return metadata_provenance(self.metadata)
 
     @property
     def layout_bbox(self) -> Rectangle | None:
@@ -367,16 +218,11 @@ class Table(Record):
         return bbox_union(boxes) if boxes else self.bbox
 
 
-class Figure(Record):
-    __slots__ = ("order", "bbox", "kind", "metadata")
-
+class Figure(FrozenMetadataFields, GeneratedRecord):
     order: int
     bbox: Rectangle | None
     kind: str
     metadata: Mapping[str, Any]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("order", "bbox", "kind", "metadata")
-    __match_args__ = ("order", "bbox", "kind", "metadata")
 
     def __init__(
         self,
@@ -389,485 +235,76 @@ class Figure(Record):
         frozen_setattr(self, "bbox", bbox)
         frozen_setattr(self, "kind", kind)
         frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        self._post_init()
+        self.__post_init__()
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.order == other.order
-            and self.bbox == other.bbox
-            and self.kind == other.kind
-            and self.metadata == other.metadata
-        )
+    node_kind: ClassVar[str] = "figure"
 
-    def __hash__(self) -> int:
-        return hash((self.order, self.bbox, self.kind, self.metadata))
-
-    def _post_init(self) -> None:
-        object.__setattr__(self, "metadata", freeze(self.metadata))
+    @property
+    def provenance(self) -> tuple[str, ...]:
+        return metadata_provenance(self.metadata)
 
 
-class Link(Record):
-    __slots__ = ("bbox", "url", "link_type", "text")
-
-    bbox: Rectangle | None
-    url: str | None
-    link_type: str | None
-    text: str
-
-    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "url", "link_type", "text")
-    __match_args__ = ("bbox", "url", "link_type", "text")
-
-    def __init__(
-        self,
-        bbox: Rectangle | None = None,
-        url: str | None = None,
-        link_type: str | None = None,
-        text: str = "",
-    ) -> None:
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "url", url)
-        frozen_setattr(self, "link_type", link_type)
-        frozen_setattr(self, "text", text)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.bbox == other.bbox
-            and self.url == other.url
-            and self.link_type == other.link_type
-            and self.text == other.text
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.bbox, self.url, self.link_type, self.text))
+class Link(GeneratedRecord):
+    bbox: Rectangle | None = None
+    url: str | None = None
+    link_type: str | None = None
+    text: str = ""
 
 
-class Annotation(Record):
-    __slots__ = ("subtype", "bbox", "contents", "destination")
+class Annotation(FrozenMetadataFields, GeneratedRecord):
+    subtype: str | None = None
+    bbox: Rectangle | None = None
+    contents: str = ""
+    destination: Any = None
 
-    subtype: str | None
-    bbox: Rectangle | None
-    contents: str
-    destination: Any
-
-    __fields__: ClassVar[tuple[str, ...]] = ("subtype", "bbox", "contents", "destination")
-    __match_args__ = ("subtype", "bbox", "contents", "destination")
-
-    def __init__(
-        self,
-        subtype: str | None = None,
-        bbox: Rectangle | None = None,
-        contents: str = "",
-        destination: Any = None,
-    ) -> None:
-        frozen_setattr(self, "subtype", subtype)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "contents", contents)
-        frozen_setattr(self, "destination", destination)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.subtype == other.subtype
-            and self.bbox == other.bbox
-            and self.contents == other.contents
-            and self.destination == other.destination
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.subtype, self.bbox, self.contents, self.destination))
-
-    def _post_init(self) -> None:
-        object.__setattr__(self, "destination", freeze(self.destination))
+    __frozen_fields__: ClassVar[tuple[str, ...]] = ("destination",)
 
 
-class FormField(Record):
-    __slots__ = (
-        "name",
-        "field_type",
-        "value_text",
-        "bbox",
-        "field_index",
-        "required",
-        "read_only",
-        "no_export",
-        "options",
-    )
-
+class FormField(GeneratedRecord):
     name: str
     field_type: str
-    value_text: str
-    bbox: Rectangle | None
-    field_index: int | None
-    required: bool
-    read_only: bool
-    no_export: bool
-    options: tuple[str, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "name",
-        "field_type",
-        "value_text",
-        "bbox",
-        "field_index",
-        "required",
-        "read_only",
-        "no_export",
-        "options",
-    )
-    __match_args__ = (
-        "name",
-        "field_type",
-        "value_text",
-        "bbox",
-        "field_index",
-        "required",
-        "read_only",
-        "no_export",
-        "options",
-    )
-
-    def __init__(
-        self,
-        name: str,
-        field_type: str,
-        value_text: str = "",
-        bbox: Rectangle | None = None,
-        field_index: int | None = None,
-        required: bool = False,
-        read_only: bool = False,
-        no_export: bool = False,
-        options: tuple[str, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "name", name)
-        frozen_setattr(self, "field_type", field_type)
-        frozen_setattr(self, "value_text", value_text)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "field_index", field_index)
-        frozen_setattr(self, "required", required)
-        frozen_setattr(self, "read_only", read_only)
-        frozen_setattr(self, "no_export", no_export)
-        frozen_setattr(self, "options", options)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.name == other.name
-            and self.field_type == other.field_type
-            and self.value_text == other.value_text
-            and self.bbox == other.bbox
-            and self.field_index == other.field_index
-            and self.required == other.required
-            and self.read_only == other.read_only
-            and self.no_export == other.no_export
-            and self.options == other.options
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.name,
-                self.field_type,
-                self.value_text,
-                self.bbox,
-                self.field_index,
-                self.required,
-                self.read_only,
-                self.no_export,
-                self.options,
-            )
-        )
+    value_text: str = ""
+    bbox: Rectangle | None = None
+    field_index: int | None = None
+    required: bool = False
+    read_only: bool = False
+    no_export: bool = False
+    options: tuple[str, ...] = ()
 
 
-class TextSpan(Record):
-    __slots__ = (
-        "text",
-        "bold",
-        "italic",
-        "underline",
-        "strikeout",
-        "mark",
-        "superscript",
-        "subscript",
-    )
-
+class TextSpan(TextStyleFields, GeneratedRecord):
     text: str
-    bold: bool
-    italic: bool
-    underline: bool
-    strikeout: bool
-    mark: bool
-    superscript: bool
-    subscript: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "text",
-        "bold",
-        "italic",
-        "underline",
-        "strikeout",
-        "mark",
-        "superscript",
-        "subscript",
-    )
-    __match_args__ = (
-        "text",
-        "bold",
-        "italic",
-        "underline",
-        "strikeout",
-        "mark",
-        "superscript",
-        "subscript",
-    )
-
-    def __init__(
-        self,
-        text: str,
-        bold: bool = False,
-        italic: bool = False,
-        underline: bool = False,
-        strikeout: bool = False,
-        mark: bool = False,
-        superscript: bool = False,
-        subscript: bool = False,
-    ) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "bold", bold)
-        frozen_setattr(self, "italic", italic)
-        frozen_setattr(self, "underline", underline)
-        frozen_setattr(self, "strikeout", strikeout)
-        frozen_setattr(self, "mark", mark)
-        frozen_setattr(self, "superscript", superscript)
-        frozen_setattr(self, "subscript", subscript)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.bold == other.bold
-            and self.italic == other.italic
-            and self.underline == other.underline
-            and self.strikeout == other.strikeout
-            and self.mark == other.mark
-            and self.superscript == other.superscript
-            and self.subscript == other.subscript
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.text,
-                self.bold,
-                self.italic,
-                self.underline,
-                self.strikeout,
-                self.mark,
-                self.superscript,
-                self.subscript,
-            )
-        )
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
+    strikeout: bool = False
+    mark: bool = False
+    superscript: bool = False
+    subscript: bool = False
 
 
-class TextLine(Record):
-    __slots__ = (
-        "text",
-        "break_before",
-        "bbox",
-        "advance_bbox",
-        "ink_bbox",
-        "kind",
-        "source",
-        "confidence",
-        "baseline",
-        "contributing_sources",
-        "bold",
-        "italic",
-        "underline",
-        "strikeout",
-        "mark",
-        "superscript",
-        "subscript",
-        "spans",
-        "words",
-    )
-
+class TextLine(TextStyleFields, GeneratedRecord):
     text: str
-    break_before: int
-    bbox: Rectangle | None
-    advance_bbox: Rectangle | None
-    ink_bbox: Rectangle | None
-    kind: str
-    source: str
-    confidence: float | None
-    baseline: Rectangle | None
-    contributing_sources: tuple[str, ...]
-    bold: bool
-    italic: bool
-    underline: bool
-    strikeout: bool
-    mark: bool
-    superscript: bool
-    subscript: bool
-    spans: tuple[TextSpan, ...]
-    words: tuple[TextWord, ...]
+    break_before: int = 1
+    bbox: Rectangle | None = None
+    advance_bbox: Rectangle | None = None
+    ink_bbox: Rectangle | None = None
+    kind: str = "text-line"
+    source: str = UNKNOWN
+    confidence: float | None = None
+    baseline: Rectangle | None = None
+    contributing_sources: tuple[str, ...] = ()
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
+    strikeout: bool = False
+    mark: bool = False
+    superscript: bool = False
+    subscript: bool = False
+    spans: tuple[TextSpan, ...] = ()
+    words: tuple[TextWord, ...] = ()
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "text",
-        "break_before",
-        "bbox",
-        "advance_bbox",
-        "ink_bbox",
-        "kind",
-        "source",
-        "confidence",
-        "baseline",
-        "contributing_sources",
-        "bold",
-        "italic",
-        "underline",
-        "strikeout",
-        "mark",
-        "superscript",
-        "subscript",
-        "spans",
-        "words",
-    )
-    __match_args__ = (
-        "text",
-        "break_before",
-        "bbox",
-        "advance_bbox",
-        "ink_bbox",
-        "kind",
-        "source",
-        "confidence",
-        "baseline",
-        "contributing_sources",
-        "bold",
-        "italic",
-        "underline",
-        "strikeout",
-        "mark",
-        "superscript",
-        "subscript",
-        "spans",
-        "words",
-    )
-
-    def __init__(
-        self,
-        text: str,
-        break_before: int = 1,
-        bbox: Rectangle | None = None,
-        advance_bbox: Rectangle | None = None,
-        ink_bbox: Rectangle | None = None,
-        kind: str = "text-line",
-        source: str = UNKNOWN,
-        confidence: float | None = None,
-        baseline: Rectangle | None = None,
-        contributing_sources: tuple[str, ...] = (),
-        bold: bool = False,
-        italic: bool = False,
-        underline: bool = False,
-        strikeout: bool = False,
-        mark: bool = False,
-        superscript: bool = False,
-        subscript: bool = False,
-        spans: tuple[TextSpan, ...] = (),
-        words: tuple[TextWord, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "break_before", break_before)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "advance_bbox", advance_bbox)
-        frozen_setattr(self, "ink_bbox", ink_bbox)
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "source", source)
-        frozen_setattr(self, "confidence", confidence)
-        frozen_setattr(self, "baseline", baseline)
-        frozen_setattr(self, "contributing_sources", contributing_sources)
-        frozen_setattr(self, "bold", bold)
-        frozen_setattr(self, "italic", italic)
-        frozen_setattr(self, "underline", underline)
-        frozen_setattr(self, "strikeout", strikeout)
-        frozen_setattr(self, "mark", mark)
-        frozen_setattr(self, "superscript", superscript)
-        frozen_setattr(self, "subscript", subscript)
-        frozen_setattr(self, "spans", spans)
-        frozen_setattr(self, "words", words)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.break_before == other.break_before
-            and self.bbox == other.bbox
-            and self.advance_bbox == other.advance_bbox
-            and self.ink_bbox == other.ink_bbox
-            and self.kind == other.kind
-            and self.source == other.source
-            and self.confidence == other.confidence
-            and self.baseline == other.baseline
-            and self.contributing_sources == other.contributing_sources
-            and self.bold == other.bold
-            and self.italic == other.italic
-            and self.underline == other.underline
-            and self.strikeout == other.strikeout
-            and self.mark == other.mark
-            and self.superscript == other.superscript
-            and self.subscript == other.subscript
-            and self.spans == other.spans
-            and self.words == other.words
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.text,
-                self.break_before,
-                self.bbox,
-                self.advance_bbox,
-                self.ink_bbox,
-                self.kind,
-                self.source,
-                self.confidence,
-                self.baseline,
-                self.contributing_sources,
-                self.bold,
-                self.italic,
-                self.underline,
-                self.strikeout,
-                self.mark,
-                self.superscript,
-                self.subscript,
-                self.spans,
-                self.words,
-            )
-        )
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         object.__setattr__(self, "words", reconcile_text_words(self.text, self.words))
         if self.spans and "".join(span.text for span in self.spans) != self.text:
             object.__setattr__(self, "spans", ())
@@ -884,119 +321,21 @@ class TextLine(Record):
                     for span in self.spans
                 )
             return self.spans
-        return (
-            TextSpan(
-                text=self.text,
-                bold=self.bold,
-                italic=self.italic,
-                underline=self.underline,
-                strikeout=self.strikeout,
-                mark=self.mark,
-                superscript=self.superscript,
-                subscript=self.subscript,
-            ),
-        )
+        return (TextSpan(self.text, *self.style_values()),)
 
 
-class Block(Record):
-    __slots__ = (
-        "order",
-        "kind",
-        "lines",
-        "bbox",
-        "column_index",
-        "rotation",
-        "confidence",
-        "level",
-        "provenance",
-    )
-
+class Block(GeneratedRecord):
     order: int
     kind: BlockKind
-    lines: tuple[TextLine, ...]
-    bbox: Rectangle | None
-    column_index: int | None
-    rotation: int
-    confidence: float | None
-    level: int | None
-    provenance: tuple[str, ...]
+    lines: tuple[TextLine, ...] = ()
+    bbox: Rectangle | None = None
+    column_index: int | None = None
+    rotation: int = 0
+    confidence: float | None = None
+    level: int | None = None
+    provenance: tuple[str, ...] = ()
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "order",
-        "kind",
-        "lines",
-        "bbox",
-        "column_index",
-        "rotation",
-        "confidence",
-        "level",
-        "provenance",
-    )
-    __match_args__ = (
-        "order",
-        "kind",
-        "lines",
-        "bbox",
-        "column_index",
-        "rotation",
-        "confidence",
-        "level",
-        "provenance",
-    )
-
-    def __init__(
-        self,
-        order: int,
-        kind: BlockKind,
-        lines: tuple[TextLine, ...] = (),
-        bbox: Rectangle | None = None,
-        column_index: int | None = None,
-        rotation: int = 0,
-        confidence: float | None = None,
-        level: int | None = None,
-        provenance: tuple[str, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "order", order)
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "lines", lines)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "column_index", column_index)
-        frozen_setattr(self, "rotation", rotation)
-        frozen_setattr(self, "confidence", confidence)
-        frozen_setattr(self, "level", level)
-        frozen_setattr(self, "provenance", provenance)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.order == other.order
-            and self.kind == other.kind
-            and self.lines == other.lines
-            and self.bbox == other.bbox
-            and self.column_index == other.column_index
-            and self.rotation == other.rotation
-            and self.confidence == other.confidence
-            and self.level == other.level
-            and self.provenance == other.provenance
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.order,
-                self.kind,
-                self.lines,
-                self.bbox,
-                self.column_index,
-                self.rotation,
-                self.confidence,
-                self.level,
-                self.provenance,
-            )
-        )
+    node_kind: ClassVar[str] = "block"
 
     @property
     def text(self) -> str:
@@ -1011,43 +350,11 @@ class Block(Record):
 PageElement: TypeAlias = Block | Table | Figure
 
 
-class ContentNode(Record):
-    __slots__ = ("node_id", "kind", "payload", "page_number")
-
+class ContentNode(GeneratedRecord):
     node_id: int
     kind: str
     payload: PageElement
-    page_number: int | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("node_id", "kind", "payload", "page_number")
-    __match_args__ = ("node_id", "kind", "payload", "page_number")
-
-    def __init__(
-        self,
-        node_id: int,
-        kind: str,
-        payload: PageElement,
-        page_number: int | None = None,
-    ) -> None:
-        frozen_setattr(self, "node_id", node_id)
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "payload", payload)
-        frozen_setattr(self, "page_number", page_number)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.node_id == other.node_id
-            and self.kind == other.kind
-            and self.payload == other.payload
-            and self.page_number == other.page_number
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.node_id, self.kind, self.payload, self.page_number))
+    page_number: int | None = None
 
     @property
     def bbox(self) -> Rectangle | None:
@@ -1055,36 +362,13 @@ class ContentNode(Record):
 
     @property
     def provenance(self) -> tuple[str, ...]:
-        value = getattr(self.payload, "provenance", ())
-        if value:
-            return tuple(value)
-        metadata = getattr(self.payload, "metadata", {})
-        source = metadata.get("source") if isinstance(metadata, Mapping) else None
-        return (str(source),) if source else ()
+        element: PageElementLike = self.payload
+        return tuple(element.provenance)
 
 
-class TextView(ViewCache, Record):
-    __slots__ = ("elements", "page_number")
-
+class TextView(ViewCache, GeneratedRecord):
     elements: tuple[PageElement, ...]
-    page_number: int | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("elements", "page_number")
-    __match_args__ = ("elements", "page_number")
-
-    def __init__(self, elements: tuple[PageElement, ...], page_number: int | None = None) -> None:
-        frozen_setattr(self, "elements", elements)
-        frozen_setattr(self, "page_number", page_number)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.elements == other.elements and self.page_number == other.page_number
-
-    def __hash__(self) -> int:
-        return hash((self.elements, self.page_number))
+    page_number: int | None = None
 
     @property
     def lines(self) -> tuple[TextLine, ...]:
@@ -1132,110 +416,25 @@ class TextView(ViewCache, Record):
         return "\n\n".join(parts)
 
 
-class TextLineReference(Record):
-    __slots__ = ("page_number", "line_index", "line")
-
+class TextLineReference(GeneratedRecord):
     page_number: int
     line_index: int
     line: TextLine
 
-    __fields__: ClassVar[tuple[str, ...]] = ("page_number", "line_index", "line")
-    __match_args__ = ("page_number", "line_index", "line")
 
-    def __init__(self, page_number: int, line_index: int, line: TextLine) -> None:
-        frozen_setattr(self, "page_number", page_number)
-        frozen_setattr(self, "line_index", line_index)
-        frozen_setattr(self, "line", line)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.page_number == other.page_number
-            and self.line_index == other.line_index
-            and self.line == other.line
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.page_number, self.line_index, self.line))
-
-
-class TableView(Record):
-    __slots__ = ("tables", "page_number")
-
+class TableView(GeneratedRecord):
     tables: tuple[Table, ...]
-    page_number: int | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("tables", "page_number")
-    __match_args__ = ("tables", "page_number")
-
-    def __init__(self, tables: tuple[Table, ...], page_number: int | None = None) -> None:
-        frozen_setattr(self, "tables", tables)
-        frozen_setattr(self, "page_number", page_number)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.tables == other.tables and self.page_number == other.page_number
-
-    def __hash__(self) -> int:
-        return hash((self.tables, self.page_number))
+    page_number: int | None = None
 
 
-class TableReference(Record):
-    __slots__ = ("page_number", "table_index", "table")
-
+class TableReference(GeneratedRecord):
     page_number: int
     table_index: int
     table: Table
 
-    __fields__: ClassVar[tuple[str, ...]] = ("page_number", "table_index", "table")
-    __match_args__ = ("page_number", "table_index", "table")
 
-    def __init__(self, page_number: int, table_index: int, table: Table) -> None:
-        frozen_setattr(self, "page_number", page_number)
-        frozen_setattr(self, "table_index", table_index)
-        frozen_setattr(self, "table", table)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.page_number == other.page_number
-            and self.table_index == other.table_index
-            and self.table == other.table
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.page_number, self.table_index, self.table))
-
-
-class DocumentTextView(Record):
-    __slots__ = ("pages",)
-
+class DocumentTextView(GeneratedRecord):
     pages: tuple[TextView, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("pages",)
-    __match_args__ = ("pages",)
-
-    def __init__(self, pages: tuple[TextView, ...]) -> None:
-        frozen_setattr(self, "pages", pages)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.pages == other.pages
-
-    def __hash__(self) -> int:
-        return hash((self.pages,))
 
     @property
     def lines(self) -> tuple[TextLine, ...]:
@@ -1269,26 +468,8 @@ class DocumentTextView(Record):
         return "\f".join(page.text for page in self.pages) + "\f"
 
 
-class DocumentTableView(Record):
-    __slots__ = ("pages",)
-
+class DocumentTableView(GeneratedRecord):
     pages: tuple[TableView, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("pages",)
-    __match_args__ = ("pages",)
-
-    def __init__(self, pages: tuple[TableView, ...]) -> None:
-        frozen_setattr(self, "pages", pages)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.pages == other.pages
-
-    def __hash__(self) -> int:
-        return hash((self.pages,))
 
     @property
     def tables(self) -> tuple[Table, ...]:
@@ -1307,30 +488,7 @@ class DocumentTableView(Record):
         )
 
 
-class Page(ViewCache, Record):
-    __slots__ = (
-        "page_number",
-        "page_label",
-        "width",
-        "height",
-        "rotation",
-        "blocks",
-        "page_class",
-        "base_route",
-        "confidence",
-        "tables",
-        "figures",
-        "links",
-        "annotations",
-        "form_fields",
-        "header",
-        "footer",
-        "diagnostics",
-        "cropbox",
-        "user_unit",
-        "_elements",
-    )
-
+class Page(ViewCache, GeneratedRecord):
     page_number: int
     page_label: str | None
     width: float
@@ -1352,29 +510,6 @@ class Page(ViewCache, Record):
     user_unit: float
     _elements: tuple[PageElement, ...]
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "page_number",
-        "page_label",
-        "width",
-        "height",
-        "rotation",
-        "blocks",
-        "page_class",
-        "base_route",
-        "confidence",
-        "tables",
-        "figures",
-        "links",
-        "annotations",
-        "form_fields",
-        "header",
-        "footer",
-        "diagnostics",
-        "cropbox",
-        "user_unit",
-        "_elements",
-    )
-    __repr_fields__: ClassVar[tuple[str, ...]] = __fields__[:-1]
     __match_args__ = (
         "page_number",
         "page_label",
@@ -1395,6 +530,7 @@ class Page(ViewCache, Record):
         "diagnostics",
         "cropbox",
     )
+    __repr_fields__: ClassVar[tuple[str, ...]] = (*__match_args__, "user_unit")
 
     def __init__(
         self,
@@ -1439,7 +575,7 @@ class Page(ViewCache, Record):
         frozen_setattr(self, "cropbox", cropbox)
         frozen_setattr(self, "user_unit", user_unit)
         frozen_setattr(self, "_elements", ())
-        self._post_init()
+        self.__post_init__()
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -1537,7 +673,7 @@ class Page(ViewCache, Record):
             user_unit=user_unit,
         )
 
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         object.__setattr__(
             self,
             "_elements",
@@ -1564,7 +700,7 @@ class Page(ViewCache, Record):
         for index, element in enumerate(self.elements, start=start_id):
             yield ContentNode(
                 node_id=index,
-                kind=type(element).__name__.casefold(),
+                kind=element.node_kind,
                 payload=element,
                 page_number=self.page_number,
             )
@@ -1598,55 +734,18 @@ class Page(ViewCache, Record):
         return page_to_html(self)
 
 
-class Diagnostic(Record):
-    __slots__ = ("code", "message", "severity", "page_number")
-
+class Diagnostic(GeneratedRecord):
     code: str
     message: str
-    severity: str
-    page_number: int | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("code", "message", "severity", "page_number")
-    __match_args__ = ("code", "message", "severity", "page_number")
-
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        severity: str = "warning",
-        page_number: int | None = None,
-    ) -> None:
-        frozen_setattr(self, "code", code)
-        frozen_setattr(self, "message", message)
-        frozen_setattr(self, "severity", severity)
-        frozen_setattr(self, "page_number", page_number)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.code == other.code
-            and self.message == other.message
-            and self.severity == other.severity
-            and self.page_number == other.page_number
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.code, self.message, self.severity, self.page_number))
+    severity: str = "warning"
+    page_number: int | None = None
 
 
-class Document(ViewCache, Record):
-    __slots__ = ("pages", "metadata", "diagnostics", "schema_version")
-
+class Document(FrozenMetadataFields, ViewCache, GeneratedRecord):
     pages: tuple[Page, ...]
     metadata: Mapping[str, Any]
     diagnostics: tuple[Diagnostic, ...]
     schema_version: str
-
-    __fields__: ClassVar[tuple[str, ...]] = ("pages", "metadata", "diagnostics", "schema_version")
-    __match_args__ = ("pages", "metadata", "diagnostics", "schema_version")
 
     def __init__(
         self,
@@ -1659,27 +758,12 @@ class Document(ViewCache, Record):
         frozen_setattr(self, "metadata", {} if metadata is None else metadata)
         frozen_setattr(self, "diagnostics", diagnostics)
         frozen_setattr(self, "schema_version", schema_version)
-        self._post_init()
+        self.__post_init__()
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.pages == other.pages
-            and self.metadata == other.metadata
-            and self.diagnostics == other.diagnostics
-            and self.schema_version == other.schema_version
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.pages, self.metadata, self.diagnostics, self.schema_version))
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         if self.schema_version != SCHEMA_VERSION:
             raise ValueError(f"unsupported structured schema version: {self.schema_version}")
-        object.__setattr__(self, "metadata", freeze(self.metadata))
+        super().__post_init__()
 
     @property
     def text_view(self) -> DocumentTextView:

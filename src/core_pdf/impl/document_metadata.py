@@ -12,6 +12,7 @@ from core_pdf.impl.document_standards import local_name, resolve_catalog
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.pdf_values import coerce_value
+from core_pdf.impl.recovery_policy import Recovery, recovery_policy
 from core_pdf.impl.recovery_text_strings import decode_pdf_text_string
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_document.metadata import catalog_metadata_stream, info_dictionary
@@ -52,7 +53,7 @@ class MetadataRecord(TypedDict):
 
 
 def resolve_metadata(
-    resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool = False
+    resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool | Recovery = False
 ) -> MetadataRecord:
     xmp: XmpNodeRecord | None
     try:
@@ -66,7 +67,7 @@ def resolve_metadata(
 
 
 def resolve_info_metadata(
-    resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool = False
+    resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool | Recovery = False
 ) -> InfoMetadataRecord:
     try:
         info = info_dictionary(resolver, trailer)
@@ -76,10 +77,8 @@ def resolve_info_metadata(
         if not isinstance(coerced, dict):
             return {}
         return {str(recover_pdf_name(key) or key): value for key, value in coerced.items()}
-    except PdfError, RecursionError, ValueError:
-        if recover:
-            return {}
-        raise
+    except (PdfError, RecursionError, ValueError) as error:
+        return recovery_policy(recover).reject(error, "info", {})
 
 
 PlainValue: TypeAlias = (

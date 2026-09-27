@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import ClassVar
+from collections.abc import Callable, Mapping
+from typing import Any
+
+import numpy
 
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_spec.s_07_filters.registry import (
     FILTER_DESCRIPTORS as PDF_FILTER_DESCRIPTORS,
 )
@@ -35,39 +37,10 @@ PREDICTOR_FILTERS = frozenset(
 )
 
 
-class NativeImageSpec(Record):
-    __slots__ = ("channels", "color_names", "bits")
-
+class NativeImageSpec(GeneratedRecord):
     channels: Mapping[str | None, int]
     color_names: frozenset[str | None]
-    bits: frozenset[int | None] | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("channels", "color_names", "bits")
-    __match_args__ = ("channels", "color_names", "bits")
-
-    def __init__(
-        self,
-        channels: Mapping[str | None, int],
-        color_names: frozenset[str | None],
-        bits: frozenset[int | None] | None = None,
-    ) -> None:
-        frozen_setattr(self, "channels", channels)
-        frozen_setattr(self, "color_names", color_names)
-        frozen_setattr(self, "bits", bits)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.channels == other.channels
-            and self.color_names == other.color_names
-            and self.bits == other.bits
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.channels, self.color_names, self.bits))
+    bits: frozenset[int | None] | None = None
 
 
 RAW_SAMPLE_IMAGE = NativeImageSpec(
@@ -76,24 +49,41 @@ RAW_SAMPLE_IMAGE = NativeImageSpec(
     bits=frozenset({None, 8}),
 )
 
-NATIVE_IMAGE_SPECS: Mapping[str, NativeImageSpec] = {
-    "jpeg": NativeImageSpec(
-        channels={"DeviceGray": 1, "DeviceRGB": 3, "DeviceCMYK": 4},
-        color_names=frozenset({None, "DeviceGray", "DeviceRGB", "DeviceCMYK"}),
-        bits=frozenset({None, 8}),
-    ),
-    "jpx": NativeImageSpec(
-        channels={"DeviceGray": 1, "DeviceRGB": 3},
-        color_names=frozenset({None, "DeviceGray", "DeviceRGB"}),
-    ),
-    "ccitt": NativeImageSpec(
-        channels={},
-        color_names=frozenset({None, "DeviceGray"}),
-        bits=frozenset({None, 1}),
-    ),
-    "flate": RAW_SAMPLE_IMAGE,
-    "lzw": RAW_SAMPLE_IMAGE,
-}
+JPEG_IMAGE = NativeImageSpec(
+    channels={"DeviceGray": 1, "DeviceRGB": 3, "DeviceCMYK": 4},
+    color_names=frozenset({None, "DeviceGray", "DeviceRGB", "DeviceCMYK"}),
+    bits=frozenset({None, 8}),
+)
+JPX_IMAGE = NativeImageSpec(
+    channels={"DeviceGray": 1, "DeviceRGB": 3},
+    color_names=frozenset({None, "DeviceGray", "DeviceRGB"}),
+)
+CCITT_IMAGE = NativeImageSpec(
+    channels={},
+    color_names=frozenset({None, "DeviceGray"}),
+    bits=frozenset({None, 1}),
+)
+
+type FilterFn = Callable[[bytes, object], bytes]
+type PassthroughFilterFn = Callable[[bytes], tuple[bytes, bool]]
+type NativeDecodeFn = Callable[
+    [bytes | memoryview, object, tuple[int, ...] | None, Callable[[], bytes]],
+    numpy.ndarray[Any, Any] | None,
+]
+
+
+class NativeImageCodec(GeneratedRecord):
+    spec: NativeImageSpec
+    decode: NativeDecodeFn
+    requires_identity_decode: bool = True
+    after_filters: bool = False
+
+
+class TolerantFilter(GeneratedRecord):
+    decoder: FilterDecoder
+    decode: FilterFn
+    passthrough: PassthroughFilterFn | None = None
+    native: NativeImageCodec | None = None
 
 
 def declared_filter_names(value: object) -> list[str]:

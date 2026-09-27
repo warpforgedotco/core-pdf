@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import ClassVar, NamedTuple
+from typing import NamedTuple
 
 import numpy
 
@@ -14,21 +14,10 @@ from core_pdf.impl.extract_quality import (
 from core_pdf.impl.extract_quality import (
     analyze_text as analyze_text,
 )
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, frozen_setattr
 
 
-class CandidateMetrics(Record):
-    __slots__ = (
-        "characters",
-        "alphanumeric_characters",
-        "tokens",
-        "line_count",
-        "mean_confidence",
-        "symbol_ratio",
-        "utility",
-        "median_text_height",
-    )
-
+class CandidateMetrics(GeneratedRecord):
     characters: int
     alphanumeric_characters: int
     tokens: int
@@ -36,97 +25,15 @@ class CandidateMetrics(Record):
     mean_confidence: float
     symbol_ratio: float
     utility: float
-    median_text_height: float
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "characters",
-        "alphanumeric_characters",
-        "tokens",
-        "line_count",
-        "mean_confidence",
-        "symbol_ratio",
-        "utility",
-        "median_text_height",
-    )
-    __match_args__ = (
-        "characters",
-        "alphanumeric_characters",
-        "tokens",
-        "line_count",
-        "mean_confidence",
-        "symbol_ratio",
-        "utility",
-        "median_text_height",
-    )
-
-    def __init__(
-        self,
-        characters: int,
-        alphanumeric_characters: int,
-        tokens: int,
-        line_count: int,
-        mean_confidence: float,
-        symbol_ratio: float,
-        utility: float,
-        median_text_height: float = 0.0,
-    ) -> None:
-        frozen_setattr(self, "characters", characters)
-        frozen_setattr(self, "alphanumeric_characters", alphanumeric_characters)
-        frozen_setattr(self, "tokens", tokens)
-        frozen_setattr(self, "line_count", line_count)
-        frozen_setattr(self, "mean_confidence", mean_confidence)
-        frozen_setattr(self, "symbol_ratio", symbol_ratio)
-        frozen_setattr(self, "utility", utility)
-        frozen_setattr(self, "median_text_height", median_text_height)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.characters == other.characters
-            and self.alphanumeric_characters == other.alphanumeric_characters
-            and self.tokens == other.tokens
-            and self.line_count == other.line_count
-            and self.mean_confidence == other.mean_confidence
-            and self.symbol_ratio == other.symbol_ratio
-            and self.utility == other.utility
-            and self.median_text_height == other.median_text_height
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.characters,
-                self.alphanumeric_characters,
-                self.tokens,
-                self.line_count,
-                self.mean_confidence,
-                self.symbol_ratio,
-                self.utility,
-                self.median_text_height,
-            )
-        )
+    median_text_height: float = 0.0
 
 
-class Candidate(Record):
-    __slots__ = ("mode", "observations", "metrics", "symbols", "recognition_status")
-
+class Candidate(GeneratedRecord):
     mode: int
     observations: ObservationBatch
     metrics: CandidateMetrics
     symbols: ObservationBatch
     recognition_status: str
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "mode",
-        "observations",
-        "metrics",
-        "symbols",
-        "recognition_status",
-    )
-    __match_args__ = ("mode", "observations", "metrics", "symbols", "recognition_status")
 
     def __init__(
         self,
@@ -141,30 +48,6 @@ class Candidate(Record):
         frozen_setattr(self, "metrics", metrics)
         frozen_setattr(self, "symbols", ObservationBatch.empty() if symbols is None else symbols)
         frozen_setattr(self, "recognition_status", recognition_status)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.mode == other.mode
-            and self.observations == other.observations
-            and self.metrics == other.metrics
-            and self.symbols == other.symbols
-            and self.recognition_status == other.recognition_status
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.mode,
-                self.observations,
-                self.metrics,
-                self.symbols,
-                self.recognition_status,
-            )
-        )
 
 
 class TextUtility(NamedTuple):

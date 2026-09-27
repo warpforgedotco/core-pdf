@@ -4,7 +4,7 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl import recovery_xref as xref
-from core_pdf.impl.document_document import object_headers_present
+from core_pdf.impl.document_xref_recovery import object_headers_present
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict

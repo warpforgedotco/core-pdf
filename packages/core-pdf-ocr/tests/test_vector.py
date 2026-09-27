@@ -5,11 +5,10 @@ import pytest
 
 from core_pdf.impl.capture_program import CapturedProgram, PageProgram
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, CapturedSubpath
-from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import (
-    ObservationSource,
     PageAnalysis,
     StrokedVectorTextEvidence,
 )
@@ -64,8 +63,20 @@ def test_shelf_packing_orders_by_height_and_wraps_without_rescaling() -> None:
     assert vector.pack_stroked_text_runs(()) == ((), 0)
 
 
+class Reference:
+    text = "A1"
+    font_name = None
+    fill_color = None
+
+    def is_bold(self) -> bool:
+        return False
+
+    def is_italic(self) -> bool:
+        return False
+
+
 def test_remapping_requires_unique_cell_and_preserves_observation_identity() -> None:
-    reference = object()
+    reference = Reference()
     observations = ObservationBatch.from_columns(
         ("A1", "outside", "ambiguous"),
         ((11, 11, 15, 14), (80, 80, 85, 85), (29, 11, 31, 13)),

@@ -3,29 +3,38 @@
 from __future__ import annotations
 
 import typing
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
+from core_pdf.impl.caches import BoundedDict, IdentityCache
+from core_pdf.impl.capture_records import CapturedSoftMask
 from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.graphics_color_spec import parse_color_space
 from core_pdf.impl.graphics_functions import compile_pdf_function
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.scalars import clamp01
+from core_pdf.impl.types import MISSING, MissingObject
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
+from core_pdf_spec.s_07_content.model import ContentSink
 from core_pdf_spec.s_07_content.operations import (
     ContentOperands,
     OperationHandler,
 )
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
-from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax.lexer import PdfLexer as SpecLexer
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
+from core_pdf_spec.s_08_graphics.color_rendering import BlackPointCompensation
 from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
+from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf_spec.s_09_fonts.service import FontProvider
 from core_pdf_spec.s_09_fonts.service import FontService as FontDecoder
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
+from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfReference, PdfString
 
 FontCompanions = dict[str, tuple[tuple[int, int], ...]]
-FontCompanionsCache = dict[int, tuple[dict[str, object], FontCompanions]]
+FontCompanionsCache = IdentityCache[FontCompanions]
 
 
 def font_companions(
@@ -33,9 +42,9 @@ def font_companions(
     resolve: typing.Callable[[object], object],
     cache: FontCompanionsCache,
 ) -> FontCompanions:
-    entry = cache.get(id(fonts))
-    if entry is not None and entry[0] is fonts:
-        return entry[1]
+    entry = cache.get(fonts)
+    if entry is not None:
+        return entry
     grouped: dict[str, list[tuple[int, int]]] = {}
     for reference in fonts.values():
         if type(reference) is not PdfReference:
@@ -48,9 +57,7 @@ def font_companions(
             grouped.setdefault(name, []).append(
                 (reference.object_number, reference.generation_number)
             )
-    companions = {name: tuple(sorted(refs)) for name, refs in grouped.items()}
-    cache[id(fonts)] = (fonts, companions)
-    return companions
+    return cache.put(fonts, {name: tuple(sorted(refs)) for name, refs in grouped.items()})
 
 
 def font_signature(
@@ -79,29 +86,84 @@ COLOR_CACHE_LIMIT = 4096
 SOFT_MASK_CACHE_LIMIT = COLOR_CACHE_LIMIT
 
 
+class CaptureCaches:
+    __slots__ = (
+        "parsed_soft_masks",
+        "capture_soft_masks",
+        "capture_mask_resources",
+        "capture_active_mask_groups",
+        "capture_image_sources",
+        "capture_font_decoders",
+        "capture_font_companions",
+        "capture_colors",
+        "capture_shadings",
+    )
+
+    parsed_soft_masks: IdentityCache[SoftMask | None]
+    capture_soft_masks: IdentityCache[CapturedSoftMask | None]
+    capture_mask_resources: IdentityCache[PdfDict]
+    capture_active_mask_groups: set[int]
+    capture_image_sources: IdentityCache[tuple[ImageSource, float | None]]
+    capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]
+    capture_font_companions: FontCompanionsCache
+    capture_colors: BoundedDict[
+        tuple[int, tuple[float, ...], str | None, BlackPointCompensation],
+        tuple[object, tuple[float, ...]],
+    ]
+    capture_shadings: IdentityCache[dict]
+
+    def __init__(self) -> None:
+        self.parsed_soft_masks = IdentityCache(SOFT_MASK_CACHE_LIMIT)
+        self.capture_soft_masks = IdentityCache(SOFT_MASK_CACHE_LIMIT)
+        self.capture_mask_resources = IdentityCache()
+        self.capture_active_mask_groups = set()
+        self.capture_image_sources = IdentityCache()
+        self.capture_font_decoders = {}
+        self.capture_font_companions = IdentityCache()
+        self.capture_colors = BoundedDict(COLOR_CACHE_LIMIT)
+        self.capture_shadings = IdentityCache()
+
+
 class RecoveringTextState(ContentInterpreter):
-    recovery: CaptureRecovery
-    normalized_colors: dict[tuple[ColorSpace, tuple[object, ...]], tuple[float, ...]]
-    parsed_soft_masks: dict[tuple[int, Matrix, int], tuple[object, object, SoftMask | None]]
+    content_recovery: CaptureRecovery
+    normalized_colors: BoundedDict[tuple[ColorSpace, tuple[object, ...]], tuple[float, ...]]
+    caches: CaptureCaches
+
+    def __init__(
+        self,
+        resolver: PdfValueResolver,
+        sink: ContentSink,
+        font_provider: FontProvider,
+        lexer_factory: Callable[[bytes | memoryview], SpecLexer] = SpecLexer,
+        *,
+        semantic_context: SemanticContext | None = None,
+        caches: CaptureCaches | None = None,
+    ) -> None:
+        self.caches = CaptureCaches() if caches is None else caches
+        self.normalized_colors = BoundedDict(COLOR_CACHE_LIMIT)
+        super().__init__(
+            resolver,
+            sink,
+            font_provider,
+            lexer_factory,
+            semantic_context=semantic_context,
+        )
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
-        cache = self.parsed_soft_masks
+        cache = self.caches.parsed_soft_masks
         resources = self.resources
         ctm = self.graphics.ctm
-        key = (id(value), ctm, id(resources))
-        cached = cache.get(key)
-        if cached is not None and cached[0] is value and cached[1] is resources:
-            return cached[2]
+        key = (id(value), id(resources), ctm)
+        cached = cache.get_key(value, key, MISSING)
+        if not isinstance(cached, MissingObject):
+            return cached
         mask = parse_soft_mask(
             value,
             self.resolver,
             ctm=ctm,
             compile_function=compile_pdf_function,
         )
-        if len(cache) >= SOFT_MASK_CACHE_LIMIT:
-            cache.clear()
-        cache[key] = (value, resources, mask)
-        return mask
+        return cache.put_key(value, key, mask, (resources,))
 
     def operation_table(self) -> Mapping[str, OperationHandler]:
         overrides = self.operator_overrides
@@ -115,15 +177,12 @@ class RecoveringTextState(ContentInterpreter):
         handler = self.operation_table().get(name)
         return handler(operands, depth) if handler is not None else None
 
-    capture_font_decoders: dict[object, list[tuple[object, object, FontDecoder]]]
-    capture_font_companions: FontCompanionsCache
-
     def decoder_for(self, font_reference: object, font: object, resources: PdfDict) -> FontDecoder:
         if isinstance(font_reference, PdfReference):
             font_key: object = (font_reference.object_number, font_reference.generation_number)
         else:
             font_key = id(font)
-        owned = self.capture_font_decoders.setdefault(font_key, [])
+        owned = self.caches.capture_font_decoders.setdefault(font_key, [])
         for owner_resources, owner_font, decoder in owned:
             if owner_resources is resources and owner_font is font:
                 return decoder
@@ -138,7 +197,7 @@ class RecoveringTextState(ContentInterpreter):
                 font,
                 resources,
                 self.resolver.resolve,
-                self.capture_font_companions,
+                self.caches.capture_font_companions,
             )
         if signature is not None and document_decoders is not None:
             shared = document_decoders.get(signature)
@@ -211,12 +270,10 @@ class RecoveringTextState(ContentInterpreter):
             return cached
         normalized = super().normalize_color_components(spec, components)
         if cacheable and normalized is not None:
-            if len(self.normalized_colors) >= COLOR_CACHE_LIMIT:
-                self.normalized_colors.clear()
-            self.normalized_colors[cache_key] = normalized
+            self.normalized_colors.put(cache_key, normalized)
         return normalized
 
-    def reject[T](self, error: Exception, context: str, fallback: T) -> T:
+    def reject[T](self, error: Exception, context: str, fallback: T) -> T:  # noqa: ARG002
         return fallback
 
     def matrix_fallback(self, value: object, context: str) -> Matrix | None:

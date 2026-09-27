@@ -3,7 +3,7 @@ import pytest
 
 from core_pdf.impl import render_target as target_module
 from core_pdf.impl.capture_records import CapturedPath
-from core_pdf.impl.render_model import DisplayListItem
+from core_pdf.impl.render_model import display_item
 from core_pdf.impl.render_target import RasterTarget
 from tests.src.core_pdf.raster_support import make_target
 
@@ -77,7 +77,6 @@ def test_paint_failure_restores_shape_and_group_state(monkeypatch, failure):
     def fail(*args, **kwargs):
         raise RuntimeError("injected rendering failure")
 
-    monkeypatch.setattr(target_module, "graphics_soft_mask", lambda item: object())
     monkeypatch.setattr(
         target_module,
         "resolve_soft_mask",
@@ -88,7 +87,9 @@ def test_paint_failure_restores_shape_and_group_state(monkeypatch, failure):
     elif failure == "composite":
         monkeypatch.setattr(RasterTarget, "composite_group", fail)
     with pytest.raises(RuntimeError, match="injected"):
-        target.paint_item(DisplayListItem("shading", 0, {"alpha_is_shape": True}))
+        target.paint_item(
+            display_item("shading", 0, {"alpha_is_shape": True, "graphics_soft_mask": object()})
+        )
     assert (target.paint_alpha_is_shape, target.shape_alpha) == (False, 0.25)
     assert target.pixels is original_buffer
     assert len(target.buffer_stack) == 1
@@ -112,8 +113,8 @@ def test_scope_failure_restores_clip_and_unwinds_all_groups(monkeypatch, failure
         monkeypatch.setattr(RasterTarget, "composite_group", fail)
 
     def items():
-        yield DisplayListItem("group-begin", 0)
-        yield DisplayListItem("group-begin", 1)
+        yield display_item("group-begin", 0)
+        yield display_item("group-begin", 1)
         if failure == "paint":
             fail()
 

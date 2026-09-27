@@ -15,106 +15,29 @@ from core_adobe_fonts.cmap.tokenizer import (
     cmap_tokens,
     decode_cmap_hex_token,
 )
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 
 def decode_utf16be(data: bytes) -> str:
     return data.decode("utf-16-be")
 
 
-class ParsedToUnicodeCMap(Record):
-    __slots__ = ("code_space_ranges", "mappings", "usecmap_name")
-
+class ParsedToUnicodeCMap(GeneratedRecord):
     code_space_ranges: tuple[tuple[bytes, bytes], ...]
     mappings: dict[bytes, str]
     usecmap_name: str | None
 
-    __fields__: ClassVar[tuple[str, ...]] = ("code_space_ranges", "mappings", "usecmap_name")
-    __match_args__ = ("code_space_ranges", "mappings", "usecmap_name")
 
-    def __init__(
-        self,
-        code_space_ranges: tuple[tuple[bytes, bytes], ...],
-        mappings: dict[bytes, str],
-        usecmap_name: str | None,
-    ) -> None:
-        frozen_setattr(self, "code_space_ranges", code_space_ranges)
-        frozen_setattr(self, "mappings", mappings)
-        frozen_setattr(self, "usecmap_name", usecmap_name)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.code_space_ranges == other.code_space_ranges
-            and self.mappings == other.mappings
-            and self.usecmap_name == other.usecmap_name
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.code_space_ranges, self.mappings, self.usecmap_name))
-
-
-class CMapMappingRecord(Record):
-    __slots__ = ("source", "destination", "source_end")
-
+class CMapMappingRecord(GeneratedRecord):
     source: bytes
     destination: bytes
-    source_end: bytes | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("source", "destination", "source_end")
-    __match_args__ = ("source", "destination", "source_end")
-
-    def __init__(self, source: bytes, destination: bytes, source_end: bytes | None = None) -> None:
-        frozen_setattr(self, "source", source)
-        frozen_setattr(self, "destination", destination)
-        frozen_setattr(self, "source_end", source_end)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.source == other.source
-            and self.destination == other.destination
-            and self.source_end == other.source_end
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.source, self.destination, self.source_end))
+    source_end: bytes | None = None
 
 
-class CMapMappingBlock(Record):
-    __slots__ = ("operator", "operands", "stride")
-
+class CMapMappingBlock(GeneratedRecord):
     operator: bytes
     operands: tuple[bytes, ...]
     stride: int
-
-    __fields__: ClassVar[tuple[str, ...]] = ("operator", "operands", "stride")
-    __match_args__ = ("operator", "operands", "stride")
-
-    def __init__(self, operator: bytes, operands: tuple[bytes, ...], stride: int) -> None:
-        frozen_setattr(self, "operator", operator)
-        frozen_setattr(self, "operands", operands)
-        frozen_setattr(self, "stride", stride)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.operator == other.operator
-            and self.operands == other.operands
-            and self.stride == other.stride
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.operator, self.operands, self.stride))
 
     @property
     def trailing_operand_count(self) -> int:
@@ -149,30 +72,10 @@ def cmap_mapping_blocks(
         )
 
 
-class CMapSourceRange(Record):
-    __slots__ = ("first", "last", "width")
-
+class CMapSourceRange(GeneratedRecord):
     first: int
     last: int
     width: int
-
-    __fields__: ClassVar[tuple[str, ...]] = ("first", "last", "width")
-    __match_args__ = ("first", "last", "width")
-
-    def __init__(self, first: int, last: int, width: int) -> None:
-        frozen_setattr(self, "first", first)
-        frozen_setattr(self, "last", last)
-        frozen_setattr(self, "width", width)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.first == other.first and self.last == other.last and self.width == other.width
-
-    def __hash__(self) -> int:
-        return hash((self.first, self.last, self.width))
 
     @property
     def count(self) -> int:

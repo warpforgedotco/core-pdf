@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Self
+from typing import Any, Self
 
 from core_pdf_spec.s_07_syntax.resolver import STREAM_DECODE_KEYS
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -14,7 +14,7 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
     parse_rendering_intent,
 )
 from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
-from core_records import Record, ReprFields, frozen_setattr
+from core_records import GeneratedRecord, RecordType, ReprFields
 
 IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
     "Width",
@@ -30,46 +30,18 @@ IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
 }
 
 
-class SoftMask(Record):
-    __slots__ = ("raw", "dictionary")
-
+class SoftMask(GeneratedRecord):
     raw: bytes | memoryview
     dictionary: dict[Any, Any]
 
-    __fields__: ClassVar[tuple[str, ...]] = ("raw", "dictionary")
-    __match_args__ = ("raw", "dictionary")
 
-    def __init__(self, raw: bytes | memoryview, dictionary: dict[Any, Any]) -> None:
-        frozen_setattr(self, "raw", raw)
-        frozen_setattr(self, "dictionary", dictionary)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.raw == other.raw and self.dictionary == other.dictionary
-
-    def __hash__(self) -> int:
-        return hash((self.raw, self.dictionary))
-
-
-class ImageSource(ReprFields):
-    __slots__ = ("raw", "dictionary", "soft_mask", "semantic_context", "color_rendering")
-
+class ImageSource(ReprFields, metaclass=RecordType, frozen=False, eq=False):
     raw: bytes | memoryview
     dictionary: dict[Any, Any]
     soft_mask: SoftMask | None
     semantic_context: SemanticContext | None
     color_rendering: ColorRendering
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "raw",
-        "dictionary",
-        "soft_mask",
-        "semantic_context",
-        "color_rendering",
-    )
     __match_args__ = ("raw", "dictionary")
 
     def __init__(

@@ -5,8 +5,9 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf.impl import render_target as raster
+from core_pdf.impl import render_shading as raster
 from core_pdf.impl.graphics_shading import prepare_shading
+from core_pdf.impl.render_model import ShadingItem
 from core_pdf.impl.render_target import RasterTarget
 from core_pdf_cythonized import shading_t, shading_values
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
@@ -15,20 +16,16 @@ from tests.src.core_pdf.pdf_bytes import serialize_pdf
 from tests.src.core_pdf.raster_support import make_backdrop_target, rendered
 
 
-def reference_paint_shading(
-    self: RasterTarget, data: dict[str, Any], blend_mode: str | None
-) -> None:
-    shading = prepare_shading(
-        data.get("dictionary"), rendering=data.get("color_rendering", DEFAULT_COLOR_RENDERING)
-    )
+def reference_paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None) -> None:
+    shading = prepare_shading(item.dictionary, rendering=item.color_rendering)
     if shading is None:
         return
-    clipped_box = self.clip.clipped_pixel_box(self.shading_box(data, shading))
+    clipped_box = self.clip.clipped_pixel_box(self.shading_box(item, shading))
     if clipped_box is None:
         return
     ix0, iy0, ix1, iy1 = clipped_box[1]
-    soft_mask_alpha = data.get("soft_mask_alpha")
-    fill_opacity = data.get("fill_opacity")
+    soft_mask_alpha = item.soft_mask_alpha
+    fill_opacity = item.fill_opacity
     shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
     domain = shading.domain
     domain_span = domain[1] - domain[0]
@@ -245,13 +242,17 @@ def test_a_colour_failing_part_way_paints_what_the_loop_painted(
         seen.clear()
         target = make_backdrop_target(12, 3, planes=planes)
         with pytest.raises(ArithmeticError, match="no colour"):
-            paint(target, {"dictionary": shading, "fill_opacity": opacity}, "Multiply")
+            paint(
+                target,
+                ShadingItem.from_data(0, {"dictionary": shading, "fill_opacity": opacity}),
+                "Multiply",
+            )
         outcomes.append(
             (
                 bytes(target.pixels),
                 plane_bytes(target.group_source_alpha),
                 plane_bytes(target.group_source_shape),
-                list(target.paint_window) if target.paint_window is not None else None,
+                target.paint_window.bounds() if target.paint_window is not None else None,
             )
         )
     assert outcomes[0] == outcomes[1]
@@ -273,7 +274,11 @@ def test_blending_rules_follow_the_documents_version(
         target = make_backdrop_target(12, 3, planes=planes)
         target.semantic_context = context
         try:
-            paint(target, {"dictionary": shading, "fill_opacity": 0.8}, mode)
+            paint(
+                target,
+                ShadingItem.from_data(0, {"dictionary": shading, "fill_opacity": 0.8}),
+                mode,
+            )
             raised = None
         except Exception as error:  # noqa: BLE001
             raised = (type(error), str(error))
@@ -283,7 +288,7 @@ def test_blending_rules_follow_the_documents_version(
                 bytes(target.pixels),
                 plane_bytes(target.group_source_alpha),
                 plane_bytes(target.group_source_shape),
-                list(target.paint_window) if target.paint_window is not None else None,
+                target.paint_window.bounds() if target.paint_window is not None else None,
             )
         )
     assert outcomes[0] == outcomes[1]
@@ -305,10 +310,10 @@ def test_a_shading_painted_again_is_prepared_once(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(raster, "prepare_shading", counting)
     target = make_backdrop_target(12, 3, planes=False)
     for _ in range(3):
-        target.paint_shading({"dictionary": shading}, None)
+        target.paint_shading(ShadingItem.from_data(0, {"dictionary": shading}), None)
     assert prepared == [shading]
     sibling, _ = target.blank_sibling()
-    assert sibling.prepared_shading_cache is target.prepared_shading_cache
+    assert sibling.resources is target.resources
 
 
 def test_a_shading_painted_again_is_captured_once() -> None:
@@ -345,13 +350,13 @@ def test_tiled_copies_of_a_shading_share_one_compiled_evaluator(
     fresh = make_backdrop_target(12, 3, planes=False)
     tiles = [{**shading, "Coords": [offset, 0, 12 + offset, 0]} for offset in range(3)]
     for tile in tiles:
-        target.paint_shading({"dictionary": tile}, None)
+        target.paint_shading(ShadingItem.from_data(0, {"dictionary": tile}), None)
     prepared = [target.prepared_shading(tile, DEFAULT_COLOR_RENDERING) for tile in tiles]
     assert len(compiled) == 1
     assert len({id(shading.evaluator) for shading in prepared if shading is not None}) == 1
     for tile in tiles:
-        fresh.prepared_shading_cache.clear()
-        fresh.shading_evaluator_cache.clear()
-        fresh.paint_shading({"dictionary": tile}, None)
+        fresh.resources.shadings.clear()
+        fresh.resources.shading_evaluators.clear()
+        fresh.paint_shading(ShadingItem.from_data(0, {"dictionary": tile}), None)
     assert len(compiled) == 4
     assert target.pixel_array.tobytes() == fresh.pixel_array.tobytes()

@@ -1,6 +1,7 @@
 import pytest
 
 from core_pdf.impl import extract_table_cleanup as cleanup
+from core_pdf.impl.extract_table_core import TableCandidate
 from core_pdf.impl.output_model import Table, TableAssociatedText, TableCell
 
 
@@ -33,7 +34,9 @@ def test_section_split_retains_cells_and_assigns_title_caption_to_ends(boundary,
     texts = [["Name", "Value"]] + [[str(i), str(i + 10)] for i in range(1, 6)]
     texts[boundary] = ["Next", "Section"]
     original = make_table(texts, geometry=geometry)
-    first, second = cleanup.split_semantic_table(original)
+    first, second = (
+        segment.table for segment in cleanup.split_semantic_table(TableCandidate(original))
+    )
     assert first.rows == original.rows[:boundary]
     assert second.rows == original.rows[boundary:]
     assert all(a is b for a, b in zip(first.rows + second.rows, original.rows, strict=True))
@@ -57,16 +60,16 @@ def test_section_split_retains_cells_and_assigns_title_caption_to_ends(boundary,
 def test_tables_without_section_headers_keep_identity(row_count, numeric):
     text = ["1", "2"] if numeric else ["ordinary", "words"]
     original = make_table([text] * row_count)
-    (result,) = cleanup.split_semantic_table(original)
-    assert result is original
+    (result,) = cleanup.split_semantic_table(TableCandidate(original))
+    assert result.table is original
 
 
 def test_repeated_identical_headers_in_long_table_do_not_create_sections():
     texts = [[str(i), str(i + 10)] for i in range(10)]
     texts[2] = texts[6] = ["Name", "Value"]
     original = make_table(texts)
-    (result,) = cleanup.split_semantic_table(original)
-    assert result is original
+    (result,) = cleanup.split_semantic_table(TableCandidate(original))
+    assert result.table is original
 
 
 @pytest.mark.parametrize(
@@ -105,7 +108,7 @@ def test_stream_prose_detection_distinguishes_word_grids_and_numeric_tables(
     rows, columns, text, expected
 ):
     table = make_table([[text] * columns for _ in range(rows)])
-    assert cleanup.stream_table_reads_like_prose(table) is expected
+    assert cleanup.stream_table_reads_like_prose(TableCandidate(table)) is expected
 
 
 @pytest.mark.parametrize("source", ["stream", "grid"])
@@ -113,6 +116,6 @@ def test_stream_prose_detection_distinguishes_word_grids_and_numeric_tables(
 @pytest.mark.parametrize("text", ["a b c d", "1234"])
 def test_character_spaced_prose_requires_wide_stream_grid(source, columns, text):
     table = make_table([[text] * columns] * 4, source=source)
-    assert cleanup.table_character_spaced_prose(table) is (
+    assert cleanup.table_character_spaced_prose(TableCandidate(table)) is (
         source == "stream" and columns == 8 and text == "a b c d"
     )

@@ -7,6 +7,9 @@ compiled, and `JBIG2PageDecoder.decode_generic_region` raises `Jbig2UnsupportedE
 for arithmetic-coded regions, as it does for MMR-coded ones. A subclass supplies the
 decoding: `core-pdf` does, through its recovery decoder.
 
+0.3.2 builds its records with `core-records` 0.2's generated methods; behaviour is
+unchanged.
+
 0.3.1 adds the text-region segment-type constants and
 `JBIG2PageDecoder.supported_segment_types` (default: every segment, as before), so a
 decoder can skip the segments it does not support.

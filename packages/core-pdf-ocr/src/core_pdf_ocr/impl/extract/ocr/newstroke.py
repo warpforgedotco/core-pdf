@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import math
 from functools import cache
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy
 
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath
 from core_pdf.impl.runs import TextRun
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_ocr._vendor.newstroke_data import NEWSTROKE_ASCII, NEWSTROKE_ASCII_ALTERNATES
 
 FIT_ERROR = 0.08
@@ -26,89 +26,14 @@ MIN_CHARACTERS = 1_000
 MIN_SEQUENCES = 100
 
 
-class NewstrokeDecode(Record):
-    __slots__ = (
-        "runs",
-        "candidate_segments",
-        "matched_segments",
-        "glyphs",
-        "characters",
-        "sequences",
-        "maximum_error",
-    )
-
-    runs: tuple[TextRun, ...]
-    candidate_segments: int
-    matched_segments: int
-    glyphs: int
-    characters: int
-    sequences: int
-    maximum_error: float
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "runs",
-        "candidate_segments",
-        "matched_segments",
-        "glyphs",
-        "characters",
-        "sequences",
-        "maximum_error",
-    )
-    __match_args__ = (
-        "runs",
-        "candidate_segments",
-        "matched_segments",
-        "glyphs",
-        "characters",
-        "sequences",
-        "maximum_error",
-    )
-
-    def __init__(
-        self,
-        runs: tuple[TextRun, ...] = (),
-        candidate_segments: int = 0,
-        matched_segments: int = 0,
-        glyphs: int = 0,
-        characters: int = 0,
-        sequences: int = 0,
-        maximum_error: float = 0.0,
-    ) -> None:
-        frozen_setattr(self, "runs", runs)
-        frozen_setattr(self, "candidate_segments", candidate_segments)
-        frozen_setattr(self, "matched_segments", matched_segments)
-        frozen_setattr(self, "glyphs", glyphs)
-        frozen_setattr(self, "characters", characters)
-        frozen_setattr(self, "sequences", sequences)
-        frozen_setattr(self, "maximum_error", maximum_error)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.runs == other.runs
-            and self.candidate_segments == other.candidate_segments
-            and self.matched_segments == other.matched_segments
-            and self.glyphs == other.glyphs
-            and self.characters == other.characters
-            and self.sequences == other.sequences
-            and self.maximum_error == other.maximum_error
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.runs,
-                self.candidate_segments,
-                self.matched_segments,
-                self.glyphs,
-                self.characters,
-                self.sequences,
-                self.maximum_error,
-            )
-        )
+class NewstrokeDecode(GeneratedRecord):
+    runs: tuple[TextRun, ...] = ()
+    candidate_segments: int = 0
+    matched_segments: int = 0
+    glyphs: int = 0
+    characters: int = 0
+    sequences: int = 0
+    maximum_error: float = 0.0
 
     @property
     def matched_coverage(self) -> float:
@@ -126,18 +51,7 @@ class NewstrokeDecode(Record):
         )
 
 
-class Template(Record):
-    __slots__ = (
-        "char",
-        "width",
-        "segments",
-        "continuity",
-        "solver",
-        "points",
-        "centroid_x",
-        "centroid_y",
-    )
-
+class Template(GeneratedRecord, eq=False):
     char: str
     width: float
     segments: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
@@ -147,76 +61,18 @@ class Template(Record):
     centroid_x: float
     centroid_y: float
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "char",
-        "width",
-        "segments",
-        "continuity",
-        "solver",
-        "points",
-        "centroid_x",
-        "centroid_y",
-    )
-    __match_args__ = (
-        "char",
-        "width",
-        "segments",
-        "continuity",
-        "solver",
-        "points",
-        "centroid_x",
-        "centroid_y",
-    )
-
-    def __init__(
-        self,
-        char: str,
-        width: float,
-        segments: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-        continuity: tuple[bool, ...],
-        solver: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-        points: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-        centroid_x: float,
-        centroid_y: float,
-    ) -> None:
-        frozen_setattr(self, "char", char)
-        frozen_setattr(self, "width", width)
-        frozen_setattr(self, "segments", segments)
-        frozen_setattr(self, "continuity", continuity)
-        frozen_setattr(self, "solver", solver)
-        frozen_setattr(self, "points", points)
-        frozen_setattr(self, "centroid_x", centroid_x)
-        frozen_setattr(self, "centroid_y", centroid_y)
-
     __hash__ = None  # type: ignore[assignment]
 
 
-class TemplateSet(Record):
-    __slots__ = ("all", "robust", "by_first_delta")
-
+class TemplateSet(GeneratedRecord, eq=False):
     all: tuple[Template, ...]
     robust: tuple[Template, ...]
     by_first_delta: dict[tuple[int, int], tuple[Template, ...]]
 
-    __fields__: ClassVar[tuple[str, ...]] = ("all", "robust", "by_first_delta")
-    __match_args__ = ("all", "robust", "by_first_delta")
-
-    def __init__(
-        self,
-        all: tuple[Template, ...],
-        robust: tuple[Template, ...],
-        by_first_delta: dict[tuple[int, int], tuple[Template, ...]],
-    ) -> None:
-        frozen_setattr(self, "all", all)
-        frozen_setattr(self, "robust", robust)
-        frozen_setattr(self, "by_first_delta", by_first_delta)
-
     __hash__ = None  # type: ignore[assignment]
 
 
-class Segment(Record):
-    __slots__ = ("x0", "y0", "x1", "y1", "style", "line_width")
-
+class Segment(GeneratedRecord):
     x0: float
     y0: float
     x1: float
@@ -224,72 +80,17 @@ class Segment(Record):
     style: int
     line_width: float
 
-    __fields__: ClassVar[tuple[str, ...]] = ("x0", "y0", "x1", "y1", "style", "line_width")
-    __match_args__ = ("x0", "y0", "x1", "y1", "style", "line_width")
 
-    def __init__(
-        self,
-        x0: float,
-        y0: float,
-        x1: float,
-        y1: float,
-        style: int,
-        line_width: float,
-    ) -> None:
-        frozen_setattr(self, "x0", x0)
-        frozen_setattr(self, "y0", y0)
-        frozen_setattr(self, "x1", x1)
-        frozen_setattr(self, "y1", y1)
-        frozen_setattr(self, "style", style)
-        frozen_setattr(self, "line_width", line_width)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.x0 == other.x0
-            and self.y0 == other.y0
-            and self.x1 == other.x1
-            and self.y1 == other.y1
-            and self.style == other.style
-            and self.line_width == other.line_width
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.x0, self.y0, self.x1, self.y1, self.style, self.line_width))
-
-
-class Transform(Record):
-    __slots__ = ("matrix", "inverse", "scale", "x_scale")
-
+class Transform(GeneratedRecord, eq=False):
     matrix: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
     inverse: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
     scale: float
     x_scale: float
 
-    __fields__: ClassVar[tuple[str, ...]] = ("matrix", "inverse", "scale", "x_scale")
-    __match_args__ = ("matrix", "inverse", "scale", "x_scale")
-
-    def __init__(
-        self,
-        matrix: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-        inverse: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-        scale: float,
-        x_scale: float,
-    ) -> None:
-        frozen_setattr(self, "matrix", matrix)
-        frozen_setattr(self, "inverse", inverse)
-        frozen_setattr(self, "scale", scale)
-        frozen_setattr(self, "x_scale", x_scale)
-
     __hash__ = None  # type: ignore[assignment]
 
 
-class Match(Record):
-    __slots__ = ("char", "start", "stop", "width", "transform", "translation", "error")
-
+class Match(GeneratedRecord, eq=False):
     char: str
     start: int
     stop: int
@@ -297,35 +98,6 @@ class Match(Record):
     transform: Transform
     translation: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
     error: float
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "char",
-        "start",
-        "stop",
-        "width",
-        "transform",
-        "translation",
-        "error",
-    )
-    __match_args__ = ("char", "start", "stop", "width", "transform", "translation", "error")
-
-    def __init__(
-        self,
-        char: str,
-        start: int,
-        stop: int,
-        width: float,
-        transform: Transform,
-        translation: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-        error: float,
-    ) -> None:
-        frozen_setattr(self, "char", char)
-        frozen_setattr(self, "start", start)
-        frozen_setattr(self, "stop", stop)
-        frozen_setattr(self, "width", width)
-        frozen_setattr(self, "transform", transform)
-        frozen_setattr(self, "translation", translation)
-        frozen_setattr(self, "error", error)
 
     __hash__ = None  # type: ignore[assignment]
 

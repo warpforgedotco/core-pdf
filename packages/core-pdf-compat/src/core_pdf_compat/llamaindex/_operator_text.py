@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf.impl.capture_recovery import iter_content_operations
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
@@ -10,7 +10,7 @@ from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode, is_uni_sequence
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.types import PdfName, PdfString, Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, PdfName, PdfString
 from core_pdf_compat._text_state import (
     IDENTITY_MATRIX,
     TextMachine,
@@ -71,17 +71,7 @@ def difference_text(glyph_name: str, code: int) -> str:
     return f"/{glyph_name}" if not mapped or mapped == glyph_name else mapped
 
 
-class Font(Record):
-    __slots__ = (
-        "decoder",
-        "space_character",
-        "space_width",
-        "encoding",
-        "character_map",
-        "character_widths",
-        "default_width",
-    )
-
+class Font(GeneratedRecord):
     decoder: FontDecoder
     space_character: str
     space_width: float
@@ -89,71 +79,6 @@ class Font(Record):
     character_map: Mapping[str, str]
     character_widths: Mapping[int, float]
     default_width: float
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "decoder",
-        "space_character",
-        "space_width",
-        "encoding",
-        "character_map",
-        "character_widths",
-        "default_width",
-    )
-    __match_args__ = (
-        "decoder",
-        "space_character",
-        "space_width",
-        "encoding",
-        "character_map",
-        "character_widths",
-        "default_width",
-    )
-
-    def __init__(
-        self,
-        decoder: FontDecoder,
-        space_character: str,
-        space_width: float,
-        encoding: tuple[str, ...] | str,
-        character_map: Mapping[str, str],
-        character_widths: Mapping[int, float],
-        default_width: float,
-    ) -> None:
-        frozen_setattr(self, "decoder", decoder)
-        frozen_setattr(self, "space_character", space_character)
-        frozen_setattr(self, "space_width", space_width)
-        frozen_setattr(self, "encoding", encoding)
-        frozen_setattr(self, "character_map", character_map)
-        frozen_setattr(self, "character_widths", character_widths)
-        frozen_setattr(self, "default_width", default_width)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.decoder == other.decoder
-            and self.space_character == other.space_character
-            and self.space_width == other.space_width
-            and self.encoding == other.encoding
-            and self.character_map == other.character_map
-            and self.character_widths == other.character_widths
-            and self.default_width == other.default_width
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.decoder,
-                self.space_character,
-                self.space_width,
-                self.encoding,
-                self.character_map,
-                self.character_widths,
-                self.default_width,
-            )
-        )
 
     def encoded(self, data: bytes) -> str:
         if isinstance(self.encoding, str):
@@ -220,12 +145,14 @@ class OperatorTextProjection:
 
     def collect_fonts(self, resources: Mapping[object, object]) -> dict[str, Font]:
         result: dict[str, Font] = {}
-        fonts = self.resolver.resolve(resources.get("Font"))
-        if not isinstance(fonts, dict):
+        resolver = self.resolver
+        fonts = resolver.dict_at(resources, "Font")
+        if fonts is None:
             return result
+        as_dict = resolver.as_dict
         for name, raw_font in fonts.items():
-            font = self.resolver.resolve(raw_font)
-            if not isinstance(font, dict):
+            font = as_dict(raw_font)
+            if font is None:
                 continue
             self.validate_font_files(font)
             subtype = recover_pdf_name(font.get("Subtype"))
@@ -267,7 +194,7 @@ class OperatorTextProjection:
                 space_code = next(
                     (
                         code
-                        for code, glyph_name in decoder.differences.items()
+                        for code, glyph_name in decoder.encoding.differences.items()
                         if difference_text(glyph_name, code) == " "
                     ),
                     None,
@@ -332,8 +259,8 @@ class OperatorTextProjection:
         return result
 
     def type1_alternative(self, font: Mapping[object, object]) -> dict[int, str]:
-        descriptor = self.resolver.resolve(font.get("FontDescriptor"))
-        if not isinstance(descriptor, dict):
+        descriptor = self.resolver.dict_at(font, "FontDescriptor")
+        if descriptor is None:
             return {}
         font_file = self.resolver.resolve(descriptor.get("FontFile"))
         if not isinstance(font_file, PdfStream):
@@ -350,8 +277,8 @@ class OperatorTextProjection:
     def type3_interpretable(self, font: Mapping[object, object]) -> bool:
         if font.get("ToUnicode") is not None:
             return True
-        char_procs = self.resolver.resolve(font.get("CharProcs"))
-        if not isinstance(char_procs, dict):
+        char_procs = self.resolver.dict_at(font, "CharProcs")
+        if char_procs is None:
             return True
         return all(
             (glyph_name := recover_pdf_name(name)) is not None
@@ -364,8 +291,8 @@ class OperatorTextProjection:
     def resolve_to_unicode(
         font: Mapping[object, object], decoder: FontDecoder
     ) -> ToUnicodeCMap | None:
-        if decoder.to_unicode is not None:
-            return decoder.to_unicode
+        if decoder.unicode.to_unicode is not None:
+            return decoder.unicode.to_unicode
         raw_cmap = font.get("ToUnicode")
         if not isinstance(raw_cmap, PdfStream):
             return None
@@ -382,14 +309,15 @@ class OperatorTextProjection:
         owners: list[Mapping[object, object]] = [font]
         descendants = self.resolver.resolve(font.get("DescendantFonts"))
         if isinstance(descendants, (list, tuple)):
+            as_dict = self.resolver.as_dict
             owners.extend(
                 descendant
                 for raw_descendant in descendants
-                if isinstance((descendant := self.resolver.resolve(raw_descendant)), dict)
+                if (descendant := as_dict(raw_descendant)) is not None
             )
         for owner in owners:
-            descriptor = self.resolver.resolve(owner.get("FontDescriptor"))
-            if not isinstance(descriptor, dict):
+            descriptor = self.resolver.dict_at(owner, "FontDescriptor")
+            if descriptor is None:
                 continue
             if embedded_font_program_count(descriptor) > 1:
                 raise ValueError("font descriptor declares more than one embedded font program")
@@ -398,13 +326,11 @@ class OperatorTextProjection:
         descendants = self.resolver.resolve(font.get("DescendantFonts"))
         owner: Mapping[object, object] = font
         if isinstance(descendants, (list, tuple)) and descendants:
-            descendant = self.resolver.resolve(descendants[0])
-            if isinstance(descendant, dict):
+            descendant = self.resolver.as_dict(descendants[0])
+            if descendant is not None:
                 owner = descendant
-        descriptor = self.resolver.resolve(owner.get("FontDescriptor"))
-        flags = (
-            self.resolver.resolve(descriptor.get("Flags")) if isinstance(descriptor, dict) else None
-        )
+        descriptor = self.resolver.dict_at(owner, "FontDescriptor")
+        flags = self.resolver.resolve(descriptor.get("Flags")) if descriptor is not None else None
         return int(flags) if isinstance(flags, (int, float)) else 0
 
     def resolve_widths(
@@ -417,8 +343,8 @@ class OperatorTextProjection:
         descendants = self.resolver.resolve(font.get("DescendantFonts"))
         if isinstance(descendants, (list, tuple)):
             for raw_descendant in descendants:
-                descendant = self.resolver.resolve(raw_descendant)
-                if not isinstance(descendant, dict):
+                descendant = self.resolver.as_dict(raw_descendant)
+                if descendant is None:
                     continue
                 raw_w = self.resolver.resolve(descendant.get("W"))
                 if isinstance(raw_w, (list, tuple)):
@@ -461,15 +387,15 @@ class OperatorTextProjection:
                     )
                     for offset, value in enumerate(raw_widths)
                 )
-            descriptor = self.resolver.resolve(font.get("FontDescriptor"))
-            if isinstance(descriptor, dict):
+            descriptor = self.resolver.dict_at(font, "FontDescriptor")
+            if descriptor is not None:
                 missing = self.resolver.resolve(descriptor.get("MissingWidth"))
                 if isinstance(missing, (int, float)):
                     default_width = float(int(missing))
             if not widths:
                 widths.update(
                     (code, width)
-                    for code, width in decoder.widths.items()
+                    for code, width in decoder.metrics.widths.items()
                     if 0 <= code < 256 and width > 0
                 )
         return widths, default_width
@@ -493,7 +419,7 @@ class OperatorTextProjection:
             table = base_encoding_table(recover_pdf_name(raw_encoding.get("BaseEncoding")))
         else:
             return "charmap"
-        for code, glyph_name in decoder.differences.items():
+        for code, glyph_name in decoder.encoding.differences.items():
             if not 0 <= code < 256:
                 continue
             table[code] = difference_text(glyph_name, code)
@@ -510,9 +436,9 @@ class OperatorTextProjection:
     ) -> dict[str, str]:
         if to_unicode is None:
             result: dict[str, str] = {}
-            if decoder.differences:
+            if decoder.encoding.differences:
                 return result
-            for code, glyph_name in decoder.encoding_differences.items():
+            for code, glyph_name in decoder.encoding.encoding_differences.items():
                 mapped = legacy_glyph_name_to_unicode(glyph_name)
                 if mapped != glyph_name:
                     result[chr(code)] = mapped
@@ -618,8 +544,8 @@ class OperatorTextProjection:
                         isinstance(form, PdfStream)
                         and str(form.dictionary.get("Subtype")) != "Image"
                     ):
-                        form_resources = self.resolver.resolve(form.dictionary.get("Resources"))
-                        if isinstance(form_resources, dict):
+                        form_resources = self.resolver.dict_at(form.dictionary, "Resources")
+                        if form_resources is not None:
                             form_id = id(form)
                             if form_id in self.active_forms:
                                 continue

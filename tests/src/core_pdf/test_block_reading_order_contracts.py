@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.extract_block_layout import (
+from core_pdf.impl.extract_block_order import (
     column_major_prose,
     interleave_columnar_blocks,
     transpose_numeric_table_blocks,

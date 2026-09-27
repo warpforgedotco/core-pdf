@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache, lru_cache
-from typing import Any, ClassVar
+from typing import Any
 
 import imagecodecs
 import numpy
 
+from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.graphics_codec_backends import thread_count
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
 from core_pdf_spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
@@ -61,20 +62,10 @@ def srgb_profile() -> bytes:
     return bytes(imagecodecs.cms_profile("srgb"))
 
 
-class IccTransform(Record):
-    __slots__ = ("profile", "color_space", "input_channels")
-
+class IccTransform(GeneratedRecord, eq=False):
     profile: bytes
     color_space: str
     input_channels: int
-
-    __fields__: ClassVar[tuple[str, ...]] = ("profile", "color_space", "input_channels")
-    __match_args__ = ("profile", "color_space", "input_channels")
-
-    def __init__(self, profile: bytes, color_space: str, input_channels: int) -> None:
-        frozen_setattr(self, "profile", profile)
-        frozen_setattr(self, "color_space", color_space)
-        frozen_setattr(self, "input_channels", input_channels)
 
     @property
     def alternate_color_space(self) -> str:
@@ -98,7 +89,7 @@ MEMO_LIMIT = 1 << 16
 MEMO_TRANSFORMS = 32
 
 type RowMemo = dict[bytes, bytes]
-row_memos: dict[tuple[bytes, str, int, int], RowMemo] = {}
+row_memos: BoundedDict[tuple[bytes, str, int, int], RowMemo] = BoundedDict(MEMO_TRANSFORMS)
 
 
 def transform(
@@ -139,9 +130,7 @@ def memoized_cms_transform(
     key = (profile, color_space, intent, flags)
     memo = row_memos.get(key)
     if memo is None:
-        if len(row_memos) >= MEMO_TRANSFORMS:
-            row_memos.clear()
-        memo = row_memos[key] = {}
+        memo = row_memos.put(key, {})
     rows, channels = samples.shape
     width = channels * 2
     raw = samples.tobytes()

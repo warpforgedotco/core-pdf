@@ -6,6 +6,7 @@ import numpy
 
 from core_pdf.impl.capture_records import CapturedDrawing
 from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.spatial import BoxIndex
 from core_pdf.impl.text import compact_text, text_tokens
 from core_pdf_ocr.impl.extract.capture import (
     hidden_text_needs_verification,
@@ -48,33 +49,19 @@ def maximum_candidate_coverage(
     if not len(candidate_boxes) or not len(native_boxes):
         return numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
     output = numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
-    native_x0 = native_boxes[:, 0][None, :]
-    native_y0 = native_boxes[:, 1][None, :]
-    native_x1 = native_boxes[:, 2][None, :]
-    native_y1 = native_boxes[:, 3][None, :]
     chunk_size = min(
         COVERAGE_CHUNK,
         max(1, COVERAGE_VECTORIZED_ELEMENTS // len(native_boxes)),
     )
-    for start in range(0, len(candidate_boxes), chunk_size):
-        stop = min(len(candidate_boxes), start + chunk_size)
-        boxes = candidate_boxes[start:stop]
-        widths = numpy.maximum(
-            0.0,
-            numpy.minimum(boxes[:, None, 2], native_x1)
-            - numpy.maximum(boxes[:, None, 0], native_x0),
-        )
-        heights = numpy.maximum(
-            0.0,
-            numpy.minimum(boxes[:, None, 3], native_y1)
-            - numpy.maximum(boxes[:, None, 1], native_y0),
-        )
+    for start, intersections in BoxIndex.from_array(native_boxes).pairwise_intersection(
+        candidate_boxes, chunk_size
+    ):
+        boxes = candidate_boxes[start : start + chunk_size]
         areas = numpy.maximum(
             1.0,
             (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]),
         )
-        numpy.multiply(widths, heights, out=widths)
-        output[start:stop] = numpy.max(widths, axis=1) / areas
+        output[start : start + len(boxes)] = numpy.max(intersections, axis=1) / areas
     return output
 
 

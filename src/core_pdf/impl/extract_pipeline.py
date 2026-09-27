@@ -9,48 +9,38 @@ from functools import cached_property
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from core_pdf.impl.document_metadata import plain_pdf_value
-from core_pdf.impl.document_page_links import resolve_destination_references
 from core_pdf.impl.execution import ExtractionScope
-from core_pdf.impl.extract_block_layout import layout_blocks_with_evidence
+from core_pdf.impl.extract_block_layout import (
+    NATIVE_LAYOUT_HOOKS,
+    LayoutHooks,
+    layout_blocks_with_evidence,
+)
 from core_pdf.impl.extract_capture import STRUCTURE_UNSET, capture_page
 from core_pdf.impl.extract_contracts import (
-    ObservationBatch,
     PageAnalysis,
-    ParsedBlock,
+    PageFrame,
+    PageState,
     ReadingOrderPolicy,
 )
 from core_pdf.impl.extract_emit import (
     assemble_page,
 )
-from core_pdf.impl.extract_table_detection import extract_tables
+from core_pdf.impl.extract_table_detection import NATIVE_TABLES, TableDetector
 from core_pdf.impl.output_model import (
     Annotation,
     Figure,
     FormField,
     Link,
     Page,
-    Table,
 )
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.pdf_values import resolve_destination_references
+from core_pdf.impl.types import GeneratedRecord, Record
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_page import PdfPage
     from core_pdf.impl.document_records import RawAnnotation, RawFormField
     from core_pdf.impl.document_structure import PageStructure
     from core_pdf.impl.extract_capture import StructureUnset
-
-
-class Layout(Protocol):
-    def __call__(
-        self,
-        observations: ObservationBatch,
-        *,
-        obstacles: tuple[tuple[float, float, float, float], ...],
-        use_xy_cut: bool,
-        rotation: int,
-        page_width: float,
-        page_height: float,
-    ) -> tuple[tuple[ParsedBlock, ...], bool]: ...
 
 
 def collected_records[Record, T](
@@ -71,43 +61,90 @@ def collected_records[Record, T](
     return tuple(output)
 
 
-class PageProducts(Record):
-    __slots__ = ("tables", "blocks", "order_ambiguous")
+class Stage(Protocol):
+    def __call__(
+        self, state: PageState, extraction: PageExtraction, context: ExtractionScope, /
+    ) -> PageState: ...
 
-    tables: tuple[Table, ...]
-    blocks: tuple[ParsedBlock, ...]
-    order_ambiguous: bool
 
-    __fields__: ClassVar[tuple[str, ...]] = ("tables", "blocks", "order_ambiguous")
-    __match_args__ = ("tables", "blocks", "order_ambiguous")
+StageAnchor = type | Stage
 
-    def __init__(
-        self,
-        tables: tuple[Table, ...],
-        blocks: tuple[ParsedBlock, ...],
-        order_ambiguous: bool,
-    ) -> None:
-        frozen_setattr(self, "tables", tables)
-        frozen_setattr(self, "blocks", blocks)
-        frozen_setattr(self, "order_ambiguous", order_ambiguous)
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.tables == other.tables
-            and self.blocks == other.blocks
-            and self.order_ambiguous == other.order_ambiguous
-        )
+def stage_matches(stage: Stage, anchor: StageAnchor) -> bool:
+    return isinstance(stage, anchor) if isinstance(anchor, type) else stage is anchor
+
+
+class PagePipeline(GeneratedRecord):
+    stages: tuple[Stage, ...]
 
     def __hash__(self) -> int:
-        return hash((self.tables, self.blocks, self.order_ambiguous))
+        return hash(self.stages)
+
+    def run(self, extraction: PageExtraction, context: ExtractionScope) -> PageState:
+        context.raise_if_cancelled()
+        state = PageState(extraction.capture.observations)
+        for stage in self.stages:
+            state = stage(state, extraction, context)
+        return state
+
+    def position(self, anchor: StageAnchor) -> int:
+        for index, stage in enumerate(self.stages):
+            if stage_matches(stage, anchor):
+                return index
+        raise ValueError(f"pipeline has no stage matching {anchor!r}")
+
+    def replacing(self, anchor: StageAnchor, stage: Stage) -> PagePipeline:
+        index = self.position(anchor)
+        return PagePipeline((*self.stages[:index], stage, *self.stages[index + 1 :]))
+
+    def inserting_before(self, anchor: StageAnchor, stage: Stage) -> PagePipeline:
+        index = self.position(anchor)
+        return PagePipeline((*self.stages[:index], stage, *self.stages[index:]))
+
+    def inserting_after(self, anchor: StageAnchor, stage: Stage) -> PagePipeline:
+        index = self.position(anchor) + 1
+        return PagePipeline((*self.stages[:index], stage, *self.stages[index:]))
+
+
+class DetectTables:
+    __slots__ = ("detector",)
+
+    def __init__(self, detector: TableDetector = NATIVE_TABLES) -> None:
+        self.detector = detector
+
+    def __call__(
+        self, state: PageState, extraction: PageExtraction, _context: ExtractionScope, /
+    ) -> PageState:
+        return replace(state, tables=self.detector.extract(extraction.capture, state.observations))
+
+
+class LayoutBlocks:
+    __slots__ = ("hooks",)
+
+    def __init__(self, hooks: LayoutHooks = NATIVE_LAYOUT_HOOKS) -> None:
+        self.hooks = hooks
+
+    def __call__(
+        self, state: PageState, extraction: PageExtraction, _context: ExtractionScope, /
+    ) -> PageState:
+        policy = extraction.reading_order
+        table_obstacles = tuple(table.bbox for table in state.tables if table.bbox is not None)
+        blocks, order_ambiguous = layout_blocks_with_evidence(
+            state.observations,
+            frame=extraction.frame,
+            obstacles=(*table_obstacles, *policy.image_obstacles),
+            use_xy_cut=policy.use_xy_cut,
+            hooks=self.hooks,
+        )
+        return replace(state, blocks=blocks, order_ambiguous=order_ambiguous)
+
+
+NATIVE_PIPELINE = PagePipeline((DetectTables(), LayoutBlocks()))
 
 
 class PageExtraction:
     capture_page_fn = staticmethod(capture_page)
+    pipeline: ClassVar[PagePipeline] = NATIVE_PIPELINE
 
     @property
     def route_name(self) -> str:
@@ -148,43 +185,24 @@ class PageExtraction:
                 annotations=annotation_records,
             )
 
-    def run(self, context: ExtractionScope) -> PageProducts:
-        context.raise_if_cancelled()
-        observations = self.capture.observations
-        return self.layout_products(
-            observations,
-            extract_tables(self.capture, observations),
-        )
-
-    def layout_products(
-        self,
-        observations: ObservationBatch,
-        tables: tuple[Table, ...],
-        *,
-        layout: Layout = layout_blocks_with_evidence,
-    ) -> PageProducts:
-        capture = self.capture
-        policy = self.reading_order
-        table_obstacles = tuple(table.bbox for table in tables if table.bbox is not None)
-        blocks, order_ambiguous = layout(
-            observations,
-            obstacles=(*table_obstacles, *policy.image_obstacles),
-            use_xy_cut=policy.use_xy_cut,
-            rotation=capture.rotation,
-            page_width=capture.width,
-            page_height=capture.height,
-        )
-        return PageProducts(tables, blocks, order_ambiguous)
+    def run(self, context: ExtractionScope) -> PageState:
+        return self.pipeline.run(self, context)
 
     @cached_property
     def reading_order(self) -> ReadingOrderPolicy:
         return ReadingOrderPolicy.from_evidence(self.capture.evidence)
 
+    @cached_property
+    def frame(self) -> PageFrame:
+        capture = self.capture
+        return PageFrame(
+            capture.width, capture.height, capture.rotation, int(self.page.page_number)
+        )
+
     def assembled_page(self, context: ExtractionScope) -> Page:
         capture = self.capture
         full_page_image = capture.evidence.full_page_image
-        products = self.run(context)
-        blocks = products.blocks
+        state = self.run(context)
         figures = (
             ()
             if full_page_image
@@ -194,15 +212,10 @@ class PageExtraction:
             )
         )
         assembled = assemble_page(
-            blocks,
-            page_number=int(self.page.page_number),
-            width=capture.width,
-            height=capture.height,
-            rotation=capture.rotation,
-            route=self.route_name,
-            tables=products.tables,
+            state,
+            self.frame,
+            self.route_name,
             figures=figures,
-            diagnostics=(("reading-order-ambiguous",) if products.order_ambiguous else ()),
             full_page_image=full_page_image,
             drawings=capture.program.drawings,
         )

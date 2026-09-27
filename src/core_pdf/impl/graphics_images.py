@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from itertools import batched
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy
 
@@ -12,36 +12,28 @@ from core_pdf.impl.array_views import readonly
 from core_pdf.impl.graphics_color import (
     convert_cmyk,
     convert_image_data,
-    image_dimension,
 )
-from core_pdf.impl.graphics_color_spec import parse_color_space, raw_color_space_paints
+from core_pdf.impl.graphics_color_spec import ColorSpace, parse_color_space, raw_color_space_paints
 from core_pdf.impl.graphics_decode_compat import (
-    filter_params,
     normalize_stream_decode_spec,
 )
-from core_pdf.impl.graphics_filter_registry import (
-    FILTER_DESCRIPTOR_BY_NAME,
-    NATIVE_IMAGE_SPECS,
-    FilterDecoder,
-)
+from core_pdf.impl.graphics_filter_registry import FilterDecoder, NativeImageCodec
+from core_pdf.impl.graphics_image_header import ImageHeader
 from core_pdf.impl.graphics_image_samples import (
     convert_integer_image,
     convert_integer_samples,
 )
 from core_pdf.impl.graphics_soft_masks import image_has_color_key_mask
 from core_pdf.impl.graphics_stream_decoding import (
-    decode_ccitt_fax_image,
-    decode_jpeg_image,
-    decode_jpx_image,
+    TOLERANT_FILTER_BY_NAME,
     decode_one_filter,
     decode_stream_data,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_cythonized import interleave_soft_mask
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf_spec.s_08_graphics.color_kernels import (
     decode_sample_values,
     unpack_image_samples,
@@ -69,28 +61,23 @@ def image_color_space_paints(dictionary: dict[Any, Any]) -> bool:
     return raw_color_space_paints(dictionary.get("ColorSpace"))
 
 
-class DecodedRaster(Record):
-    __slots__ = ("data", "width", "height", "channels")
+def samples_equal(left: object, right: object) -> bool:
+    if isinstance(left, numpy.ndarray) or isinstance(right, numpy.ndarray):
+        return (
+            isinstance(left, numpy.ndarray)
+            and isinstance(right, numpy.ndarray)
+            and left.dtype == right.dtype
+            and left.shape == right.shape
+            and bool(numpy.array_equal(left, right))
+        )
+    return bool(left == right)
 
+
+class DecodedRaster(GeneratedRecord):
     data: bytes | memoryview | numpy.ndarray[Any, Any]
     width: int
     height: int
     channels: int
-
-    __fields__: ClassVar[tuple[str, ...]] = ("data", "width", "height", "channels")
-    __match_args__ = ("data", "width", "height", "channels")
-
-    def __init__(
-        self,
-        data: bytes | memoryview | numpy.ndarray[Any, Any],
-        width: int,
-        height: int,
-        channels: int,
-    ) -> None:
-        frozen_setattr(self, "data", data)
-        frozen_setattr(self, "width", width)
-        frozen_setattr(self, "height", height)
-        frozen_setattr(self, "channels", channels)
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -98,41 +85,31 @@ class DecodedRaster(Record):
         if other.__class__ is not self.__class__:
             return NotImplemented
         return (
-            self.data == other.data
-            and self.width == other.width
+            self.width == other.width
             and self.height == other.height
             and self.channels == other.channels
+            and samples_equal(self.data, other.data)
         )
 
     def __hash__(self) -> int:
-        return hash((self.data, self.width, self.height, self.channels))
+        return hash((self.width, self.height, self.channels))
 
 
-class ImageRaster(Record):
-    __slots__ = ("array", "color_model")
-
+class ImageRaster(GeneratedRecord):
     array: numpy.ndarray[Any, Any]
     color_model: str
-
-    __fields__: ClassVar[tuple[str, ...]] = ("array", "color_model")
-    __match_args__ = ("array", "color_model")
-
-    def __init__(self, array: numpy.ndarray[Any, Any], color_model: str) -> None:
-        frozen_setattr(self, "array", array)
-        frozen_setattr(self, "color_model", color_model)
-        self._post_init()
 
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
         if other.__class__ is not self.__class__:
             return NotImplemented
-        return self.array == other.array and self.color_model == other.color_model
+        return self.color_model == other.color_model and samples_equal(self.array, other.array)
 
     def __hash__(self) -> int:
-        return hash((self.array, self.color_model))
+        return hash((self.array.shape, self.array.dtype.str, self.color_model))
 
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         array = numpy.asarray(self.array, dtype=numpy.uint8)
         if array.ndim == 2:
             array = array[:, :, None]
@@ -166,50 +143,21 @@ class ImageRaster(Record):
         return int(self.array.strides[0])
 
 
-class PreparedImage(Record):
-    __slots__ = ("raster", "soft_mask", "is_stencil")
-
+class PreparedImage(GeneratedRecord):
     raster: ImageRaster
-    soft_mask: ImageRaster | None
-    is_stencil: bool
+    soft_mask: ImageRaster | None = None
+    is_stencil: bool = False
 
-    __fields__: ClassVar[tuple[str, ...]] = ("raster", "soft_mask", "is_stencil")
-    __match_args__ = ("raster", "soft_mask", "is_stencil")
-
-    def __init__(
-        self,
-        raster: ImageRaster,
-        soft_mask: ImageRaster | None = None,
-        is_stencil: bool = False,
-    ) -> None:
-        frozen_setattr(self, "raster", raster)
-        frozen_setattr(self, "soft_mask", soft_mask)
-        frozen_setattr(self, "is_stencil", is_stencil)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.raster == other.raster
-            and self.soft_mask == other.soft_mask
-            and self.is_stencil == other.is_stencil
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.raster, self.soft_mask, self.is_stencil))
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         soft_mask = self.soft_mask
         if soft_mask is not None and (soft_mask.color_model != "gray" or soft_mask.has_alpha):
             raise ValueError("prepared image soft mask must be grayscale without alpha")
 
 
 def decode_mask(source: ImageSource) -> DecodedRaster | None:
-    width = image_dimension(source.dictionary, "Width")
-    height = image_dimension(source.dictionary, "Height")
+    header = ImageHeader(source.dictionary)
+    width = header.width
+    height = header.height
     if width <= 0 or height <= 0:
         return None
     try:
@@ -221,7 +169,7 @@ def decode_mask(source: ImageSource) -> DecodedRaster | None:
         return None
     bits = unpack_subbyte_image_samples(decoded, 1, width, height, 1).reshape(height, width)
     alpha = (1 - bits) * 255
-    decode = source.dictionary.get("Decode")
+    decode = header.decode
     if isinstance(decode, (list, tuple)) and len(decode) >= 2:
         try:
             if float(decode[0]) > float(decode[1]):
@@ -249,17 +197,15 @@ def decode_soft_mask(source: ImageSource, soft_mask: SoftMask) -> ImageRaster | 
 
 
 def decode_matte(
-    source: ImageSource, soft_mask: SoftMask
+    source: ImageSource, soft_mask: SoftMask, source_header: ImageHeader
 ) -> tuple[tuple[float, ...], numpy.ndarray[Any, Any]]:
     dictionary = soft_mask.dictionary
-    width = image_dimension(dictionary, "Width")
-    height = image_dimension(dictionary, "Height")
-    if (width, height) != (
-        image_dimension(source.dictionary, "Width"),
-        image_dimension(source.dictionary, "Height"),
-    ):
+    header = ImageHeader(dictionary)
+    width = header.width
+    height = header.height
+    if (width, height) != (source_header.width, source_header.height):
         raise ValueError("image matte requires matching soft mask dimensions")
-    decoded = decode_image_samples(soft_mask.raw, dictionary, size=(width, height))
+    decoded = decode_image_samples(soft_mask.raw, dictionary, size=(width, height), header=header)
     decode = dictionary.get("Decode", (0, 1))
     if isinstance(decoded, DecodedImage):
         if decoded.channels != 1:
@@ -271,7 +217,7 @@ def decode_matte(
         ):
             decode = (0, 1)
     elif decoded is not None:
-        bits = parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True)
+        bits = header.bits
         integers = unpack_image_samples(decoded, bits, width, height, 1)
         maximum = (1 << bits) - 1
     else:
@@ -313,6 +259,7 @@ def canonical_image_array(
     alpha: numpy.ndarray[Any, Any] | None = None,
     semantic_context: SemanticContext | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    header: ImageHeader | None = None,
 ) -> tuple[numpy.ndarray[Any, Any], int] | None:
     explicit_jpx_decode = (
         samples.source == "jpx"
@@ -322,6 +269,7 @@ def canonical_image_array(
     encoded_alpha = None
     sample_array = samples.array
     high_depth_dictionary = dict(dictionary)
+    space: ColorSpace | None = None
     if samples.source == "jpx":
         try:
             selector = image_smask_in_data(dictionary)
@@ -371,6 +319,7 @@ def canonical_image_array(
                 matte=matte,
                 alpha=alpha,
                 rendering=rendering,
+                space=space,
             )
         except TypeError, ValueError:
             return None
@@ -389,7 +338,7 @@ def canonical_image_array(
     else:
         return None
     if channels == 4:
-        converted = convert_image_data(array.reshape(-1), dictionary)
+        converted = convert_image_data(array.reshape(-1), dictionary, header=header)
         expected_rgb = int(array.shape[0]) * int(array.shape[1]) * 3
         if converted is not None and len(converted) == expected_rgb:
             array = numpy.asarray(converted, dtype=numpy.uint8).reshape(
@@ -424,10 +373,13 @@ def decode_image_samples(
     dictionary: dict[Any, Any],
     *,
     size: tuple[int, int] | None = None,
+    header: ImageHeader | None = None,
 ) -> bytes | memoryview | DecodedImage | None:
+    if header is None:
+        header = ImageHeader(dictionary)
     if size is None:
-        width = image_dimension(dictionary, "Width")
-        height = image_dimension(dictionary, "Height")
+        width = header.width
+        height = header.height
     else:
         width, height = size
     if width <= 0 or height <= 0:
@@ -436,7 +388,7 @@ def decode_image_samples(
     native = decode_stream_image_data(raw, dictionary, chain)
     if native is not None and native.width == width and native.height == height:
         return native
-    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True)
+    bits_per_component = header.bits
     if bits_per_component == 16:
         try:
             return chain.decoded()
@@ -446,10 +398,8 @@ def decode_image_samples(
     expected_rgb = expected_gray * 3
     expected_source = 0
     with suppress(ValueError):
-        expected_source = expected_gray * len(
-            parse_color_space(dictionary.get("ColorSpace")).component_ranges
-        )
-    if dictionary.get("Filter") is None and (
+        expected_source = expected_gray * len(header.space().component_ranges)
+    if header.filter is None and (
         len(raw) in {expected_gray, expected_rgb}
         or (bits_per_component == 8 and len(raw) == expected_source)
     ):
@@ -475,16 +425,19 @@ def decode_pdf_image(
     alpha: numpy.ndarray[Any, Any] | None = None,
     semantic_context: SemanticContext | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    header: ImageHeader | None = None,
 ) -> DecodedRaster | None:
     if not image_color_space_paints(dictionary):
         return None
     with suppress(ValueError):
         rendering = image_color_rendering(dictionary, rendering)
-    width = image_dimension(dictionary, "Width")
-    height = image_dimension(dictionary, "Height")
+    if header is None:
+        header = ImageHeader(dictionary)
+    width = header.width
+    height = header.height
     if width <= 0 or height <= 0:
         return None
-    samples = decode_image_samples(raw, dictionary, size=(width, height))
+    samples = decode_image_samples(raw, dictionary, size=(width, height), header=header)
     if samples is None:
         return None
     if isinstance(samples, DecodedImage):
@@ -495,13 +448,14 @@ def decode_pdf_image(
             alpha=alpha,
             semantic_context=semantic_context,
             rendering=rendering,
+            header=header,
         )
         if canonical is None:
             return None
         array, channels = canonical
         return DecodedRaster(array, width, height, channels)
-    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True)
-    if bits_per_component == 16 or image_has_color_key_mask(dictionary):
+    bits_per_component = header.bits
+    if bits_per_component == 16 or header.has_color_key_mask:
         try:
             converted_words = convert_integer_image(
                 samples,
@@ -510,12 +464,13 @@ def decode_pdf_image(
                 matte=matte,
                 alpha=alpha,
                 rendering=rendering,
+                space=header.space(),
             )
         except TypeError, ValueError:
             return None
         return DecodedRaster(converted_words.reshape(-1), width, height, converted_words.shape[1])
     try:
-        converted = convert_image_data(samples, dictionary, rendering=rendering)
+        converted = convert_image_data(samples, dictionary, rendering=rendering, header=header)
     except ValueError:
         pixels = width * height
         if len(samples) in {pixels, pixels * 3}:
@@ -562,14 +517,14 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
     if soft_mask_source is not None:
         dictionary = dict(dictionary)
         dictionary.pop("Mask", None)
-        filters = dictionary.get("Filter", ())
-        filters = filters if isinstance(filters, (list, tuple)) else (filters,)
+    header = ImageHeader(dictionary)
+    if soft_mask_source is not None:
+        filters = header.filter if isinstance(header.filter, (list, tuple)) else (header.filter,)
         if soft_mask_source.dictionary.get("Matte") is not None and (
-            parse_int(dictionary.get("BitsPerComponent"), 8, python_syntax=True) == 16
-            or "JPXDecode" in filters
+            header.bits == 16 or "JPXDecode" in filters
         ):
             try:
-                matte, alpha = decode_matte(source, soft_mask_source)
+                matte, alpha = decode_matte(source, soft_mask_source, header)
             except TypeError, ValueError:
                 return None
     decoded = (
@@ -582,6 +537,7 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
             alpha=alpha,
             semantic_context=source.semantic_context,
             rendering=rendering,
+            header=header,
         )
     )
     if decoded is None:
@@ -613,31 +569,21 @@ def decode_image(source: ImageSource) -> ImageRaster | None:
     return prepared.raster if prepared is not None else None
 
 
-class DecodedImage(Record):
-    __slots__ = ("array", "source")
-
+class DecodedImage(GeneratedRecord):
     array: numpy.ndarray[Any, Any]
     source: str
-
-    __fields__: ClassVar[tuple[str, ...]] = ("array", "source")
-    __match_args__ = ("array", "source")
-
-    def __init__(self, array: numpy.ndarray[Any, Any], source: str) -> None:
-        frozen_setattr(self, "array", array)
-        frozen_setattr(self, "source", source)
-        self._post_init()
 
     def __eq__(self, other: object) -> bool:
         if self is other:
             return True
         if other.__class__ is not self.__class__:
             return NotImplemented
-        return self.array == other.array and self.source == other.source
+        return self.source == other.source and samples_equal(self.array, other.array)
 
     def __hash__(self) -> int:
-        return hash((self.array, self.source))
+        return hash((self.array.shape, self.array.dtype.str, self.source))
 
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         if self.array.ndim not in {2, 3}:
             raise ValueError("decoded image must have two or three dimensions")
         if self.array.dtype not in (numpy.uint8, numpy.uint16):
@@ -658,45 +604,11 @@ class DecodedImage(Record):
         return 1 if self.array.ndim == 2 else int(self.array.shape[2])
 
 
-NATIVE_ARRAY_DECODERS = {
-    "jpeg": decode_jpeg_image,
-    "jpx": decode_jpx_image,
-}
-
-
-class NativeImagePlan(Record):
-    __slots__ = ("decoder", "params", "output_shape")
-
+class NativeImagePlan(GeneratedRecord):
     decoder: FilterDecoder
+    native: NativeImageCodec
     params: object
     output_shape: tuple[int, ...] | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("decoder", "params", "output_shape")
-    __match_args__ = ("decoder", "params", "output_shape")
-
-    def __init__(
-        self,
-        decoder: FilterDecoder,
-        params: object,
-        output_shape: tuple[int, ...] | None,
-    ) -> None:
-        frozen_setattr(self, "decoder", decoder)
-        frozen_setattr(self, "params", params)
-        frozen_setattr(self, "output_shape", output_shape)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.decoder == other.decoder
-            and self.params == other.params
-            and self.output_shape == other.output_shape
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.decoder, self.params, self.output_shape))
 
 
 def prepare_native_image(
@@ -707,13 +619,13 @@ def prepare_native_image(
     if len(stream_spec.steps) != 1:
         return None
     step = stream_spec.steps[0]
-    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(step.name)
-    decoder = descriptor.decoder if descriptor is not None else None
-    if decoder is None or (decoder != "jpx" and not image_decode_is_identity(dictionary)):
+    tolerant = TOLERANT_FILTER_BY_NAME.get(step.name)
+    native = tolerant.native if tolerant is not None else None
+    if tolerant is None or native is None:
         return None
-    spec = NATIVE_IMAGE_SPECS.get(decoder)
-    if spec is None:
+    if native.requires_identity_decode and not image_decode_is_identity(dictionary):
         return None
+    spec = native.spec
     image_dictionary = dictionary if isinstance(dictionary, dict) else {}
     color_space = image_dictionary.get("ColorSpace")
     if isinstance(color_space, (list, tuple, dict)):
@@ -734,7 +646,7 @@ def prepare_native_image(
         and components is not None
     ):
         shape = (height, width) if components == 1 else (height, width, components)
-    return NativeImagePlan(decoder, step.params, shape)
+    return NativeImagePlan(tolerant.decoder, native, step.params, shape)
 
 
 def decode_stream_image_data(
@@ -743,10 +655,13 @@ def decode_stream_image_data(
     chain: FilterChainOutput,
 ) -> DecodedImage | None:
     stream_spec = chain.spec
-    if stream_spec.steps and stream_spec.steps[-1].name == "JPXDecode":
+    steps = stream_spec.steps
+    last = TOLERANT_FILTER_BY_NAME.get(steps[-1].name) if steps else None
+    last_native = last.native if last is not None else None
+    if last is not None and last_native is not None and last_native.after_filters:
         try:
             compressed = bytes(data)
-            for step in stream_spec.steps[:-1]:
+            for step in steps[:-1]:
                 compressed = decode_one_filter(
                     compressed,
                     step.name,
@@ -754,50 +669,23 @@ def decode_stream_image_data(
                     dictionary=dictionary,
                     parent_dictionary=None,
                 )
-            array = decode_jpx_image(compressed, preserve_precision=True)
+            array = last_native.decode(compressed, steps[-1].params, None, chain.decoded)
+            if array is None:
+                return None
             color_space = dictionary.get("ColorSpace") if isinstance(dictionary, dict) else None
             if array.dtype == numpy.uint16 or not isinstance(color_space, (list, tuple, dict)):
-                return DecodedImage(array, "jpx")
+                return DecodedImage(array, last.decoder)
             chain.output = array.tobytes()
         except Exception:
             return None
     plan = prepare_native_image(dictionary, stream_spec)
     if plan is None:
         return None
-    decoder = plan.decoder
-    params = plan.params
-    output_shape = plan.output_shape
-    source = data
     try:
-        array_decoder = NATIVE_ARRAY_DECODERS.get(decoder)
-        if decoder == "jpx":
-            return DecodedImage(decode_jpx_image(source, preserve_precision=True), decoder)
-        if array_decoder is not None:
-            output = numpy.empty(output_shape, dtype=numpy.uint8) if output_shape else None
-            return DecodedImage(array_decoder(source, out=output), decoder)
-        if decoder == "ccitt":
-            ccitt_params = filter_params(params)
-            output = (
-                numpy.empty((ccitt_params.rows, ccitt_params.columns), dtype=numpy.uint8)
-                if ccitt_params.rows > 0 and ccitt_params.columns > 0
-                else None
-            )
-            return DecodedImage(
-                decode_ccitt_fax_image(source, ccitt_params, out=output),
-                "ccitt",
-            )
-        if decoder in {"flate", "lzw"}:
-            if output_shape is None:
-                return None
-            decoded = chain.decoded()
-            expected_size = int(numpy.prod(output_shape, dtype=numpy.int64))
-            if len(decoded) != expected_size:
-                return None
-            array = numpy.frombuffer(decoded, dtype=numpy.uint8).reshape(output_shape)
-            return DecodedImage(array, decoder)
+        array = plan.native.decode(data, plan.params, plan.output_shape, chain.decoded)
+        return DecodedImage(array, plan.decoder) if array is not None else None
     except Exception:
         return None
-    return None
 
 
 def image_decode_is_identity(dictionary: object) -> bool:

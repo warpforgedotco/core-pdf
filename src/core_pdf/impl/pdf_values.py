@@ -3,22 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import ClassVar
+from typing import Protocol
 
-from core_pdf.impl.types import PdfString, ReplaceFields, ReprFields
+from core_pdf.impl.types import PdfReference, PdfString, RecordType, ReplaceFields, ReprFields
 
 
-class CoercionFrame(ReplaceFields, ReprFields):
-    __slots__ = ("original", "entries", "values", "pending", "changed")
+class ReferenceResolver(Protocol):
+    def resolve(self, value: object, /) -> object: ...
 
+
+class CoercionFrame(ReplaceFields, ReprFields, metaclass=RecordType, frozen=False):
     original: object
     entries: Iterator[tuple[object, object]]
     values: list[tuple[object, object]]
     pending: tuple[object, object] | None
     changed: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = ("original", "entries", "values", "pending", "changed")
-    __match_args__ = ("original", "entries", "values", "pending", "changed")
 
     def __init__(
         self,
@@ -34,25 +33,32 @@ class CoercionFrame(ReplaceFields, ReprFields):
         self.pending = pending
         self.changed = changed
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.original == other.original
-            and self.entries == other.entries
-            and self.values == other.values
-            and self.pending == other.pending
-            and self.changed == other.changed
-        )
-
     __hash__ = None  # type: ignore[assignment]
 
     def add(self, key: object, original: object, coerced: object) -> None:
         self.values.append((key, coerced))
         if coerced is not original:
             self.changed = True
+
+
+def resolve_destination_references(
+    resolver: ReferenceResolver, value: object, depth: int = 0
+) -> object:
+    if depth > 8:
+        return value
+    if isinstance(value, PdfReference):
+        resolved = resolver.resolve(value)
+        if resolved is None or isinstance(resolved, (dict, list, tuple)):
+            return value
+        return resolve_destination_references(resolver, resolved, depth + 1)
+    if isinstance(value, dict):
+        return {
+            str(key): resolve_destination_references(resolver, item, depth + 1)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [resolve_destination_references(resolver, item, depth + 1) for item in value]
+    return value
 
 
 def coerce_value(value: object, string_decoder: Callable[[bytes], object] | None = None) -> object:

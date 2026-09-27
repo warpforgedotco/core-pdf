@@ -7,28 +7,26 @@ from typing import Any, ClassVar, Self
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, CapturedSoftMask
 from core_pdf.impl.geometry import finite_rect, rect_tuple, union_bbox
 from core_pdf.impl.glyphs import GlyphStyle
-from core_pdf.impl.graphics_color import image_dimension
 from core_pdf.impl.graphics_color_spec import describe_color_space
 from core_pdf.impl.graphics_filter_registry import declared_filter_names
+from core_pdf.impl.pdf_names import lenient_int
 from core_pdf.impl.render_model import (
     DisplayItem,
     DisplayListItem,
     ImagePaintItem,
     PathPaintItem,
     PathPaintKind,
+    display_item,
     is_plain_fill,
     path_paint_fields,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number, parse_int
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
 PATH_PAINT_KINDS = {
     name: PathPaintKind(index) for index, name in enumerate(("fill", "stroke", "fillstroke"))
 }
 MAX_COALESCED_STROKE_SUBPATHS = 256
-RASTER_CONTROL_KINDS = frozenset(
-    {"state-push", "state-pop", "clip", "group-begin", "group-end", "scope-begin", "scope-end"}
-)
 
 
 def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -36,15 +34,13 @@ def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(dictionary, dict):
         return {}
 
-    width = image_dimension(dictionary, "Width")
-    height = image_dimension(dictionary, "Height")
+    width = lenient_int(dictionary.get("Width"), 0)
+    height = lenient_int(dictionary.get("Height"), 0)
     width = max(0, width)
     height = max(0, height)
     image_mask = dictionary.get("ImageMask") is True
     default_bpc = 1 if image_mask else 0
-    bits_per_component = parse_int(
-        dictionary.get("BitsPerComponent"), default_bpc, python_syntax=True
-    )
+    bits_per_component = lenient_int(dictionary.get("BitsPerComponent"), default_bpc)
     bits_per_component = bits_per_component if bits_per_component > 0 else default_bpc
     image_source = data.get("image_source")
     has_soft_mask = (
@@ -349,7 +345,7 @@ class DisplayList:
             )
             return
         self.track_group_boundary(kind, data)
-        self.items.append(DisplayListItem(kind=kind, seqno=seqno, data=data))
+        self.items.append(display_item(kind, seqno, data))
 
     def append_captured_drawing(self, drawing: CapturedDrawing) -> None:
         if not drawing.paints:
@@ -436,35 +432,6 @@ class DisplayList:
             path=drawing.path,
             items=drawing.items,
         )
-
-
-def display_item_box(
-    item: DisplayItem, *, scale: float = 1.0
-) -> tuple[float, float, float, float] | None:
-    if type(item) is ImagePaintItem:
-        return rect_tuple(item.bbox)
-    if type(item) is PathPaintItem:
-        value = item.bbox
-        if value is None and type(item.path) is CapturedPath:
-            value = item.path.bbox()
-        box = rect_tuple(value)
-        if box is None:
-            return None
-        if item.paint_kind in {PathPaintKind.STROKE, PathPaintKind.FILL_STROKE}:
-            pad = max(0.5 / scale, item.line_width * 0.5)
-            box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
-        return box
-    generic_item = item
-    data = generic_item.data
-    if generic_item.kind in {"text", "glyph"}:
-        value = data.get("bbox")
-    elif generic_item.kind in {"annotation", "widget"}:
-        value = data.get("rect")
-    elif generic_item.kind == "shading":
-        value = data.get("bbox") or data.get("rect")
-    else:
-        return None
-    return rect_tuple(value)
 
 
 __all__ = (

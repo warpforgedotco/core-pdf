@@ -2,7 +2,7 @@ import numpy
 import pytest
 
 from core_pdf.impl import extract_block_layout as native_layout
-from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch, PageFrame
 from core_pdf_ocr.impl.extract import block_layout
 
 
@@ -58,8 +58,8 @@ def test_layout_preserves_ocr_source_labels_and_evidence() -> None:
     observations = ObservationBatch.from_columns(
         ("Hello", "world"), ((10, 10, 35, 20), (40, 10, 70, 20)), source=1, confidence=(99, 99)
     )
-    blocks, ambiguous = block_layout.layout_blocks_with_evidence(
-        observations, page_width=100, page_height=100
+    blocks, ambiguous = native_layout.layout_blocks_with_evidence(
+        observations, frame=PageFrame(100.0, 100.0), hooks=block_layout.OCR_LAYOUT_HOOKS
     )
     assert len(blocks) == 1
     assert blocks[0].lines[0].line.source == "ocr"

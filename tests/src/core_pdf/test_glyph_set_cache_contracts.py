@@ -1,6 +1,6 @@
 import threading
 
-from core_pdf.impl.fonts_font_program import glyph_set_of
+from core_pdf.impl.fonts_program_truetype import glyph_set_of
 
 
 class CountingFont:

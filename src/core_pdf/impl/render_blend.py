@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from enum import IntEnum
 from typing import Any
 
 import numpy
 
+from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.graphics_device_profiles import cmyk_floats_to_srgb, component_byte
 from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
@@ -13,6 +15,41 @@ from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_components
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 RASTER_NUMPY_SPAN_MIN_PIXELS = 32
+
+
+class BlendOp(IntEnum):
+    NORMAL = 0
+    MULTIPLY = 1
+    SCREEN = 2
+    COLOR_DODGE = 3
+    COLOR_BURN = 4
+    UNSUPPORTED = 5
+
+
+BLEND_OPS: dict[str, BlendOp] = {
+    "normal": BlendOp.NORMAL,
+    "multiply": BlendOp.MULTIPLY,
+    "screen": BlendOp.SCREEN,
+    "colordodge": BlendOp.COLOR_DODGE,
+    "colorburn": BlendOp.COLOR_BURN,
+}
+KERNEL_BLEND_CODES = (0, 1, 2, 3, 4, 0)
+
+
+def blend_op(name: object, *, casefold: bool = False) -> BlendOp | None:
+    if not isinstance(name, str):
+        return None
+    return BLEND_OPS.get(name.casefold() if casefold else name.lower(), BlendOp.UNSUPPORTED)
+
+
+def kernel_blend_code(op: BlendOp | None) -> int:
+    return 0 if op is None else KERNEL_BLEND_CODES[op]
+
+
+def declared_blend(name: str | None) -> str | None:
+    return None if name == "Normal" else name
+
+
 FALLBACK_BLEND_CONTEXT = SemanticContext(PdfVersion(2, 0))
 
 
@@ -80,22 +117,22 @@ def blend_channels_f64(
     dg: numpy.ndarray,
     db: numpy.ndarray,
     da: numpy.ndarray,
-    mode: str | None,
+    mode: BlendOp | None,
     *,
     semantic_context: SemanticContext | None = None,
 ) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     one_minus_src_a = 1.0 - src_a
     dst_a = da / 255.0
-    if mode == "multiply":
+    if mode is BlendOp.MULTIPLY:
         src_r = src_r * (1.0 - dst_a) + dst_a * (src_r * (dr / 255.0))
         src_g = src_g * (1.0 - dst_a) + dst_a * (src_g * (dg / 255.0))
         src_b = src_b * (1.0 - dst_a) + dst_a * (src_b * (db / 255.0))
-    elif mode == "screen":
+    elif mode is BlendOp.SCREEN:
         src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dr / 255.0))
         src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dg / 255.0))
         src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - db / 255.0))
-    elif mode in {"colordodge", "colorburn"}:
-        component_mode: BlendMode = "ColorDodge" if mode == "colordodge" else "ColorBurn"
+    elif mode is BlendOp.COLOR_DODGE or mode is BlendOp.COLOR_BURN:
+        component_mode: BlendMode = "ColorDodge" if mode is BlendOp.COLOR_DODGE else "ColorBurn"
         context = blend_context(semantic_context)
         src_r = src_r * (1.0 - dst_a) + dst_a * blend_components(
             dr / 255.0, src_r, component_mode, context=context
@@ -130,7 +167,7 @@ def blend_solid_array_numpy(
     sr, sg, sb, sa = rgba
     if sa <= 0 or target.size == 0:
         return
-    mode = blend_mode.lower() if isinstance(blend_mode, str) else None
+    mode = blend_op(blend_mode)
     if sa >= 255 and mode is None:
         target[..., 0] = sr
         target[..., 1] = sg
@@ -182,7 +219,7 @@ def composite_blended_group_numpy(
     dg = destination[..., 1][visible].astype(numpy.float64)
     db = destination[..., 2][visible].astype(numpy.float64)
     da = destination[..., 3][visible].astype(numpy.float64)
-    mode = blend_mode.lower() if isinstance(blend_mode, str) else None
+    mode = blend_op(blend_mode)
     out_r, out_g, out_b, out_a_i = blend_channels_f64(
         source[..., 0][visible].astype(numpy.float64) / 255.0,
         source[..., 1][visible].astype(numpy.float64) / 255.0,
@@ -221,7 +258,7 @@ def blend_visible_pixels(
     green: float | numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     blue: float | numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     alpha: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
-    blend_mode: str | None,
+    blend_mode: BlendOp | None,
     *,
     semantic_context: SemanticContext | None = None,
 ) -> None:
@@ -241,8 +278,10 @@ def blend_visible_pixels(
     destination[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(numpy.uint8)
 
 
-COLOR_RGBA_CACHE: dict[tuple[tuple[float, ...], object, type], tuple[int, int, int, int]] = {}
 COLOR_RGBA_CACHE_LIMIT = 4096
+COLOR_RGBA_CACHE: BoundedDict[tuple[tuple[float, ...], object, type], tuple[int, int, int, int]] = (
+    BoundedDict(COLOR_RGBA_CACHE_LIMIT)
+)
 
 
 def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
@@ -255,10 +294,7 @@ def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
         pass
     except TypeError:
         return convert_color_rgba(color, opacity)
-    if len(COLOR_RGBA_CACHE) >= COLOR_RGBA_CACHE_LIMIT:
-        COLOR_RGBA_CACHE.clear()
-    rgba = COLOR_RGBA_CACHE[key] = convert_color_rgba(color, opacity)
-    return rgba
+    return COLOR_RGBA_CACHE.put(key, convert_color_rgba(color, opacity))
 
 
 def convert_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:

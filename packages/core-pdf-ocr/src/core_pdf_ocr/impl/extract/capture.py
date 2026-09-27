@@ -39,6 +39,7 @@ from core_pdf.impl.geometry import bbox_area, bbox_union, rect_tuple
 from core_pdf.impl.glyphs import GlyphObservation, UnicodeSource
 from core_pdf.impl.graphics_filter_registry import declared_filter_names
 from core_pdf.impl.runs import TextRun
+from core_pdf.impl.spatial import BoxIndex
 from core_pdf.impl.text import normalize_extracted_text
 from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
@@ -282,24 +283,10 @@ def uncovered_vector_area(
     if not rectangles:
         return 0.0
     uncovered = 0.0
-    for offset in range(0, len(rectangles), 64):
-        batch = numpy.asarray(rectangles[offset : offset + 64], dtype=numpy.float32)
-        batch_x0 = batch[:, 0, None]
-        batch_y0 = batch[:, 1, None]
-        batch_x1 = batch[:, 2, None]
-        batch_y1 = batch[:, 3, None]
-        overlap_x = numpy.maximum(
-            0.0,
-            numpy.minimum(native[None, :, 2], batch_x1)
-            - numpy.maximum(native[None, :, 0], batch_x0),
-        )
-        overlap_y = numpy.maximum(
-            0.0,
-            numpy.minimum(native[None, :, 3], batch_y1)
-            - numpy.maximum(native[None, :, 1], batch_y0),
-        )
-        batch_covered = numpy.sum(overlap_x * overlap_y, axis=1, dtype=numpy.float64)
-        areas = batch[:, 4]
+    packed = numpy.asarray(rectangles, dtype=numpy.float32)
+    for offset, intersections in BoxIndex.from_array(native).pairwise_intersection(packed, 64):
+        batch_covered = numpy.sum(intersections, axis=1, dtype=numpy.float64)
+        areas = packed[offset : offset + 64, 4]
         uncovered += float(
             numpy.sum(numpy.maximum(0.0, areas - numpy.minimum(areas, batch_covered)))
         )
@@ -406,8 +393,8 @@ def enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
         for image in program.inline_images
         for filter_name in declared_filter_names(image.dictionary.get("Filter"))
     )
-    evidence = PageEvidence(
-        **{name: getattr(native.evidence, name) for name in native.evidence.__fields__},
+    evidence = native.evidence.extended(
+        PageEvidence,
         vector_complexity=vector_complexity(program.drawings, program.lines),
         image_filters=image_filters,
         uncovered_vector_area=uncovered_vector_area(
@@ -416,17 +403,7 @@ def enrich_capture(native: NativePageAnalysis) -> PageAnalysis:
             page_area=native.evidence.page_area,
         ),
     )
-    captured = PageAnalysis(
-        page=native.page,
-        width=native.width,
-        height=native.height,
-        rotation=native.rotation,
-        fields=native.fields,
-        annotations=native.annotations,
-        program=program,
-        observations=native.observations,
-        evidence=evidence,
-    )
+    captured = native.extended(PageAnalysis, evidence=evidence)
     if not program.runs and requires_high_resolution_vector_ocr(captured):
         decoded = decode_newstroke_drawings(program.drawings)
         if decoded.trusted:

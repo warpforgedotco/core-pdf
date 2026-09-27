@@ -161,7 +161,7 @@ class PdfminerTextState(TextState):
 def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
     state = PdfminerTextState(page.document, page_clip=page.effective_page_clip())
     state.lexer_factory = PdfminerContentLexer
-    state.recovery = PdfminerRecovery()
+    state.content_recovery = PdfminerRecovery()
     page.consume_contents(state)
     state.run_accumulator.flush()
     return CapturedProgram(
@@ -177,19 +177,20 @@ def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
 
 def pdfminer_validate_page_resources(page: PdfPage) -> None:
     resources = page.resources
-    fonts = page.document.resolver.resolve(resources.get("Font"))
-    if isinstance(fonts, dict):
+    resolver = page.document.resolver
+    fonts = resolver.dict_at(resources, "Font")
+    if fonts is not None:
         for font_value in fonts.values():
-            font = page.document.resolver.resolve(font_value)
-            if not isinstance(font, dict):
+            font = resolver.as_dict(font_value)
+            if font is None:
                 continue
-            if recover_pdf_name(font.get("Subtype")) == "Type0":
-                descendants = page.document.resolver.resolve(font.get("DescendantFonts"))
-                if not isinstance(descendants, list) or not descendants:
-                    raise PdfError("Type0 font is missing /DescendantFonts")
+            if recover_pdf_name(font.get("Subtype")) == "Type0" and not resolver.array_at(
+                font, "DescendantFonts"
+            ):
+                raise PdfError("Type0 font is missing /DescendantFonts")
 
-    color_spaces = page.document.resolver.resolve(resources.get("ColorSpace"))
-    if not isinstance(color_spaces, dict):
+    color_spaces = resolver.dict_at(resources, "ColorSpace")
+    if color_spaces is None:
         return
     for color_space_value in color_spaces.values():
         color_space = page.document.resolver.resolve(color_space_value)

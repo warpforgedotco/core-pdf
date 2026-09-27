@@ -3,24 +3,19 @@
 
 from __future__ import annotations
 
-from typing import Protocol
-
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.fonts_decoder import normalized_base_font_name
-from core_pdf.impl.fonts_font_program import (
+from core_pdf.impl.fonts_encoding import normalized_base_font_name
+from core_pdf.impl.fonts_program_truetype import (
     TrueTypeFontProgram,
     cached_truetype_program,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import ReferenceResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
 
 
-class FontResourceDocument(Protocol):
-    def resolve(self, value: object, /) -> object: ...
-
-
-def get_font_file(document: FontResourceDocument, font_obj: object) -> PdfStream | None:
+def get_font_file(document: ReferenceResolver, font_obj: object) -> PdfStream | None:
     if not isinstance(font_obj, dict):
         return None
     descriptor = document.resolve(font_obj.get("FontDescriptor"))
@@ -45,7 +40,7 @@ def load_font_file_tables(font_file: PdfStream) -> TrueTypeFontProgram | None:
 
 
 def find_companion_font(
-    document: FontResourceDocument,
+    document: ReferenceResolver,
     resources: object,
     base_name: str,
     ligature_starters: set[str],
@@ -119,7 +114,7 @@ def find_companion_font(
 
 
 def detect_ligature_overrides(
-    document: FontResourceDocument,
+    document: ReferenceResolver,
     resources: object,
     font_obj: object,
 ) -> dict[int, str]:
@@ -196,7 +191,6 @@ def detect_ligature_overrides(
 
 
 __all__ = (
-    "FontResourceDocument",
     "detect_ligature_overrides",
     "find_companion_font",
     "get_font_file",

@@ -17,27 +17,13 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     require_pdf_number_pairs,
 )
 from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord, frozen_setattr
 
 ColorParams: TypeAlias = Mapping[str, object]
 ComponentRanges: TypeAlias = tuple[tuple[float, float], ...]
 
 
-class ColorSpace(Record):
-    __slots__ = (
-        "kind",
-        "component_ranges",
-        "params",
-        "base",
-        "alternate",
-        "colorants",
-        "hival",
-        "lookup",
-        "tint_fn",
-        "icc_profile",
-        "devicen_attributes",
-    )
-
+class ColorSpace(GeneratedRecord, eq=False):
     kind: str
     component_ranges: ComponentRanges
     params: ColorParams
@@ -50,19 +36,6 @@ class ColorSpace(Record):
     icc_profile: bytes | None
     devicen_attributes: DeviceNAttributes | None
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "kind",
-        "component_ranges",
-        "params",
-        "base",
-        "alternate",
-        "colorants",
-        "hival",
-        "lookup",
-        "tint_fn",
-        "icc_profile",
-        "devicen_attributes",
-    )
     __repr_fields__: ClassVar[tuple[str, ...]] = (
         "kind",
         "component_ranges",
@@ -73,19 +46,6 @@ class ColorSpace(Record):
         "hival",
         "lookup",
         "tint_fn",
-        "devicen_attributes",
-    )
-    __match_args__ = (
-        "kind",
-        "component_ranges",
-        "params",
-        "base",
-        "alternate",
-        "colorants",
-        "hival",
-        "lookup",
-        "tint_fn",
-        "icc_profile",
         "devicen_attributes",
     )
 
@@ -116,46 +76,16 @@ class ColorSpace(Record):
         frozen_setattr(self, "devicen_attributes", devicen_attributes)
 
 
-class DeviceNProcess(Record):
-    __slots__ = ("color_space", "components", "component_indices")
-
+class DeviceNProcess(GeneratedRecord, eq=False):
     color_space: ColorSpace
     components: tuple[str, ...]
     component_indices: tuple[int | None, ...]
 
-    __fields__: ClassVar[tuple[str, ...]] = ("color_space", "components", "component_indices")
-    __match_args__ = ("color_space", "components", "component_indices")
 
-    def __init__(
-        self,
-        color_space: ColorSpace,
-        components: tuple[str, ...],
-        component_indices: tuple[int | None, ...],
-    ) -> None:
-        frozen_setattr(self, "color_space", color_space)
-        frozen_setattr(self, "components", components)
-        frozen_setattr(self, "component_indices", component_indices)
-
-
-class DeviceNAttributes(Record):
-    __slots__ = ("subtype", "process", "colorants")
-
+class DeviceNAttributes(GeneratedRecord, eq=False):
     subtype: str
     process: DeviceNProcess | None
     colorants: Mapping[str, ColorSpace]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("subtype", "process", "colorants")
-    __match_args__ = ("subtype", "process", "colorants")
-
-    def __init__(
-        self,
-        subtype: str,
-        process: DeviceNProcess | None,
-        colorants: Mapping[str, ColorSpace],
-    ) -> None:
-        frozen_setattr(self, "subtype", subtype)
-        frozen_setattr(self, "process", process)
-        frozen_setattr(self, "colorants", colorants)
 
 
 DEVICE_GRAY = ColorSpace("DeviceGray", ((0.0, 1.0),))

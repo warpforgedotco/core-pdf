@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from typing import Any, ClassVar
+from typing import Any
 
 from core_adobe_fonts.cmap.decoder import MAX_CID, MIN_CID
 from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_integer, require_pdf_number
@@ -9,7 +9,7 @@ from core_pdf_spec.s_09_fonts.dictionaries import (
     font_descriptor,
     get_descendant,
 )
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 
 class CompactCIDWidthMap(Mapping[int, float]):
@@ -77,81 +77,13 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
     return widths
 
 
-class FontMetrics(Record):
-    __slots__ = (
-        "widths",
-        "default_width",
-        "default_width_explicit",
-        "default_vertical_displacement_y",
-        "default_vertical_origin_y",
-        "vertical_metrics",
-    )
-
+class FontMetrics(GeneratedRecord):
     widths: Mapping[int, float]
     default_width: float
     default_width_explicit: bool
     default_vertical_displacement_y: float
     default_vertical_origin_y: float
     vertical_metrics: dict[int, tuple[float, float, float]]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "widths",
-        "default_width",
-        "default_width_explicit",
-        "default_vertical_displacement_y",
-        "default_vertical_origin_y",
-        "vertical_metrics",
-    )
-    __match_args__ = (
-        "widths",
-        "default_width",
-        "default_width_explicit",
-        "default_vertical_displacement_y",
-        "default_vertical_origin_y",
-        "vertical_metrics",
-    )
-
-    def __init__(
-        self,
-        widths: Mapping[int, float],
-        default_width: float,
-        default_width_explicit: bool,
-        default_vertical_displacement_y: float,
-        default_vertical_origin_y: float,
-        vertical_metrics: dict[int, tuple[float, float, float]],
-    ) -> None:
-        frozen_setattr(self, "widths", widths)
-        frozen_setattr(self, "default_width", default_width)
-        frozen_setattr(self, "default_width_explicit", default_width_explicit)
-        frozen_setattr(self, "default_vertical_displacement_y", default_vertical_displacement_y)
-        frozen_setattr(self, "default_vertical_origin_y", default_vertical_origin_y)
-        frozen_setattr(self, "vertical_metrics", vertical_metrics)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.widths == other.widths
-            and self.default_width == other.default_width
-            and self.default_width_explicit == other.default_width_explicit
-            and self.default_vertical_displacement_y == other.default_vertical_displacement_y
-            and self.default_vertical_origin_y == other.default_vertical_origin_y
-            and self.vertical_metrics == other.vertical_metrics
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.widths,
-                self.default_width,
-                self.default_width_explicit,
-                self.default_vertical_displacement_y,
-                self.default_vertical_origin_y,
-                self.vertical_metrics,
-            )
-        )
 
 
 def w2_metric(values: Any) -> tuple[float, float, float]:

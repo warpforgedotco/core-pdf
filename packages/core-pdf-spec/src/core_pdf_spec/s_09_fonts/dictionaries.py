@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 
 def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
@@ -21,81 +21,13 @@ def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
     return descendant_fonts[0]
 
 
-class FontProgramInputs(Record):
-    __slots__ = (
-        "subtype",
-        "original_subtype",
-        "descendant",
-        "font_file",
-        "font_file2",
-        "font_file3",
-    )
-
+class FontProgramInputs(GeneratedRecord):
     subtype: str | None
     original_subtype: str | None
     descendant: dict[str, Any] | None
     font_file: PdfStream | None
     font_file2: PdfStream | None
     font_file3: PdfStream | None
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "subtype",
-        "original_subtype",
-        "descendant",
-        "font_file",
-        "font_file2",
-        "font_file3",
-    )
-    __match_args__ = (
-        "subtype",
-        "original_subtype",
-        "descendant",
-        "font_file",
-        "font_file2",
-        "font_file3",
-    )
-
-    def __init__(
-        self,
-        subtype: str | None,
-        original_subtype: str | None,
-        descendant: dict[str, Any] | None,
-        font_file: PdfStream | None,
-        font_file2: PdfStream | None,
-        font_file3: PdfStream | None,
-    ) -> None:
-        frozen_setattr(self, "subtype", subtype)
-        frozen_setattr(self, "original_subtype", original_subtype)
-        frozen_setattr(self, "descendant", descendant)
-        frozen_setattr(self, "font_file", font_file)
-        frozen_setattr(self, "font_file2", font_file2)
-        frozen_setattr(self, "font_file3", font_file3)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.subtype == other.subtype
-            and self.original_subtype == other.original_subtype
-            and self.descendant == other.descendant
-            and self.font_file == other.font_file
-            and self.font_file2 == other.font_file2
-            and self.font_file3 == other.font_file3
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.subtype,
-                self.original_subtype,
-                self.descendant,
-                self.font_file,
-                self.font_file2,
-                self.font_file3,
-            )
-        )
 
 
 def font_descriptor(value: object) -> dict[str, Any] | None:

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal, TypeAlias
+from typing import Literal, TypeAlias
 
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 FilterDecoder: TypeAlias = Literal[
     "ascii85",
@@ -20,61 +20,12 @@ FilterDecoder: TypeAlias = Literal[
 ]
 
 
-class FilterDescriptor(Record):
-    __slots__ = ("name", "decoder", "predictor", "ccitt", "wants_image_dictionary")
-
+class FilterDescriptor(GeneratedRecord):
     name: str
     decoder: FilterDecoder | None
-    predictor: bool
-    ccitt: bool
-    wants_image_dictionary: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "name",
-        "decoder",
-        "predictor",
-        "ccitt",
-        "wants_image_dictionary",
-    )
-    __match_args__ = ("name", "decoder", "predictor", "ccitt", "wants_image_dictionary")
-
-    def __init__(
-        self,
-        name: str,
-        decoder: FilterDecoder | None,
-        predictor: bool = False,
-        ccitt: bool = False,
-        wants_image_dictionary: bool = False,
-    ) -> None:
-        frozen_setattr(self, "name", name)
-        frozen_setattr(self, "decoder", decoder)
-        frozen_setattr(self, "predictor", predictor)
-        frozen_setattr(self, "ccitt", ccitt)
-        frozen_setattr(self, "wants_image_dictionary", wants_image_dictionary)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.name == other.name
-            and self.decoder == other.decoder
-            and self.predictor == other.predictor
-            and self.ccitt == other.ccitt
-            and self.wants_image_dictionary == other.wants_image_dictionary
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.name,
-                self.decoder,
-                self.predictor,
-                self.ccitt,
-                self.wants_image_dictionary,
-            )
-        )
+    predictor: bool = False
+    ccitt: bool = False
+    wants_image_dictionary: bool = False
 
 
 FILTER_DESCRIPTORS = (

@@ -57,7 +57,7 @@ def test_mask_pixels_ignore_destination_clip_and_backdrop(
     np.testing.assert_array_equal(result[1:3, 2:4], plane[1:3, 2:4])
     assert bytes(target.pixels) == original_pixels
     assert target.clip.depth == 1
-    assert not target.active_soft_masks
+    assert not target.resources.active_soft_masks
     assert samples == ([0, 1] if invert else [])
     assert resolve_soft_mask(target, mask) is result
     assert samples == ([0, 1] if invert else [])
@@ -70,9 +70,7 @@ def test_sibling_reuses_mask_cache_without_sharing_paint_state() -> None:
     assert result is not None
     sibling, pixels = target.blank_sibling()
     assert resolve_soft_mask(sibling, mask) is result
-    assert sibling.prepared_image_cache is target.prepared_image_cache
-    assert sibling.tiling_cell_cache is target.tiling_cell_cache
-    assert sibling.active_soft_masks is target.active_soft_masks
+    assert sibling.resources is target.resources
     sibling.blend_px(0, (255, 0, 0, 255), None)
     np.testing.assert_array_equal(pixels[0, 0], [255, 0, 0, 255])
     assert not any(target.pixels)
@@ -107,13 +105,13 @@ def test_transfer_failure_is_cached_and_does_not_poison_other_masks() -> None:
     program = mask_program()
     mask = CapturedSoftMask(program, transfer)
     assert resolve_soft_mask(target, mask) is None
-    assert not target.active_soft_masks
+    assert not target.resources.active_soft_masks
     assert resolve_soft_mask(target, mask) is None
     assert calls == 1
     valid = resolve_soft_mask(target, CapturedSoftMask(program))
     assert valid is not None
     assert np.count_nonzero(valid[...]) == 4
-    assert not target.active_soft_masks
+    assert not target.resources.active_soft_masks
 
 
 REPEATED_SOFT_MASK_PDF = (
@@ -177,7 +175,7 @@ def test_the_same_source_under_the_same_state_parses_once(
     assert state.resolve_soft_mask(value) is None
     assert state.resolve_soft_mask(value) is None
     assert len(parses) == 1
-    assert len(state.parsed_soft_masks) == 1
+    assert len(state.caches.parsed_soft_masks) == 1
 
 
 def test_the_parse_cache_separates_masks_by_transform(
@@ -202,19 +200,15 @@ def test_the_parse_cache_separates_masks_by_resource_scope(
     assert len(parses) == 2
 
 
-def test_the_parse_cache_is_bounded(
-    state: TextState, parses: list[object], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from core_pdf.impl import capture_tolerant_state as tolerant_state
-
-    monkeypatch.setattr(tolerant_state, "SOFT_MASK_CACHE_LIMIT", 3)
+def test_the_parse_cache_is_bounded(state: TextState, parses: list[object]) -> None:
+    state.caches.parsed_soft_masks.limit = 3
     for index in range(4):
         state.resolve_soft_mask({"S": "Alpha", "n": index})
-    assert len(state.parsed_soft_masks) <= 3
+    assert len(state.caches.parsed_soft_masks) <= 3
 
 
 def test_a_nested_capture_shares_the_parse_cache(state: TextState) -> None:
-    assert state.nested_capture_state().parsed_soft_masks is state.parsed_soft_masks
+    assert state.nested_capture_state().caches.parsed_soft_masks is state.caches.parsed_soft_masks
 
 
 def make_plane(megabytes: float) -> np.ndarray:
@@ -234,7 +228,7 @@ def store_plane(cache, key, plane) -> None:
 
 
 def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
-    from core_pdf.impl.render_target import ByteBudgetCache
+    from core_pdf.impl.caches import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=10_000_000)
     for index in range(4):
@@ -245,7 +239,7 @@ def test_the_plane_cache_evicts_oldest_once_the_budget_is_spent() -> None:
 
 
 def test_a_plane_larger_than_the_budget_is_not_cached_at_all() -> None:
-    from core_pdf.impl.render_target import ByteBudgetCache
+    from core_pdf.impl.caches import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=1_000_000)
     store_plane(cache, plane_key(1), make_plane(5))
@@ -254,7 +248,7 @@ def test_a_plane_larger_than_the_budget_is_not_cached_at_all() -> None:
 
 
 def test_restoring_a_key_does_not_double_count_its_bytes() -> None:
-    from core_pdf.impl.render_target import ByteBudgetCache
+    from core_pdf.impl.caches import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=10_000_000)
     store_plane(cache, plane_key(1), make_plane(2))
@@ -264,7 +258,7 @@ def test_restoring_a_key_does_not_double_count_its_bytes() -> None:
 
 
 def test_a_cached_none_plane_costs_nothing() -> None:
-    from core_pdf.impl.render_target import ByteBudgetCache
+    from core_pdf.impl.caches import ByteBudgetCache
 
     cache = ByteBudgetCache(budget=1_000)
     store_plane(cache, plane_key(1), None)

@@ -8,7 +8,7 @@ import inspect
 import pickle
 import pkgutil
 from copy import replace
-from types import ModuleType
+from types import FunctionType, ModuleType
 from typing import Any, ClassVar, Protocol
 
 import pytest
@@ -152,6 +152,7 @@ def buildable() -> dict[str, type[ValueClass]]:
 
 VALUE_CLASSES = value_classes()
 BUILDABLE = buildable()
+GENERATED = {name: cls for name, cls in VALUE_CLASSES.items() if "__field_specs__" in cls.__dict__}
 
 
 def is_frozen(cls: type[ValueClass]) -> bool:
@@ -284,3 +285,35 @@ def test_frozen_slotted_classes_survive_pickling(name: str) -> None:
     assert type(restored) is cls
     for field in cls.__fields__:
         assert hasattr(restored, field) == hasattr(instance, field)
+
+
+def test_most_value_classes_are_generated() -> None:
+    assert len(GENERATED) > 200
+
+
+@pytest.mark.parametrize("dunder", ["__init__", "__eq__", "__hash__", "__repr__", "__replace__"])
+def test_generated_methods_are_specialised_per_class(dunder: str) -> None:
+    codes = [
+        method.__code__
+        for cls in GENERATED.values()
+        if dunder in cls.__dict__
+        and isinstance(method := getattr(cls, dunder), FunctionType)
+        and method.__code__.co_filename == "<record>"
+    ]
+    assert codes
+    assert len({id(code) for code in codes}) == len(codes)
+
+
+@pytest.mark.parametrize("name", sorted(GENERATED))
+def test_generated_records_own_a_slot_for_every_new_field(name: str) -> None:
+    cls = GENERATED[name]
+    slots = {
+        slot
+        for base in cls.__mro__
+        for slot in (
+            (base.__dict__.get("__slots__", ()),)
+            if isinstance(base.__dict__.get("__slots__", ()), str)
+            else base.__dict__.get("__slots__", ())
+        )
+    }
+    assert set(cls.__fields__) <= slots

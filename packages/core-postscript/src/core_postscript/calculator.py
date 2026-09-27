@@ -5,9 +5,8 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable, Iterator, Sequence
-from typing import ClassVar
 
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 STACK_LIMIT = 100
 NESTING_LIMIT = 255
@@ -65,32 +64,9 @@ type Operand = int | float | bool
 type Instruction = Operand | str | Conditional
 
 
-class Conditional(Record):
-    __slots__ = ("when_true", "when_false")
-
+class Conditional(GeneratedRecord):
     when_true: tuple[Instruction, ...]
-    when_false: tuple[Instruction, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("when_true", "when_false")
-    __match_args__ = ("when_true", "when_false")
-
-    def __init__(
-        self,
-        when_true: tuple[Instruction, ...],
-        when_false: tuple[Instruction, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "when_true", when_true)
-        frozen_setattr(self, "when_false", when_false)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.when_true == other.when_true and self.when_false == other.when_false
-
-    def __hash__(self) -> int:
-        return hash((self.when_true, self.when_false))
+    when_false: tuple[Instruction, ...] = ()
 
 
 def iter_tokens(source: bytes) -> Iterator[bytes]:

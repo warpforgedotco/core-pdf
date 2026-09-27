@@ -5,7 +5,18 @@ from __future__ import annotations
 import re
 from copy import replace
 
-from core_pdf.impl.types import TextWord
+from core_pdf.impl.types import GeneratedRecord, Rectangle
+
+
+class TextWord(GeneratedRecord):
+    text: str
+    bbox: Rectangle | None = None
+    line_index: int = 0
+    word_index: int = 0
+    block_index: int = 0
+    page_number: int | None = None
+    source: str = "unknown"
+
 
 NORMALIZE_TEXT_TABLE = dict.fromkeys(range(0xD800, 0xE000))
 SURROGATE_RE = re.compile("[\ud800-\udfff]")

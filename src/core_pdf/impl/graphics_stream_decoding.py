@@ -5,7 +5,7 @@ from __future__ import annotations
 import binascii
 import zlib
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import imagecodecs
 import numpy
@@ -36,9 +36,16 @@ from core_pdf.impl.graphics_decode_compat import (
     normalize_stream_decode_spec,
 )
 from core_pdf.impl.graphics_filter_registry import (
+    CCITT_IMAGE,
     FILTER_DESCRIPTOR_BY_NAME,
     FILTER_DESCRIPTORS,
+    JPEG_IMAGE,
+    JPX_IMAGE,
     PREDICTOR_FILTERS,
+    RAW_SAMPLE_IMAGE,
+    FilterDecoder,
+    NativeImageCodec,
+    TolerantFilter,
 )
 from core_pdf_cythonized import decode_arithmetic_generic_template0
 from core_pdf_spec.s_07_filters.decode_spec import FilterParams as PdfFilterParams
@@ -72,9 +79,6 @@ from core_pdf_spec.s_07_syntax_primitives.tokens import (
     WS_TABLE,
 )
 
-if TYPE_CHECKING:
-    FilterFn = Callable[[bytes, object], bytes]
-
 
 def coerce_decoder_bytes(result: object) -> bytes:
     if type(result) is bytearray:
@@ -96,8 +100,8 @@ def decode_one_filter(
     if filter_name in {"None", "Identity"}:
         return data
     descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
-    fn = FILTER_MAP.get(filter_name)
-    if fn is None:
+    tolerant = TOLERANT_FILTER_BY_NAME.get(filter_name)
+    if tolerant is None:
         raise FilterUnsupportedError(f"stream filter {filter_name} is not implemented yet")
     try:
         decoder_context = (
@@ -106,11 +110,12 @@ def decode_one_filter(
             else parms
         )
         passed_through = False
-        if fn is apply_flate:
-            inflated, passed_through = inflate(data)
+        passthrough = tolerant.passthrough
+        if passthrough is not None:
+            inflated, passed_through = passthrough(data)
             result = coerce_decoder_bytes(inflated)
         else:
-            result = coerce_decoder_bytes(fn(data, decoder_context))
+            result = coerce_decoder_bytes(tolerant.decode(data, decoder_context))
         if filter_name in PREDICTOR_FILTERS and not (
             passed_through and allow_content_stream_passthrough
         ):
@@ -494,21 +499,85 @@ def looks_like_pdf_content_stream(data: bytes | memoryview) -> bool:
     return False
 
 
-FILTER_DECODERS: dict[str, FilterFn] = {
-    "flate": apply_flate,
-    "ascii_hex": apply_ascii_hex,
-    "ascii85": apply_ascii85,
-    "run_length": apply_run_length,
-    "lzw": apply_lzw,
-    "jpeg": decode_jpeg,
-    "ccitt": decode_ccitt_fax,
-    "crypt": decode_crypt,
-    "jpx": decode_jpx,
-    "jbig2": decode_jbig2,
+def decode_native_jpx(
+    data: bytes | memoryview,
+    params: object,
+    output_shape: tuple[int, ...] | None,
+    decoded: Callable[[], bytes],
+) -> numpy.ndarray[Any, Any] | None:
+    return decode_jpx_image(data, preserve_precision=True)
+
+
+def decode_native_jpeg(
+    data: bytes | memoryview,
+    params: object,
+    output_shape: tuple[int, ...] | None,
+    decoded: Callable[[], bytes],
+) -> numpy.ndarray[Any, Any] | None:
+    output = numpy.empty(output_shape, dtype=numpy.uint8) if output_shape else None
+    return decode_jpeg_image(data, out=output)
+
+
+def decode_native_ccitt(
+    data: bytes | memoryview,
+    params: object,
+    output_shape: tuple[int, ...] | None,
+    decoded: Callable[[], bytes],
+) -> numpy.ndarray[Any, Any] | None:
+    ccitt_params = filter_params(params)
+    output = (
+        numpy.empty((ccitt_params.rows, ccitt_params.columns), dtype=numpy.uint8)
+        if ccitt_params.rows > 0 and ccitt_params.columns > 0
+        else None
+    )
+    return decode_ccitt_fax_image(data, ccitt_params, out=output)
+
+
+def decode_native_samples(
+    data: bytes | memoryview,
+    params: object,
+    output_shape: tuple[int, ...] | None,
+    decoded: Callable[[], bytes],
+) -> numpy.ndarray[Any, Any] | None:
+    if output_shape is None:
+        return None
+    samples = decoded()
+    expected_size = int(numpy.prod(output_shape, dtype=numpy.int64))
+    if len(samples) != expected_size:
+        return None
+    return numpy.frombuffer(samples, dtype=numpy.uint8).reshape(output_shape)
+
+
+NATIVE_SAMPLES = NativeImageCodec(RAW_SAMPLE_IMAGE, decode_native_samples)
+
+TOLERANT_FILTERS: dict[FilterDecoder, TolerantFilter] = {
+    tolerant.decoder: tolerant
+    for tolerant in (
+        TolerantFilter("flate", apply_flate, passthrough=inflate, native=NATIVE_SAMPLES),
+        TolerantFilter("ascii_hex", apply_ascii_hex),
+        TolerantFilter("ascii85", apply_ascii85),
+        TolerantFilter("run_length", apply_run_length),
+        TolerantFilter("lzw", apply_lzw, native=NATIVE_SAMPLES),
+        TolerantFilter(
+            "jpeg", decode_jpeg, native=NativeImageCodec(JPEG_IMAGE, decode_native_jpeg)
+        ),
+        TolerantFilter(
+            "ccitt", decode_ccitt_fax, native=NativeImageCodec(CCITT_IMAGE, decode_native_ccitt)
+        ),
+        TolerantFilter("crypt", decode_crypt),
+        TolerantFilter(
+            "jpx",
+            decode_jpx,
+            native=NativeImageCodec(
+                JPX_IMAGE, decode_native_jpx, requires_identity_decode=False, after_filters=True
+            ),
+        ),
+        TolerantFilter("jbig2", decode_jbig2),
+    )
 }
 
-FILTER_MAP: dict[str, FilterFn] = {
-    descriptor.name: FILTER_DECODERS[descriptor.decoder]
+TOLERANT_FILTER_BY_NAME: dict[str, TolerantFilter] = {
+    descriptor.name: TOLERANT_FILTERS[descriptor.decoder]
     for descriptor in FILTER_DESCRIPTORS
     if descriptor.decoder is not None
 }

@@ -10,8 +10,12 @@ from typing import Any
 import imagecodecs
 import numpy
 
+from core_pdf.impl.caches import BoundedDict, IdentityCache
 from core_pdf.impl.graphics_color_spec import (
+    CIE_KINDS,
+    GRAY_RGB_KINDS,
     ColorSpace,
+    DeviceNProcess,
     cs_param_floats,
     nchannel_attributes,
     nchannel_process,
@@ -26,6 +30,7 @@ from core_pdf.impl.graphics_icc_profiles import (
     parse_icc_transform,
     srgb_profile,
 )
+from core_pdf.impl.pdf_names import lenient_float
 from core_pdf_cythonized import (
     code_presence,
     distinct_uint16_rows,
@@ -34,7 +39,6 @@ from core_pdf_cythonized import (
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float
 from core_pdf_spec.s_08_graphics.color_kernels import (
     color_key_alpha,
     decode_sample_values,
@@ -71,10 +75,10 @@ def distinct_component_rows(
 
 type TintFunction = Callable[..., tuple[float, ...]]
 
-TINT_FUNCTION_CACHE: dict[object, tuple[object, TintFunction]] = {}
 TINT_FUNCTION_CACHE_LIMIT = 64
-TINT_FUNCTION_OBJECTS: dict[int, tuple[object, TintFunction]] = {}
+TINT_FUNCTION_CACHE: BoundedDict[object, TintFunction] = BoundedDict(TINT_FUNCTION_CACHE_LIMIT)
 TINT_FUNCTION_OBJECTS_LIMIT = 256
+TINT_FUNCTION_OBJECTS: IdentityCache[TintFunction] = IdentityCache(TINT_FUNCTION_OBJECTS_LIMIT)
 TINT_OUTPUT_CACHE_LIMIT = 4096
 
 
@@ -104,45 +108,180 @@ def tint_function_key(tint_fn: object) -> object | None:
 
 
 def tint_function(tint_fn: object) -> TintFunction:
-    seen = TINT_FUNCTION_OBJECTS.get(id(tint_fn))
-    if seen is not None and seen[0] is tint_fn:
-        return seen[1]
-    function = compiled_tint_function(tint_fn)
-    if len(TINT_FUNCTION_OBJECTS) >= TINT_FUNCTION_OBJECTS_LIMIT:
-        TINT_FUNCTION_OBJECTS.clear()
-    TINT_FUNCTION_OBJECTS[id(tint_fn)] = (tint_fn, function)
-    return function
+    seen = TINT_FUNCTION_OBJECTS.get(tint_fn)
+    if seen is not None:
+        return seen
+    return TINT_FUNCTION_OBJECTS.put(tint_fn, compiled_tint_function(tint_fn))
 
 
 def compiled_tint_function(tint_fn: object) -> TintFunction:
     key = tint_function_key(tint_fn)
-    if key is None:
-        key = id(tint_fn)
-        cached = TINT_FUNCTION_CACHE.get(key)
-        if cached is not None and cached[0] is tint_fn:
-            return cached[1]
-    else:
+    if key is not None:
         cached = TINT_FUNCTION_CACHE.get(key)
         if cached is not None:
-            return cached[1]
+            return cached
     compiled = compile_pdf_function(tint_fn)
-    outputs: dict[tuple[float, ...], tuple[float, ...]] = {}
+    outputs: BoundedDict[tuple[float, ...], tuple[float, ...]] = BoundedDict(
+        TINT_OUTPUT_CACHE_LIMIT
+    )
 
     def remembered(*inputs: float) -> tuple[float, ...]:
         if 0.0 in inputs and any(copysign(1.0, value) < 0.0 for value in inputs):
             return compiled(*inputs)
         output = outputs.get(inputs)
         if output is None:
-            output = compiled(*inputs)
-            if len(outputs) >= TINT_OUTPUT_CACHE_LIMIT:
-                outputs.clear()
-            outputs[inputs] = output
+            output = outputs.put(inputs, compiled(*inputs))
         return output
 
-    if len(TINT_FUNCTION_CACHE) >= TINT_FUNCTION_CACHE_LIMIT:
-        TINT_FUNCTION_CACHE.clear()
-    TINT_FUNCTION_CACHE[key] = (tint_fn, remembered)
+    if key is not None:
+        TINT_FUNCTION_CACHE.put(key, remembered)
     return remembered
+
+
+class ConversionContext:
+    __slots__ = ("alpha", "depth", "matte", "rendering")
+
+    def __init__(
+        self,
+        depth: int,
+        matte: tuple[float, ...] | None,
+        alpha: numpy.ndarray[Any, Any] | None,
+        rendering: ColorRendering,
+    ) -> None:
+        self.depth = depth
+        self.matte = matte
+        self.alpha = alpha
+        self.rendering = rendering
+
+    def nested(self, values: numpy.ndarray, space: ColorSpace) -> numpy.ndarray:
+        return convert_components(values, space, self.depth + 1, rendering=self.rendering)
+
+    def nested_with_matte(self, values: numpy.ndarray, space: ColorSpace) -> numpy.ndarray:
+        return convert_components(
+            values,
+            space,
+            self.depth + 1,
+            matte=self.matte,
+            alpha=self.alpha,
+            rendering=self.rendering,
+        )
+
+
+def process_components(values: numpy.ndarray, process: DeviceNProcess) -> numpy.ndarray:
+    mapped = numpy.zeros((len(values), len(process.component_indices)), dtype=numpy.float64)
+    for destination, source in enumerate(process.component_indices):
+        if source is not None:
+            mapped[:, destination] = values[:, source]
+    return mapped
+
+
+def convert_device_components(
+    values: numpy.ndarray, space: ColorSpace, context: ConversionContext
+) -> numpy.ndarray | None:
+    return quantize(values)
+
+
+def convert_cmyk_components(
+    values: numpy.ndarray, space: ColorSpace, context: ConversionContext
+) -> numpy.ndarray | None:
+    return cmyk_components_to_srgb(values, rendering=context.rendering)
+
+
+def convert_icc_components(
+    values: numpy.ndarray, space: ColorSpace, context: ConversionContext
+) -> numpy.ndarray | None:
+    try:
+        transform = parse_icc_transform(space.icc_profile) if space.icc_profile else None
+        if transform is not None and transform.input_channels == values.shape[1]:
+            return transform.apply_uint16(quantize(values, 65535), rendering=context.rendering)
+    except IccProfileError, IccSampleError:
+        pass
+    if space.alternate is not None:
+        return context.nested(values, space.alternate)
+    return None
+
+
+def convert_indexed_components(
+    values: numpy.ndarray, space: ColorSpace, context: ConversionContext
+) -> numpy.ndarray | None:
+    if space.base is None or space.lookup is None:
+        return None
+    count = len(space.base.component_ranges)
+    entries = numpy.frombuffer(space.lookup, dtype=numpy.uint8)
+    if len(entries) < (space.hival + 1) * count:
+        raise ValueError("invalid Indexed color lookup")
+    table = entries[: (space.hival + 1) * count].reshape(-1, count)
+    indices = numpy.floor(values[:, 0] + 0.5).astype(numpy.intp)
+    base = decode_sample_values(table[indices], space.base.component_ranges, 255)
+    return context.nested_with_matte(base, space.base)
+
+
+def convert_tint_components(
+    values: numpy.ndarray, space: ColorSpace, context: ConversionContext
+) -> numpy.ndarray | None:
+    try:
+        if space.alternate is None:
+            raise ValueError("missing tint alternate")
+        function = tint_function(space.tint_fn)
+        distinct, inverse = distinct_component_rows(values)
+        tinted = numpy.asarray(
+            [function(*(float(component) for component in row)) for row in distinct],
+            dtype=numpy.float64,
+        )
+        if tinted.shape != (len(distinct), len(space.alternate.component_ranges)):
+            raise ValueError("invalid tint transform output count")
+        if not numpy.isfinite(tinted).all():
+            raise ValueError("nonfinite tint transform output")
+        return context.nested(tinted, space.alternate)[inverse]
+    except TypeError, ValueError, ArithmeticError:
+        gray = quantize(1 - numpy.max(values, axis=1, keepdims=True))
+        return numpy.repeat(gray, 3, axis=1)
+
+
+def convert_devicen_components(
+    values: numpy.ndarray, space: ColorSpace, context: ConversionContext
+) -> numpy.ndarray | None:
+    mixed = mix_nchannel(values, space, context.nested)
+    if mixed is not None:
+        return mixed
+    return convert_tint_components(values, space, context)
+
+
+def convert_cie_components(
+    values: numpy.ndarray, space: ColorSpace, context: ConversionContext
+) -> numpy.ndarray | None:
+    kind = space.kind
+    white = cs_param_floats(space.params, "WhitePoint", 3, [0.9642, 1, 0.8249])
+    if kind == "Lab":
+        xyz = lab_components_to_xyz(values.astype(numpy.float32), (white[0], white[1], white[2]))
+    elif kind == "CalGray":
+        exponent = lenient_float(space.params.get("Gamma", 1), None)
+        if exponent is None or exponent <= 0:
+            raise ValueError("invalid CalGray Gamma")
+        xyz = (values**exponent * numpy.asarray(white)).astype(numpy.float32)
+    else:
+        gamma = cs_param_floats(space.params, "Gamma", 3, [1, 1, 1])
+        matrix = cs_param_floats(space.params, "Matrix", 9, [1, 0, 0, 0, 1, 0, 0, 0, 1])
+        xyz = ((values ** numpy.asarray(gamma)) @ numpy.asarray(matrix).reshape(3, 3)).astype(
+            numpy.float32
+        )
+    black = cs_param_floats(space.params, "BlackPoint", 3, [0, 0, 0])
+    return calibrated_xyz_to_srgb(
+        xyz, (white[0], white[1], white[2]), (black[0], black[1], black[2]), context.rendering
+    )
+
+
+type ColorConverter = Callable[[numpy.ndarray, ColorSpace, ConversionContext], numpy.ndarray | None]
+
+COLOR_CONVERTERS: dict[str, ColorConverter] = {
+    **dict.fromkeys(GRAY_RGB_KINDS, convert_device_components),
+    "DeviceCMYK": convert_cmyk_components,
+    "ICCBased": convert_icc_components,
+    "Indexed": convert_indexed_components,
+    "Separation": convert_tint_components,
+    "DeviceN": convert_devicen_components,
+    **dict.fromkeys(CIE_KINDS, convert_cie_components),
+}
 
 
 def convert_components(
@@ -166,90 +305,23 @@ def convert_components(
         values = unblend_matte_components(values, alpha, matte)
     low, high = numpy.asarray(space.component_ranges, dtype=numpy.float64).T
     values = numpy.clip(values, low, high)
-    kind = space.kind
     process = nchannel_process(space)
     if process is not None:
-        mapped = numpy.zeros((len(values), len(process.component_indices)), dtype=numpy.float64)
-        for destination, source in enumerate(process.component_indices):
-            if source is not None:
-                mapped[:, destination] = values[:, source]
-        return convert_components(mapped, process.color_space, depth + 1, rendering=rendering)
-    if kind == "DeviceN":
-        mixed = mix_nchannel(
-            values,
-            space,
-            lambda components, target: convert_components(
-                components, target, depth + 1, rendering=rendering
-            ),
-        )
-        if mixed is not None:
-            return mixed
-    if kind in {"DeviceGray", "DeviceRGB"}:
-        return quantize(values)
-    if kind == "DeviceCMYK":
-        return cmyk_components_to_srgb(values, rendering=rendering)
-    if kind == "ICCBased":
-        try:
-            transform = parse_icc_transform(space.icc_profile) if space.icc_profile else None
-            if transform is not None and transform.input_channels == values.shape[1]:
-                return transform.apply_uint16(quantize(values, 65535), rendering=rendering)
-        except IccProfileError, IccSampleError:
-            pass
-        if space.alternate is not None:
-            return convert_components(values, space.alternate, depth + 1, rendering=rendering)
-    if kind == "Indexed" and space.base is not None and space.lookup is not None:
-        count = len(space.base.component_ranges)
-        entries = numpy.frombuffer(space.lookup, dtype=numpy.uint8)
-        if len(entries) < (space.hival + 1) * count:
-            raise ValueError("invalid Indexed color lookup")
-        table = entries[: (space.hival + 1) * count].reshape(-1, count)
-        indices = numpy.floor(values[:, 0] + 0.5).astype(numpy.intp)
-        base = decode_sample_values(table[indices], space.base.component_ranges, 255)
         return convert_components(
-            base, space.base, depth + 1, matte=matte, alpha=alpha, rendering=rendering
+            process_components(values, process),
+            process.color_space,
+            depth + 1,
+            rendering=rendering,
         )
-    if kind in {"Separation", "DeviceN"}:
-        try:
-            if space.alternate is None:
-                raise ValueError("missing tint alternate")
-            function = tint_function(space.tint_fn)
-            distinct, inverse = distinct_component_rows(values)
-            tinted = numpy.asarray(
-                [function(*(float(component) for component in row)) for row in distinct],
-                dtype=numpy.float64,
-            )
-            if tinted.shape != (len(distinct), len(space.alternate.component_ranges)):
-                raise ValueError("invalid tint transform output count")
-            if not numpy.isfinite(tinted).all():
-                raise ValueError("nonfinite tint transform output")
-            return convert_components(tinted, space.alternate, depth + 1, rendering=rendering)[
-                inverse
-            ]
-        except TypeError, ValueError, ArithmeticError:
-            gray = quantize(1 - numpy.max(values, axis=1, keepdims=True))
-            return numpy.repeat(gray, 3, axis=1)
-    if kind in {"Lab", "CalGray", "CalRGB"}:
-        white = cs_param_floats(space.params, "WhitePoint", 3, [0.9642, 1, 0.8249])
-        if kind == "Lab":
-            xyz = lab_components_to_xyz(
-                values.astype(numpy.float32), (white[0], white[1], white[2])
-            )
-        elif kind == "CalGray":
-            exponent = parse_float(space.params.get("Gamma", 1), None, python_syntax=True)
-            if exponent is None or exponent <= 0:
-                raise ValueError("invalid CalGray Gamma")
-            xyz = (values**exponent * numpy.asarray(white)).astype(numpy.float32)
-        else:
-            gamma = cs_param_floats(space.params, "Gamma", 3, [1, 1, 1])
-            matrix = cs_param_floats(space.params, "Matrix", 9, [1, 0, 0, 0, 1, 0, 0, 0, 1])
-            xyz = ((values ** numpy.asarray(gamma)) @ numpy.asarray(matrix).reshape(3, 3)).astype(
-                numpy.float32
-            )
-        black = cs_param_floats(space.params, "BlackPoint", 3, [0, 0, 0])
-        return calibrated_xyz_to_srgb(
-            xyz, (white[0], white[1], white[2]), (black[0], black[1], black[2]), rendering
-        )
-    raise ValueError("unsupported image color space")
+    converter = COLOR_CONVERTERS.get(space.kind)
+    converted = (
+        converter(values, space, ConversionContext(depth, matte, alpha, rendering))
+        if converter is not None
+        else None
+    )
+    if converted is None:
+        raise ValueError("unsupported image color space")
+    return converted
 
 
 def convert_distinct_codes(
@@ -463,11 +535,9 @@ def mix_nchannel(
                 return None
         mixed = numpy.ones((len(values), 3), dtype=numpy.float64)
         if process is not None:
-            mapped = numpy.zeros((len(values), len(process.component_indices)), dtype=numpy.float64)
-            for destination, source in enumerate(process.component_indices):
-                if source is not None:
-                    mapped[:, destination] = values[:, source]
-            mixed = rgb_appearance(convert(mapped, process.color_space))
+            mixed = rgb_appearance(
+                convert(process_components(values, process), process.color_space)
+            )
         for source, spot in spots:
             mixed *= rgb_appearance(convert(values[:, source : source + 1], spot))
         return quantize(mixed)

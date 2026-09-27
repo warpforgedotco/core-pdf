@@ -4,22 +4,18 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left, bisect_right
-from collections.abc import Iterable
 from copy import replace
 from statistics import fmean
-from typing import Any, ClassVar
 
 import numpy
 
 from core_pdf.impl.capture_records import CapturedDrawing
-from core_pdf.impl.extract_block_layout import (
-    has_repeated_block_columns,
-    layout_element_order,
-)
-from core_pdf.impl.extract_contracts import ParsedBlock
+from core_pdf.impl.extract_block_layout import layout_element_order
+from core_pdf.impl.extract_block_order import has_repeated_block_columns
+from core_pdf.impl.extract_contracts import PageFrame, PageState, ParsedBlock
+from core_pdf.impl.extract_layout_rules import LAYOUT_RULES
 from core_pdf.impl.extract_table_cleanup import table_with_bands
 from core_pdf.impl.geometry import (
-    bbox_area,
     bbox_intersects,
     bbox_union,
     horizontal_overlap_ratio,
@@ -38,8 +34,9 @@ from core_pdf.impl.output_model import (
     TableCell,
     TextLine,
 )
+from core_pdf.impl.spatial import BoxIndex
 from core_pdf.impl.text import collapse_ws, complete_text_covered, content_tokens
-from core_pdf.impl.types import Record, Rectangle, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, Rectangle
 
 
 def caption_for(
@@ -48,9 +45,13 @@ def caption_for(
 ) -> Block | None:
     if target_bbox is None:
         return None
+    rules = LAYOUT_RULES.page_regions
     candidates: list[tuple[float, Block]] = []
     for caption in caption_blocks:
-        if caption.bbox is None or horizontal_overlap_ratio(caption.bbox, target_bbox) < 0.3:
+        if (
+            caption.bbox is None
+            or horizontal_overlap_ratio(caption.bbox, target_bbox) < rules.caption_min_overlap
+        ):
             continue
         if caption.bbox[3] <= target_bbox[1]:
             gap = target_bbox[1] - caption.bbox[3]
@@ -59,7 +60,7 @@ def caption_for(
         else:
             continue
         caption_height = max(1.0, caption.bbox[3] - caption.bbox[1])
-        if gap <= max(24.0, caption_height * 2.5):
+        if gap <= max(rules.caption_gap, caption_height * rules.caption_height_ratio):
             candidates.append((gap, caption))
     return min(candidates, key=lambda item: item[0])[1] if candidates else None
 
@@ -202,55 +203,45 @@ def normalize_blocks(
 
 
 def assemble_page(
-    blocks: tuple[ParsedBlock, ...],
-    *,
-    page_number: int,
-    width: float,
-    height: float,
-    rotation: int,
+    state: PageState,
+    frame: PageFrame,
     route: str,
-    tables: tuple[Table, ...],
+    *,
     figures: tuple[Figure, ...],
-    diagnostics: tuple[str, ...],
     full_page_image: bool,
     drawings: tuple[CapturedDrawing, ...],
 ) -> Page:
-    normalized_blocks = normalize_blocks(blocks, drawings)
+    normalized_blocks = normalize_blocks(state.blocks, drawings)
     normalized_blocks = remove_off_page_blocks(
         normalized_blocks,
-        width,
-        height,
+        frame.width,
+        frame.height,
     )
-    normalized_blocks, projected_tables = project_text_and_tables(normalized_blocks, tables)
+    normalized_blocks, projected_tables = project_text_and_tables(normalized_blocks, state.tables)
     return compose_page(
-        blocks,
-        normalized_blocks,
-        projected_tables,
-        page_number=page_number,
-        width=width,
-        height=height,
-        rotation=rotation,
-        route=route,
+        state,
+        frame,
+        route,
+        normalized_blocks=normalized_blocks,
+        projected_tables=projected_tables,
         figures=figures,
-        diagnostics=diagnostics,
         full_page_image=full_page_image,
     )
 
 
 def compose_page(
-    blocks: tuple[ParsedBlock, ...],
+    state: PageState,
+    frame: PageFrame,
+    route: str,
+    *,
     normalized_blocks: list[Block],
     projected_tables: tuple[Table, ...],
-    *,
-    page_number: int,
-    width: float,
-    height: float,
-    rotation: int,
-    route: str,
     figures: tuple[Figure, ...],
-    diagnostics: tuple[str, ...],
     full_page_image: bool,
 ) -> Page:
+    page_number = frame.page_number
+    height = frame.height
+    diagnostics = ("reading-order-ambiguous",) if state.order_ambiguous else ()
     elements: list[tuple[str, object, tuple[float, float, float, float]]] = [
         ("block", block, block.bbox or (0.0, 0.0, 0.0, 0.0)) for block in normalized_blocks
     ]
@@ -262,7 +253,7 @@ def compose_page(
     ordered_tables: list[Table] = []
     ordered_figures: list[Figure] = []
     element_boxes = tuple(item[2] for item in elements)
-    if full_page_image and len(element_boxes) > 1 and has_repeated_block_columns(blocks):
+    if full_page_image and len(element_boxes) > 1 and has_repeated_block_columns(state.blocks):
         element_order = tuple(
             sorted(
                 range(len(element_boxes)),
@@ -270,7 +261,7 @@ def compose_page(
             )
         )
     else:
-        element_order = layout_element_order(element_boxes, rotation, width, height)
+        element_order = layout_element_order(element_boxes, frame)
     for order, index in enumerate(element_order):
         kind, element, bbox = elements[index]
         if kind == "block":
@@ -285,27 +276,28 @@ def compose_page(
     ordered_tables, ordered_figures = attach_semantic_context(
         tuple(ordered_blocks), ordered_tables, ordered_figures
     )
+    regions = LAYOUT_RULES.page_regions
     header_parts = [
         block.text
         for block in ordered_blocks
         if block.bbox is not None
-        and block.bbox[3] >= height * 0.88
-        and block.bbox[3] - block.bbox[1] <= height * 0.08
-        and len(block.text) <= 240
+        and block.bbox[3] >= height * regions.header_top_ratio
+        and block.bbox[3] - block.bbox[1] <= height * regions.band_height_ratio
+        and len(block.text) <= regions.band_max_characters
     ]
     footer_parts = [
         block.text
         for block in ordered_blocks
         if block.bbox is not None
-        and block.bbox[1] <= height * 0.12
-        and block.bbox[3] - block.bbox[1] <= height * 0.08
-        and len(block.text) <= 240
+        and block.bbox[1] <= height * regions.footer_bottom_ratio
+        and block.bbox[3] - block.bbox[1] <= height * regions.band_height_ratio
+        and len(block.text) <= regions.band_max_characters
     ]
     return Page(
         page_number=page_number,
-        width=width,
+        width=frame.width,
         height=height,
-        rotation=rotation,
+        rotation=frame.rotation,
         blocks=tuple(ordered_blocks),
         page_class=route,
         base_route=route,
@@ -394,74 +386,17 @@ def remove_block_duplicate_table_rows(
     return tuple(filtered)
 
 
-class IndexedRow(Record):
-    __slots__ = ("cells", "texts", "tokens", "frame_indexes")
-
+class IndexedRow(GeneratedRecord):
     cells: tuple[TableCell, ...]
     texts: tuple[str, ...]
     tokens: tuple[tuple[str, ...], ...]
     frame_indexes: tuple[int, ...]
 
-    __fields__: ClassVar[tuple[str, ...]] = ("cells", "texts", "tokens", "frame_indexes")
-    __match_args__ = ("cells", "texts", "tokens", "frame_indexes")
 
-    def __init__(
-        self,
-        cells: tuple[TableCell, ...],
-        texts: tuple[str, ...],
-        tokens: tuple[tuple[str, ...], ...],
-        frame_indexes: tuple[int, ...],
-    ) -> None:
-        frozen_setattr(self, "cells", cells)
-        frozen_setattr(self, "texts", texts)
-        frozen_setattr(self, "tokens", tokens)
-        frozen_setattr(self, "frame_indexes", frame_indexes)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.cells == other.cells
-            and self.texts == other.texts
-            and self.tokens == other.tokens
-            and self.frame_indexes == other.frame_indexes
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.cells, self.texts, self.tokens, self.frame_indexes))
-
-
-class TableIndex(Record):
-    __slots__ = ("table", "rows", "frame")
-
+class TableIndex(GeneratedRecord):
     table: Table
     rows: tuple[IndexedRow, ...]
-    frame: SpatialFrame | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("table", "rows", "frame")
-    __match_args__ = ("table", "rows", "frame")
-
-    def __init__(
-        self,
-        table: Table,
-        rows: tuple[IndexedRow, ...],
-        frame: SpatialFrame | None,
-    ) -> None:
-        frozen_setattr(self, "table", table)
-        frozen_setattr(self, "rows", rows)
-        frozen_setattr(self, "frame", frame)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.table == other.table and self.rows == other.rows and self.frame == other.frame
-
-    def __hash__(self) -> int:
-        return hash((self.table, self.rows, self.frame))
+    frame: BoxIndex | None
 
     @classmethod
     def build(cls, table: Table) -> TableIndex:
@@ -485,7 +420,7 @@ class TableIndex(Record):
                     tuple(indexes),
                 )
             )
-        frame = SpatialFrame.from_boxes(boxes) if boxes else None
+        frame = BoxIndex.from_boxes(boxes) if boxes else None
         return cls(table, tuple(rows), frame)
 
 
@@ -500,12 +435,7 @@ def line_duplicates_table(text: str, box: Rectangle, index: TableIndex) -> bool:
     else:
         intersections = index.frame.intersection_areas(box)
         touches = intersections > 0.0
-        box_area = bbox_area(box)
-        covered = (
-            intersections / box_area >= 0.90
-            if box_area > 0.0
-            else numpy.zeros(len(intersections), dtype=bool)
-        )
+        covered = index.frame.overlap_of(box, intersections) >= 0.90
     participating_cells: list[TableCell] = []
     total_cells = 0
     for row in index.rows:
@@ -569,7 +499,7 @@ def remove_table_duplicate_blocks(
     located_tables = [table for table in tables if table.bbox is not None]
     if not located_tables:
         return blocks
-    table_frame = SpatialFrame.from_boxes(
+    table_frame = BoxIndex.from_boxes(
         table.bbox for table in located_tables if table.bbox is not None
     )
     indexes = [TableIndex.build(table) for table in located_tables]
@@ -602,64 +532,3 @@ def project_text_and_tables(
     text_blocks = remove_table_duplicate_blocks(blocks, parsed_tables)
     projected_tables = remove_block_duplicate_table_rows(text_blocks, parsed_tables)
     return text_blocks, projected_tables
-
-
-class SpatialFrame(Record):
-    __slots__ = ("boxes", "areas")
-
-    boxes: numpy.ndarray[Any, Any]
-    areas: numpy.ndarray[Any, Any]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("boxes", "areas")
-    __match_args__ = ("boxes", "areas")
-
-    def __init__(self, boxes: numpy.ndarray[Any, Any], areas: numpy.ndarray[Any, Any]) -> None:
-        frozen_setattr(self, "boxes", boxes)
-        frozen_setattr(self, "areas", areas)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.boxes == other.boxes and self.areas == other.areas
-
-    def __hash__(self) -> int:
-        return hash((self.boxes, self.areas))
-
-    @classmethod
-    def from_boxes(cls, boxes: Iterable[Rectangle]) -> SpatialFrame:
-        packed = numpy.asarray(tuple(boxes), dtype=numpy.float64).reshape((-1, 4))
-        widths = numpy.maximum(0.0, packed[:, 2] - packed[:, 0])
-        heights = numpy.maximum(0.0, packed[:, 3] - packed[:, 1])
-        packed.setflags(write=False)
-        areas = widths * heights
-        areas.setflags(write=False)
-        return cls(packed, areas)
-
-    def intersection_areas(self, box: Rectangle) -> numpy.ndarray[Any, Any]:
-        widths = numpy.maximum(
-            0.0,
-            numpy.minimum(self.boxes[:, 2], box[2]) - numpy.maximum(self.boxes[:, 0], box[0]),
-        )
-        heights = numpy.maximum(
-            0.0,
-            numpy.minimum(self.boxes[:, 3], box[3]) - numpy.maximum(self.boxes[:, 1], box[1]),
-        )
-        return widths * heights
-
-    def overlap_min(self, box: Rectangle) -> numpy.ndarray[Any, Any]:
-        box_area = bbox_area(box)
-        denominator = numpy.minimum(self.areas, box_area)
-        return numpy.divide(
-            self.intersection_areas(box),
-            denominator,
-            out=numpy.zeros_like(denominator),
-            where=denominator > 0.0,
-        )
-
-    def matching_overlap_min(self, box: Rectangle, minimum: float) -> numpy.ndarray[Any, Any]:
-        return numpy.flatnonzero(self.overlap_min(box) >= minimum)
-
-
-__all__ = ("SpatialFrame",)

@@ -6,7 +6,7 @@ from collections import defaultdict
 from math import ceil, floor, isfinite
 from os import PathLike
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
@@ -20,7 +20,7 @@ from core_pdf.impl.geometry import (
 )
 from core_pdf.impl.render_page import compose_page
 from core_pdf.impl.text import collapse_ws
-from core_pdf.impl.types import PdfReference, ReplaceFields, ReprFields
+from core_pdf.impl.types import PdfReference, RecordType, ReplaceFields, ReprFields
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 from .._shared import parse_indirect_object_at
@@ -41,107 +41,28 @@ class XrayDocument(PdfDocument):
         return None
 
 
-class _Rectangle(ReprFields, ReplaceFields):
-    __slots__ = ("bbox", "seqno", "fill", "allow_same_fill")
-
+class _Rectangle(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     bbox: tuple[float, float, float, float]
     seqno: int
     fill: tuple[float, ...]
-    allow_same_fill: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "seqno", "fill", "allow_same_fill")
-    __match_args__ = ("bbox", "seqno", "fill", "allow_same_fill")
-
-    def __init__(
-        self,
-        bbox: tuple[float, float, float, float],
-        seqno: int,
-        fill: tuple[float, ...],
-        allow_same_fill: bool = False,
-    ) -> None:
-        self.bbox = bbox
-        self.seqno = seqno
-        self.fill = fill
-        self.allow_same_fill = allow_same_fill
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.bbox == other.bbox
-            and self.seqno == other.seqno
-            and self.fill == other.fill
-            and self.allow_same_fill == other.allow_same_fill
-        )
+    allow_same_fill: bool = False
 
     __hash__ = None  # type: ignore[assignment]
 
 
-class _Character(ReprFields, ReplaceFields):
-    __slots__ = ("bbox", "text", "seqno", "fill")
-
+class _Character(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     bbox: tuple[float, float, float, float]
     text: str
     seqno: int
     fill: tuple[float, ...] | None
 
-    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "text", "seqno", "fill")
-    __match_args__ = ("bbox", "text", "seqno", "fill")
-
-    def __init__(
-        self,
-        bbox: tuple[float, float, float, float],
-        text: str,
-        seqno: int,
-        fill: tuple[float, ...] | None,
-    ) -> None:
-        self.bbox = bbox
-        self.text = text
-        self.seqno = seqno
-        self.fill = fill
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.bbox == other.bbox
-            and self.text == other.text
-            and self.seqno == other.seqno
-            and self.fill == other.fill
-        )
-
     __hash__ = None  # type: ignore[assignment]
 
 
-class _RecoveredFont(ReprFields, ReplaceFields):
-    __slots__ = ("cmap", "first_char", "widths")
-
+class _RecoveredFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     cmap: ToUnicodeCMap
     first_char: int
     widths: tuple[float, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("cmap", "first_char", "widths")
-    __match_args__ = ("cmap", "first_char", "widths")
-
-    def __init__(self, cmap: ToUnicodeCMap, first_char: int, widths: tuple[float, ...]) -> None:
-        self.cmap = cmap
-        self.first_char = first_char
-        self.widths = widths
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.cmap == other.cmap
-            and self.first_char == other.first_char
-            and self.widths == other.widths
-        )
 
     __hash__ = None  # type: ignore[assignment]
 

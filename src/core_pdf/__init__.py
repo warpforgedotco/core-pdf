@@ -38,13 +38,9 @@ if TYPE_CHECKING:
         TextView,
     )
     from core_pdf.impl.page_selection import PageSelection
-    from core_pdf.impl.types import (
-        DrawingRecord,
-        ImageMetadata,
-        ImageRecord,
-        PageScoped,
-        TextWord,
-    )
+    from core_pdf.impl.raw_media import DrawingRecord, ImageMetadata, ImageRecord
+    from core_pdf.impl.text import TextWord
+    from core_pdf.impl.types import PageScoped
 EXPORTS = {
     "CaptureOptions": ("core_pdf.impl.capture_program", "CaptureOptions"),
     "DocumentAdapter": ("core_pdf.impl.document_document", "DocumentAdapter"),
@@ -68,9 +64,9 @@ EXPORTS = {
     "ContentNode": ("core_pdf.impl.output_model", "ContentNode"),
     "DocumentTableView": ("core_pdf.impl.output_model", "DocumentTableView"),
     "DocumentTextView": ("core_pdf.impl.output_model", "DocumentTextView"),
-    "DrawingRecord": ("core_pdf.impl.types", "DrawingRecord"),
-    "ImageMetadata": ("core_pdf.impl.types", "ImageMetadata"),
-    "ImageRecord": ("core_pdf.impl.types", "ImageRecord"),
+    "DrawingRecord": ("core_pdf.impl.raw_media", "DrawingRecord"),
+    "ImageMetadata": ("core_pdf.impl.raw_media", "ImageMetadata"),
+    "ImageRecord": ("core_pdf.impl.raw_media", "ImageRecord"),
     "PageScoped": ("core_pdf.impl.types", "PageScoped"),
     "TableView": ("core_pdf.impl.output_model", "TableView"),
     "TableReference": ("core_pdf.impl.output_model", "TableReference"),
@@ -78,7 +74,7 @@ EXPORTS = {
     "TableColumnBand": ("core_pdf.impl.output_model", "TableColumnBand"),
     "TableRowBand": ("core_pdf.impl.output_model", "TableRowBand"),
     "TextView": ("core_pdf.impl.output_model", "TextView"),
-    "TextWord": ("core_pdf.impl.types", "TextWord"),
+    "TextWord": ("core_pdf.impl.text", "TextWord"),
     "TextLineReference": ("core_pdf.impl.output_model", "TextLineReference"),
     "PdfPage": ("core_pdf.impl.document_page", "PdfPage"),
     "PdfDecryptionError": ("core_pdf.impl.exceptions", "PdfDecryptionError"),

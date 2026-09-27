@@ -114,4 +114,4 @@ def test_a_tagged_document_builds_its_structure_tree_once(
 def test_an_untagged_document_remembers_it_has_no_structure_tree() -> None:
     with PdfDocument(multi_page_pdf()) as document:
         assert document.structure is None
-        assert document.structure_cache is None
+        assert document.caches.content.get("structure", False) is None

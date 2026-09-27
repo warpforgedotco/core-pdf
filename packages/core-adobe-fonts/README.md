@@ -2,6 +2,9 @@
 
 Adobe font format parsers and tables: CFF (TN 5176), Type 2 charstrings (TN 5177), Type 1 font programs, CMaps (TN 5014) with the Adobe cmap-resources data, the Adobe Glyph List, and Core 14 AFM metrics. Independent of PDF.
 
+0.2.3 builds its records with `core-records` 0.2's generated methods; behaviour is
+unchanged.
+
 0.2.2 adds `type1.program.eexec_ciphertext` and a `skip_truncated` option on
 `binary_entries`, whose defaults keep the strict behavior.
 

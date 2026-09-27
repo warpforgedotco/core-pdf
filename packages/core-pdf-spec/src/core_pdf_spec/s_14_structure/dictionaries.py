@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from typing import ClassVar
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.types import MISSING
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 
 def parse_role_map(
@@ -21,34 +20,10 @@ def parse_role_map(
     return mapping
 
 
-class StructureAttribute(Record):
-    __slots__ = ("value", "revision", "explicit_revision")
-
+class StructureAttribute(GeneratedRecord):
     value: PdfDict | PdfStream
     revision: int
     explicit_revision: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = ("value", "revision", "explicit_revision")
-    __match_args__ = ("value", "revision", "explicit_revision")
-
-    def __init__(self, value: PdfDict | PdfStream, revision: int, explicit_revision: bool) -> None:
-        frozen_setattr(self, "value", value)
-        frozen_setattr(self, "revision", revision)
-        frozen_setattr(self, "explicit_revision", explicit_revision)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.value == other.value
-            and self.revision == other.revision
-            and self.explicit_revision == other.explicit_revision
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.value, self.revision, self.explicit_revision))
 
 
 def attribute_entries(

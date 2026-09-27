@@ -20,7 +20,8 @@ from core_pdf_spec.s_14_structure.roles import StructureRole, resolve_structure_
 from core_pdf_spec.standards import recognized_version
 
 if TYPE_CHECKING:
-    from core_pdf.impl.document_document import PageLookup, PdfDocument
+    from core_pdf.impl.document_contracts import StructureHost
+    from core_pdf.impl.document_navigation import PageLookup
     from core_pdf.impl.document_page import PdfPage
 
 
@@ -104,7 +105,7 @@ class StructureNode:
 
     def __init__(
         self,
-        document: PdfDocument[Any],
+        document: StructureHost,
         props: PdfDict,
         *,
         page_lookup: PageLookup[Any] | None = None,
@@ -153,7 +154,7 @@ class StructureElement(StructureNode):
 
     def __init__(
         self,
-        document: PdfDocument[Any],
+        document: StructureHost,
         props: PdfDict,
         *,
         page_lookup: PageLookup[Any] | None = None,
@@ -314,7 +315,7 @@ class StructureElement(StructureNode):
             return None
         if not isinstance(parent, dict):
             raise ValueError("invalid structure parent entry")
-        if self.document.resolver.resolve_name(parent.get("Type")) == "StructTreeRoot":
+        if self.document.resolver.name_at(parent, "Type") == "StructTreeRoot":
             tree = self.document.structure
             if tree is not None and self.page_lookup is not None:
                 tree.page_lookup = self.page_lookup
@@ -345,7 +346,7 @@ class StructureTree(StructureNode):
 
     def __init__(
         self,
-        document: PdfDocument[Any],
+        document: StructureHost,
         props: PdfDict,
         *,
         page_lookup: PageLookup[Any] | None = None,
@@ -396,7 +397,7 @@ class StructureTree(StructureNode):
                 resolved,
                 self.document.resolver.resolve,
                 decode_number=self.document.resolver.resolve_int,
-                on_malformed_entry=self.document.recovery_policy(),
+                on_malformed_entry=self.document.recovery.malformed,
                 resolve_values=False,
                 tree_name="parent",
                 max_depth=MAX_PARENT_TREE_DEPTH,
@@ -496,7 +497,7 @@ StructureChild: TypeAlias = StructureElement | StructureContentItem | StructureC
 
 
 def get_kid_page_index(
-    document: PdfDocument[Any],
+    document: StructureHost,
     page: PdfPage | None,
     kid: PdfDict,
     page_lookup: PageLookup[Any] | None = None,
@@ -516,12 +517,12 @@ def get_kid_page_index(
 def make_kids(
     kid: Any,
     page: PdfPage | None,
-    document: PdfDocument[Any],
+    document: StructureHost,
     depth: int = 0,
     *,
     page_lookup: PageLookup[Any] | None = None,
 ) -> Iterator[StructureChild]:
-    malformed = document.recovery_policy()
+    malformed = document.recovery.malformed
     stack: list[tuple[Any, int]] = [(kid, depth)]
     while stack:
         current, depth = stack.pop()
@@ -552,7 +553,7 @@ def make_kids(
             ktype_value = current.get("Type")
             ktype = document.resolver.resolve_name_or_text(ktype_value)
             if ktype == "MCR":
-                mcid = document.resolver.resolve_int(current.get("MCID"))
+                mcid = document.resolver.int_at(current, "MCID")
                 if mcid is None:
                     malformed("invalid structure content mcid")
                     continue
@@ -563,8 +564,8 @@ def make_kids(
                 )
                 continue
             if ktype == "OBJR":
-                obj = document.resolver.resolve(current.get("Obj"))
-                if not isinstance(obj, dict):
+                obj = document.resolver.dict_at(current, "Obj")
+                if obj is None:
                     malformed("invalid structure object reference")
                     continue
                 yield StructureContentObject(

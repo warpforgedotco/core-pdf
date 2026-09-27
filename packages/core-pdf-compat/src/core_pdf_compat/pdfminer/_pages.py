@@ -8,6 +8,7 @@ from typing import Any, cast
 from core_pdf import PdfDocument, PdfPage
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner
 from core_pdf.impl.types import PdfByteBuffer, PdfReference
 from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, key_for, merge_xref_sections
@@ -61,9 +62,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
             value: object = None
             if entry is not None and entry.object_stream is None:
                 try:
-                    parsed = parse_indirect_object_at(
-                        data, entry.offset, recover_malformed_objects=False
-                    )
+                    parsed = parse_indirect_object_at(data, entry.offset, mode=RecoveryMode.STRICT)
                 except Exception:
                     parsed = None
                 if isinstance(parsed, dict):
@@ -114,9 +113,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
             recovered_root = recovered.get(root_number)
             if recovered_root is not None and recovered_root[0] == root_generation:
                 try:
-                    root_value = parse_indirect_object_at(
-                        data, recovered_root[1], recover_malformed_objects=True
-                    )
+                    root_value = parse_indirect_object_at(data, recovered_root[1])
                 except Exception:
                     root_value = None
                 if (
@@ -194,7 +191,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
             if data[value_start : value_start + 2] != b"<<" and not malformed_root:
                 continue
             try:
-                value = parse_indirect_object_at(data, offset, recover_malformed_objects=True)
+                value = parse_indirect_object_at(data, offset)
             except Exception:
                 continue
             if not isinstance(value, dict):
@@ -288,7 +285,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
                 + rb"\s+obj\b"
             )
             if expected_header.match(data, info_entry.offset):
-                parse_indirect_object_at(data, info_entry.offset, recover_malformed_objects=False)
+                parse_indirect_object_at(data, info_entry.offset, mode=RecoveryMode.STRICT)
 
     resolvable_keys: dict[int, bool] = {}
 
@@ -384,8 +381,8 @@ def pdfminer_resolvable_pages(  # noqa: C901
         if node_type == "Pages":
             if not valid_reference or duplicate:
                 return
-            kids = document.resolver.resolve(node.get("Kids"))
-            if not isinstance(kids, list):
+            kids = document.resolver.array_at(node, "Kids")
+            if kids is None:
                 return
             for kid in kids:
                 yield from traverse(kid, depth + 1)

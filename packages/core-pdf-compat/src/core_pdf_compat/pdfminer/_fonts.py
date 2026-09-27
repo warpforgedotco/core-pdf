@@ -2,20 +2,33 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.fonts_cmap_resources import resolve_cmap_decoder
+from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import ReplaceFields, ReprFields
+from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
+
+
+def decoder_base_encoding(decoder: object) -> str | None:
+    return decoder.encoding.base_encoding if isinstance(decoder, FontDecoder) else None
+
+
+def decoder_encoding_differences(decoder: object) -> dict[int, str]:
+    return decoder.encoding.encoding_differences if isinstance(decoder, FontDecoder) else {}
+
+
+def decoder_to_unicode(decoder: object) -> Any:
+    return decoder.unicode.to_unicode if isinstance(decoder, FontDecoder) else None
 
 
 def legacy_glyph_name_text(name: str) -> str:
@@ -31,69 +44,13 @@ def _mapping_value(mapping: object, name: str) -> object | None:
     return next((value for key, value in mapping.items() if str(key) == name), None)
 
 
-class _FontProjection(ReprFields, ReplaceFields):
-    __slots__ = (
-        "font",
-        "values",
-        "has_widths",
-        "legacy_widths",
-        "first_char",
-        "recovered_malformed_token",
-    )
-
+class _FontProjection(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     font: dict[Any, Any]
     values: dict[str, Any]
     has_widths: bool
     legacy_widths: list[float] | None
     first_char: int
     recovered_malformed_token: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "font",
-        "values",
-        "has_widths",
-        "legacy_widths",
-        "first_char",
-        "recovered_malformed_token",
-    )
-    __match_args__ = (
-        "font",
-        "values",
-        "has_widths",
-        "legacy_widths",
-        "first_char",
-        "recovered_malformed_token",
-    )
-
-    def __init__(
-        self,
-        font: dict[Any, Any],
-        values: dict[str, Any],
-        has_widths: bool,
-        legacy_widths: list[float] | None,
-        first_char: int,
-        recovered_malformed_token: bool,
-    ) -> None:
-        self.font = font
-        self.values = values
-        self.has_widths = has_widths
-        self.legacy_widths = legacy_widths
-        self.first_char = first_char
-        self.recovered_malformed_token = recovered_malformed_token
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.font == other.font
-            and self.values == other.values
-            and self.has_widths == other.has_widths
-            and self.legacy_widths == other.legacy_widths
-            and self.first_char == other.first_char
-            and self.recovered_malformed_token == other.recovered_malformed_token
-        )
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -179,7 +136,7 @@ def _pdfminer_base_encoding_text(
     base_encoding: str | None = None,
 ) -> str:
     if base_encoding is None:
-        base_encoding = getattr(decoder, "base_encoding", None)
+        base_encoding = decoder_base_encoding(decoder)
     table = base_encoding_table(base_encoding)
     if base_encoding == "WinAnsiEncoding":
         if char_code == 173:
@@ -213,9 +170,9 @@ def pdfminer_glyph_text(glyph: Any) -> str:
         return ""
     if glyph.unicode_source == "actual_text" and glyph.alternates:
         return glyph.alternates[0]
-    to_unicode = getattr(glyph.font_decoder, "to_unicode", None)
+    to_unicode = decoder_to_unicode(glyph.font_decoder)
     decoder = glyph.font_decoder
-    glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
+    glyph_name = decoder_encoding_differences(decoder).get(glyph.char_code)
     if glyph_name and glyph_name.isdecimal():
         glyph_name = None
     glyph_name_text = legacy_glyph_name_text(glyph_name) if glyph_name else ""
@@ -231,9 +188,9 @@ def pdfminer_glyph_text(glyph: Any) -> str:
             glyph.unicode_source != "identity"
             and not getattr(decoder, "is_cid_font", False)
             and glyph.char_code is not None
-            and (not glyph_name or getattr(decoder, "base_encoding", None) == "WinAnsiEncoding")
+            and (not glyph_name or decoder_base_encoding(decoder) == "WinAnsiEncoding")
         ):
-            base_encoding = getattr(decoder, "base_encoding", None)
+            base_encoding = decoder_base_encoding(decoder)
             if base_encoding is None and str(_font_value(decoder.font, "Subtype")) == "TrueType":
                 base_encoding = "WinAnsiEncoding"
             encoded = _pdfminer_base_encoding_text(decoder, glyph.char_code, base_encoding)
@@ -265,7 +222,7 @@ def pdfminer_glyph_text(glyph: Any) -> str:
     ):
         return f"(cid:{glyph.cid})"
     if glyph.unicode_source in {"fallback_nul", "undefined"}:
-        base_encoding = getattr(decoder, "base_encoding", None)
+        base_encoding = decoder_base_encoding(decoder)
         if base_encoding in {"MacRomanEncoding", "StandardEncoding", "WinAnsiEncoding"} and (
             glyph.char_code is not None
         ):
@@ -276,7 +233,7 @@ def pdfminer_glyph_text(glyph: Any) -> str:
     if glyph.unicode_source == "encoding" and not glyph_name and glyph.char_code is not None:
         base_text = _pdfminer_base_encoding_text(decoder, glyph.char_code)
         return base_text or f"(cid:{glyph.cid})"
-    if glyph.unicode_source == "truetype_cmap" and getattr(decoder, "to_unicode", None) is None:
+    if glyph.unicode_source == "truetype_cmap" and decoder_to_unicode(decoder) is None:
         descendants = _font_value(getattr(decoder, "font", None), "DescendantFonts")
         descendant = descendants[0] if isinstance(descendants, list) and descendants else None
         system_info = _mapping_value(descendant, "CIDSystemInfo")
@@ -354,7 +311,7 @@ def pdfminer_ligature_overrides(
     skipped: set[int] = set()
     for index, glyph in enumerate(glyphs):
         decoder = glyph.font_decoder
-        to_unicode = getattr(decoder, "to_unicode", None)
+        to_unicode = decoder_to_unicode(decoder)
         if to_unicode is not None and glyph.code_bytes:
             mapped = _pdfminer_to_unicode_text(glyph, to_unicode)
             if mapped is not None:
@@ -374,7 +331,7 @@ def pdfminer_ligature_overrides(
                 continue
         if glyph.char_code is None:
             continue
-        glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
+        glyph_name = decoder_encoding_differences(decoder).get(glyph.char_code)
         glyph_name_text = legacy_glyph_name_text(glyph_name) if glyph_name else ""
         if len(glyph_name_text) > 1:
             difference_cluster = glyphs[index : index + len(glyph_name_text)]
@@ -391,7 +348,7 @@ def pdfminer_ligature_overrides(
                 overrides[id(glyph)] = (glyph_name_text, box, glyph.baseline)
                 skipped.update(id(item) for item in difference_cluster[1:])
                 continue
-        base_table = base_encoding_table(getattr(decoder, "base_encoding", None))
+        base_table = base_encoding_table(decoder_base_encoding(decoder))
         encoded_ligature = (
             base_table[glyph.char_code] if 0 <= glyph.char_code < len(base_table) else ""
         )
@@ -453,7 +410,7 @@ def _pdfminer_builtin_width(glyph: Any, projected_text: str | None = None) -> fl
         width_index = glyph.char_code - projection.first_char if glyph.char_code is not None else -1
         if projection.recovered_malformed_token and 0 <= width_index < len(legacy_widths):
             return legacy_widths[width_index]
-    glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
+    glyph_name = decoder_encoding_differences(decoder).get(glyph.char_code)
     if (
         not decoder.is_cid_font
         and len(projected_text) == 1
@@ -517,7 +474,7 @@ def pdfminer_normalized_width(glyph: Any, projected_text: str | None = None) -> 
     if builtin_width is not None:
         width = builtin_width * 0.001
     base_font = recover_pdf_name(_font_value(glyph.font_decoder.font, "BaseFont"))
-    glyph_name = getattr(glyph.font_decoder, "encoding_differences", {}).get(glyph.char_code)
+    glyph_name = decoder_encoding_differences(glyph.font_decoder).get(glyph.char_code)
     if (
         base_font in {"Symbol", "ZapfDingbats"}
         and glyph_name

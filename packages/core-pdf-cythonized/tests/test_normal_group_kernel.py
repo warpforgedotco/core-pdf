@@ -76,7 +76,7 @@ def test_mismatched_shapes_are_rejected():
 
 def test_render_target_uses_the_kernel():
     pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_target as target
+    from core_pdf.impl import render_compositing as target
 
     assert target.composite_normal_group is composite_normal_group
 

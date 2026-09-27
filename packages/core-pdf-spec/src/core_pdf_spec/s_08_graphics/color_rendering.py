@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from collections.abc import Mapping
-from typing import ClassVar, Literal
+from typing import Literal
 
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 RenderingIntent = Literal[
     "RelativeColorimetric", "AbsoluteColorimetric", "Perceptual", "Saturation"
@@ -36,38 +36,11 @@ def parse_black_point_compensation(value: object) -> BlackPointCompensation:
             raise ValueError("UseBlackPtComp must be Default, ON, or OFF")
 
 
-class ColorRendering(Record):
-    __slots__ = ("intent", "black_point_compensation")
+class ColorRendering(GeneratedRecord):
+    intent: RenderingIntent = "RelativeColorimetric"
+    black_point_compensation: BlackPointCompensation = "Default"
 
-    intent: RenderingIntent
-    black_point_compensation: BlackPointCompensation
-
-    __fields__: ClassVar[tuple[str, ...]] = ("intent", "black_point_compensation")
-    __match_args__ = ("intent", "black_point_compensation")
-
-    def __init__(
-        self,
-        intent: RenderingIntent = "RelativeColorimetric",
-        black_point_compensation: BlackPointCompensation = "Default",
-    ) -> None:
-        frozen_setattr(self, "intent", intent)
-        frozen_setattr(self, "black_point_compensation", black_point_compensation)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.intent == other.intent
-            and self.black_point_compensation == other.black_point_compensation
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.intent, self.black_point_compensation))
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         object.__setattr__(self, "intent", parse_rendering_intent(self.intent))
         object.__setattr__(
             self,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import binascii
 import typing
-from typing import ClassVar, Self
+from typing import Self
 
 from core_adobe_fonts.cmap.lexical import (
     SEPARATOR_TABLE,
@@ -12,7 +12,7 @@ from core_adobe_fonts.cmap.lexical import (
     WS_TABLE,
     read_literal_string,
 )
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 
 def decode_literal_string(data: bytes | bytearray | memoryview) -> bytes:
@@ -30,61 +30,16 @@ def decode_literal_string(data: bytes | bytearray | memoryview) -> bytes:
 CMapTokenKind = typing.Literal["array", "delimiter", "hex", "literal", "procedure", "word"]
 
 
-class CMapToken(Record):
-    __slots__ = ("value", "start", "end", "kind")
-
+class CMapToken(GeneratedRecord):
     value: bytes
     start: int
     end: int
     kind: CMapTokenKind
 
-    __fields__: ClassVar[tuple[str, ...]] = ("value", "start", "end", "kind")
-    __match_args__ = ("value", "start", "end", "kind")
 
-    def __init__(self, value: bytes, start: int, end: int, kind: CMapTokenKind) -> None:
-        frozen_setattr(self, "value", value)
-        frozen_setattr(self, "start", start)
-        frozen_setattr(self, "end", end)
-        frozen_setattr(self, "kind", kind)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.value == other.value
-            and self.start == other.start
-            and self.end == other.end
-            and self.kind == other.kind
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.value, self.start, self.end, self.kind))
-
-
-class CMapTokenRun(Record):
-    __slots__ = ("data", "tokens")
-
+class CMapTokenRun(GeneratedRecord):
     data: bytes
     tokens: tuple[CMapToken, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("data", "tokens")
-    __match_args__ = ("data", "tokens")
-
-    def __init__(self, data: bytes, tokens: tuple[CMapToken, ...]) -> None:
-        frozen_setattr(self, "data", data)
-        frozen_setattr(self, "tokens", tokens)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.data == other.data and self.tokens == other.tokens
-
-    def __hash__(self) -> int:
-        return hash((self.data, self.tokens))
 
 
 class CMapBlock(CMapTokenRun):

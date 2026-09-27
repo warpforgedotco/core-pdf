@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from core_pdf.impl import graphics_images as images
-from core_pdf.impl.graphics_images import DecodedImage
+from core_pdf.impl.graphics_images import DecodedImage, DecodedRaster, ImageRaster, PreparedImage
 
 
 @pytest.mark.parametrize("dtype", [np.uint8, np.uint16])
@@ -113,3 +113,47 @@ def test_native_decoded_samples_reject_unsupported_dimensions(shape):
 def test_native_decoded_samples_require_contiguous_storage():
     with pytest.raises(ValueError, match="must be C-contiguous"):
         DecodedImage(np.zeros((2, 2), dtype=np.uint8)[:, ::-1], "jpx")
+
+
+def image_records(array, other):
+    return [
+        (DecodedRaster(array, 2, 2, 1), DecodedRaster(other, 2, 2, 1)),
+        (ImageRaster(array, "gray"), ImageRaster(other, "gray")),
+        (DecodedImage(array, "flate"), DecodedImage(other, "flate")),
+        (
+            PreparedImage(ImageRaster(array, "gray")),
+            PreparedImage(ImageRaster(other, "gray")),
+        ),
+    ]
+
+
+def test_image_records_compare_and_hash_their_samples_by_value():
+    array = np.arange(4, dtype=np.uint8).reshape(2, 2)
+    for left, right in image_records(array, array.copy()):
+        assert left == right
+        assert hash(left) == hash(right)
+        assert len({left, right}) == 1
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        np.arange(1, 5, dtype=np.uint8).reshape(2, 2),
+        np.arange(4, dtype=np.uint16).reshape(2, 2),
+        np.arange(4, dtype=np.uint8).reshape(1, 4),
+    ],
+)
+def test_image_records_differ_when_samples_dtype_or_shape_differ(other):
+    array = np.arange(4, dtype=np.uint8).reshape(2, 2)
+    for left, right in image_records(array, other):
+        if isinstance(left, (ImageRaster, PreparedImage)) and other.dtype != np.uint8:
+            assert left == right
+            continue
+        assert left != right
+
+
+def test_decoded_raster_bytes_compare_by_content_and_never_equal_an_array():
+    data = bytes(range(4))
+    assert DecodedRaster(data, 2, 2, 1) == DecodedRaster(memoryview(data), 2, 2, 1)
+    assert DecodedRaster(data, 2, 2, 1) != DecodedRaster(np.frombuffer(data, np.uint8), 2, 2, 1)
+    assert DecodedRaster(data, 2, 2, 1) != DecodedRaster(data, 4, 1, 1)

@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from copy import replace
-from functools import cached_property
 from statistics import fmean
-from typing import ClassVar
 
 import numpy
 
 from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_table_core import (
+    TableCandidate,
+    TableFacts,
+    cell_text,
+    numeric_cell,
+    short_digit_cell,
+)
 from core_pdf.impl.geometry import (
     bbox_union,
     horizontal_overlap_ratio,
@@ -25,37 +30,8 @@ from core_pdf.impl.output_model import (
     TableColumnBand,
     TableRowBand,
 )
-from core_pdf.impl.text import collapse_ws
-from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
 
 TABLE_MERGE_GAP = 36.0
-
-
-def cell_text(
-    observations: ObservationBatch,
-    indexes: list[int],
-) -> str:
-    boxes = observations.bbox[indexes]
-    centers = ((boxes[:, 1] + boxes[:, 3]) * 0.5).tolist()
-    lefts = boxes[:, 0].tolist()
-    sequences = observations.sequence[indexes].tolist()
-    ordered = sorted(
-        range(len(indexes)),
-        key=lambda position: (-centers[position], lefts[position], sequences[position]),
-    )
-    parts = []
-    for position in ordered:
-        part = collapse_ws(observations.text[indexes[position]])
-        if part:
-            parts.append(part)
-    return " ".join(parts)
-
-
-def table_quality(table: Table) -> tuple[int, int, float, int, int]:
-    facts = TableFacts.from_rows(table.rows)
-    populated = len(facts.filled_texts)
-    density = populated / max(1, facts.row_count * facts.columns)
-    return (int(2 <= facts.columns <= 16), populated, density, facts.row_count, -facts.columns)
 
 
 def table_column_bounds(table: Table) -> tuple[tuple[float, float], ...]:
@@ -174,9 +150,10 @@ def semantic_header_row(row: tuple[TableCell, ...]) -> bool:
     return numeric == 0 and len(populated) >= 2
 
 
-def split_semantic_table(table: Table) -> tuple[Table, ...]:
-    if len(table.rows) < 6 or TableFacts.from_rows(table.rows).numeric_density < 0.3:
-        return (table,)
+def split_semantic_table(candidate: TableCandidate) -> tuple[TableCandidate, ...]:
+    table = candidate.table
+    if len(table.rows) < 6 or candidate.facts.numeric_density < 0.3:
+        return (candidate,)
     boundaries = [
         index
         for index, row in enumerate(table.rows[1:], start=1)
@@ -188,7 +165,7 @@ def split_semantic_table(table: Table) -> tuple[Table, ...]:
         )
     ]
     if not boundaries:
-        return (table,)
+        return (candidate,)
     signatures = {
         tuple(index for index, cell in enumerate(table.rows[index]) if cell.text.strip())
         for index in boundaries
@@ -199,9 +176,9 @@ def split_semantic_table(table: Table) -> tuple[Table, ...]:
         if any(item.text.strip() for item in table.rows[index])
     }
     if len(table.rows) > 8 and len(boundaries) > 1 and len(signatures) == 1 and len(labels) == 1:
-        return (table,)
+        return (candidate,)
     starts = [0, *boundaries]
-    segments: list[Table] = []
+    segments: list[TableCandidate] = []
     for segment_index, start in enumerate(starts):
         end = starts[segment_index + 1] if segment_index + 1 < len(starts) else len(table.rows)
         rows = table.rows[start:end]
@@ -210,23 +187,26 @@ def split_semantic_table(table: Table) -> tuple[Table, ...]:
         boxes = [cell.bbox for row in rows for cell in row if cell.bbox is not None]
         bbox = bbox_union(boxes)
         segments.append(
-            Table(
-                order=table.order + segment_index,
-                rows=rows,
-                bbox=bbox,
-                confidence=table.confidence,
-                title=table.title if segment_index == 0 else None,
-                caption=table.caption if end == len(table.rows) else None,
-                metadata=table.metadata,
+            TableCandidate(
+                Table(
+                    order=table.order + segment_index,
+                    rows=rows,
+                    bbox=bbox,
+                    confidence=table.confidence,
+                    title=table.title if segment_index == 0 else None,
+                    caption=table.caption if end == len(table.rows) else None,
+                    metadata=table.metadata,
+                )
             )
         )
-    return tuple(segments) or (table,)
+    return tuple(segments) or (candidate,)
 
 
-def table_character_spaced_prose(table: Table, *, facts: TableFacts | None = None) -> bool:
+def table_character_spaced_prose(candidate: TableCandidate) -> bool:
+    table = candidate.table
     if table.metadata.get("source") != "stream":
         return False
-    facts = facts or TableFacts.from_rows(table.rows)
+    facts = candidate.facts
     if facts.columns < 8:
         return False
     filled_texts = facts.filled_texts
@@ -239,8 +219,8 @@ def table_character_spaced_prose(table: Table, *, facts: TableFacts | None = Non
     )
 
 
-def table_is_single_column_prose(table: Table, *, facts: TableFacts | None = None) -> bool:
-    facts = facts or TableFacts.from_rows(table.rows)
+def table_is_single_column_prose(candidate: TableCandidate) -> bool:
+    facts = candidate.facts
     if facts.nonempty_rows < 3:
         return False
     if facts.spanned_columns < 2:
@@ -260,60 +240,62 @@ STREAM_SPARSE_PROSE_LONG_RATIO = 0.25
 STREAM_SPARSE_PROSE_MAX_COLUMNS = 6
 
 
-def stream_table_reads_like_prose(table: Table) -> bool:
-    facts = TableFacts.from_rows(table.rows)
+def stream_long_cell_prose(filled: int, long_cells: int, numeric_cells: int) -> bool:
+    return (
+        long_cells >= filled * STREAM_PROSE_LONG_CELL_RATIO
+        and numeric_cells < filled * STREAM_PROSE_NUMERIC_CELL_RATIO
+    )
+
+
+def stream_sparse_prose(facts: TableFacts, filled: int, long_cells: int) -> bool:
+    total_cells = facts.cell_count
+    narrow = facts.columns <= STREAM_SPARSE_PROSE_MAX_COLUMNS
+    return bool(
+        total_cells
+        and narrow
+        and filled < total_cells * STREAM_SPARSE_PROSE_MAX_DENSITY
+        and long_cells >= filled * STREAM_SPARSE_PROSE_LONG_RATIO
+    )
+
+
+def stream_word_grid(facts: TableFacts, filled: int, numeric_cells: int) -> bool:
+    if not (
+        facts.columns >= STREAM_WORD_GRID_MIN_COLUMNS
+        and facts.populated_rows >= STREAM_WORD_GRID_MIN_ROWS
+        and numeric_cells < filled * STREAM_WORD_GRID_NUMERIC_RATIO
+    ):
+        return False
+    lengths = sorted(facts.text_lengths)
+    return lengths[len(lengths) // 2] <= STREAM_WORD_GRID_MEDIAN_CELL_CHARACTERS
+
+
+def stream_table_reads_like_prose(candidate: TableCandidate) -> bool:
+    facts = candidate.facts
     filled = facts.filled_texts
     if not filled:
         return True
     long_cells = sum(length > STREAM_PROSE_LONG_CELL_CHARACTERS for length in facts.text_lengths)
-    numeric_cells = sum(
-        1
-        for text in filled
-        if len(text) <= STREAM_PROSE_LONG_CELL_CHARACTERS
-        and any(character.isdigit() for character in text)
+    numeric_cells = sum(1 for text in filled if short_digit_cell(text))
+    return (
+        stream_long_cell_prose(len(filled), long_cells, numeric_cells)
+        or stream_sparse_prose(facts, len(filled), long_cells)
+        or stream_word_grid(facts, len(filled), numeric_cells)
     )
-    if (
-        long_cells >= len(filled) * STREAM_PROSE_LONG_CELL_RATIO
-        and numeric_cells < len(filled) * STREAM_PROSE_NUMERIC_CELL_RATIO
-    ):
-        return True
-    total_cells = facts.cell_count
-    narrow = facts.columns <= STREAM_SPARSE_PROSE_MAX_COLUMNS
-    if (
-        total_cells
-        and narrow
-        and len(filled) < total_cells * STREAM_SPARSE_PROSE_MAX_DENSITY
-        and long_cells >= len(filled) * STREAM_SPARSE_PROSE_LONG_RATIO
-    ):
-        return True
-    if (
-        facts.columns >= STREAM_WORD_GRID_MIN_COLUMNS
-        and facts.populated_rows >= STREAM_WORD_GRID_MIN_ROWS
-        and numeric_cells < len(filled) * STREAM_WORD_GRID_NUMERIC_RATIO
-    ):
-        lengths = sorted(facts.text_lengths)
-        median_length = lengths[len(lengths) // 2]
-        if median_length <= STREAM_WORD_GRID_MEDIAN_CELL_CHARACTERS:
-            return True
-    return False
 
 
-def clean_stream_table(table: Table) -> Table | None:
-    merged = merge_wrapped_stream_rows(merge_stream_text_columns(table))
+def clean_stream_table(candidate: TableCandidate) -> TableCandidate | None:
+    merged = merge_stream_text_columns(candidate)
+    merged = merged.with_table(merge_wrapped_stream_rows(merged.table))
     if stream_table_reads_like_prose(merged):
         return None
-    return merge_wrapped_cell_rows(merged)
+    return merged.with_table(merge_wrapped_cell_rows(merged.table))
 
 
-def merge_stream_text_columns(table: Table) -> Table:
+def merge_stream_text_columns(candidate: TableCandidate) -> TableCandidate:
+    table = candidate.table
     columns = max((len(row) for row in table.rows), default=0)
-    if (
-        columns < 6
-        or columns % 2
-        or len(table.rows) < 4
-        or TableFacts.from_rows(table.rows).numeric_density >= 0.25
-    ):
-        return table
+    if columns < 6 or columns % 2 or len(table.rows) < 4 or candidate.facts.numeric_density >= 0.25:
+        return candidate
     group_size = columns // 2
     merged_rows: list[tuple[TableCell, ...]] = []
     for row_index, row in enumerate(table.rows):
@@ -336,7 +318,9 @@ def merge_stream_text_columns(table: Table) -> Table:
             )
         if merged:
             merged_rows.append(tuple(merged))
-    return replace(table, rows=tuple(merged_rows), metadata={**table.metadata, "merged": True})
+    return TableCandidate(
+        replace(table, rows=tuple(merged_rows), metadata={**table.metadata, "merged": True})
+    )
 
 
 LOGICAL_ROW_GAP_RATIO = 0.10
@@ -352,12 +336,7 @@ def merge_wrapped_cell_rows(table: Table) -> Table:
         return table
     filled = [cell.text.strip() for row in table.rows for cell in row if cell.text.strip()]
     if filled:
-        numeric = sum(
-            1
-            for text in filled
-            if len(text) <= STREAM_PROSE_LONG_CELL_CHARACTERS
-            and any(character.isdigit() for character in text)
-        )
+        numeric = sum(1 for text in filled if short_digit_cell(text))
         if numeric >= len(filled) * LOGICAL_ROW_MAX_NUMERIC_RATIO:
             return table
     if max((len(row) for row in table.rows), default=0) < LOGICAL_ROW_MIN_COLUMNS:
@@ -556,148 +535,3 @@ def table_with_bands(table: Table) -> Table:
         for index, boxes in enumerate(column_boxes)
     )
     return replace(table, row_bands=tuple(row_bands), column_bands=column_bands)
-
-
-def numeric_cell(text: str) -> bool:
-    alphanumeric = sum(character.isalnum() for character in text)
-    digits = sum(character.isdigit() for character in text)
-    return bool(digits and digits * 2 >= max(1, alphanumeric))
-
-
-def character_spaced_cell(text: str) -> bool:
-    tokens = [token for token in text.split() if any(character.isalpha() for character in token)]
-    if len(tokens) < 4:
-        return False
-    single_character = sum(len(token) == 1 for token in tokens)
-    return single_character / len(tokens) >= 0.50
-
-
-class TableFacts(FrozenFields, ReplaceFields, ReprFields):
-    row_count: int
-    nonempty_rows: int
-    populated_rows: int
-    columns: int
-    spanned_columns: int
-    cell_count: int
-    single_cell_rows: int
-    filled_texts: tuple[str, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "row_count",
-        "nonempty_rows",
-        "populated_rows",
-        "columns",
-        "spanned_columns",
-        "cell_count",
-        "single_cell_rows",
-        "filled_texts",
-    )
-    __match_args__ = (
-        "row_count",
-        "nonempty_rows",
-        "populated_rows",
-        "columns",
-        "spanned_columns",
-        "cell_count",
-        "single_cell_rows",
-        "filled_texts",
-    )
-
-    def __init__(
-        self,
-        row_count: int,
-        nonempty_rows: int,
-        populated_rows: int,
-        columns: int,
-        spanned_columns: int,
-        cell_count: int,
-        single_cell_rows: int,
-        filled_texts: tuple[str, ...],
-    ) -> None:
-        frozen_setattr(self, "row_count", row_count)
-        frozen_setattr(self, "nonempty_rows", nonempty_rows)
-        frozen_setattr(self, "populated_rows", populated_rows)
-        frozen_setattr(self, "columns", columns)
-        frozen_setattr(self, "spanned_columns", spanned_columns)
-        frozen_setattr(self, "cell_count", cell_count)
-        frozen_setattr(self, "single_cell_rows", single_cell_rows)
-        frozen_setattr(self, "filled_texts", filled_texts)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.row_count == other.row_count
-            and self.nonempty_rows == other.nonempty_rows
-            and self.populated_rows == other.populated_rows
-            and self.columns == other.columns
-            and self.spanned_columns == other.spanned_columns
-            and self.cell_count == other.cell_count
-            and self.single_cell_rows == other.single_cell_rows
-            and self.filled_texts == other.filled_texts
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.row_count,
-                self.nonempty_rows,
-                self.populated_rows,
-                self.columns,
-                self.spanned_columns,
-                self.cell_count,
-                self.single_cell_rows,
-                self.filled_texts,
-            )
-        )
-
-    @classmethod
-    def from_rows(cls, rows: Sequence[Sequence[TableCell]]) -> TableFacts:
-        nonempty_rows = populated_rows = columns = spanned_columns = cell_count = 0
-        single_cell_rows = 0
-        filled_texts: list[str] = []
-        for row in rows:
-            size = len(row)
-            nonempty_rows += bool(size)
-            columns = max(columns, size)
-            cell_count += size
-            single_cell_rows += size == 1
-            previous_count = len(filled_texts)
-            for cell in row:
-                spanned_columns = max(spanned_columns, cell.column + cell.column_span)
-                text = cell.text.strip()
-                if text:
-                    filled_texts.append(text)
-            populated_rows += len(filled_texts) > previous_count
-        return cls(
-            len(rows),
-            nonempty_rows,
-            populated_rows,
-            columns,
-            spanned_columns,
-            cell_count,
-            single_cell_rows,
-            tuple(filled_texts),
-        )
-
-    @cached_property
-    def numeric_cells(self) -> int:
-        return sum(numeric_cell(text) for text in self.filled_texts)
-
-    @property
-    def numeric_density(self) -> float:
-        return self.numeric_cells / max(1, len(self.filled_texts))
-
-    @cached_property
-    def character_spaced_cells(self) -> int:
-        return sum(character_spaced_cell(text) for text in self.filled_texts)
-
-    @cached_property
-    def text_lengths(self) -> tuple[int, ...]:
-        return tuple(map(len, self.filled_texts))
-
-    @property
-    def average_cell_length(self) -> float:
-        return sum(self.text_lengths) / max(1, len(self.filled_texts))

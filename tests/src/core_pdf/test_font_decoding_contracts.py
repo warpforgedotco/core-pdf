@@ -6,7 +6,9 @@ import core_pdf.impl.fonts_decoder as decoder_module
 from core_pdf import PdfDocument
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl.fonts_decoder import FontDecoder, single_code_mapping, split_code_bytes
+from core_pdf.impl.fonts_decoder import FontDecoder, split_code_bytes
+from core_pdf.impl.fonts_program_base import NULL_PROGRAM
+from core_pdf.impl.fonts_unicode import single_code_mapping
 from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 
@@ -112,8 +114,8 @@ def test_text_advance_equals_ordered_sum_of_glyph_advances(
     vertical, font_size, horizontal_scale, spacing
 ):
     font = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
-    font.is_vertical = vertical
-    font.vertical_metrics = {65: (-700, 200, 800)}
+    font.metrics.is_vertical = vertical
+    font.metrics.vertical_metrics = {65: (-700, 200, 800)}
     data = b"A B"
     glyphs = font.decode_glyphs(data)
     parameters = {
@@ -207,7 +209,7 @@ def test_invalid_type1_length_metadata_does_not_prevent_font_recovery(length):
             "FontDescriptor": {"FontFile": PdfStream({"Length1": length}, b"damaged program")},
         }
     )
-    assert font.font_program is None
+    assert font.geometry.program is NULL_PROGRAM
     assert font.decode_glyphs(b"A")[0].unicode == "A"
 
 
@@ -268,7 +270,7 @@ def test_a_cff_repair_that_changes_a_mapping_clears_cached_strings() -> None:
             return dict(self.answer)
 
     repairs = Repairs()
-    font.cff_unicode_repair_index = repairs  # ty: ignore[invalid-assignment]
+    font.unicode.cff_unicode_repair_index = repairs  # ty: ignore[invalid-assignment]
     assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x41")] == ["�"]
     assert [glyph.unicode for glyph in font.decode_glyphs(b"\x00\x41\x00\x42")] == ["�", "B"]
     repairs.answer = {b"\x00\x41": "A"}

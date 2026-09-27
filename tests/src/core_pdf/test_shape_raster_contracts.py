@@ -1,16 +1,17 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl import render_target as render_target
+from core_pdf.impl import render_fills
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_target import RasterTarget
 
 
 def make_target(clip_kind):
     pixels = bytearray(12 * 12 * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(12, 12, 4)
-    clip = ClipState(crop_x0=0, crop_y1=12, scale=1, width=12, height=12)
+    clip = ClipState(DeviceGrid(0, 0, 12, 1, 12, 12))
     if clip_kind != "none":
         points: list[tuple[float, float]] = (
             [(2, 2), (8, 2), (8, 10), (2, 10)]
@@ -22,12 +23,6 @@ def make_target(clip_kind):
         pixels,
         None,
         clip=clip,
-        width=12,
-        height=12,
-        scale=1,
-        crop_x0=0,
-        crop_y0=0,
-        crop_y1=12,
         page_view=view,
     ), view
 
@@ -49,7 +44,7 @@ def in_clip(x, y, kind):
 def test_circle_routes_follow_pixel_center_geometry(
     monkeypatch, threshold, clip_kind, alpha, cx, cy, radius
 ):
-    monkeypatch.setattr(render_target, "RASTER_CIRCLE_MIN_PIXEL_AREA", threshold)
+    monkeypatch.setattr(render_fills, "RASTER_CIRCLE_MIN_PIXEL_AREA", threshold)
     target, actual = make_target(clip_kind)
     color = (200, 30, 50, alpha)
     target.fill_circle(cx, cy, radius, color)

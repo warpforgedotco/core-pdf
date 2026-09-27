@@ -6,7 +6,7 @@ from itertools import islice
 from typing import TYPE_CHECKING
 
 from core_pdf.impl.runs import TextRun
-from core_pdf.impl.types import TextWord
+from core_pdf.impl.text import TextWord
 
 if TYPE_CHECKING:
     from core_pdf.impl.runs import (

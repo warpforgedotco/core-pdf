@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from math import isfinite
-from typing import Any, ClassVar, Protocol, Self
+from typing import Any, Protocol, Self
 
 import numpy
 
@@ -20,20 +20,17 @@ from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.render_clipping import ClipState
 from core_pdf.impl.render_commands import append_captured_program
 from core_pdf.impl.render_display import (
-    RASTER_CONTROL_KINDS,
     DisplayList,
-    display_item_box,
 )
+from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_model import (
     DisplayItem,
     DisplayListItem,
-    ImagePaintItem,
-    PathPaintItem,
     RasterImage,
     RenderOptions,
 )
 from core_pdf.impl.render_target import RasterTarget
-from core_pdf.impl.types import ReprFields
+from core_pdf.impl.types import RecordType, ReprFields
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.standards import SemanticContext
 
@@ -75,18 +72,7 @@ def pixel_dimension(length: float, scale: float) -> int:
     return max(1, int(round(pixels)))
 
 
-class RenderedPage(ReprFields):
-    __slots__ = (
-        "page_number",
-        "width",
-        "height",
-        "rotate",
-        "display_list",
-        "metadata",
-        "semantic_context",
-        "user_unit",
-    )
-
+class RenderedPage(ReprFields, metaclass=RecordType, frozen=False):
     page_number: int
     width: float
     height: float
@@ -96,16 +82,6 @@ class RenderedPage(ReprFields):
     semantic_context: SemanticContext | None
     user_unit: float
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "page_number",
-        "width",
-        "height",
-        "rotate",
-        "display_list",
-        "metadata",
-        "semantic_context",
-        "user_unit",
-    )
     __match_args__ = ("page_number", "width", "height", "rotate", "display_list", "metadata")
 
     def __init__(
@@ -128,22 +104,6 @@ class RenderedPage(ReprFields):
         self.metadata = {} if metadata is None else metadata
         self.semantic_context = semantic_context
         self.user_unit = user_unit
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.page_number == other.page_number
-            and self.width == other.width
-            and self.height == other.height
-            and self.rotate == other.rotate
-            and self.display_list == other.display_list
-            and self.metadata == other.metadata
-            and self.semantic_context == other.semantic_context
-            and self.user_unit == other.user_unit
-        )
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -181,10 +141,8 @@ class RenderedPage(ReprFields):
         for item in self.display_list.items:
             if type(item) is DisplayListItem and item.kind == "text":
                 continue
-            box = display_item_box(item, scale=scale)
-            always_render = box is None or (
-                type(item) is DisplayListItem and item.kind in RASTER_CONTROL_KINDS
-            )
+            box = item.page_box(scale)
+            always_render = box is None
             outside_crop = box is not None and (
                 box[2] <= crop[0] or box[0] >= crop[2] or box[3] <= crop[1] or box[1] >= crop[3]
             )
@@ -268,23 +226,10 @@ class RenderedPage(ReprFields):
         page_group_alpha = self.metadata.get("group_alpha")
         if not is_pdf_number(page_group_alpha):
             page_group_alpha = None
-        clip_state = ClipState(
-            crop_x0=crop_x0,
-            crop_y1=crop_y1,
-            scale=device_scale,
-            width=width,
-            height=height,
-        )
         raster_target = RasterTarget(
             pixels,
             page_group_alpha,
-            clip=clip_state,
-            width=width,
-            height=height,
-            scale=device_scale,
-            crop_x0=crop_x0,
-            crop_y0=crop_y0,
-            crop_y1=crop_y1,
+            clip=ClipState(DeviceGrid(crop_x0, crop_y0, crop_y1, device_scale, width, height)),
             page_view=page_pixels,
             semantic_context=self.semantic_context,
         )
@@ -318,11 +263,7 @@ class RenderedPage(ReprFields):
                 {
                     "kind": item.kind,
                     "seqno": item.seqno,
-                    "data": (
-                        item.to_data()
-                        if isinstance(item, (PathPaintItem, ImagePaintItem))
-                        else dict(item.data)
-                    ),
+                    "data": item.to_data(),
                 }
                 for item in self.display_list.items
             ],

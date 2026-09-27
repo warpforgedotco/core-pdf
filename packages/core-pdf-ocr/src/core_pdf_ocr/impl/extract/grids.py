@@ -7,9 +7,9 @@ from statistics import fmean
 import numpy
 
 from core_pdf.impl.array_views import finite_median
-from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
 from core_pdf.impl.render_model import RasterImage
-from core_pdf_ocr.impl.extract.contracts import ObservationSource
+from core_pdf.impl.spatial import band_rows, cluster_1d
 from core_pdf_ocr.impl.extract.ocr.types import OcrTask, pixel_box_to_page_box
 
 GRID_DARK_THRESHOLD = 160
@@ -55,13 +55,11 @@ def cluster_line_positions(
     positions: numpy.ndarray,
     tolerance: int = GRID_LINE_CLUSTER_PX,
 ) -> list[int]:
-    clusters: list[list[int]] = []
-    for position in positions.tolist():
-        if clusters and position - clusters[-1][-1] <= tolerance:
-            clusters[-1].append(position)
-        else:
-            clusters.append([position])
-    return [int(round(fmean(cluster))) for cluster in clusters]
+    values = positions.tolist()
+    return [
+        int(round(fmean(values[index] for index in group)))
+        for group in cluster_1d(values, tolerance, linkage="chain")
+    ]
 
 
 GRID_STRIP_MIN_FRACTION = 0.5
@@ -276,15 +274,8 @@ def grid_row_observations(
     heights = observations.bbox[:, 3] - observations.bbox[:, 1]
     tolerance = max(2.0, finite_median(heights) * 0.6)
     order = numpy.argsort(-(observations.bbox[:, 1] + observations.bbox[:, 3]) * 0.5)
-    rows: list[list[int]] = []
-    row_center = 0.0
-    for index in order.tolist():
-        center = float(observations.bbox[index, 1] + observations.bbox[index, 3]) * 0.5
-        if rows and abs(row_center - center) <= tolerance:
-            rows[-1].append(index)
-        else:
-            rows.append([index])
-            row_center = center
+    centers = [float(box[1] + box[3]) * 0.5 for box in observations.bbox]
+    rows = band_rows(centers, tolerance, order.tolist(), linkage="window")
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
     confidences: list[float] = []

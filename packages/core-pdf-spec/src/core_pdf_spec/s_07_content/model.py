@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from array import array
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self, TypeAlias
+from typing import TYPE_CHECKING, Any, Protocol, Self, TypeAlias
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -17,7 +17,14 @@ from core_pdf_spec.s_08_graphics.color_spec import DEVICE_GRAY, ColorSpace
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf_spec.types import Rectangle
-from core_records import FrozenFields, PickleFields, ReplaceFields, ReprFields, frozen_setattr
+from core_records import (
+    FrozenFields,
+    PickleFields,
+    RecordType,
+    ReplaceFields,
+    ReprFields,
+    frozen_setattr,
+)
 
 if TYPE_CHECKING:
     from core_pdf_spec.s_07_content.inline_images import InlineImage
@@ -37,14 +44,9 @@ PATH_CURVE = ord("c")
 PATH_OPERAND_COUNTS = {PATH_MOVE: 2, PATH_LINE: 2, PATH_CLOSE: 0, PATH_RECT: 4, PATH_CURVE: 13}
 
 
-class PdfPath(ReplaceFields):
-    __slots__ = ("ops", "coords")
-
+class PdfPath(ReplaceFields, metaclass=RecordType, frozen=False):
     ops: bytearray
     coords: array[float]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("ops", "coords")
-    __match_args__ = ("ops", "coords")
 
     def __init__(self, ops: bytearray | None = None, coords: array[float] | None = None) -> None:
         self.ops = bytearray() if ops is None else ops
@@ -53,13 +55,6 @@ class PdfPath(ReplaceFields):
     def __repr__(self) -> str:
         name = self.__class__.__qualname__
         return f"{name}(ops={bytes(self.ops)!r}, coords={self.coords.tolist()!r})"
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.ops == other.ops and self.coords == other.coords
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -94,28 +89,15 @@ class PdfPath(ReplaceFields):
         return ["re" if op == PATH_RECT else chr(op) for op in self.ops]
 
 
-class ShadingPattern(FrozenFields, PickleFields, ReprFields):
-    __slots__ = ("dictionary", "extgstate")
-
+class ShadingPattern(FrozenFields, PickleFields, ReprFields, metaclass=RecordType):
     dictionary: PdfDict
     extgstate: PdfDict | None
 
-    __fields__: ClassVar[tuple[str, ...]] = ("dictionary", "extgstate")
     __match_args__ = ("dictionary",)
 
     def __init__(self, dictionary: PdfDict, *, extgstate: PdfDict | None = None) -> None:
         frozen_setattr(self, "dictionary", dictionary)
         frozen_setattr(self, "extgstate", extgstate)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.dictionary == other.dictionary and self.extgstate == other.extgstate
-
-    def __hash__(self) -> int:
-        return hash((self.dictionary, self.extgstate))
 
     def __replace__(self, /, **changes: Any) -> Self:
         dictionary = changes.pop("dictionary", self.dictionary)
@@ -125,21 +107,7 @@ class ShadingPattern(FrozenFields, PickleFields, ReprFields):
         return self.__class__(dictionary, extgstate=extgstate)
 
 
-class TilingPattern(FrozenFields, PickleFields, ReprFields):
-    __slots__ = (
-        "bbox",
-        "x_step",
-        "y_step",
-        "stream",
-        "resources",
-        "matrix",
-        "paint_type",
-        "base_color",
-        "base_color_spec",
-        "alpha_is_shape",
-        "text_knockout",
-    )
-
+class TilingPattern(FrozenFields, PickleFields, ReprFields, metaclass=RecordType):
     bbox: Rectangle
     x_step: float
     y_step: float
@@ -152,19 +120,6 @@ class TilingPattern(FrozenFields, PickleFields, ReprFields):
     alpha_is_shape: bool
     text_knockout: bool
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "bbox",
-        "x_step",
-        "y_step",
-        "stream",
-        "resources",
-        "matrix",
-        "paint_type",
-        "base_color",
-        "base_color_spec",
-        "alpha_is_shape",
-        "text_knockout",
-    )
     __match_args__ = (
         "bbox",
         "x_step",
@@ -203,42 +158,6 @@ class TilingPattern(FrozenFields, PickleFields, ReprFields):
         frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
         frozen_setattr(self, "text_knockout", text_knockout)
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.bbox == other.bbox
-            and self.x_step == other.x_step
-            and self.y_step == other.y_step
-            and self.stream == other.stream
-            and self.resources == other.resources
-            and self.matrix == other.matrix
-            and self.paint_type == other.paint_type
-            and self.base_color == other.base_color
-            and self.base_color_spec == other.base_color_spec
-            and self.alpha_is_shape == other.alpha_is_shape
-            and self.text_knockout == other.text_knockout
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.bbox,
-                self.x_step,
-                self.y_step,
-                self.stream,
-                self.resources,
-                self.matrix,
-                self.paint_type,
-                self.base_color,
-                self.base_color_spec,
-                self.alpha_is_shape,
-                self.text_knockout,
-            )
-        )
-
     def __replace__(self, /, **changes: Any) -> Self:
         bbox = changes.pop("bbox", self.bbox)
         x_step = changes.pop("x_step", self.x_step)
@@ -271,75 +190,15 @@ class TilingPattern(FrozenFields, PickleFields, ReprFields):
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern
 
 
-class MarkedContentEntry(ReprFields, ReplaceFields):
-    __slots__ = ("layer", "actual_text", "mcid")
-
-    layer: str | None
-    actual_text: str | None
-    mcid: int | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("layer", "actual_text", "mcid")
-    __match_args__ = ("layer", "actual_text", "mcid")
-
-    def __init__(
-        self,
-        layer: str | None = None,
-        actual_text: str | None = None,
-        mcid: int | None = None,
-    ) -> None:
-        self.layer = layer
-        self.actual_text = actual_text
-        self.mcid = mcid
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.layer == other.layer
-            and self.actual_text == other.actual_text
-            and self.mcid == other.mcid
-        )
+class MarkedContentEntry(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
+    layer: str | None = None
+    actual_text: str | None = None
+    mcid: int | None = None
 
     __hash__ = None  # type: ignore[assignment]
 
 
-class GraphicsState(ReprFields):
-    __slots__ = (
-        "ctm",
-        "fill_color",
-        "fill_pattern",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_pattern",
-        "stroke_opacity",
-        "fill_space",
-        "stroke_space",
-        "blend_mode",
-        "flatness",
-        "render_intent",
-        "black_point_compensation",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "miter_limit",
-        "dash_pattern",
-        "font_size",
-        "horizontal_scale",
-        "char_space",
-        "word_space",
-        "rise",
-        "leading",
-        "render_mode",
-        "current_font",
-        "current_decoder",
-        "decoder_resources",
-        "alpha_is_shape",
-        "text_knockout",
-        "soft_mask",
-    )
-
+class GraphicsState(ReprFields, metaclass=RecordType, frozen=False):
     ctm: Matrix
     fill_color: tuple[float, ...] | None
     fill_pattern: PatternPaint | None
@@ -372,39 +231,6 @@ class GraphicsState(ReprFields):
     text_knockout: bool
     soft_mask: SoftMask | None
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "ctm",
-        "fill_color",
-        "fill_pattern",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_pattern",
-        "stroke_opacity",
-        "fill_space",
-        "stroke_space",
-        "blend_mode",
-        "flatness",
-        "render_intent",
-        "black_point_compensation",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "miter_limit",
-        "dash_pattern",
-        "font_size",
-        "horizontal_scale",
-        "char_space",
-        "word_space",
-        "rise",
-        "leading",
-        "render_mode",
-        "current_font",
-        "current_decoder",
-        "decoder_resources",
-        "alpha_is_shape",
-        "text_knockout",
-        "soft_mask",
-    )
     __match_args__ = (
         "ctm",
         "fill_color",
@@ -502,45 +328,6 @@ class GraphicsState(ReprFields):
         self.alpha_is_shape = alpha_is_shape
         self.text_knockout = text_knockout
         self.soft_mask = soft_mask
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.ctm == other.ctm
-            and self.fill_color == other.fill_color
-            and self.fill_pattern == other.fill_pattern
-            and self.fill_opacity == other.fill_opacity
-            and self.stroke_color == other.stroke_color
-            and self.stroke_pattern == other.stroke_pattern
-            and self.stroke_opacity == other.stroke_opacity
-            and self.fill_space == other.fill_space
-            and self.stroke_space == other.stroke_space
-            and self.blend_mode == other.blend_mode
-            and self.flatness == other.flatness
-            and self.render_intent == other.render_intent
-            and self.black_point_compensation == other.black_point_compensation
-            and self.line_width == other.line_width
-            and self.line_cap == other.line_cap
-            and self.line_join == other.line_join
-            and self.miter_limit == other.miter_limit
-            and self.dash_pattern == other.dash_pattern
-            and self.font_size == other.font_size
-            and self.horizontal_scale == other.horizontal_scale
-            and self.char_space == other.char_space
-            and self.word_space == other.word_space
-            and self.rise == other.rise
-            and self.leading == other.leading
-            and self.render_mode == other.render_mode
-            and self.current_font == other.current_font
-            and self.current_decoder == other.current_decoder
-            and self.decoder_resources == other.decoder_resources
-            and self.alpha_is_shape == other.alpha_is_shape
-            and self.text_knockout == other.text_knockout
-            and self.soft_mask == other.soft_mask
-        )
 
     __hash__ = None  # type: ignore[assignment]
 

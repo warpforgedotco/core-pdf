@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field  # noqa: TID251
 from functools import partial
 from itertools import chain
 from typing import Literal, TypeAlias
@@ -16,14 +16,14 @@ from core_pdf.impl.capture_records import (
 )
 from core_pdf.impl.glyphs import GlyphObservation
 from core_pdf.impl.runs import TextRun
+from core_pdf.impl.types import GeneratedRecord
 
 PageCommand: TypeAlias = (
     TextRun | GlyphObservation | CapturedDrawing | CapturedInlineImage | CapturedTextBoundary
 )
 
 
-@dataclass(frozen=True, slots=True)
-class CaptureOptions:
+class CaptureOptions(GeneratedRecord):
     ink_bounds: bool = True
     text_runs: bool = True
     render_details: bool = True
@@ -74,8 +74,7 @@ class CapturedProgram:
         return commands
 
 
-@dataclass(frozen=True, slots=True)
-class AppearanceProgram:
+class AppearanceProgram(GeneratedRecord):
     kind: Literal["widget", "annotation"]
     source: object
     clip_bbox: tuple[float, float, float, float]

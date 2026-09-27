@@ -4,23 +4,26 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from copy import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_capture import STRUCTURE_UNSET
-from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch, PageState
+from core_pdf.impl.extract_pipeline import (
+    NATIVE_PIPELINE,
+    DetectTables,
+    LayoutBlocks,
+    PagePipeline,
+)
 from core_pdf.impl.extract_pipeline import (
     PageExtraction as NativePageExtraction,
 )
-from core_pdf.impl.extract_pipeline import (
-    PageProducts,
-)
 from core_pdf.impl.output_model import Page
-from core_pdf_ocr.impl.extract.block_layout import layout_blocks_with_evidence
+from core_pdf_ocr.impl.extract.block_layout import OCR_LAYOUT_HOOKS
 from core_pdf_ocr.impl.extract.capture import capture_page
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult, WorkPlan
 from core_pdf_ocr.impl.extract.observations import fuse_observations, plan_page
-from core_pdf_ocr.impl.extract.table_detection import extract_tables
+from core_pdf_ocr.impl.extract.table_detection import OCR_TABLES
 from core_pdf_ocr.impl.extract.table_reconcile import remove_duplicate_tables
 
 if TYPE_CHECKING:
@@ -31,8 +34,43 @@ if TYPE_CHECKING:
     from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextProfile
 
 
+class FuseRecognition:
+    __slots__ = ()
+
+    def __call__(
+        self, state: PageState, extraction: NativePageExtraction, context: ExtractionScope, /
+    ) -> PageState:
+        ocr_extraction = cast(PageExtraction, extraction)
+        return replace(
+            state,
+            observations=fuse_observations(
+                state.observations,
+                ocr_extraction.recognize(context).observations,
+                ocr_extraction.plan,
+            ),
+        )
+
+
+class RemoveDuplicateTables:
+    __slots__ = ()
+
+    def __call__(
+        self, state: PageState, _extraction: NativePageExtraction, _context: ExtractionScope, /
+    ) -> PageState:
+        return replace(state, tables=remove_duplicate_tables(state.tables))
+
+
+OCR_PIPELINE = (
+    NATIVE_PIPELINE.replacing(DetectTables, DetectTables(OCR_TABLES))
+    .replacing(LayoutBlocks, LayoutBlocks(OCR_LAYOUT_HOOKS))
+    .inserting_before(DetectTables, FuseRecognition())
+    .inserting_after(LayoutBlocks, RemoveDuplicateTables())
+)
+
+
 class PageExtraction(NativePageExtraction):
     capture_page_fn = staticmethod(capture_page)
+    pipeline: ClassVar[PagePipeline] = OCR_PIPELINE
 
     @property
     def capture(self) -> PageAnalysis:
@@ -87,20 +125,6 @@ class PageExtraction(NativePageExtraction):
 
             return recognize_page(self.capture, plan, context, stroked_profile=self.stroked_profile)
         return RecognitionResult(ObservationBatch.empty())
-
-    def run(self, context: ExtractionScope) -> PageProducts:
-        context.raise_if_cancelled()
-        observations = fuse_observations(
-            self.capture.observations,
-            self.recognize(context).observations,
-            self.plan,
-        )
-        products = self.layout_products(
-            observations,
-            extract_tables(self.capture, observations),
-            layout=layout_blocks_with_evidence,
-        )
-        return replace(products, tables=remove_duplicate_tables(products.tables))
 
 
 def extract_page(page: PdfPage, context: ExtractionScope) -> Page:

@@ -26,16 +26,12 @@ from core_pdf.impl.extract_pipeline import extract_page
 from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.graphics_images import decode_image
 from core_pdf.impl.output_model import Page as StructuredPage
+from core_pdf.impl.raw_media import DrawingRecord, ImageMetadata, ImageRecord
 from core_pdf.impl.recovery_resolver import resolve_resource_dict
 from core_pdf.impl.render_model import RenderOptions
 from core_pdf.impl.render_page import compose_page
 from core_pdf.impl.scalars import clamp01
-from core_pdf.impl.types import (
-    DrawingRecord,
-    ImageMetadata,
-    ImageRecord,
-    PdfReference,
-)
+from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_document.page import page_clip, page_rotation, page_user_unit
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -61,13 +57,13 @@ PAGE_INHERITED_KEYS = (
 
 
 if TYPE_CHECKING:
-    from core_pdf.impl.document_document import PdfDocument
+    from core_pdf.impl.document_contracts import PageHost
     from core_pdf.impl.document_records import RawFormField
     from core_pdf.impl.runs import TextRun
 
 
 class PdfPage:
-    document: PdfDocument[Any]
+    document: PageHost
     page_dict: PdfDict
     page_number: int
     contents: CachedPdfObject | None
@@ -75,7 +71,7 @@ class PdfPage:
 
     def __init__(
         self,
-        document: PdfDocument[Any],
+        document: PageHost,
         page_dict: PdfDict,
         page_number: int,
         *,
@@ -109,7 +105,7 @@ class PdfPage:
         return self._annotation_dicts(strict=False)
 
     def _annotation_dicts(self, *, strict: bool) -> list[PdfDict]:
-        malformed = self.document.recovery_policy()
+        malformed = self.document.recovery.malformed
         raw_annots = self.document.resolver.resolve(self.inherited_values.get("Annots"))
         if raw_annots is None:
             return []
@@ -130,10 +126,10 @@ class PdfPage:
         return resolved_annots
 
     def get_annotations(self) -> list[RawAnnotation]:
-        malformed = self.document.recovery_policy()
+        malformed = self.document.recovery.malformed
         results = []
         for annot in self._annotation_dicts(strict=True):
-            subtype = self.document.resolver.resolve_name(annot.get("Subtype"))
+            subtype = self.document.resolver.name_at(annot, "Subtype")
             try:
                 rect = self.document.resolver.resolve_box(annot.get("Rect"))
             except ValueError:
@@ -170,7 +166,7 @@ class PdfPage:
         resolve = self.document.resolve
         records: list[RawLink] = []
         for annot in annots:
-            subtype = resolver.resolve_name(annot.get("Subtype"))
+            subtype = resolver.name_at(annot, "Subtype")
             if subtype != "Link":
                 continue
 
@@ -186,7 +182,7 @@ class PdfPage:
             link_type = None
             url = None
             if isinstance(action, dict):
-                link_type = resolver.resolve_name(action.get("S"))
+                link_type = resolver.name_at(action, "S")
                 url = link_target(resolver, action, link_type)
 
             records.append(
@@ -222,10 +218,8 @@ class PdfPage:
     def user_unit(self) -> float:
         try:
             return page_user_unit(self.document.resolver.resolve(self.page_dict.get("UserUnit")))
-        except ValueError, PdfParseError:
-            if not self.document.recovery_enabled:
-                raise
-            return 1.0
+        except (ValueError, PdfParseError) as error:
+            return self.document.recovery.reject(error, "user-unit", 1.0)
 
     @property
     def label(self) -> str | None:
@@ -336,12 +330,13 @@ class PdfPage:
         return media if clip[0] >= clip[2] or clip[1] >= clip[3] else clip
 
     def resolve_transparency_group_alpha(self) -> float | None:
-        group = self.document.resolver.resolve(self.page_dict.get("Group"))
-        if not isinstance(group, dict):
+        resolver = self.document.resolver
+        group = resolver.dict_at(self.page_dict, "Group")
+        if group is None:
             return None
-        if self.document.resolver.resolve_name(group.get("S")) != "Transparency":
+        if resolver.name_at(group, "S") != "Transparency":
             return None
-        ca = self.document.resolver.resolve_float(group.get("ca"), default=None)
+        ca = resolver.float_at(group, "ca", None)
         if ca is None:
             return None
         return clamp01(ca)

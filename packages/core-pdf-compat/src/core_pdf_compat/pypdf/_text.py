@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from contextlib import suppress
-from typing import Any, ClassVar
+from typing import Any
 
 from core_adobe_fonts.afm.core14 import FONT_DATA as CORE14_FONT_DATA
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
@@ -16,7 +16,7 @@ from core_pdf.impl.fonts_metrics import LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.fonts_widths import parse_font_widths
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.types import PdfName, PdfString, ReplaceFields, ReprFields
+from core_pdf.impl.types import PdfName, PdfString, RecordType, ReplaceFields, ReprFields
 from core_pdf_compat._text_state import (
     IDENTITY_MATRIX,
     TextMachine,
@@ -30,22 +30,7 @@ from core_pdf_compat._text_state import (
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 
-class LegacyFont(ReprFields, ReplaceFields):
-    __slots__ = (
-        "decoder",
-        "cmap",
-        "widths",
-        "default_width",
-        "space_width",
-        "synthetic_space_width",
-        "space_code_bytes",
-        "encoding_table",
-        "encoding_codec",
-        "character_map",
-        "difference_fallbacks",
-        "width_uses_source_code",
-    )
-
+class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     decoder: FontDecoder
     cmap: ToUnicodeCMap | None
     widths: Mapping[int, float]
@@ -58,83 +43,6 @@ class LegacyFont(ReprFields, ReplaceFields):
     character_map: dict[str, str]
     difference_fallbacks: dict[bytes, str]
     width_uses_source_code: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "decoder",
-        "cmap",
-        "widths",
-        "default_width",
-        "space_width",
-        "synthetic_space_width",
-        "space_code_bytes",
-        "encoding_table",
-        "encoding_codec",
-        "character_map",
-        "difference_fallbacks",
-        "width_uses_source_code",
-    )
-    __match_args__ = (
-        "decoder",
-        "cmap",
-        "widths",
-        "default_width",
-        "space_width",
-        "synthetic_space_width",
-        "space_code_bytes",
-        "encoding_table",
-        "encoding_codec",
-        "character_map",
-        "difference_fallbacks",
-        "width_uses_source_code",
-    )
-
-    def __init__(
-        self,
-        decoder: FontDecoder,
-        cmap: ToUnicodeCMap | None,
-        widths: Mapping[int, float],
-        default_width: float,
-        space_width: float,
-        synthetic_space_width: float,
-        space_code_bytes: bytes,
-        encoding_table: tuple[str, ...] | None,
-        encoding_codec: str | None,
-        character_map: dict[str, str],
-        difference_fallbacks: dict[bytes, str],
-        width_uses_source_code: bool,
-    ) -> None:
-        self.decoder = decoder
-        self.cmap = cmap
-        self.widths = widths
-        self.default_width = default_width
-        self.space_width = space_width
-        self.synthetic_space_width = synthetic_space_width
-        self.space_code_bytes = space_code_bytes
-        self.encoding_table = encoding_table
-        self.encoding_codec = encoding_codec
-        self.character_map = character_map
-        self.difference_fallbacks = difference_fallbacks
-        self.width_uses_source_code = width_uses_source_code
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.decoder == other.decoder
-            and self.cmap == other.cmap
-            and self.widths == other.widths
-            and self.default_width == other.default_width
-            and self.space_width == other.space_width
-            and self.synthetic_space_width == other.synthetic_space_width
-            and self.space_code_bytes == other.space_code_bytes
-            and self.encoding_table == other.encoding_table
-            and self.encoding_codec == other.encoding_codec
-            and self.character_map == other.character_map
-            and self.difference_fallbacks == other.difference_fallbacks
-            and self.width_uses_source_code == other.width_uses_source_code
-        )
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -237,17 +145,19 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         super().__init__(self.collect_fonts(self.resources))
 
     def collect_fonts(self, resources: object) -> dict[str, LegacyFont]:
-        resolved_resources = self.document.resolver.resolve(resources)
-        if not isinstance(resolved_resources, dict):
+        resolver = self.document.resolver
+        resolved_resources = resolver.as_dict(resources)
+        if resolved_resources is None:
             return {}
-        raw_fonts = self.document.resolver.resolve(resolved_resources.get("Font"))
-        if not isinstance(raw_fonts, dict):
+        raw_fonts = resolver.dict_at(resolved_resources, "Font")
+        if raw_fonts is None:
             return {}
         fonts: dict[str, LegacyFont] = {}
         font_cache = self.caches.fonts
+        as_dict = resolver.as_dict
         for resource_name, raw_font in raw_fonts.items():
-            font = self.document.resolver.resolve(raw_font)
-            if not isinstance(font, dict):
+            font = as_dict(raw_font)
+            if font is None:
                 continue
             known = font_cache.get(id(font))
             if known is None or known[0] is not font:
@@ -396,10 +306,10 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         if encoding_obj is None and base_font not in {"Symbol", "ZapfDingbats"}:
             table = [chr(code) for code in range(256)]
         else:
-            table = legacy_base_table(decoder.base_encoding or "StandardEncoding")
+            table = legacy_base_table(decoder.encoding.base_encoding or "StandardEncoding")
         character_map: dict[str, str] = {}
 
-        for code, name in decoder.differences.items():
+        for code, name in decoder.encoding.differences.items():
             if 0 <= code <= 255:
                 table[code] = self.legacy_glyph_name(name)
 
@@ -487,7 +397,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         space_code: int,
     ) -> tuple[Mapping[int, float], float, float]:
         subtype = recover_pdf_name(font.get("Subtype") or "")
-        widths = decoder.widths
+        widths = decoder.metrics.widths
         if decoder.is_type3:
             char_procs = self.document.resolver.resolve(font.get("CharProcs"))
             if (
@@ -502,7 +412,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
             with suppress(ValueError):
                 widths = parse_font_widths(font, subtype).widths
 
-        default_width = decoder.default_width
+        default_width = decoder.metrics.default_width
         if not decoder.is_cid_font:
             descriptor = self.document.resolver.resolve(font.get("FontDescriptor"))
             missing_width = (
@@ -645,11 +555,11 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
     def paint_form_xobject(self, operands: tuple[object, ...]) -> None:
         if not operands:
             return
-        resources = self.document.resolver.resolve(self.resources)
-        if not isinstance(resources, dict):
+        resources = self.document.resolver.as_dict(self.resources)
+        if resources is None:
             return
-        xobjects = self.document.resolver.resolve(resources.get("XObject"))
-        if not isinstance(xobjects, dict):
+        xobjects = self.document.resolver.dict_at(resources, "XObject")
+        if xobjects is None:
             return
         xobject = self.document.resolver.resolve(xobjects.get(operands[0]))
         if not isinstance(xobject, PdfStream):

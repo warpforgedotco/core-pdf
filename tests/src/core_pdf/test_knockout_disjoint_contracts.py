@@ -9,10 +9,10 @@ import pytest
 
 from core_pdf.impl.capture_records import CapturedPath
 from core_pdf.impl.render_model import (
-    DisplayListItem,
     PathPaintItem,
     PathPaintKind,
     RasterGroup,
+    display_item,
 )
 from core_pdf.impl.render_target import RasterTarget
 from tests.src.core_pdf.raster_support import make_target as make_real_target
@@ -213,10 +213,10 @@ def test_a_fill_clear_of_a_stroke_skips(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def nested_group(target: RasterTarget, items: list[Any]) -> None:
-    target.paint_display_item(DisplayListItem("group-begin", 0))
+    target.paint_display_item(display_item("group-begin", 0))
     for item in items:
         target.paint_item(item)
-    target.paint_display_item(DisplayListItem("group-end", 1))
+    target.paint_display_item(display_item("group-end", 1))
 
 
 def test_a_fill_over_a_nested_group_takes_a_group(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy
 
-from core_pdf.impl.extract_contracts import bbox_tuple
 from core_pdf.impl.extract_grids import (
     axis_segments,
     grid_components,
@@ -13,9 +12,11 @@ from core_pdf.impl.extract_grids import (
 from core_pdf.impl.geometry import (
     bbox_area,
     bbox_intersection_area,
+    bbox_tuple,
     bbox_union,
     rect_tuple,
 )
+from core_pdf.impl.spatial import BoxIndex
 from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     VECTOR_PAINT_KINDS,
@@ -184,18 +185,11 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
 
     native = capture.observations
     native_boxes = native.bbox
+    native_index = BoxIndex.from_array(native_boxes)
 
     def native_overlap(box: tuple[float, float, float, float]) -> float:
         area = max(1.0, (box[2] - box[0]) * (box[3] - box[1]))
-        overlap_width = numpy.maximum(
-            0.0,
-            numpy.minimum(native_boxes[:, 2], box[2]) - numpy.maximum(native_boxes[:, 0], box[0]),
-        )
-        overlap_height = numpy.maximum(
-            0.0,
-            numpy.minimum(native_boxes[:, 3], box[3]) - numpy.maximum(native_boxes[:, 1], box[1]),
-        )
-        return min(1.0, float(numpy.sum(overlap_width * overlap_height)) / area)
+        return min(1.0, float(numpy.sum(native_index.intersection_areas(box))) / area)
 
     for drawing in capture.program.drawings:
         if drawing.kind not in {"fill", "fillstroke", "stroke"}:

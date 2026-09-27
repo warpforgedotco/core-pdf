@@ -21,7 +21,7 @@ from core_pdf_validate.models import (
     ProfileSupport,
     RuleResult,
 )
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 __all__ = ["VeraPdfBackend"]
 
@@ -209,33 +209,9 @@ def parse_report(
         return failed("invalid_report", str(error))
 
 
-class VeraPdfBackend(Record):
-    __slots__ = ("executable", "timeout")
-
-    executable: str | os.PathLike[str]
-    timeout: float
-
-    __fields__: ClassVar[tuple[str, ...]] = ("executable", "timeout")
-    __match_args__ = ("executable", "timeout")
-
-    def __init__(
-        self,
-        executable: str | os.PathLike[str] = "verapdf",
-        timeout: float = 60.0,
-    ) -> None:
-        frozen_setattr(self, "executable", executable)
-        frozen_setattr(self, "timeout", timeout)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.executable == other.executable and self.timeout == other.timeout
-
-    def __hash__(self) -> int:
-        return hash((self.executable, self.timeout))
+class VeraPdfBackend(GeneratedRecord):
+    executable: str | os.PathLike[str] = "verapdf"
+    timeout: float = 60.0
 
     name: ClassVar[str] = "veraPDF"
     supported_engine_versions: ClassVar[tuple[str, ...]] = (VERSION,)
@@ -243,7 +219,7 @@ class VeraPdfBackend(Record):
         ProfileSupport(identifier, values[2]) for identifier, values in PROFILES.items()
     )
 
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         if not math.isfinite(self.timeout) or self.timeout <= 0:
             raise ValueError("timeout must be a positive finite number of seconds")
         if not os.fspath(self.executable):

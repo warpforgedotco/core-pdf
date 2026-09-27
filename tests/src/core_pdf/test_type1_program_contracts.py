@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.fonts_font_program import Type1FontProgram
+from core_pdf.impl.fonts_program_type1 import Type1FontProgram
 
 SQUARE = bytes((139, 248, 136, 13, 239, 139, 21, 247, 192, 139, 5, 139, 248, 36, 5, 9, 14))
 LEN_IV = 4

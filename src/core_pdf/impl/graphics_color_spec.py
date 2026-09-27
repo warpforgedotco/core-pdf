@@ -10,11 +10,11 @@ from core_pdf.impl.graphics_icc_profiles import (
     IccProfileError,
     parse_icc_transform,
 )
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_names import lenient_float, lenient_int, recover_pdf_name
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import coerce_to_bytes, parse_float, parse_int
+from core_pdf_spec.s_07_syntax_primitives.coercion import coerce_to_bytes
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_spec import (
     ColorParams,
@@ -27,13 +27,19 @@ from core_pdf_spec.s_08_graphics.color_spec import (
     parse_color_space as parse_pdf_color_space,
 )
 
+GRAY_RGB_KINDS = frozenset({"DeviceGray", "DeviceRGB"})
+DEVICE_KINDS = frozenset({*GRAY_RGB_KINDS, "DeviceCMYK"})
+NAMED_KINDS = frozenset({*DEVICE_KINDS, "Pattern"})
+CIE_KINDS = frozenset({"Lab", "CalGray", "CalRGB"})
+TINT_KINDS = frozenset({"Separation", "DeviceN"})
+
 
 def cs_param_floats(params: ColorParams, key: str, count: int, default: list[float]) -> list[float]:
     raw = params.get(key, default)
     if isinstance(raw, (list, tuple)) and len(raw) >= count:
         result: list[float] = []
         for value in raw[:count]:
-            parsed = parse_float(value, None, python_syntax=True)
+            parsed = lenient_float(value, None)
             if parsed is None or not isfinite(parsed):
                 raise ValueError("invalid color space parameters")
             result.append(parsed)
@@ -81,15 +87,6 @@ def describe_color_space(value: object) -> str | None:
         if kind is None:
             return ":".join(prefixes) if prefixes else None
         return ":".join((*prefixes, kind))
-
-
-def recover_image_bits_per_component(image_dict: object) -> int:
-    dictionary = image_dict if isinstance(image_dict, dict) else {}
-    raw = dictionary.get("BitsPerComponent", 8)
-    value = parse_int(raw, None, python_syntax=True)
-    if value is None or value <= 0:
-        raise ValueError("invalid image bits-per-component")
-    return value
 
 
 def raw_color_space_paints(value: object) -> bool:
@@ -157,14 +154,14 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
         active.add(marker)
     try:
         direct = recover_pdf_name(value)
-        if direct in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}:
+        if direct in NAMED_KINDS:
             return parse_pdf_color_space(direct)
         if isinstance(value, (list, tuple)) and value:
             kind = recover_pdf_name(value[0])
-            if len(value) == 1 and kind in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}:
+            if len(value) == 1 and kind in NAMED_KINDS:
                 return parse_pdf_color_space(kind)
             if kind == "Indexed" and len(value) >= 4:
-                hival = parse_int(value[2], None, python_syntax=True)
+                hival = lenient_int(value[2], None)
                 if type(value[2]) is bool or hival is None or hival < 0:
                     raise ValueError("invalid hival")
                 try:
@@ -185,7 +182,7 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                 stream = value[1]
                 source = stream.dictionary if isinstance(stream, PdfStream) else stream
                 raw_count = source.get("N", 3)
-                count = parse_int(raw_count, None, python_syntax=True)
+                count = lenient_int(raw_count, None)
                 if count is None or count <= 0:
                     raise ValueError("invalid ICCBased color space")
                 profile = stream.data if isinstance(stream, PdfStream) else None
@@ -218,11 +215,7 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                 return ColorSpace(
                     "ICCBased", ranges, params, alternate=alternate, icc_profile=profile
                 )
-            if (
-                kind in {"Lab", "CalRGB", "CalGray"}
-                and len(value) >= 2
-                and isinstance(value[1], dict)
-            ):
+            if kind in CIE_KINDS and len(value) >= 2 and isinstance(value[1], dict):
                 source = dict(value[1])
                 calibrated_params: dict[str, object] = {}
                 for key, raw in source.items():
@@ -248,7 +241,7 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                     pattern_base.component_ranges,
                     base=pattern_base,
                 )
-            if kind in {"Separation", "DeviceN"} and len(value) >= 4:
+            if kind in TINT_KINDS and len(value) >= 4:
                 raw_names = value[1] if kind == "DeviceN" else [value[1]]
                 if not isinstance(raw_names, (list, tuple)):
                     raise ValueError("invalid DeviceN color space")

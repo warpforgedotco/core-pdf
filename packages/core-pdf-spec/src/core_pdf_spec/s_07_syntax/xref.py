@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from functools import partial
 from itertools import batched, compress, repeat
 from operator import not_
-from typing import Any, ClassVar, Literal, NamedTuple, Protocol
+from typing import Any, Literal, NamedTuple, Protocol
 
 import numpy
 
@@ -23,7 +23,7 @@ from core_pdf_spec.s_07_syntax_primitives.numbers import parse_identifier_tokens
 from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules, lexical_rules
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfByteBuffer
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 
 class PdfXRefEntry(NamedTuple):
@@ -37,73 +37,17 @@ class PdfXRefEntry(NamedTuple):
 XRefTable = dict[int, PdfXRefEntry]
 
 
-class ParsedXRefSection(Record):
-    __slots__ = ("offset", "kind", "entries", "trailer")
-
+class ParsedXRefSection(GeneratedRecord):
     offset: int
     kind: Literal["table", "stream"]
     entries: XRefTable
     trailer: PdfDict
 
-    __fields__: ClassVar[tuple[str, ...]] = ("offset", "kind", "entries", "trailer")
-    __match_args__ = ("offset", "kind", "entries", "trailer")
 
-    def __init__(
-        self,
-        offset: int,
-        kind: Literal["table", "stream"],
-        entries: XRefTable,
-        trailer: PdfDict,
-    ) -> None:
-        frozen_setattr(self, "offset", offset)
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "entries", entries)
-        frozen_setattr(self, "trailer", trailer)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.offset == other.offset
-            and self.kind == other.kind
-            and self.entries == other.entries
-            and self.trailer == other.trailer
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.offset, self.kind, self.entries, self.trailer))
-
-
-class XRefRevision(Record):
-    __slots__ = ("offset", "entries", "trailer")
-
+class XRefRevision(GeneratedRecord):
     offset: int
     entries: XRefTable
     trailer: PdfDict
-
-    __fields__: ClassVar[tuple[str, ...]] = ("offset", "entries", "trailer")
-    __match_args__ = ("offset", "entries", "trailer")
-
-    def __init__(self, offset: int, entries: XRefTable, trailer: PdfDict) -> None:
-        frozen_setattr(self, "offset", offset)
-        frozen_setattr(self, "entries", entries)
-        frozen_setattr(self, "trailer", trailer)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.offset == other.offset
-            and self.entries == other.entries
-            and self.trailer == other.trailer
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.offset, self.entries, self.trailer))
 
 
 class XRefSectionReader(Protocol):

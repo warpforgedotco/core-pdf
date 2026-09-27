@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from csv import writer
 from html import escape
 from io import StringIO
+from typing import Protocol
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from core_pdf.impl.output_model import (
@@ -31,8 +32,26 @@ from core_pdf.impl.output_model import (
     TextLine,
 )
 from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
+from core_pdf.impl.types import GeneratedRecord
 
 LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•▪◦]|(?:\d+|[^\W_])[.)])[ \t]*")
+
+
+class PageIds:
+    __slots__ = ("page_id",)
+
+    def __init__(self, page_number: int) -> None:
+        self.page_id = f"p{page_number}"
+
+    def record(self, kind: str, index: int) -> str:
+        return f"{self.page_id}:{kind}:{index}"
+
+    def records(self, kind: str, count: int) -> list[JsonValue]:
+        return [self.record(kind, index) for index in range(count)]
+
+    def identities(self, kind: str, items: Iterable[object]) -> dict[int, str]:
+        unique = dict.fromkeys(id(item) for item in items)
+        return {identity: self.record(kind, index) for index, identity in enumerate(unique)}
 
 
 def node_to_json_dict(
@@ -73,7 +92,8 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
     seen_page_ids: set[str] = set()
 
     for page in document.pages:
-        page_id = f"p{page.page_number}"
+        ids = PageIds(page.page_number)
+        page_id = ids.page_id
         if page_id in seen_page_ids:
             raise ValueError(f"duplicate structured page id: {page_id}")
         seen_page_ids.add(page_id)
@@ -81,22 +101,16 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
         page_blocks = {id(block): block for block in page.blocks}
         page_tables = {id(table): table for table in page.tables}
         page_figures = {id(figure): figure for figure in page.figures}
-        block_ids = {
-            identity: f"{page_id}:block:{index}" for index, identity in enumerate(page_blocks)
-        }
-        table_ids = {
-            identity: f"{page_id}:table:{index}" for index, identity in enumerate(page_tables)
-        }
-        figure_ids = {
-            identity: f"{page_id}:figure:{index}" for index, identity in enumerate(page_figures)
-        }
+        block_ids = ids.identities("block", page_blocks.values())
+        table_ids = ids.identities("table", page_tables.values())
+        figure_ids = ids.identities("figure", page_figures.values())
 
         line_ids: dict[int, str] = {}
         for block in page_blocks.values():
             for line in block.lines:
                 identity = id(line)
                 if identity not in line_ids:
-                    line_ids[identity] = f"{page_id}:line:{len(line_ids)}"
+                    line_ids[identity] = ids.record("line", len(line_ids))
                     lines.append(
                         {
                             "id": line_ids[identity],
@@ -134,7 +148,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
         target_ids = {**block_ids, **table_ids, **figure_ids}
         page_node_ids: list[JsonValue] = []
         for index, node in enumerate(page.nodes):
-            node_id = f"{page_id}:node:{index}"
+            node_id = ids.record("node", index)
             page_node_ids.append(node_id)
             nodes.append(
                 node_to_json_dict(
@@ -145,15 +159,9 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
                 )
             )
 
-        page_link_ids: list[JsonValue] = [
-            f"{page_id}:link:{index}" for index in range(len(page.links))
-        ]
-        page_annotation_ids: list[JsonValue] = [
-            f"{page_id}:annotation:{index}" for index in range(len(page.annotations))
-        ]
-        page_field_ids: list[JsonValue] = [
-            f"{page_id}:form-field:{index}" for index in range(len(page.form_fields))
-        ]
+        page_link_ids = ids.records("link", len(page.links))
+        page_annotation_ids = ids.records("annotation", len(page.annotations))
+        page_field_ids = ids.records("form-field", len(page.form_fields))
         links.extend(
             {"id": record_id, "page_id": page_id, **link_to_json_dict(link)}
             for record_id, link in zip(page_link_ids, page.links, strict=True)
@@ -247,26 +255,8 @@ def line_to_json_dict(line: TextLine) -> dict[str, JsonValue]:
         "kind": line.kind,
         "source": line.source,
         "confidence": line.confidence,
-        "bold": line.bold,
-        "italic": line.italic,
-        "underline": line.underline,
-        "strikeout": line.strikeout,
-        "mark": line.mark,
-        "superscript": line.superscript,
-        "subscript": line.subscript,
-        "spans": [
-            {
-                "text": span.text,
-                "bold": span.bold,
-                "italic": span.italic,
-                "underline": span.underline,
-                "strikeout": span.strikeout,
-                "mark": span.mark,
-                "superscript": span.superscript,
-                "subscript": span.subscript,
-            }
-            for span in line.styled_spans()
-        ],
+        **line.style_dict(),
+        "spans": [{"text": span.text, **span.style_dict()} for span in line.styled_spans()],
         "baseline": bbox_to_json(line.baseline),
         "contributing_sources": list(line.contributing_sources),
     }
@@ -385,12 +375,19 @@ def selected_pages(document: Document, pages: PageSelection | None) -> tuple[Pag
     return tuple(document.pages[index] for index in indexes)
 
 
+def iter_selected_lines(
+    document: Document, pages: PageSelection | None
+) -> Iterator[tuple[Page, tuple[TextLine, ...]]]:
+    for page in selected_pages(document, pages):
+        yield page, page.text_view.lines
+
+
 def document_to_csv(document: Document, *, pages: PageSelection | None = None) -> str:
     output = StringIO()
     rows = writer(output, lineterminator="\n")
     rows.writerow(("page_number", "line_index", "text", "x0", "y0", "x1", "y1"))
-    for page in selected_pages(document, pages):
-        for index, line in enumerate(page.text_view.lines):
+    for page, lines in iter_selected_lines(document, pages):
+        for index, line in enumerate(lines):
             bbox = line.bbox
             rows.writerow(
                 (
@@ -410,40 +407,26 @@ def document_to_tei(document: Document, *, pages: PageSelection | None = None) -
     root = Element("TEI")
     text = SubElement(root, "text")
     body = SubElement(text, "body")
-    for page in selected_pages(document, pages):
+    for page, lines in iter_selected_lines(document, pages):
         SubElement(body, "pb", {"n": str(page.page_number)})
-        for line in page.text_view.lines:
+        for line in lines:
             paragraph = SubElement(body, "p")
             paragraph.text = line.text
     return tostring(root, encoding="unicode", short_empty_elements=True)
 
 
-def document_to_markdown(document: Document) -> str:
-    return "\f".join(page_to_markdown(page) for page in document.pages) + "\f"
+class InlineMarkup(GeneratedRecord):
+    escape_text: bool
+    strikeout: tuple[str, str]
+    bold: tuple[str, str]
+    italic: tuple[str, str]
 
 
-def page_to_markdown(page: Page) -> str:
-    parts = [
-        map_page_element(
-            element,
-            block=block_to_markdown,
-            table=table_to_html,
-            figure=lambda figure: f"> [Figure: {figure.kind}]",
-        )
-        for element in page.elements
-    ]
-    return "\n\n".join(parts)
+MARKDOWN_MARKUP = InlineMarkup(False, ("~~", "~~"), ("**", "**"), ("*", "*"))
+HTML_MARKUP = InlineMarkup(True, ("<del>", "</del>"), ("<strong>", "</strong>"), ("<em>", "</em>"))
 
 
-def render_styled_line(
-    line: TextLine,
-    *,
-    escape_text: bool,
-    strikeout: tuple[str, str],
-    bold: tuple[str, str],
-    italic: tuple[str, str],
-    start: int = 0,
-) -> str:
+def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) -> str:
     rendered: list[str] = []
     for span in line.styled_spans():
         text = span.text
@@ -452,7 +435,7 @@ def render_styled_line(
             start = max(0, start - len(span.text))
             if not text:
                 continue
-        text = escape(text) if escape_text else text
+        text = escape(text) if markup.escape_text else text
         if span.superscript:
             text = f"<sup>{text}</sup>"
         elif span.subscript:
@@ -462,35 +445,97 @@ def render_styled_line(
         if span.underline:
             text = f"<u>{text}</u>"
         if span.strikeout:
-            text = f"{strikeout[0]}{text}{strikeout[1]}"
+            text = f"{markup.strikeout[0]}{text}{markup.strikeout[1]}"
         if span.bold:
-            text = f"{bold[0]}{text}{bold[1]}"
+            text = f"{markup.bold[0]}{text}{markup.bold[1]}"
         if span.italic:
-            text = f"{italic[0]}{text}{italic[1]}"
+            text = f"{markup.italic[0]}{text}{markup.italic[1]}"
         rendered.append(text)
     return "".join(rendered)
 
 
 def markdown_line(line: TextLine, *, start: int = 0) -> str:
-    return render_styled_line(
-        line,
-        escape_text=False,
-        strikeout=("~~", "~~"),
-        bold=("**", "**"),
-        italic=("*", "*"),
-        start=start,
-    )
+    return render_styled_line(line, MARKDOWN_MARKUP, start=start)
 
 
 def html_line(line: TextLine, *, start: int = 0) -> str:
-    return render_styled_line(
-        line,
-        escape_text=True,
-        strikeout=("<del>", "</del>"),
-        bold=("<strong>", "</strong>"),
-        italic=("<em>", "</em>"),
-        start=start,
-    )
+    return render_styled_line(line, HTML_MARKUP, start=start)
+
+
+class ElementFormatter(Protocol):
+    def format_block(self, block: Block) -> str: ...
+
+    def format_table(self, table: Table) -> str: ...
+
+    def format_figure(self, figure: Figure) -> str: ...
+
+    def format_page(self, page: Page) -> str: ...
+
+    def format_document(self, document: Document) -> str: ...
+
+
+def format_elements(formatter: ElementFormatter, page: Page) -> list[str]:
+    return [
+        map_page_element(
+            element,
+            block=formatter.format_block,
+            table=formatter.format_table,
+            figure=formatter.format_figure,
+        )
+        for element in page.elements
+    ]
+
+
+class MarkdownFormatter:
+    __slots__ = ()
+
+    def format_block(self, block: Block) -> str:
+        return block_to_markdown(block)
+
+    def format_table(self, table: Table) -> str:
+        return table_to_html(table)
+
+    def format_figure(self, figure: Figure) -> str:
+        return f"> [Figure: {figure.kind}]"
+
+    def format_page(self, page: Page) -> str:
+        return "\n\n".join(format_elements(self, page))
+
+    def format_document(self, document: Document) -> str:
+        return "\f".join(self.format_page(page) for page in document.pages) + "\f"
+
+
+class HtmlFormatter:
+    __slots__ = ()
+
+    def format_block(self, block: Block) -> str:
+        return block_to_html(block)
+
+    def format_table(self, table: Table) -> str:
+        return table_to_html(table)
+
+    def format_figure(self, figure: Figure) -> str:
+        return f'<figure data-kind="{escape(figure.kind)}"></figure>'
+
+    def format_page(self, page: Page) -> str:
+        rendered = "\n".join(format_elements(self, page))
+        return f'<section data-page-number="{page.page_number}">{rendered}</section>'
+
+    def format_document(self, document: Document) -> str:
+        pages = "\n".join(self.format_page(page) for page in document.pages)
+        return f'<article data-schema-version="{escape(document.schema_version)}">{pages}</article>'
+
+
+MARKDOWN_FORMATTER = MarkdownFormatter()
+HTML_FORMATTER = HtmlFormatter()
+
+
+def document_to_markdown(document: Document) -> str:
+    return MARKDOWN_FORMATTER.format_document(document)
+
+
+def page_to_markdown(page: Page) -> str:
+    return MARKDOWN_FORMATTER.format_page(page)
 
 
 def block_to_markdown(block: Block) -> str:
@@ -507,22 +552,11 @@ def block_to_markdown(block: Block) -> str:
 
 
 def document_to_html(document: Document) -> str:
-    pages = "\n".join(page_to_html(page) for page in document.pages)
-    return f'<article data-schema-version="{escape(document.schema_version)}">{pages}</article>'
+    return HTML_FORMATTER.format_document(document)
 
 
 def page_to_html(page: Page) -> str:
-    parts = [
-        map_page_element(
-            element,
-            block=block_to_html,
-            table=table_to_html,
-            figure=lambda figure: f'<figure data-kind="{escape(figure.kind)}"></figure>',
-        )
-        for element in page.elements
-    ]
-    rendered = "\n".join(parts)
-    return f'<section data-page-number="{page.page_number}">{rendered}</section>'
+    return HTML_FORMATTER.format_page(page)
 
 
 def block_to_html(block: Block) -> str:

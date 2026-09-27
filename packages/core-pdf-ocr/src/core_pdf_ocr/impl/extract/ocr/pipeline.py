@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from copy import replace
-from typing import ClassVar
 
 import numpy
 
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_ocr.impl.extract.capture import promoted_hidden_observations
 from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,
@@ -58,65 +57,11 @@ from core_pdf_ocr.impl.extract.ocr.vector import (
 from core_pdf_ocr.impl.extract.quality import Candidate
 
 
-class OcrPassState(Record):
-    __slots__ = (
-        "selected",
-        "selected_tasks",
-        "previous_region_additions",
-        "seeded_region_selected",
-    )
-
-    selected: Candidate | None
-    selected_tasks: tuple[OcrTask, ...]
-    previous_region_additions: int
-    seeded_region_selected: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "selected",
-        "selected_tasks",
-        "previous_region_additions",
-        "seeded_region_selected",
-    )
-    __match_args__ = (
-        "selected",
-        "selected_tasks",
-        "previous_region_additions",
-        "seeded_region_selected",
-    )
-
-    def __init__(
-        self,
-        selected: Candidate | None = None,
-        selected_tasks: tuple[OcrTask, ...] = (),
-        previous_region_additions: int = 0,
-        seeded_region_selected: bool = False,
-    ) -> None:
-        frozen_setattr(self, "selected", selected)
-        frozen_setattr(self, "selected_tasks", selected_tasks)
-        frozen_setattr(self, "previous_region_additions", previous_region_additions)
-        frozen_setattr(self, "seeded_region_selected", seeded_region_selected)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.selected == other.selected
-            and self.selected_tasks == other.selected_tasks
-            and self.previous_region_additions == other.previous_region_additions
-            and self.seeded_region_selected == other.seeded_region_selected
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.selected,
-                self.selected_tasks,
-                self.previous_region_additions,
-                self.seeded_region_selected,
-            )
-        )
+class OcrPassState(GeneratedRecord):
+    selected: Candidate | None = None
+    selected_tasks: tuple[OcrTask, ...] = ()
+    previous_region_additions: int = 0
+    seeded_region_selected: bool = False
 
     def prepare(self, ocr_pass: OcrPass, *, visible_native_characters: int) -> OcrPassState | None:
         selected = self.selected

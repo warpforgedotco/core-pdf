@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import ClassVar
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_filters.decode_spec import (
@@ -26,7 +25,7 @@ from core_pdf_spec.s_07_syntax_primitives.scanning import (
 from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules
 from core_pdf_spec.standards import SemanticContext
 from core_pdf_spec.types import PdfName
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 INLINE_IMAGE_KEY_MAP = {
     "BPC": "BitsPerComponent",
@@ -61,28 +60,9 @@ def normalize_inline_color_space(value: PdfObject) -> PdfObject:
     return value
 
 
-class InlineImage(Record):
-    __slots__ = ("dictionary", "data")
-
+class InlineImage(GeneratedRecord):
     dictionary: PdfDict
     data: bytes
-
-    __fields__: ClassVar[tuple[str, ...]] = ("dictionary", "data")
-    __match_args__ = ("dictionary", "data")
-
-    def __init__(self, dictionary: PdfDict, data: bytes) -> None:
-        frozen_setattr(self, "dictionary", dictionary)
-        frozen_setattr(self, "data", data)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.dictionary == other.dictionary and self.data == other.data
-
-    def __hash__(self) -> int:
-        return hash((self.dictionary, self.data))
 
 
 class InlineImageDataLengthError(PdfParseError):

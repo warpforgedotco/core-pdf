@@ -6,8 +6,8 @@ from core_pdf.impl.graphics_color_spec import (
     nchannel_process,
     parse_color_space,
     raw_color_space_paints,
-    recover_image_bits_per_component,
 )
+from core_pdf.impl.graphics_image_header import ImageHeader
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.color_spec import ColorSpace, DeviceNAttributes
 
@@ -77,15 +77,15 @@ def test_uncolored_pattern_reuses_its_base_component_ranges():
 @pytest.mark.parametrize("raw", [True, 0, -1, None, "bad", float("inf")])
 def test_image_bit_depth_rejects_invalid_values(raw):
     with pytest.raises(ValueError, match="bits-per-component"):
-        recover_image_bits_per_component({"BitsPerComponent": raw})
+        ImageHeader({"BitsPerComponent": raw}).checked_bits()
 
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [(None, 8), ({}, 8), ({"BitsPerComponent": "16"}, 16), ({"BitsPerComponent": 1}, 1)],
+    [({}, 8), ({"BitsPerComponent": "16"}, 16), ({"BitsPerComponent": 1}, 1)],
 )
 def test_image_bit_depth_defaults_and_reader_numeric_coercion(value, expected):
-    assert recover_image_bits_per_component(value) == expected
+    assert ImageHeader(value).checked_bits() == expected
 
 
 @pytest.mark.parametrize("raw", [None, [], [1], "bad"])

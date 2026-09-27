@@ -45,6 +45,6 @@ def test_coverage_is_bounded_to_unit_range():
 
 def test_render_target_uses_the_kernel():
     pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_target as target
+    from core_pdf.impl import render_fills as target
 
     assert target.fill_glyph_coverage is fill_glyph_coverage

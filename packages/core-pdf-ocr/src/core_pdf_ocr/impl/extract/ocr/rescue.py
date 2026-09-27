@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from copy import replace
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy
 
 from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_RESCUE_DENSE_MIN_CHARACTERS,
     OCR_RESCUE_DENSE_MIN_CONFIDENCE,
@@ -76,43 +76,11 @@ def observation_coverage_grid(
     return output.astype(numpy.float32, copy=False).reshape(-1)
 
 
-class RescueCoverage(Record):
-    __slots__ = ("raster_count", "cell_count", "ink", "weak_ink")
-
-    raster_count: int
-    cell_count: int
-    ink: float
-    weak_ink: float
-
-    __fields__: ClassVar[tuple[str, ...]] = ("raster_count", "cell_count", "ink", "weak_ink")
-    __match_args__ = ("raster_count", "cell_count", "ink", "weak_ink")
-
-    def __init__(
-        self,
-        raster_count: int = 0,
-        cell_count: int = 0,
-        ink: float = 0.0,
-        weak_ink: float = 0.0,
-    ) -> None:
-        frozen_setattr(self, "raster_count", raster_count)
-        frozen_setattr(self, "cell_count", cell_count)
-        frozen_setattr(self, "ink", ink)
-        frozen_setattr(self, "weak_ink", weak_ink)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.raster_count == other.raster_count
-            and self.cell_count == other.cell_count
-            and self.ink == other.ink
-            and self.weak_ink == other.weak_ink
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.raster_count, self.cell_count, self.ink, self.weak_ink))
+class RescueCoverage(GeneratedRecord):
+    raster_count: int = 0
+    cell_count: int = 0
+    ink: float = 0.0
+    weak_ink: float = 0.0
 
     @property
     def mean_ink(self) -> float:

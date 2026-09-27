@@ -1,6 +1,6 @@
 from core_pdf.impl.fonts_decoder import DecodedGlyph
 from core_pdf.impl.glyphs import GlyphCluster
-from core_pdf.impl.types import TextWord
+from core_pdf.impl.text import TextWord
 
 
 def test_decoded_glyph_field_order_is_pinned():

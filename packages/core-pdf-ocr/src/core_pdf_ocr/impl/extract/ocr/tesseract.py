@@ -21,10 +21,10 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.array_views import contiguous_bytes, finite_median
-from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
 from core_pdf.impl.render_model import RasterImage
 from core_pdf.impl.text import collapse_ws
-from core_pdf_ocr.impl.extract.contracts import PRIMARY_OCR_PIXELS, ObservationSource
+from core_pdf_ocr.impl.extract.contracts import PRIMARY_OCR_PIXELS
 from core_pdf_ocr.impl.extract.ocr.resampling import resample_smooth
 from core_pdf_ocr.impl.extract.ocr.types import (
     OcrTask,

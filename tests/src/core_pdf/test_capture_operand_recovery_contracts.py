@@ -19,7 +19,7 @@ class RecordingRecovery(TextState):
 @pytest.fixture
 def state():
     resolver = ObjectResolver(b"", {})
-    instance = RecordingRecovery(SimpleNamespace(resolver=resolver))
+    instance = RecordingRecovery(SimpleNamespace(resolver=resolver))  # ty: ignore[invalid-argument-type]
     instance.errors = []
     yield instance
     resolver.close()

@@ -1,10 +1,10 @@
 import core_pdf.impl.glyphs as glyphs_module
+from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.glyphs import glyph_unicode_confidence
 
 
 def test_confidence_is_memoised_and_bounded(monkeypatch) -> None:
-    monkeypatch.setattr(glyphs_module, "CONFIDENCE_CACHE", {})
-    monkeypatch.setattr(glyphs_module, "CONFIDENCE_CACHE_LIMIT", 2)
+    monkeypatch.setattr(glyphs_module, "CONFIDENCE_CACHE", BoundedDict(2))
     first = glyph_unicode_confidence("a", "tounicode", ())
     assert glyph_unicode_confidence("a", "tounicode", ()) == first
     assert len(glyphs_module.CONFIDENCE_CACHE) == 1
@@ -15,7 +15,7 @@ def test_confidence_is_memoised_and_bounded(monkeypatch) -> None:
 
 
 def test_unhashable_alternates_bypass_the_cache(monkeypatch) -> None:
-    monkeypatch.setattr(glyphs_module, "CONFIDENCE_CACHE", {})
+    monkeypatch.setattr(glyphs_module, "CONFIDENCE_CACHE", BoundedDict(8))
     value = glyph_unicode_confidence("a", "tounicode", (["x"]))  # ty: ignore[invalid-argument-type]
     assert value == glyph_unicode_confidence("a", "tounicode", ("x",))
     assert list(glyphs_module.CONFIDENCE_CACHE) == [("a", "tounicode", ("x",))]

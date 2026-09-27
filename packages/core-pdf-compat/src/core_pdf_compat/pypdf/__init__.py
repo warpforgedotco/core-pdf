@@ -36,8 +36,8 @@ def validate_pypdf_page_tree(pdf: PdfDocument) -> None:
             if key in seen:
                 raise ValueError("detected cyclic page references")
             seen.add(key)
-        node = pdf.resolver.resolve(value)
-        if not isinstance(node, dict):
+        node = pdf.resolver.as_dict(value)
+        if node is None:
             raise ValueError("invalid object in page tree")
         kids = pdf.resolver.resolve(node.get("Kids"))
         if isinstance(kids, (list, tuple)):
@@ -91,7 +91,7 @@ class StructuredState(ClosingMixin):
 
     def page_count(self) -> int:
         pdf = self.source_pdf
-        return len(pdf.pages) if pdf.page_count() else 0
+        return len(pdf.pages) if pdf.declared_page_count() else 0
 
     @property
     def form_fields(self) -> tuple[Any, ...]:

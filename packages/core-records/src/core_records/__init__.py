@@ -3,18 +3,50 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, NoReturn, Self
+import builtins
+import re
+from collections.abc import Callable
+from functools import partial
+from types import CodeType, FunctionType, MemberDescriptorType
+from typing import Any, ClassVar, NoReturn, Self, dataclass_transform
+from weakref import WeakSet
 
 __all__ = (
     "FrozenFields",
+    "GeneratedRecord",
     "PickleFields",
     "Record",
+    "RecordType",
     "ReplaceFields",
     "ReprFields",
     "frozen_setattr",
 )
 
 frozen_setattr = object.__setattr__
+
+RECORD_KEYWORDS = frozenset({"init", "frozen", "eq", "hash"})
+
+
+def plain_keywords(kwargs: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in kwargs.items() if key not in RECORD_KEYWORDS}
+
+
+def specialise_inherited(cls: type, name: str) -> None:
+    if name in cls.__dict__ or not any("__field_specs__" in base.__dict__ for base in cls.__mro__):
+        return
+    if not specialises(cls, name, set()):
+        return
+    fields: tuple[str, ...] = tuple(getattr(cls, "__fields__"))
+    if name == "__repr__":
+        names = getattr(cls, "__repr_fields__", None)
+        fields = fields if names is None else tuple(names)
+    elif name == "__replace__" and not takes_fields_in_order(
+        inherited_attribute(cls, "__init__"), fields
+    ):
+        return
+    method = pending_method(name, fields)
+    method.owner = cls
+    setattr(cls, name, method)
 
 
 class FrozenFields:
@@ -32,6 +64,10 @@ class PickleFields:
 
     __fields__: ClassVar[tuple[str, ...]]
 
+    def __init_subclass__(cls, /, **kwargs: Any) -> None:
+        super().__init_subclass__(**plain_keywords(kwargs))
+        specialise_inherited(cls, "__getstate__")
+
     def __getstate__(self) -> list[Any]:
         return [getattr(self, name) for name in self.__fields__]
 
@@ -46,6 +82,10 @@ class ReprFields:
     __fields__: ClassVar[tuple[str, ...]]
     __repr_fields__: ClassVar[tuple[str, ...] | None] = None
 
+    def __init_subclass__(cls, /, **kwargs: Any) -> None:
+        super().__init_subclass__(**plain_keywords(kwargs))
+        specialise_inherited(cls, "__repr__")
+
     def __repr__(self) -> str:
         names = self.__repr_fields__ if self.__repr_fields__ is not None else self.__fields__
         fields = ", ".join([f"{name}={getattr(self, name)!r}" for name in names])
@@ -57,6 +97,10 @@ class ReplaceFields:
 
     __fields__: ClassVar[tuple[str, ...]]
 
+    def __init_subclass__(cls, /, **kwargs: Any) -> None:
+        super().__init_subclass__(**plain_keywords(kwargs))
+        specialise_inherited(cls, "__replace__")
+
     def __replace__(self, /, **changes: Any) -> Self:
         values = [changes.pop(name, getattr(self, name)) for name in self.__fields__]
         if changes:
@@ -65,4 +109,363 @@ class ReplaceFields:
 
 
 class Record(FrozenFields, PickleFields, ReprFields, ReplaceFields):
+    __slots__ = ()
+
+
+MISSING: Any = object()
+CLASS_VARIABLE = re.compile(r"^\s*(?:typing\.)?ClassVar\b")
+
+type FieldSpecs = dict[str, tuple[Any, str]]
+
+GENERATED: WeakSet[Callable[..., Any]] = WeakSet()
+SHARED: tuple[Callable[..., Any], ...] = (
+    ReprFields.__repr__,
+    ReplaceFields.__replace__,
+    PickleFields.__getstate__,
+)
+
+
+def own_annotations(namespace: dict[str, Any]) -> dict[str, str]:
+    annotations = namespace.get("__annotations__")
+    if annotations is None:
+        import annotationlib
+
+        annotate = annotationlib.get_annotate_from_class_namespace(namespace)
+        if annotate is None:
+            return {}
+        annotations = annotationlib.call_annotate_function(annotate, annotationlib.Format.STRING)
+    return {
+        name: annotation
+        for name, annotation in annotations.items()
+        if not CLASS_VARIABLE.match(annotation)
+    }
+
+
+def inherited_specs(bases: tuple[type, ...]) -> FieldSpecs:
+    specs: FieldSpecs = {}
+    for base in reversed(bases):
+        for ancestor in reversed(base.__mro__):
+            specs.update(ancestor.__dict__.get("__field_specs__", {}))
+    return specs
+
+
+def slotted_names(bases: tuple[type, ...]) -> set[str]:
+    names: set[str] = set()
+    for base in bases:
+        for ancestor in base.__mro__:
+            slots = ancestor.__dict__.get("__slots__", ())
+            names.update((slots,) if isinstance(slots, str) else slots)
+    return names
+
+
+def inherits_frozen_guard(bases: tuple[type, ...]) -> bool:
+    return any(
+        "__setattr__" in ancestor.__dict__
+        for base in bases
+        for ancestor in base.__mro__
+        if ancestor is not object
+    )
+
+
+TOKEN = re.compile(r"_f(\d+)_")
+BUILTINS: dict[str, Any] = {"__builtins__": builtins}
+TEMPLATES: dict[tuple[str, int], Template] = {}
+
+
+def init_template(names: list[str]) -> list[str]:
+    body = [f"    __set_{index}(self, {name})" for index, name in enumerate(names)]
+    return [f"def __init__({', '.join(['self', *names])}):", *(body or ["    pass"])]
+
+
+def mutable_init_template(names: list[str]) -> list[str]:
+    body = [f"    self.{name} = {name}" for name in names]
+    return [f"def __init__({', '.join(['self', *names])}):", *(body or ["    pass"])]
+
+
+def post_init_template(names: list[str]) -> list[str]:
+    return [*init_template(names), "    self.__post_init__()"]
+
+
+def mutable_post_init_template(names: list[str]) -> list[str]:
+    return [*mutable_init_template(names), "    self.__post_init__()"]
+
+
+def eq_template(names: list[str]) -> list[str]:
+    compare = " and ".join(f"self.{name} == other.{name}" for name in names) or "True"
+    return [
+        "def __eq__(self, other):",
+        "    if self is other:",
+        "        return True",
+        "    if other.__class__ is not self.__class__:",
+        "        return NotImplemented",
+        f"    return {compare}",
+    ]
+
+
+def hash_template(names: list[str]) -> list[str]:
+    return [
+        "def __hash__(self):",
+        f"    return hash(({''.join(f'self.{name}, ' for name in names)}))",
+    ]
+
+
+def repr_template(names: list[str]) -> list[str]:
+    parts = ", ".join(f"{name}={{self.{name}!r}}" for name in names)
+    return ["def __repr__(self):", f'    return f"{{self.__class__.__qualname__}}({parts})"']
+
+
+def replace_template(names: list[str]) -> list[str]:
+    return [
+        "def __replace__(self, /, **changes):",
+        *(f"    {name} = changes.pop({name!r}, self.{name})" for name in names),
+        "    if changes:",
+        '        raise TypeError(f"__replace__() got unexpected keyword arguments'
+        ' {sorted(changes)!r}")',
+        f"    return self.__class__({', '.join(names)})",
+    ]
+
+
+def getstate_template(names: list[str]) -> list[str]:
+    return [
+        "def __getstate__(self):",
+        f"    return [{', '.join(f'self.{name}' for name in names)}]",
+    ]
+
+
+SOURCES: dict[str, Callable[[list[str]], list[str]]] = {
+    "init": init_template,
+    "mutable_init": mutable_init_template,
+    "post_init": post_init_template,
+    "mutable_post_init": mutable_post_init_template,
+    "__eq__": eq_template,
+    "__hash__": hash_template,
+    "__repr__": repr_template,
+    "__replace__": replace_template,
+    "__getstate__": getstate_template,
+}
+
+
+type Patches = tuple[tuple[int, int | str], ...]
+
+
+class Template:
+    __slots__ = ("code", "consts", "names", "varnames")
+
+    def __init__(self, kind: str, count: int) -> None:
+        source = "\n".join(SOURCES[kind]([f"_f{index}_" for index in range(count)]))
+        (self.code,) = (
+            item
+            for item in compile(source, "<record>", "exec").co_consts
+            if isinstance(item, CodeType)
+        )
+        self.names = token_patches(self.code.co_names)
+        self.varnames = token_patches(self.code.co_varnames) if kind.endswith("init") else ()
+        self.consts = token_patches(self.code.co_consts)
+
+    def specialise(self, qualname: str, fields: tuple[str, ...]) -> CodeType:
+        code = self.code
+        return code.replace(
+            co_names=patched(code.co_names, self.names, fields),
+            co_varnames=patched(code.co_varnames, self.varnames, fields),
+            co_consts=patched(code.co_consts, self.consts, fields),
+            co_qualname=qualname,
+        )
+
+
+def token_patches(items: tuple[Any, ...]) -> Patches:
+    patches: list[tuple[int, int | str]] = []
+    for position, item in enumerate(items):
+        if not isinstance(item, str) or len(parts := TOKEN.split(item)) == 1:
+            continue
+        if len(parts) == 3 and parts[0] == parts[2] == "":
+            patches.append((position, int(parts[1])))
+        else:
+            patches.append(
+                (
+                    position,
+                    "".join(
+                        f"{{{part}}}" if odd % 2 else part.replace("{", "{{").replace("}", "}}")
+                        for odd, part in enumerate(parts)
+                    ),
+                )
+            )
+    return tuple(patches)
+
+
+def patched[T](items: tuple[T, ...], patches: Patches, fields: tuple[str, ...]) -> tuple[T, ...]:
+    if not patches:
+        return items
+    result: list[Any] = list(items)
+    for position, patch in patches:
+        result[position] = fields[patch] if isinstance(patch, int) else patch.format(*fields)
+    return tuple(result)
+
+
+def specialise(
+    cls: type,
+    kind: str,
+    fields: tuple[str, ...],
+    scope: dict[str, Any] = BUILTINS,
+    defaults: tuple[Any, ...] | None = None,
+) -> FunctionType:
+    template = TEMPLATES.get((kind, len(fields)))
+    if template is None:
+        template = TEMPLATES[kind, len(fields)] = Template(kind, len(fields))
+    name = template.code.co_name
+    code = template.specialise(f"{cls.__qualname__}.{name}", fields)
+    function = FunctionType(code, scope, name, defaults)
+    function.__module__ = cls.__module__
+    GENERATED.add(function)
+    return function
+
+
+def slot_setter(cls: type, name: str) -> Callable[[object, object], None]:
+    for ancestor in cls.__mro__:
+        if name in ancestor.__dict__:
+            descriptor = ancestor.__dict__[name]
+            if type(descriptor) is MemberDescriptorType:
+                setter: Callable[[object, object], None] = descriptor.__set__
+                return setter
+            break
+    return partial(field_setter, name)
+
+
+def field_setter(name: str, instance: object, value: object) -> None:
+    frozen_setattr(instance, name, value)
+
+
+class Pending:
+    __slots__ = ("build", "fields", "name", "owner")
+
+    def __init__(
+        self, name: str, fields: tuple[str, ...], build: Callable[[type], FunctionType]
+    ) -> None:
+        self.name = name
+        self.fields = fields
+        self.build = build
+        self.owner: type | None = None
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self.owner = owner
+
+    def __get__(self, instance: object, owner: type | None = None) -> Any:
+        cls = self.owner
+        assert cls is not None
+        function = self.build(cls)
+        type.__setattr__(cls, self.name, function)
+        return function if instance is None else function.__get__(instance, owner)
+
+
+def pending_method(kind: str, fields: tuple[str, ...]) -> Pending:
+    return Pending(kind, fields, partial(specialise_method, kind, fields))
+
+
+def specialise_method(kind: str, fields: tuple[str, ...], cls: type) -> FunctionType:
+    return specialise(cls, kind, fields)
+
+
+def inherited_attribute(cls: type, name: str) -> object:
+    for ancestor in cls.__mro__:
+        if name in ancestor.__dict__:
+            return ancestor.__dict__[name]
+    return None
+
+
+def takes_fields_in_order(init: object, fields: tuple[str, ...]) -> bool:
+    if isinstance(init, Pending):
+        return init.fields == fields
+    code = getattr(init, "__code__", None)
+    return isinstance(code, CodeType) and code.co_varnames[1 : code.co_argcount] == fields
+
+
+def specialises(cls: type, name: str, explicit: set[str]) -> bool:
+    if name in explicit:
+        return False
+    inherited = inherited_attribute(cls, name)
+    return isinstance(inherited, Pending) or inherited in GENERATED or inherited in SHARED
+
+
+def check_defaults(name: str, specs: FieldSpecs) -> None:
+    has_default = False
+    for field, (default, _) in specs.items():
+        if default is not MISSING:
+            has_default = True
+        elif has_default:
+            raise TypeError(f"non-default field {field!r} follows a default field in {name}")
+
+
+def build_init(specs: FieldSpecs, frozen: bool, cls: type) -> FunctionType:
+    fields = tuple(specs)
+    defaults = tuple(default for default, _ in specs.values() if default is not MISSING)
+    kind = "post_init" if hasattr(cls, "__post_init__") else "init"
+    if frozen:
+        scope = dict(BUILTINS)
+        for index, name in enumerate(fields):
+            scope[f"__set_{index}"] = slot_setter(cls, name)
+        function = specialise(cls, kind, fields, scope, defaults or None)
+    else:
+        function = specialise(cls, f"mutable_{kind}", fields, BUILTINS, defaults or None)
+    function.__annotations__ = {name: annotation for name, (_, annotation) in specs.items()}
+    function.__annotations__["return"] = "None"
+    return function
+
+
+@dataclass_transform(frozen_default=True, eq_default=True)
+class RecordType(type):
+    def __new__(
+        mcs,
+        name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+        /,
+        *,
+        init: bool = True,
+        frozen: bool = True,
+        eq: bool = True,
+        hash: bool | None = None,
+        **kwargs: Any,
+    ) -> type:
+        if namespace.get("__module__") == __name__ and name == "GeneratedRecord":
+            return super().__new__(mcs, name, bases, namespace, **kwargs)
+        bases = tuple(Record if isinstance(base, RecordType) else base for base in bases)
+        own = own_annotations(namespace)
+        if not own:
+            return type(name, bases, namespace, **kwargs)
+        specs = inherited_specs(bases)
+        for field, annotation in own.items():
+            inherited = specs.get(field, (MISSING, annotation))[0]
+            specs[field] = (namespace.pop(field, inherited), annotation)
+        fields = tuple(specs)
+        if tuple(namespace.get("__fields__", fields)) != fields:
+            raise TypeError(f"{name}.__fields__ disagrees with its annotated fields {fields}")
+        guarded = inherits_frozen_guard(bases)
+        if frozen and not guarded:
+            namespace.setdefault("__setattr__", FrozenFields.__setattr__)
+            namespace.setdefault("__delattr__", FrozenFields.__delattr__)
+        elif not frozen and guarded:
+            raise TypeError(f"mutable record {name} cannot inherit a frozen one")
+        if "__slots__" not in namespace:
+            owned = slotted_names(bases)
+            namespace["__slots__"] = tuple(field for field in own if field not in owned)
+        explicit = set(namespace)
+        generate_eq = eq and "__eq__" not in explicit
+        generate_hash = "__hash__" not in explicit and (
+            bool(hash) or (hash is None and frozen and generate_eq)
+        )
+        if "__hash__" not in explicit and not generate_hash and (hash is False or generate_eq):
+            namespace["__hash__"] = None
+        if init and "__init__" not in explicit:
+            check_defaults(name, specs)
+            namespace["__init__"] = Pending("__init__", fields, partial(build_init, specs, frozen))
+        if generate_eq:
+            namespace["__eq__"] = pending_method("__eq__", fields)
+        if generate_hash:
+            namespace["__hash__"] = pending_method("__hash__", fields)
+        namespace["__fields__"] = fields
+        namespace["__field_specs__"] = specs
+        namespace.setdefault("__match_args__", fields)
+        return type(name, bases, namespace, **kwargs)
+
+
+class GeneratedRecord(Record, metaclass=RecordType):
     __slots__ = ()

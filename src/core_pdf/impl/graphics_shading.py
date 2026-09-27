@@ -6,33 +6,26 @@ from collections.abc import Callable
 from functools import lru_cache
 from typing import ClassVar
 
+from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.graphics_color import color_operands_to_srgb
-from core_pdf.impl.graphics_color_spec import parse_color_space, raw_color_space_paints
+from core_pdf.impl.graphics_color_spec import (
+    DEVICE_KINDS,
+    parse_color_space,
+    raw_color_space_paints,
+)
 from core_pdf.impl.graphics_functions import (
     compile_pdf_function,
     number_array,
 )
-from core_pdf.impl.types import Record, frozen_setattr
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
+from core_pdf.impl.pdf_names import lenient_int
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
 from core_pdf_spec.s_08_graphics.shading import parse_shading
 
 
-class PreparedShading(Record):
-    __slots__ = (
-        "shading_type",
-        "coords",
-        "domain",
-        "extend_start",
-        "extend_end",
-        "color_model",
-        "bbox",
-        "evaluator",
-        "color_rendering",
-    )
-
+class PreparedShading(GeneratedRecord):
     shading_type: int
     coords: tuple[float, ...]
     domain: tuple[float, float]
@@ -41,9 +34,9 @@ class PreparedShading(Record):
     color_model: str
     bbox: tuple[float, float, float, float] | None
     evaluator: Callable[[float], tuple[float, ...]]
-    color_rendering: ColorRendering
+    color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 
-    __fields__: ClassVar[tuple[str, ...]] = (
+    __repr_fields__: ClassVar[tuple[str, ...]] = (
         "shading_type",
         "coords",
         "domain",
@@ -51,45 +44,8 @@ class PreparedShading(Record):
         "extend_end",
         "color_model",
         "bbox",
-        "evaluator",
         "color_rendering",
     )
-    __repr_fields__: ClassVar[tuple[str, ...]] = tuple(
-        name for name in __fields__ if name != "evaluator"
-    )
-    __match_args__ = (
-        "shading_type",
-        "coords",
-        "domain",
-        "extend_start",
-        "extend_end",
-        "color_model",
-        "bbox",
-        "evaluator",
-        "color_rendering",
-    )
-
-    def __init__(
-        self,
-        shading_type: int,
-        coords: tuple[float, ...],
-        domain: tuple[float, float],
-        extend_start: bool,
-        extend_end: bool,
-        color_model: str,
-        bbox: tuple[float, float, float, float] | None,
-        evaluator: Callable[[float], tuple[float, ...]],
-        color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
-    ) -> None:
-        frozen_setattr(self, "shading_type", shading_type)
-        frozen_setattr(self, "coords", coords)
-        frozen_setattr(self, "domain", domain)
-        frozen_setattr(self, "extend_start", extend_start)
-        frozen_setattr(self, "extend_end", extend_end)
-        frozen_setattr(self, "color_model", color_model)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "evaluator", evaluator)
-        frozen_setattr(self, "color_rendering", color_rendering)
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -122,10 +78,8 @@ class PreparedShading(Record):
         )
 
 
-type ShadingEvaluatorKey = tuple[int, int, ColorRendering]
-type ShadingEvaluatorCache = dict[
-    ShadingEvaluatorKey,
-    tuple[object, object, PdfFunctionEvaluator, Callable[[float], tuple[float, ...]], str],
+type ShadingEvaluatorCache = IdentityCache[
+    tuple[PdfFunctionEvaluator, Callable[[float], tuple[float, ...]], str]
 ]
 
 
@@ -139,7 +93,7 @@ def prepare_shading(
         return None
     if not raw_color_space_paints(dictionary.get("ColorSpace")):
         return None
-    shading_type = parse_int(dictionary.get("ShadingType"), 0, python_syntax=True)
+    shading_type = lenient_int(dictionary.get("ShadingType"), 0)
     if shading_type not in {2, 3}:
         return None
     coords = number_array(dictionary.get("Coords"))
@@ -171,14 +125,13 @@ def prepare_shading(
     function = normalized.get("Function")
     color_space = normalized["ColorSpace"]
     key = (id(function), id(color_space), rendering)
-    cached = evaluators.get(key) if evaluators is not None else None
-    if cached is not None and cached[0] is function and cached[1] is color_space:
-        compiled = cached[2]
+    cached = evaluators.get_key(function, key) if evaluators is not None else None
+    if cached is not None:
+        compiled, evaluator, color_model = cached
         try:
             spec = parse_shading(normalized, compile_function=lambda _function: compiled)
         except ValueError:
             return None
-        evaluator, color_model = cached[3], cached[4]
     else:
         try:
             spec = parse_shading(normalized, compile_function=compile_pdf_function)
@@ -187,7 +140,9 @@ def prepare_shading(
             return None
         evaluator, color_model = shading_color_evaluator(spec.evaluator, space, rendering)
         if evaluators is not None:
-            evaluators[key] = (function, color_space, spec.evaluator, evaluator, color_model)
+            evaluators.put_key(
+                function, key, (spec.evaluator, evaluator, color_model), (color_space,)
+            )
     return PreparedShading(
         spec.shading_type,
         coords,
@@ -204,7 +159,7 @@ def prepare_shading(
 def shading_color_evaluator(
     function: PdfFunctionEvaluator, space: ColorSpace, rendering: ColorRendering
 ) -> tuple[Callable[[float], tuple[float, ...]], str]:
-    if space.kind in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
+    if space.kind in DEVICE_KINDS:
         return function, space.kind
 
     @lru_cache(maxsize=8192)

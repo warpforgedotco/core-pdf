@@ -1,0 +1,98 @@
+{
+ "PyMuPDF/tests/resources/merge-form1.pdf": {
+  "csv": "1fe0be3b1937a97e0bce731f5017f503f05b53a5b6337f9ddde1c32ccfd65355",
+  "csv-first-page": "1fe0be3b1937a97e0bce731f5017f503f05b53a5b6337f9ddde1c32ccfd65355",
+  "html": "aa243c37d1f21ad7bb08917e07cdded40953d8c419ddb03ecbbeec9c41abbb48",
+  "json": "25dd266d743c74b34db3a34a92ec44ec1c7222f7f1e2b11dd942658ac599bebf",
+  "json-compact": "a2badb2f40e3b76f86b71601b04e68bffdba2a8f4daa67afdef9edad2e7828b2",
+  "markdown": "ef6cbd2161eaea7943ce8693b9824d23d1793ffb1c0fca05b600d3899b44c977",
+  "page-html": "091e27fb06d588dafc35067b07ac8b71ec7788c8ebf18ee7d82bb41b7f8580c6",
+  "page-markdown": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "tei": "c1c9f8743fdf74634ee53b73143e787e00ca887e37cc1080a304d78478e947e6",
+  "tei-first-page": "c1c9f8743fdf74634ee53b73143e787e00ca887e37cc1080a304d78478e947e6"
+ },
+ "SCORE-Bench/src/VBA-29-0975-ARE-p002.pdf": {
+  "csv": "22bf362d3c58acf61f4eb27c798b0ae3335de1f8b1d28f43cbd3c05cd1ec4d5b",
+  "csv-first-page": "22bf362d3c58acf61f4eb27c798b0ae3335de1f8b1d28f43cbd3c05cd1ec4d5b",
+  "html": "dccd83ad8e675daa1d7737d851b28b8ff47a7da6af00ba9653a5e804698e690b",
+  "json": "5b2afc84c3ca403ea099ecada9ac67989f76338d517d9544d4132e2e758b7e33",
+  "json-compact": "d32f40b0c1b860887713e353901a200b013cfea4f83149a369174b57fdfa7cb9",
+  "markdown": "57358bfcd77625a56c745b0e143a096933e79eccfe9472c075df18e1a48fef5b",
+  "page-html": "3f6089cb67fd5941d2d880504a8ec6ca6bbdbcf92a79a12b1236de1316704ec7",
+  "page-markdown": "dd59a18b84d1bf4f2632c9d7e1d541b6981891e0c820cceea9a78d3a955f0b7c",
+  "tei": "1dafac24a0c260579bd029284e93807a271715715ac7bd98360e3d01a5f7fece",
+  "tei-first-page": "1dafac24a0c260579bd029284e93807a271715715ac7bd98360e3d01a5f7fece"
+ },
+ "pdfminer.six/samples/acroform/AcroForm_TEST.pdf": {
+  "csv": "009fc0909b60c62b16bd672430d975523e9821a6defc5a92b164bae8073c80c8",
+  "csv-first-page": "009fc0909b60c62b16bd672430d975523e9821a6defc5a92b164bae8073c80c8",
+  "html": "ed1f859a265e7068e3be8bd0fca58e094f93e3dec5deb972e5562e035c7dc36d",
+  "json": "3d532174f0ea57df4ed1f89425ae08352bef42e027cb1d1cf548cf7fe9dbc634",
+  "json-compact": "99d8417b0de24cfe9730ab7152c63a1dcf9fa4bd1453e74374287f51acb9fda1",
+  "markdown": "fb9906f47a369c6163d9baba24e41ee67412b05b2c180b7bd35dd4562aeb0a72",
+  "page-html": "413a508472a8aa381398dd721ce9cf454a3363bb22a646b71225d2ff1858187b",
+  "page-markdown": "ef54bc0c613e04e85b72941107c3acbc22482303a2adf6c2e4ad4a9f213c27fd",
+  "tei": "f7545036c6bda84e1df8b890e7d48a18d3baa15a28a282d9ca855848217d7794",
+  "tei-first-page": "f7545036c6bda84e1df8b890e7d48a18d3baa15a28a282d9ca855848217d7794"
+ },
+ "pdfminer.six/samples/simple1.pdf": {
+  "csv": "f0136271965ae6ed5fb87e8e4afcee9638477d0999e828b1850e7a0073e6050c",
+  "csv-first-page": "f0136271965ae6ed5fb87e8e4afcee9638477d0999e828b1850e7a0073e6050c",
+  "html": "4380aa87699a3124fdb9a835243160903750ee10b382c6f0da369a32280d266f",
+  "json": "d403a3849337b8d6abc6f044908f637f51d410508b139a140c07c5cef90b6155",
+  "json-compact": "0e6cd3af9802aa1e10fe5632dc0fec15ee333dbbcca9bebe642e6d707a76e013",
+  "markdown": "5b838cbb4b982e908a5fb78cd94a07fa6e123840b0e6d6ed5cf8b28320f345a5",
+  "page-html": "736bdfeedbeda85cd555645fdb7705c38f5fe17109033c30a2d3ef61747fbbf9",
+  "page-markdown": "aa51f93edeeb076ecd01c77d95a5724c316fa4dc0726809d81203b20e383cbd7",
+  "tei": "7c114782daf03b2df495d70af2fd911f315cc40dad1f57ce3516cfb758372ad0",
+  "tei-first-page": "7c114782daf03b2df495d70af2fd911f315cc40dad1f57ce3516cfb758372ad0"
+ },
+ "pdfplumber/tests/pdfs/150109DSP-Milw-505-90D.pdf": {
+  "csv": "ffd2fa519726bb5736483c94aae64b63e4f3b75cf96d55ca63884cf81acdcd8d",
+  "csv-first-page": "f5f1dddacaf1b39a5d4b9a2af83a27a6bf0a5a30e16ba9f2701d5b82e9d1652c",
+  "html": "1dcc018e3c8a1334d7d0c1b7a8fedca7a988d1035ef47bf06dcf8d6195056325",
+  "json": "0633a95f4eb340d7a98fd665b466857bed43b12ec97f5a547d3f71028fec0ef1",
+  "json-compact": "c51e80fb550cb89a7230a5dd4bbc4a2fdbd76990e62d0321a4ba532105abb3f2",
+  "markdown": "bea6b910faf826992a2b376b91caab809915e3d8be4909e63b793dd735021ffa",
+  "page-html": "7a3e72c37429bae4ac67f85ea63c7677196af78f19b52488178008ef5a7b3fa7",
+  "page-markdown": "38fddc6854c053e8d7eedde90520f190d896d8da9d42b64feed231b2b4d44474",
+  "tei": "41ba822af93376e2c027c1232d782dd451ace215a730307bee5a6545e4e8d8d9",
+  "tei-first-page": "155b2fdcc753a370100cc2b234800cd2daaecd24f60e2fdba4b53c2697f8102b"
+ },
+ "pypdf/sample-files/024-annotations/annotated_pdf.pdf": {
+  "csv": "9a9c6df0e40abbc0f3f24de164d392dae6c27496a934f87eced41c2b6527c349",
+  "csv-first-page": "9a9c6df0e40abbc0f3f24de164d392dae6c27496a934f87eced41c2b6527c349",
+  "html": "e88e0bde1b6e1e79c1794b581d69ea877eef4a65a920ce25a58f86964e4bf3b8",
+  "json": "e55f126a2e43cdf4051fc086c47c7dafaf3622fc0e629f76c05141f754ad2aac",
+  "json-compact": "2d409e4f2d886f10e457d77fb3dd76057fe58dc98ff8ad96221236266c52817b",
+  "markdown": "6d2b3a0425a595fd9819f119438ac9932753110cf80963a0d4976ce9e0f9b18a",
+  "page-html": "0f0c4b0a1a9e5faa6c7c08fcd58b9cce063f8bfe850b96a408aec6158540a462",
+  "page-markdown": "5090a9181d7a9bb18b4ded56dce808de02182fcee0c393de03f013127c9c8482",
+  "tei": "b1fe8d7e2ac0ee12f6e6a43ac6c45d8fd7d83bfa78869ea8d3e723d4a1c1bd11",
+  "tei-first-page": "b1fe8d7e2ac0ee12f6e6a43ac6c45d8fd7d83bfa78869ea8d3e723d4a1c1bd11"
+ },
+ "synthetic": {
+  "csv": "38818844ce78b5aba6abb3cc15a8c57df8ac3e51c984b5aba8636fe55e8dae63",
+  "csv-first-page": "ad48447315fbbc2b8bb7c00d6cdb441d89fc9bb5dc8e35daab63c9d8b9f97233",
+  "html": "d21d2832ae450bbf4837491a52819c3e96f41716fdf483f7ca0999d4839e9232",
+  "json": "def0127eab5345bc5b6080e1654ccca78673099efdeeef98ddaa200f818ffc15",
+  "json-compact": "771c76c14f7fb416d2f472e32c9d2695c48b710779e058a04dc9f30719111b10",
+  "markdown": "bd1f6623dea2a1df1a33be9a7bd23d52d97808242679bb45c76bff145f1212b1",
+  "page-html": "c0b59bda4fee9532260eca5c4dfc0aced01ba7aac4f93edc9acee28e29388540",
+  "page-markdown": "06de40e275753d61f3a563746d79eee95e98db335855db4cc19b68c9ae43fb2a",
+  "tei": "6b74b2e9efdef4dfcdf197c32ea3ea38aaeaa6af13118cc204d29ecd5fe5dbeb",
+  "tei-first-page": "541f06b3d1ba112f2925d2ec3234ac77867439ab13d53ea7d01cb195733e8480"
+ },
+ "x-ray/tests/assets/rect_ordering_6.19.pdf": {
+  "csv": "6b6b3771c7e8987d32223899e8915fa7f6103d89d340146cfb9a0109f80889ef",
+  "csv-first-page": "6b6b3771c7e8987d32223899e8915fa7f6103d89d340146cfb9a0109f80889ef",
+  "html": "e52b3fd8ad517942e8cd8a31fa67f6e3086b006f29e43f98666c25364485978c",
+  "json": "67004758e0ff6a596ef0989719b62735af9b48d080fc0eb9e7863295b42d47bf",
+  "json-compact": "f9e0124691a2bafa8df4a4fe09c7b3c2a919ecb01a31046a9835843613553d41",
+  "markdown": "7d472c314070cf77deca2a92e6a22a1175d9b3e4c0680cfa3b6d3d7e7855b2ea",
+  "page-html": "5d0e33863fbf8c58501429db6ad42093239f8b189450c0ceb396a1a32cb2b604",
+  "page-markdown": "28c49d4462639c5bd5f09f1d7c8299f436a07d655e706d88d0d117cd330c14fe",
+  "tei": "99b48e3908d0206a47a1787a1bd9597f72ac7ba07d8aaa60f4fe9a91df5cba67",
+  "tei-first-page": "99b48e3908d0206a47a1787a1bd9597f72ac7ba07d8aaa60f4fe9a91df5cba67"
+ }
+}

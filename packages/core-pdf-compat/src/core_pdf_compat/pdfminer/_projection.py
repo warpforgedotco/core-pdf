@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf import PdfPage
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.geometry import bbox_union, overlap_ratio_of
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 
 from ._capture import (
     pdfminer_page_program,
@@ -15,6 +15,7 @@ from ._capture import (
 from ._fonts import (
     _font_value,
     _pdfminer_builtin_width,
+    decoder_encoding_differences,
     pdfminer_descent,
     pdfminer_embedded_cmap_is_unusable,
     pdfminer_font_name,
@@ -33,31 +34,9 @@ from ._layout import (
 )
 
 
-class ProjectionPolicy(Record):
-    __slots__ = ("strict_resources", "tolerant_pages")
-
+class ProjectionPolicy(GeneratedRecord):
     strict_resources: bool
     tolerant_pages: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = ("strict_resources", "tolerant_pages")
-    __match_args__ = ("strict_resources", "tolerant_pages")
-
-    def __init__(self, strict_resources: bool, tolerant_pages: bool) -> None:
-        frozen_setattr(self, "strict_resources", strict_resources)
-        frozen_setattr(self, "tolerant_pages", tolerant_pages)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.strict_resources == other.strict_resources
-            and self.tolerant_pages == other.tolerant_pages
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.strict_resources, self.tolerant_pages))
 
 
 PDFMINER_POLICY = ProjectionPolicy(strict_resources=True, tolerant_pages=False)
@@ -247,9 +226,7 @@ def project_page(
             if builtin_width is not None:
                 normalized_width = builtin_width * 0.001
             base_font = str(_font_value(glyph.font_decoder.font, "BaseFont"))
-            glyph_name = getattr(glyph.font_decoder, "encoding_differences", {}).get(
-                glyph.char_code
-            )
+            glyph_name = decoder_encoding_differences(glyph.font_decoder).get(glyph.char_code)
             if (
                 glyph_name
                 and _font_value(glyph.font_decoder.font, "Widths") is None
