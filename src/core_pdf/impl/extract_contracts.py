@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 import numpy
 
@@ -13,7 +13,7 @@ from core_pdf.impl.capture_program import PageProgram
 from core_pdf.impl.geometry import interval_overlap, rect_tuple
 from core_pdf.impl.output_model import Table, TextLine
 from core_pdf.impl.runs import TextRun
-from core_pdf.impl.types import GeneratedRecord, Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, frozen_setattr
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_page import PdfPage
@@ -61,32 +61,7 @@ class ObservationBatch(GeneratedRecord):
     line_break_before: BoolArray
     references: tuple[TextReference | None, ...]
 
-    def __init__(
-        self,
-        text: tuple[str, ...],
-        bbox: FloatArray,
-        source: ByteArray,
-        confidence: FloatArray,
-        sequence: IntArray,
-        visible: BoolArray,
-        rotation: IntArray,
-        font_size: FloatArray,
-        line_break_before: BoolArray,
-        references: tuple[TextReference | None, ...],
-    ) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "source", source)
-        frozen_setattr(self, "confidence", confidence)
-        frozen_setattr(self, "sequence", sequence)
-        frozen_setattr(self, "visible", visible)
-        frozen_setattr(self, "rotation", rotation)
-        frozen_setattr(self, "font_size", font_size)
-        frozen_setattr(self, "line_break_before", line_break_before)
-        frozen_setattr(self, "references", references)
-        self._post_init()
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         size = len(self.text)
         if len(self.references) != size:
             raise ValueError("observation references must match the text column")
@@ -616,46 +591,13 @@ class PageFrame(GeneratedRecord):
         return (boxes[:, 0] + boxes[:, 2]) * 0.5
 
 
-class ParsedLine(Record):
-    __slots__ = ("line", "sequence", "rotation", "font_size")
-
+class ParsedLine(GeneratedRecord):
     line: TextLine
-    sequence: int
-    rotation: int
-    font_size: float | None
+    sequence: int = 0
+    rotation: int = 0
+    font_size: float | None = None
 
-    __fields__: ClassVar[tuple[str, ...]] = ("line", "sequence", "rotation", "font_size")
-    __match_args__ = ("line", "sequence", "rotation", "font_size")
-
-    def __init__(
-        self,
-        line: TextLine,
-        sequence: int = 0,
-        rotation: int = 0,
-        font_size: float | None = None,
-    ) -> None:
-        frozen_setattr(self, "line", line)
-        frozen_setattr(self, "sequence", sequence)
-        frozen_setattr(self, "rotation", rotation)
-        frozen_setattr(self, "font_size", font_size)
-        self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.line == other.line
-            and self.sequence == other.sequence
-            and self.rotation == other.rotation
-            and self.font_size == other.font_size
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.line, self.sequence, self.rotation, self.font_size))
-
-    def _post_init(self) -> None:
+    def __post_init__(self) -> None:
         if self.line.bbox is None:
             raise ValueError("ParsedLine requires a positioned line")
 

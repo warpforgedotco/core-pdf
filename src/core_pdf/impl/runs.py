@@ -2,79 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Self, TypeAlias
+from typing import Any, Self, TypeAlias
 
 from core_pdf.impl.geometry import extend_baseline, union_bbox
 from core_pdf.impl.glyphs import GlyphClusterLike, min_optional_confidence
-from core_pdf.impl.types import Record, ReprFields, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, RecordType, ReprFields
 
 
-class LayoutLineTextSegment(Record):
-    __slots__ = ("text", "separator_before", "advance_bbox", "rotation_angle")
-
+class LayoutLineTextSegment(GeneratedRecord):
     text: str
     separator_before: str
     advance_bbox: tuple[float, float, float, float]
     rotation_angle: int
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "text",
-        "separator_before",
-        "advance_bbox",
-        "rotation_angle",
-    )
-    __match_args__ = ("text", "separator_before", "advance_bbox", "rotation_angle")
 
-    def __init__(
-        self,
-        text: str,
-        separator_before: str,
-        advance_bbox: tuple[float, float, float, float],
-        rotation_angle: int,
-    ) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "separator_before", separator_before)
-        frozen_setattr(self, "advance_bbox", advance_bbox)
-        frozen_setattr(self, "rotation_angle", rotation_angle)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.separator_before == other.separator_before
-            and self.advance_bbox == other.advance_bbox
-            and self.rotation_angle == other.rotation_angle
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.text, self.separator_before, self.advance_bbox, self.rotation_angle))
-
-
-class LayoutLineText(Record):
-    __slots__ = ("text", "segments")
-
+class LayoutLineText(GeneratedRecord):
     text: str
     segments: tuple[LayoutLineTextSegment, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("text", "segments")
-    __match_args__ = ("text", "segments")
-
-    def __init__(self, text: str, segments: tuple[LayoutLineTextSegment, ...]) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "segments", segments)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.text == other.text and self.segments == other.segments
-
-    def __hash__(self) -> int:
-        return hash((self.text, self.segments))
 
 
 EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
@@ -83,36 +27,7 @@ EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
 Provenance: TypeAlias = tuple[tuple[str, object], ...]
 
 
-class TextRun(ReprFields):
-    __slots__ = (
-        "text",
-        "x0",
-        "y0",
-        "x1",
-        "y1",
-        "tx",
-        "ty",
-        "font_size",
-        "space_width",
-        "font_name",
-        "order",
-        "stream_order",
-        "xobject_depth",
-        "is_vertical",
-        "rotation_angle",
-        "visible",
-        "inside_active_clip",
-        "line_break_before",
-        "seqno",
-        "fill_color",
-        "advance_bbox",
-        "ink_bbox",
-        "baseline",
-        "provenance",
-        "confidence",
-        "glyph_clusters",
-    )
-
+class TextRun(ReprFields, metaclass=RecordType, frozen=False, eq=False):
     text: str
     x0: float
     y0: float
@@ -139,63 +54,6 @@ class TextRun(ReprFields):
     provenance: Provenance
     confidence: float | None
     glyph_clusters: tuple[GlyphClusterLike, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "text",
-        "x0",
-        "y0",
-        "x1",
-        "y1",
-        "tx",
-        "ty",
-        "font_size",
-        "space_width",
-        "font_name",
-        "order",
-        "stream_order",
-        "xobject_depth",
-        "is_vertical",
-        "rotation_angle",
-        "visible",
-        "inside_active_clip",
-        "line_break_before",
-        "seqno",
-        "fill_color",
-        "advance_bbox",
-        "ink_bbox",
-        "baseline",
-        "provenance",
-        "confidence",
-        "glyph_clusters",
-    )
-    __match_args__ = (
-        "text",
-        "x0",
-        "y0",
-        "x1",
-        "y1",
-        "tx",
-        "ty",
-        "font_size",
-        "space_width",
-        "font_name",
-        "order",
-        "stream_order",
-        "xobject_depth",
-        "is_vertical",
-        "rotation_angle",
-        "visible",
-        "inside_active_clip",
-        "line_break_before",
-        "seqno",
-        "fill_color",
-        "advance_bbox",
-        "ink_bbox",
-        "baseline",
-        "provenance",
-        "confidence",
-        "glyph_clusters",
-    )
 
     def __replace__(self, /, **changes: Any) -> Self:
         text = changes.pop("text", self.text)
