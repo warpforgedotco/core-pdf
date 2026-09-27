@@ -6,7 +6,6 @@ from contextlib import suppress
 from copy import copy
 from dataclasses import replace
 from math import hypot
-from typing import TYPE_CHECKING
 
 from core_pdf.impl.capture_host import CaptureHost
 from core_pdf.impl.capture_program import CapturedProgram
@@ -25,10 +24,6 @@ from core_pdf_spec.s_07_content.model import TilingPattern as PdfTilingPattern
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_rendering import ColorRendering, override_color_rendering
 from core_pdf_spec.s_11_transparency.soft_masks import SoftMask as PdfSoftMask
-
-if TYPE_CHECKING:
-    pass
-
 
 GRAPHICS_STATE_FIELDS = GraphicsState.__fields__
 

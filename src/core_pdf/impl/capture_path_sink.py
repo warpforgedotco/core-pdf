@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from array import array
 from math import hypot
-from typing import TYPE_CHECKING
 
 import numpy
 
@@ -21,9 +20,6 @@ from core_pdf_cythonized import flatten_path_commands
 from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
-
-if TYPE_CHECKING:
-    pass
 
 
 def flatten_path(

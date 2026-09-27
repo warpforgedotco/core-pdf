@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import hypot
-from typing import TYPE_CHECKING
 
 from core_pdf.impl.capture_glyphs import GlyphCapture, GlyphPaint, capture_glyphs, glyph_style
 from core_pdf.impl.capture_host import CaptureHost
@@ -18,9 +17,6 @@ from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf_spec.s_07_content.model import MarkedContentEntry as SemanticMarkedContentEntry
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass(slots=True)
