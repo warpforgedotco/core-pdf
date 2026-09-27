@@ -34,6 +34,7 @@ LIGATURE_TEXT_OVERRIDES = {
     "\ufb03": "ffi",
     "\ufb04": "ffl",
 }
+LEGITIMATE_MULTI_CHAR_GLYPHS = frozenset({"ff", "fi", "fl", "ffi", "ffl", "st"})
 
 
 def normalize_ligature_text(text: str) -> str:

@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 
 from core_pdf.impl import fonts_decoder as decoder
+from core_pdf.impl import fonts_program
 from core_pdf.impl.fonts_ligatures import detect_ligature_overrides
 from core_pdf.impl.types import PdfName
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -19,7 +20,7 @@ def sfnt(tag: bytes, payload: bytes, *, offset: int = 28, length: int | None = N
 
 @pytest.mark.parametrize("payload", [b"", b"cff payload", bytes(range(256))])
 def test_cff_table_extraction_preserves_exact_table_bytes(payload):
-    assert decoder.extract_cff_table(sfnt(b"CFF ", payload)) == payload
+    assert fonts_program.extract_cff_table(sfnt(b"CFF ", payload)) == payload
 
 
 @pytest.mark.parametrize(
@@ -34,7 +35,7 @@ def test_cff_table_extraction_preserves_exact_table_bytes(payload):
     ],
 )
 def test_missing_or_truncated_cff_table_is_unavailable(data):
-    assert decoder.extract_cff_table(data) is None
+    assert fonts_program.extract_cff_table(data) is None
 
 
 @pytest.mark.parametrize(
@@ -49,7 +50,7 @@ def test_malformed_embedded_programs_leave_font_recovery_available(
     font: dict[str, Any] = {"Subtype": PdfName(subtype.encode()), "FontDescriptor": descriptor}
     if subtype.startswith("CID"):
         font = {"Subtype": PdfName(b"Type0"), "DescendantFonts": [font]}
-    assert decoder.font_program_for_pdf_font(font) is None
+    assert fonts_program.font_program_for_pdf_font(font) is None
 
 
 @pytest.mark.parametrize("descriptor", [None, 1, b"invalid", {"FontFile2": 1}, {"FontFile3": []}])
@@ -58,7 +59,7 @@ def test_invalid_font_descriptors_are_contained_at_reader_boundary(descriptor, d
     font: dict[str, Any] = {"Subtype": PdfName(b"TrueType"), "FontDescriptor": descriptor}
     if descendant:
         font = {"Subtype": PdfName(b"Type0"), "DescendantFonts": [font], "FontDescriptor": 1}
-    assert decoder.font_program_for_pdf_font(font) is None
+    assert fonts_program.font_program_for_pdf_font(font) is None
 
 
 @pytest.mark.parametrize("base", [None, "Base"])

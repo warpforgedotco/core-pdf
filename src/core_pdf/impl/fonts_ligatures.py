@@ -7,7 +7,7 @@ from typing import Protocol
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_decoder import normalized_base_font_name
-from core_pdf.impl.fonts_font_program import (
+from core_pdf.impl.fonts_program_truetype import (
     TrueTypeFontProgram,
     cached_truetype_program,
 )
