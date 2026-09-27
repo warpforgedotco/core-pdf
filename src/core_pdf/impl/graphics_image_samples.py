@@ -76,9 +76,7 @@ def distinct_component_rows(
 type TintFunction = Callable[..., tuple[float, ...]]
 
 TINT_FUNCTION_CACHE_LIMIT = 64
-TINT_FUNCTION_CACHE: BoundedDict[object, tuple[object, TintFunction]] = BoundedDict(
-    TINT_FUNCTION_CACHE_LIMIT
-)
+TINT_FUNCTION_CACHE: BoundedDict[object, TintFunction] = BoundedDict(TINT_FUNCTION_CACHE_LIMIT)
 TINT_FUNCTION_OBJECTS_LIMIT = 256
 TINT_FUNCTION_OBJECTS: IdentityCache[TintFunction] = IdentityCache(TINT_FUNCTION_OBJECTS_LIMIT)
 TINT_OUTPUT_CACHE_LIMIT = 4096
@@ -118,15 +116,10 @@ def tint_function(tint_fn: object) -> TintFunction:
 
 def compiled_tint_function(tint_fn: object) -> TintFunction:
     key = tint_function_key(tint_fn)
-    if key is None:
-        key = id(tint_fn)
-        cached = TINT_FUNCTION_CACHE.get(key)
-        if cached is not None and cached[0] is tint_fn:
-            return cached[1]
-    else:
+    if key is not None:
         cached = TINT_FUNCTION_CACHE.get(key)
         if cached is not None:
-            return cached[1]
+            return cached
     compiled = compile_pdf_function(tint_fn)
     outputs: BoundedDict[tuple[float, ...], tuple[float, ...]] = BoundedDict(
         TINT_OUTPUT_CACHE_LIMIT
@@ -140,7 +133,8 @@ def compiled_tint_function(tint_fn: object) -> TintFunction:
             output = outputs.put(inputs, compiled(*inputs))
         return output
 
-    TINT_FUNCTION_CACHE.put(key, (tint_fn, remembered))
+    if key is not None:
+        TINT_FUNCTION_CACHE.put(key, remembered)
     return remembered
 
 
