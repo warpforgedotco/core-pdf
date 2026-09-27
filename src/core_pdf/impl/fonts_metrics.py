@@ -10,7 +10,11 @@ from core_adobe_fonts.afm.core14 import FONT_DATA as PDF_FONT_DATA
 from core_adobe_fonts.afm.core14 import Core14FontMetrics
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
-from core_pdf.impl.fonts_widths import parse_font_widths, recover_descendant
+from core_pdf.impl.fonts_widths import (
+    effective_descriptor,
+    parse_font_widths,
+    recover_descendant,
+)
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_float_strict,
     parse_int_strict,
@@ -41,7 +45,7 @@ def parse_font_metrics(
     widths: Mapping[int, float],
 ) -> tuple[float, float]:
     ascent, descent = 800.0, -200.0
-    descriptor = font_dict.get("FontDescriptor")
+    descriptor = effective_descriptor(font_dict, subtype)
     if subtype == "Type3" and not isinstance(descriptor, dict):
         font_bbox = font_dict.get("FontBBox")
         if isinstance(font_bbox, (list, tuple)) and len(font_bbox) >= 4:
@@ -49,11 +53,6 @@ def parse_font_metrics(
                 bbox_descent = parse_float_strict(font_bbox[1], "invalid Type3 FontBBox")
                 bbox_ascent = parse_float_strict(font_bbox[3], "invalid Type3 FontBBox")
                 descent, ascent = bbox_descent, bbox_ascent
-    if subtype == "Type0":
-        descendant = recover_descendant(font_dict)
-        if isinstance(descendant, dict):
-            desc_descriptor = descendant.get("FontDescriptor")
-            descriptor = desc_descriptor or descriptor
 
     if base_font_name in FONT_DATA and not widths:
         entry = FONT_DATA[base_font_name]

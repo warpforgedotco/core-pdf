@@ -45,6 +45,7 @@ def eexec_payload(data: bytes, length1: int | None) -> bytes:
 
 class Type1FontProgram(GlyphProgram):
     __slots__ = (
+        "builtin_encoding",
         "charstrings",
         "font_matrix",
         "glyph_names",
@@ -93,6 +94,11 @@ class Type1FontProgram(GlyphProgram):
             if matrix_match is not None
             else (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
         )
+        self.builtin_encoding = parse_type1_font_program_encoding(data)
+
+    def font_builtin_encoding(self) -> tuple[dict[int, str], bool]:
+        encoding = self.builtin_encoding
+        return encoding, bool(encoding)
 
     def glyph_id_for_name(self, glyph_name: str) -> int | None:
         glyph_id = self.glyph_name_to_id.get(glyph_name)

@@ -27,6 +27,7 @@ from core_pdf.impl.fonts_cmap_resources import (
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap, unicode_scalar_or_replacement
 from core_pdf.impl.fonts_encoding import FontEncoding
+from core_pdf.impl.fonts_program import recover_descriptor, recover_font_file
 from core_pdf.impl.fonts_program_base import GlyphProgram
 from core_pdf.impl.fonts_program_cff import CFFFont
 from core_pdf.impl.fonts_widths import (
@@ -71,11 +72,8 @@ def build_cff_unicode_repair_index(
         return None
     if recover_pdf_name(descendant.get("Subtype")) != "CIDFontType0":
         return None
-    descriptor = descendant.get("FontDescriptor")
-    if not isinstance(descriptor, dict):
-        return None
-    font_file = descriptor.get("FontFile3")
-    if not isinstance(font_file, PdfStream) or len(font_file.data) > 750_000:
+    font_file = recover_font_file(recover_descriptor(descendant.get("FontDescriptor")), "FontFile3")
+    if font_file is None or len(font_file.data) > 750_000:
         return None
     mapping = single_code_mapping(to_unicode, cmap)
     if not any(is_repairable_to_unicode_label(value) for _, value in mapping.values()):
@@ -411,51 +409,34 @@ class UnicodeResolver:
             if to_unicode_text is not None:
                 alternates.append(to_unicode_text)
 
+        def choose(text: str, source: UnicodeSource) -> UnicodeChoice:
+            return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
+
         if to_unicode_text is not None and not has_invalid_unicode_mapping(to_unicode_text):
             visual_punctuation = self.visual_punctuation_for_code(
                 to_unicode_text,
                 fallback_code=fallback_code,
             )
             if visual_punctuation is not None:
-                return UnicodeChoice(
-                    visual_punctuation,
-                    UnicodeSource.TRUETYPE_GLYPH_SHAPE,
-                    dedupe_alternates(alternates, visual_punctuation),
-                )
-            return UnicodeChoice(
-                to_unicode_text,
-                UnicodeSource.TO_UNICODE,
-                dedupe_alternates(alternates, to_unicode_text),
-            )
+                return choose(visual_punctuation, UnicodeSource.TRUETYPE_GLYPH_SHAPE)
+            return choose(to_unicode_text, UnicodeSource.TO_UNICODE)
 
         replacement = self.cff_unicode_repairs.get(code_bytes)
         if replacement is not None:
-            return UnicodeChoice(
-                replacement,
-                UnicodeSource.CFF_GLYPH_REPAIR,
-                dedupe_alternates(alternates, replacement),
-            )
+            return choose(replacement, UnicodeSource.CFF_GLYPH_REPAIR)
 
         if gid is not None:
             tt_text = self.program.unicode_for_gid(gid)
             if tt_text == to_unicode_text == "\ufffd":
                 return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
             if tt_text and not has_untrusted_unicode_semantics(tt_text):
-                return UnicodeChoice(
-                    tt_text,
-                    UnicodeSource.TRUETYPE_CMAP,
-                    dedupe_alternates(alternates, tt_text),
-                )
+                return choose(tt_text, UnicodeSource.TRUETYPE_CMAP)
 
         encoding = self.encoding
         if fallback_code != 0:
             predefined_text = predefined_cmap_unicode(encoding.base_encoding, code_bytes)
             if predefined_text is not None:
-                return UnicodeChoice(
-                    predefined_text,
-                    UnicodeSource.PREDEFINED_CMAP,
-                    dedupe_alternates(alternates, predefined_text),
-                )
+                return choose(predefined_text, UnicodeSource.PREDEFINED_CMAP)
 
         if (
             not self.is_cid_font
@@ -465,11 +446,7 @@ class UnicodeResolver:
             encoding_table = encoding.encoding_decode_table
             encoding_text = encoding_table[code_bytes[0]]
             if encoding_text and not has_invalid_unicode_mapping(encoding_text):
-                return UnicodeChoice(
-                    encoding_text,
-                    UnicodeSource.ENCODING,
-                    dedupe_alternates(alternates, encoding_text),
-                )
+                return choose(encoding_text, UnicodeSource.ENCODING)
 
         registry = encoding.cid_registry
         ordering = encoding.cid_ordering
@@ -481,22 +458,16 @@ class UnicodeResolver:
         if cid_unicode_map is not None:
             cid_text = cid_unicode_map.get(fallback_code)
             if cid_text is not None:
-                return UnicodeChoice(
-                    cid_text,
-                    UnicodeSource.CID_COLLECTION,
-                    dedupe_alternates(alternates, cid_text),
-                )
+                return choose(cid_text, UnicodeSource.CID_COLLECTION)
 
         if to_unicode_text is not None and "\ufffd" in to_unicode_text:
             return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
 
         if fallback_code == 0:
-            return UnicodeChoice(
-                "\u0000", UnicodeSource.FALLBACK_NUL, dedupe_alternates(alternates, "\u0000")
-            )
+            return choose("\u0000", UnicodeSource.FALLBACK_NUL)
         text = unicode_scalar_or_replacement(fallback_code)
         source = UnicodeSource.IDENTITY if text != "\ufffd" else UnicodeSource.REPLACEMENT
-        return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
+        return choose(text, source)
 
     def visual_punctuation_for_code(self, text: str, *, fallback_code: int) -> str | None:
         if len(text) != 1 or not unicodedata.category(text).startswith("M"):

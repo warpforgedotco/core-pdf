@@ -82,13 +82,13 @@ def glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float, float] 
 GLYPH_HEADER = struct.Struct(">hhhhh")
 
 
-def raw_glyph_locations(font: TTFont) -> tuple[Any, bytes]:
+def raw_glyph_locations(font: TTFont) -> tuple[Any, bytes | None]:
     try:
         locations = font["loca"]
         reader = font.reader
         glyph_data = bytes(reader["glyf"]) if reader is not None else b""
     except Exception:
-        return (), b""
+        return (), None
     return locations, glyph_data
 
 
@@ -118,7 +118,7 @@ def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...
 TrueTypeTables = tuple[bytes, numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], int]
 
 
-def truetype_tables(font: TTFont) -> TrueTypeTables | None:
+def truetype_tables(font: TTFont, glyph_data: bytes | None = None) -> TrueTypeTables | None:
     try:
         keys = set(font.keys())
         if (
@@ -131,7 +131,7 @@ def truetype_tables(font: TTFont) -> TrueTypeTables | None:
         reader = font.reader
         if reader is None:
             return None
-        glyf = bytes(reader["glyf"])
+        glyf = bytes(reader["glyf"]) if glyph_data is None else glyph_data
         loca = numpy.asarray(font["loca"].locations, dtype=numpy.int64)
         order = font.getGlyphOrder()
         if len(set(order)) != len(order):
@@ -153,10 +153,19 @@ def truetype_tables(font: TTFont) -> TrueTypeTables | None:
 
 
 class FontToolsOutlineAccess:
-    __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale", "truetype", "truetype_read")
+    __slots__ = (
+        "font",
+        "glyph_count",
+        "glyph_data",
+        "reverse_glyph_map",
+        "scale",
+        "truetype",
+        "truetype_read",
+    )
 
-    def __init__(self, font: TTFont) -> None:
+    def __init__(self, font: TTFont, glyph_data: bytes | None = None) -> None:
         self.font = font
+        self.glyph_data = glyph_data
         self.glyph_count = len(font.getGlyphOrder())
         self.reverse_glyph_map = font.getReverseGlyphMap()
         units_per_em = float(getattr(font["head"], "unitsPerEm", 1000) or 1000)
@@ -172,7 +181,7 @@ class FontToolsOutlineAccess:
 
     def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
         if not self.truetype_read:
-            self.truetype = truetype_tables(self.font)
+            self.truetype = truetype_tables(self.font, self.glyph_data)
             self.truetype_read = True
         tables = self.truetype
         if tables is not None:
@@ -260,29 +269,25 @@ class TrueTypeFontProgram(FontToolsProgram):
             int, tuple[tuple[float, float, float, float] | None, bool]
         ] = {}
         self.font = tt_font_from_data(data)
-        if not {"maxp", "glyf", "loca", "head"} <= set(self.font.keys()):
-            raise ValueError("invalid TrueType glyph tables")
         ensure_glyph_order(self.font)
         self.units_per_em = float(getattr(self.font["head"], "unitsPerEm", 1000) or 1000)
-        self.glyph_locations, self.glyph_table_data = raw_glyph_locations(self.font)
-        self.outlines = FontToolsOutlineAccess(self.font)
+        self.glyph_locations, glyph_data = raw_glyph_locations(self.font)
+        self.glyph_table_data = glyph_data if glyph_data is not None else b""
+        self.outlines = FontToolsOutlineAccess(self.font, glyph_data)
         self.cid_to_gid = cid_to_gid
         self.unicode_cmap = best_unicode_gid_cmap(self.font)
         self.glyph_to_unicode = invert_unicode_cmap(self.unicode_cmap)
-        if use_cmap:
-            self.cmap = self.unicode_cmap or code_gid_cmap(self.font)
-        else:
-            self.cmap = {}
+        self.cmap = self.selected_cmap(use_cmap=use_cmap)
+
+    def selected_cmap(self, *, use_cmap: bool) -> dict[int, int]:
+        return (self.unicode_cmap or code_gid_cmap(self.font)) if use_cmap else {}
 
     def variant(self, cid_to_gid: bytes | None, *, use_cmap: bool) -> TrueTypeFontProgram:
         variant = object.__new__(TrueTypeFontProgram)
         for name in (*FontToolsProgram.__slots__, *TrueTypeFontProgram.__slots__):
             setattr(variant, name, getattr(self, name))
         variant.cid_to_gid = cid_to_gid
-        if use_cmap:
-            variant.cmap = self.unicode_cmap or code_gid_cmap(self.font)
-        else:
-            variant.cmap = {}
+        variant.cmap = self.selected_cmap(use_cmap=use_cmap)
         return variant
 
     def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:

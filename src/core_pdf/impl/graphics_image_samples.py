@@ -39,6 +39,7 @@ from core_pdf_cythonized import (
 from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_kernels import (
     color_key_alpha,
     decode_sample_values,
@@ -87,7 +88,7 @@ def plain_function_value(value: object) -> bool:
     if kind is int or kind is float or kind is PdfName:
         return True
     return (kind is list or kind is tuple) and all(
-        type(item) is int or type(item) is float
+        is_pdf_number(item)
         for item in value  # type: ignore[attr-defined]  # ty: ignore[not-iterable]
     )
 

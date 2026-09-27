@@ -24,7 +24,7 @@ from core_pdf.impl.fonts_unicode import (
     drop_code_entries,
     parse_to_unicode,
 )
-from core_pdf.impl.fonts_widths import recover_descendant
+from core_pdf.impl.fonts_widths import effective_descriptor, recover_descendant
 from core_pdf.impl.glyph_outlines import GlyphOutlineArrays
 from core_pdf.impl.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
@@ -38,12 +38,7 @@ if typing.TYPE_CHECKING:
 
 
 def descriptor_font_name(font: dict[str, Any], subtype: str | None) -> str | None:
-    descriptor = font.get("FontDescriptor")
-    if subtype == "Type0":
-        descendant = recover_descendant(font)
-        if isinstance(descendant, dict):
-            descendant_descriptor = descendant.get("FontDescriptor")
-            descriptor = descendant_descriptor or descriptor
+    descriptor = effective_descriptor(font, subtype)
     if not isinstance(descriptor, dict):
         return None
     return recover_pdf_name(descriptor.get("FontName"))
@@ -304,9 +299,7 @@ class FontDecoder:
                 continue
             chunk = SINGLE_BYTES[code]
             gid = glyph_id_for_code(code)
-            if to_unicode is not None:
-                choice = unicode_choice_for_code(chunk, code, gid)
-            elif table is not None:
+            if to_unicode is None and table is not None:
                 text = table[code]
                 undefined = not text or (code in differences and len(text) == 1 and ord(text) < 32)
                 choice = UnicodeChoice(

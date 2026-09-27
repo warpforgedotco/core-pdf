@@ -29,6 +29,15 @@ def recover_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
     return None
 
 
+def effective_descriptor(font: dict[Any, Any], subtype: str | None) -> object:
+    descriptor = font.get("FontDescriptor")
+    if subtype == "Type0":
+        descendant = recover_descendant(font)
+        if isinstance(descendant, dict):
+            descriptor = descendant.get("FontDescriptor") or descriptor
+    return descriptor
+
+
 def recover_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     widths: Mapping[int, float] = {}
     missing_width = font.get("MissingWidth")

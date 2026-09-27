@@ -15,6 +15,7 @@ from core_pdf.impl.fonts_helpers import (
     recover_strip_subset_tag,
     unicode_for_glyph_name,
 )
+from core_pdf.impl.fonts_program import recover_descriptor, recover_font_file
 from core_pdf.impl.fonts_program_base import GlyphProgram
 from core_pdf.impl.fonts_program_type1 import parse_type1_font_program_encoding
 from core_pdf.impl.fonts_widths import recover_descendant
@@ -93,12 +94,7 @@ def build_glyph_decode_table(
 def cid_system_info_string(value: object) -> str | None:
     if isinstance(value, PdfString):
         return value.data.decode("latin-1")
-    normalized = recover_pdf_name(value)
-    if normalized is not None:
-        return normalized
-    if isinstance(value, bytes):
-        return value.decode("latin-1")
-    return None
+    return recover_pdf_name(value)
 
 
 def cid_system_info(font: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -125,11 +121,8 @@ def builtin_font_encoding(
     builtin = program.font_builtin_encoding()
     if builtin is not None:
         return builtin
-    descriptor = font.get("FontDescriptor")
-    if not isinstance(descriptor, dict):
-        return {}, False
-    font_file = descriptor.get("FontFile")
-    if isinstance(font_file, PdfStream):
+    font_file = recover_font_file(recover_descriptor(font.get("FontDescriptor")), "FontFile")
+    if font_file is not None:
         try:
             encoding = parse_type1_font_program_encoding(font_file.data)
             return encoding, bool(encoding)
