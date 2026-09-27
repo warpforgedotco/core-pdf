@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import mmap
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
+from core_pdf.impl.document_contracts import DocumentState
 from core_pdf.impl.document_standards import (
     bootstrap_security_context,
     discover_document_standards,
@@ -22,10 +21,10 @@ from core_pdf_spec.s_07_security.standard import (
     StandardSecurityHandler,
     create_standard_security_handler,
 )
-from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
-from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, key_for
+from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
-from core_pdf_spec.standards import DocumentStandards, PdfVersion, SemanticContext
+from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 
 def legacy_name_context(context: SemanticContext | None) -> bool:
@@ -123,21 +122,8 @@ def create_recovered_security_handler(
     return create_standard_security_handler(document_id, normalized, password)
 
 
-class SecuritySetupMixin:
-    if not TYPE_CHECKING:
-        __slots__ = ()
-
-    raw_data: bytes | mmap.mmap
-    xref: dict[int, PdfXRefEntry]
-    trailer_dict: PdfDict
-    decipher: Decipher | None
-    resolver: ObjectResolver
-    xref_was_recovered: bool
-    _standards: DocumentStandards
-
-    if TYPE_CHECKING:
-
-        def scan_xref(self) -> None: ...
+class SecuritySetupMixin(DocumentState):
+    __slots__ = ()
 
     def negotiate_security(self, password: str) -> None:
         self._standards = discover_header_standards(self.raw_data)

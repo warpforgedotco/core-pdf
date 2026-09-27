@@ -4,20 +4,18 @@ from __future__ import annotations
 
 import contextlib
 import mmap
-import threading
 from contextlib import AbstractContextManager
 from os import PathLike
 from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO, Self
 
-from core_pdf.impl.caches import DocumentCaches
+from core_pdf.impl.document_contracts import DocumentState
 from core_pdf.impl.exceptions import PdfDocumentClosedError, PdfEmptySourceError, PdfSourceError
 from core_pdf.impl.fonts_fallback import RasterFontRepository
-from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.types import PdfByteBuffer, PdfSource
 
 if TYPE_CHECKING:
-    from core_pdf.impl.fonts_fallback import RasterFontProviderLike
+    pass
 
 
 class DocumentOperation(AbstractContextManager["DocumentOperation"]):
@@ -41,21 +39,8 @@ class DocumentOperation(AbstractContextManager["DocumentOperation"]):
         self.release()
 
 
-class DocumentLifecycle:
-    if not TYPE_CHECKING:
-        __slots__ = ()
-
-    raw_data: bytes | mmap.mmap
-    file_handle: BinaryIO | None
-    resolver: ObjectResolver
-    raster_font_provider: RasterFontProviderLike | RasterFontRepository | None
-    _closed: bool
-    closing: bool
-    operation_lock: threading.RLock
-    operation_cancelled: threading.Event
-    active_operations: int
-    font_decoders: dict[object, object]
-    caches: DocumentCaches
+class DocumentLifecycle(DocumentState):
+    __slots__ = ()
 
     def __enter__(self) -> Self:
         if self.closed:

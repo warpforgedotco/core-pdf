@@ -2,30 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from core_pdf.impl.caches import DocumentCaches
-from core_pdf.impl.recovery_policy import Recovery
-from core_pdf.impl.recovery_resolver import ObjectResolver
+from core_pdf.impl.document_contracts import DocumentState
 from core_pdf.impl.types import PdfReference
-from core_pdf_spec.s_07_syntax.types import PdfDict
 
 
-class OptionalContent:
-    if not TYPE_CHECKING:
-        __slots__ = ()
-
-    resolver: ObjectResolver
-    caches: DocumentCaches
-
-    if TYPE_CHECKING:
-
-        def catalog(self) -> PdfDict: ...
-
-        def catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None: ...
-
-        @property
-        def recovery(self) -> Recovery: ...
+class OptionalContent(DocumentState):
+    __slots__ = ()
 
     @staticmethod
     def ocg_key(ref: object, resolved: object) -> tuple[int, int] | int | None:

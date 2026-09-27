@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING
 
+from core_pdf.impl.document_contracts import DocumentState
 from core_pdf.impl.document_page import PAGE_INHERITED_KEYS
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_document.page import PageNode, iter_page_nodes
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import InheritedValueMap, PdfDict, PdfValueResolver
-from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
 
 MAX_PAGE_TREE_DEPTH = 100
 
@@ -48,17 +46,8 @@ def infer_page_tree_node_type(
     return None
 
 
-class PageTreeRecovery:
-    if not TYPE_CHECKING:
-        __slots__ = ()
-
-    xref: dict[int, PdfXRefEntry]
-    resolver: ObjectResolver
-    page_tree_was_recovered: bool
-
-    if TYPE_CHECKING:
-
-        def catalog(self) -> PdfDict: ...
+class PageTreeRecovery(DocumentState):
+    __slots__ = ()
 
     def discover_page_nodes(self) -> Iterator[PageNode]:
         candidates: list[tuple[int, int, int, PdfDict]] = []

@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import mmap
 import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Protocol, Self, TypeVar, cast
 
 from core_pdf.impl.caches import DocumentCaches
 from core_pdf.impl.document_forms import DocumentForms
@@ -28,15 +27,13 @@ from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.raw_media import ImageRecord
 from core_pdf.impl.recovery_policy import Recovery, recovery_policy
-from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_text_strings import parse_text_string
 from core_pdf.impl.recovery_trees import iter_number_tree_items
 from core_pdf.impl.types import PageScoped, PdfName, PdfSource
 from core_pdf_spec.s_07_document.document_labels import PageLabelStyle
 from core_pdf_spec.s_07_document.document_labels import format_page_label as format_spec_page_label
 from core_pdf_spec.s_07_document.page import PageNode as PageNode
-from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
-from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.standards import DocumentStandards, SemanticContext
 
 if TYPE_CHECKING:
@@ -62,53 +59,7 @@ class PdfDocument(
 ):
     page_class: type[PdfPage] = PdfPage
 
-    __slots__ = (
-        "source",
-        "raw_data",
-        "xref",
-        "trailer_dict",
-        "decipher",
-        "resolver",
-        "file_handle",
-        "xref_was_recovered",
-        "xref_recovery_reason",
-        "recovery_scan_all_revisions",
-        "raster_font_provider",
-        "page_tree_was_recovered",
-        "_closed",
-        "closing",
-        "operation_lock",
-        "operation_cancelled",
-        "active_operations",
-        "_standards",
-        "standards_complete",
-        "font_decoders",
-        "caches",
-        "pending_parsed_objects",
-    )
-
-    source: PdfSource
-    raw_data: bytes | mmap.mmap
-    xref: dict[int, PdfXRefEntry]
-    trailer_dict: PdfDict
-    decipher: Decipher | None
-    resolver: ObjectResolver
-    file_handle: BinaryIO | None
-    xref_was_recovered: bool
-    xref_recovery_reason: str | None
-    recovery_scan_all_revisions: bool
-    raster_font_provider: RasterFontProviderLike | RasterFontRepository | None
-    page_tree_was_recovered: bool
-    _closed: bool
-    closing: bool
-    operation_lock: threading.RLock
-    operation_cancelled: threading.Event
-    active_operations: int
-    _standards: DocumentStandards
-    standards_complete: bool
-    font_decoders: dict[object, object]
-    caches: DocumentCaches
-    pending_parsed_objects: tuple[SemanticContext | None, dict[int, object]] | None
+    __slots__ = ()
 
     def __init__(
         self,

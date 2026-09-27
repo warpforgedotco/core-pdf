@@ -7,12 +7,11 @@ from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
 from core_pdf.impl.caches import DocumentCaches
+from core_pdf.impl.document_contracts import DocumentState
 from core_pdf.impl.document_page import PdfPage
 from core_pdf.impl.document_page_links import goto_action_destination
 from core_pdf.impl.document_records import RawNamedDestination, RawOutlineItem
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.recovery_policy import Recovery
-from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_trees import iter_name_tree_items
 from core_pdf_spec.s_07_document.page import PageNode
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict
@@ -110,25 +109,8 @@ def unresolved_destination(name: str) -> RawNamedDestination:
     return RawNamedDestination(page_index=None, type=None, args=[], raw=name)
 
 
-class DocumentNavigation[PageT: PdfPage]:
-    if not TYPE_CHECKING:
-        __slots__ = ()
-
-    resolver: ObjectResolver
-
-    if TYPE_CHECKING:
-
-        def catalog(self) -> PdfDict: ...
-
-        def catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None: ...
-
-        def malformed(self, message: str) -> None: ...
-
-        @property
-        def recovery(self) -> Recovery: ...
-
-        @property
-        def page_lookup(self) -> PageLookup[PageT]: ...
+class DocumentNavigation[PageT: PdfPage](DocumentState[PageT]):
+    __slots__ = ()
 
     @property
     def outlines(self) -> tuple[Any, ...]:

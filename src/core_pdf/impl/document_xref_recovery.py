@@ -9,11 +9,11 @@ from collections.abc import Callable, Iterator
 from functools import partial
 from itertools import compress, repeat
 from operator import and_, is_, itemgetter, not_, truth
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy
 
-from core_pdf.impl.caches import DocumentCaches
+from core_pdf.impl.document_contracts import DocumentState
 from core_pdf.impl.document_page_tree import (
     MAX_PAGE_TREE_DEPTH,
     infer_page_tree_node_type,
@@ -33,19 +33,8 @@ from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, iter_xref_revisions, me
 from core_pdf_spec.standards import SemanticContext
 
 
-class XRefRecovery:
-    if not TYPE_CHECKING:
-        __slots__ = ()
-
-    raw_data: bytes | mmap.mmap
-    xref: dict[int, PdfXRefEntry]
-    trailer_dict: PdfDict
-    resolver: ObjectResolver
-    xref_was_recovered: bool
-    xref_recovery_reason: str | None
-    recovery_scan_all_revisions: bool
-    pending_parsed_objects: tuple[SemanticContext | None, dict[int, object]] | None
-    caches: DocumentCaches
+class XRefRecovery(DocumentState):
+    __slots__ = ()
 
     @property
     def xref_context(self) -> SemanticContext | None:
