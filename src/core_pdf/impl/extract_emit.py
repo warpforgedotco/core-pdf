@@ -277,21 +277,18 @@ def compose_page(
         tuple(ordered_blocks), ordered_tables, ordered_figures
     )
     regions = LAYOUT_RULES.page_regions
-    header_parts = [
-        block.text
+    margin_blocks = [
+        (block.bbox, text)
         for block in ordered_blocks
         if block.bbox is not None
-        and block.bbox[3] >= height * regions.header_top_ratio
         and block.bbox[3] - block.bbox[1] <= height * regions.band_height_ratio
-        and len(block.text) <= regions.band_max_characters
+        and len(text := block.text) <= regions.band_max_characters
+    ]
+    header_parts = [
+        text for bbox, text in margin_blocks if bbox[3] >= height * regions.header_top_ratio
     ]
     footer_parts = [
-        block.text
-        for block in ordered_blocks
-        if block.bbox is not None
-        and block.bbox[1] <= height * regions.footer_bottom_ratio
-        and block.bbox[3] - block.bbox[1] <= height * regions.band_height_ratio
-        and len(block.text) <= regions.band_max_characters
+        text for bbox, text in margin_blocks if bbox[1] <= height * regions.footer_bottom_ratio
     ]
     return Page(
         page_number=page_number,

@@ -56,62 +56,10 @@ class TextRun(ReprFields, metaclass=RecordType, frozen=False, eq=False):
     glyph_clusters: tuple[GlyphClusterLike, ...]
 
     def __replace__(self, /, **changes: Any) -> Self:
-        text = changes.pop("text", self.text)
-        x0 = changes.pop("x0", self.x0)
-        y0 = changes.pop("y0", self.y0)
-        x1 = changes.pop("x1", self.x1)
-        y1 = changes.pop("y1", self.y1)
-        tx = changes.pop("tx", self.tx)
-        ty = changes.pop("ty", self.ty)
-        font_size = changes.pop("font_size", self.font_size)
-        space_width = changes.pop("space_width", self.space_width)
-        font_name = changes.pop("font_name", self.font_name)
-        order = changes.pop("order", self.order)
-        stream_order = changes.pop("stream_order", self.stream_order)
-        xobject_depth = changes.pop("xobject_depth", self.xobject_depth)
-        is_vertical = changes.pop("is_vertical", self.is_vertical)
-        rotation_angle = changes.pop("rotation_angle", self.rotation_angle)
-        visible = changes.pop("visible", self.visible)
-        inside_active_clip = changes.pop("inside_active_clip", self.inside_active_clip)
-        line_break_before = changes.pop("line_break_before", self.line_break_before)
-        seqno = changes.pop("seqno", self.seqno)
-        fill_color = changes.pop("fill_color", self.fill_color)
-        advance_bbox = changes.pop("advance_bbox", self.advance_bbox)
-        ink_bbox = changes.pop("ink_bbox", self.ink_bbox)
-        baseline = changes.pop("baseline", self.baseline)
-        provenance = changes.pop("provenance", self.provenance)
-        confidence = changes.pop("confidence", self.confidence)
-        glyph_clusters = changes.pop("glyph_clusters", self.glyph_clusters)
+        values = {name: changes.pop(name, getattr(self, name)) for name in self.__fields__}
         if changes:
             raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            text=text,
-            x0=x0,
-            y0=y0,
-            x1=x1,
-            y1=y1,
-            tx=tx,
-            ty=ty,
-            font_size=font_size,
-            space_width=space_width,
-            font_name=font_name,
-            order=order,
-            stream_order=stream_order,
-            xobject_depth=xobject_depth,
-            is_vertical=is_vertical,
-            rotation_angle=rotation_angle,
-            visible=visible,
-            inside_active_clip=inside_active_clip,
-            line_break_before=line_break_before,
-            seqno=seqno,
-            fill_color=fill_color,
-            advance_bbox=advance_bbox,
-            ink_bbox=ink_bbox,
-            baseline=baseline,
-            provenance=provenance,
-            confidence=confidence,
-            glyph_clusters=glyph_clusters,
-        )
+        return self.__class__(**values)
 
     @property
     def height(self) -> float:

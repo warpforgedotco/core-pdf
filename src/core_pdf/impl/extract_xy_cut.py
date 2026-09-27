@@ -8,6 +8,7 @@ import numpy
 
 from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract_layout_rules import LAYOUT_RULES
+from core_pdf.impl.geometry import array_bbox
 from core_pdf.impl.spatial import band_rows
 from core_pdf.impl.types import (
     GeneratedRecord,
@@ -329,12 +330,7 @@ def partition_by_obstacles(
     if not obstacles or len(indexes) < 3:
         return None
     region = boxes[indexes]
-    region_box = (
-        float(numpy.min(region[:, 0])),
-        float(numpy.min(region[:, 1])),
-        float(numpy.max(region[:, 2])),
-        float(numpy.max(region[:, 3])),
-    )
+    region_box = array_bbox(region)
     region_width = max(1.0, region_box[2] - region_box[0])
     region_height = max(1.0, region_box[3] - region_box[1])
     centers_x = (region[:, 0] + region[:, 2]) * 0.5

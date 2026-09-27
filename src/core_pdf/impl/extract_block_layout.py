@@ -26,7 +26,7 @@ from core_pdf.impl.extract_contracts import (
 )
 from core_pdf.impl.extract_layout_rules import LAYOUT_RULES
 from core_pdf.impl.extract_xy_cut import row_order_indexes, xy_cut_regions
-from core_pdf.impl.geometry import bbox_tuple, interval_overlap
+from core_pdf.impl.geometry import array_bbox, bbox_tuple, interval_overlap
 from core_pdf.impl.layout_lines import LayoutLine
 from core_pdf.impl.output_model import TextLine, TextSpan
 from core_pdf.impl.runs import TextRun
@@ -466,12 +466,7 @@ def xy_cut_blocks(
     blocks = [
         ParsedBlock(
             lines=tuple(lines[int(index)] for index in region),
-            bbox=(
-                float(numpy.min(built_lines.boxes[region, 0])),
-                float(numpy.min(built_lines.boxes[region, 1])),
-                float(numpy.max(built_lines.boxes[region, 2])),
-                float(numpy.max(built_lines.boxes[region, 3])),
-            ),
+            bbox=array_bbox(built_lines.boxes[region]),
         )
         for region in regions
     ]

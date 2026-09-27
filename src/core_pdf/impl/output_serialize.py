@@ -54,6 +54,19 @@ class PageIds:
         return {identity: self.record(kind, index) for index, identity in enumerate(unique)}
 
 
+def extend_records[RecordT](
+    records: list[JsonValue],
+    page_id: str,
+    ids: Iterable[JsonValue],
+    items: Iterable[RecordT],
+    to_json: Callable[[RecordT], dict[str, JsonValue]],
+) -> None:
+    records.extend(
+        {"id": record_id, "page_id": page_id, **to_json(item)}
+        for record_id, item in zip(ids, items, strict=True)
+    )
+
+
 def node_to_json_dict(
     node: ContentNode,
     *,
@@ -128,21 +141,11 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
             }
             for block in page_blocks.values()
         )
-        tables.extend(
-            {
-                "id": table_ids[id(table)],
-                "page_id": page_id,
-                **table_to_json_dict(table),
-            }
-            for table in page_tables.values()
+        extend_records(
+            tables, page_id, table_ids.values(), page_tables.values(), table_to_json_dict
         )
-        figures.extend(
-            {
-                "id": figure_ids[id(figure)],
-                "page_id": page_id,
-                **figure_to_json_dict(figure),
-            }
-            for figure in page_figures.values()
+        extend_records(
+            figures, page_id, figure_ids.values(), page_figures.values(), figure_to_json_dict
         )
 
         target_ids = {**block_ids, **table_ids, **figure_ids}
@@ -162,18 +165,11 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
         page_link_ids = ids.records("link", len(page.links))
         page_annotation_ids = ids.records("annotation", len(page.annotations))
         page_field_ids = ids.records("form-field", len(page.form_fields))
-        links.extend(
-            {"id": record_id, "page_id": page_id, **link_to_json_dict(link)}
-            for record_id, link in zip(page_link_ids, page.links, strict=True)
+        extend_records(links, page_id, page_link_ids, page.links, link_to_json_dict)
+        extend_records(
+            annotations, page_id, page_annotation_ids, page.annotations, annotation_to_json_dict
         )
-        annotations.extend(
-            {"id": record_id, "page_id": page_id, **annotation_to_json_dict(annotation)}
-            for record_id, annotation in zip(page_annotation_ids, page.annotations, strict=True)
-        )
-        form_fields.extend(
-            {"id": record_id, "page_id": page_id, **field_to_json_dict(field)}
-            for record_id, field in zip(page_field_ids, page.form_fields, strict=True)
-        )
+        extend_records(form_fields, page_id, page_field_ids, page.form_fields, field_to_json_dict)
         pages.append(
             {
                 "id": page_id,

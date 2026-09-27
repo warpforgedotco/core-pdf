@@ -52,6 +52,15 @@ def bbox_tuple(row: Any) -> tuple[float, float, float, float]:
     return (float(row[0]), float(row[1]), float(row[2]), float(row[3]))
 
 
+def array_bbox(boxes: Any) -> tuple[float, float, float, float]:
+    return (
+        float(boxes[:, 0].min()),
+        float(boxes[:, 1].min()),
+        float(boxes[:, 2].max()),
+        float(boxes[:, 3].max()),
+    )
+
+
 def interval_overlap(a0: float, a1: float, b0: float, b1: float) -> float:
     overlap = min(a1, b1) - max(a0, b0)
     return max(0.0, overlap)

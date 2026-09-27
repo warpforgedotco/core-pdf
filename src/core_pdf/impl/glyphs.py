@@ -99,7 +99,7 @@ class GlyphStyle(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
 STYLE_FIELDS: tuple[str, ...] = GlyphStyle.__fields__
 
 
-class GlyphObservation:
+class GlyphObservation(ReprFields):
     __slots__ = (
         "text",
         "ink_bbox",
@@ -263,6 +263,7 @@ class GlyphObservation:
         "paint_from_program",
         "graphics_soft_mask",
     )
+    __repr_fields__ = __match_args__
 
     def __init__(
         self,
@@ -354,55 +355,6 @@ class GlyphObservation:
             alpha_is_shape,
             paint_from_program,
             graphics_soft_mask,
-        )
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"text={self.text!r}, "
-            f"ink_bbox={self.ink_bbox!r}, "
-            f"advance_bbox={self.advance_bbox!r}, "
-            f"seqno={self.seqno!r}, "
-            f"code_bytes={self.code_bytes!r}, "
-            f"char_code={self.char_code!r}, "
-            f"cid={self.cid!r}, "
-            f"gid={self.gid!r}, "
-            f"font_name={self.font_name!r}, "
-            f"font_size={self.font_size!r}, "
-            f"baseline={self.baseline!r}, "
-            f"rotation_angle={self.rotation_angle!r}, "
-            f"fill={self.fill!r}, "
-            f"visible={self.visible!r}, "
-            f"confidence={self.confidence!r}, "
-            f"unicode_source={self.unicode_source!r}, "
-            f"alternates={self.alternates!r}, "
-            f"bitmap={self.bitmap!r}, "
-            f"bitmap_width={self.bitmap_width!r}, "
-            f"bitmap_height={self.bitmap_height!r}, "
-            f"bitmap_code={self.bitmap_code!r}, "
-            f"font_decoder={self.font_decoder!r}, "
-            f"effective_font_size={self.effective_font_size!r}, "
-            f"effective_font_height={self.effective_font_height!r}, "
-            f"provenance={self.provenance!r}, "
-            f"glyph_transform={self.glyph_transform!r}, "
-            f"text_render_mode={self.text_render_mode!r}, "
-            f"fill_opacity={self.fill_opacity!r}, "
-            f"stroke_color={self.stroke_color!r}, "
-            f"stroke_opacity={self.stroke_opacity!r}, "
-            f"line_width={self.line_width!r}, "
-            f"blend_mode={self.blend_mode!r}, "
-            f"soft_mask_alpha={self.soft_mask_alpha!r}, "
-            f"paint_glyph={self.paint_glyph!r}, "
-            f"text_object_id={self.text_object_id!r}, "
-            f"line_cap={self.line_cap!r}, "
-            f"line_join={self.line_join!r}, "
-            f"dash_pattern={self.dash_pattern!r}, "
-            f"cluster_key={self.cluster_key!r}, "
-            f"clip_glyph={self.clip_glyph!r}, "
-            f"alpha_is_shape={self.alpha_is_shape!r}, "
-            f"paint_from_program={self.paint_from_program!r}, "
-            f"graphics_soft_mask={self.graphics_soft_mask!r}"
-            ")"
         )
 
     def __replace__(self, /, **changes: Any) -> Self:
@@ -559,7 +511,7 @@ for style_field in STYLE_FIELDS:
     setattr(GlyphObservation, style_field, style_field_property(style_field))
 
 
-class GlyphCluster:
+class GlyphCluster(ReprFields, ReplaceFields):
     __slots__ = (
         "cluster_id",
         "text",
@@ -614,39 +566,6 @@ class GlyphCluster:
         self.ink_bbox = ink_bbox
         self.baseline = baseline
         self.confidence = confidence
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__qualname__}("
-            f"cluster_id={self.cluster_id!r}, "
-            f"text={self.text!r}, "
-            f"glyphs={self.glyphs!r}, "
-            f"advance_bbox={self.advance_bbox!r}, "
-            f"ink_bbox={self.ink_bbox!r}, "
-            f"baseline={self.baseline!r}, "
-            f"confidence={self.confidence!r}"
-            ")"
-        )
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        cluster_id = changes.pop("cluster_id", self.cluster_id)
-        text = changes.pop("text", self.text)
-        glyphs = changes.pop("glyphs", self.glyphs)
-        advance_bbox = changes.pop("advance_bbox", self.advance_bbox)
-        ink_bbox = changes.pop("ink_bbox", self.ink_bbox)
-        baseline = changes.pop("baseline", self.baseline)
-        confidence = changes.pop("confidence", self.confidence)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            cluster_id,
-            text,
-            glyphs,
-            advance_bbox,
-            ink_bbox,
-            baseline,
-            confidence,
-        )
 
 
 CONFIDENCE_CACHE_LIMIT = 8192

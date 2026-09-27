@@ -18,6 +18,7 @@ from core_pdf.impl.extract_table_core import (
     short_digit_cell,
 )
 from core_pdf.impl.geometry import (
+    array_bbox,
     bbox_union,
     horizontal_overlap_ratio,
     interval_overlap,
@@ -457,33 +458,21 @@ def annotate_table_associations(
     if table.bbox is None or title is not None:
         return replace(table, title=title, caption=caption)
     x0, _y0, x1, y1 = table.bbox
-    candidates: list[tuple[float, tuple[int, ...]]] = []
+    candidates: list[tuple[float, tuple[int, ...], tuple[float, float, float, float]]] = []
     for row in text_rows:
-        boxes = observations.bbox[list(row)]
-        row_x0 = float(boxes[:, 0].min())
-        row_x1 = float(boxes[:, 2].max())
-        row_y0 = float(boxes[:, 1].min())
+        row_bbox = array_bbox(observations.bbox[list(row)])
+        row_x0, row_y0, row_x1, _row_y1 = row_bbox
         overlap = interval_overlap(x0, x1, row_x0, row_x1)
         if overlap / max(1.0, min(x1 - x0, row_x1 - row_x0)) < 0.60:
             continue
         gap = row_y0 - y1
         if 0.0 <= gap <= 36.0:
-            candidates.append((gap, tuple(row)))
+            candidates.append((gap, tuple(row), row_bbox))
     if candidates:
-        _gap, title_row = min(candidates, key=lambda item: item[0])
+        _gap, title_row, title_bbox = min(candidates, key=lambda item: item[0])
         text = cell_text(observations, list(title_row))
         if text:
-            title_boxes = observations.bbox[list(title_row)]
-            title = TableAssociatedText(
-                text,
-                (
-                    float(title_boxes[:, 0].min()),
-                    float(title_boxes[:, 1].min()),
-                    float(title_boxes[:, 2].max()),
-                    float(title_boxes[:, 3].max()),
-                ),
-                kind="title",
-            )
+            title = TableAssociatedText(text, title_bbox, kind="title")
     if title is table.title and caption is table.caption:
         return table
     return replace(table, title=title, caption=caption)
