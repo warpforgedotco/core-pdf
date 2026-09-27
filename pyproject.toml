@@ -159,6 +159,8 @@ line-length = 100
 # Stream filters share the FilterFn signature: (data, parms).
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_filters/codecs.py" = ["ARG001"]
 "src/core_pdf/impl/graphics_stream_decoding.py" = ["ARG001"]
+# Colour converters share one (values, space, context) signature.
+"src/core_pdf/impl/graphics_image_samples.py" = ["ARG001"]
 # FURB136 rewrites `a if a < b else b` back into min()/max(). Both spellings
 # are fine, but min(a, b) is a call with tuple packing where the conditional
 # is a compare and a jump -- measured 3.2x cheaper. These run per glyph, over

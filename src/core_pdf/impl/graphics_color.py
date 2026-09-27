@@ -9,6 +9,7 @@ import numpy
 
 from core_pdf.impl.array_views import ByteBuffer, uint8_view
 from core_pdf.impl.graphics_color_spec import (
+    GRAY_RGB_KINDS,
     ColorSpace,
     parse_color_space,
     recover_image_bits_per_component,
@@ -30,8 +31,10 @@ def color_operands_to_srgb(
     *,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[float, float, float] | None:
-    if spec.kind in {"DeviceGray", "DeviceRGB", "Pattern"} or (
-        spec.kind == "DeviceCMYK" and rendering == DEFAULT_COLOR_RENDERING
+    if (
+        spec.kind in GRAY_RGB_KINDS
+        or spec.kind == "Pattern"
+        or (spec.kind == "DeviceCMYK" and rendering == DEFAULT_COLOR_RENDERING)
     ):
         return None
     try:
@@ -91,7 +94,7 @@ def simple_device_color_fast_path(
 ) -> ByteBuffer | None:
     if bits_per_component != 8:
         return None
-    if spec.kind not in {"DeviceRGB", "DeviceGray"}:
+    if spec.kind not in GRAY_RGB_KINDS:
         return None
     if header.decode is not None:
         return None

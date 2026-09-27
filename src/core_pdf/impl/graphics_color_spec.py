@@ -27,6 +27,12 @@ from core_pdf_spec.s_08_graphics.color_spec import (
     parse_color_space as parse_pdf_color_space,
 )
 
+GRAY_RGB_KINDS = frozenset({"DeviceGray", "DeviceRGB"})
+DEVICE_KINDS = frozenset({*GRAY_RGB_KINDS, "DeviceCMYK"})
+NAMED_KINDS = frozenset({*DEVICE_KINDS, "Pattern"})
+CIE_KINDS = frozenset({"Lab", "CalGray", "CalRGB"})
+TINT_KINDS = frozenset({"Separation", "DeviceN"})
+
 
 def cs_param_floats(params: ColorParams, key: str, count: int, default: list[float]) -> list[float]:
     raw = params.get(key, default)
@@ -157,11 +163,11 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
         active.add(marker)
     try:
         direct = recover_pdf_name(value)
-        if direct in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}:
+        if direct in NAMED_KINDS:
             return parse_pdf_color_space(direct)
         if isinstance(value, (list, tuple)) and value:
             kind = recover_pdf_name(value[0])
-            if len(value) == 1 and kind in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}:
+            if len(value) == 1 and kind in NAMED_KINDS:
                 return parse_pdf_color_space(kind)
             if kind == "Indexed" and len(value) >= 4:
                 hival = lenient_int(value[2], None)
@@ -218,11 +224,7 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                 return ColorSpace(
                     "ICCBased", ranges, params, alternate=alternate, icc_profile=profile
                 )
-            if (
-                kind in {"Lab", "CalRGB", "CalGray"}
-                and len(value) >= 2
-                and isinstance(value[1], dict)
-            ):
+            if kind in CIE_KINDS and len(value) >= 2 and isinstance(value[1], dict):
                 source = dict(value[1])
                 calibrated_params: dict[str, object] = {}
                 for key, raw in source.items():
@@ -248,7 +250,7 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                     pattern_base.component_ranges,
                     base=pattern_base,
                 )
-            if kind in {"Separation", "DeviceN"} and len(value) >= 4:
+            if kind in TINT_KINDS and len(value) >= 4:
                 raw_names = value[1] if kind == "DeviceN" else [value[1]]
                 if not isinstance(raw_names, (list, tuple)):
                     raise ValueError("invalid DeviceN color space")

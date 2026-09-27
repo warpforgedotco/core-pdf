@@ -8,7 +8,11 @@ from typing import ClassVar
 
 from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.graphics_color import color_operands_to_srgb
-from core_pdf.impl.graphics_color_spec import parse_color_space, raw_color_space_paints
+from core_pdf.impl.graphics_color_spec import (
+    DEVICE_KINDS,
+    parse_color_space,
+    raw_color_space_paints,
+)
 from core_pdf.impl.graphics_functions import (
     compile_pdf_function,
     number_array,
@@ -205,7 +209,7 @@ def prepare_shading(
 def shading_color_evaluator(
     function: PdfFunctionEvaluator, space: ColorSpace, rendering: ColorRendering
 ) -> tuple[Callable[[float], tuple[float, ...]], str]:
-    if space.kind in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
+    if space.kind in DEVICE_KINDS:
         return function, space.kind
 
     @lru_cache(maxsize=8192)
