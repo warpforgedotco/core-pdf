@@ -16,7 +16,6 @@ from core_pdf.impl.extract_contracts import (
     PageAnalysis,
 )
 from core_pdf.impl.extract_grids import (
-    DisjointSet,
     axis_segments,
     grid_components,
     merge_collinear_segments,
@@ -38,6 +37,7 @@ from core_pdf.impl.extract_table_cleanup import (
 )
 from core_pdf.impl.geometry import bbox_union, interval_overlap, overlap_ratio_min
 from core_pdf.impl.output_model import Table, TableCell
+from core_pdf.impl.spatial import DisjointSet, cluster_1d
 from core_pdf.impl.types import Record, frozen_setattr
 
 
@@ -362,16 +362,10 @@ def aligned_column_clusters(
         (all_lefts[index], row_index, index) for row_index, row in enumerate(rows) for index in row
     ]
     positions.sort(key=lambda item: (item[0], item[1], sequences[item[2]]))
-    clusters: list[list[tuple[int, int]]] = []
-    means: list[float] = []
-    for x, row_index, index in positions:
-        if clusters and abs(x - means[-1]) <= tolerance:
-            count = len(clusters[-1])
-            clusters[-1].append((row_index, index))
-            means[-1] = (means[-1] * count + x) / (count + 1)
-        else:
-            clusters.append([(row_index, index)])
-            means.append(x)
+    clusters = [
+        [positions[position][1:] for position in group]
+        for group in cluster_1d([item[0] for item in positions], tolerance, linkage="mean")
+    ]
     candidates = []
     for cluster in clusters:
         row_support = {row_index for row_index, _ in cluster}

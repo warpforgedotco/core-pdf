@@ -605,6 +605,7 @@ source_modules = [
     "core_pdf.impl.pdf_names",
     "core_pdf.impl.pdf_values",
     "core_pdf.impl.runs",
+    "core_pdf.impl.spatial",
     "core_pdf.impl.scalars",
     "core_pdf.impl.text",
     "core_pdf.impl.types",
@@ -730,6 +731,7 @@ forbidden_modules = [
     "core_pdf.impl.page_selection",
     "core_pdf.impl.pdf_values",
     "core_pdf.impl.runs",
+    "core_pdf.impl.spatial",
     "core_pdf.impl.text",
     "core_pdf_spec",
 ]
@@ -743,6 +745,7 @@ source_modules = [
     "core_pdf.impl.page_selection",
     "core_pdf.impl.pdf_values",
     "core_pdf.impl.runs",
+    "core_pdf.impl.spatial",
     "core_pdf.impl.text",
 ]
 # Spec's geometry module is a leaf (only core_pdf_spec.types); the geometry
@@ -823,6 +826,7 @@ forbidden_modules = [
     "core_pdf.impl.page_selection",
     "core_pdf.impl.pdf_values",
     "core_pdf.impl.runs",
+    "core_pdf.impl.spatial",
     "core_pdf.impl.text",
     "core_pdf_spec.s_07_content",
     "core_pdf_spec.s_07_document",

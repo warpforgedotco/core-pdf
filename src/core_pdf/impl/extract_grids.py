@@ -12,6 +12,7 @@ from core_pdf.impl.extract_contracts import ObservationBatch, PageAnalysis
 from core_pdf.impl.extract_table_cleanup import cell_text
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.output_model import Table, TableCell
+from core_pdf.impl.spatial import DisjointSet
 
 AXIS_TOLERANCE = 1.5
 
@@ -19,24 +20,6 @@ GRID_CROSSING_MASK_ELEMENTS = 1 << 20
 
 
 TABLE_REGION_GAP = 22.0
-
-
-class DisjointSet:
-    def __init__(self, size: int) -> None:
-        self.parent = list(range(size))
-
-    def find(self, value: int) -> int:
-        parent = self.parent
-        while parent[value] != value:
-            parent[value] = parent[parent[value]]
-            value = parent[value]
-        return value
-
-    def union(self, left: int, right: int) -> None:
-        left_root = self.find(left)
-        right_root = self.find(right)
-        if left_root != right_root:
-            self.parent[right_root] = left_root
 
 
 def axis_segments(

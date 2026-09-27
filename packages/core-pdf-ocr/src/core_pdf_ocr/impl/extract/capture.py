@@ -39,6 +39,7 @@ from core_pdf.impl.geometry import bbox_area, bbox_union, rect_tuple
 from core_pdf.impl.glyphs import GlyphObservation, UnicodeSource
 from core_pdf.impl.graphics_filter_registry import declared_filter_names
 from core_pdf.impl.runs import TextRun
+from core_pdf.impl.spatial import BoxIndex
 from core_pdf.impl.text import normalize_extracted_text
 from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
@@ -282,24 +283,10 @@ def uncovered_vector_area(
     if not rectangles:
         return 0.0
     uncovered = 0.0
-    for offset in range(0, len(rectangles), 64):
-        batch = numpy.asarray(rectangles[offset : offset + 64], dtype=numpy.float32)
-        batch_x0 = batch[:, 0, None]
-        batch_y0 = batch[:, 1, None]
-        batch_x1 = batch[:, 2, None]
-        batch_y1 = batch[:, 3, None]
-        overlap_x = numpy.maximum(
-            0.0,
-            numpy.minimum(native[None, :, 2], batch_x1)
-            - numpy.maximum(native[None, :, 0], batch_x0),
-        )
-        overlap_y = numpy.maximum(
-            0.0,
-            numpy.minimum(native[None, :, 3], batch_y1)
-            - numpy.maximum(native[None, :, 1], batch_y0),
-        )
-        batch_covered = numpy.sum(overlap_x * overlap_y, axis=1, dtype=numpy.float64)
-        areas = batch[:, 4]
+    packed = numpy.asarray(rectangles, dtype=numpy.float32)
+    for offset, intersections in BoxIndex.from_array(native).pairwise_intersection(packed, 64):
+        batch_covered = numpy.sum(intersections, axis=1, dtype=numpy.float64)
+        areas = packed[offset : offset + 64, 4]
         uncovered += float(
             numpy.sum(numpy.maximum(0.0, areas - numpy.minimum(areas, batch_covered)))
         )

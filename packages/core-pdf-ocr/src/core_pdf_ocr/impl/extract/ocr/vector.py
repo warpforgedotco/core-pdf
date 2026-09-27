@@ -18,6 +18,7 @@ from core_pdf.impl.render_model import (
     PathPaintKind,
 )
 from core_pdf.impl.render_page import RenderedPage
+from core_pdf.impl.spatial import BoxIndex
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, ObservationSource, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.atlas import rasterize_packed_stroked_paths
 from core_pdf_ocr.impl.extract.ocr.raster import fit_raster_scale
@@ -573,6 +574,7 @@ def recover_stroked_vector_text(
         return ocr, ()
     decoded = decode_stroked_vector_text(profile, ocr)
     ocr_boxes = ocr.bbox
+    ocr_index = BoxIndex.from_array(ocr_boxes)
     ocr_areas = numpy.maximum(
         0.01,
         (ocr_boxes[:, 2] - ocr_boxes[:, 0]) * (ocr_boxes[:, 3] - ocr_boxes[:, 1]),
@@ -585,17 +587,9 @@ def recover_stroked_vector_text(
             (observation.bbox[2] - observation.bbox[0])
             * (observation.bbox[3] - observation.bbox[1]),
         )
-        overlap_width = numpy.maximum(
-            0.0,
-            numpy.minimum(ocr_boxes[:, 2], observation.bbox[2])
-            - numpy.maximum(ocr_boxes[:, 0], observation.bbox[0]),
+        overlap_ratios = ocr_index.intersection_areas(observation.bbox) / numpy.minimum(
+            candidate_area, ocr_areas
         )
-        overlap_height = numpy.maximum(
-            0.0,
-            numpy.minimum(ocr_boxes[:, 3], observation.bbox[3])
-            - numpy.maximum(ocr_boxes[:, 1], observation.bbox[1]),
-        )
-        overlap_ratios = (overlap_width * overlap_height) / numpy.minimum(candidate_area, ocr_areas)
         matching = numpy.flatnonzero(overlap_ratios >= STROKED_VECTOR_DECODE_MIN_OVERLAP)
         if not len(matching):
             accepted.append(observation)

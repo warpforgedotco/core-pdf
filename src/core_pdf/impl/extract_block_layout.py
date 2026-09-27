@@ -24,6 +24,7 @@ from core_pdf.impl.geometry import horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl.layout_lines import LayoutLine
 from core_pdf.impl.output_model import TextLine, TextSpan
 from core_pdf.impl.runs import TextRun
+from core_pdf.impl.spatial import band_rows, cluster_1d, interval_overlap_pairs
 from core_pdf.impl.text import (
     collapse_ws,
     reconcile_text_words,
@@ -565,24 +566,6 @@ def has_mixed_rotation_block(blocks: tuple[ParsedBlock, ...]) -> bool:
     return any(len({line.rotation % 360 for line in block.lines}) > 1 for block in blocks)
 
 
-def interval_overlap_pairs(starts: numpy.ndarray, ends: numpy.ndarray) -> set[tuple[int, int]]:
-    order = numpy.argsort(starts, kind="stable")
-    active: set[int] = set()
-    ending: list[tuple[float, int]] = []
-    pairs: set[tuple[int, int]] = set()
-    for raw_index in order:
-        index = int(raw_index)
-        start = float(starts[index])
-        while ending and ending[0][0] <= start:
-            _end, expired = heappop(ending)
-            active.discard(expired)
-        for other in active:
-            pairs.add((other, index) if other < index else (index, other))
-        active.add(index)
-        heappush(ending, (float(ends[index]), index))
-    return pairs
-
-
 def sparse_block_candidate_pairs(
     blocks: list[ParsedBlock], full_width: list[bool]
 ) -> list[tuple[int, int]]:
@@ -699,10 +682,7 @@ def column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
             (line_bbox(line)[0] for line in block.lines), dtype=numpy.float64
         )
         starts = numpy.sort(line_starts)
-        clusters: list[float] = []
-        for start in starts:
-            if not clusters or start - clusters[-1] > 40.0:
-                clusters.append(float(start))
+        clusters = [float(starts[group[0]]) for group in cluster_1d(starts, 40.0, linkage="anchor")]
         if len(clusters) < 3:
             output.append(block)
             continue
@@ -747,11 +727,7 @@ def transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[ParsedBloc
             output.append(block)
             continue
         starts = sorted(line_bbox(line)[0] for line in block.lines)
-        columns: list[float] = []
-        for start in starts:
-            if not columns or start - columns[-1] > 8.0:
-                columns.append(start)
-        if len(columns) < 20:
+        if len(cluster_1d(starts, 8.0, linkage="anchor")) < 20:
             output.append(block)
             continue
         text = " ".join(line.line.text for line in block.lines)
@@ -777,12 +753,7 @@ def has_repeated_block_columns(blocks: tuple[ParsedBlock, ...]) -> bool:
     starts = sorted(box[0] for box in bounded if box[3] >= cutoff)
     if len(starts) < 6:
         return False
-    clusters: list[list[float]] = []
-    for start in starts:
-        if clusters and start - clusters[-1][-1] <= 16.0:
-            clusters[-1].append(start)
-        else:
-            clusters.append([start])
+    clusters = cluster_1d(starts, 16.0, linkage="chain")
     return sum(len(cluster) >= 3 for cluster in clusters) >= 3
 
 
@@ -1123,15 +1094,9 @@ def assign_row_bands(
     tolerance: float,
     row_ids: numpy.ndarray,
 ) -> None:
-    current_row = 0
-    row_center = float(centers[order[0]])
-    for position, raw_item in enumerate(order):
-        item = int(raw_item)
-        center = float(centers[item])
-        if position and row_center - center > tolerance:
-            current_row += 1
-            row_center = center
-        row_ids[item] = current_row
+    bands = band_rows(centers[order].tolist(), tolerance, range(len(order)), linkage="anchor")
+    for row, band in enumerate(bands):
+        row_ids[order[band]] = row
 
 
 def row_order_indexes(indexes: numpy.ndarray, boxes: numpy.ndarray) -> numpy.ndarray:

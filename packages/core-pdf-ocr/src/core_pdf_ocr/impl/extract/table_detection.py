@@ -15,6 +15,7 @@ from core_pdf.impl.extract_table_detection import (
 )
 from core_pdf.impl.geometry import bbox_union, finite_rect, overlap_ratio_min_exact
 from core_pdf.impl.output_model import Table, TableCell
+from core_pdf.impl.spatial import band_rows
 from core_pdf.impl.text import text_word_tokens
 from core_pdf.impl.types import Rectangle
 from core_pdf_ocr.impl.extract.contracts import ObservationSource, PageAnalysis
@@ -87,24 +88,24 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
     if len(cells) < 3:
         return None
     row_tolerance = max(6.0, capture.height * 0.008)
-    row_groups: list[tuple[float, list[TableCell]]] = []
-    for cell in sorted(
+    ordered_cells = sorted(
         cells,
         key=lambda item: (-chart_cell_center_y(item), item.column),
-    ):
-        center_y = chart_cell_center_y(cell)
-        if not row_groups or abs(row_groups[-1][0] - center_y) > row_tolerance:
-            row_groups.append((center_y, [cell]))
-        else:
-            row_groups[-1][1].append(cell)
+    )
+    row_groups = band_rows(
+        [chart_cell_center_y(cell) for cell in ordered_cells],
+        row_tolerance,
+        range(len(ordered_cells)),
+        linkage="anchor",
+    )
     rows = tuple(
         tuple(
             sorted(
-                (replace(cell, row=row_index) for cell in group),
+                (replace(ordered_cells[position], row=row_index) for position in group),
                 key=lambda item: item.column,
             )
         )
-        for row_index, (_, group) in enumerate(row_groups)
+        for row_index, group in enumerate(row_groups)
     )
     return Table(
         order=-1,

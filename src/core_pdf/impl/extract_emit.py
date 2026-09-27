@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left, bisect_right
-from collections.abc import Iterable
 from copy import replace
 from statistics import fmean
-from typing import Any, ClassVar
+from typing import ClassVar
 
 import numpy
 
@@ -19,7 +18,6 @@ from core_pdf.impl.extract_block_layout import (
 from core_pdf.impl.extract_contracts import ParsedBlock
 from core_pdf.impl.extract_table_cleanup import table_with_bands
 from core_pdf.impl.geometry import (
-    bbox_area,
     bbox_intersects,
     bbox_union,
     horizontal_overlap_ratio,
@@ -38,6 +36,7 @@ from core_pdf.impl.output_model import (
     TableCell,
     TextLine,
 )
+from core_pdf.impl.spatial import BoxIndex
 from core_pdf.impl.text import collapse_ws, complete_text_covered, content_tokens
 from core_pdf.impl.types import Record, Rectangle, frozen_setattr
 
@@ -438,7 +437,7 @@ class TableIndex(Record):
 
     table: Table
     rows: tuple[IndexedRow, ...]
-    frame: SpatialFrame | None
+    frame: BoxIndex | None
 
     __fields__: ClassVar[tuple[str, ...]] = ("table", "rows", "frame")
     __match_args__ = ("table", "rows", "frame")
@@ -447,7 +446,7 @@ class TableIndex(Record):
         self,
         table: Table,
         rows: tuple[IndexedRow, ...],
-        frame: SpatialFrame | None,
+        frame: BoxIndex | None,
     ) -> None:
         frozen_setattr(self, "table", table)
         frozen_setattr(self, "rows", rows)
@@ -485,7 +484,7 @@ class TableIndex(Record):
                     tuple(indexes),
                 )
             )
-        frame = SpatialFrame.from_boxes(boxes) if boxes else None
+        frame = BoxIndex.from_boxes(boxes) if boxes else None
         return cls(table, tuple(rows), frame)
 
 
@@ -500,12 +499,7 @@ def line_duplicates_table(text: str, box: Rectangle, index: TableIndex) -> bool:
     else:
         intersections = index.frame.intersection_areas(box)
         touches = intersections > 0.0
-        box_area = bbox_area(box)
-        covered = (
-            intersections / box_area >= 0.90
-            if box_area > 0.0
-            else numpy.zeros(len(intersections), dtype=bool)
-        )
+        covered = index.frame.overlap_of(box, intersections) >= 0.90
     participating_cells: list[TableCell] = []
     total_cells = 0
     for row in index.rows:
@@ -569,7 +563,7 @@ def remove_table_duplicate_blocks(
     located_tables = [table for table in tables if table.bbox is not None]
     if not located_tables:
         return blocks
-    table_frame = SpatialFrame.from_boxes(
+    table_frame = BoxIndex.from_boxes(
         table.bbox for table in located_tables if table.bbox is not None
     )
     indexes = [TableIndex.build(table) for table in located_tables]
@@ -602,64 +596,3 @@ def project_text_and_tables(
     text_blocks = remove_table_duplicate_blocks(blocks, parsed_tables)
     projected_tables = remove_block_duplicate_table_rows(text_blocks, parsed_tables)
     return text_blocks, projected_tables
-
-
-class SpatialFrame(Record):
-    __slots__ = ("boxes", "areas")
-
-    boxes: numpy.ndarray[Any, Any]
-    areas: numpy.ndarray[Any, Any]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("boxes", "areas")
-    __match_args__ = ("boxes", "areas")
-
-    def __init__(self, boxes: numpy.ndarray[Any, Any], areas: numpy.ndarray[Any, Any]) -> None:
-        frozen_setattr(self, "boxes", boxes)
-        frozen_setattr(self, "areas", areas)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.boxes == other.boxes and self.areas == other.areas
-
-    def __hash__(self) -> int:
-        return hash((self.boxes, self.areas))
-
-    @classmethod
-    def from_boxes(cls, boxes: Iterable[Rectangle]) -> SpatialFrame:
-        packed = numpy.asarray(tuple(boxes), dtype=numpy.float64).reshape((-1, 4))
-        widths = numpy.maximum(0.0, packed[:, 2] - packed[:, 0])
-        heights = numpy.maximum(0.0, packed[:, 3] - packed[:, 1])
-        packed.setflags(write=False)
-        areas = widths * heights
-        areas.setflags(write=False)
-        return cls(packed, areas)
-
-    def intersection_areas(self, box: Rectangle) -> numpy.ndarray[Any, Any]:
-        widths = numpy.maximum(
-            0.0,
-            numpy.minimum(self.boxes[:, 2], box[2]) - numpy.maximum(self.boxes[:, 0], box[0]),
-        )
-        heights = numpy.maximum(
-            0.0,
-            numpy.minimum(self.boxes[:, 3], box[3]) - numpy.maximum(self.boxes[:, 1], box[1]),
-        )
-        return widths * heights
-
-    def overlap_min(self, box: Rectangle) -> numpy.ndarray[Any, Any]:
-        box_area = bbox_area(box)
-        denominator = numpy.minimum(self.areas, box_area)
-        return numpy.divide(
-            self.intersection_areas(box),
-            denominator,
-            out=numpy.zeros_like(denominator),
-            where=denominator > 0.0,
-        )
-
-    def matching_overlap_min(self, box: Rectangle, minimum: float) -> numpy.ndarray[Any, Any]:
-        return numpy.flatnonzero(self.overlap_min(box) >= minimum)
-
-
-__all__ = ("SpatialFrame",)
