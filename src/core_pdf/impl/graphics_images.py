@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from itertools import batched
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy
 
@@ -30,7 +30,7 @@ from core_pdf.impl.graphics_stream_decoding import (
     decode_stream_data,
 )
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, frozen_setattr
 from core_pdf_cythonized import interleave_soft_mask
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterError
@@ -73,28 +73,11 @@ def samples_equal(left: object, right: object) -> bool:
     return bool(left == right)
 
 
-class DecodedRaster(Record):
-    __slots__ = ("data", "width", "height", "channels")
-
+class DecodedRaster(GeneratedRecord):
     data: bytes | memoryview | numpy.ndarray[Any, Any]
     width: int
     height: int
     channels: int
-
-    __fields__: ClassVar[tuple[str, ...]] = ("data", "width", "height", "channels")
-    __match_args__ = ("data", "width", "height", "channels")
-
-    def __init__(
-        self,
-        data: bytes | memoryview | numpy.ndarray[Any, Any],
-        width: int,
-        height: int,
-        channels: int,
-    ) -> None:
-        frozen_setattr(self, "data", data)
-        frozen_setattr(self, "width", width)
-        frozen_setattr(self, "height", height)
-        frozen_setattr(self, "channels", channels)
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -112,14 +95,9 @@ class DecodedRaster(Record):
         return hash((self.width, self.height, self.channels))
 
 
-class ImageRaster(Record):
-    __slots__ = ("array", "color_model")
-
+class ImageRaster(GeneratedRecord):
     array: numpy.ndarray[Any, Any]
     color_model: str
-
-    __fields__: ClassVar[tuple[str, ...]] = ("array", "color_model")
-    __match_args__ = ("array", "color_model")
 
     def __init__(self, array: numpy.ndarray[Any, Any], color_model: str) -> None:
         frozen_setattr(self, "array", array)
@@ -170,15 +148,10 @@ class ImageRaster(Record):
         return int(self.array.strides[0])
 
 
-class PreparedImage(Record):
-    __slots__ = ("raster", "soft_mask", "is_stencil")
-
+class PreparedImage(GeneratedRecord):
     raster: ImageRaster
     soft_mask: ImageRaster | None
     is_stencil: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = ("raster", "soft_mask", "is_stencil")
-    __match_args__ = ("raster", "soft_mask", "is_stencil")
 
     def __init__(
         self,
@@ -190,20 +163,6 @@ class PreparedImage(Record):
         frozen_setattr(self, "soft_mask", soft_mask)
         frozen_setattr(self, "is_stencil", is_stencil)
         self._post_init()
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.raster == other.raster
-            and self.soft_mask == other.soft_mask
-            and self.is_stencil == other.is_stencil
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.raster, self.soft_mask, self.is_stencil))
 
     def _post_init(self) -> None:
         soft_mask = self.soft_mask
@@ -626,14 +585,9 @@ def decode_image(source: ImageSource) -> ImageRaster | None:
     return prepared.raster if prepared is not None else None
 
 
-class DecodedImage(Record):
-    __slots__ = ("array", "source")
-
+class DecodedImage(GeneratedRecord):
     array: numpy.ndarray[Any, Any]
     source: str
-
-    __fields__: ClassVar[tuple[str, ...]] = ("array", "source")
-    __match_args__ = ("array", "source")
 
     def __init__(self, array: numpy.ndarray[Any, Any], source: str) -> None:
         frozen_setattr(self, "array", array)
@@ -671,43 +625,11 @@ class DecodedImage(Record):
         return 1 if self.array.ndim == 2 else int(self.array.shape[2])
 
 
-class NativeImagePlan(Record):
-    __slots__ = ("decoder", "native", "params", "output_shape")
-
+class NativeImagePlan(GeneratedRecord):
     decoder: FilterDecoder
     native: NativeImageCodec
     params: object
     output_shape: tuple[int, ...] | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("decoder", "native", "params", "output_shape")
-    __match_args__ = ("decoder", "native", "params", "output_shape")
-
-    def __init__(
-        self,
-        decoder: FilterDecoder,
-        native: NativeImageCodec,
-        params: object,
-        output_shape: tuple[int, ...] | None,
-    ) -> None:
-        frozen_setattr(self, "decoder", decoder)
-        frozen_setattr(self, "native", native)
-        frozen_setattr(self, "params", params)
-        frozen_setattr(self, "output_shape", output_shape)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.decoder == other.decoder
-            and self.native == other.native
-            and self.params == other.params
-            and self.output_shape == other.output_shape
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.decoder, self.native, self.params, self.output_shape))
 
 
 def prepare_native_image(

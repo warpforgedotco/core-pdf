@@ -18,26 +18,14 @@ from core_pdf.impl.graphics_functions import (
     number_array,
 )
 from core_pdf.impl.pdf_names import lenient_int
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf_spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
 from core_pdf_spec.s_08_graphics.shading import parse_shading
 
 
-class PreparedShading(Record):
-    __slots__ = (
-        "shading_type",
-        "coords",
-        "domain",
-        "extend_start",
-        "extend_end",
-        "color_model",
-        "bbox",
-        "evaluator",
-        "color_rendering",
-    )
-
+class PreparedShading(GeneratedRecord):
     shading_type: int
     coords: tuple[float, ...]
     domain: tuple[float, float]
@@ -46,9 +34,9 @@ class PreparedShading(Record):
     color_model: str
     bbox: tuple[float, float, float, float] | None
     evaluator: Callable[[float], tuple[float, ...]]
-    color_rendering: ColorRendering
+    color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 
-    __fields__: ClassVar[tuple[str, ...]] = (
+    __repr_fields__: ClassVar[tuple[str, ...]] = (
         "shading_type",
         "coords",
         "domain",
@@ -56,45 +44,8 @@ class PreparedShading(Record):
         "extend_end",
         "color_model",
         "bbox",
-        "evaluator",
         "color_rendering",
     )
-    __repr_fields__: ClassVar[tuple[str, ...]] = tuple(
-        name for name in __fields__ if name != "evaluator"
-    )
-    __match_args__ = (
-        "shading_type",
-        "coords",
-        "domain",
-        "extend_start",
-        "extend_end",
-        "color_model",
-        "bbox",
-        "evaluator",
-        "color_rendering",
-    )
-
-    def __init__(
-        self,
-        shading_type: int,
-        coords: tuple[float, ...],
-        domain: tuple[float, float],
-        extend_start: bool,
-        extend_end: bool,
-        color_model: str,
-        bbox: tuple[float, float, float, float] | None,
-        evaluator: Callable[[float], tuple[float, ...]],
-        color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
-    ) -> None:
-        frozen_setattr(self, "shading_type", shading_type)
-        frozen_setattr(self, "coords", coords)
-        frozen_setattr(self, "domain", domain)
-        frozen_setattr(self, "extend_start", extend_start)
-        frozen_setattr(self, "extend_end", extend_end)
-        frozen_setattr(self, "color_model", color_model)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "evaluator", evaluator)
-        frozen_setattr(self, "color_rendering", color_rendering)
 
     def __eq__(self, other: object) -> bool:
         if self is other:

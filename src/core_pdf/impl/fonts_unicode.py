@@ -6,7 +6,7 @@ import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable
 from functools import cache
-from typing import Any, ClassVar
+from typing import Any
 
 from core_adobe_fonts.cmap.ranges import (
     code_in_ranges,
@@ -36,7 +36,7 @@ from core_pdf.impl.fonts_widths import (
 from core_pdf.impl.glyphs import UnicodeSource
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import (
-    Record,
+    GeneratedRecord,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
@@ -90,34 +90,15 @@ UNRESOLVED_UNICODE_SOURCES = frozenset(
 )
 
 
-class UnicodeChoice(Record):
-    __slots__ = ("text", "source", "alternates")
-
+class UnicodeChoice(GeneratedRecord):
     text: str
     source: UnicodeSource
     alternates: tuple[str, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("text", "source", "alternates")
-    __match_args__ = ("text", "source", "alternates")
 
     def __init__(self, text: str, source: UnicodeSource, alternates: tuple[str, ...] = ()) -> None:
         _unicodechoice_set_text(self, text)
         _unicodechoice_set_source(self, source)
         _unicodechoice_set_alternates(self, alternates)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.source == other.source
-            and self.alternates == other.alternates
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.text, self.source, self.alternates))
 
 
 _unicodechoice_set_text = slot_setter(UnicodeChoice, "text")

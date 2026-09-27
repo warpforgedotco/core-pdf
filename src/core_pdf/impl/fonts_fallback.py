@@ -5,105 +5,25 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import cache
 from importlib.resources import files
-from typing import Any, ClassVar, Protocol
+from typing import Any, Protocol
 
 from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.fonts_program_truetype import TrueTypeFontProgram
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 
 
-class PdfRasterFontRequest(Record):
-    __slots__ = ("font_name", "text", "is_cid_font", "is_vertical", "cid_registry", "cid_ordering")
-
+class PdfRasterFontRequest(GeneratedRecord):
     font_name: str | None
     text: str
     is_cid_font: bool
     is_vertical: bool
-    cid_registry: str | None
-    cid_ordering: str | None
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "font_name",
-        "text",
-        "is_cid_font",
-        "is_vertical",
-        "cid_registry",
-        "cid_ordering",
-    )
-    __match_args__ = (
-        "font_name",
-        "text",
-        "is_cid_font",
-        "is_vertical",
-        "cid_registry",
-        "cid_ordering",
-    )
-
-    def __init__(
-        self,
-        font_name: str | None,
-        text: str,
-        is_cid_font: bool,
-        is_vertical: bool,
-        cid_registry: str | None = None,
-        cid_ordering: str | None = None,
-    ) -> None:
-        frozen_setattr(self, "font_name", font_name)
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "is_cid_font", is_cid_font)
-        frozen_setattr(self, "is_vertical", is_vertical)
-        frozen_setattr(self, "cid_registry", cid_registry)
-        frozen_setattr(self, "cid_ordering", cid_ordering)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.font_name == other.font_name
-            and self.text == other.text
-            and self.is_cid_font == other.is_cid_font
-            and self.is_vertical == other.is_vertical
-            and self.cid_registry == other.cid_registry
-            and self.cid_ordering == other.cid_ordering
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.font_name,
-                self.text,
-                self.is_cid_font,
-                self.is_vertical,
-                self.cid_registry,
-                self.cid_ordering,
-            )
-        )
+    cid_registry: str | None = None
+    cid_ordering: str | None = None
 
 
-class PdfRasterFontFace(Record):
-    __slots__ = ("identifier", "data")
-
+class PdfRasterFontFace(GeneratedRecord):
     identifier: str
     data: bytes
-
-    __fields__: ClassVar[tuple[str, ...]] = ("identifier", "data")
-    __match_args__ = ("identifier", "data")
-
-    def __init__(self, identifier: str, data: bytes) -> None:
-        frozen_setattr(self, "identifier", identifier)
-        frozen_setattr(self, "data", data)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.identifier == other.identifier and self.data == other.data
-
-    def __hash__(self) -> int:
-        return hash((self.identifier, self.data))
 
 
 class PdfRasterFontProvider(Protocol):
