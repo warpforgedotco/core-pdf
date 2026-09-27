@@ -6,7 +6,7 @@ from math import ceil
 from typing import ClassVar
 
 from core_pdf.impl.geometry import bbox_union
-from core_pdf.impl.types import ReplaceFields, ReprFields
+from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
 
 
 class LAParams(ReprFields, ReplaceFields):
@@ -648,36 +648,10 @@ def _group_lines(
     return boxes
 
 
-class _TextGroup(ReprFields, ReplaceFields):
-    __slots__ = ("children", "bbox", "vertical")
-
+class _TextGroup(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     children: list[LTTextBox | _TextGroup]
     bbox: tuple[float, float, float, float]
-    vertical: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = ("children", "bbox", "vertical")
-    __match_args__ = ("children", "bbox", "vertical")
-
-    def __init__(
-        self,
-        children: list[LTTextBox | _TextGroup],
-        bbox: tuple[float, float, float, float],
-        vertical: bool = False,
-    ) -> None:
-        self.children = children
-        self.bbox = bbox
-        self.vertical = vertical
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.children == other.children
-            and self.bbox == other.bbox
-            and self.vertical == other.vertical
-        )
+    vertical: bool = False
 
     __hash__ = None  # type: ignore[assignment]
 

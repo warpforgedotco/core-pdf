@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy
 
 from core_pdf.impl.geometry import flip_rect_vertical, interval_overlap
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTTextBox
 
 from ._classification import (
@@ -19,39 +19,10 @@ from ._elements import (
 )
 
 
-class TextRegion(Record):
-    __slots__ = ("text", "bbox", "element_class")
-
+class TextRegion(GeneratedRecord):
     text: str
     bbox: tuple[float, float, float, float]
-    element_class: type[Element] | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("text", "bbox", "element_class")
-    __match_args__ = ("text", "bbox", "element_class")
-
-    def __init__(
-        self,
-        text: str,
-        bbox: tuple[float, float, float, float],
-        element_class: type[Element] | None = None,
-    ) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "element_class", element_class)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.bbox == other.bbox
-            and self.element_class == other.element_class
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.text, self.bbox, self.element_class))
+    element_class: type[Element] | None = None
 
 
 def clean_text(text: str) -> str:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from contextlib import suppress
-from typing import Any, ClassVar
+from typing import Any
 
 from core_adobe_fonts.afm.core14 import FONT_DATA as CORE14_FONT_DATA
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
@@ -16,7 +16,7 @@ from core_pdf.impl.fonts_metrics import LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.fonts_widths import parse_font_widths
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.types import PdfName, PdfString, ReplaceFields, ReprFields
+from core_pdf.impl.types import PdfName, PdfString, RecordType, ReplaceFields, ReprFields
 from core_pdf_compat._text_state import (
     IDENTITY_MATRIX,
     TextMachine,
@@ -30,22 +30,7 @@ from core_pdf_compat._text_state import (
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 
-class LegacyFont(ReprFields, ReplaceFields):
-    __slots__ = (
-        "decoder",
-        "cmap",
-        "widths",
-        "default_width",
-        "space_width",
-        "synthetic_space_width",
-        "space_code_bytes",
-        "encoding_table",
-        "encoding_codec",
-        "character_map",
-        "difference_fallbacks",
-        "width_uses_source_code",
-    )
-
+class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     decoder: FontDecoder
     cmap: ToUnicodeCMap | None
     widths: Mapping[int, float]
@@ -58,83 +43,6 @@ class LegacyFont(ReprFields, ReplaceFields):
     character_map: dict[str, str]
     difference_fallbacks: dict[bytes, str]
     width_uses_source_code: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "decoder",
-        "cmap",
-        "widths",
-        "default_width",
-        "space_width",
-        "synthetic_space_width",
-        "space_code_bytes",
-        "encoding_table",
-        "encoding_codec",
-        "character_map",
-        "difference_fallbacks",
-        "width_uses_source_code",
-    )
-    __match_args__ = (
-        "decoder",
-        "cmap",
-        "widths",
-        "default_width",
-        "space_width",
-        "synthetic_space_width",
-        "space_code_bytes",
-        "encoding_table",
-        "encoding_codec",
-        "character_map",
-        "difference_fallbacks",
-        "width_uses_source_code",
-    )
-
-    def __init__(
-        self,
-        decoder: FontDecoder,
-        cmap: ToUnicodeCMap | None,
-        widths: Mapping[int, float],
-        default_width: float,
-        space_width: float,
-        synthetic_space_width: float,
-        space_code_bytes: bytes,
-        encoding_table: tuple[str, ...] | None,
-        encoding_codec: str | None,
-        character_map: dict[str, str],
-        difference_fallbacks: dict[bytes, str],
-        width_uses_source_code: bool,
-    ) -> None:
-        self.decoder = decoder
-        self.cmap = cmap
-        self.widths = widths
-        self.default_width = default_width
-        self.space_width = space_width
-        self.synthetic_space_width = synthetic_space_width
-        self.space_code_bytes = space_code_bytes
-        self.encoding_table = encoding_table
-        self.encoding_codec = encoding_codec
-        self.character_map = character_map
-        self.difference_fallbacks = difference_fallbacks
-        self.width_uses_source_code = width_uses_source_code
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.decoder == other.decoder
-            and self.cmap == other.cmap
-            and self.widths == other.widths
-            and self.default_width == other.default_width
-            and self.space_width == other.space_width
-            and self.synthetic_space_width == other.synthetic_space_width
-            and self.space_code_bytes == other.space_code_bytes
-            and self.encoding_table == other.encoding_table
-            and self.encoding_codec == other.encoding_codec
-            and self.character_map == other.character_map
-            and self.difference_fallbacks == other.difference_fallbacks
-            and self.width_uses_source_code == other.width_uses_source_code
-        )
 
     __hash__ = None  # type: ignore[assignment]
 

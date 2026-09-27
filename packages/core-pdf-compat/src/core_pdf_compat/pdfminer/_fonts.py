@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
 from core_pdf.impl.exceptions import PdfError
@@ -11,7 +11,7 @@ from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.types import ReplaceFields, ReprFields
+from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
@@ -44,69 +44,13 @@ def _mapping_value(mapping: object, name: str) -> object | None:
     return next((value for key, value in mapping.items() if str(key) == name), None)
 
 
-class _FontProjection(ReprFields, ReplaceFields):
-    __slots__ = (
-        "font",
-        "values",
-        "has_widths",
-        "legacy_widths",
-        "first_char",
-        "recovered_malformed_token",
-    )
-
+class _FontProjection(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     font: dict[Any, Any]
     values: dict[str, Any]
     has_widths: bool
     legacy_widths: list[float] | None
     first_char: int
     recovered_malformed_token: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "font",
-        "values",
-        "has_widths",
-        "legacy_widths",
-        "first_char",
-        "recovered_malformed_token",
-    )
-    __match_args__ = (
-        "font",
-        "values",
-        "has_widths",
-        "legacy_widths",
-        "first_char",
-        "recovered_malformed_token",
-    )
-
-    def __init__(
-        self,
-        font: dict[Any, Any],
-        values: dict[str, Any],
-        has_widths: bool,
-        legacy_widths: list[float] | None,
-        first_char: int,
-        recovered_malformed_token: bool,
-    ) -> None:
-        self.font = font
-        self.values = values
-        self.has_widths = has_widths
-        self.legacy_widths = legacy_widths
-        self.first_char = first_char
-        self.recovered_malformed_token = recovered_malformed_token
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.font == other.font
-            and self.values == other.values
-            and self.has_widths == other.has_widths
-            and self.legacy_widths == other.legacy_widths
-            and self.first_char == other.first_char
-            and self.recovered_malformed_token == other.recovered_malformed_token
-        )
 
     __hash__ = None  # type: ignore[assignment]
 

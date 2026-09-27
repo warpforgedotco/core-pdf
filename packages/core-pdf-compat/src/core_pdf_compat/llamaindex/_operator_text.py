@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf.impl.capture_recovery import iter_content_operations
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
@@ -10,7 +10,7 @@ from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode, is_uni_sequence
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.types import PdfName, PdfString, Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, PdfName, PdfString
 from core_pdf_compat._text_state import (
     IDENTITY_MATRIX,
     TextMachine,
@@ -71,17 +71,7 @@ def difference_text(glyph_name: str, code: int) -> str:
     return f"/{glyph_name}" if not mapped or mapped == glyph_name else mapped
 
 
-class Font(Record):
-    __slots__ = (
-        "decoder",
-        "space_character",
-        "space_width",
-        "encoding",
-        "character_map",
-        "character_widths",
-        "default_width",
-    )
-
+class Font(GeneratedRecord):
     decoder: FontDecoder
     space_character: str
     space_width: float
@@ -89,71 +79,6 @@ class Font(Record):
     character_map: Mapping[str, str]
     character_widths: Mapping[int, float]
     default_width: float
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "decoder",
-        "space_character",
-        "space_width",
-        "encoding",
-        "character_map",
-        "character_widths",
-        "default_width",
-    )
-    __match_args__ = (
-        "decoder",
-        "space_character",
-        "space_width",
-        "encoding",
-        "character_map",
-        "character_widths",
-        "default_width",
-    )
-
-    def __init__(
-        self,
-        decoder: FontDecoder,
-        space_character: str,
-        space_width: float,
-        encoding: tuple[str, ...] | str,
-        character_map: Mapping[str, str],
-        character_widths: Mapping[int, float],
-        default_width: float,
-    ) -> None:
-        frozen_setattr(self, "decoder", decoder)
-        frozen_setattr(self, "space_character", space_character)
-        frozen_setattr(self, "space_width", space_width)
-        frozen_setattr(self, "encoding", encoding)
-        frozen_setattr(self, "character_map", character_map)
-        frozen_setattr(self, "character_widths", character_widths)
-        frozen_setattr(self, "default_width", default_width)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.decoder == other.decoder
-            and self.space_character == other.space_character
-            and self.space_width == other.space_width
-            and self.encoding == other.encoding
-            and self.character_map == other.character_map
-            and self.character_widths == other.character_widths
-            and self.default_width == other.default_width
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.decoder,
-                self.space_character,
-                self.space_width,
-                self.encoding,
-                self.character_map,
-                self.character_widths,
-                self.default_width,
-            )
-        )
 
     def encoded(self, data: bytes) -> str:
         if isinstance(self.encoding, str):
