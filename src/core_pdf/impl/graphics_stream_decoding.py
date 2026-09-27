@@ -551,26 +551,29 @@ def decode_native_samples(
 NATIVE_SAMPLES = NativeImageCodec(RAW_SAMPLE_IMAGE, decode_native_samples)
 
 TOLERANT_FILTERS: dict[FilterDecoder, TolerantFilter] = {
-    "flate": TolerantFilter("flate", apply_flate, passthrough=inflate, native=NATIVE_SAMPLES),
-    "ascii_hex": TolerantFilter("ascii_hex", apply_ascii_hex),
-    "ascii85": TolerantFilter("ascii85", apply_ascii85),
-    "run_length": TolerantFilter("run_length", apply_run_length),
-    "lzw": TolerantFilter("lzw", apply_lzw, native=NATIVE_SAMPLES),
-    "jpeg": TolerantFilter(
-        "jpeg", decode_jpeg, native=NativeImageCodec(JPEG_IMAGE, decode_native_jpeg)
-    ),
-    "ccitt": TolerantFilter(
-        "ccitt", decode_ccitt_fax, native=NativeImageCodec(CCITT_IMAGE, decode_native_ccitt)
-    ),
-    "crypt": TolerantFilter("crypt", decode_crypt),
-    "jpx": TolerantFilter(
-        "jpx",
-        decode_jpx,
-        native=NativeImageCodec(
-            JPX_IMAGE, decode_native_jpx, requires_identity_decode=False, after_filters=True
+    tolerant.decoder: tolerant
+    for tolerant in (
+        TolerantFilter("flate", apply_flate, passthrough=inflate, native=NATIVE_SAMPLES),
+        TolerantFilter("ascii_hex", apply_ascii_hex),
+        TolerantFilter("ascii85", apply_ascii85),
+        TolerantFilter("run_length", apply_run_length),
+        TolerantFilter("lzw", apply_lzw, native=NATIVE_SAMPLES),
+        TolerantFilter(
+            "jpeg", decode_jpeg, native=NativeImageCodec(JPEG_IMAGE, decode_native_jpeg)
         ),
-    ),
-    "jbig2": TolerantFilter("jbig2", decode_jbig2),
+        TolerantFilter(
+            "ccitt", decode_ccitt_fax, native=NativeImageCodec(CCITT_IMAGE, decode_native_ccitt)
+        ),
+        TolerantFilter("crypt", decode_crypt),
+        TolerantFilter(
+            "jpx",
+            decode_jpx,
+            native=NativeImageCodec(
+                JPX_IMAGE, decode_native_jpx, requires_identity_decode=False, after_filters=True
+            ),
+        ),
+        TolerantFilter("jbig2", decode_jbig2),
+    )
 }
 
 TOLERANT_FILTER_BY_NAME: dict[str, TolerantFilter] = {
