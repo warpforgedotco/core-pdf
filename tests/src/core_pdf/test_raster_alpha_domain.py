@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl import render_fills
+from core_pdf.impl import render_target
 from core_pdf.impl import render_target as raster
 from core_pdf.impl.render_blend import blend_op
 from core_pdf.impl.render_clipping import ClipState
@@ -18,7 +18,7 @@ def rounded_ratio(numerator: int, denominator: int) -> int:
 @pytest.mark.parametrize("route", ["generic", "span", "numpy-span"])
 def test_every_byte_alpha_pair_matches_integer_source_over(monkeypatch, route):
     monkeypatch.setattr(
-        render_fills, "RASTER_NUMPY_SPAN_MIN_PIXELS", 1 if route == "numpy-span" else 1000
+        render_target, "RASTER_NUMPY_SPAN_MIN_PIXELS", 1 if route == "numpy-span" else 1000
     )
     pixels = bytearray(256 * 4)
     view = np.frombuffer(pixels, dtype=np.uint8).reshape(1, 256, 4)

@@ -5,7 +5,7 @@ from typing import Any
 import numpy
 import pytest
 
-from core_pdf.impl import render_shading as raster
+from core_pdf.impl import render_target as raster
 from core_pdf.impl.graphics_shading import prepare_shading
 from core_pdf.impl.render_model import ShadingItem
 from core_pdf.impl.render_target import RasterTarget
