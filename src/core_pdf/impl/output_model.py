@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 from copy import replace
 from enum import StrEnum
-from typing import Any, ClassVar, NoReturn, Self, TypeAlias
+from operator import attrgetter
+from typing import Any, ClassVar, NoReturn, Protocol, Self, TypeAlias
 
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.page_selection import PageSelection
@@ -41,6 +42,58 @@ def freeze(value: Any) -> Any:
     if isinstance(value, set):
         return frozenset(freeze(item) for item in value)
     return value
+
+
+class FrozenMetadataFields:
+    __slots__ = ()
+
+    __frozen_fields__: ClassVar[tuple[str, ...]] = ("metadata",)
+
+    def _post_init(self) -> None:
+        for name in self.__frozen_fields__:
+            object.__setattr__(self, name, freeze(getattr(self, name)))
+
+
+TEXT_STYLE_FIELDS = ("bold", "italic", "underline", "strikeout", "mark", "superscript", "subscript")
+text_style_values = attrgetter(*TEXT_STYLE_FIELDS)
+
+
+class TextStyleFields:
+    __slots__ = ()
+
+    bold: bool
+    italic: bool
+    underline: bool
+    strikeout: bool
+    mark: bool
+    superscript: bool
+    subscript: bool
+
+    def style_values(self) -> tuple[bool, ...]:
+        values: tuple[bool, ...] = text_style_values(self)
+        return values
+
+    def style_dict(self) -> dict[str, bool]:
+        return dict(zip(TEXT_STYLE_FIELDS, self.style_values(), strict=True))
+
+
+class PageElementLike(Protocol):
+    @property
+    def order(self) -> int: ...
+
+    @property
+    def bbox(self) -> Rectangle | None: ...
+
+    @property
+    def node_kind(self) -> str: ...
+
+    @property
+    def provenance(self) -> tuple[str, ...]: ...
+
+
+def metadata_provenance(metadata: object) -> tuple[str, ...]:
+    source = metadata.get("source") if isinstance(metadata, Mapping) else None
+    return (str(source),) if source else ()
 
 
 class ViewCache:
@@ -244,7 +297,7 @@ class TableAssociatedText(Record):
         return hash((self.text, self.bbox, self.kind, self.confidence))
 
 
-class Table(Record):
+class Table(FrozenMetadataFields, Record):
     __slots__ = (
         "order",
         "rows",
@@ -345,8 +398,11 @@ class Table(Record):
             )
         )
 
-    def _post_init(self) -> None:
-        object.__setattr__(self, "metadata", freeze(self.metadata))
+    node_kind: ClassVar[str] = "table"
+
+    @property
+    def provenance(self) -> tuple[str, ...]:
+        return metadata_provenance(self.metadata)
 
     @property
     def layout_bbox(self) -> Rectangle | None:
@@ -367,7 +423,7 @@ class Table(Record):
         return bbox_union(boxes) if boxes else self.bbox
 
 
-class Figure(Record):
+class Figure(FrozenMetadataFields, Record):
     __slots__ = ("order", "bbox", "kind", "metadata")
 
     order: int
@@ -406,8 +462,11 @@ class Figure(Record):
     def __hash__(self) -> int:
         return hash((self.order, self.bbox, self.kind, self.metadata))
 
-    def _post_init(self) -> None:
-        object.__setattr__(self, "metadata", freeze(self.metadata))
+    node_kind: ClassVar[str] = "figure"
+
+    @property
+    def provenance(self) -> tuple[str, ...]:
+        return metadata_provenance(self.metadata)
 
 
 class Link(Record):
@@ -449,7 +508,7 @@ class Link(Record):
         return hash((self.bbox, self.url, self.link_type, self.text))
 
 
-class Annotation(Record):
+class Annotation(FrozenMetadataFields, Record):
     __slots__ = ("subtype", "bbox", "contents", "destination")
 
     subtype: str | None
@@ -459,6 +518,7 @@ class Annotation(Record):
 
     __fields__: ClassVar[tuple[str, ...]] = ("subtype", "bbox", "contents", "destination")
     __match_args__ = ("subtype", "bbox", "contents", "destination")
+    __frozen_fields__: ClassVar[tuple[str, ...]] = ("destination",)
 
     def __init__(
         self,
@@ -487,9 +547,6 @@ class Annotation(Record):
 
     def __hash__(self) -> int:
         return hash((self.subtype, self.bbox, self.contents, self.destination))
-
-    def _post_init(self) -> None:
-        object.__setattr__(self, "destination", freeze(self.destination))
 
 
 class FormField(Record):
@@ -593,7 +650,7 @@ class FormField(Record):
         )
 
 
-class TextSpan(Record):
+class TextSpan(TextStyleFields, Record):
     __slots__ = (
         "text",
         "bold",
@@ -686,7 +743,7 @@ class TextSpan(Record):
         )
 
 
-class TextLine(Record):
+class TextLine(TextStyleFields, Record):
     __slots__ = (
         "text",
         "break_before",
@@ -884,18 +941,7 @@ class TextLine(Record):
                     for span in self.spans
                 )
             return self.spans
-        return (
-            TextSpan(
-                text=self.text,
-                bold=self.bold,
-                italic=self.italic,
-                underline=self.underline,
-                strikeout=self.strikeout,
-                mark=self.mark,
-                superscript=self.superscript,
-                subscript=self.subscript,
-            ),
-        )
+        return (TextSpan(self.text, *self.style_values()),)
 
 
 class Block(Record):
@@ -998,6 +1044,8 @@ class Block(Record):
             )
         )
 
+    node_kind: ClassVar[str] = "block"
+
     @property
     def text(self) -> str:
         parts: list[str] = []
@@ -1055,12 +1103,8 @@ class ContentNode(Record):
 
     @property
     def provenance(self) -> tuple[str, ...]:
-        value = getattr(self.payload, "provenance", ())
-        if value:
-            return tuple(value)
-        metadata = getattr(self.payload, "metadata", {})
-        source = metadata.get("source") if isinstance(metadata, Mapping) else None
-        return (str(source),) if source else ()
+        element: PageElementLike = self.payload
+        return tuple(element.provenance)
 
 
 class TextView(ViewCache, Record):
@@ -1564,7 +1608,7 @@ class Page(ViewCache, Record):
         for index, element in enumerate(self.elements, start=start_id):
             yield ContentNode(
                 node_id=index,
-                kind=type(element).__name__.casefold(),
+                kind=element.node_kind,
                 payload=element,
                 page_number=self.page_number,
             )
@@ -1637,7 +1681,7 @@ class Diagnostic(Record):
         return hash((self.code, self.message, self.severity, self.page_number))
 
 
-class Document(ViewCache, Record):
+class Document(FrozenMetadataFields, ViewCache, Record):
     __slots__ = ("pages", "metadata", "diagnostics", "schema_version")
 
     pages: tuple[Page, ...]
@@ -1679,7 +1723,7 @@ class Document(ViewCache, Record):
     def _post_init(self) -> None:
         if self.schema_version != SCHEMA_VERSION:
             raise ValueError(f"unsupported structured schema version: {self.schema_version}")
-        object.__setattr__(self, "metadata", freeze(self.metadata))
+        super()._post_init()
 
     @property
     def text_view(self) -> DocumentTextView:

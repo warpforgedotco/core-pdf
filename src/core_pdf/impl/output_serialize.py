@@ -255,26 +255,8 @@ def line_to_json_dict(line: TextLine) -> dict[str, JsonValue]:
         "kind": line.kind,
         "source": line.source,
         "confidence": line.confidence,
-        "bold": line.bold,
-        "italic": line.italic,
-        "underline": line.underline,
-        "strikeout": line.strikeout,
-        "mark": line.mark,
-        "superscript": line.superscript,
-        "subscript": line.subscript,
-        "spans": [
-            {
-                "text": span.text,
-                "bold": span.bold,
-                "italic": span.italic,
-                "underline": span.underline,
-                "strikeout": span.strikeout,
-                "mark": span.mark,
-                "superscript": span.superscript,
-                "subscript": span.subscript,
-            }
-            for span in line.styled_spans()
-        ],
+        **line.style_dict(),
+        "spans": [{"text": span.text, **span.style_dict()} for span in line.styled_spans()],
         "baseline": bbox_to_json(line.baseline),
         "contributing_sources": list(line.contributing_sources),
     }
