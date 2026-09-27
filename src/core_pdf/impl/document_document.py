@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import contextlib
 import mmap
 import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from contextlib import AbstractContextManager
-from os import PathLike
-from types import TracebackType
 from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVar, cast
 
 from core_pdf.impl.document_forms import DocumentForms
@@ -25,6 +21,7 @@ from core_pdf.impl.document_page_tree import MAX_PAGE_TREE_DEPTH, PageTreeRecove
 from core_pdf.impl.document_records import (
     RawFormField,
 )
+from core_pdf.impl.document_source import DocumentLifecycle, DocumentOperation, load_source
 from core_pdf.impl.document_standards import (
     bootstrap_security_context,
     discover_document_standards,
@@ -39,10 +36,8 @@ from core_pdf.impl.document_xref_recovery import (
     object_headers_present,
 )
 from core_pdf.impl.exceptions import (
-    PdfDocumentClosedError,
     PdfEmptySourceError,
     PdfParseError,
-    PdfSourceError,
     PdfUnsupportedError,
 )
 from core_pdf.impl.execution import ExtractionScope
@@ -59,7 +54,6 @@ from core_pdf.impl.recovery_trees import iter_number_tree_items
 from core_pdf.impl.types import (
     ImageRecord,
     PageScoped,
-    PdfByteBuffer,
     PdfName,
     PdfReference,
     PdfSource,
@@ -94,27 +88,6 @@ PageT = TypeVar("PageT", bound=PdfPage, default=PdfPage)
 
 class DocumentAdapter(Protocol):
     def apply(self, document: StructuredDocument, /) -> StructuredDocument: ...
-
-
-class DocumentOperation(AbstractContextManager["DocumentOperation"]):
-    __slots__ = ("document", "released")
-
-    def __init__(self, document: PdfDocument[Any]) -> None:
-        self.document = document
-        self.released = False
-
-    @property
-    def cancelled(self) -> bool:
-        return self.document.operation_cancelled.is_set()
-
-    def release(self) -> None:
-        if self.released:
-            return
-        self.released = True
-        self.document.release_operation()
-
-    def __exit__(self, *args: object) -> None:
-        self.release()
 
 
 def legacy_name_context(context: SemanticContext | None) -> bool:
@@ -164,6 +137,7 @@ NOT_BUILT = NotBuilt()
 
 
 class PdfDocument(
+    DocumentLifecycle,
     XRefRecovery,
     PageTreeRecovery,
     DocumentNavigation[PageT],
@@ -267,7 +241,7 @@ class PdfDocument(
         self.strict_xref_error_cache = None
         self.reset_caches()
         try:
-            self.raw_data = self.load_data(source)
+            self.raw_data, self.file_handle = load_source(source)
             if not len(self.raw_data):
                 raise PdfEmptySourceError("PDF source is empty")
             self._standards = discover_header_standards(self.raw_data)
@@ -357,73 +331,6 @@ class PdfDocument(
             raster_font_provider=raster_font_provider,
         )
 
-    def __enter__(self) -> Self:
-        if self.closed:
-            raise PdfDocumentClosedError("PDF document is closed")
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        self.close()
-
-    @property
-    def closed(self) -> bool:
-        return self.closing or self._closed
-
-    def acquire_operation(self) -> DocumentOperation:
-        with self.operation_lock:
-            if self.closed:
-                raise PdfDocumentClosedError("PDF document is closed")
-            self.active_operations += 1
-        return DocumentOperation(self)
-
-    def release_operation(self) -> None:
-        with self.operation_lock:
-            self.active_operations = max(0, self.active_operations - 1)
-            should_close = self.closing and self.active_operations == 0
-        if should_close:
-            self.close_resources()
-
-    def close(self) -> None:
-        with self.operation_lock:
-            if self.closing or self._closed:
-                return
-            self.closing = True
-            self.operation_cancelled.set()
-            if self.active_operations:
-                return
-        self.close_resources()
-
-    def close_resources(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        self.font_decoders.clear()
-        self.reset_caches()
-
-        resolver = getattr(self, "resolver", None)
-        if resolver is not None:
-            resolver.close()
-
-        raster_fonts = self.raster_font_provider
-        if isinstance(raster_fonts, RasterFontRepository):
-            raster_fonts.close()
-
-        raw_data = self.raw_data
-        self.raw_data = b""
-        if isinstance(raw_data, mmap.mmap):
-            with contextlib.suppress(BufferError, OSError, ValueError):
-                raw_data.close()
-
-        if self.file_handle is not None:
-            with contextlib.suppress(OSError):
-                self.file_handle.close()
-            self.file_handle = None
-
     def resolve(self, ref: object) -> object:
         return self.resolver.resolve(ref)
 
@@ -481,70 +388,6 @@ class PdfDocument(
 
     def malformed(self, message: str) -> None:
         self.recovery.malformed(message)
-
-    def load_data(self, source: PdfSource) -> PdfByteBuffer:
-        if isinstance(source, (str, PathLike)):
-            if isinstance(source, str) and source.startswith("%PDF"):
-                return source.encode("latin-1")
-            file_handle = open(source, "rb")  # noqa: SIM115
-            self.file_handle = file_handle
-            try:
-                return mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ)
-            except (OSError, ValueError) as exc:
-                try:
-                    is_empty = file_handle.seek(0, 2) == 0
-                except OSError:
-                    is_empty = False
-                file_handle.close()
-                self.file_handle = None
-                if is_empty:
-                    raise PdfEmptySourceError("PDF source is empty") from exc
-                raise PdfSourceError(str(exc)) from exc
-        if isinstance(source, bytes):
-            return source
-        if isinstance(source, (memoryview, bytearray)):
-            return bytes(source)
-
-        mapped = self.try_mmap_reader(source)
-        if mapped is not None:
-            return mapped
-
-        read = getattr(source, "read", None)
-        if not callable(read):
-            raise PdfSourceError(f"PDF source type {type(source).__name__} is not supported")
-        reader = source
-        tell = getattr(source, "tell", None)
-        seek = getattr(source, "seek", None)
-        position: int | None = None
-        if callable(tell) and callable(seek):
-            try:
-                position = tell()
-                seek(0)
-            except OSError, TypeError, ValueError:
-                position = None
-        try:
-            raw = reader.read()
-        except OSError as exc:
-            raise PdfSourceError(str(exc)) from exc
-        finally:
-            if position is not None and callable(seek):
-                seek(position)
-        return raw if isinstance(raw, bytes) else bytes(raw)
-
-    def try_mmap_reader(self, source: object) -> mmap.mmap | None:
-        fileno = getattr(source, "fileno", None)
-        if not callable(fileno):
-            return None
-        try:
-            fd = fileno()
-        except OSError, TypeError, ValueError:
-            return None
-        try:
-            return mmap.mmap(fd, 0, access=mmap.ACCESS_READ)
-        except ValueError as error:
-            raise PdfEmptySourceError("PDF source is empty") from error
-        except OSError:
-            return None
 
     def init_security(self, password: str) -> None:
         trailer = self.trailer_dict
@@ -813,6 +656,7 @@ def create_recovered_security_handler(
 __all__ = (
     "MAX_PAGE_TREE_DEPTH",
     "TRAILER_METADATA_KEYS",
+    "DocumentOperation",
     "PageLookup",
     "first_indexes",
     "object_headers_present",
