@@ -288,6 +288,11 @@ def field_setter(name: str, instance: object, value: object) -> None:
     frozen_setattr(instance, name, value)
 
 
+def takes_fields_in_order(init: object, fields: tuple[str, ...]) -> bool:
+    code = getattr(init, "__code__", None)
+    return isinstance(code, CodeType) and code.co_varnames[1 : code.co_argcount] == fields
+
+
 def specialises(cls: type, name: str, explicit: set[str]) -> bool:
     if name in explicit:
         return False
@@ -371,7 +376,9 @@ class RecordType(type):
         if specialises(cls, "__repr__", explicit):
             names = getattr(cls, "__repr_fields__", None)
             generated["__repr__"] = specialise(cls, "__repr__", fields if names is None else names)
-        if specialises(cls, "__replace__", explicit):
+        if specialises(cls, "__replace__", explicit) and takes_fields_in_order(
+            generated.get("__init__", getattr(cls, "__init__", None)), fields
+        ):
             generated["__replace__"] = specialise(cls, "__replace__", fields)
         if specialises(cls, "__getstate__", explicit):
             generated["__getstate__"] = specialise(cls, "__getstate__", fields)

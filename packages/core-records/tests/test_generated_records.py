@@ -340,3 +340,16 @@ def test_init_false_keeps_the_inherited_initialiser() -> None:
     assert "__init__" not in Parsed.__dict__
     assert Parsed("5").value == 5
     assert repr(Parsed("5")) == "Custom<5>"
+
+
+def test_replace_stays_shared_when_the_initialiser_reorders_fields() -> None:
+    class KeywordOnly(GeneratedRecord):
+        first: int
+        second: int
+
+        def __init__(self, first: int, *, second: int) -> None:
+            frozen_setattr(self, "first", first)
+            frozen_setattr(self, "second", second)
+
+    assert "__replace__" not in KeywordOnly.__dict__
+    assert KeywordOnly.__replace__ is ReplaceFields.__replace__
