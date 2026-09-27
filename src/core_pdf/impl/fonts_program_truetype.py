@@ -16,7 +16,8 @@ from core_pdf._vendor.fontTools.pens.recordingPen import (
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.caches import BoundedDict
-from core_pdf.impl.fonts_program_base import BitmapFromContours
+from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode
+from core_pdf.impl.fonts_program_base import GlyphBox, GlyphContours, GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts_raster_kernel import (
     Point,
     scale_contours,
@@ -112,17 +113,6 @@ def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...
     return tuple(tuple(contour) for contour in recording_to_contours(pen.value))
 
 
-class BitmapFromOutlines:
-    __slots__ = ()
-
-    outlines: FontToolsOutlineAccess
-
-    def glyph_bitmap_for_gid(
-        self, glyph_id: int, *, width: int = 24, height: int = 32
-    ) -> tuple[int, ...]:
-        return self.outlines.glyph_bitmap_for_gid(glyph_id, width=width, height=height)
-
-
 TrueTypeTables = tuple[bytes, numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], int]
 
 
@@ -160,7 +150,7 @@ def truetype_tables(font: TTFont) -> TrueTypeTables | None:
     return glyf, loca, lsb, len(order)
 
 
-class FontToolsOutlineAccess(BitmapFromContours):
+class FontToolsOutlineAccess:
     __slots__ = ("font", "glyph_count", "reverse_glyph_map", "scale", "truetype", "truetype_read")
 
     def __init__(self, font: TTFont) -> None:
@@ -224,16 +214,33 @@ for logger_name in (
     logging.getLogger(logger_name).addFilter(FONT_TABLE_WARNING_FILTER)
 
 
-class TrueTypeFontProgram(BitmapFromOutlines):
+class FontToolsProgram(GlyphProgram):
+    __slots__ = ("font", "outlines")
+
+    font: TTFont
+    outlines: FontToolsOutlineAccess
+
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        return self.outlines.glyph_id_for_name(glyph_name)
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return self.outlines.has_glyph_id(glyph_id)
+
+    def glyph_contours_uncached(self, glyph_id: int) -> GlyphContours:
+        return self.outlines.normalized_glyph_contours(glyph_id)
+
+    def glyph_bbox_uncached(self, glyph_id: int) -> GlyphBox | None:
+        return self.outlines.glyph_bbox_for_gid(glyph_id)
+
+
+class TrueTypeFontProgram(FontToolsProgram):
     __slots__ = (
         "data",
-        "font",
         "units_per_em",
         "cid_to_gid",
         "cmap",
         "unicode_cmap",
         "glyph_to_unicode",
-        "outlines",
         "glyph_locations",
         "glyph_table_data",
         "composite_bbox_cache",
@@ -267,7 +274,7 @@ class TrueTypeFontProgram(BitmapFromOutlines):
 
     def variant(self, cid_to_gid: bytes | None, *, use_cmap: bool) -> TrueTypeFontProgram:
         variant = object.__new__(TrueTypeFontProgram)
-        for name in TrueTypeFontProgram.__slots__:
+        for name in (*FontToolsProgram.__slots__, *TrueTypeFontProgram.__slots__):
             setattr(variant, name, getattr(self, name))
         variant.cid_to_gid = cid_to_gid
         if use_cmap:
@@ -276,7 +283,14 @@ class TrueTypeFontProgram(BitmapFromOutlines):
             variant.cmap = {}
         return variant
 
-    def glyph_id_for_code(self, code: int) -> int:
+    def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:
+        if not naming.is_cid_font and 0 <= code < 256 and self.cmap:
+            glyph_text = glyph_name_to_unicode(naming.glyph_name(code))
+            if len(glyph_text) == 1:
+                return self.glyph_id_for_unicode(ord(glyph_text))
+        return self.mapped_glyph_id(code)
+
+    def mapped_glyph_id(self, code: int) -> int:
         if self.cid_to_gid is not None:
             pos = code * 2
             if pos >= 0 and pos + 2 <= len(self.cid_to_gid):
@@ -291,17 +305,14 @@ class TrueTypeFontProgram(BitmapFromOutlines):
             return self.cmap.get(codepoint, 0)
         return 0
 
-    def has_glyph_id(self, gid: int) -> bool:
-        return self.outlines.has_glyph_id(gid)
-
     def unicode_for_gid(self, gid: int) -> str:
         return self.glyph_to_unicode.get(gid, "")
 
-    def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
-        return self.glyph_bbox_for_gid(self.glyph_id_for_code(code))
+    def code_bbox(self, code: int) -> GlyphBox | None:
+        return self.glyph_bbox_for_gid(self.mapped_glyph_id(code))
 
-    def glyph_bbox_for_gid(self, gid: int) -> tuple[float, float, float, float] | None:
-        bbox = glyph_header_bbox(self.glyph_locations, self.glyph_table_data, gid)
+    def glyph_bbox_uncached(self, glyph_id: int) -> GlyphBox | None:
+        bbox = glyph_header_bbox(self.glyph_locations, self.glyph_table_data, glyph_id)
         if bbox is None:
             return None
         scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
@@ -309,9 +320,6 @@ class TrueTypeFontProgram(BitmapFromOutlines):
             return bbox
         x0, y0, x1, y1 = bbox
         return (x0 * scale, y0 * scale, x1 * scale, y1 * scale)
-
-    def normalized_glyph_contours(self, gid: int) -> tuple[tuple[Point, ...], ...]:
-        return self.outlines.normalized_glyph_contours(gid)
 
     def composite_body_bbox(
         self, gid: int
@@ -622,11 +630,8 @@ def parse_opentype_program(data: bytes) -> TTFont:
     return font
 
 
-class OpenTypeFontProgram(BitmapFromOutlines):
-    __slots__ = (
-        "font",
-        "outlines",
-    )
+class OpenTypeFontProgram(FontToolsProgram):
+    __slots__ = ()
 
     def __init__(self, data: bytes) -> None:
         try:
@@ -637,14 +642,7 @@ class OpenTypeFontProgram(BitmapFromOutlines):
         except Exception as exc:
             raise ValueError("invalid OpenType CFF font program") from exc
 
-    def glyph_id_for_name(self, glyph_name: str) -> int | None:
-        return self.outlines.glyph_id_for_name(glyph_name)
-
-    def has_glyph_id(self, glyph_id: int) -> bool:
-        return self.outlines.has_glyph_id(glyph_id)
-
-    def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
-        return self.outlines.normalized_glyph_contours(glyph_id)
-
-    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
-        return self.outlines.glyph_bbox_for_gid(glyph_id)
+    def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:
+        if naming.is_cid_font:
+            return code
+        return self.glyph_id_for_name(naming.glyph_name(code))

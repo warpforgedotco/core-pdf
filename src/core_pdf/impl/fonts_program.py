@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import suppress
 from io import BytesIO
 from typing import Any
 
 from core_pdf._vendor.fontTools.ttLib import TTFont
+from core_pdf.impl.fonts_program_base import NULL_PROGRAM, GlyphProgram
 from core_pdf.impl.fonts_program_cff import CFFFont
 from core_pdf.impl.fonts_program_truetype import (
     OpenTypeFontProgram,
@@ -120,6 +122,14 @@ def recover_font_file(descriptor: dict[str, Any] | None, key: str) -> PdfStream 
     return value if isinstance(value, PdfStream) else None
 
 
+FONT_PROGRAM_LOADERS: tuple[Callable[[FontProgramInputs], FontProgram | None], ...] = (
+    cff_font,
+    tt_font,
+    type1_font,
+    opentype_font,
+)
+
+
 def font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
     inputs = prepare_font_program_inputs(
         font,
@@ -128,13 +138,13 @@ def font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
         read_descriptor=recover_descriptor,
         read_font_file=recover_font_file,
     )
-    for resolver in (
-        cff_font,
-        tt_font,
-        type1_font,
-        opentype_font,
-    ):
-        program = resolver(inputs)
+    for loader in FONT_PROGRAM_LOADERS:
+        program = loader(inputs)
         if program is not None:
             return program
     return None
+
+
+def load_glyph_program(font: dict[str, Any]) -> GlyphProgram:
+    program = font_program_for_pdf_font(font)
+    return program if program is not None else NULL_PROGRAM

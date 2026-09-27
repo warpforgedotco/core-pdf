@@ -7,6 +7,7 @@ from core_pdf import PdfDocument
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder, single_code_mapping, split_code_bytes
+from core_pdf.impl.fonts_program_base import NULL_PROGRAM
 from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 
@@ -207,7 +208,7 @@ def test_invalid_type1_length_metadata_does_not_prevent_font_recovery(length):
             "FontDescriptor": {"FontFile": PdfStream({"Length1": length}, b"damaged program")},
         }
     )
-    assert font.font_program is None
+    assert font.font_program is NULL_PROGRAM
     assert font.decode_glyphs(b"A")[0].unicode == "A"
 
 

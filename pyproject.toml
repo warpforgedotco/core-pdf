@@ -183,6 +183,9 @@ line-length = 100
 "src/core_pdf/impl/recovery_lexer.py" = ["ARG002"]
 "src/core_pdf/impl/recovery_resolver.py" = ["ARG002"]
 "src/core_pdf/impl/fonts_cmap_tounicode.py" = ["ARG002"]
+# Glyph programs share one hook signature; the defaults and the null program
+# ignore the parts a program type does not need.
+"src/core_pdf/impl/fonts_program_base.py" = ["ARG002"]
 [tool.ruff.lint.mccabe]
 max-complexity = 60
 

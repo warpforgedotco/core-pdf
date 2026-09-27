@@ -21,13 +21,14 @@ from core_pdf._vendor.fontTools.cffLib import (
     cffISOAdobeStrings,
 )
 from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_cff_repair import (
     EMPTY_FEATURE,
     CFFGlyphFeature,
     feature_from_contours,
 )
+from core_pdf.impl.fonts_program_base import GlyphBox, GlyphContours, GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts_raster_kernel import (
-    rasterize_contours,
     transform_contours,
 )
 from core_pdf.impl.geometry import points_bbox
@@ -56,7 +57,7 @@ def cff_font_matrix(
         return None
 
 
-class CFFFont(PdfCFFFont):
+class CFFFont(PdfCFFFont, GlyphProgram):
     __slots__ = ()
 
     def read_header(self) -> int:
@@ -430,23 +431,23 @@ class CFFFont(PdfCFFFont):
             return EMPTY_FEATURE
         return feature_from_contours(contours)
 
-    def glyph_bitmap_for_gid(
-        self, glyph_id: int, *, width: int = 24, height: int = 32
-    ) -> tuple[int, ...]:
-        geometry = self.glyph_geometry_for_gid(glyph_id)
-        contours = geometry[0]
-        if not contours:
-            return ()
-        return rasterize_contours(contours, width=width, height=height)
-
-    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+    def glyph_bbox_uncached(self, glyph_id: int) -> GlyphBox | None:
         geometry = self.glyph_geometry_for_gid(glyph_id, bounds_only=True)
         return geometry[1]
 
-    def normalized_glyph_contours(
-        self, glyph_id: int
-    ) -> tuple[tuple[tuple[float, float], ...], ...]:
+    def glyph_contours_uncached(self, glyph_id: int) -> GlyphContours:
         return self.glyph_geometry_for_gid(glyph_id)[0]
+
+    def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:
+        if naming.is_cid_font:
+            return self.glyph_id_for_cid(code)
+        return self.glyph_id_for_name(naming.glyph_name(code))
+
+    def font_builtin_encoding(self) -> tuple[dict[int, str], bool] | None:
+        try:
+            return (self.builtin_encoding(), self.builtin_encoding_is_authoritative())
+        except PdfParseError, ValueError:
+            return {}, False
 
 
 def contours_bbox(

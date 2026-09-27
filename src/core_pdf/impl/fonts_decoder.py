@@ -45,10 +45,10 @@ from core_pdf.impl.fonts_metrics import (
     parse_font_metrics,
     standard_14_widths,
 )
-from core_pdf.impl.fonts_program import FontProgram, font_program_for_pdf_font
+from core_pdf.impl.fonts_program import load_glyph_program
+from core_pdf.impl.fonts_program_base import GlyphProgram
 from core_pdf.impl.fonts_program_cff import CFFFont
-from core_pdf.impl.fonts_program_truetype import OpenTypeFontProgram, TrueTypeFontProgram
-from core_pdf.impl.fonts_program_type1 import Type1FontProgram, parse_type1_font_program_encoding
+from core_pdf.impl.fonts_program_type1 import parse_type1_font_program_encoding
 from core_pdf.impl.fonts_widths import (
     parse_font_widths,
     recover_descendant,
@@ -113,7 +113,7 @@ def single_code_mapping(
 
 def build_cff_unicode_repair_index(
     font: dict[str, Any],
-    font_program: FontProgram | None,
+    font_program: GlyphProgram,
     to_unicode: ToUnicodeCMap | None,
     cmap: CMapDecoder | None,
 ) -> CFFUnicodeRepairIndex | None:
@@ -471,7 +471,7 @@ class FontDecoder:
     cff_unicode_repairs: dict[bytes, str]
     simple_glyph_cache: dict[int, DecodedGlyph]
     cid_glyph_cache: dict[tuple[bytes, int], DecodedGlyph]
-    font_program: FontProgram | None
+    font_program: GlyphProgram
     raster_font_provider: RasterFontProviderLike | None
     glyph_bbox_cache: dict[int, Rectangle | None]
     glyph_outline_cache: dict[
@@ -548,7 +548,7 @@ class FontDecoder:
         if subtype is not None:
             subtype = recover_pdf_name(subtype)
 
-        self.font_program = font_program_for_pdf_font(font)
+        self.font_program = load_glyph_program(font)
 
         to_unicode_obj = font.get("ToUnicode")
         to_unicode = None
@@ -722,17 +722,9 @@ class FontDecoder:
         return cmap, base_encoding, differences, builtin, builtin_authoritative
 
     def builtin_font_encoding(self, font: dict[str, Any]) -> tuple[dict[int, str], bool]:
-        match self.font_program:
-            case CFFFont() as program:
-                try:
-                    return (
-                        program.builtin_encoding(),
-                        program.builtin_encoding_is_authoritative(),
-                    )
-                except PdfParseError, ValueError:
-                    return {}, False
-            case _:
-                pass
+        builtin = self.font_program.font_builtin_encoding()
+        if builtin is not None:
+            return builtin
         descriptor = font.get("FontDescriptor")
         if not isinstance(descriptor, dict):
             return {}, False
@@ -833,7 +825,7 @@ class FontDecoder:
             )
 
         if gid is not None:
-            tt_text = self.true_type_unicode_for_gid(gid)
+            tt_text = self.font_program.unicode_for_gid(gid)
             if tt_text == to_unicode_text == "\ufffd":
                 return UnicodeChoice(to_unicode_text, UnicodeSource.TO_UNICODE)
             if tt_text and not has_untrusted_unicode_semantics(tt_text):
@@ -889,21 +881,10 @@ class FontDecoder:
         source = UnicodeSource.IDENTITY if text != "\ufffd" else UnicodeSource.REPLACEMENT
         return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
 
-    def true_type_unicode_for_gid(self, gid: int) -> str:
-        match self.font_program:
-            case TrueTypeFontProgram() as program:
-                return program.unicode_for_gid(gid)
-            case _:
-                return ""
-
     def visual_punctuation_for_code(self, text: str, *, fallback_code: int) -> str | None:
         if len(text) != 1 or not unicodedata.category(text).startswith("M"):
             return None
-        match self.font_program:
-            case TrueTypeFontProgram() as program:
-                bbox = program.glyph_bbox(fallback_code)
-            case _:
-                return None
+        bbox = self.font_program.code_bbox(fallback_code)
         if bbox is None:
             return None
         x_min, y_min, x_max, y_max = bbox
@@ -1071,8 +1052,7 @@ class FontDecoder:
         )
 
     def glyph_exists(self, gid: int) -> bool:
-        program = self.font_program
-        return program.has_glyph_id(gid) if program is not None else True
+        return self.font_program.has_glyph_id(gid)
 
     def glyph_id_for_code(self, code: int) -> int | None:
         cache = self.glyph_id_cache
@@ -1083,25 +1063,7 @@ class FontDecoder:
             return gid
 
     def resolve_glyph_id_for_code(self, code: int) -> int | None:
-        match self.font_program:
-            case CFFFont() as program:
-                if self.is_cid_font:
-                    return program.glyph_id_for_cid(code)
-                return program.glyph_id_for_name(self.glyph_name(code))
-            case TrueTypeFontProgram() as program:
-                if not self.is_cid_font and 0 <= code < 256 and program.cmap:
-                    glyph_text = glyph_name_to_unicode(self.glyph_name(code))
-                    if len(glyph_text) == 1:
-                        return program.glyph_id_for_unicode(ord(glyph_text))
-                return program.glyph_id_for_code(code)
-            case Type1FontProgram() as program:
-                return program.glyph_id_for_name(self.glyph_name(code))
-            case OpenTypeFontProgram() as program:
-                if self.is_cid_font:
-                    return code
-                return program.glyph_id_for_name(self.glyph_name(code))
-            case _:
-                return code
+        return self.font_program.glyph_id_for_code(code, self)
 
     @property
     def font_matrix(self) -> Matrix:
@@ -1126,12 +1088,7 @@ class FontDecoder:
     def glyph_bbox_uncached(self, code: int) -> Rectangle | None:
         if code < 0:
             return None
-        program = self.font_program
-        if program is None:
-            width = self.glyph_width(code)
-            return None if width <= 0 else (0.0, self.descent, width, self.ascent)
-        glyph_id = self.glyph_id_for_code(code)
-        return program.glyph_bbox_for_gid(glyph_id) if glyph_id is not None else None
+        return self.font_program.glyph_bbox_for_code(code, self.glyph_id_for_code(code), self)
 
     def vertical_glyph_metric(self, code: int) -> tuple[float, float, float]:
         metric = self.vertical_metrics.get(code)
@@ -1152,10 +1109,9 @@ class FontDecoder:
         if code < 0:
             return ()
         glyph_id = self.glyph_id_for_code(code)
-        program = self.font_program
         return (
-            program.glyph_bitmap_for_gid(glyph_id, width=width, height=height)
-            if program is not None and glyph_id is not None
+            self.font_program.glyph_bitmap_for_gid(glyph_id, width=width, height=height)
+            if glyph_id is not None
             else ()
         )
 
@@ -1193,9 +1149,9 @@ class FontDecoder:
         glyph_id = gid if gid is not None else self.glyph_id_for_code(code)
         if glyph_id is None:
             return ()
-        program = self.font_program
-        if program is not None:
-            return program.normalized_glyph_contours(glyph_id)
+        return self.font_program.glyph_outline_for(glyph_id, text, self)
+
+    def fallback_glyph_outline(self, text: str) -> tuple[tuple[tuple[float, float], ...], ...]:
         return fallback_glyph_outline(
             self.font_name,
             text,

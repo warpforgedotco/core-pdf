@@ -10,7 +10,7 @@ from core_pdf._vendor.fontTools.pens.recordingPen import (
     RecordingPen,
 )
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
-from core_pdf.impl.fonts_program_base import BitmapFromContours
+from core_pdf.impl.fonts_program_base import GlyphBox, GlyphContours, GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts_program_truetype import recording_to_contours
 from core_pdf.impl.fonts_raster_kernel import (
     Point,
@@ -41,7 +41,7 @@ def eexec_payload(data: bytes, length1: int | None) -> bytes:
     return decrypted[4:]
 
 
-class Type1FontProgram(BitmapFromContours):
+class Type1FontProgram(GlyphProgram):
     __slots__ = (
         "charstrings",
         "font_matrix",
@@ -101,7 +101,10 @@ class Type1FontProgram(BitmapFromContours):
     def has_glyph_id(self, glyph_id: int) -> bool:
         return 0 <= glyph_id < len(self.glyph_names)
 
-    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+    def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:
+        return self.glyph_id_for_name(naming.glyph_name(code))
+
+    def glyph_bbox_uncached(self, glyph_id: int) -> GlyphBox | None:
         try:
             if not self.has_glyph_id(glyph_id):
                 return None
@@ -124,7 +127,7 @@ class Type1FontProgram(BitmapFromContours):
         except Exception:
             return None
 
-    def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+    def glyph_contours_uncached(self, glyph_id: int) -> GlyphContours:
         if not self.has_glyph_id(glyph_id):
             return ()
         return self.glyph_contours(self.glyph_names[glyph_id])
