@@ -3,6 +3,7 @@ import numpy
 from core_pdf import PdfDocument
 from core_pdf.impl.render_clipping import ClipState
 from core_pdf.impl.render_grid import DeviceGrid
+from core_pdf.impl.render_model import PixelWindow
 from core_pdf.impl.render_target import RasterTarget
 
 BACKDROP_PIXEL = bytes([10, 200, 90, 180])
@@ -25,7 +26,7 @@ def make_backdrop_target(width: int, height: int, *, planes: bool) -> RasterTarg
     if planes:
         target.group_source_alpha = numpy.full((height, width), 0.25, dtype=numpy.float32)
         target.group_source_shape = numpy.full((height, width), 0.5, dtype=numpy.float32)
-        target.paint_window = []
+        target.paint_window = PixelWindow()
     return target
 
 

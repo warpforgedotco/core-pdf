@@ -251,7 +251,7 @@ def test_a_colour_failing_part_way_paints_what_the_loop_painted(
                 bytes(target.pixels),
                 plane_bytes(target.group_source_alpha),
                 plane_bytes(target.group_source_shape),
-                list(target.paint_window) if target.paint_window is not None else None,
+                target.paint_window.bounds() if target.paint_window is not None else None,
             )
         )
     assert outcomes[0] == outcomes[1]
@@ -283,7 +283,7 @@ def test_blending_rules_follow_the_documents_version(
                 bytes(target.pixels),
                 plane_bytes(target.group_source_alpha),
                 plane_bytes(target.group_source_shape),
-                list(target.paint_window) if target.paint_window is not None else None,
+                target.paint_window.bounds() if target.paint_window is not None else None,
             )
         )
     assert outcomes[0] == outcomes[1]

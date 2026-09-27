@@ -37,17 +37,21 @@ class RasterCoverage(RasterState):
         window = self.paint_window
         if window is None:
             return
-        if window:
-            if y0 < window[0]:
-                window[0] = y0
-            if y1 > window[1]:
-                window[1] = y1
-            if x0 < window[2]:
-                window[2] = x0
-            if x1 > window[3]:
-                window[3] = x1
-        else:
-            window[:] = (y0, y1, x0, x1)
+        if window.empty:
+            window.empty = False
+            window.y0 = y0
+            window.y1 = y1
+            window.x0 = x0
+            window.x1 = x1
+            return
+        if y0 < window.y0:
+            window.y0 = y0
+        if y1 > window.y1:
+            window.y1 = y1
+        if x0 < window.x0:
+            window.x0 = x0
+        if x1 > window.x1:
+            window.x1 = x1
 
     def record_source_coverage(
         self,

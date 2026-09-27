@@ -152,8 +152,7 @@ class RasterShading(RasterImages):
             blend_error is not None,
         )
         if window is not None and self.paint_window is not None:
-            x0, y0, x1, y1 = window
-            self.extend_paint_box(y0, y1, x0, x1)
+            self.paint_window.extend_box(window)
         if stopped:
             assert blend_error is not None
             raise blend_error

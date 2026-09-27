@@ -9,7 +9,7 @@ import numpy
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render_blend import blend_visible_pixels
 from core_pdf.impl.render_fills import RasterFills
-from core_pdf.impl.render_model import LineCap, LineJoin
+from core_pdf.impl.render_model import LineCap, LineJoin, PixelWindow
 from core_pdf.impl.render_paths import (
     RASTER_KERNEL_MIN_PIXEL_AREA,
     circle_path,
@@ -71,16 +71,16 @@ def paint_stroke_once(
     if coverage_buffer is None or len(coverage_buffer) != size:
         coverage_buffer = bytearray(size)
     target.stroke_scratch = None
-    window: list[int] = []
+    window = PixelWindow()
     scratch = target.pixel_view(coverage_buffer)
     try:
         with target.detached_buffer(coverage_buffer, window):
             target.stroke_path(
                 path, line_width, (0, 0, 0, 255), dash_pattern, None, line_cap, line_join
             )
-        if not window:
+        if window.empty:
             return
-        y0, y1, x0, x1 = window
+        y0, y1, x0, x1 = window.y0, window.y1, window.x0, window.x1
         coverage = scratch[y0:y1, x0:x1, 3]
         covered_rows = numpy.flatnonzero(coverage.any(axis=1))
         if covered_rows.size == 0:
@@ -90,8 +90,8 @@ def paint_stroke_once(
         columns = slice(x0 + int(covered_columns[0]), x0 + int(covered_columns[-1]) + 1)
         coverage = scratch[rows, columns, 3].copy()
     finally:
-        if window:
-            scratch[window[0] : window[1], window[2] : window[3]] = 0
+        if not window.empty:
+            scratch[window.y0 : window.y1, window.x0 : window.x1] = 0
         target.stroke_scratch = coverage_buffer
     alpha = numpy.rint(coverage.astype(numpy.float64) * (rgba[3] / 255.0)).astype(numpy.uint8)
     target.record_source_coverage(rows, columns, alpha, shape=coverage)

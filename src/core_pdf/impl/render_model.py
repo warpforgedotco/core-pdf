@@ -507,6 +507,49 @@ class ImagePaintItem(ReplaceFields, ReprFields):
 DisplayItem = DisplayListItem | ImagePaintItem | PathPaintItem
 
 
+class PixelWindow:
+    __slots__ = ("empty", "y0", "y1", "x0", "x1")
+
+    def __init__(self) -> None:
+        self.empty = True
+        self.y0 = 0
+        self.y1 = 0
+        self.x0 = 0
+        self.x1 = 0
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__qualname__}{self.bounds()!r}"
+
+    def extend(self, y0: int, y1: int, x0: int, x1: int) -> None:
+        if self.empty:
+            self.empty = False
+            self.y0 = y0
+            self.y1 = y1
+            self.x0 = x0
+            self.x1 = x1
+            return
+        if y0 < self.y0:
+            self.y0 = y0
+        if y1 > self.y1:
+            self.y1 = y1
+        if x0 < self.x0:
+            self.x0 = x0
+        if x1 > self.x1:
+            self.x1 = x1
+
+    def extend_box(self, box: tuple[int, int, int, int]) -> None:
+        x0, y0, x1, y1 = box
+        self.extend(y0, y1, x0, x1)
+
+    def bounds(self) -> tuple[int, ...]:
+        return () if self.empty else (self.y0, self.y1, self.x0, self.x1)
+
+    def slices(self) -> tuple[slice, slice] | None:
+        if self.empty:
+            return None
+        return slice(self.y0, self.y1), slice(self.x0, self.x1)
+
+
 class RasterGroup(Record):
     __slots__ = (
         "pixels",
@@ -533,7 +576,7 @@ class RasterGroup(Record):
     knockout: bool
     alpha_is_shape: bool
     mask_alpha: SoftMaskPlane | None
-    paint_window: list[int]
+    paint_window: PixelWindow
     painted_boxes: list[tuple[int, int, int, int]] | None
 
     __fields__: ClassVar[tuple[str, ...]] = (
@@ -565,7 +608,7 @@ class RasterGroup(Record):
         knockout: bool = False,
         alpha_is_shape: bool = False,
         mask_alpha: SoftMaskPlane | None = None,
-        paint_window: list[int] | None = None,
+        paint_window: PixelWindow | None = None,
         painted_boxes: list[tuple[int, int, int, int]] | None = None,
     ) -> None:
         frozen_setattr(self, "pixels", pixels)
@@ -578,43 +621,10 @@ class RasterGroup(Record):
         frozen_setattr(self, "knockout", knockout)
         frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
         frozen_setattr(self, "mask_alpha", mask_alpha)
-        frozen_setattr(self, "paint_window", [] if paint_window is None else paint_window)
+        frozen_setattr(
+            self, "paint_window", PixelWindow() if paint_window is None else paint_window
+        )
         frozen_setattr(self, "painted_boxes", painted_boxes)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.pixels == other.pixels
-            and self.composite_alpha == other.composite_alpha
-            and self.blend_mode == other.blend_mode
-            and self.backdrop == other.backdrop
-            and self.source_alpha == other.source_alpha
-            and self.source_shape == other.source_shape
-            and self.knockout == other.knockout
-            and self.alpha_is_shape == other.alpha_is_shape
-            and self.mask_alpha == other.mask_alpha
-            and self.paint_window == other.paint_window
-            and self.painted_boxes == other.painted_boxes
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.pixels,
-                self.composite_alpha,
-                self.blend_mode,
-                self.backdrop,
-                self.source_alpha,
-                self.source_shape,
-                self.knockout,
-                self.alpha_is_shape,
-                self.mask_alpha,
-                self.paint_window,
-            )
-        )
 
     def __replace__(self, /, **changes: Any) -> Self:
         pixels = changes.pop("pixels", self.pixels)

@@ -10,7 +10,7 @@ import numpy
 from core_pdf.impl.array_views import uint8_image_view
 from core_pdf.impl.capture_records import CapturedPath
 from core_pdf.impl.render_compositing import RasterCompositing
-from core_pdf.impl.render_model import RasterGroup, SoftMaskPlane
+from core_pdf.impl.render_model import PixelWindow, RasterGroup, SoftMaskPlane
 from core_pdf.impl.render_raster_state import ElementaryScratch, PixelBox
 
 
@@ -95,11 +95,11 @@ class RasterGroups(RasterCompositing):
             scratch.synced_parent = None
         elif parent.knockout and scratch.synced_parent is parent:
             dirty = scratch.dirty
-            if dirty:
-                y0, y1, x0, x1 = dirty
-                scratch.view[y0:y1, x0:x1] = self.pixel_view(backdrop)[y0:y1, x0:x1]
-                source_alpha[y0:y1, x0:x1] = 0.0
-                source_shape[y0:y1, x0:x1] = 0.0
+            if dirty is not None:
+                rows, columns = dirty
+                scratch.view[rows, columns] = self.pixel_view(backdrop)[rows, columns]
+                source_alpha[rows, columns] = 0.0
+                source_shape[rows, columns] = 0.0
             scratch.synced_parent = parent
         else:
             buffer[:] = backdrop
@@ -173,7 +173,7 @@ class RasterGroups(RasterCompositing):
         child = self.buffer_stack.pop()
         scratch = self.elementary_scratch.get(len(self.buffer_stack))
         if scratch is not None and child.pixels is scratch.buffer:
-            scratch.dirty = list(child.paint_window) if child.paint_window else None
+            scratch.dirty = child.paint_window.slices()
         self.sync_group_mirrors()
         return child
 
@@ -186,7 +186,9 @@ class RasterGroups(RasterCompositing):
         self.paint_window = group.paint_window if len(self.buffer_stack) > 1 else None
 
     @contextmanager
-    def detached_buffer(self, buffer: bytearray, window: list[int] | None = None) -> Iterator[None]:
+    def detached_buffer(
+        self, buffer: bytearray, window: PixelWindow | None = None
+    ) -> Iterator[None]:
         self.pixels = buffer
         self.pixel_array = self.pixel_view(buffer)
         self.group_source_alpha = None

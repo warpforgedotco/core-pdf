@@ -9,7 +9,7 @@ from core_pdf import PdfDocument
 from core_pdf.impl import render_target as raster
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render_grid import DeviceGrid
-from core_pdf.impl.render_model import LineCap
+from core_pdf.impl.render_model import LineCap, PixelWindow
 from core_pdf.impl.render_paths import circle_path, dash_subpath, intersect_box
 from core_pdf.impl.render_target import RasterTarget
 from core_pdf_cythonized import path_bounds
@@ -184,7 +184,7 @@ def outcome(target: RasterTarget, stroke: Any) -> tuple[Any, ...]:
         raised = None
     except Exception as error:  # noqa: BLE001
         raised = (type(error), str(error))
-    window = None if target.paint_window is None else list(target.paint_window)
+    window = None if target.paint_window is None else target.paint_window.bounds()
     planes = tuple(
         None if plane is None else plane.tobytes()
         for plane in (target.group_source_alpha, target.group_source_shape)
@@ -242,10 +242,10 @@ def test_the_kernel_strokes_as_the_python_walk_did(
         if clip is not None:
             push_clip(target, size, clip)
         if window:
-            target.paint_window = []
+            target.paint_window = PixelWindow()
         if planes:
             target.group_source_alpha = numpy.full((height, width), 0.25, dtype=numpy.float32)
-            target.paint_window = []
+            target.paint_window = PixelWindow()
         return target
 
     compare(
@@ -278,7 +278,7 @@ def test_a_box_floor_refuses_raises_as_the_python_walk_did(
         target = make_target(20, 20, "mixed", 1.0, random.Random(3))
         if clip is not None:
             push_clip(target, 20.0, clip)
-        target.paint_window = []
+        target.paint_window = PixelWindow()
         return target
 
     compare(
@@ -341,7 +341,7 @@ def test_pixel_aligned_strokes_blend_as_the_python_walk_did(
         target = make_target(48, 48, backdrop, 1.0, random.Random(seed))
         if clip is not None:
             push_clip(target, 48.0, clip)
-        target.paint_window = []
+        target.paint_window = PixelWindow()
         return target
 
     compare(

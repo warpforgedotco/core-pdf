@@ -11,7 +11,7 @@ from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.capture_records import CapturedPath
 from core_pdf.impl.render_clipping import ClipState
 from core_pdf.impl.render_grid import DeviceGrid
-from core_pdf.impl.render_model import DisplayItem, RasterGroup
+from core_pdf.impl.render_model import DisplayItem, PixelWindow, RasterGroup
 from core_pdf.impl.render_resources import RenderResources
 from core_pdf_spec.standards import SemanticContext
 
@@ -29,7 +29,7 @@ class ElementaryScratch:
         self.source_alpha = numpy.zeros((height, width), dtype=numpy.float32)
         self.source_shape = numpy.zeros((height, width), dtype=numpy.float32)
         self.synced_parent: RasterGroup | None = None
-        self.dirty: list[int] | None = None
+        self.dirty: tuple[slice, slice] | None = None
 
 
 class RasterState:
@@ -69,7 +69,7 @@ class RasterState:
     buffer_stack: list[RasterGroup]
     group_source_alpha: FloatPlane | None
     group_source_shape: FloatPlane | None
-    paint_window: list[int] | None
+    paint_window: PixelWindow | None
     paint_alpha_is_shape: bool
     shape_alpha: float
     clip: ClipState

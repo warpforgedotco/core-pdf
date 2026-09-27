@@ -243,11 +243,7 @@ class RasterCompositing(RasterCoverage):
         return box
 
     def group_window(self, group: RasterGroup) -> tuple[slice, slice] | None:
-        window = group.paint_window
-        if not window:
-            return None
-        y0, y1, x0, x1 = window
-        return slice(y0, y1), slice(x0, x1)
+        return group.paint_window.slices()
 
     def composite_group(self, group: RasterGroup) -> None:
         parent = self.buffer_stack[-1]

@@ -159,7 +159,7 @@ def state(target: RasterTarget) -> tuple[Any, ...]:
         bytes(target.pixels),
         None if target.group_source_alpha is None else target.group_source_alpha.tobytes(),
         None if target.group_source_shape is None else target.group_source_shape.tobytes(),
-        None if target.paint_window is None else list(target.paint_window),
+        None if target.paint_window is None else target.paint_window.bounds(),
     )
 
 
