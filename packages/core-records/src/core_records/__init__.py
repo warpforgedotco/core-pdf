@@ -325,6 +325,7 @@ class RecordType(type):
         namespace: dict[str, Any],
         /,
         *,
+        init: bool = True,
         frozen: bool = True,
         eq: bool = True,
         hash: bool | None = None,
@@ -361,7 +362,7 @@ class RecordType(type):
         namespace.setdefault("__match_args__", fields)
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
         generated: dict[str, FunctionType] = {}
-        if "__init__" not in explicit:
+        if init and "__init__" not in explicit:
             generated["__init__"] = build_init(cls, specs, frozen)
         if generate_eq:
             generated["__eq__"] = specialise(cls, "__eq__", fields)

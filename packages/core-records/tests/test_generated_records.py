@@ -331,3 +331,12 @@ def test_a_written_field_list_must_agree_with_the_annotations() -> None:
             __fields__: ClassVar[tuple[str, ...]] = ("b", "a")
             a: int
             b: int
+
+
+def test_init_false_keeps_the_inherited_initialiser() -> None:
+    class Parsed(Custom, init=False):
+        __repr_fields__: ClassVar[tuple[str, ...]] = ()
+
+    assert "__init__" not in Parsed.__dict__
+    assert Parsed("5").value == 5
+    assert repr(Parsed("5")) == "Custom<5>"

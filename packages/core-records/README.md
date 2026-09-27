@@ -17,8 +17,9 @@ own `__repr__`, `__replace__` and `__getstate__` in place of the shared mixin
 methods. Every generated method is a separate code object per class, so the
 interpreter specialises each one for its own receiver type. A method written in the
 class body wins. Class keywords select the variations: `frozen=False` for a mutable
-record (no guards, unhashable when compared by value), `eq=False` to keep identity
-equality, and `hash=False` for an equality-compared record that stays unhashable.
+record (no guards, unhashable when compared by value), `init=False` to inherit the
+parent's `__init__`, `eq=False` to keep identity equality, and `hash=False` for an
+equality-compared record that stays unhashable.
 `RecordType` is marked with `typing.dataclass_transform`, so type checkers see the
 generated `__init__` and the frozen fields.
 
