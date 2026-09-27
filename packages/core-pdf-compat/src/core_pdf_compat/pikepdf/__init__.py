@@ -7,8 +7,8 @@ from os import PathLike
 from typing import Any, overload
 
 from core_pdf import PdfDocument
+from core_pdf.impl.document_document import resolve_page_tree_node_type
 from core_pdf.impl.document_metadata import resolve_info_metadata
-from core_pdf.impl.document_page_tree import resolve_page_tree_node_type
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.output_model import Document
 from core_pdf.impl.output_model import Page as StructuredPage

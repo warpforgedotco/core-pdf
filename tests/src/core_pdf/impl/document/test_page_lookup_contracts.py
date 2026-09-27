@@ -1,7 +1,6 @@
 import pytest
 
-from core_pdf.impl.document_document import PdfDocument
-from core_pdf.impl.document_navigation import PageLookup
+from core_pdf.impl.document_document import PageLookup, PdfDocument
 from core_pdf.impl.types import PdfReference
 
 

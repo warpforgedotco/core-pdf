@@ -1,8 +1,7 @@
 import pytest
 
 from core_pdf.impl import document_structure as structure
-from core_pdf.impl.document_document import PdfDocument
-from core_pdf.impl.document_navigation import PageLookup
+from core_pdf.impl.document_document import PageLookup, PdfDocument
 from core_pdf.impl.document_structure import (
     PageStructure,
     StructureContentItem,

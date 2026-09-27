@@ -22,7 +22,7 @@ from core_pdf_spec.standards import recognized_version
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_contracts import StructureHost
-    from core_pdf.impl.document_navigation import PageLookup
+    from core_pdf.impl.document_document import PageLookup
     from core_pdf.impl.document_page import PdfPage
 
 
