@@ -220,7 +220,7 @@ class RenderedPage(ReprFields, metaclass=RecordType, frozen=False):
         width, height = self.unrotated_raster_size(scale, crop=crop)
         device_scale = scale * self.user_unit
         background_bytes = bytes(background)
-        pixels = bytearray(background_bytes * (width * height))
+        pixels = bytearray(background_bytes) * (width * height)
         page_pixels = uint8_image_view(pixels, (height, width, 4))
 
         page_group_alpha = self.metadata.get("group_alpha")

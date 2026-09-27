@@ -79,13 +79,17 @@ def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
     return metadata
 
 
+def quad_points(quad: list[Any] | tuple[Any, ...]) -> tuple[tuple[float, float], ...] | None:
+    try:
+        return tuple((float(point[0]), float(point[1])) for point in quad)
+    except TypeError, ValueError, IndexError:
+        return None
+
+
 def image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
     quad = data.get("quad")
     if isinstance(quad, (list, tuple)) and len(quad) >= 3:
-        try:
-            return tuple((float(point[0]), float(point[1])) for point in quad)
-        except TypeError, ValueError, IndexError:
-            return None
+        return quad_points(quad)
     items = data.get("items")
     if not isinstance(items, (list, tuple)):
         return None
@@ -94,10 +98,7 @@ def image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
             continue
         if not isinstance(value, (list, tuple)) or len(value) < 3:
             return None
-        try:
-            return tuple((float(point[0]), float(point[1])) for point in value)
-        except TypeError, ValueError, IndexError:
-            return None
+        return quad_points(value)
     return None
 
 

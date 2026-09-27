@@ -16,6 +16,7 @@ from core_pdf.impl.render_paths import (
     dash_subpath,
     intersect_box,
     rasterize_unclipped_line_normal,
+    stroke_half_width,
 )
 from core_pdf_cythonized import stroke_polylines, stroke_segment_samples
 
@@ -134,8 +135,8 @@ class RasterStrokes(RasterFills):
         dx = x1 - x0
         dy = y1 - y0
         cap_extension = 0.0
+        half = stroke_half_width(scale, float(line_width))
         if abs(dx) <= 1e-12 or abs(dy) <= 1e-12:
-            half = max(0.5 / scale, float(line_width) * 0.5)
             if abs(dy) <= 1e-12:
                 fill_rect(
                     (
@@ -160,7 +161,6 @@ class RasterStrokes(RasterFills):
                 )
             return
         seg_len2 = dx * dx + dy * dy
-        half = max(0.5 / scale, float(line_width) * 0.5)
         if seg_len2 <= 1e-12:
             fill_rect((x0 - half, y0 - half, x0 + half, y0 + half), rgba, blend_mode)
             return
@@ -272,7 +272,7 @@ class RasterStrokes(RasterFills):
         round_shape: bool,
         blend_mode: str | None,
     ) -> None:
-        radius = max(0.5 / self.scale, float(line_width) * 0.5)
+        radius = stroke_half_width(self.scale, float(line_width))
         if round_shape:
             self.fill_circle(px, py, radius, rgba, blend_mode)
         else:
@@ -297,7 +297,7 @@ class RasterStrokes(RasterFills):
             clip_box = self.clip.current_clip()
             path_box = self.clip.path_bbox(path)
             if clip_box is not None and path_box is not None:
-                stroke_pad = max(0.5 / scale, float(line_width) * 0.5)
+                stroke_pad = stroke_half_width(scale, float(line_width))
                 stroke_box = (
                     path_box[0] - stroke_pad,
                     path_box[1] - stroke_pad,

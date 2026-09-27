@@ -26,6 +26,7 @@ from core_pdf.impl.render_model import (
 )
 from core_pdf.impl.render_resources import RenderResources
 from core_pdf.impl.scalars import clamp01
+from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 
@@ -114,7 +115,7 @@ def shading_color_rgba(
     opacity: Any,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[int, int, int, int]:
-    alpha = color_component(opacity, 255) if type(opacity) in {int, float} else 255
+    alpha = color_component(opacity, 255) if is_pdf_number(opacity) else 255
     name = color_model or "DeviceRGB"
     if name.endswith("DeviceGray") or len(components) == 1:
         gray = color_component(components[0] if components else 0.0)
