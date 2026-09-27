@@ -9,9 +9,12 @@ import numpy
 from core_pdf.impl.array_views import UInt8Array
 from core_pdf.impl.capture_records import CapturedPath
 from core_pdf.impl.render_blend import (
+    BlendOp,
+    blend_op,
     blend_visible_pixels,
     color_rgba,
     composite_blended_group_numpy,
+    declared_blend,
     scale_rgba_alpha,
 )
 from core_pdf.impl.render_coverage import RasterCoverage
@@ -49,8 +52,9 @@ def composite_nonisolated_group(
     mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
 ) -> UInt8Array:
     opacity = clamp01(opacity)
-    mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
-    if opacity == 1.0 and mode in {None, "normal"} and mask_alpha is None:
+    mode = blend_op(blend_mode, casefold=True)
+    normal = mode is None or mode is BlendOp.NORMAL
+    if opacity == 1.0 and normal and mask_alpha is None:
         return composite_elementary_normal(destination, rendered, source_alpha)
     scaled_alpha = source_alpha.astype(numpy.float64) * opacity * 255.0
     if mask_alpha is not None:
@@ -59,7 +63,7 @@ def composite_nonisolated_group(
     visible = effective_alpha > 0
     if not numpy.any(visible):
         return effective_alpha
-    if opacity == 1.0 and mode in {None, "normal"}:
+    if opacity == 1.0 and normal:
         unchanged_alpha = visible & (mask_alpha == 1.0)
         destination[unchanged_alpha] = rendered[unchanged_alpha]
         visible &= ~unchanged_alpha
@@ -100,8 +104,8 @@ def composite_masked_group(
     *,
     semantic_context: SemanticContext,
 ) -> UInt8Array:
-    mode = blend_mode.casefold() if isinstance(blend_mode, str) else None
-    if source_alpha is None and mode in {None, "normal"}:
+    mode = blend_op(blend_mode, casefold=True)
+    if source_alpha is None and (mode is None or mode is BlendOp.NORMAL):
         return composite_masked_normal(
             destination, rendered, opacity, mask.alpha[window], mask.values()
         )
@@ -151,7 +155,7 @@ class RasterCompositing(RasterCoverage):
             or edge_array is None
             or bbox is None
             or item.fill_pattern is not None
-            or item.blend_mode not in (None, "Normal")
+            or declared_blend(item.blend_mode) is not None
             or item.fill_rule != "nonzero"
         ):
             return False
@@ -267,7 +271,7 @@ class RasterCompositing(RasterCoverage):
             and group.source_scale == 1.0
             and (
                 group.blend_mode is None
-                or (isinstance(group.blend_mode, str) and group.blend_mode.casefold() == "normal")
+                or blend_op(group.blend_mode, casefold=True) is BlendOp.NORMAL
             )
         ):
             assert parent.source_alpha is not None
@@ -321,9 +325,7 @@ class RasterCompositing(RasterCoverage):
         child = group.view[rows, columns]
         group_alpha = group.composite_alpha
         group_blend_mode = group.blend_mode
-        normalized_blend_mode = (
-            group_blend_mode.casefold() if isinstance(group_blend_mode, str) else None
-        )
+        normalized_blend_mode = blend_op(group_blend_mode, casefold=True)
         source_scale = group.source_scale
         if group.mask_alpha is not None:
             return composite_masked_group(
@@ -348,7 +350,9 @@ class RasterCompositing(RasterCoverage):
                 group_blend_mode,
                 semantic_context=self.semantic_context,
             )
-        if normalized_blend_mode in {None, "normal"} and len(group.pixels) >= 4_096:
+        if (normalized_blend_mode is None or normalized_blend_mode is BlendOp.NORMAL) and len(
+            group.pixels
+        ) >= 4_096:
             plane = composite_normal_group(destination, child, source_scale, 1.0, True)
             assert plane is not None
             return plane

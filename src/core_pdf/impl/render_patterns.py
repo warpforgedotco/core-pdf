@@ -11,7 +11,7 @@ from core_pdf.impl.capture_records import (
 )
 from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.graphics_device_profiles import cmyk_floats_to_srgb
-from core_pdf.impl.render_blend import color_component
+from core_pdf.impl.render_blend import BlendOp, blend_op, color_component
 from core_pdf.impl.render_commands import append_captured_program
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import DisplayItem, ImagePaintItem, PathPaintItem
@@ -127,7 +127,10 @@ def tiling_pattern_uses_normal_blends(
         modes = [drawing.blend_mode for drawing in program.drawings]
         modes.extend(glyph.blend_mode for glyph in program.glyphs)
         modes.extend(image.blend_mode for image in program.inline_images)
-        if any(mode is not None and mode.casefold() != "normal" for mode in modes):
+        if any(
+            mode is not None and blend_op(mode, casefold=True) is not BlendOp.NORMAL
+            for mode in modes
+        ):
             return False
         for drawing in program.drawings:
             for nested in (drawing.fill_pattern, drawing.stroke_pattern):

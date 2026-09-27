@@ -11,8 +11,7 @@ from core_pdf.impl.caches import MISSING
 from core_pdf.impl.capture_records import CapturedPath, ShadingPattern, TilingPattern
 from core_pdf.impl.geometry import normalize_rect, rect_tuple
 from core_pdf.impl.graphics_shading import PreparedShading, prepare_shading
-from core_pdf.impl.render_blend import scale_rgba_alpha
-from core_pdf.impl.render_fills import BLEND_MODE_CODES
+from core_pdf.impl.render_blend import kernel_blend_code, scale_rgba_alpha
 from core_pdf.impl.render_images import RasterImages
 from core_pdf.impl.render_model import PathPaintItem
 from core_pdf.impl.render_paths import intersect_box
@@ -89,7 +88,7 @@ class RasterShading(RasterImages):
         soft_mask_alpha = data.get("soft_mask_alpha")
         fill_opacity = data.get("fill_opacity")
         shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
-        mode = BLEND_MODE_CODES.get(self.resolved_blend(blend_mode), 0)
+        mode = kernel_blend_code(self.resolved_blend(blend_mode))
         domain = shading.domain
         allowed = numpy.frombuffer(
             self.clip_pixel_mask(ix0, iy0, ix1, iy1), dtype=numpy.uint8

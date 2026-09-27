@@ -13,8 +13,12 @@ from core_pdf.impl.capture_records import CapturedPath
 from core_pdf.impl.pdf_names import lenient_int
 from core_pdf.impl.render_blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
+    BlendOp,
     blend_normal_solid_array_numpy,
+    blend_op,
     blend_solid_array_numpy,
+    declared_blend,
+    kernel_blend_code,
 )
 from core_pdf.impl.render_groups import RasterGroups
 from core_pdf.impl.render_paths import (
@@ -31,19 +35,6 @@ from core_pdf_cythonized import (
 )
 from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_component
 
-BLEND_COLOR_DODGE = 3
-
-
-BLEND_COLOR_BURN = 4
-
-
-BLEND_MODE_CODES: dict[str | None, int] = {
-    "multiply": 1,
-    "screen": 2,
-    "colordodge": BLEND_COLOR_DODGE,
-    "colorburn": BLEND_COLOR_BURN,
-}
-
 
 def edge_tuples(
     edge_array: numpy.ndarray[Any, Any] | None,
@@ -56,14 +47,14 @@ def edge_tuples(
 class RasterFills(RasterGroups):
     __slots__ = ()
 
-    def resolved_blend(self, blend_mode: str | None) -> str | None:
-        return blend_mode.lower() if isinstance(blend_mode, str) else None
+    def resolved_blend(self, blend_mode: str | None) -> BlendOp | None:
+        return blend_op(blend_mode)
 
     def blend_px(
         self,
         idx: int,
         rgba: tuple[int, int, int, int],
-        mode: str | None,
+        mode: BlendOp | None,
         *,
         shape: int = 255,
     ) -> None:
@@ -99,16 +90,16 @@ class RasterFills(RasterGroups):
         dst_r = dr / 255.0
         dst_g = dg / 255.0
         dst_b = db / 255.0
-        if mode == "multiply":
+        if mode is BlendOp.MULTIPLY:
             src_r = src_r * (1.0 - dst_a) + dst_a * (src_r * dst_r)
             src_g = src_g * (1.0 - dst_a) + dst_a * (src_g * dst_g)
             src_b = src_b * (1.0 - dst_a) + dst_a * (src_b * dst_b)
-        elif mode == "screen":
+        elif mode is BlendOp.SCREEN:
             src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dst_r))
             src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dst_g))
             src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - dst_b))
-        elif mode in {"colordodge", "colorburn"}:
-            component_mode: BlendMode = "ColorDodge" if mode == "colordodge" else "ColorBurn"
+        elif mode is BlendOp.COLOR_DODGE or mode is BlendOp.COLOR_BURN:
+            component_mode: BlendMode = "ColorDodge" if mode is BlendOp.COLOR_DODGE else "ColorBurn"
             src_r = src_r * (1.0 - dst_a) + dst_a * blend_component(
                 dst_r, src_r, component_mode, context=self.semantic_context
             )
@@ -189,7 +180,7 @@ class RasterFills(RasterGroups):
     ) -> None:
         if box is None:
             return
-        if blend_mode == "Normal" and rgba[3] == 255:
+        if rgba[3] == 255 and declared_blend(blend_mode) is None:
             blend_mode = None
         clipped_box = self.clip.clipped_pixel_box(box)
         if clipped_box is None:
@@ -339,7 +330,7 @@ class RasterFills(RasterGroups):
         cell_h = (y1 - y0) / bitmap_h
         if cell_w <= 0 or cell_h <= 0:
             return
-        opaque_glyph = rgba[3] == 255 and (blend_mode is None or blend_mode == "Normal")
+        opaque_glyph = rgba[3] == 255 and declared_blend(blend_mode) is None
         if opaque_glyph and not clip_regions and bitmap_w <= 64:
             pixel_box = page_box_to_pixels(x0, y0, x1, y1)
             pixel_width = (x1 - x0) * scale
@@ -813,7 +804,7 @@ class RasterFills(RasterGroups):
         fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
 
     def blend_rules(self, mode: int) -> tuple[bool, Exception | None]:
-        if mode not in (BLEND_COLOR_DODGE, BLEND_COLOR_BURN):
+        if mode not in {BlendOp.COLOR_DODGE, BlendOp.COLOR_BURN}:
             return True, None
         try:
             revised = blend_component(0.0, 1.0, "ColorDodge", context=self.semantic_context)
@@ -830,7 +821,7 @@ class RasterFills(RasterGroups):
         rgba: tuple[int, int, int, int],
         blend_mode: str | None,
     ) -> None:
-        mode = BLEND_MODE_CODES.get(self.resolved_blend(blend_mode), 0)
+        mode = kernel_blend_code(self.resolved_blend(blend_mode))
         revised, blend_error = self.blend_rules(mode)
         shape_plane = self.group_source_shape
         window, stopped = blend_coverage_counts(

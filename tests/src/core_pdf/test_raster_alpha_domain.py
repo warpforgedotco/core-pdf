@@ -3,6 +3,7 @@ import pytest
 
 from core_pdf.impl import render_fills
 from core_pdf.impl import render_target as raster
+from core_pdf.impl.render_blend import blend_op
 from core_pdf.impl.render_clipping import ClipState
 
 
@@ -91,7 +92,7 @@ def test_non_normal_pixel_blending_matches_rational_composition(
         crop_y1=1,
         page_view=view,
     )
-    target.blend_px(0, (*source, source_alpha), mode)
+    target.blend_px(0, (*source, source_alpha), blend_op(mode))
     if source_alpha == 0:
         assert tuple(pixels) == (*destination, destination_alpha)
         return

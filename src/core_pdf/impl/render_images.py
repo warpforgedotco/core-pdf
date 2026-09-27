@@ -11,7 +11,12 @@ from core_pdf.impl.array_views import ByteBuffer, UInt8Array, uint8_view
 from core_pdf.impl.geometry import points_bbox, rect_tuple
 from core_pdf.impl.graphics_images import PreparedImage, prepare_image
 from core_pdf.impl.graphics_soft_masks import image_color_key_mask_is_shape
-from core_pdf.impl.render_blend import blend_visible_pixels, color_rgba, resolve_constant_alpha
+from core_pdf.impl.render_blend import (
+    blend_visible_pixels,
+    color_rgba,
+    declared_blend,
+    resolve_constant_alpha,
+)
 from core_pdf.impl.render_model import ImagePaintItem
 from core_pdf.impl.render_paths import intersect_box
 from core_pdf.impl.render_resources import RenderResources
@@ -413,9 +418,7 @@ class RasterImages(RasterStrokes):
         box = points_bbox(quad)
         if box is None:
             return
-        blend_mode = item.blend_mode
-        if blend_mode == "Normal":
-            blend_mode = None
+        blend_mode = declared_blend(item.blend_mode)
         prepared = prepared_image(self.resources, item.source)
         if prepared is None:
             return

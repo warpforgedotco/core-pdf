@@ -10,6 +10,7 @@ import numpy
 
 from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.capture_records import CapturedSoftMask, PatternPaint
+from core_pdf.impl.render_blend import declared_blend
 from core_pdf.impl.scalars import clamp01
 from core_pdf.impl.types import Record, ReplaceFields, ReprFields, frozen_setattr
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
@@ -343,7 +344,7 @@ def is_plain_fill(item: object) -> TypeIs[PathPaintItem]:
         and item.edge_array is not None
         and item.bbox is not None
         and item.fill_pattern is None
-        and item.blend_mode in (None, "Normal")
+        and declared_blend(item.blend_mode) is None
     )
 
 

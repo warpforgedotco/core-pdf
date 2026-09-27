@@ -12,6 +12,7 @@ from core_pdf.impl.capture_records import CapturedPath, CapturedSoftMask
 from core_pdf.impl.render_blend import (
     blend_context,
     color_rgba,
+    declared_blend,
     resolve_constant_alpha,
     scale_rgba_alpha,
 )
@@ -222,9 +223,7 @@ class RasterTarget(RasterShading):
             self.blit_image(item)
             return
         data = item.data
-        blend_mode = data.get("blend_mode")
-        if blend_mode == "Normal":
-            blend_mode = None
+        blend_mode = declared_blend(data.get("blend_mode"))
         match item.kind:
             case "scope-begin":
                 path = data.get("path")
@@ -300,9 +299,7 @@ class RasterTarget(RasterShading):
         path = item.path
         if type(path) is not CapturedPath:
             return
-        blend_mode = item.blend_mode
-        if blend_mode == "Normal":
-            blend_mode = None
+        blend_mode = declared_blend(item.blend_mode)
         soft_mask_alpha = item.soft_mask_alpha
         paint_kind = item.paint_kind
         if paint_kind is PathPaintKind.FILL_STROKE and self.group_source_shape is not None:
