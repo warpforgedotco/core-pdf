@@ -8,7 +8,7 @@ import pytest
 from core_pdf import PdfDocument
 from core_pdf.impl import render_target as raster
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
-from core_pdf.impl.render_grid import DeviceGrid
+from core_pdf.impl.render_clipping import DeviceGrid
 from core_pdf.impl.render_model import LineCap, PixelWindow
 from core_pdf.impl.render_paths import circle_path, dash_subpath, intersect_box
 from core_pdf.impl.render_target import RasterTarget

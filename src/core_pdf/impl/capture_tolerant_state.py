@@ -9,10 +9,10 @@ from core_pdf.impl.caches import BoundedDict, IdentityCache
 from core_pdf.impl.capture_records import CapturedSoftMask
 from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
+from core_pdf.impl.geometry import clamp01
 from core_pdf.impl.graphics_color_spec import parse_color_space
 from core_pdf.impl.graphics_functions import compile_pdf_function
-from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.scalars import clamp01
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import MISSING, MissingObject
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.model import ContentSink

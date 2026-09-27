@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from core_pdf.impl import graphics_images as images
-from core_pdf.impl.graphics_image_header import ImageHeader
+from core_pdf.impl.graphics_image_samples import ImageHeader
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
 

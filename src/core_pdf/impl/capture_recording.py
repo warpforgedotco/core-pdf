@@ -38,9 +38,8 @@ from core_pdf.impl.geometry import intersect_bbox, transform_bbox
 from core_pdf.impl.glyphs import GlyphObservation, GlyphStyle
 from core_pdf.impl.graphics_color import color_operands_to_srgb
 from core_pdf.impl.graphics_color_spec import raw_color_space_paints
-from core_pdf.impl.graphics_images import decode_soft_mask
-from core_pdf.impl.graphics_soft_masks import image_overrides_graphics_soft_mask
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.graphics_images import decode_soft_mask, image_overrides_graphics_soft_mask
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.text import normalize_extracted_text

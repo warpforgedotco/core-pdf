@@ -29,8 +29,7 @@ import numpy
 
 from core_pdf.impl.caches import DocumentCaches
 from core_pdf.impl.document_metadata import MetadataRecord, resolve_metadata
-from core_pdf.impl.document_page import PAGE_INHERITED_KEYS, PdfPage
-from core_pdf.impl.document_page_links import goto_action_destination
+from core_pdf.impl.document_page import PAGE_INHERITED_KEYS, PdfPage, goto_action_destination
 from core_pdf.impl.document_records import (
     RawEmbeddedFile,
     RawFormField,
@@ -47,23 +46,22 @@ from core_pdf.impl.document_standards import (
 )
 from core_pdf.impl.document_structure import StructureTree, resolve_optional_dict
 from core_pdf.impl.exceptions import (
+    ExtractionScope,
     PdfDocumentClosedError,
     PdfEmptySourceError,
     PdfParseError,
     PdfSourceError,
     PdfUnsupportedError,
 )
-from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_selection import extract_document
 from core_pdf.impl.fonts_fallback import RasterFontRepository
 from core_pdf.impl.output_model import Document as StructuredDocument
 from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import parse_text_string, recover_pdf_name
 from core_pdf.impl.raw_media import ImageRecord
 from core_pdf.impl.recovery_lexer import PdfLexer, reader_rules_for
 from core_pdf.impl.recovery_policy import MalformedFn, Recovery, recovery_policy
 from core_pdf.impl.recovery_resolver import ObjectResolver
-from core_pdf.impl.recovery_text_strings import parse_text_string
 from core_pdf.impl.recovery_trees import iter_name_tree_items, iter_number_tree_items
 from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner, iter_indirect_object_headers
 from core_pdf.impl.types import (

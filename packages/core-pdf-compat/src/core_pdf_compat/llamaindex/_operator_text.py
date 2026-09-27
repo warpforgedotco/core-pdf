@@ -8,7 +8,7 @@ from core_pdf.impl.capture_recovery import iter_content_operations
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode, is_uni_sequence
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.types import GeneratedRecord, PdfName, PdfString
 from core_pdf_compat._text_state import (

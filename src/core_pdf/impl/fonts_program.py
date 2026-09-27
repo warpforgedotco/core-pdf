@@ -17,7 +17,7 @@ from core_pdf.impl.fonts_program_truetype import (
 )
 from core_pdf.impl.fonts_program_type1 import Type1FontProgram
 from core_pdf.impl.fonts_widths import recover_descendant
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_09_fonts.dictionaries import (
     FontProgramInputs,

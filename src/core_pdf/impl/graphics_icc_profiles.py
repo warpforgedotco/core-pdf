@@ -10,7 +10,7 @@ import imagecodecs
 import numpy
 
 from core_pdf.impl.caches import BoundedDict
-from core_pdf.impl.graphics_codec_backends import thread_count
+from core_pdf.impl.graphics_stream_decoding import thread_count
 from core_pdf.impl.types import GeneratedRecord
 from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
 from core_pdf_spec.s_08_graphics.color_rendering import (

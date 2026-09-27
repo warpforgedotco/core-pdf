@@ -1,8 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl.render_clipping import ClipState
-from core_pdf.impl.render_grid import DeviceGrid
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 from core_pdf.impl.render_target import RasterTarget
 
 

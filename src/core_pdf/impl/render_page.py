@@ -17,12 +17,11 @@ from core_pdf.impl.capture_records import (
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.geometry import rect_tuple
-from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 from core_pdf.impl.render_commands import append_captured_program
 from core_pdf.impl.render_display import (
     DisplayList,
 )
-from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_model import (
     DisplayItem,
     DisplayListItem,

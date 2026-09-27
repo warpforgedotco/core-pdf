@@ -2,7 +2,7 @@ from copy import replace
 
 import pytest
 
-from core_pdf.impl.execution import ExtractionScope
+from core_pdf.impl.exceptions import ExtractionScope
 from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.render_model import RasterImage
 from core_pdf_ocr.impl.extract.contracts import (

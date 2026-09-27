@@ -10,7 +10,7 @@ from core_pdf.impl.fonts_cmap_resources import resolve_cmap_decoder
 from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.geometry import bbox_union
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,

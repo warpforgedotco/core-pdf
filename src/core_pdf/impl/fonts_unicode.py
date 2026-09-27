@@ -34,7 +34,7 @@ from core_pdf.impl.fonts_widths import (
     recover_descendant,
 )
 from core_pdf.impl.glyphs import UnicodeSource
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import (
     GeneratedRecord,
 )

@@ -5,9 +5,8 @@ import pytest
 
 from core_pdf.impl.capture_program import CapturedProgram
 from core_pdf.impl.capture_records import CapturedPath, CapturedSoftMask, CapturedSubpath
-from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 from core_pdf.impl.render_display import DisplayList
-from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_model import ClipItem, PathPaintItem, ShadingItem, display_item
 from core_pdf.impl.render_target import RasterTarget
 

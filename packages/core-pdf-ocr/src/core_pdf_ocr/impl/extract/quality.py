@@ -7,13 +7,13 @@ from typing import NamedTuple
 
 import numpy
 
-from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf.impl.extract_quality import (
+from core_pdf.impl.extract_capture import (
     TextAnalysis as TextAnalysis,
 )
-from core_pdf.impl.extract_quality import (
+from core_pdf.impl.extract_capture import (
     analyze_text as analyze_text,
 )
+from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.types import GeneratedRecord, frozen_setattr
 
 

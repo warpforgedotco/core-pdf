@@ -12,6 +12,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.array_views import ByteBuffer, UInt8Array, uint8_image_view, uint8_view
+from core_pdf.impl.caches import ByteBudgetCache, IdentityCache
 from core_pdf.impl.capture_records import (
     CapturedPath,
     CapturedSoftMask,
@@ -19,11 +20,15 @@ from core_pdf.impl.capture_records import (
     ShadingPattern,
     TilingPattern,
 )
-from core_pdf.impl.geometry import normalize_rect, points_bbox, rect_tuple
-from core_pdf.impl.graphics_images import PreparedImage, prepare_image
-from core_pdf.impl.graphics_shading import PreparedShading, prepare_shading
-from core_pdf.impl.graphics_soft_masks import image_color_key_mask_is_shape
-from core_pdf.impl.pdf_names import lenient_int
+from core_pdf.impl.geometry import clamp01, normalize_rect, points_bbox, rect_tuple
+from core_pdf.impl.graphics_device_profiles import cmyk_floats_to_srgb
+from core_pdf.impl.graphics_images import (
+    PreparedImage,
+    image_color_key_mask_is_shape,
+    prepare_image,
+)
+from core_pdf.impl.graphics_shading import PreparedShading, ShadingEvaluatorCache, prepare_shading
+from core_pdf.impl.pdf_values import lenient_int
 from core_pdf.impl.render_blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     BlendOp,
@@ -32,6 +37,7 @@ from core_pdf.impl.render_blend import (
     blend_op,
     blend_solid_array_numpy,
     blend_visible_pixels,
+    color_component,
     color_rgba,
     composite_blended_group_numpy,
     declared_blend,
@@ -39,10 +45,9 @@ from core_pdf.impl.render_blend import (
     resolve_constant_alpha,
     scale_rgba_alpha,
 )
-from core_pdf.impl.render_clipping import ClipState
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 from core_pdf.impl.render_commands import append_captured_program
 from core_pdf.impl.render_display import DisplayList
-from core_pdf.impl.render_grid import DeviceGrid
 from core_pdf.impl.render_model import (
     ClipItem,
     ControlItem,
@@ -72,14 +77,6 @@ from core_pdf.impl.render_paths import (
     rasterize_unclipped_line_normal,
     stroke_half_width,
 )
-from core_pdf.impl.render_patterns import (
-    cell_paints_nothing,
-    shading_color_rgba,
-    tiling_cell,
-    tiling_pattern_uses_normal_blends,
-)
-from core_pdf.impl.render_resources import RenderResources
-from core_pdf.impl.scalars import clamp01
 from core_pdf.impl.types import MISSING, MissingObject
 from core_pdf_cythonized import (
     accumulate_source_plane,
@@ -103,11 +100,189 @@ from core_pdf_cythonized import (
     supersampled_coverage_plane,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf_spec.s_08_graphics.color_rendering import ColorRendering
+from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_component
 from core_pdf_spec.s_11_transparency.groups import remove_group_backdrop
 from core_pdf_spec.standards import SemanticContext
+
+SoftMaskKey = tuple[int, int, tuple[float, float]]
+
+
+SOFT_MASK_CACHE_BYTES = 512 << 20
+
+
+PREPARED_IMAGE_CACHE_BYTES = 256 << 20
+
+
+SHADING_CACHE_LIMIT = 4096
+
+
+TILING_CELL_CACHE_LIMIT = 4096
+
+
+type SoftMaskCache = ByteBudgetCache[SoftMaskKey, tuple[CapturedSoftMask, SoftMaskPlane | None]]
+
+
+type PreparedImageCache = ByteBudgetCache[int, tuple[ImageSource, PreparedImage | None]]
+
+
+type PreparedShadingCache = IdentityCache[PreparedShading | None]
+
+
+type TilingCellCache = IdentityCache[tuple[DisplayList, CapturedPath]]
+
+
+class RenderResources:
+    __slots__ = (
+        "soft_masks",
+        "images",
+        "tiling_cells",
+        "shadings",
+        "shading_evaluators",
+        "active_soft_masks",
+    )
+
+    def __init__(self) -> None:
+        self.soft_masks: SoftMaskCache = ByteBudgetCache(SOFT_MASK_CACHE_BYTES)
+        self.images: PreparedImageCache = ByteBudgetCache(PREPARED_IMAGE_CACHE_BYTES)
+        self.tiling_cells: TilingCellCache = IdentityCache(TILING_CELL_CACHE_LIMIT)
+        self.shadings: PreparedShadingCache = IdentityCache(SHADING_CACHE_LIMIT)
+        self.shading_evaluators: ShadingEvaluatorCache = IdentityCache(SHADING_CACHE_LIMIT)
+        self.active_soft_masks: set[SoftMaskKey] = set()
+
+
+def tiling_cell(
+    resources: RenderResources,
+    pattern: TilingPattern,
+    width: float,
+    height: float,
+    *,
+    preserve_object_boundaries: bool,
+) -> tuple[DisplayList, CapturedPath]:
+    cache = resources.tiling_cells
+    key = (id(pattern), preserve_object_boundaries)
+    cached = cache.get_key(pattern, key)
+    if cached is not None:
+        return cached
+    cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
+    display = DisplayList(
+        width,
+        height,
+        preserve_object_boundaries=preserve_object_boundaries,
+    )
+    cell_clip = CapturedPath()
+    cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
+    append_captured_program(display, pattern.program, include_text=True)
+    return cache.put_key(pattern, key, (display, cell_clip))
+
+
+def path_cell_extent(item: PathPaintItem) -> tuple[object, float]:
+    path = item.path
+    box = item.bbox
+    if box is None and type(path) is CapturedPath:
+        box = path.bbox()
+    return box, 10.0 * abs(float(item.line_width or 0.0))
+
+
+def box_cell_extent(item: ImagePaintItem | GlyphBitmapItem) -> tuple[object, float]:
+    return item.bbox, 0.0
+
+
+CELL_EXTENTS: dict[type, Callable[[Any], tuple[object, float]]] = {
+    PathPaintItem: path_cell_extent,
+    ImagePaintItem: box_cell_extent,
+    GlyphBitmapItem: box_cell_extent,
+}
+
+
+NON_PAINTING_ITEMS = frozenset({ClipItem, ControlItem, GroupBeginItem, ScopeBeginItem})
+
+
+def cell_paints_nothing(
+    items: Iterable[DisplayItem], cell_clip: CapturedPath, scale: float
+) -> bool:
+    clip_box = cell_clip.bbox()
+    if clip_box is None:
+        return False
+    margin = 2.0 / scale if scale > 0 else 2.0
+    left, bottom, right, top = clip_box
+    left -= margin
+    bottom -= margin
+    right += margin
+    top += margin
+    for item in items:
+        item_type = type(item)
+        if item_type in NON_PAINTING_ITEMS:
+            continue
+        cell_extent = CELL_EXTENTS.get(item_type)
+        if cell_extent is None:
+            return False
+        box, spread = cell_extent(item)
+        extent = rect_tuple(box)
+        if extent is None:
+            return False
+        pad = spread + margin
+        if (
+            extent[0] - pad <= right
+            and extent[2] + pad >= left
+            and extent[1] - pad <= top
+            and extent[3] + pad >= bottom
+        ):
+            return False
+    return True
+
+
+def shading_color_rgba(
+    color_model: str,
+    components: list[float] | tuple[float, ...],
+    opacity: Any,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+) -> tuple[int, int, int, int]:
+    alpha = color_component(opacity, 255) if is_pdf_number(opacity) else 255
+    name = color_model or "DeviceRGB"
+    if name.endswith("DeviceGray") or len(components) == 1:
+        gray = color_component(components[0] if components else 0.0)
+        return gray, gray, gray, alpha
+    if name.endswith("DeviceCMYK") and len(components) >= 4:
+        c, m, y, k = (clamp01(v) for v in components[:4])
+        red, green, blue = cmyk_floats_to_srgb(c, m, y, k, rendering=rendering)
+        return red, green, blue, alpha
+    rgb = [color_component(c) for c in components[:3]]
+    while len(rgb) < 3:
+        rgb.append(rgb[-1] if rgb else 0)
+    return rgb[0], rgb[1], rgb[2], alpha
+
+
+def tiling_pattern_uses_normal_blends(
+    pattern: TilingPattern, active: set[int] | None = None
+) -> bool:
+    if active is None:
+        active = set()
+    identity = id(pattern)
+    if identity in active:
+        return False
+    active.add(identity)
+    try:
+        program = pattern.program
+        modes = [drawing.blend_mode for drawing in program.drawings]
+        modes.extend(glyph.blend_mode for glyph in program.glyphs)
+        modes.extend(image.blend_mode for image in program.inline_images)
+        if any(
+            mode is not None and blend_op(mode, casefold=True) is not BlendOp.NORMAL
+            for mode in modes
+        ):
+            return False
+        for drawing in program.drawings:
+            for nested in (drawing.fill_pattern, drawing.stroke_pattern):
+                if isinstance(nested, TilingPattern) and not tiling_pattern_uses_normal_blends(
+                    nested, active
+                ):
+                    return False
+        return True
+    finally:
+        active.remove(identity)
+
 
 type PixelBox = tuple[int, int, int, int]
 

@@ -72,7 +72,7 @@ def test_a_text_only_capture_splits_glyphs_the_same_way(text_pdf_bytes: bytes) -
 
 @pytest.mark.parametrize("want_transform", [True, False])
 def test_a_vertical_run_honours_the_render_details_gate(want_transform: bool) -> None:
-    from core_pdf.impl.capture_glyph_geometry import vertical_glyph_geometry
+    from core_pdf.impl.capture_glyphs import vertical_glyph_geometry
 
     _advance, _baseline, transforms, _ink, _visible, _bitmap = vertical_glyph_geometry(
         [0.0, 12.0],

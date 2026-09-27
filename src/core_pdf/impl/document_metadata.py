@@ -10,10 +10,8 @@ from defusedxml.ElementTree import fromstring as defused_fromstring
 
 from core_pdf.impl.document_standards import local_name, resolve_catalog
 from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.pdf_values import coerce_value
+from core_pdf.impl.pdf_values import coerce_value, decode_pdf_text_string, recover_pdf_name
 from core_pdf.impl.recovery_policy import Recovery, recovery_policy
-from core_pdf.impl.recovery_text_strings import decode_pdf_text_string
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_document.metadata import catalog_metadata_stream, info_dictionary
 from core_pdf_spec.s_07_syntax.stream import PdfStream

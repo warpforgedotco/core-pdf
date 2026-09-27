@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import GeneratedRecord
 from core_pdf_spec.s_07_filters.registry import (
     FILTER_DESCRIPTORS as PDF_FILTER_DESCRIPTORS,

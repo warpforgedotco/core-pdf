@@ -13,6 +13,7 @@ from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageP
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedLines
 from core_pdf.impl.extract_capture import (
     STRUCTURE_UNSET,
+    analyze_text,
     capture_runs,
     observations_from_runs,
     promoted_hidden_runs,
@@ -34,7 +35,6 @@ from core_pdf.impl.extract_contracts import (
 from core_pdf.impl.extract_contracts import (
     PageAnalysis as NativePageAnalysis,
 )
-from core_pdf.impl.extract_quality import analyze_text
 from core_pdf.impl.geometry import bbox_area, bbox_union, rect_tuple
 from core_pdf.impl.glyphs import GlyphObservation, UnicodeSource
 from core_pdf.impl.graphics_filter_registry import declared_filter_names

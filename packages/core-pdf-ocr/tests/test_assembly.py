@@ -5,7 +5,7 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl import extract_pipeline as native_pipeline
-from core_pdf.impl.execution import ExtractionScope
+from core_pdf.impl.exceptions import ExtractionScope
 from core_pdf.impl.extract_contracts import ObservationBatch, PageState
 from core_pdf.impl.output_model import Table, TableCell
 from core_pdf_ocr.impl.extract import pipeline

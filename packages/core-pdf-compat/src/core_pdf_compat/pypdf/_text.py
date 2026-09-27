@@ -14,7 +14,7 @@ from core_pdf.impl.fonts_glyphs import TEX_GLYPH_ALIASES
 from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.fonts_metrics import LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.fonts_widths import parse_font_widths
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.types import PdfName, PdfString, RecordType, ReplaceFields, ReprFields
 from core_pdf_compat._text_state import (

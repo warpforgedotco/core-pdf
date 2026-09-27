@@ -5,7 +5,7 @@ import re
 import typing
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.objects import PdfObjectStream as SyntaxObjectStream
 from core_pdf_spec.s_07_syntax.objects import (

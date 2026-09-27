@@ -9,7 +9,7 @@ from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
 from core_pdf.impl.capture_recording import TextState
 from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.exceptions import PdfError, PdfParseError
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.types import PdfString, Rectangle
 from core_pdf_spec.s_07_content.operations import ContentOperands

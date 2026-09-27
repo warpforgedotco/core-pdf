@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
-from core_pdf.impl.glyph_outlines import outline_arrays
+from core_pdf.impl.fonts_glyph_geometry import outline_arrays
 from core_pdf.impl.glyphs import GlyphObservation
 from core_pdf.impl.render_commands import (
     append_glyph_paint,

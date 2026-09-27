@@ -9,7 +9,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from core_pdf.impl.document_metadata import plain_pdf_value
-from core_pdf.impl.execution import ExtractionScope
+from core_pdf.impl.exceptions import ExtractionScope
 from core_pdf.impl.extract_block_layout import (
     NATIVE_LAYOUT_HOOKS,
     LayoutHooks,

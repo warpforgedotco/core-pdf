@@ -3,8 +3,7 @@ import pytest
 
 from core_pdf.impl import render_target
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
-from core_pdf.impl.render_clipping import ClipState
-from core_pdf.impl.render_grid import DeviceGrid
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 from core_pdf.impl.render_target import RasterTarget
 
 

@@ -12,7 +12,7 @@ import numpy
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer, matches_keyword_with_one_substitution
 from core_pdf.impl.recovery_objects import PdfObjectStream
 from core_pdf.impl.recovery_policy import RecoveryMode

@@ -9,7 +9,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from core_pdf.impl.execution import ExtractionScope
+from core_pdf.impl.exceptions import ExtractionScope
 from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.extract_selection import (
     assemble_document,

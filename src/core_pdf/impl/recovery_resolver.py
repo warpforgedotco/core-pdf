@@ -7,10 +7,14 @@ from typing import Any, overload
 
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
-from core_pdf.impl.pdf_names import lenient_float, lenient_int, recover_pdf_name
+from core_pdf.impl.pdf_values import (
+    decode_pdf_text_string,
+    lenient_float,
+    lenient_int,
+    recover_pdf_name,
+)
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.recovery_objects import PdfObjectStream
-from core_pdf.impl.recovery_text_strings import decode_pdf_text_string
 from core_pdf.impl.recovery_xref import iter_indirect_object_headers
 from core_pdf.impl.types import MISSING, PdfReference, PdfString
 from core_pdf_spec.s_07_filters.pipeline import decode_stream_data as decode_spec_stream_data

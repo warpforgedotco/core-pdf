@@ -19,7 +19,7 @@ from core_pdf.impl.fonts_program import recover_descriptor, recover_font_file
 from core_pdf.impl.fonts_program_base import GlyphProgram
 from core_pdf.impl.fonts_program_type1 import parse_type1_font_program_encoding
 from core_pdf.impl.fonts_widths import recover_descendant
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import PdfString
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_09_fonts.helpers import BASE_ENCODING_GLYPH_NAMES

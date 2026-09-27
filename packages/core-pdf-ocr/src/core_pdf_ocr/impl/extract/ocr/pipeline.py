@@ -6,7 +6,7 @@ from copy import replace
 
 import numpy
 
-from core_pdf.impl.execution import ExtractionScope
+from core_pdf.impl.exceptions import ExtractionScope
 from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.types import GeneratedRecord
 from core_pdf_ocr.impl.extract.capture import promoted_hidden_observations

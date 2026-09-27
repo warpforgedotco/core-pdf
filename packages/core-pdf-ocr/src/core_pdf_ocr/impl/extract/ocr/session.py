@@ -6,7 +6,7 @@ import math
 from copy import replace
 from typing import Any
 
-from core_pdf.impl.execution import ExtractionScope
+from core_pdf.impl.exceptions import ExtractionScope
 from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.geometry import rect_tuple
 from core_pdf.impl.render_model import RenderOptions

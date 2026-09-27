@@ -13,7 +13,7 @@ from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.fonts_encoding import FontEncoding
-from core_pdf.impl.fonts_glyph_geometry import GlyphGeometry
+from core_pdf.impl.fonts_glyph_geometry import GlyphGeometry, GlyphOutlineArrays
 from core_pdf.impl.fonts_helpers import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.fonts_metrics import FontMetricsModel
 from core_pdf.impl.fonts_program import load_glyph_program
@@ -25,9 +25,8 @@ from core_pdf.impl.fonts_unicode import (
     parse_to_unicode,
 )
 from core_pdf.impl.fonts_widths import effective_descriptor, recover_descendant
-from core_pdf.impl.glyph_outlines import GlyphOutlineArrays
 from core_pdf.impl.glyphs import UnicodeSource
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import RecordType, Rectangle
 from core_pdf_spec.s_08_graphics.matrix import Matrix
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph

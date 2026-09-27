@@ -4,8 +4,7 @@ import pytest
 from core_pdf.impl import render_target
 from core_pdf.impl import render_target as raster
 from core_pdf.impl.render_blend import blend_op
-from core_pdf.impl.render_clipping import ClipState
-from core_pdf.impl.render_grid import DeviceGrid
+from core_pdf.impl.render_clipping import ClipState, DeviceGrid
 
 
 def rounded_ratio(numerator: int, denominator: int) -> int:

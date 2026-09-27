@@ -8,29 +8,21 @@ from contextlib import suppress
 from copy import replace
 from typing import TYPE_CHECKING, Any
 
-from core_pdf.impl.capture_page import (
-    capture_page_program,
-)
+from core_pdf.impl.capture_page import capture_page_program
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture_recording import TextState
-from core_pdf.impl.document_page_links import (
-    goto_action_destination,
-    link_target,
-    resolve_annotation_dict,
-)
 from core_pdf.impl.document_records import RawAnnotation, RawLink
 from core_pdf.impl.document_structure import PageStructure
-from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.execution import ExtractionScope
+from core_pdf.impl.exceptions import ExtractionScope, PdfParseError
 from core_pdf.impl.extract_pipeline import extract_page
-from core_pdf.impl.geometry import rect_tuple
+from core_pdf.impl.geometry import clamp01, rect_tuple
 from core_pdf.impl.graphics_images import decode_image
 from core_pdf.impl.output_model import Page as StructuredPage
+from core_pdf.impl.pdf_values import parse_text_string
 from core_pdf.impl.raw_media import DrawingRecord, ImageMetadata, ImageRecord
 from core_pdf.impl.recovery_resolver import resolve_resource_dict
 from core_pdf.impl.render_model import RenderOptions
 from core_pdf.impl.render_page import compose_page
-from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.s_07_document.page import page_clip, page_rotation, page_user_unit
 from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -39,9 +31,36 @@ from core_pdf_spec.s_07_syntax.types import (
     InheritedValueMap,
     PdfDict,
     PdfObject,
+    PdfValueResolver,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_box
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
+
+if TYPE_CHECKING:
+    from core_pdf.impl.document_document import PdfDocument
+    from core_pdf.impl.document_records import RawFormField
+    from core_pdf.impl.runs import TextRun
+
+
+def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDict | None:
+    value = resolver.resolve(value)
+    return value if isinstance(value, dict) else None
+
+
+def link_target(resolver: PdfValueResolver, action: PdfDict, link_type: str | None) -> str | None:
+    key = "URI" if link_type == "URI" else "D" if link_type == "GoTo" else None
+    if key is None:
+        return None
+    target = action.get(key)
+    text = parse_text_string(target)
+    return resolver.resolve_str(target) if text is None else text
+
+
+def goto_action_destination(resolver: PdfValueResolver, action: object) -> PdfObject:
+    if isinstance(action, dict) and resolver.resolve_name(action.get("S")) == "GoTo":
+        return action.get("D")
+    return None
+
 
 PAGE_INHERITED_KEYS = (
     "MediaBox",
@@ -53,12 +72,6 @@ PAGE_INHERITED_KEYS = (
     "Resources",
     "Annots",
 )
-
-
-if TYPE_CHECKING:
-    from core_pdf.impl.document_document import PdfDocument
-    from core_pdf.impl.document_records import RawFormField
-    from core_pdf.impl.runs import TextRun
 
 
 class PdfPage:

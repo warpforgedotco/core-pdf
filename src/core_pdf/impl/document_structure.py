@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, TypeAlias, overload
 
-from core_pdf.impl.pdf_names import recover_pdf_name
-from core_pdf.impl.pdf_values import coerce_value
+from core_pdf.impl.pdf_values import coerce_value, recover_pdf_name
 from core_pdf.impl.recovery_trees import iter_number_tree_items
 from core_pdf.impl.types import MISSING, PdfReference
 from core_pdf_spec.exceptions import PdfError

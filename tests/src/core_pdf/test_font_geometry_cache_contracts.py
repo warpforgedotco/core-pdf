@@ -2,8 +2,7 @@ import numpy
 import pytest
 
 from core_pdf.impl.fonts_decoder import FontDecoder
-from core_pdf.impl.fonts_glyph_geometry import GlyphGeometry
-from core_pdf.impl.glyph_outlines import outline_arrays
+from core_pdf.impl.fonts_glyph_geometry import GlyphGeometry, outline_arrays
 
 
 @pytest.mark.parametrize("code", [-1, -99])

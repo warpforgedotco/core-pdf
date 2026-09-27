@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from core_pdf.impl.fonts_glyphs import glyph_name_to_unicode
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf_spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,

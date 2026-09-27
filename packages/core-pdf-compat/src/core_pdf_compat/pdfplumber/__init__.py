@@ -21,10 +21,10 @@ from core_pdf.impl.geometry import (
     bbox_union,
     flip_rect_vertical,
 )
-from core_pdf.impl.graphics_codec_backends import PNG_SIGNATURE, png_chunk
+from core_pdf.impl.graphics_stream_decoding import PNG_SIGNATURE, png_chunk
 from core_pdf.impl.output_model import Table as StructuredTable
 from core_pdf.impl.output_model import TableCell
-from core_pdf.impl.pdf_names import recover_pdf_name
+from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.raw_media import DrawingRecord, ImageRecord
 from core_pdf.impl.render_paths import intersect_box
 from core_pdf.impl.types import (

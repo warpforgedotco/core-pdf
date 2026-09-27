@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from copy import replace
 from typing import TYPE_CHECKING, ClassVar, cast
 
-from core_pdf.impl.execution import ExtractionScope
+from core_pdf.impl.exceptions import ExtractionScope
 from core_pdf.impl.extract_capture import STRUCTURE_UNSET
 from core_pdf.impl.extract_contracts import ObservationBatch, PageState
 from core_pdf.impl.extract_pipeline import (
