@@ -34,7 +34,7 @@ from core_pdf.impl.output_model import (
     Page,
 )
 from core_pdf.impl.pdf_values import resolve_destination_references
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, Record
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_page import PdfPage
@@ -74,23 +74,8 @@ def stage_matches(stage: Stage, anchor: StageAnchor) -> bool:
     return isinstance(stage, anchor) if isinstance(anchor, type) else stage is anchor
 
 
-class PagePipeline(Record):
-    __slots__ = ("stages",)
-
+class PagePipeline(GeneratedRecord):
     stages: tuple[Stage, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("stages",)
-    __match_args__ = ("stages",)
-
-    def __init__(self, stages: tuple[Stage, ...]) -> None:
-        frozen_setattr(self, "stages", stages)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.stages == other.stages
 
     def __hash__(self) -> int:
         return hash(self.stages)

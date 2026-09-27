@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import replace
-from typing import ClassVar
 
 from core_pdf.impl.extract_contracts import ObservationBatch, PageAnalysis
 from core_pdf.impl.extract_grids import (
@@ -32,7 +31,7 @@ from core_pdf.impl.extract_table_core import (
 )
 from core_pdf.impl.extract_table_stream import StreamTableSource
 from core_pdf.impl.output_model import Table
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 
 TableGate = Callable[[PageAnalysis], bool]
 
@@ -89,53 +88,12 @@ CHARACTER_SPACED_PROSE = TableRule("character-spaced-prose", table_character_spa
 SINGLE_COLUMN_PROSE = TableRule("single-column-prose", table_is_single_column_prose)
 
 
-class TableDetector(Record):
-    __slots__ = ("gate", "sources", "transforms", "filters", "supplements")
-
+class TableDetector(GeneratedRecord):
     gate: TableGate | None
     sources: tuple[TableSource, ...]
-    transforms: tuple[TableTransform, ...]
-    filters: tuple[TableRule, ...]
-    supplements: tuple[TableSource, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "gate",
-        "sources",
-        "transforms",
-        "filters",
-        "supplements",
-    )
-    __match_args__ = ("gate", "sources", "transforms", "filters", "supplements")
-
-    def __init__(
-        self,
-        gate: TableGate | None,
-        sources: tuple[TableSource, ...],
-        transforms: tuple[TableTransform, ...] = (),
-        filters: tuple[TableRule, ...] = (),
-        supplements: tuple[TableSource, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "gate", gate)
-        frozen_setattr(self, "sources", sources)
-        frozen_setattr(self, "transforms", transforms)
-        frozen_setattr(self, "filters", filters)
-        frozen_setattr(self, "supplements", supplements)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.gate == other.gate
-            and self.sources == other.sources
-            and self.transforms == other.transforms
-            and self.filters == other.filters
-            and self.supplements == other.supplements
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.gate, self.sources, self.transforms, self.filters, self.supplements))
+    transforms: tuple[TableTransform, ...] = ()
+    filters: tuple[TableRule, ...] = ()
+    supplements: tuple[TableSource, ...] = ()
 
     @classmethod
     def native(cls) -> TableDetector:

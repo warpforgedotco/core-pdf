@@ -13,7 +13,13 @@ from core_pdf.impl.extract_contracts import ObservationBatch, PageAnalysis
 from core_pdf.impl.output_model import Table, TableCell
 from core_pdf.impl.spatial import cluster_1d
 from core_pdf.impl.text import collapse_ws
-from core_pdf.impl.types import FrozenFields, Record, ReplaceFields, ReprFields, frozen_setattr
+from core_pdf.impl.types import (
+    FrozenFields,
+    GeneratedRecord,
+    ReplaceFields,
+    ReprFields,
+    frozen_setattr,
+)
 
 
 def cell_text(
@@ -197,18 +203,9 @@ class TableFacts(FrozenFields, ReplaceFields, ReprFields):
 TableQuality: TypeAlias = tuple[int, int, float, int, int]
 
 
-class TableCandidate(Record):
-    __slots__ = ("table", "cached_facts")
-
+class TableCandidate(GeneratedRecord):
     table: Table
-    cached_facts: TableFacts | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("table", "cached_facts")
-    __match_args__ = ("table", "cached_facts")
-
-    def __init__(self, table: Table, cached_facts: TableFacts | None = None) -> None:
-        frozen_setattr(self, "table", table)
-        frozen_setattr(self, "cached_facts", cached_facts)
+    cached_facts: TableFacts | None = None
 
     def __eq__(self, other: object) -> bool:
         if self is other:
@@ -241,9 +238,7 @@ class TableCandidate(Record):
         return TableCandidate(table, self.cached_facts if table.rows is self.table.rows else None)
 
 
-class ObservationCoordinates(Record):
-    __slots__ = ("x0", "y0", "x1", "y1", "y_centers", "widths", "heights", "sequences")
-
+class ObservationCoordinates(GeneratedRecord):
     x0: list[float]
     y0: list[float]
     x1: list[float]
@@ -252,68 +247,6 @@ class ObservationCoordinates(Record):
     widths: list[float]
     heights: list[float]
     sequences: list[int]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "x0",
-        "y0",
-        "x1",
-        "y1",
-        "y_centers",
-        "widths",
-        "heights",
-        "sequences",
-    )
-    __match_args__ = ("x0", "y0", "x1", "y1", "y_centers", "widths", "heights", "sequences")
-
-    def __init__(
-        self,
-        x0: list[float],
-        y0: list[float],
-        x1: list[float],
-        y1: list[float],
-        y_centers: list[float],
-        widths: list[float],
-        heights: list[float],
-        sequences: list[int],
-    ) -> None:
-        frozen_setattr(self, "x0", x0)
-        frozen_setattr(self, "y0", y0)
-        frozen_setattr(self, "x1", x1)
-        frozen_setattr(self, "y1", y1)
-        frozen_setattr(self, "y_centers", y_centers)
-        frozen_setattr(self, "widths", widths)
-        frozen_setattr(self, "heights", heights)
-        frozen_setattr(self, "sequences", sequences)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.x0 == other.x0
-            and self.y0 == other.y0
-            and self.x1 == other.x1
-            and self.y1 == other.y1
-            and self.y_centers == other.y_centers
-            and self.widths == other.widths
-            and self.heights == other.heights
-            and self.sequences == other.sequences
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.x0,
-                self.y0,
-                self.x1,
-                self.y1,
-                self.y_centers,
-                self.widths,
-                self.heights,
-                self.sequences,
-            )
-        )
 
     @classmethod
     def from_observations(cls, observations: ObservationBatch) -> ObservationCoordinates:
@@ -330,67 +263,12 @@ class ObservationCoordinates(Record):
         )
 
 
-class TableAnalysis(Record):
-    __slots__ = ("observations", "coordinates", "text_rows", "row_centers", "candidate_columns")
-
+class TableAnalysis(GeneratedRecord):
     observations: ObservationBatch
     coordinates: ObservationCoordinates
     text_rows: list[list[int]]
     row_centers: list[float]
     candidate_columns: list[list[tuple[int, int]]]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "observations",
-        "coordinates",
-        "text_rows",
-        "row_centers",
-        "candidate_columns",
-    )
-    __match_args__ = (
-        "observations",
-        "coordinates",
-        "text_rows",
-        "row_centers",
-        "candidate_columns",
-    )
-
-    def __init__(
-        self,
-        observations: ObservationBatch,
-        coordinates: ObservationCoordinates,
-        text_rows: list[list[int]],
-        row_centers: list[float],
-        candidate_columns: list[list[tuple[int, int]]],
-    ) -> None:
-        frozen_setattr(self, "observations", observations)
-        frozen_setattr(self, "coordinates", coordinates)
-        frozen_setattr(self, "text_rows", text_rows)
-        frozen_setattr(self, "row_centers", row_centers)
-        frozen_setattr(self, "candidate_columns", candidate_columns)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.observations == other.observations
-            and self.coordinates == other.coordinates
-            and self.text_rows == other.text_rows
-            and self.row_centers == other.row_centers
-            and self.candidate_columns == other.candidate_columns
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.observations,
-                self.coordinates,
-                self.text_rows,
-                self.row_centers,
-                self.candidate_columns,
-            )
-        )
 
     @classmethod
     def build(cls, observations: ObservationBatch, page_width: float) -> TableAnalysis:
@@ -498,28 +376,9 @@ def aligned_column_clusters(
     return candidates
 
 
-class TableContext(Record):
-    __slots__ = ("capture", "analysis")
-
+class TableContext(GeneratedRecord):
     capture: PageAnalysis
     analysis: TableAnalysis
-
-    __fields__: ClassVar[tuple[str, ...]] = ("capture", "analysis")
-    __match_args__ = ("capture", "analysis")
-
-    def __init__(self, capture: PageAnalysis, analysis: TableAnalysis) -> None:
-        frozen_setattr(self, "capture", capture)
-        frozen_setattr(self, "analysis", analysis)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.capture == other.capture and self.analysis == other.analysis
-
-    def __hash__(self) -> int:
-        return hash((self.capture, self.analysis))
 
 
 class TableSource(Protocol):
@@ -534,25 +393,6 @@ class TableTransform(Protocol):
     def __call__(self, candidates: list[TableCandidate], /) -> list[TableCandidate]: ...
 
 
-class TableRule(Record):
-    __slots__ = ("name", "rejects")
-
+class TableRule(GeneratedRecord):
     name: str
     rejects: Callable[[TableCandidate], bool]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("name", "rejects")
-    __match_args__ = ("name", "rejects")
-
-    def __init__(self, name: str, rejects: Callable[[TableCandidate], bool]) -> None:
-        frozen_setattr(self, "name", name)
-        frozen_setattr(self, "rejects", rejects)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.name == other.name and self.rejects == other.rejects
-
-    def __hash__(self) -> int:
-        return hash((self.name, self.rejects))

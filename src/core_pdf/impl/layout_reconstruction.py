@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import ClassVar
 
 from core_pdf.impl import layout_text_rules as rules
 from core_pdf.impl.runs import (
@@ -13,7 +12,7 @@ from core_pdf.impl.runs import (
     TextRun,
 )
 from core_pdf.impl.text import WORD_GAP_SIZE_FACTOR, word_gap_threshold
-from core_pdf.impl.types import ReplaceFields, ReprFields
+from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
 
 SUPERSCRIPT_HEIGHT_RATIO = 0.9
 SUPERSCRIPT_BASELINE_MIN = 0.45
@@ -33,50 +32,12 @@ SUPERSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶�
 SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 
 
-class LayoutLineTextAtom(ReplaceFields, ReprFields):
-    __slots__ = ("text", "run", "advance_bbox", "baseline", "has_glyph_geometry")
-
+class LayoutLineTextAtom(ReplaceFields, ReprFields, metaclass=RecordType, frozen=False):
     text: str
     run: TextRun
     advance_bbox: tuple[float, float, float, float]
     baseline: tuple[float, float, float, float] | None
     has_glyph_geometry: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "text",
-        "run",
-        "advance_bbox",
-        "baseline",
-        "has_glyph_geometry",
-    )
-    __match_args__ = ("text", "run", "advance_bbox", "baseline", "has_glyph_geometry")
-
-    def __init__(
-        self,
-        text: str,
-        run: TextRun,
-        advance_bbox: tuple[float, float, float, float],
-        baseline: tuple[float, float, float, float] | None,
-        has_glyph_geometry: bool,
-    ) -> None:
-        self.text = text
-        self.run = run
-        self.advance_bbox = advance_bbox
-        self.baseline = baseline
-        self.has_glyph_geometry = has_glyph_geometry
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.run == other.run
-            and self.advance_bbox == other.advance_bbox
-            and self.baseline == other.baseline
-            and self.has_glyph_geometry == other.has_glyph_geometry
-        )
 
     __hash__ = None  # type: ignore[assignment]
 

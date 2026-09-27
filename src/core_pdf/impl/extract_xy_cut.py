@@ -3,111 +3,36 @@
 from __future__ import annotations
 
 import math
-from typing import ClassVar
 
 import numpy
 
 from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract_layout_rules import LAYOUT_RULES
 from core_pdf.impl.spatial import band_rows
-from core_pdf.impl.types import Record, ReplaceFields, ReprFields, frozen_setattr
+from core_pdf.impl.types import (
+    GeneratedRecord,
+    RecordType,
+    ReplaceFields,
+    ReprFields,
+)
 
 XY_CUT = LAYOUT_RULES.xy_cut
 
 
-class LayoutRegion(Record):
-    __slots__ = ("indexes", "x_start_order", "y_start_order", "y_center_order")
-
+class LayoutRegion(GeneratedRecord):
     indexes: numpy.ndarray
     x_start_order: numpy.ndarray
     y_start_order: numpy.ndarray
     y_center_order: numpy.ndarray
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "indexes",
-        "x_start_order",
-        "y_start_order",
-        "y_center_order",
-    )
-    __match_args__ = ("indexes", "x_start_order", "y_start_order", "y_center_order")
 
-    def __init__(
-        self,
-        indexes: numpy.ndarray,
-        x_start_order: numpy.ndarray,
-        y_start_order: numpy.ndarray,
-        y_center_order: numpy.ndarray,
-    ) -> None:
-        frozen_setattr(self, "indexes", indexes)
-        frozen_setattr(self, "x_start_order", x_start_order)
-        frozen_setattr(self, "y_start_order", y_start_order)
-        frozen_setattr(self, "y_center_order", y_center_order)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.indexes == other.indexes
-            and self.x_start_order == other.x_start_order
-            and self.y_start_order == other.y_start_order
-            and self.y_center_order == other.y_center_order
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.indexes, self.x_start_order, self.y_start_order, self.y_center_order))
-
-
-class LayoutGeometry(ReplaceFields, ReprFields):
-    __slots__ = ("boxes", "x_centers", "y_centers", "heights", "marks", "row_ids")
-
+class LayoutGeometry(ReplaceFields, ReprFields, metaclass=RecordType, frozen=False):
     boxes: numpy.ndarray
     x_centers: numpy.ndarray
     y_centers: numpy.ndarray
     heights: numpy.ndarray
     marks: numpy.ndarray
     row_ids: numpy.ndarray
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "boxes",
-        "x_centers",
-        "y_centers",
-        "heights",
-        "marks",
-        "row_ids",
-    )
-    __match_args__ = ("boxes", "x_centers", "y_centers", "heights", "marks", "row_ids")
-
-    def __init__(
-        self,
-        boxes: numpy.ndarray,
-        x_centers: numpy.ndarray,
-        y_centers: numpy.ndarray,
-        heights: numpy.ndarray,
-        marks: numpy.ndarray,
-        row_ids: numpy.ndarray,
-    ) -> None:
-        self.boxes = boxes
-        self.x_centers = x_centers
-        self.y_centers = y_centers
-        self.heights = heights
-        self.marks = marks
-        self.row_ids = row_ids
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.boxes == other.boxes
-            and self.x_centers == other.x_centers
-            and self.y_centers == other.y_centers
-            and self.heights == other.heights
-            and self.marks == other.marks
-            and self.row_ids == other.row_ids
-        )
 
     __hash__ = None  # type: ignore[assignment]
 

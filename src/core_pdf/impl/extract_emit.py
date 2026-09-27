@@ -6,7 +6,6 @@ import math
 from bisect import bisect_left, bisect_right
 from copy import replace
 from statistics import fmean
-from typing import ClassVar
 
 import numpy
 
@@ -37,7 +36,7 @@ from core_pdf.impl.output_model import (
 )
 from core_pdf.impl.spatial import BoxIndex
 from core_pdf.impl.text import collapse_ws, complete_text_covered, content_tokens
-from core_pdf.impl.types import Record, Rectangle, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, Rectangle
 
 
 def caption_for(
@@ -387,74 +386,17 @@ def remove_block_duplicate_table_rows(
     return tuple(filtered)
 
 
-class IndexedRow(Record):
-    __slots__ = ("cells", "texts", "tokens", "frame_indexes")
-
+class IndexedRow(GeneratedRecord):
     cells: tuple[TableCell, ...]
     texts: tuple[str, ...]
     tokens: tuple[tuple[str, ...], ...]
     frame_indexes: tuple[int, ...]
 
-    __fields__: ClassVar[tuple[str, ...]] = ("cells", "texts", "tokens", "frame_indexes")
-    __match_args__ = ("cells", "texts", "tokens", "frame_indexes")
 
-    def __init__(
-        self,
-        cells: tuple[TableCell, ...],
-        texts: tuple[str, ...],
-        tokens: tuple[tuple[str, ...], ...],
-        frame_indexes: tuple[int, ...],
-    ) -> None:
-        frozen_setattr(self, "cells", cells)
-        frozen_setattr(self, "texts", texts)
-        frozen_setattr(self, "tokens", tokens)
-        frozen_setattr(self, "frame_indexes", frame_indexes)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.cells == other.cells
-            and self.texts == other.texts
-            and self.tokens == other.tokens
-            and self.frame_indexes == other.frame_indexes
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.cells, self.texts, self.tokens, self.frame_indexes))
-
-
-class TableIndex(Record):
-    __slots__ = ("table", "rows", "frame")
-
+class TableIndex(GeneratedRecord):
     table: Table
     rows: tuple[IndexedRow, ...]
     frame: BoxIndex | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("table", "rows", "frame")
-    __match_args__ = ("table", "rows", "frame")
-
-    def __init__(
-        self,
-        table: Table,
-        rows: tuple[IndexedRow, ...],
-        frame: BoxIndex | None,
-    ) -> None:
-        frozen_setattr(self, "table", table)
-        frozen_setattr(self, "rows", rows)
-        frozen_setattr(self, "frame", frame)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.table == other.table and self.rows == other.rows and self.frame == other.frame
-
-    def __hash__(self) -> int:
-        return hash((self.table, self.rows, self.frame))
 
     @classmethod
     def build(cls, table: Table) -> TableIndex:

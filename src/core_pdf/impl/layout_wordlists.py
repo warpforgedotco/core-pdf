@@ -8,9 +8,8 @@ import struct
 from collections.abc import Iterator, Mapping
 from functools import cache, lru_cache
 from importlib.resources import files
-from typing import ClassVar
 
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 
 WORDLIST_PACKAGE = "core_pdf.impl.data.wordlists"
 NORVIG_COUNTS = "norvig_count_1w.txt.gz"
@@ -21,28 +20,9 @@ WORD_RANK_HEADER = struct.Struct("<8sI")
 UINT32 = struct.Struct("<I")
 
 
-class WordFrequency(Record):
-    __slots__ = ("count", "rank")
-
+class WordFrequency(GeneratedRecord):
     count: int
     rank: int
-
-    __fields__: ClassVar[tuple[str, ...]] = ("count", "rank")
-    __match_args__ = ("count", "rank")
-
-    def __init__(self, count: int, rank: int) -> None:
-        frozen_setattr(self, "count", count)
-        frozen_setattr(self, "rank", rank)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.count == other.count and self.rank == other.rank
-
-    def __hash__(self) -> int:
-        return hash((self.count, self.rank))
 
 
 class WordRankIndex(Mapping[str, int]):

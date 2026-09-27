@@ -6,7 +6,6 @@ import re
 from collections.abc import Callable, Mapping
 from copy import replace
 from types import MappingProxyType
-from typing import ClassVar
 
 import numpy
 
@@ -37,7 +36,7 @@ from core_pdf.impl.text import (
     reconcile_text_words,
     text_word_tokens,
 )
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, frozen_setattr
 
 NATIVE_SOURCE = int(ObservationSource.NATIVE)
 
@@ -54,14 +53,9 @@ SPAN_TRAILING_SPACE = (" ", "\t", "\n")
 GroupOrder = Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray]
 
 
-class LayoutHooks(Record):
-    __slots__ = ("source_labels", "group_order")
-
+class LayoutHooks(GeneratedRecord):
     source_labels: Mapping[int, str]
     group_order: GroupOrder | None
-
-    __fields__: ClassVar[tuple[str, ...]] = ("source_labels", "group_order")
-    __match_args__ = ("source_labels", "group_order")
 
     def __init__(
         self,
@@ -75,13 +69,6 @@ class LayoutHooks(Record):
         )
         frozen_setattr(self, "group_order", group_order)
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.source_labels == other.source_labels and self.group_order == other.group_order
-
     def __hash__(self) -> int:
         return hash((tuple(self.source_labels.items()), self.group_order))
 
@@ -89,58 +76,15 @@ class LayoutHooks(Record):
 NATIVE_LAYOUT_HOOKS = LayoutHooks()
 
 
-class LineGroupPlan(Record):
-    __slots__ = ("indexes", "starts", "stops")
-
+class LineGroupPlan(GeneratedRecord):
     indexes: numpy.ndarray
     starts: numpy.ndarray
     stops: numpy.ndarray
 
-    __fields__: ClassVar[tuple[str, ...]] = ("indexes", "starts", "stops")
-    __match_args__ = ("indexes", "starts", "stops")
 
-    def __init__(self, indexes: numpy.ndarray, starts: numpy.ndarray, stops: numpy.ndarray) -> None:
-        frozen_setattr(self, "indexes", indexes)
-        frozen_setattr(self, "starts", starts)
-        frozen_setattr(self, "stops", stops)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.indexes == other.indexes
-            and self.starts == other.starts
-            and self.stops == other.stops
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.indexes, self.starts, self.stops))
-
-
-class BuiltLines(Record):
-    __slots__ = ("lines", "boxes")
-
+class BuiltLines(GeneratedRecord):
     lines: tuple[ParsedLine, ...]
     boxes: numpy.ndarray
-
-    __fields__: ClassVar[tuple[str, ...]] = ("lines", "boxes")
-    __match_args__ = ("lines", "boxes")
-
-    def __init__(self, lines: tuple[ParsedLine, ...], boxes: numpy.ndarray) -> None:
-        frozen_setattr(self, "lines", lines)
-        frozen_setattr(self, "boxes", boxes)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.lines == other.lines and self.boxes == other.boxes
-
-    def __hash__(self) -> int:
-        return hash((self.lines, self.boxes))
 
 
 def line_group_indexes(observations: ObservationBatch) -> LineGroupPlan:

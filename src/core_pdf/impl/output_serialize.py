@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from csv import writer
 from html import escape
 from io import StringIO
-from typing import ClassVar, Protocol
+from typing import Protocol
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from core_pdf.impl.output_model import (
@@ -32,7 +32,7 @@ from core_pdf.impl.output_model import (
     TextLine,
 )
 from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord
 
 LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•▪◦]|(?:\d+|[^\W_])[.)])[ \t]*")
 
@@ -415,43 +415,11 @@ def document_to_tei(document: Document, *, pages: PageSelection | None = None) -
     return tostring(root, encoding="unicode", short_empty_elements=True)
 
 
-class InlineMarkup(Record):
-    __slots__ = ("escape_text", "strikeout", "bold", "italic")
-
+class InlineMarkup(GeneratedRecord):
     escape_text: bool
     strikeout: tuple[str, str]
     bold: tuple[str, str]
     italic: tuple[str, str]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("escape_text", "strikeout", "bold", "italic")
-    __match_args__ = ("escape_text", "strikeout", "bold", "italic")
-
-    def __init__(
-        self,
-        escape_text: bool,
-        strikeout: tuple[str, str],
-        bold: tuple[str, str],
-        italic: tuple[str, str],
-    ) -> None:
-        frozen_setattr(self, "escape_text", escape_text)
-        frozen_setattr(self, "strikeout", strikeout)
-        frozen_setattr(self, "bold", bold)
-        frozen_setattr(self, "italic", italic)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.escape_text == other.escape_text
-            and self.strikeout == other.strikeout
-            and self.bold == other.bold
-            and self.italic == other.italic
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.escape_text, self.strikeout, self.bold, self.italic))
 
 
 MARKDOWN_MARKUP = InlineMarkup(False, ("~~", "~~"), ("**", "**"), ("*", "*"))
