@@ -419,6 +419,7 @@ source_modules = ["core_pdf.impl.output_serialize"]
 ignore_imports = ["core_pdf.impl.geometry -> core_pdf_spec.s_08_graphics.geometry"]
 forbidden_modules = [
     "core_pdf.impl.document_document",
+    "core_pdf.impl.document_xref_recovery",
     "core_pdf.impl.document_fields",
     "core_pdf.impl.document_metadata",
     "core_pdf.impl.document_page",
@@ -575,6 +576,7 @@ source_modules = [
 ]
 forbidden_modules = [
     "core_pdf.impl.document_document",
+    "core_pdf.impl.document_xref_recovery",
     "core_pdf.impl.document_fields",
     "core_pdf.impl.document_metadata",
     "core_pdf.impl.document_page",
@@ -809,6 +811,7 @@ source_modules = [
 ]
 forbidden_modules = [
     "core_pdf.impl.document_document",
+    "core_pdf.impl.document_xref_recovery",
     "core_pdf.impl.document_fields",
     "core_pdf.impl.document_metadata",
     "core_pdf.impl.document_page",
@@ -877,6 +880,7 @@ source_modules = [
 ]
 forbidden_modules = [
     "core_pdf.impl.document_document",
+    "core_pdf.impl.document_xref_recovery",
     "core_pdf.impl.document_page",
     "core_pdf.impl.document_fields",
     "core_pdf.impl.document_metadata",
@@ -921,6 +925,7 @@ source_modules = [
 ]
 forbidden_modules = [
     "core_pdf.impl.document_document",
+    "core_pdf.impl.document_xref_recovery",
     "core_pdf.impl.document_page",
     "core_pdf.impl.capture_glyph_boxes",
     "core_pdf.impl.capture_glyph_geometry",
