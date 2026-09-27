@@ -3,41 +3,16 @@
 from __future__ import annotations
 
 import typing
-from typing import ClassVar
 
-from core_records import Record, frozen_setattr
+from core_records import GeneratedRecord
 
 CodeSpaceRanges = list[tuple[bytes, bytes]] | tuple[tuple[bytes, bytes], ...]
 
 
-class CIDRange(Record):
-    __slots__ = ("start", "end", "first_cid")
-
+class CIDRange(GeneratedRecord):
     start: bytes
     end: bytes
     first_cid: int
-
-    __fields__: ClassVar[tuple[str, ...]] = ("start", "end", "first_cid")
-    __match_args__ = ("start", "end", "first_cid")
-
-    def __init__(self, start: bytes, end: bytes, first_cid: int) -> None:
-        frozen_setattr(self, "start", start)
-        frozen_setattr(self, "end", end)
-        frozen_setattr(self, "first_cid", first_cid)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.start == other.start
-            and self.end == other.end
-            and self.first_cid == other.first_cid
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.start, self.end, self.first_cid))
 
     def cid_for(self, code: bytes) -> int:
         return self.first_cid + range_offset(
@@ -45,30 +20,10 @@ class CIDRange(Record):
         )
 
 
-class NotdefRange(Record):
-    __slots__ = ("start", "end", "cid")
-
+class NotdefRange(GeneratedRecord):
     start: bytes
     end: bytes
     cid: int
-
-    __fields__: ClassVar[tuple[str, ...]] = ("start", "end", "cid")
-    __match_args__ = ("start", "end", "cid")
-
-    def __init__(self, start: bytes, end: bytes, cid: int) -> None:
-        frozen_setattr(self, "start", start)
-        frozen_setattr(self, "end", end)
-        frozen_setattr(self, "cid", cid)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.start == other.start and self.end == other.end and self.cid == other.cid
-
-    def __hash__(self) -> int:
-        return hash((self.start, self.end, self.cid))
 
     def cid_for(self, code: bytes) -> int:  # noqa: ARG002
         return self.cid
