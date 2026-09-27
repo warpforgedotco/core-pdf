@@ -10,24 +10,15 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVa
 from core_pdf.impl.caches import DocumentCaches
 from core_pdf.impl.document_forms import DocumentForms
 from core_pdf.impl.document_metadata import MetadataRecord, resolve_metadata
-from core_pdf.impl.document_navigation import (
-    DocumentNavigation,
-    PageLookup,
-    first_indexes,
-    unresolved_destination,
-)
+from core_pdf.impl.document_navigation import DocumentNavigation, PageLookup
 from core_pdf.impl.document_optional_content import OptionalContent
 from core_pdf.impl.document_page import PdfPage
-from core_pdf.impl.document_page_tree import MAX_PAGE_TREE_DEPTH, PageTreeRecovery
-from core_pdf.impl.document_security import SecuritySetupMixin, check_security_aliases
-from core_pdf.impl.document_source import DocumentLifecycle, DocumentOperation, load_source
+from core_pdf.impl.document_page_tree import PageTreeRecovery
+from core_pdf.impl.document_security import SecuritySetupMixin
+from core_pdf.impl.document_source import DocumentLifecycle, load_source
 from core_pdf.impl.document_standards import discover_profile_claims
 from core_pdf.impl.document_structure import StructureTree
-from core_pdf.impl.document_xref_recovery import (
-    TRAILER_METADATA_KEYS,
-    XRefRecovery,
-    object_headers_present,
-)
+from core_pdf.impl.document_xref_recovery import XRefRecovery
 from core_pdf.impl.exceptions import PdfEmptySourceError, PdfParseError
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_selection import extract_document
@@ -427,15 +418,3 @@ def format_page_label(spec: PdfDict, page_offset: int, resolve: Callable[[object
     if style is not None and style in PageLabelStyle:
         normalized["S"] = PdfName.of(style)
     return format_spec_page_label(normalized, page_offset, lambda value: value)
-
-
-__all__ = (
-    "MAX_PAGE_TREE_DEPTH",
-    "TRAILER_METADATA_KEYS",
-    "check_security_aliases",
-    "DocumentOperation",
-    "PageLookup",
-    "first_indexes",
-    "object_headers_present",
-    "unresolved_destination",
-)

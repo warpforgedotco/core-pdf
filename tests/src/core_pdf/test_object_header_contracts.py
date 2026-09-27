@@ -2,7 +2,7 @@ import gzip
 import pickle
 from pathlib import Path
 
-from core_pdf.impl.document_document import object_headers_present
+from core_pdf.impl.document_xref_recovery import object_headers_present
 
 GOLDEN_PATH = (
     Path(__file__).parents[3] / "packages/core-pdf-cythonized/tests/xref_headers_golden.pkl.gz"

@@ -4,37 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from math import isfinite
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_host import NO_MARKS, CaptureMarks
-from core_pdf.impl.capture_image_sink import (
-    ImageCaptureMixin,
-    image_source_from_stream,
-    soft_mask_mean_alpha,
-)
-from core_pdf.impl.capture_paints import MASK_KEYED_FIELDS, PaintResolutionMixin, state_key
-from core_pdf.impl.capture_path_sink import PathCaptureMixin, StrokeLineRows, flatten_path
+from core_pdf.impl.capture_image_sink import ImageCaptureMixin
+from core_pdf.impl.capture_paints import PaintResolutionMixin
+from core_pdf.impl.capture_path_sink import PathCaptureMixin, StrokeLineRows
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CapturedProgram, CaptureOptions
 from core_pdf.impl.capture_recovery import CaptureRecovery, iter_content_operations
-from core_pdf.impl.capture_scopes import CaptureGraphicsSave, ScopeCaptureMixin
-from core_pdf.impl.capture_text_runs import (
-    RunAccumulator,
-)
-from core_pdf.impl.capture_text_sink import (
-    GlyphCaptureMixin,
-    MarkedContentEntry,
-    TextLayout,
-    detect_rotation_from_linear,
-)
+from core_pdf.impl.capture_scopes import ScopeCaptureMixin
+from core_pdf.impl.capture_text_runs import RunAccumulator
+from core_pdf.impl.capture_text_sink import GlyphCaptureMixin
 from core_pdf.impl.capture_tolerant_state import CaptureCaches, RecoveringTextState
 from core_pdf.impl.document_contracts import CaptureDocument
 from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_ligatures import detect_ligature_overrides
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.types import (
-    Rectangle,
-)
+from core_pdf.impl.types import Rectangle
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.operations import OperationHandler
@@ -44,10 +31,6 @@ from core_pdf_spec.s_07_content.streams import (
 )
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
-
-if TYPE_CHECKING:
-    pass
-
 
 GLYPH_PAINT_KEEPING_OPERATORS = frozenset(
     ("BT", "Td", "TD", "Tm", "T*", "Tj", "TJ", "'", '"', "Tc", "Tw", "Tz", "TL", "Ts", "Tf")
@@ -284,20 +267,4 @@ class TextState(
         return resolver.resolve_name_like_value(value)
 
 
-__all__ = (
-    "MASK_KEYED_FIELDS",
-    "NO_MARKS",
-    "CaptureGraphicsSave",
-    "CaptureMarks",
-    "CaptureStreamExecutor",
-    "MarkedContentEntry",
-    "StrokeLineRows",
-    "TextLayout",
-    "TextState",
-    "applies_paths_natively",
-    "detect_rotation_from_linear",
-    "flatten_path",
-    "image_source_from_stream",
-    "soft_mask_mean_alpha",
-    "state_key",
-)
+__all__ = ("CaptureStreamExecutor", "TextState", "applies_paths_natively")

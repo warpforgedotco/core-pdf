@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from core_pdf.impl.pdf_values import resolve_destination_references
-from core_pdf.impl.recovery_text_strings import (
-    parse_text_string,
-)
+from core_pdf.impl.recovery_text_strings import parse_text_string
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
 
@@ -35,5 +32,4 @@ __all__ = (
     "goto_action_destination",
     "link_target",
     "resolve_annotation_dict",
-    "resolve_destination_references",
 )
