@@ -594,6 +594,12 @@ requires-dist = [
 name = "core-pdf-cythonized"
 version = "0.1.0"
 source = { editable = "packages/core-pdf-cythonized" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy", specifier = ">=2.5.1" }]
 
 [[package]]
 name = "core-pdf-ocr"

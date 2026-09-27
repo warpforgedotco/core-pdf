@@ -316,6 +316,52 @@ cdef class ContentScanner:
         self.paths_changed = True
         return True
 
+    cdef object scan_numeric_array(self, Py_ssize_t p):
+        cdef const unsigned char* b = self.buf
+        cdef Py_ssize_t n = self.size
+        cdef Py_ssize_t start, digits_before, digits_after
+        cdef bint has_dot
+        cdef char* end
+        cdef bytes word
+        cdef list values = []
+        p += 1
+        while True:
+            while p < n and IS_SPACE[b[p]]:
+                p += 1
+            if p >= n:
+                return None
+            if b[p] == 0x5D:
+                self.cursor = p + 1
+                return values
+            if not IS_NUMERIC_START[b[p]]:
+                return None
+            start = p
+            has_dot = 0
+            digits_before = 0
+            digits_after = 0
+            if b[p] == 0x2B or b[p] == 0x2D:
+                p += 1
+            while p < n and IS_DIGIT[b[p]]:
+                p += 1
+                digits_before += 1
+            if p < n and b[p] == 0x2E:
+                has_dot = 1
+                p += 1
+                while p < n and IS_DIGIT[b[p]]:
+                    p += 1
+                    digits_after += 1
+            if digits_before == 0 and not (has_dot and digits_after > 0):
+                return None
+            if p >= n or not (IS_SPACE[b[p]] or b[p] == 0x5D):
+                return None
+            if p - start >= NUMBER_LIMIT:
+                return None
+            if has_dot:
+                PyList_Append(values, PyOS_string_to_double(<const char*> (b + start), &end, None))
+            else:
+                word = PyBytes_FromStringAndSize(<const char*> (b + start), p - start)
+                PyList_Append(values, PyLong_FromString(word, NULL, 10))
+
     def next_operation(self):
         try:
             return self.scan_operation()
@@ -402,6 +448,16 @@ cdef class ContentScanner:
                 value = self.names.get(word)
                 if value is None:
                     value = self.names[word] = self.make_name(word[1:])
+                if PyList_GET_SIZE(operands) + self.pending < OPERAND_LIMIT:
+                    if self.pending:
+                        self.materialize()
+                    PyList_Append(operands, value)
+                continue
+
+            if c == 0x5B:
+                value = self.scan_numeric_array(p)
+                if value is None:
+                    return p
                 if PyList_GET_SIZE(operands) + self.pending < OPERAND_LIMIT:
                     if self.pending:
                         self.materialize()

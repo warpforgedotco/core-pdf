@@ -89,8 +89,8 @@ from core_pdf_cythonized import (
     composite_knockout_group,
     composite_masked_normal,
     composite_normal_group,
-    fill_glyph_coverage,
-    fill_glyph_knockout,
+    fill_glyph_coverage_at,
+    fill_glyph_knockout_at,
     fill_rect_coverage,
     sample_opaque_pixels,
     shading_blend,
@@ -898,9 +898,7 @@ class RasterTarget:
         ):
             return False
         self.set_shape_alpha(rgba[3] / 255.0)
-        rows = slice(iy0, iy1)
-        columns = slice(ix0, ix1)
-        drawn = fill_glyph_knockout(
+        drawn = fill_glyph_knockout_at(
             edge_array,
             self.crop_x0,
             self.crop_y1,
@@ -910,10 +908,10 @@ class RasterTarget:
             ix1 - ix0,
             iy1 - iy0,
             rgba,
-            parent.view[rows, columns],
-            self.pixel_view(parent.backdrop)[rows, columns],
-            parent.source_alpha[rows, columns],
-            parent.source_shape[rows, columns],
+            parent.view,
+            self.pixel_view(parent.backdrop),
+            parent.source_alpha,
+            parent.source_shape,
             self.shape_alpha,
         )
         if drawn is None:
@@ -1933,11 +1931,7 @@ class RasterTarget:
                 else numpy.asarray(edges, dtype=numpy.float64)
             )
             if normal_fast and rectangular_clip and fill_rule == "nonzero":
-                rows = slice(iy0, iy1)
-                columns = slice(ix0, ix1)
-                source_alpha = self.group_source_alpha
-                source_shape = self.group_source_shape
-                drawn = fill_glyph_coverage(
+                drawn = fill_glyph_coverage_at(
                     source,
                     crop_x0,
                     crop_y1,
@@ -1947,9 +1941,9 @@ class RasterTarget:
                     ix1 - ix0,
                     iy1 - iy0,
                     rgba,
-                    self.pixel_array[rows, columns],
-                    source_alpha[rows, columns] if source_alpha is not None else None,
-                    source_shape[rows, columns] if source_shape is not None else None,
+                    self.pixel_array,
+                    self.group_source_alpha,
+                    self.group_source_shape,
                     self.shape_alpha,
                 )
                 if drawn is not None:

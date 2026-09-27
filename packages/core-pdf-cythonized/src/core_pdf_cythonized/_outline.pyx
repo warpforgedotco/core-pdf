@@ -1,8 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+cimport numpy as cnp
 from libc.math cimport isnan
 
+from core_pdf_cythonized._ndarray cimport (
+    empty_float64,
+    empty_float64_rows,
+    float64_data,
+    is_float64_vector,
+    vector_length,
+)
+
 import numpy
+
+cnp.import_array()
 
 
 def outline_edges(double[::1] xs, double[::1] ys, spans):
@@ -33,9 +44,8 @@ cdef tuple _outline_edges(const double* xs, const double* ys, spans):
     if not kept:
         return None, kept, dropped
 
-    edges = numpy.empty((total, 4), numpy.float64)
-    cdef double[:, ::1] out_view = edges
-    cdef double* out = &out_view[0, 0]
+    edges = empty_float64_rows(total, 4)
+    cdef double* out = float64_data(edges)
     for span in kept:
         start = span[0]
         end = span[1]
@@ -105,31 +115,51 @@ cdef object column_extreme(
     return bound
 
 
-def translated_outline_edges(double[::1] linear_x, double[::1] linear_y, double e, double f, spans):
-    cdef Py_ssize_t count = linear_x.shape[0], i
+def translated_outline_edges(linear_x, linear_y, double e, double f, spans):
+    if not (is_float64_vector(linear_x) and is_float64_vector(linear_y)):
+        return translated_outline_edges_view(linear_x, linear_y, e, f, spans)
+    cdef Py_ssize_t count = vector_length(linear_x)
+    if vector_length(linear_y) != count:
+        raise ValueError("columns differ in length")
+    return _translated_outline_edges(
+        float64_data(linear_x), float64_data(linear_y), count, e, f, spans
+    )
+
+
+def translated_outline_edges_view(
+    double[::1] linear_x, double[::1] linear_y, double e, double f, spans
+):
+    cdef Py_ssize_t count = linear_x.shape[0]
     if linear_y.shape[0] != count:
         raise ValueError("columns differ in length")
-    column_x = numpy.empty(count, numpy.float64)
-    column_y = numpy.empty(count, numpy.float64)
-    cdef double[::1] xs = column_x
-    cdef double[::1] ys = column_y
+    return _translated_outline_edges(&linear_x[0], &linear_y[0], count, e, f, spans)
+
+
+cdef tuple _translated_outline_edges(
+    const double* linear_x, const double* linear_y, Py_ssize_t count, double e, double f, spans
+):
+    cdef Py_ssize_t i
+    column_x = empty_float64(count)
+    column_y = empty_float64(count)
+    cdef double* xs = float64_data(column_x)
+    cdef double* ys = float64_data(column_y)
     for i in range(count):
         xs[i] = linear_x[i] + e
         ys[i] = linear_y[i] + f
     if not _spans_inside(spans, count):
         raise IndexError("outline span outside the columns")
-    edges, kept, dropped = _outline_edges(&xs[0], &ys[0], spans)
+    edges, kept, dropped = _outline_edges(xs, ys, spans)
     if edges is None:
         return column_x, column_y, None, kept, dropped, None
     cdef double low_x, high_x, low_y, high_y
     cdef int flags_x, flags_y
     with nogil:
-        flags_x = column_range(&xs[0], count, &low_x, &high_x)
-        flags_y = column_range(&ys[0], count, &low_y, &high_y)
+        flags_x = column_range(xs, count, &low_x, &high_x)
+        flags_y = column_range(ys, count, &low_y, &high_y)
     bounds = (
-        column_extreme(&xs[0], count, column_x, False, low_x, flags_x),
-        column_extreme(&ys[0], count, column_y, False, low_y, flags_y),
-        column_extreme(&xs[0], count, column_x, True, high_x, flags_x),
-        column_extreme(&ys[0], count, column_y, True, high_y, flags_y),
+        column_extreme(xs, count, column_x, False, low_x, flags_x),
+        column_extreme(ys, count, column_y, False, low_y, flags_y),
+        column_extreme(xs, count, column_x, True, high_x, flags_x),
+        column_extreme(ys, count, column_y, True, high_y, flags_y),
     )
     return column_x, column_y, edges, kept, dropped, bounds

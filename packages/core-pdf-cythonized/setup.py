@@ -37,10 +37,20 @@ class BuildExtWithStrictFloats(build_ext):
 
 
 def extensions() -> list:
+    import numpy
     from Cython.Build import cythonize
+    from setuptools import Extension
 
     return cythonize(
-        SOURCES,
+        [
+            Extension(
+                str(Path(source).relative_to("src").with_suffix("")).replace("/", "."),
+                [source],
+                include_dirs=[numpy.get_include()],
+                define_macros=[("NPY_NO_DEPRECATED_API", "NPY_2_0_API_VERSION")],
+            )
+            for source in SOURCES
+        ],
         language_level="3",
         compiler_directives={
             "boundscheck": False,
