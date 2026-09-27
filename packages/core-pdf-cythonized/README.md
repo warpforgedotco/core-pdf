@@ -4,7 +4,7 @@ Compiled kernels for `core-pdf` hot paths.
 
 `core-pdf` depends on this distribution and imports from it directly. There is
 no pure-Python fallback: when a kernel lands here, the Python it replaced is
-deleted -- with one exception, `ObjectScanner`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
+deleted -- with two exceptions, `ObjectScanner` and `scan_to_unicode_cmap`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
 ## Two kernels own their algorithms
@@ -32,7 +32,7 @@ did MMR and text regions. Core's `RecoveryJBIG2PageDecoder` checks the region
 header and calls the kernel. The one conformance test the decoder had moved
 here with it; spec's test now asserts that it declines.
 
-## One kernel keeps its Python
+## Two kernels keep their Python
 
 `ObjectScanner` is the other exception, in the opposite direction: it mirrors
 code that is not deleted. The Python it mirrors is `core-pdf-spec`'s object
@@ -53,6 +53,18 @@ builds dicts, lists, ints and floats, which cost the same from C as from the
 interpreter, and a repeated name is a dict hit. Rebuilding the object graphs
 of the benchmark corpus in Python costs 12% of parsing them; the other 88% was
 per-token dispatch, which is what compiling removes.
+
+`scan_to_unicode_cmap` keeps its Python on the same terms. It parses a
+ToUnicode CMap straight from bytes to the mapping dict, for the well-formed
+subset: `bfchar` and `bfrange` blocks whose operands are clean hex strings,
+with array destinations. Anything else -- literal operands, whitespace or an
+odd digit count inside a hex string, `cidrange` blocks, an unterminated token,
+a `bfrange` block that would be rejected -- returns None, and
+`core_pdf.impl.fonts_cmap` parses the same bytes with the tokenizer and block
+parsers it always used. `test_tounicode_scanner_kernel.py` pins the accepted
+results and the declined inputs over corpus streams, synthetic cases and
+mutations of both; `tests/src/core_pdf/test_tounicode_scanner_contracts.py`
+compares the composed parser with the Python alone, error for error.
 
 ## What belongs here
 
@@ -118,6 +130,7 @@ the wheel.
 | `object_headers_match` | the anchored `OBJECT_HEADER_RE` match and its two `int()` comparisons in `core_pdf.impl.document_document.xref_entry_matches_header` (deleted), run per in-use xref entry at open | one pass over every entry instead of a match object and two conversions each (471,099 over the corpus); corpus open 2.80 to 2.73 s. An object number too large for 63 bits is settled by core by digits |
 | `decrypt_type1` | nothing deleted: mirrors `core_adobe_fonts.type1.program.decrypt_type1`, which that pure-Python package keeps; core's `Type1FontProgram` decrypts its eexec section and every charstring with this | 1.36 s of a 400-document extraction sample over 41,241 calls, at about 100 ns a byte in Python; first-page extract of f1040nr 0.17 to 0.13 s, layout-parser-paper 0.11 to 0.09 s |
 | `ObjectScanner` | nothing deleted: mirrors `parse_dictionary` and `parse_array` of `core_pdf.impl.recovery_lexer.PdfLexer`, which falls back to them | 5.5x on parsing the indirect objects of the benchmark corpus (201 to 37 ms), 99% of calls taking the compiled path; -30 to -46% on document open, -3 to -55% on first-page extraction |
+| `scan_to_unicode_cmap` | nothing deleted: mirrors `core_pdf.impl.fonts_cmap.parse_to_unicode_program` and the `core_adobe_fonts` tokenizer under it, which parse whatever it declines | 6.8x on the 1,978 distinct ToUnicode streams of the fixture corpus (570 to 84 ms), 99% of them taking the compiled path; first-page extract of the NASA JBIG2 scan 463 to 310 ms (29 distinct 52 KB CMaps), lyft_2021 -5.5% |
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render_target` (both deleted) | 7.06x on the fused wrapper |
 | `decode_arithmetic_generic_template0` | `core_jbig2.codec` (deleted, with `JBIG2MQDecoder` and the `MQ_*` tables) | 69x over the 18 generic regions the JBIG2 fixtures decode (168 to 2.4 ns/px); render of no_bad_redactions.4.1 1424 to 77 ms, the two SCORE-Bench JBIG2 scans -31% and -40% |
 

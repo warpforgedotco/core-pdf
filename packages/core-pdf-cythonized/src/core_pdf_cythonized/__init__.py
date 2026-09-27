@@ -3,6 +3,7 @@
 
 from core_pdf_cythonized._bezier import cubic_sample_times
 from core_pdf_cythonized._blend import blend_normal_alpha_array_numpy
+from core_pdf_cythonized._cmap import scan_to_unicode_cmap
 from core_pdf_cythonized._composite import (
     composite_elementary_normal,
     composite_masked_normal,
@@ -79,6 +80,7 @@ __all__ = (
     "outline_edges",
     "path_bounds",
     "sample_opaque_pixels",
+    "scan_to_unicode_cmap",
     "shading_blend",
     "shading_t",
     "shading_values",

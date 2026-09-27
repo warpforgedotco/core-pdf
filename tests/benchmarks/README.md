@@ -45,6 +45,10 @@ Four axes are covered:
 - `test_extract_first_page` -- one page, across the shape spread.
 - `test_extract_page_slice` -- three pages, for costs that only appear across
   page boundaries, such as shared font and resource caches.
+- `test_extract_first_page_cold` -- open plus first extraction, for costs the
+  open document caches after one round, such as font decoders and their
+  ToUnicode CMaps. The warm first-page benchmark stops seeing those after its
+  first round.
 - `test_compose_page` / `test_rasterize_page` -- rendering, which is a sibling
   of extraction rather than a stage of it. Both consume the captured page
   program and only rendering produces pixels, so a change moves one and not
