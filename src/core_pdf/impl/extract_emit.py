@@ -11,11 +11,10 @@ from typing import ClassVar
 import numpy
 
 from core_pdf.impl.capture_records import CapturedDrawing
-from core_pdf.impl.extract_block_layout import (
-    has_repeated_block_columns,
-    layout_element_order,
-)
+from core_pdf.impl.extract_block_layout import layout_element_order
+from core_pdf.impl.extract_block_order import has_repeated_block_columns
 from core_pdf.impl.extract_contracts import ParsedBlock
+from core_pdf.impl.extract_layout_rules import LAYOUT_RULES
 from core_pdf.impl.extract_table_cleanup import table_with_bands
 from core_pdf.impl.geometry import (
     bbox_intersects,
@@ -47,9 +46,13 @@ def caption_for(
 ) -> Block | None:
     if target_bbox is None:
         return None
+    rules = LAYOUT_RULES.page_regions
     candidates: list[tuple[float, Block]] = []
     for caption in caption_blocks:
-        if caption.bbox is None or horizontal_overlap_ratio(caption.bbox, target_bbox) < 0.3:
+        if (
+            caption.bbox is None
+            or horizontal_overlap_ratio(caption.bbox, target_bbox) < rules.caption_min_overlap
+        ):
             continue
         if caption.bbox[3] <= target_bbox[1]:
             gap = target_bbox[1] - caption.bbox[3]
@@ -58,7 +61,7 @@ def caption_for(
         else:
             continue
         caption_height = max(1.0, caption.bbox[3] - caption.bbox[1])
-        if gap <= max(24.0, caption_height * 2.5):
+        if gap <= max(rules.caption_gap, caption_height * rules.caption_height_ratio):
             candidates.append((gap, caption))
     return min(candidates, key=lambda item: item[0])[1] if candidates else None
 
@@ -284,21 +287,22 @@ def compose_page(
     ordered_tables, ordered_figures = attach_semantic_context(
         tuple(ordered_blocks), ordered_tables, ordered_figures
     )
+    regions = LAYOUT_RULES.page_regions
     header_parts = [
         block.text
         for block in ordered_blocks
         if block.bbox is not None
-        and block.bbox[3] >= height * 0.88
-        and block.bbox[3] - block.bbox[1] <= height * 0.08
-        and len(block.text) <= 240
+        and block.bbox[3] >= height * regions.header_top_ratio
+        and block.bbox[3] - block.bbox[1] <= height * regions.band_height_ratio
+        and len(block.text) <= regions.band_max_characters
     ]
     footer_parts = [
         block.text
         for block in ordered_blocks
         if block.bbox is not None
-        and block.bbox[1] <= height * 0.12
-        and block.bbox[3] - block.bbox[1] <= height * 0.08
-        and len(block.text) <= 240
+        and block.bbox[1] <= height * regions.footer_bottom_ratio
+        and block.bbox[3] - block.bbox[1] <= height * regions.band_height_ratio
+        and len(block.text) <= regions.band_max_characters
     ]
     return Page(
         page_number=page_number,
