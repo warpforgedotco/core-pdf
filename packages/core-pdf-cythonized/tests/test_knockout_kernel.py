@@ -52,7 +52,7 @@ def test_pixels_outside_the_shape_are_left_alone():
 
 def test_render_target_uses_the_kernel():
     pytest.importorskip("core_pdf")
-    from core_pdf.impl import render_target as target
+    from core_pdf.impl import render_compositing as target
 
     assert target.composite_knockout_group is composite_knockout_group
 
