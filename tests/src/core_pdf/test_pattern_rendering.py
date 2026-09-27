@@ -5,6 +5,7 @@ from core_pdf.impl import render_patterns as patterns
 from core_pdf.impl.capture_program import CapturedProgram
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, TilingPattern
 from core_pdf.impl.render_model import DisplayListItem, PathPaintItem, PathPaintKind
+from core_pdf.impl.render_resources import RenderResources
 from core_pdf_cythonized import shading_t
 from tests.src.core_pdf.raster_support import make_target
 
@@ -118,16 +119,15 @@ def test_nested_tiling_blends_and_cycles_disable_isolated_optimization():
 
 
 def test_tiling_cell_cache_reuses_display_and_clip_for_same_pattern():
-    target = make_target()
+    resources = RenderResources()
     pattern = TilingPattern((0, 0, 2, 2), 2, 2, CapturedProgram())
-    first = patterns.tiling_cell(target, pattern)
-    second = patterns.tiling_cell(target, pattern)
+    first = patterns.tiling_cell(resources, pattern, 4, 1, preserve_object_boundaries=False)
+    second = patterns.tiling_cell(resources, pattern, 4, 1, preserve_object_boundaries=False)
     assert first[0] is second[0]
     assert first[1] is second[1]
-    target.group_source_shape = numpy.zeros((1, 4), dtype=numpy.float32)
-    grouped = patterns.tiling_cell(target, pattern)
+    grouped = patterns.tiling_cell(resources, pattern, 4, 1, preserve_object_boundaries=True)
     assert grouped[0] is not first[0]
-    assert len(target.tiling_cell_cache) == 2
+    assert len(resources.tiling_cells) == 2
 
 
 def cell_item(box, line_width=0.0):

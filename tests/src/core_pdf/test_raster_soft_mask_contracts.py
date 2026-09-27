@@ -57,7 +57,7 @@ def test_mask_pixels_ignore_destination_clip_and_backdrop(
     np.testing.assert_array_equal(result[1:3, 2:4], plane[1:3, 2:4])
     assert bytes(target.pixels) == original_pixels
     assert target.clip.depth == 1
-    assert not target.active_soft_masks
+    assert not target.resources.active_soft_masks
     assert samples == ([0, 1] if invert else [])
     assert resolve_soft_mask(target, mask) is result
     assert samples == ([0, 1] if invert else [])
@@ -70,9 +70,7 @@ def test_sibling_reuses_mask_cache_without_sharing_paint_state() -> None:
     assert result is not None
     sibling, pixels = target.blank_sibling()
     assert resolve_soft_mask(sibling, mask) is result
-    assert sibling.prepared_image_cache is target.prepared_image_cache
-    assert sibling.tiling_cell_cache is target.tiling_cell_cache
-    assert sibling.active_soft_masks is target.active_soft_masks
+    assert sibling.resources is target.resources
     sibling.blend_px(0, (255, 0, 0, 255), None)
     np.testing.assert_array_equal(pixels[0, 0], [255, 0, 0, 255])
     assert not any(target.pixels)
@@ -107,13 +105,13 @@ def test_transfer_failure_is_cached_and_does_not_poison_other_masks() -> None:
     program = mask_program()
     mask = CapturedSoftMask(program, transfer)
     assert resolve_soft_mask(target, mask) is None
-    assert not target.active_soft_masks
+    assert not target.resources.active_soft_masks
     assert resolve_soft_mask(target, mask) is None
     assert calls == 1
     valid = resolve_soft_mask(target, CapturedSoftMask(program))
     assert valid is not None
     assert np.count_nonzero(valid[...]) == 4
-    assert not target.active_soft_masks
+    assert not target.resources.active_soft_masks
 
 
 REPEATED_SOFT_MASK_PDF = (

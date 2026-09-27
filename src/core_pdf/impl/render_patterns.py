@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_records import (
     CapturedPath,
     TilingPattern,
@@ -16,26 +15,27 @@ from core_pdf.impl.render_blend import color_component
 from core_pdf.impl.render_commands import append_captured_program
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import DisplayItem, ImagePaintItem, PathPaintItem
+from core_pdf.impl.render_resources import RenderResources
 from core_pdf.impl.scalars import clamp01
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
-if TYPE_CHECKING:
-    from core_pdf.impl.render_target import RasterTarget
 
-TilingCellCache = IdentityCache[tuple[DisplayList, CapturedPath]]
-TILING_CELL_CACHE_LIMIT = 4096
-
-
-def tiling_cell(target: RasterTarget, pattern: TilingPattern) -> tuple[DisplayList, CapturedPath]:
-    preserve_object_boundaries = target.group_source_shape is not None
-    cache = target.tiling_cell_cache
+def tiling_cell(
+    resources: RenderResources,
+    pattern: TilingPattern,
+    width: float,
+    height: float,
+    *,
+    preserve_object_boundaries: bool,
+) -> tuple[DisplayList, CapturedPath]:
+    cache = resources.tiling_cells
     cached = cache.get(pattern, preserve_object_boundaries)
     if cached is not None:
         return cached
     cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
     display = DisplayList(
-        target.width,
-        target.height,
+        width,
+        height,
         preserve_object_boundaries=preserve_object_boundaries,
     )
     cell_clip = CapturedPath()

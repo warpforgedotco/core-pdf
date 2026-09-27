@@ -17,7 +17,7 @@ from core_pdf.impl.array_views import (
     uint8_image_view,
     uint8_view,
 )
-from core_pdf.impl.caches import MISSING, ByteBudgetCache, IdentityCache
+from core_pdf.impl.caches import MISSING
 from core_pdf.impl.capture_records import (
     CapturedPath,
     CapturedSoftMask,
@@ -29,7 +29,6 @@ from core_pdf.impl.geometry import normalize_rect, points_bbox, rect_tuple
 from core_pdf.impl.graphics_images import PreparedImage, prepare_image
 from core_pdf.impl.graphics_shading import (
     PreparedShading,
-    ShadingEvaluatorCache,
     prepare_shading,
 )
 from core_pdf.impl.graphics_soft_masks import image_color_key_mask_is_shape
@@ -69,13 +68,12 @@ from core_pdf.impl.render_paths import (
     rasterize_unclipped_line_normal,
 )
 from core_pdf.impl.render_patterns import (
-    TILING_CELL_CACHE_LIMIT,
-    TilingCellCache,
     cell_paints_nothing,
     shading_color_rgba,
     tiling_cell,
     tiling_pattern_uses_normal_blends,
 )
+from core_pdf.impl.render_resources import RenderResources
 from core_pdf.impl.scalars import clamp01
 from core_pdf_cythonized import (
     accumulate_source_plane,
@@ -141,9 +139,6 @@ class ElementaryScratch:
         self.dirty: list[int] | None = None
 
 
-PREPARED_IMAGE_CACHE_BYTES = 256 << 20
-
-
 def prepared_image_bytes(prepared: PreparedImage | None) -> int:
     if prepared is None:
         return 0
@@ -151,12 +146,21 @@ def prepared_image_bytes(prepared: PreparedImage | None) -> int:
     return prepared.raster.array.nbytes + (0 if soft_mask is None else soft_mask.array.nbytes)
 
 
-type PreparedImageCache = ByteBudgetCache[int, tuple[ImageSource, PreparedImage | None]]
-type PreparedShadingCache = IdentityCache[PreparedShading | None]
-SHADING_CACHE_LIMIT = 4096
+def prepared_shading(
+    resources: RenderResources, dictionary: object, rendering: ColorRendering
+) -> PreparedShading | None:
+    cache = resources.shadings
+    cached = cache.get(dictionary, rendering, default=MISSING)
+    if cached is not MISSING:
+        return cached
+    shading = prepare_shading(
+        dictionary, rendering=rendering, evaluators=resources.shading_evaluators
+    )
+    return cache.put(dictionary, shading, rendering)
 
 
-def prepared_image(cache: PreparedImageCache, source: ImageSource) -> PreparedImage | None:
+def prepared_image(resources: RenderResources, source: ImageSource) -> PreparedImage | None:
+    cache = resources.images
     cached = cache.get(id(source))
     if cached is not None and cached[0] is source:
         return cached[1]
@@ -374,14 +378,8 @@ def composite_masked_group(
     return effective_alpha
 
 
-SoftMaskKey = tuple[int, int, tuple[float, float]]
-SOFT_MASK_CACHE_BYTES = 512 << 20
-
 type PixelBox = tuple[int, int, int, int]
 EMPTY_PIXEL_BOX: PixelBox = (0, 0, 0, 0)
-
-
-type SoftMaskCache = ByteBudgetCache[SoftMaskKey, tuple[CapturedSoftMask, SoftMaskPlane | None]]
 
 
 def graphics_soft_mask(item: DisplayItem) -> CapturedSoftMask | None:
@@ -392,13 +390,14 @@ def graphics_soft_mask(item: DisplayItem) -> CapturedSoftMask | None:
 
 
 def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskPlane | None:
+    resources = target.resources
     key = (id(mask.program), id(mask.transfer), mask.offset)
-    cached = target.soft_mask_cache.get(key)
+    cached = resources.soft_masks.get(key)
     if cached is not None:
         return cached[1]
-    if key in target.active_soft_masks:
+    if key in resources.active_soft_masks:
         return None
-    target.active_soft_masks.add(key)
+    resources.active_soft_masks.add(key)
     result: SoftMaskPlane | None = None
     try:
         nested, view = target.blank_sibling()
@@ -419,8 +418,8 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
     except Exception:
         result = None
     finally:
-        target.active_soft_masks.remove(key)
-    target.soft_mask_cache.store(key, (mask, result), 0 if result is None else result.nbytes)
+        resources.active_soft_masks.remove(key)
+    resources.soft_masks.store(key, (mask, result), 0 if result is None else result.nbytes)
     return result
 
 
@@ -491,12 +490,7 @@ class RasterTarget:
         "clip_floor",
         "group_floor",
         "scope_stack",
-        "soft_mask_cache",
-        "prepared_image_cache",
-        "tiling_cell_cache",
-        "prepared_shading_cache",
-        "shading_evaluator_cache",
-        "active_soft_masks",
+        "resources",
         "elementary_scratch",
         "group_member_boxes",
         "stroke_scratch",
@@ -516,6 +510,7 @@ class RasterTarget:
         crop_y1: float,
         page_view: UInt8Array,
         semantic_context: SemanticContext | None = None,
+        resources: RenderResources | None = None,
     ) -> None:
         self.semantic_context = blend_context(semantic_context)
         self.buffer_stack = [RasterGroup(pixels, view=page_view)]
@@ -540,12 +535,7 @@ class RasterTarget:
         self.clip_floor = 0
         self.group_floor = 1
         self.scope_stack: list[tuple[int, list[int], int, int, int]] = []
-        self.soft_mask_cache: SoftMaskCache = ByteBudgetCache(SOFT_MASK_CACHE_BYTES)
-        self.prepared_image_cache: PreparedImageCache = ByteBudgetCache(PREPARED_IMAGE_CACHE_BYTES)
-        self.tiling_cell_cache: TilingCellCache = IdentityCache(TILING_CELL_CACHE_LIMIT)
-        self.prepared_shading_cache: PreparedShadingCache = IdentityCache(SHADING_CACHE_LIMIT)
-        self.shading_evaluator_cache: ShadingEvaluatorCache = IdentityCache(SHADING_CACHE_LIMIT)
-        self.active_soft_masks: set[SoftMaskKey] = set()
+        self.resources = RenderResources() if resources is None else resources
         self.elementary_scratch: dict[int, ElementaryScratch] = {}
         self.group_member_boxes: dict[int, tuple[float, float, float, float] | None] | None = None
         self.stroke_scratch: bytearray | None = None
@@ -594,13 +584,8 @@ class RasterTarget:
             crop_y1=self.crop_y1,
             page_view=view,
             semantic_context=self.semantic_context,
+            resources=self.resources,
         )
-        sibling.soft_mask_cache = self.soft_mask_cache
-        sibling.prepared_image_cache = self.prepared_image_cache
-        sibling.tiling_cell_cache = self.tiling_cell_cache
-        sibling.prepared_shading_cache = self.prepared_shading_cache
-        sibling.shading_evaluator_cache = self.shading_evaluator_cache
-        sibling.active_soft_masks = self.active_soft_masks
         return sibling, view
 
     def pop_scope(self) -> None:
@@ -1752,7 +1737,7 @@ class RasterTarget:
         blend_mode = item.blend_mode
         if blend_mode == "Normal":
             blend_mode = None
-        prepared = prepared_image(self.prepared_image_cache, item.source)
+        prepared = prepared_image(self.resources, item.source)
         if prepared is None:
             return
         if prepared.is_stencil:
@@ -2817,14 +2802,7 @@ class RasterTarget:
     def prepared_shading(
         self, dictionary: object, rendering: ColorRendering
     ) -> PreparedShading | None:
-        cache = self.prepared_shading_cache
-        cached = cache.get(dictionary, rendering, default=MISSING)
-        if cached is not MISSING:
-            return cached
-        shading = prepare_shading(
-            dictionary, rendering=rendering, evaluators=self.shading_evaluator_cache
-        )
-        return cache.put(dictionary, shading, rendering)
+        return prepared_shading(self.resources, dictionary, rendering)
 
     def paint_shading(self, data: dict[str, Any], blend_mode: str | None) -> None:
         shading = self.prepared_shading(
@@ -2926,7 +2904,13 @@ class RasterTarget:
         program = pattern.program
         if not program.drawings and not program.glyphs and not program.inline_images:
             return False
-        display, cell_clip = tiling_cell(self, pattern)
+        display, cell_clip = tiling_cell(
+            self.resources,
+            pattern,
+            self.width,
+            self.height,
+            preserve_object_boundaries=self.group_source_shape is not None,
+        )
         if cell_paints_nothing(display.items, cell_clip, scale):
             return True
         target_box = target_data.bbox or self.clip.path_bbox(target_data.path)

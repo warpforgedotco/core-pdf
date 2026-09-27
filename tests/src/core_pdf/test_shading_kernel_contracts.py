@@ -308,7 +308,7 @@ def test_a_shading_painted_again_is_prepared_once(monkeypatch: pytest.MonkeyPatc
         target.paint_shading({"dictionary": shading}, None)
     assert prepared == [shading]
     sibling, _ = target.blank_sibling()
-    assert sibling.prepared_shading_cache is target.prepared_shading_cache
+    assert sibling.resources is target.resources
 
 
 def test_a_shading_painted_again_is_captured_once() -> None:
@@ -350,8 +350,8 @@ def test_tiled_copies_of_a_shading_share_one_compiled_evaluator(
     assert len(compiled) == 1
     assert len({id(shading.evaluator) for shading in prepared if shading is not None}) == 1
     for tile in tiles:
-        fresh.prepared_shading_cache.clear()
-        fresh.shading_evaluator_cache.clear()
+        fresh.resources.shadings.clear()
+        fresh.resources.shading_evaluators.clear()
         fresh.paint_shading({"dictionary": tile}, None)
     assert len(compiled) == 4
     assert target.pixel_array.tobytes() == fresh.pixel_array.tobytes()
