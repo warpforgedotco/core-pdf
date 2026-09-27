@@ -12,13 +12,13 @@ from core_pdf.impl.array_views import readonly
 from core_pdf.impl.graphics_color import (
     convert_cmyk,
     convert_image_data,
-    image_dimension,
 )
-from core_pdf.impl.graphics_color_spec import parse_color_space, raw_color_space_paints
+from core_pdf.impl.graphics_color_spec import ColorSpace, parse_color_space, raw_color_space_paints
 from core_pdf.impl.graphics_decode_compat import (
     normalize_stream_decode_spec,
 )
 from core_pdf.impl.graphics_filter_registry import FilterDecoder, NativeImageCodec
+from core_pdf.impl.graphics_image_header import ImageHeader, read_image_header
 from core_pdf.impl.graphics_image_samples import (
     convert_integer_image,
     convert_integer_samples,
@@ -29,7 +29,7 @@ from core_pdf.impl.graphics_stream_decoding import (
     decode_one_filter,
     decode_stream_data,
 )
-from core_pdf.impl.pdf_names import lenient_int, recover_pdf_name
+from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_cythonized import interleave_soft_mask
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
@@ -212,8 +212,9 @@ class PreparedImage(Record):
 
 
 def decode_mask(source: ImageSource) -> DecodedRaster | None:
-    width = image_dimension(source.dictionary, "Width")
-    height = image_dimension(source.dictionary, "Height")
+    header = read_image_header(source.dictionary)
+    width = header.width
+    height = header.height
     if width <= 0 or height <= 0:
         return None
     try:
@@ -225,7 +226,7 @@ def decode_mask(source: ImageSource) -> DecodedRaster | None:
         return None
     bits = unpack_subbyte_image_samples(decoded, 1, width, height, 1).reshape(height, width)
     alpha = (1 - bits) * 255
-    decode = source.dictionary.get("Decode")
+    decode = header.decode
     if isinstance(decode, (list, tuple)) and len(decode) >= 2:
         try:
             if float(decode[0]) > float(decode[1]):
@@ -256,14 +257,13 @@ def decode_matte(
     source: ImageSource, soft_mask: SoftMask
 ) -> tuple[tuple[float, ...], numpy.ndarray[Any, Any]]:
     dictionary = soft_mask.dictionary
-    width = image_dimension(dictionary, "Width")
-    height = image_dimension(dictionary, "Height")
-    if (width, height) != (
-        image_dimension(source.dictionary, "Width"),
-        image_dimension(source.dictionary, "Height"),
-    ):
+    header = read_image_header(dictionary)
+    width = header.width
+    height = header.height
+    source_header = read_image_header(source.dictionary)
+    if (width, height) != (source_header.width, source_header.height):
         raise ValueError("image matte requires matching soft mask dimensions")
-    decoded = decode_image_samples(soft_mask.raw, dictionary, size=(width, height))
+    decoded = decode_image_samples(soft_mask.raw, dictionary, size=(width, height), header=header)
     decode = dictionary.get("Decode", (0, 1))
     if isinstance(decoded, DecodedImage):
         if decoded.channels != 1:
@@ -275,7 +275,7 @@ def decode_matte(
         ):
             decode = (0, 1)
     elif decoded is not None:
-        bits = lenient_int(dictionary.get("BitsPerComponent"), 8)
+        bits = header.bits
         integers = unpack_image_samples(decoded, bits, width, height, 1)
         maximum = (1 << bits) - 1
     else:
@@ -317,6 +317,7 @@ def canonical_image_array(
     alpha: numpy.ndarray[Any, Any] | None = None,
     semantic_context: SemanticContext | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    header: ImageHeader | None = None,
 ) -> tuple[numpy.ndarray[Any, Any], int] | None:
     explicit_jpx_decode = (
         samples.source == "jpx"
@@ -326,6 +327,7 @@ def canonical_image_array(
     encoded_alpha = None
     sample_array = samples.array
     high_depth_dictionary = dict(dictionary)
+    space: ColorSpace | None = None
     if samples.source == "jpx":
         try:
             selector = image_smask_in_data(dictionary)
@@ -375,6 +377,7 @@ def canonical_image_array(
                 matte=matte,
                 alpha=alpha,
                 rendering=rendering,
+                space=space,
             )
         except TypeError, ValueError:
             return None
@@ -393,7 +396,7 @@ def canonical_image_array(
     else:
         return None
     if channels == 4:
-        converted = convert_image_data(array.reshape(-1), dictionary)
+        converted = convert_image_data(array.reshape(-1), dictionary, header=header)
         expected_rgb = int(array.shape[0]) * int(array.shape[1]) * 3
         if converted is not None and len(converted) == expected_rgb:
             array = numpy.asarray(converted, dtype=numpy.uint8).reshape(
@@ -428,10 +431,13 @@ def decode_image_samples(
     dictionary: dict[Any, Any],
     *,
     size: tuple[int, int] | None = None,
+    header: ImageHeader | None = None,
 ) -> bytes | memoryview | DecodedImage | None:
+    if header is None:
+        header = read_image_header(dictionary)
     if size is None:
-        width = image_dimension(dictionary, "Width")
-        height = image_dimension(dictionary, "Height")
+        width = header.width
+        height = header.height
     else:
         width, height = size
     if width <= 0 or height <= 0:
@@ -440,7 +446,7 @@ def decode_image_samples(
     native = decode_stream_image_data(raw, dictionary, chain)
     if native is not None and native.width == width and native.height == height:
         return native
-    bits_per_component = lenient_int(dictionary.get("BitsPerComponent"), 8)
+    bits_per_component = header.bits
     if bits_per_component == 16:
         try:
             return chain.decoded()
@@ -450,10 +456,8 @@ def decode_image_samples(
     expected_rgb = expected_gray * 3
     expected_source = 0
     with suppress(ValueError):
-        expected_source = expected_gray * len(
-            parse_color_space(dictionary.get("ColorSpace")).component_ranges
-        )
-    if dictionary.get("Filter") is None and (
+        expected_source = expected_gray * len(header.space().component_ranges)
+    if header.filter is None and (
         len(raw) in {expected_gray, expected_rgb}
         or (bits_per_component == 8 and len(raw) == expected_source)
     ):
@@ -479,16 +483,19 @@ def decode_pdf_image(
     alpha: numpy.ndarray[Any, Any] | None = None,
     semantic_context: SemanticContext | None = None,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    header: ImageHeader | None = None,
 ) -> DecodedRaster | None:
     if not image_color_space_paints(dictionary):
         return None
     with suppress(ValueError):
         rendering = image_color_rendering(dictionary, rendering)
-    width = image_dimension(dictionary, "Width")
-    height = image_dimension(dictionary, "Height")
+    if header is None:
+        header = read_image_header(dictionary)
+    width = header.width
+    height = header.height
     if width <= 0 or height <= 0:
         return None
-    samples = decode_image_samples(raw, dictionary, size=(width, height))
+    samples = decode_image_samples(raw, dictionary, size=(width, height), header=header)
     if samples is None:
         return None
     if isinstance(samples, DecodedImage):
@@ -499,13 +506,14 @@ def decode_pdf_image(
             alpha=alpha,
             semantic_context=semantic_context,
             rendering=rendering,
+            header=header,
         )
         if canonical is None:
             return None
         array, channels = canonical
         return DecodedRaster(array, width, height, channels)
-    bits_per_component = lenient_int(dictionary.get("BitsPerComponent"), 8)
-    if bits_per_component == 16 or image_has_color_key_mask(dictionary):
+    bits_per_component = header.bits
+    if bits_per_component == 16 or header.has_color_key_mask:
         try:
             converted_words = convert_integer_image(
                 samples,
@@ -514,12 +522,13 @@ def decode_pdf_image(
                 matte=matte,
                 alpha=alpha,
                 rendering=rendering,
+                space=header.space(),
             )
         except TypeError, ValueError:
             return None
         return DecodedRaster(converted_words.reshape(-1), width, height, converted_words.shape[1])
     try:
-        converted = convert_image_data(samples, dictionary, rendering=rendering)
+        converted = convert_image_data(samples, dictionary, rendering=rendering, header=header)
     except ValueError:
         pixels = width * height
         if len(samples) in {pixels, pixels * 3}:
@@ -566,10 +575,11 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
     if soft_mask_source is not None:
         dictionary = dict(dictionary)
         dictionary.pop("Mask", None)
-        filters = dictionary.get("Filter", ())
-        filters = filters if isinstance(filters, (list, tuple)) else (filters,)
+    header = read_image_header(dictionary)
+    if soft_mask_source is not None:
+        filters = header.filter if isinstance(header.filter, (list, tuple)) else (header.filter,)
         if soft_mask_source.dictionary.get("Matte") is not None and (
-            lenient_int(dictionary.get("BitsPerComponent"), 8) == 16 or "JPXDecode" in filters
+            header.bits == 16 or "JPXDecode" in filters
         ):
             try:
                 matte, alpha = decode_matte(source, soft_mask_source)
@@ -585,6 +595,7 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
             alpha=alpha,
             semantic_context=source.semantic_context,
             rendering=rendering,
+            header=header,
         )
     )
     if decoded is None:

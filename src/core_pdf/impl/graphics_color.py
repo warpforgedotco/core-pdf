@@ -13,6 +13,7 @@ from core_pdf.impl.graphics_color_spec import (
     parse_color_space,
     recover_image_bits_per_component,
 )
+from core_pdf.impl.graphics_image_header import ImageHeader, read_image_header
 from core_pdf.impl.graphics_image_samples import (
     convert_components,
     convert_integer_image,
@@ -49,13 +50,16 @@ def convert_image_data(
     image_dict: ImageDict,
     *,
     rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
+    header: ImageHeader | None = None,
 ) -> ByteBuffer | None:
-    spec = parse_color_space(image_dict.get("ColorSpace"))
+    if header is None:
+        header = read_image_header(image_dict)
+    spec = header.space()
     bits = recover_image_bits_per_component(image_dict)
     if bits not in {1, 2, 4, 8, 16} or not spec.component_ranges:
         return None
-    fast = simple_device_color_fast_path(raw, spec, image_dict, bits)
-    if fast is not None and image_dict.get("Mask") is None:
+    fast = simple_device_color_fast_path(raw, spec, header, bits)
+    if fast is not None and header.mask is None:
         return fast
     dictionary = dict(image_dict)
     decode = dictionary.get("Decode")
@@ -82,17 +86,17 @@ def convert_image_data(
 def simple_device_color_fast_path(
     raw: ByteBuffer,
     spec: ColorSpace,
-    image_dict: ImageDict,
+    header: ImageHeader,
     bits_per_component: int,
 ) -> ByteBuffer | None:
     if bits_per_component != 8:
         return None
     if spec.kind not in {"DeviceRGB", "DeviceGray"}:
         return None
-    if image_dict.get("Decode") is not None:
+    if header.decode is not None:
         return None
-    width = image_dimension(image_dict, "Width")
-    height = image_dimension(image_dict, "Height")
+    width = header.width
+    height = header.height
     if width <= 0 or height <= 0:
         return None
     expected = width * height * (3 if spec.kind == "DeviceRGB" else 1)
