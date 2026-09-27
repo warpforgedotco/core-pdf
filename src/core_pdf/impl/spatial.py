@@ -4,39 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from heapq import heappop, heappush
-from typing import Any, ClassVar, Literal, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 import numpy
 
 from core_pdf.impl.geometry import bbox_area
-from core_pdf.impl.types import Record, Rectangle, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, Rectangle
 
 ClusterLinkage: TypeAlias = Literal["chain", "anchor", "mean"]
 BandLinkage: TypeAlias = Literal["anchor", "window"]
 
 
-class BoxIndex(Record):
-    __slots__ = ("boxes", "areas")
-
+class BoxIndex(GeneratedRecord):
     boxes: numpy.ndarray[Any, Any]
     areas: numpy.ndarray[Any, Any]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("boxes", "areas")
-    __match_args__ = ("boxes", "areas")
-
-    def __init__(self, boxes: numpy.ndarray[Any, Any], areas: numpy.ndarray[Any, Any]) -> None:
-        frozen_setattr(self, "boxes", boxes)
-        frozen_setattr(self, "areas", areas)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.boxes == other.boxes and self.areas == other.areas
-
-    def __hash__(self) -> int:
-        return hash((self.boxes, self.areas))
 
     @classmethod
     def from_boxes(cls, boxes: Iterable[Rectangle], dtype: Any = numpy.float64) -> BoxIndex:

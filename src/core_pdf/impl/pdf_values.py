@@ -3,26 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import ClassVar, Protocol
+from typing import Protocol
 
-from core_pdf.impl.types import PdfReference, PdfString, ReplaceFields, ReprFields
+from core_pdf.impl.types import PdfReference, PdfString, RecordType, ReplaceFields, ReprFields
 
 
 class ReferenceResolver(Protocol):
     def resolve(self, value: object, /) -> object: ...
 
 
-class CoercionFrame(ReplaceFields, ReprFields):
-    __slots__ = ("original", "entries", "values", "pending", "changed")
-
+class CoercionFrame(ReplaceFields, ReprFields, metaclass=RecordType, frozen=False):
     original: object
     entries: Iterator[tuple[object, object]]
     values: list[tuple[object, object]]
     pending: tuple[object, object] | None
     changed: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = ("original", "entries", "values", "pending", "changed")
-    __match_args__ = ("original", "entries", "values", "pending", "changed")
 
     def __init__(
         self,
@@ -37,19 +32,6 @@ class CoercionFrame(ReplaceFields, ReprFields):
         self.values = [] if values is None else values
         self.pending = pending
         self.changed = changed
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.original == other.original
-            and self.entries == other.entries
-            and self.values == other.values
-            and self.pending == other.pending
-            and self.changed == other.changed
-        )
 
     __hash__ = None  # type: ignore[assignment]
 

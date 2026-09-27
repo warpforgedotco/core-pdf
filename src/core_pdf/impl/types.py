@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from os import PathLike
-from typing import ClassVar, Protocol, TypeAlias, TypeVar
+from typing import Protocol, TypeAlias, TypeVar
 
 from core_pdf_spec.types import (
     MISSING,
@@ -45,28 +45,11 @@ PdfSource: TypeAlias = (
 RecordT = TypeVar("RecordT")
 
 
-class PageScoped[RecordT](Record):
-    __slots__ = ("page_index", "page_number", "page_label", "record")
-
+class PageScoped[RecordT](GeneratedRecord):
     page_index: int
     page_number: int
     page_label: str | None
     record: RecordT
-
-    __fields__: ClassVar[tuple[str, ...]] = ("page_index", "page_number", "page_label", "record")
-    __match_args__ = ("page_index", "page_number", "page_label", "record")
-
-    def __init__(
-        self,
-        page_index: int,
-        page_number: int,
-        page_label: str | None,
-        record: RecordT,
-    ) -> None:
-        frozen_setattr(self, "page_index", page_index)
-        frozen_setattr(self, "page_number", page_number)
-        frozen_setattr(self, "page_label", page_label)
-        frozen_setattr(self, "record", record)
 
     def __eq__(self, other: object) -> bool:
         if self is other:
