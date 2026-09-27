@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import ClassVar
+from collections.abc import Callable, Mapping
+from typing import Any, ClassVar
+
+import numpy
 
 from core_pdf.impl.pdf_names import recover_pdf_name
 from core_pdf.impl.types import Record, frozen_setattr
@@ -76,24 +78,110 @@ RAW_SAMPLE_IMAGE = NativeImageSpec(
     bits=frozenset({None, 8}),
 )
 
-NATIVE_IMAGE_SPECS: Mapping[str, NativeImageSpec] = {
-    "jpeg": NativeImageSpec(
-        channels={"DeviceGray": 1, "DeviceRGB": 3, "DeviceCMYK": 4},
-        color_names=frozenset({None, "DeviceGray", "DeviceRGB", "DeviceCMYK"}),
-        bits=frozenset({None, 8}),
-    ),
-    "jpx": NativeImageSpec(
-        channels={"DeviceGray": 1, "DeviceRGB": 3},
-        color_names=frozenset({None, "DeviceGray", "DeviceRGB"}),
-    ),
-    "ccitt": NativeImageSpec(
-        channels={},
-        color_names=frozenset({None, "DeviceGray"}),
-        bits=frozenset({None, 1}),
-    ),
-    "flate": RAW_SAMPLE_IMAGE,
-    "lzw": RAW_SAMPLE_IMAGE,
-}
+JPEG_IMAGE = NativeImageSpec(
+    channels={"DeviceGray": 1, "DeviceRGB": 3, "DeviceCMYK": 4},
+    color_names=frozenset({None, "DeviceGray", "DeviceRGB", "DeviceCMYK"}),
+    bits=frozenset({None, 8}),
+)
+JPX_IMAGE = NativeImageSpec(
+    channels={"DeviceGray": 1, "DeviceRGB": 3},
+    color_names=frozenset({None, "DeviceGray", "DeviceRGB"}),
+)
+CCITT_IMAGE = NativeImageSpec(
+    channels={},
+    color_names=frozenset({None, "DeviceGray"}),
+    bits=frozenset({None, 1}),
+)
+
+type FilterFn = Callable[[bytes, object], bytes]
+type PassthroughFilterFn = Callable[[bytes], tuple[bytes, bool]]
+type NativeDecodeFn = Callable[
+    [bytes | memoryview, object, tuple[int, ...] | None, Callable[[], bytes]],
+    numpy.ndarray[Any, Any] | None,
+]
+
+
+class NativeImageCodec(Record):
+    __slots__ = ("spec", "decode", "requires_identity_decode", "after_filters")
+
+    spec: NativeImageSpec
+    decode: NativeDecodeFn
+    requires_identity_decode: bool
+    after_filters: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = (
+        "spec",
+        "decode",
+        "requires_identity_decode",
+        "after_filters",
+    )
+    __match_args__ = ("spec", "decode", "requires_identity_decode", "after_filters")
+
+    def __init__(
+        self,
+        spec: NativeImageSpec,
+        decode: NativeDecodeFn,
+        requires_identity_decode: bool = True,
+        after_filters: bool = False,
+    ) -> None:
+        frozen_setattr(self, "spec", spec)
+        frozen_setattr(self, "decode", decode)
+        frozen_setattr(self, "requires_identity_decode", requires_identity_decode)
+        frozen_setattr(self, "after_filters", after_filters)
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.spec == other.spec
+            and self.decode == other.decode
+            and self.requires_identity_decode == other.requires_identity_decode
+            and self.after_filters == other.after_filters
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.spec, self.decode, self.requires_identity_decode, self.after_filters))
+
+
+class TolerantFilter(Record):
+    __slots__ = ("decoder", "decode", "passthrough", "native")
+
+    decoder: FilterDecoder
+    decode: FilterFn
+    passthrough: PassthroughFilterFn | None
+    native: NativeImageCodec | None
+
+    __fields__: ClassVar[tuple[str, ...]] = ("decoder", "decode", "passthrough", "native")
+    __match_args__ = ("decoder", "decode", "passthrough", "native")
+
+    def __init__(
+        self,
+        decoder: FilterDecoder,
+        decode: FilterFn,
+        passthrough: PassthroughFilterFn | None = None,
+        native: NativeImageCodec | None = None,
+    ) -> None:
+        frozen_setattr(self, "decoder", decoder)
+        frozen_setattr(self, "decode", decode)
+        frozen_setattr(self, "passthrough", passthrough)
+        frozen_setattr(self, "native", native)
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.decoder == other.decoder
+            and self.decode == other.decode
+            and self.passthrough == other.passthrough
+            and self.native == other.native
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.decoder, self.decode, self.passthrough, self.native))
 
 
 def declared_filter_names(value: object) -> list[str]:

@@ -16,23 +16,16 @@ from core_pdf.impl.graphics_color import (
 )
 from core_pdf.impl.graphics_color_spec import parse_color_space, raw_color_space_paints
 from core_pdf.impl.graphics_decode_compat import (
-    filter_params,
     normalize_stream_decode_spec,
 )
-from core_pdf.impl.graphics_filter_registry import (
-    FILTER_DESCRIPTOR_BY_NAME,
-    NATIVE_IMAGE_SPECS,
-    FilterDecoder,
-)
+from core_pdf.impl.graphics_filter_registry import FilterDecoder, NativeImageCodec
 from core_pdf.impl.graphics_image_samples import (
     convert_integer_image,
     convert_integer_samples,
 )
 from core_pdf.impl.graphics_soft_masks import image_has_color_key_mask
 from core_pdf.impl.graphics_stream_decoding import (
-    decode_ccitt_fax_image,
-    decode_jpeg_image,
-    decode_jpx_image,
+    TOLERANT_FILTER_BY_NAME,
     decode_one_filter,
     decode_stream_data,
 )
@@ -668,29 +661,26 @@ class DecodedImage(Record):
         return 1 if self.array.ndim == 2 else int(self.array.shape[2])
 
 
-NATIVE_ARRAY_DECODERS = {
-    "jpeg": decode_jpeg_image,
-    "jpx": decode_jpx_image,
-}
-
-
 class NativeImagePlan(Record):
-    __slots__ = ("decoder", "params", "output_shape")
+    __slots__ = ("decoder", "native", "params", "output_shape")
 
     decoder: FilterDecoder
+    native: NativeImageCodec
     params: object
     output_shape: tuple[int, ...] | None
 
-    __fields__: ClassVar[tuple[str, ...]] = ("decoder", "params", "output_shape")
-    __match_args__ = ("decoder", "params", "output_shape")
+    __fields__: ClassVar[tuple[str, ...]] = ("decoder", "native", "params", "output_shape")
+    __match_args__ = ("decoder", "native", "params", "output_shape")
 
     def __init__(
         self,
         decoder: FilterDecoder,
+        native: NativeImageCodec,
         params: object,
         output_shape: tuple[int, ...] | None,
     ) -> None:
         frozen_setattr(self, "decoder", decoder)
+        frozen_setattr(self, "native", native)
         frozen_setattr(self, "params", params)
         frozen_setattr(self, "output_shape", output_shape)
 
@@ -701,12 +691,13 @@ class NativeImagePlan(Record):
             return NotImplemented
         return (
             self.decoder == other.decoder
+            and self.native == other.native
             and self.params == other.params
             and self.output_shape == other.output_shape
         )
 
     def __hash__(self) -> int:
-        return hash((self.decoder, self.params, self.output_shape))
+        return hash((self.decoder, self.native, self.params, self.output_shape))
 
 
 def prepare_native_image(
@@ -717,13 +708,13 @@ def prepare_native_image(
     if len(stream_spec.steps) != 1:
         return None
     step = stream_spec.steps[0]
-    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(step.name)
-    decoder = descriptor.decoder if descriptor is not None else None
-    if decoder is None or (decoder != "jpx" and not image_decode_is_identity(dictionary)):
+    tolerant = TOLERANT_FILTER_BY_NAME.get(step.name)
+    native = tolerant.native if tolerant is not None else None
+    if tolerant is None or native is None:
         return None
-    spec = NATIVE_IMAGE_SPECS.get(decoder)
-    if spec is None:
+    if native.requires_identity_decode and not image_decode_is_identity(dictionary):
         return None
+    spec = native.spec
     image_dictionary = dictionary if isinstance(dictionary, dict) else {}
     color_space = image_dictionary.get("ColorSpace")
     if isinstance(color_space, (list, tuple, dict)):
@@ -744,7 +735,7 @@ def prepare_native_image(
         and components is not None
     ):
         shape = (height, width) if components == 1 else (height, width, components)
-    return NativeImagePlan(decoder, step.params, shape)
+    return NativeImagePlan(tolerant.decoder, native, step.params, shape)
 
 
 def decode_stream_image_data(
@@ -753,10 +744,13 @@ def decode_stream_image_data(
     chain: FilterChainOutput,
 ) -> DecodedImage | None:
     stream_spec = chain.spec
-    if stream_spec.steps and stream_spec.steps[-1].name == "JPXDecode":
+    steps = stream_spec.steps
+    last = TOLERANT_FILTER_BY_NAME.get(steps[-1].name) if steps else None
+    last_native = last.native if last is not None else None
+    if last is not None and last_native is not None and last_native.after_filters:
         try:
             compressed = bytes(data)
-            for step in stream_spec.steps[:-1]:
+            for step in steps[:-1]:
                 compressed = decode_one_filter(
                     compressed,
                     step.name,
@@ -764,50 +758,23 @@ def decode_stream_image_data(
                     dictionary=dictionary,
                     parent_dictionary=None,
                 )
-            array = decode_jpx_image(compressed, preserve_precision=True)
+            array = last_native.decode(compressed, steps[-1].params, None, chain.decoded)
+            if array is None:
+                return None
             color_space = dictionary.get("ColorSpace") if isinstance(dictionary, dict) else None
             if array.dtype == numpy.uint16 or not isinstance(color_space, (list, tuple, dict)):
-                return DecodedImage(array, "jpx")
+                return DecodedImage(array, last.decoder)
             chain.output = array.tobytes()
         except Exception:
             return None
     plan = prepare_native_image(dictionary, stream_spec)
     if plan is None:
         return None
-    decoder = plan.decoder
-    params = plan.params
-    output_shape = plan.output_shape
-    source = data
     try:
-        array_decoder = NATIVE_ARRAY_DECODERS.get(decoder)
-        if decoder == "jpx":
-            return DecodedImage(decode_jpx_image(source, preserve_precision=True), decoder)
-        if array_decoder is not None:
-            output = numpy.empty(output_shape, dtype=numpy.uint8) if output_shape else None
-            return DecodedImage(array_decoder(source, out=output), decoder)
-        if decoder == "ccitt":
-            ccitt_params = filter_params(params)
-            output = (
-                numpy.empty((ccitt_params.rows, ccitt_params.columns), dtype=numpy.uint8)
-                if ccitt_params.rows > 0 and ccitt_params.columns > 0
-                else None
-            )
-            return DecodedImage(
-                decode_ccitt_fax_image(source, ccitt_params, out=output),
-                "ccitt",
-            )
-        if decoder in {"flate", "lzw"}:
-            if output_shape is None:
-                return None
-            decoded = chain.decoded()
-            expected_size = int(numpy.prod(output_shape, dtype=numpy.int64))
-            if len(decoded) != expected_size:
-                return None
-            array = numpy.frombuffer(decoded, dtype=numpy.uint8).reshape(output_shape)
-            return DecodedImage(array, decoder)
+        array = plan.native.decode(data, plan.params, plan.output_shape, chain.decoded)
+        return DecodedImage(array, plan.decoder) if array is not None else None
     except Exception:
         return None
-    return None
 
 
 def image_decode_is_identity(dictionary: object) -> bool:
