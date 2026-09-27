@@ -13,7 +13,7 @@ import numpy
 from core_pdf.impl.capture_records import CapturedDrawing
 from core_pdf.impl.extract_block_layout import layout_element_order
 from core_pdf.impl.extract_block_order import has_repeated_block_columns
-from core_pdf.impl.extract_contracts import ParsedBlock
+from core_pdf.impl.extract_contracts import PageFrame, PageState, ParsedBlock
 from core_pdf.impl.extract_layout_rules import LAYOUT_RULES
 from core_pdf.impl.extract_table_cleanup import table_with_bands
 from core_pdf.impl.geometry import (
@@ -204,55 +204,45 @@ def normalize_blocks(
 
 
 def assemble_page(
-    blocks: tuple[ParsedBlock, ...],
-    *,
-    page_number: int,
-    width: float,
-    height: float,
-    rotation: int,
+    state: PageState,
+    frame: PageFrame,
     route: str,
-    tables: tuple[Table, ...],
+    *,
     figures: tuple[Figure, ...],
-    diagnostics: tuple[str, ...],
     full_page_image: bool,
     drawings: tuple[CapturedDrawing, ...],
 ) -> Page:
-    normalized_blocks = normalize_blocks(blocks, drawings)
+    normalized_blocks = normalize_blocks(state.blocks, drawings)
     normalized_blocks = remove_off_page_blocks(
         normalized_blocks,
-        width,
-        height,
+        frame.width,
+        frame.height,
     )
-    normalized_blocks, projected_tables = project_text_and_tables(normalized_blocks, tables)
+    normalized_blocks, projected_tables = project_text_and_tables(normalized_blocks, state.tables)
     return compose_page(
-        blocks,
-        normalized_blocks,
-        projected_tables,
-        page_number=page_number,
-        width=width,
-        height=height,
-        rotation=rotation,
-        route=route,
+        state,
+        frame,
+        route,
+        normalized_blocks=normalized_blocks,
+        projected_tables=projected_tables,
         figures=figures,
-        diagnostics=diagnostics,
         full_page_image=full_page_image,
     )
 
 
 def compose_page(
-    blocks: tuple[ParsedBlock, ...],
+    state: PageState,
+    frame: PageFrame,
+    route: str,
+    *,
     normalized_blocks: list[Block],
     projected_tables: tuple[Table, ...],
-    *,
-    page_number: int,
-    width: float,
-    height: float,
-    rotation: int,
-    route: str,
     figures: tuple[Figure, ...],
-    diagnostics: tuple[str, ...],
     full_page_image: bool,
 ) -> Page:
+    page_number = frame.page_number
+    height = frame.height
+    diagnostics = ("reading-order-ambiguous",) if state.order_ambiguous else ()
     elements: list[tuple[str, object, tuple[float, float, float, float]]] = [
         ("block", block, block.bbox or (0.0, 0.0, 0.0, 0.0)) for block in normalized_blocks
     ]
@@ -264,7 +254,7 @@ def compose_page(
     ordered_tables: list[Table] = []
     ordered_figures: list[Figure] = []
     element_boxes = tuple(item[2] for item in elements)
-    if full_page_image and len(element_boxes) > 1 and has_repeated_block_columns(blocks):
+    if full_page_image and len(element_boxes) > 1 and has_repeated_block_columns(state.blocks):
         element_order = tuple(
             sorted(
                 range(len(element_boxes)),
@@ -272,7 +262,7 @@ def compose_page(
             )
         )
     else:
-        element_order = layout_element_order(element_boxes, rotation, width, height)
+        element_order = layout_element_order(element_boxes, frame)
     for order, index in enumerate(element_order):
         kind, element, bbox = elements[index]
         if kind == "block":
@@ -306,9 +296,9 @@ def compose_page(
     ]
     return Page(
         page_number=page_number,
-        width=width,
+        width=frame.width,
         height=height,
-        rotation=rotation,
+        rotation=frame.rotation,
         blocks=tuple(ordered_blocks),
         page_class=route,
         base_route=route,

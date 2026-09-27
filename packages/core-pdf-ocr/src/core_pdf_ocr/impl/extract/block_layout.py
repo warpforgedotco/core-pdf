@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import unicodedata
-from functools import partial
 
 import numpy
 
-from core_pdf.impl import extract_block_layout as native_layout
-from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
+from core_pdf.impl.extract_block_layout import LayoutHooks
+from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource, PageFrame
 
 SOURCE_LABELS = {
     int(ObservationSource.NATIVE): "native",
@@ -20,16 +19,9 @@ OCR_SOURCE = numpy.uint8(ObservationSource.OCR)
 def group_order(observations: ObservationBatch, indexes: numpy.ndarray) -> numpy.ndarray:
     if not bool((observations.source[indexes] == OCR_SOURCE).any()):
         return indexes
-    rotation = int(observations.rotation[indexes[0]]) % 360
-    boxes = observations.bbox[indexes]
-    if rotation == 90:
-        positions = (boxes[:, 1] + boxes[:, 3]) * 0.5
-    elif rotation == 180:
-        positions = -(boxes[:, 0] + boxes[:, 2]) * 0.5
-    elif rotation == 270:
-        positions = -(boxes[:, 1] + boxes[:, 3]) * 0.5
-    else:
-        positions = (boxes[:, 0] + boxes[:, 2]) * 0.5
+    positions = PageFrame.reading_axis_positions(
+        observations.bbox[indexes], int(observations.rotation[indexes[0]])
+    )
     rtl = 0
     ltr = 0
     bidirectional = unicodedata.bidirectional
@@ -48,8 +40,4 @@ def group_order(observations: ObservationBatch, indexes: numpy.ndarray) -> numpy
     return indexes[order]
 
 
-layout_blocks_with_evidence = partial(
-    native_layout.layout_blocks_with_evidence,
-    source_labels=SOURCE_LABELS,
-    group_order=group_order,
-)
+OCR_LAYOUT_HOOKS = LayoutHooks(SOURCE_LABELS, group_order)

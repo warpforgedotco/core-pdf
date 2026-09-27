@@ -4,8 +4,9 @@ from typing import Any
 import pytest
 
 from core_pdf import PdfDocument
+from core_pdf.impl import extract_pipeline as native_pipeline
 from core_pdf.impl.execution import ExtractionScope
-from core_pdf.impl.extract_contracts import ObservationBatch
+from core_pdf.impl.extract_contracts import ObservationBatch, PageState
 from core_pdf.impl.output_model import Table, TableCell
 from core_pdf_ocr.impl.extract import pipeline
 from core_pdf_ocr.impl.extract.contracts import PageRoute, RecognitionResult, WorkPlan
@@ -38,15 +39,22 @@ def test_ocr_assembly_reconciles_tables_after_using_original_layout_obstacles(
     duplicate = chart(0, "Revenue sales income profit")
     real = chart(1, "Revenue sales income profit", synthetic=False)
     tables = (duplicate, real)
-    original_layout = pipeline.layout_blocks_with_evidence
+    original_layout = native_pipeline.layout_blocks_with_evidence
     seen: list[tuple[tuple[float, float, float, float], ...]] = []
 
     def layout(observations: ObservationBatch, **kwargs: Any) -> Any:
         seen.append(kwargs["obstacles"])
         return original_layout(observations, **kwargs)
 
-    monkeypatch.setattr(pipeline, "extract_tables", lambda *args: tables)
-    monkeypatch.setattr(pipeline, "layout_blocks_with_evidence", layout)
+    def fixed_tables(state: PageState, *_args: Any) -> PageState:
+        return replace(state, tables=tables)
+
+    monkeypatch.setattr(native_pipeline, "layout_blocks_with_evidence", layout)
+    monkeypatch.setattr(
+        pipeline.PageExtraction,
+        "pipeline",
+        pipeline.OCR_PIPELINE.replacing(native_pipeline.DetectTables, fixed_tables),
+    )
     with PdfDocument(text_pdf_bytes) as document:
         extraction = pipeline.PageExtraction(
             document.pages[0],
@@ -77,3 +85,22 @@ def test_companion_exports_resolve() -> None:
 
     for name in core_pdf_ocr.__all__:
         assert getattr(core_pdf_ocr, name).__module__ == "core_pdf_ocr.api.document"
+
+
+def test_the_ocr_pipeline_composes_recognition_around_the_native_stages() -> None:
+    stages = pipeline.OCR_PIPELINE.stages
+    assert [type(stage) for stage in stages] == [
+        pipeline.FuseRecognition,
+        native_pipeline.DetectTables,
+        native_pipeline.LayoutBlocks,
+        pipeline.RemoveDuplicateTables,
+    ]
+    detect, layout = stages[1], stages[2]
+    assert isinstance(detect, native_pipeline.DetectTables)
+    assert isinstance(layout, native_pipeline.LayoutBlocks)
+    assert detect.detector is pipeline.OCR_TABLES
+    assert layout.hooks is pipeline.OCR_LAYOUT_HOOKS
+    assert [type(stage) for stage in native_pipeline.NATIVE_PIPELINE.stages] == [
+        native_pipeline.DetectTables,
+        native_pipeline.LayoutBlocks,
+    ]

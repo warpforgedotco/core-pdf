@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from copy import replace
+from types import MappingProxyType
 from typing import ClassVar
 
 import numpy
@@ -19,6 +20,7 @@ from core_pdf.impl.extract_block_order import (
 from core_pdf.impl.extract_contracts import (
     ObservationBatch,
     ObservationSource,
+    PageFrame,
     ParsedBlock,
     ParsedLine,
 )
@@ -40,6 +42,44 @@ NATIVE_SOURCE = int(ObservationSource.NATIVE)
 
 CAPTION_RE = re.compile(r"^(?:figure|fig\.|table|chart|exhibit)\s+\d+\b")
 LIST_MARKER_RE = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
+
+
+GroupOrder = Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray]
+
+
+class LayoutHooks(Record):
+    __slots__ = ("source_labels", "group_order")
+
+    source_labels: Mapping[int, str]
+    group_order: GroupOrder | None
+
+    __fields__: ClassVar[tuple[str, ...]] = ("source_labels", "group_order")
+    __match_args__ = ("source_labels", "group_order")
+
+    def __init__(
+        self,
+        source_labels: Mapping[int, str] | None = None,
+        group_order: GroupOrder | None = None,
+    ) -> None:
+        frozen_setattr(
+            self,
+            "source_labels",
+            MappingProxyType({NATIVE_SOURCE: "native"} if source_labels is None else source_labels),
+        )
+        frozen_setattr(self, "group_order", group_order)
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self.source_labels == other.source_labels and self.group_order == other.group_order
+
+    def __hash__(self) -> int:
+        return hash((tuple(self.source_labels.items()), self.group_order))
+
+
+NATIVE_LAYOUT_HOOKS = LayoutHooks()
 
 
 class LineGroupPlan(Record):
@@ -185,11 +225,11 @@ def color_is_emphasis(color: object) -> bool:
 
 def build_lines(
     observations: ObservationBatch,
-    *,
-    source_labels: Mapping[int, str] | None = None,
-    group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
+    hooks: LayoutHooks | None = None,
 ) -> BuiltLines:
-    labels = source_labels if source_labels is not None else {NATIVE_SOURCE: "native"}
+    hooks = NATIVE_LAYOUT_HOOKS if hooks is None else hooks
+    labels = hooks.source_labels
+    group_order = hooks.group_order
     line_groups = line_group_indexes(observations)
     if not len(line_groups.starts):
         return BuiltLines((), numpy.empty((0, 4), dtype=numpy.float32))
@@ -423,63 +463,24 @@ def semantic_body_font_size(lines: tuple[ParsedLine, ...]) -> float | None:
     return finite_median(sizes) if len(sizes) else None
 
 
-def display_boxes(
-    boxes: numpy.ndarray, rotation: int, width: float, height: float
-) -> numpy.ndarray:
-    rotation %= 360
-    if rotation == 0 or not len(boxes):
-        return boxes
-    x0, y0, x1, y1 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
-    if rotation == 90:
-        corners = (y0, width - x1, y1, width - x0)
-    elif rotation == 180:
-        corners = (width - x1, height - y1, width - x0, height - y0)
-    elif rotation == 270:
-        corners = (height - y1, x0, height - y0, x1)
-    else:
-        return boxes
-    rotated = numpy.column_stack(corners).astype(boxes.dtype, copy=False)
-    return numpy.column_stack(
-        (
-            numpy.minimum(rotated[:, 0], rotated[:, 2]),
-            numpy.minimum(rotated[:, 1], rotated[:, 3]),
-            numpy.maximum(rotated[:, 0], rotated[:, 2]),
-            numpy.maximum(rotated[:, 1], rotated[:, 3]),
-        )
-    ).astype(boxes.dtype, copy=False)
-
-
 def layout_blocks_with_evidence(
     observations: ObservationBatch,
     *,
+    frame: PageFrame,
     obstacles: tuple[tuple[float, float, float, float], ...] = (),
     use_xy_cut: bool = True,
-    rotation: int = 0,
-    page_width: float = 0.0,
-    page_height: float = 0.0,
-    source_labels: Mapping[int, str] | None = None,
-    group_order: Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray] | None = None,
+    hooks: LayoutHooks | None = None,
 ) -> tuple[tuple[ParsedBlock, ...], bool]:
-    built_lines = build_lines(observations, source_labels=source_labels, group_order=group_order)
+    built_lines = build_lines(observations, hooks)
     lines = built_lines.lines
     if not lines:
         return (), False
-    boxes = display_boxes(
-        built_lines.boxes,
-        rotation,
-        page_width,
-        page_height,
-    )
+    boxes = frame.display_boxes(built_lines.boxes)
     if use_xy_cut:
         if obstacles:
             obstacles = tuple(
                 bbox_tuple(box)
-                for box in display_boxes(
-                    numpy.asarray(obstacles, dtype=numpy.float32),
-                    rotation,
-                    page_width,
-                    page_height,
-                )
+                for box in frame.display_boxes(numpy.asarray(obstacles, dtype=numpy.float32))
             )
         blocks = xy_cut_blocks(built_lines, boxes, obstacles)
     else:
@@ -530,15 +531,11 @@ def xy_cut_blocks(
 
 def layout_element_order(
     boxes: tuple[tuple[float, float, float, float], ...],
-    rotation: int = 0,
-    page_width: float = 0.0,
-    page_height: float = 0.0,
+    frame: PageFrame,
 ) -> tuple[int, ...]:
     if len(boxes) < 2:
         return tuple(range(len(boxes)))
-    values = display_boxes(
-        numpy.asarray(boxes, dtype=numpy.float32), rotation, page_width, page_height
-    )
+    values = frame.display_boxes(numpy.asarray(boxes, dtype=numpy.float32))
     heights = numpy.maximum(1.0, values[:, 3] - values[:, 1])
     span = max(1.0, float(values[:, 2].max() - values[:, 0].min()))
     full_width_ratio = LAYOUT_RULES.reading_order.full_width_ratio

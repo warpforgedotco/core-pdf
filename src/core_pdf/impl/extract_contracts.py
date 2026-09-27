@@ -10,9 +10,7 @@ import numpy
 
 from core_pdf.impl.array_views import make_column, readonly, validate_selection_mask
 from core_pdf.impl.capture_program import PageProgram
-from core_pdf.impl.output_model import (
-    TextLine,
-)
+from core_pdf.impl.output_model import Table, TextLine
 from core_pdf.impl.types import Record, frozen_setattr
 
 if TYPE_CHECKING:
@@ -849,6 +847,79 @@ class PageAnalysis(Record):
         )
 
 
+class PageFrame(Record):
+    __slots__ = ("width", "height", "rotation", "page_number")
+
+    width: float
+    height: float
+    rotation: int
+    page_number: int
+
+    __fields__: ClassVar[tuple[str, ...]] = ("width", "height", "rotation", "page_number")
+    __match_args__ = ("width", "height", "rotation", "page_number")
+
+    def __init__(
+        self, width: float, height: float, rotation: int = 0, page_number: int = 0
+    ) -> None:
+        frozen_setattr(self, "width", width)
+        frozen_setattr(self, "height", height)
+        frozen_setattr(self, "rotation", rotation)
+        frozen_setattr(self, "page_number", page_number)
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.width == other.width
+            and self.height == other.height
+            and self.rotation == other.rotation
+            and self.page_number == other.page_number
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.width, self.height, self.rotation, self.page_number))
+
+    def display_boxes(self, boxes: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
+        rotation = self.rotation % 360
+        if rotation == 0 or not len(boxes):
+            return boxes
+        width = self.width
+        height = self.height
+        x0, y0, x1, y1 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
+        if rotation == 90:
+            corners = (y0, width - x1, y1, width - x0)
+        elif rotation == 180:
+            corners = (width - x1, height - y1, width - x0, height - y0)
+        elif rotation == 270:
+            corners = (height - y1, x0, height - y0, x1)
+        else:
+            return boxes
+        rotated = numpy.column_stack(corners).astype(boxes.dtype, copy=False)
+        return numpy.column_stack(
+            (
+                numpy.minimum(rotated[:, 0], rotated[:, 2]),
+                numpy.minimum(rotated[:, 1], rotated[:, 3]),
+                numpy.maximum(rotated[:, 0], rotated[:, 2]),
+                numpy.maximum(rotated[:, 1], rotated[:, 3]),
+            )
+        ).astype(boxes.dtype, copy=False)
+
+    @staticmethod
+    def reading_axis_positions(
+        boxes: numpy.ndarray[Any, Any], rotation: int
+    ) -> numpy.ndarray[Any, Any]:
+        rotation %= 360
+        if rotation == 90:
+            return (boxes[:, 1] + boxes[:, 3]) * 0.5
+        if rotation == 180:
+            return -(boxes[:, 0] + boxes[:, 2]) * 0.5
+        if rotation == 270:
+            return -(boxes[:, 1] + boxes[:, 3]) * 0.5
+        return (boxes[:, 0] + boxes[:, 2]) * 0.5
+
+
 class ParsedLine(Record):
     __slots__ = ("line", "sequence", "rotation", "font_size")
 
@@ -934,3 +1005,42 @@ class ParsedBlock(Record):
 
     def __hash__(self) -> int:
         return hash((self.lines, self.bbox, self.column_index, self.kind, self.level))
+
+
+class PageState(Record):
+    __slots__ = ("observations", "tables", "blocks", "order_ambiguous")
+
+    observations: ObservationBatch
+    tables: tuple[Table, ...]
+    blocks: tuple[ParsedBlock, ...]
+    order_ambiguous: bool
+
+    __fields__: ClassVar[tuple[str, ...]] = ("observations", "tables", "blocks", "order_ambiguous")
+    __match_args__ = ("observations", "tables", "blocks", "order_ambiguous")
+
+    def __init__(
+        self,
+        observations: ObservationBatch,
+        tables: tuple[Table, ...] = (),
+        blocks: tuple[ParsedBlock, ...] = (),
+        order_ambiguous: bool = False,
+    ) -> None:
+        frozen_setattr(self, "observations", observations)
+        frozen_setattr(self, "tables", tables)
+        frozen_setattr(self, "blocks", blocks)
+        frozen_setattr(self, "order_ambiguous", order_ambiguous)
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.observations == other.observations
+            and self.tables == other.tables
+            and self.blocks == other.blocks
+            and self.order_ambiguous == other.order_ambiguous
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.observations, self.tables, self.blocks, self.order_ambiguous))
