@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
-from copy import copy
-from dataclasses import replace
+from copy import copy, replace
 from math import hypot
 
 from core_pdf.impl.capture_host import CaptureHost

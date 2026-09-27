@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from core_pdf.impl.capture_host import CaptureHost
 from core_pdf.impl.capture_records import (
     CapturedDrawing,
@@ -13,12 +11,11 @@ from core_pdf.impl.capture_records import (
     marker_drawing,
 )
 from core_pdf.impl.geometry import intersect_bbox, transform_bbox
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import RecordType, Rectangle, ReplaceFields, ReprFields
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 
 
-@dataclass(slots=True)
-class CaptureGraphicsSave:
+class CaptureGraphicsSave(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     clip_bbox: Rectangle | None
     group_alpha: float | None
     clip_scope_emitted: bool = False

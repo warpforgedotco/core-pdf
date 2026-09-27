@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from math import hypot
 
 from core_pdf.impl.capture_glyphs import GlyphCapture, GlyphPaint, capture_glyphs, glyph_style
@@ -13,14 +12,14 @@ from core_pdf.impl.fonts_decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.glyphs import GlyphObservation, GlyphStyle
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.text import normalize_extracted_text
+from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf_spec.s_07_content.model import MarkedContentEntry as SemanticMarkedContentEntry
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
 
 
-@dataclass(slots=True)
-class MarkedContentEntry:
+class MarkedContentEntry(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     layer: str | None = None
     actual_text: str | None = None
     mcid: int | None = None

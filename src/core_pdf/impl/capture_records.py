@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, overload
 
 import numpy
 
 from core_pdf.impl.geometry import bbox_union, normalize_rect, points_bbox
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import GeneratedRecord, RecordType, Rectangle, ReplaceFields, ReprFields
 from core_pdf_cythonized import path_bounds
 from core_pdf_spec.s_07_content.streams import StreamKey
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
@@ -23,22 +22,19 @@ if TYPE_CHECKING:
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
 
 
-@dataclass(frozen=True, slots=True, eq=False)
-class CapturedSoftMask:
+class CapturedSoftMask(GeneratedRecord, eq=False):
     program: CapturedProgram
     transfer: PdfFunctionEvaluator | None = None
     offset: tuple[float, float] = (0.0, 0.0)
 
 
-@dataclass(frozen=True, slots=True)
-class CapturedTextBoundary:
+class CapturedTextBoundary(GeneratedRecord):
     seqno: int
     kind: Literal["begin", "end", "glyph-begin", "glyph-end", "stream-begin", "stream-end"]
     knockout: bool = True
 
 
-@dataclass(slots=True, eq=False)
-class CapturedLine:
+class CapturedLine(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False, eq=False):
     x0: float
     y0: float
     x1: float
@@ -117,8 +113,7 @@ def read_only(array: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
 EMPTY_LINES = CapturedLines()
 
 
-@dataclass(frozen=True, slots=True)
-class CapturedInlineImage:
+class CapturedInlineImage(GeneratedRecord):
     seqno: int
     dictionary: dict[Any, Any]
     data: bytes
@@ -434,8 +429,7 @@ StrokeStyleKey = tuple[
 ]
 
 
-@dataclass(slots=True)
-class CapturedDrawing:
+class CapturedDrawing(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     seqno: int
     fill: tuple[float, ...] | None
     fill_opacity: float | None
@@ -530,14 +524,12 @@ def marker_drawing(
     )
 
 
-@dataclass(frozen=True, slots=True)
-class ShadingPattern:
+class ShadingPattern(GeneratedRecord):
     dictionary: dict[Any, Any]
     color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 
 
-@dataclass(frozen=True, slots=True)
-class TilingPattern:
+class TilingPattern(GeneratedRecord):
     bbox: Rectangle
     x_step: float
     y_step: float

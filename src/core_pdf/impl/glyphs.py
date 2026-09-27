@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, replace
+from copy import replace
 from enum import StrEnum
 from operator import attrgetter
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
 
 from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.geometry import bbox_union
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import RecordType, Rectangle, ReplaceFields, ReprFields
 
 Matrix6 = tuple[float, float, float, float, float, float]
 
@@ -71,8 +71,7 @@ class GlyphUnicodeSemantics(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
-@dataclass(slots=True)
-class GlyphStyle:
+class GlyphStyle(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     font_size: float
     rotation_angle: int
     fill: tuple[float, ...] | None
@@ -97,7 +96,7 @@ class GlyphStyle:
     graphics_soft_mask: object | None
 
 
-STYLE_FIELDS: tuple[str, ...] = tuple(field.name for field in fields(GlyphStyle))
+STYLE_FIELDS: tuple[str, ...] = GlyphStyle.__fields__
 
 
 class GlyphObservation:

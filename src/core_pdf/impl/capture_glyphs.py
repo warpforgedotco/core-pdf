@@ -22,7 +22,7 @@ from core_pdf.impl.glyphs import (
     glyph_unicode_confidence,
     min_optional_confidence,
 )
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.types import RecordType, Rectangle, ReplaceFields, ReprFields
 from core_pdf_cythonized import horizontal_glyph_geometry
 
 GLYPH_BITMAP_REPAIR_LABELS = frozenset(
@@ -52,8 +52,7 @@ def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
     return punctuation >= 1 and punctuation / len(nonspace) >= 0.25
 
 
-@dataclass(slots=True, eq=False)
-class RunGeometry:
+class RunGeometry(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False, eq=False):
     started: bool = False
     advance: Rectangle = (0.0, 0.0, 0.0, 0.0)
     ink: Rectangle = (0.0, 0.0, 0.0, 0.0)
@@ -90,8 +89,7 @@ class RunGeometry:
         self.confidence = min_optional_confidence(self.confidence, confidence)
 
 
-@dataclass(slots=True)
-class GlyphPaint:
+class GlyphPaint(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     clip_bbox: Rectangle | None
     page_clip: Rectangle | None
     fill: tuple[float, ...] | None
