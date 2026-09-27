@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl import fonts_decoder as cid
+from core_pdf.impl import fonts_unicode as cid
 from core_pdf.impl.fonts_cmap_resources import unicode_scalar_from_cmap_code
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 

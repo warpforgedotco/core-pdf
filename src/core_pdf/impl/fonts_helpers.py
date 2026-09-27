@@ -153,3 +153,7 @@ def build_simple_encoding_glyph_names(
 
 def encoding_context(context: SemanticContext | None) -> SemanticContext | None:
     return None if recognized_version(context) is None else context
+
+
+def slot_setter(owner: type, name: str) -> Callable[[object, Any], None]:
+    return getattr(owner, name).__set__

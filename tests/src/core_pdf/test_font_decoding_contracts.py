@@ -6,8 +6,9 @@ import core_pdf.impl.fonts_decoder as decoder_module
 from core_pdf import PdfDocument
 from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl.fonts_decoder import FontDecoder, single_code_mapping, split_code_bytes
+from core_pdf.impl.fonts_decoder import FontDecoder, split_code_bytes
 from core_pdf.impl.fonts_program_base import NULL_PROGRAM
+from core_pdf.impl.fonts_unicode import single_code_mapping
 from tests.src.core_pdf.pdf_bytes import one_page_pdf
 
 

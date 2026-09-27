@@ -8,9 +8,14 @@ from typing import Any
 
 from core_adobe_fonts.afm.core14 import FONT_DATA as PDF_FONT_DATA
 from core_adobe_fonts.afm.core14 import Core14FontMetrics
+from core_pdf.impl.fonts_cmap_tokenizer import CMapDecoder
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.fonts_widths import recover_descendant
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, require_pdf_number
+from core_pdf_spec.s_07_syntax_primitives.coercion import (
+    parse_float_strict,
+    parse_int_strict,
+    require_pdf_number,
+)
 from core_pdf_spec.s_09_fonts.metrics import standard_14_widths as pdf_standard_14_widths
 
 LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
@@ -123,3 +128,29 @@ METRIC_RECORD_NAMES: dict[str, str] = {
 FONT_DATA: dict[str, Core14FontMetrics] = {
     name: PDF_FONT_DATA[record] for name, record in METRIC_RECORD_NAMES.items()
 }
+
+
+def font_is_vertical(
+    font: dict[str, Any],
+    subtype: str | None,
+    base_encoding: str | None,
+    base_font_name: str | None,
+    cmap: CMapDecoder | None,
+) -> bool:
+    if (
+        base_encoding == "V"
+        or (base_encoding and base_encoding.endswith("-V"))
+        or (base_font_name and base_font_name.endswith("-V"))
+        or (cmap is not None and cmap.wmode == 1)
+    ):
+        return True
+    descendant = recover_descendant(font) if subtype == "Type0" else None
+    if descendant is None:
+        return False
+    wmode = descendant.get("WMode")
+    if wmode is None:
+        wmode = font.get("WMode", 0)
+    try:
+        return parse_int_strict(wmode, "invalid font WMode") == 1
+    except ValueError:
+        return False
