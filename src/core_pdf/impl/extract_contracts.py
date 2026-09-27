@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, ClassVar, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self
 
 import numpy
 
@@ -34,6 +34,21 @@ class ObservationSource(IntEnum):
     STRUCTURE = 2
 
 
+class TextReference(Protocol):
+    @property
+    def text(self) -> str: ...
+
+    @property
+    def font_name(self) -> str | None: ...
+
+    @property
+    def fill_color(self) -> tuple[float, ...] | None: ...
+
+    def is_bold(self) -> bool: ...
+
+    def is_italic(self) -> bool: ...
+
+
 class ObservationBatch(Record):
     __slots__ = (
         "text",
@@ -57,7 +72,7 @@ class ObservationBatch(Record):
     rotation: IntArray
     font_size: FloatArray
     line_break_before: BoolArray
-    references: tuple[Any | None, ...]
+    references: tuple[TextReference | None, ...]
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "text",
@@ -95,7 +110,7 @@ class ObservationBatch(Record):
         rotation: IntArray,
         font_size: FloatArray,
         line_break_before: BoolArray,
-        references: tuple[Any | None, ...],
+        references: tuple[TextReference | None, ...],
     ) -> None:
         frozen_setattr(self, "text", text)
         frozen_setattr(self, "bbox", bbox)
@@ -196,7 +211,7 @@ class ObservationBatch(Record):
         rotation: Iterable[int] | None = None,
         font_size: Iterable[float] | None = None,
         line_break_before: Iterable[bool] | None = None,
-        references: Iterable[Any | None] | None = None,
+        references: Iterable[TextReference | None] | None = None,
     ) -> ObservationBatch:
         texts = tuple(text)
         size = len(texts)

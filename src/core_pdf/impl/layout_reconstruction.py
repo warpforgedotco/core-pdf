@@ -28,6 +28,7 @@ def is_superscript_metrics(previous_height: float, height: float, baseline_raise
     )
 
 
+CLOSING_BRACKETS = (")", "]", "}")
 SUPERSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 
@@ -600,7 +601,7 @@ class GlyphLineBuilder:
                 for candidate in ordered
                 if candidate is not run
                 and candidate.x0 >= run.x1 - 0.01
-                and candidate.stripped_text.lstrip().startswith((")", "]", "}"))
+                and candidate.stripped_text.lstrip().startswith(CLOSING_BRACKETS)
             ),
             None,
         )
@@ -973,7 +974,7 @@ class GlyphLineBuilder:
         previous_text = previous.text.strip()
         if not previous_text:
             return False
-        if text[:1] == "∂" and previous_text.endswith((")", "]", "}")):
+        if text[:1] == "∂" and previous_text.endswith(CLOSING_BRACKETS):
             return True
         if text[:1] not in "√GT":
             return False

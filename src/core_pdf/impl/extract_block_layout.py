@@ -23,6 +23,7 @@ from core_pdf.impl.extract_contracts import (
     PageFrame,
     ParsedBlock,
     ParsedLine,
+    TextReference,
 )
 from core_pdf.impl.extract_layout_rules import LAYOUT_RULES
 from core_pdf.impl.extract_xy_cut import row_order_indexes, xy_cut_regions
@@ -42,6 +43,12 @@ NATIVE_SOURCE = int(ObservationSource.NATIVE)
 
 CAPTION_RE = re.compile(r"^(?:figure|fig\.|table|chart|exhibit)\s+\d+\b")
 LIST_MARKER_RE = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
+
+OBSERVATION_JOIN_NO_SPACE_AFTER = (" ", "-", "/")
+OBSERVATION_JOIN_NO_SPACE_BEFORE = (".", ",", ":", ";", ")", "]", "}")
+SPAN_JOIN_NO_SPACE_AFTER = ("(", "[", "{", "/", "-")
+SPAN_JOIN_NO_SPACE_BEFORE = (".", ",", ";", ":", "!", "?", ")", "]", "}")
+SPAN_TRAILING_SPACE = (" ", "\t", "\n")
 
 
 GroupOrder = Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray]
@@ -199,8 +206,8 @@ def group_text_and_words(
             continue
         if (
             parts
-            and not parts[-1].endswith((" ", "-", "/"))
-            and not text.startswith((".", ",", ":", ";", ")", "]", "}"))
+            and not parts[-1].endswith(OBSERVATION_JOIN_NO_SPACE_AFTER)
+            and not text.startswith(OBSERVATION_JOIN_NO_SPACE_BEFORE)
         ):
             parts.append(" ")
         parts.append(text)
@@ -251,7 +258,7 @@ def build_lines(
     run_styles: dict[str | None, tuple[bool, bool]] = {}
     color_marks: dict[object, bool] = {}
 
-    def reference_style(reference: object) -> tuple[bool, bool]:
+    def reference_style(reference: TextReference) -> tuple[bool, bool]:
         if type(reference) is not TextRun:
             return (style_enabled(reference, "is_bold"), style_enabled(reference, "is_italic"))
         font_name = reference.font_name
@@ -312,8 +319,8 @@ def build_lines(
             if (
                 pending_space
                 and span_values
-                and not span_values[-1].text.endswith(("(", "[", "{", "/", "-"))
-                and not reference_text.startswith((".", ",", ";", ":", "!", "?", ")", "]", "}"))
+                and not span_values[-1].text.endswith(SPAN_JOIN_NO_SPACE_AFTER)
+                and not reference_text.startswith(SPAN_JOIN_NO_SPACE_BEFORE)
             ):
                 prefix = " "
             span_values.append(
@@ -324,7 +331,7 @@ def build_lines(
                     mark=emphasis_mark(getattr(reference, "fill_color", None)),
                 )
             )
-            pending_space = reference.text.endswith((" ", "\t", "\n"))
+            pending_space = reference.text.endswith(SPAN_TRAILING_SPACE)
         source_low = int(source_minimum[group_index])
         source_high = int(source_maximum[group_index])
         source = labels.get(source_low, "hybrid") if source_low == source_high else "hybrid"
