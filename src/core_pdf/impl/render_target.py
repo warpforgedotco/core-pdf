@@ -404,12 +404,20 @@ def composite_masked_group(
     return effective_alpha
 
 
-def edge_tuples(
-    edge_array: numpy.ndarray[Any, Any] | None,
-) -> list[tuple[float, float, float, float]]:
-    if edge_array is None:
-        return []
-    return [(x0, y0, x1, y1) for x0, y0, x1, y1 in edge_array.tolist()]
+def bounded_edges(
+    edge_array: numpy.ndarray[Any, Any], *, skip_horizontal: bool = False
+) -> list[tuple[float, float, float, float, float, float]]:
+    """Edge rows with each edge's low and high y appended, as the scanline
+    fills take them; the low and high pick exactly as min(y1, y0) and
+    max(y0, y1) do."""
+    ey0 = edge_array[:, 1]
+    ey1 = edge_array[:, 3]
+    rows = numpy.column_stack(
+        (edge_array, numpy.where(ey0 < ey1, ey0, ey1), numpy.where(ey1 > ey0, ey1, ey0))
+    )
+    if skip_horizontal:
+        rows = rows[ey0 != ey1]
+    return list(map(tuple, rows.tolist()))
 
 
 def subpath_columns(
@@ -912,7 +920,7 @@ class RasterTarget:
             return True
         if parent.painted_boxes is not None:
             self.record_knockout_paint((ix0, iy0, ix1, iy1))
-        self.extend_paint_window(rows, columns)
+        self.extend_paint_box(iy0, iy1, ix0, ix1)
         return True
 
     def knockout_group_region(self, item: DisplayItem) -> PixelBox | None:
@@ -1792,7 +1800,7 @@ class RasterTarget:
 
     def fast_fill_path(
         self,
-        edges: list[tuple[float, float, float, float]],
+        edges: list[tuple[float, float, float, float]] | numpy.ndarray[Any, Any],
         bbox: tuple[float, float, float, float],
     ) -> bool:
         blend_normal_solid_span = self.blend_normal_solid_span
@@ -1808,9 +1816,13 @@ class RasterTarget:
         ix0, iy0, ix1, iy1 = pixel_box
         if ix1 - ix0 < 10 or iy1 - iy0 < 10:
             return False
-        edge_bounds = [
-            (ex0, ey0, ex1, ey1, min(ey1, ey0), max(ey0, ey1)) for ex0, ey0, ex1, ey1 in edges
-        ]
+        edge_bounds = (
+            bounded_edges(edges)
+            if isinstance(edges, numpy.ndarray)
+            else [
+                (ex0, ey0, ex1, ey1, min(ey1, ey0), max(ey0, ey1)) for ex0, ey0, ex1, ey1 in edges
+            ]
+        )
         edge_count = len(edge_bounds)
         pending_order = sorted(range(edge_count), key=lambda i: -edge_bounds[i][5])
         pending_index = 0
@@ -1874,7 +1886,7 @@ class RasterTarget:
         if rect is not None:
             fill_rect(rect, rgba, blend_mode)
             return
-        edges: list[tuple[float, float, float, float]] | None
+        edges: list[tuple[float, float, float, float]] | numpy.ndarray[Any, Any]
         if edge_array is None:
             edge_array = path.fill_edge_array()
         if edge_array is None:
@@ -1882,7 +1894,7 @@ class RasterTarget:
             if not edges:
                 return
         else:
-            edges = None
+            edges = edge_array
             if len(edge_array) == 0:
                 return
         if bbox is None:
@@ -1903,11 +1915,9 @@ class RasterTarget:
             and self.group_source_shape is None
             and fast_bbox is not None
             and fill_rule == "nonzero"
+            and fast_fill_path(edges, fast_bbox)
         ):
-            if edges is None:
-                edges = edge_tuples(edge_array)
-            if fast_fill_path(edges, fast_bbox):
-                return
+            return
         clipped_box = clipped_pixel_box(bbox)
         if clipped_box is None:
             return
@@ -1918,7 +1928,9 @@ class RasterTarget:
         normal_fast = blend_mode is None
         if pixel_area < 10_000:
             source = (
-                edge_array if edge_array is not None else numpy.asarray(edges, dtype=numpy.float64)
+                edges
+                if isinstance(edges, numpy.ndarray)
+                else numpy.asarray(edges, dtype=numpy.float64)
             )
             if normal_fast and rectangular_clip and fill_rule == "nonzero":
                 rows = slice(iy0, iy1)
@@ -1941,7 +1953,7 @@ class RasterTarget:
                     self.shape_alpha,
                 )
                 if drawn is not None:
-                    self.extend_paint_window(rows, columns)
+                    self.extend_paint_box(iy0, iy1, ix0, ix1)
                 return
             sampled = supersampled_coverage_plane(
                 source, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
@@ -1973,20 +1985,21 @@ class RasterTarget:
                 blend_mode,
             )
             return
-        if edges is None:
-            edges = edge_tuples(edge_array)
-        edge_segments = [
-            (
-                ex0,
-                ey0,
-                ex1,
-                ey1,
-                min(ey1, ey0),
-                max(ey0, ey1),
-            )
-            for ex0, ey0, ex1, ey1 in edges
-            if ey0 != ey1
-        ]
+        if isinstance(edges, numpy.ndarray):
+            edge_segments = bounded_edges(edges, skip_horizontal=True)
+        else:
+            edge_segments = [
+                (
+                    ex0,
+                    ey0,
+                    ex1,
+                    ey1,
+                    min(ey1, ey0),
+                    max(ey0, ey1),
+                )
+                for ex0, ey0, ex1, ey1 in edges
+                if ey0 != ey1
+            ]
         if not edge_segments:
             return
         fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)

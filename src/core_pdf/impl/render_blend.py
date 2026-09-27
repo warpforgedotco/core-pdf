@@ -301,8 +301,11 @@ COLOR_RGBA_CACHE: BoundedDict[tuple[tuple[float, ...], object, type], tuple[int,
 
 
 def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
-    if type(color) is not tuple or not all(type(component) is float for component in color):
+    if type(color) is not tuple:
         return convert_color_rgba(color, opacity)
+    for component in color:
+        if type(component) is not float:
+            return convert_color_rgba(color, opacity)
     key = (color, opacity, type(opacity))
     try:
         return COLOR_RGBA_CACHE[key]

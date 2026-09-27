@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import struct
 import threading
+from collections.abc import Callable
+from functools import partial
 from io import BytesIO
 from typing import Any
 
@@ -157,7 +159,6 @@ class FontToolsOutlineAccess:
         "font",
         "glyph_count",
         "glyph_data",
-        "reverse_glyph_map",
         "scale",
         "truetype",
         "truetype_read",
@@ -167,14 +168,13 @@ class FontToolsOutlineAccess:
         self.font = font
         self.glyph_data = glyph_data
         self.glyph_count = len(font.getGlyphOrder())
-        self.reverse_glyph_map = font.getReverseGlyphMap()
         units_per_em = float(getattr(font["head"], "unitsPerEm", 1000) or 1000)
         self.scale = 1000.0 / units_per_em if units_per_em else 1.0
         self.truetype: TrueTypeTables | None = None
         self.truetype_read = False
 
     def glyph_id_for_name(self, glyph_name: str) -> int | None:
-        return self.reverse_glyph_map.get(glyph_name)
+        return self.font.getReverseGlyphMap().get(glyph_name)
 
     def has_glyph_id(self, glyph_id: int) -> bool:
         return 0 <= glyph_id < self.glyph_count
@@ -400,19 +400,78 @@ def tt_font_from_data(data: bytes) -> TTFont:
         raise ValueError("invalid TrueType font program") from exc
 
 
+PLACEHOLDER_GLYPH_NAMES = [".notdef"]
+
+
+def placeholder_glyph_order(glyph_count: int) -> list[str]:
+    global PLACEHOLDER_GLYPH_NAMES
+    names = PLACEHOLDER_GLYPH_NAMES
+    if glyph_count > len(names):
+        names = PLACEHOLDER_GLYPH_NAMES = [
+            *names,
+            *("glyph%.5d" % gid for gid in range(len(names), glyph_count)),
+        ]
+    return names[:glyph_count] if glyph_count > 0 else []
+
+
+def placeholder_glyph_names(font: TTFont) -> None:
+    glyph_order = placeholder_glyph_order(int(font["maxp"].numGlyphs))
+    glyph_order[0] = ".notdef"
+    font.glyphOrder = glyph_order
+    font.__dict__["_core_pdf_placeholder_names"] = True
+    if "cmap" in font:
+        font["cmap"].buildReversedMin()
+
+
 def ensure_glyph_order(font: TTFont) -> None:
+    # A TrueType program finds glyphs by ID, so when the post table names none,
+    # fontTools' names synthesized from the cmap would only be re-mapped back to
+    # IDs. The placeholders it starts from serve instead; the cmap is still read
+    # where fontTools reads it, so a corrupt one fails and is kept the same way.
+    overrides = font.__dict__
+    overrides["_getGlyphNamesFromCmap"] = partial(placeholder_glyph_names, font)
     try:
         font.getGlyphOrder()
         return
     except Exception:
         pass
+    finally:
+        del overrides["_getGlyphNamesFromCmap"]
     try:
         glyph_count = int(font["maxp"].numGlyphs)
     except Exception as exc:
         raise ValueError("invalid TrueType glyph order") from exc
     if glyph_count <= 0:
         raise ValueError("invalid TrueType glyph order")
-    font.setGlyphOrder([".notdef", *(f"glyph{gid:05d}" for gid in range(1, glyph_count))])
+    font.setGlyphOrder(placeholder_glyph_order(glyph_count))
+    font.__dict__["_core_pdf_placeholder_names"] = True
+
+
+def cmap_glyph_ids(font: TTFont) -> Callable[[str], int | None]:
+    """Glyph ID for a glyph name a cmap subtable produced, or None when the
+    font neither names it nor gives it a placeholder name."""
+    if font.__dict__.get("_core_pdf_placeholder_names"):
+        return placeholder_glyph_id
+    reverse_glyph_map = font.getReverseGlyphMap()
+
+    def gid_for(glyph_name: str) -> int | None:
+        try:
+            return reverse_glyph_map[glyph_name]
+        except KeyError:
+            return placeholder_glyph_id(glyph_name)
+
+    return gid_for
+
+
+def placeholder_glyph_id(glyph_name: str) -> int | None:
+    if glyph_name == ".notdef":
+        return 0
+    if not glyph_name.startswith("glyph"):
+        return None
+    try:
+        return int(glyph_name[5:])
+    except ValueError:
+        return None
 
 
 def best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
@@ -424,23 +483,15 @@ def best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
             symbol_cmap = cmap_table.getcmap(3, 0)
             name_cmap = symbol_cmap.cmap if symbol_cmap is not None else {}
             symbol_fallback = bool(name_cmap)
-        reverse_glyph_map = font.getReverseGlyphMap()
+        gid_for = cmap_glyph_ids(font)
     except Exception:
         return {}
     mapping: dict[int, int] = {}
     for codepoint, glyph_name in name_cmap.items():
         if not is_unicode_scalar(codepoint):
             continue
-        try:
-            gid = reverse_glyph_map[glyph_name]
-        except KeyError:
-            if not glyph_name.startswith("glyph"):
-                continue
-            try:
-                gid = int(glyph_name[5:])
-            except ValueError:
-                continue
-        if gid > 0:
+        gid = gid_for(glyph_name)
+        if gid is not None and gid > 0:
             mapping[codepoint] = gid
             if symbol_fallback and 0xF000 <= codepoint <= 0xF2FF:
                 mapping.setdefault(symbol_character_code(codepoint), gid)
@@ -450,20 +501,9 @@ def best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
 def code_gid_cmap(font: TTFont) -> dict[int, int]:
     try:
         cmap_table = font["cmap"]
-        reverse_glyph_map = font.getReverseGlyphMap()
+        gid_for = cmap_glyph_ids(font)
     except Exception:
         return {}
-
-    def gid_for(glyph_name: str) -> int:
-        try:
-            return int(reverse_glyph_map[glyph_name])
-        except KeyError:
-            if glyph_name.startswith("glyph"):
-                try:
-                    return int(glyph_name[5:])
-                except ValueError:
-                    return 0
-            return 0
 
     for platform, encoding in ((3, 0), (1, 0)):
         try:
@@ -475,7 +515,7 @@ def code_gid_cmap(font: TTFont) -> dict[int, int]:
         mapping: dict[int, int] = {}
         for code, glyph_name in subtable.cmap.items():
             gid = gid_for(glyph_name)
-            if gid <= 0:
+            if gid is None or gid <= 0:
                 continue
             mapping.setdefault(code, gid)
             if platform == 3 and 0xF000 <= code <= 0xF0FF:
@@ -491,8 +531,8 @@ def invert_unicode_cmap(cmap: dict[int, int]) -> dict[int, str]:
         if gid <= 0 or not is_unicode_scalar(codepoint):
             continue
         char = chr(codepoint)
-        previous = by_gid.get(gid)
-        if previous is None or prefer_unicode_text(char, previous):
+        previous = by_gid.setdefault(gid, char)
+        if previous is not char and prefer_unicode_text(char, previous):
             by_gid[gid] = char
     return by_gid
 
