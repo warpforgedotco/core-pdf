@@ -420,6 +420,7 @@ ignore_imports = ["core_pdf.impl.geometry -> core_pdf_spec.s_08_graphics.geometr
 forbidden_modules = [
     "core_pdf.impl.document_document",
     "core_pdf.impl.document_navigation",
+    "core_pdf.impl.document_optional_content",
     "core_pdf.impl.document_xref_recovery",
     "core_pdf.impl.document_fields",
     "core_pdf.impl.document_forms",
@@ -579,6 +580,7 @@ source_modules = [
 forbidden_modules = [
     "core_pdf.impl.document_document",
     "core_pdf.impl.document_navigation",
+    "core_pdf.impl.document_optional_content",
     "core_pdf.impl.document_xref_recovery",
     "core_pdf.impl.document_fields",
     "core_pdf.impl.document_forms",
@@ -816,6 +818,7 @@ source_modules = [
 forbidden_modules = [
     "core_pdf.impl.document_document",
     "core_pdf.impl.document_navigation",
+    "core_pdf.impl.document_optional_content",
     "core_pdf.impl.document_xref_recovery",
     "core_pdf.impl.document_fields",
     "core_pdf.impl.document_forms",
@@ -887,6 +890,7 @@ source_modules = [
 forbidden_modules = [
     "core_pdf.impl.document_document",
     "core_pdf.impl.document_navigation",
+    "core_pdf.impl.document_optional_content",
     "core_pdf.impl.document_xref_recovery",
     "core_pdf.impl.document_page",
     "core_pdf.impl.document_fields",
@@ -934,6 +938,7 @@ source_modules = [
 forbidden_modules = [
     "core_pdf.impl.document_document",
     "core_pdf.impl.document_navigation",
+    "core_pdf.impl.document_optional_content",
     "core_pdf.impl.document_xref_recovery",
     "core_pdf.impl.document_page",
     "core_pdf.impl.capture_glyph_boxes",
