@@ -8,7 +8,12 @@ from core_jbig2.bitmap import (
     compose_packed_bitmap_data,
     uint8_matrix_view,
 )
-from core_records import Record, ReplaceFields, ReprFields, frozen_setattr
+from core_records import (
+    GeneratedRecord,
+    RecordType,
+    ReplaceFields,
+    ReprFields,
+)
 
 JBIG2_PAGE_INFO = 48
 JBIG2_END_OF_FILE = 51
@@ -34,50 +39,12 @@ class Jbig2UnsupportedError(Jbig2Error):
 GENERIC_TEMPLATE_0_DEFAULT_AT = ((3, -1), (-3, -1), (2, -2), (-2, -2))
 
 
-class JBIG2Segment(ReprFields, ReplaceFields):
-    __slots__ = ("number", "flags", "retention_flags", "page_association", "data")
-
+class JBIG2Segment(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     number: int
     flags: int
     retention_flags: int
     page_association: int
     data: bytes
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "number",
-        "flags",
-        "retention_flags",
-        "page_association",
-        "data",
-    )
-    __match_args__ = ("number", "flags", "retention_flags", "page_association", "data")
-
-    def __init__(
-        self,
-        number: int,
-        flags: int,
-        retention_flags: int,
-        page_association: int,
-        data: bytes,
-    ) -> None:
-        self.number = number
-        self.flags = flags
-        self.retention_flags = retention_flags
-        self.page_association = page_association
-        self.data = data
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.number == other.number
-            and self.flags == other.flags
-            and self.retention_flags == other.retention_flags
-            and self.page_association == other.page_association
-            and self.data == other.data
-        )
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -86,57 +53,17 @@ class JBIG2Segment(ReprFields, ReplaceFields):
         return self.flags & 0x3F
 
 
-class JBIG2PageInfo(ReprFields, ReplaceFields):
-    __slots__ = ("width", "height", "x_resolution", "y_resolution", "flags")
-
+class JBIG2PageInfo(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     width: int
     height: int
     x_resolution: int
     y_resolution: int
     flags: int
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "width",
-        "height",
-        "x_resolution",
-        "y_resolution",
-        "flags",
-    )
-    __match_args__ = ("width", "height", "x_resolution", "y_resolution", "flags")
-
-    def __init__(
-        self,
-        width: int,
-        height: int,
-        x_resolution: int,
-        y_resolution: int,
-        flags: int,
-    ) -> None:
-        self.width = width
-        self.height = height
-        self.x_resolution = x_resolution
-        self.y_resolution = y_resolution
-        self.flags = flags
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.width == other.width
-            and self.height == other.height
-            and self.x_resolution == other.x_resolution
-            and self.y_resolution == other.y_resolution
-            and self.flags == other.flags
-        )
-
     __hash__ = None  # type: ignore[assignment]
 
 
-class JBIG2Region(Record):
-    __slots__ = ("width", "height", "x", "y", "flags", "raw")
-
+class JBIG2Region(GeneratedRecord):
     width: int
     height: int
     x: int
@@ -144,38 +71,8 @@ class JBIG2Region(Record):
     flags: int
     raw: bytes
 
-    __fields__: ClassVar[tuple[str, ...]] = ("width", "height", "x", "y", "flags", "raw")
-    __match_args__ = ("width", "height", "x", "y", "flags", "raw")
 
-    def __init__(self, width: int, height: int, x: int, y: int, flags: int, raw: bytes) -> None:
-        frozen_setattr(self, "width", width)
-        frozen_setattr(self, "height", height)
-        frozen_setattr(self, "x", x)
-        frozen_setattr(self, "y", y)
-        frozen_setattr(self, "flags", flags)
-        frozen_setattr(self, "raw", raw)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.width == other.width
-            and self.height == other.height
-            and self.x == other.x
-            and self.y == other.y
-            and self.flags == other.flags
-            and self.raw == other.raw
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.width, self.height, self.x, self.y, self.flags, self.raw))
-
-
-class JBIG2GenericRegionHeader(Record):
-    __slots__ = ("region", "mmr", "template", "prediction", "adaptive_pixels", "bitmap_start")
-
+class JBIG2GenericRegionHeader(GeneratedRecord):
     region: JBIG2Region
     mmr: bool
     template: int
@@ -183,71 +80,8 @@ class JBIG2GenericRegionHeader(Record):
     adaptive_pixels: tuple[tuple[int, int], ...]
     bitmap_start: int
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "region",
-        "mmr",
-        "template",
-        "prediction",
-        "adaptive_pixels",
-        "bitmap_start",
-    )
-    __match_args__ = ("region", "mmr", "template", "prediction", "adaptive_pixels", "bitmap_start")
 
-    def __init__(
-        self,
-        region: JBIG2Region,
-        mmr: bool,
-        template: int,
-        prediction: bool,
-        adaptive_pixels: tuple[tuple[int, int], ...],
-        bitmap_start: int,
-    ) -> None:
-        frozen_setattr(self, "region", region)
-        frozen_setattr(self, "mmr", mmr)
-        frozen_setattr(self, "template", template)
-        frozen_setattr(self, "prediction", prediction)
-        frozen_setattr(self, "adaptive_pixels", adaptive_pixels)
-        frozen_setattr(self, "bitmap_start", bitmap_start)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.region == other.region
-            and self.mmr == other.mmr
-            and self.template == other.template
-            and self.prediction == other.prediction
-            and self.adaptive_pixels == other.adaptive_pixels
-            and self.bitmap_start == other.bitmap_start
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.region,
-                self.mmr,
-                self.template,
-                self.prediction,
-                self.adaptive_pixels,
-                self.bitmap_start,
-            )
-        )
-
-
-class JBIG2SegmentHeader(ReprFields, ReplaceFields):
-    __slots__ = (
-        "number",
-        "flags",
-        "retention_flags",
-        "referred_to_count",
-        "referred_to_segments",
-        "page_association",
-        "data_length",
-        "header_length",
-    )
-
+class JBIG2SegmentHeader(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     number: int
     flags: int
     retention_flags: int
@@ -257,94 +91,14 @@ class JBIG2SegmentHeader(ReprFields, ReplaceFields):
     data_length: int
     header_length: int
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "number",
-        "flags",
-        "retention_flags",
-        "referred_to_count",
-        "referred_to_segments",
-        "page_association",
-        "data_length",
-        "header_length",
-    )
-    __match_args__ = (
-        "number",
-        "flags",
-        "retention_flags",
-        "referred_to_count",
-        "referred_to_segments",
-        "page_association",
-        "data_length",
-        "header_length",
-    )
-
-    def __init__(
-        self,
-        number: int,
-        flags: int,
-        retention_flags: int,
-        referred_to_count: int,
-        referred_to_segments: list[int],
-        page_association: int,
-        data_length: int,
-        header_length: int,
-    ) -> None:
-        self.number = number
-        self.flags = flags
-        self.retention_flags = retention_flags
-        self.referred_to_count = referred_to_count
-        self.referred_to_segments = referred_to_segments
-        self.page_association = page_association
-        self.data_length = data_length
-        self.header_length = header_length
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.number == other.number
-            and self.flags == other.flags
-            and self.retention_flags == other.retention_flags
-            and self.referred_to_count == other.referred_to_count
-            and self.referred_to_segments == other.referred_to_segments
-            and self.page_association == other.page_association
-            and self.data_length == other.data_length
-            and self.header_length == other.header_length
-        )
-
     __hash__ = None  # type: ignore[assignment]
 
 
-class JBIG2Image(ReprFields, ReplaceFields):
-    __slots__ = ("width", "height", "stride", "data")
-
+class JBIG2Image(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     width: int
     height: int
     stride: int
     data: bytearray
-
-    __fields__: ClassVar[tuple[str, ...]] = ("width", "height", "stride", "data")
-    __match_args__ = ("width", "height", "stride", "data")
-
-    def __init__(self, width: int, height: int, stride: int, data: bytearray) -> None:
-        self.width = width
-        self.height = height
-        self.stride = stride
-        self.data = data
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.width == other.width
-            and self.height == other.height
-            and self.stride == other.stride
-            and self.data == other.data
-        )
 
     __hash__ = None  # type: ignore[assignment]
 
