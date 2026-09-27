@@ -32,7 +32,34 @@ class ElementaryScratch:
 
 
 class RasterState:
-    __slots__ = ()
+    __slots__ = (
+        "pixels",
+        "pixel_array",
+        "semantic_context",
+        "buffer_stack",
+        "group_source_alpha",
+        "group_source_shape",
+        "paint_window",
+        "paint_alpha_is_shape",
+        "shape_alpha",
+        "clip",
+        "width",
+        "height",
+        "scale",
+        "crop_x0",
+        "crop_y1",
+        "page_pixels",
+        "page_buffer",
+        "crop_y0",
+        "clip_stack",
+        "clip_floor",
+        "group_floor",
+        "scope_stack",
+        "resources",
+        "elementary_scratch",
+        "group_member_boxes",
+        "stroke_scratch",
+    )
 
     pixels: bytearray
     pixel_array: UInt8Array
