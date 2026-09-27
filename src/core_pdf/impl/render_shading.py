@@ -55,9 +55,6 @@ def prepared_shading(
 class RasterShading(RasterImages):
     __slots__ = ()
 
-    def raster_page_box(self) -> tuple[float, float, float, float]:
-        return self.grid.page_box()
-
     def shading_box(
         self,
         item: ShadingItem,
@@ -67,7 +64,7 @@ class RasterShading(RasterImages):
         if box is None:
             box = rect_tuple(item.bbox)
         if box is None:
-            box = self.raster_page_box()
+            box = self.grid.page_box()
         return normalize_rect(box)
 
     def prepared_shading(
@@ -187,7 +184,7 @@ class RasterShading(RasterImages):
             if box is None:
                 return False
         else:
-            box = self.raster_page_box()
+            box = self.grid.page_box()
         x0, y0, x1, y1 = box
         clip_box = self.clip.current_clip()
         if clip_box is not None:
