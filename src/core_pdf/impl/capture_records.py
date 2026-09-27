@@ -180,14 +180,30 @@ class CapturedSubpath:
 DeferredPoints: TypeAlias = tuple[Any, Any, list[tuple[int, int, bool]], bool]
 
 
+def deferred_axis_aligned_rect(deferred: DeferredPoints) -> Rectangle | None:
+    column_x, column_y, spans, outline = deferred
+    if not spans:
+        return None
+    start, end, flag = spans[-1]
+    if outline and (len(spans) != 1 or end - start != 4):
+        return None
+    if end - start < 2 or any(e - s > 1 for s, e, _ in spans[:-1]):
+        return None
+    if end - start > 5:
+        return None
+    points = list(zip(column_x[start:end].tolist(), column_y[start:end].tolist(), strict=True))
+    return rect_from_points(points, outline or flag)
+
+
 class CapturedPath:
-    __slots__ = ("subpaths", "_deferred", "_parts", "_summary")
+    __slots__ = ("subpaths", "_deferred", "_parts", "_summary", "_rect")
 
     def __init__(self, subpaths: list[CapturedSubpath] | None = None) -> None:
         self.subpaths = subpaths if subpaths is not None else []
         self._deferred: DeferredPoints | None = None
         self._parts: list[DeferredPoints] | None = None
         self._summary: tuple[Rectangle | None, bool] | None = None
+        self._rect: tuple[Rectangle | None] | None = None
 
     @classmethod
     def deferred_outline(
@@ -200,6 +216,7 @@ class CapturedPath:
         path._deferred = (column_x, column_y, spans, True)
         path._parts = None
         path._summary = None
+        path._rect = None
         return path
 
     @classmethod
@@ -215,6 +232,7 @@ class CapturedPath:
         path._deferred = (column_x, column_y, spans, False)
         path._parts = None
         path._summary = (bbox, has_segments)
+        path._rect = None
         return path
 
     def coalesced_with(self, other: CapturedPath) -> CapturedPath | None:
@@ -226,6 +244,7 @@ class CapturedPath:
         path._deferred = None
         path._parts = [*mine, *theirs]
         path._summary = None
+        path._rect = None
         return path
 
     def flattened_parts(self) -> list[DeferredPoints] | None:
@@ -292,20 +311,11 @@ class CapturedPath:
     def axis_aligned_rect(self) -> Rectangle | None:
         deferred = self.deferred_columns()
         if deferred is not None:
-            column_x, column_y, spans, outline = deferred
-            if not spans:
-                return None
-            start, end, flag = spans[-1]
-            if outline and (len(spans) != 1 or end - start != 4):
-                return None
-            if end - start < 2 or any(e - s > 1 for s, e, _ in spans[:-1]):
-                return None
-            if end - start > 5:
-                return None
-            points = list(
-                zip(column_x[start:end].tolist(), column_y[start:end].tolist(), strict=True)
-            )
-            return rect_from_points(points, outline or flag)
+            # Deferred columns never change, so their answer is kept.
+            known = self._rect
+            if known is None:
+                known = self._rect = (deferred_axis_aligned_rect(deferred),)
+            return known[0]
         segment_subpaths = [subpath for subpath in self.subpaths if subpath.has_segments()]
         if len(segment_subpaths) != 1 or self.subpaths[-1] is not segment_subpaths[0]:
             return None

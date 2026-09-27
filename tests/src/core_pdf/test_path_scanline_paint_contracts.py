@@ -182,12 +182,17 @@ def test_scanline_fill_tracks_group_coverage_without_changing_page_buffer(alpha,
     numpy.testing.assert_array_equal(page, expected)
 
 
+@pytest.mark.parametrize("as_array", [False, True])
 @pytest.mark.parametrize("extent", [(10, 30), (10.5, 30.5), (10.1, 30.2), (4.5, 35.5)])
-def test_opaque_black_fast_fill_uses_the_same_pixel_centers_as_the_scanline_path(extent):
+def test_opaque_black_fast_fill_uses_the_same_pixel_centers_as_the_scanline_path(extent, as_array):
     target, actual = make_target("none")
     left, right = extent
     edges = [(left, 0.0, left, 20.0), (right, 20.0, right, 0.0)]
-    assert target.fast_fill_path(edges, (left, 0.0, right, 20.0))
+    if as_array:
+        edge_array = numpy.asarray(edges, dtype=numpy.float64)
+        assert target.fast_fill_path(edge_array, (left, 0.0, right, 20.0))
+    else:
+        assert target.fast_fill_path(edges, (left, 0.0, right, 20.0))
     expected = numpy.zeros_like(actual)
     for column in range(48):
         if left <= column + 0.5 < right:
