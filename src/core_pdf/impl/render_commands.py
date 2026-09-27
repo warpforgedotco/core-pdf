@@ -49,31 +49,12 @@ def glyph_outline_path(
     if code is None:
         return None
     array_resolver = getattr(decoder, "glyph_outline_arrays", None)
-    if callable(array_resolver):
-        arrays = array_resolver(code, glyph.gid, glyph.text)
-        if arrays is None:
-            return None
-        return transformed_outline(arrays, transform)
-    resolver = getattr(decoder, "glyph_outline", None)
-    if not callable(resolver):
+    if not callable(array_resolver):
         return None
-    contours = resolver(code, glyph.gid, glyph.text)
-    if not contours:
+    arrays = array_resolver(code, glyph.gid, glyph.text)
+    if arrays is None:
         return None
-    subpaths: list[CapturedSubpath] = []
-    for contour in contours:
-        if len(contour) < 2:
-            continue
-        subpath = CapturedSubpath(list(contour), closed=True).transformed(transform)
-        points = subpath.points
-        if len(points) >= 2 and points[0] == points[-1]:
-            points.pop()
-        if len(points) >= 2:
-            subpaths.append(subpath)
-    if not subpaths:
-        return None
-    path = CapturedPath(subpaths)
-    return path, path.bbox(), None
+    return transformed_outline(arrays, transform)
 
 
 def transformed_outline(

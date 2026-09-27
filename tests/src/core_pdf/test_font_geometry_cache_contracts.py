@@ -11,7 +11,6 @@ def test_negative_glyph_codes_produce_no_paintable_geometry(code):
     assert decoder.glyph_name(code) == ".notdef"
     assert decoder.glyph_bbox(code) is None
     assert decoder.glyph_bitmap(code) == ()
-    assert decoder.glyph_outline(code) == ()
     assert decoder.glyph_outline_arrays(code) is None
 
 
@@ -52,10 +51,6 @@ def test_outline_cache_keys_include_explicit_gid_and_text_and_cache_empty_result
             numpy.testing.assert_array_equal(arrays.xs, [0, 2, 4])
             numpy.testing.assert_array_equal(arrays.ys, [0, 3, 0])
     assert calls == keys
-    for key in keys:
-        assert decoder.glyph_outline(*key) == contours
-        assert decoder.glyph_outline(*key) == contours
-    assert calls == keys + keys
 
 
 @pytest.mark.parametrize("missing", [False, True])
@@ -118,5 +113,5 @@ def test_missing_glyph_identity_does_not_request_fallback_outline(monkeypatch):
     monkeypatch.setattr(FontDecoder, "resolve_glyph_id_for_code", lambda self, code: None)
     decoder = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
     assert decoder.glyph_id_for_code(65) is None
-    assert decoder.glyph_outline(65, text="A") == ()
+    assert decoder.glyph_outline_arrays(65, text="A") is None
     assert decoder.glyph_bitmap(65) == ()

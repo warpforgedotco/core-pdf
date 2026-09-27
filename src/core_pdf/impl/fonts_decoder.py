@@ -380,7 +380,6 @@ class FontDecoder:
         "font_program",
         "raster_font_provider",
         "glyph_bbox_cache",
-        "glyph_outline_cache",
         "glyph_outline_array_cache",
         "glyph_id_cache",
         "unicode_choice_cache",
@@ -420,9 +419,6 @@ class FontDecoder:
     font_program: GlyphProgram
     raster_font_provider: RasterFontProviderLike | None
     glyph_bbox_cache: dict[int, Rectangle | None]
-    glyph_outline_cache: dict[
-        tuple[int, int | None, str], tuple[tuple[tuple[float, float], ...], ...]
-    ]
     glyph_outline_array_cache: dict[tuple[int, int | None, str], GlyphOutlineArrays | None]
     glyph_id_cache: dict[int, int | None]
     unicode_choice_cache: dict[tuple[bytes, int, int | None], UnicodeChoice]
@@ -462,7 +458,6 @@ class FontDecoder:
         "font_program",
         "raster_font_provider",
         "glyph_bbox_cache",
-        "glyph_outline_cache",
         "glyph_outline_array_cache",
         "glyph_id_cache",
         "unicode_choice_cache",
@@ -485,7 +480,6 @@ class FontDecoder:
 
     def initialize(self) -> None:
         self.glyph_bbox_cache = {}
-        self.glyph_outline_cache = {}
         self.glyph_outline_array_cache = {}
         self.glyph_id_cache = {}
         self.unicode_choice_cache = {}
@@ -1061,18 +1055,6 @@ class FontDecoder:
             else ()
         )
 
-    def glyph_outline(
-        self, code: int, gid: int | None = None, text: str = ""
-    ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        if code < 0:
-            return ()
-        cache = self.glyph_outline_cache
-        key = (code, gid, text)
-        contours = cache.get(key)
-        if contours is None:
-            contours = cache[key] = self.glyph_outline_uncached(code, gid, text)
-        return contours
-
     def glyph_outline_arrays(
         self, code: int, gid: int | None = None, text: str = ""
     ) -> GlyphOutlineArrays | None:
@@ -1083,10 +1065,7 @@ class FontDecoder:
         try:
             return cache[key]
         except KeyError:
-            contours = self.glyph_outline_cache.get(key)
-            if contours is None:
-                contours = self.glyph_outline_uncached(code, gid, text)
-            arrays = cache[key] = outline_arrays(contours)
+            arrays = cache[key] = outline_arrays(self.glyph_outline_uncached(code, gid, text))
             return arrays
 
     def glyph_outline_uncached(
