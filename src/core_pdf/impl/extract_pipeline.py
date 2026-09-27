@@ -9,7 +9,6 @@ from functools import cached_property
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from core_pdf.impl.document_metadata import plain_pdf_value
-from core_pdf.impl.document_page_links import resolve_destination_references
 from core_pdf.impl.execution import ExtractionScope
 from core_pdf.impl.extract_block_layout import layout_blocks_with_evidence
 from core_pdf.impl.extract_capture import STRUCTURE_UNSET, capture_page
@@ -31,6 +30,7 @@ from core_pdf.impl.output_model import (
     Page,
     Table,
 )
+from core_pdf.impl.pdf_values import resolve_destination_references
 from core_pdf.impl.types import Record, frozen_setattr
 
 if TYPE_CHECKING:
