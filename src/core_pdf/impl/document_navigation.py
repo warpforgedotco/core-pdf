@@ -39,7 +39,10 @@ class PageLookup[LookupPageT: PdfPage]:
 
     @property
     def nodes(self) -> tuple[PageNode, ...]:
-        return self.memo.get("nodes", self.build_nodes)
+        try:
+            return self.memo.content["nodes"]
+        except KeyError:
+            return self.memo.get("nodes", self.build_nodes)
 
     def build_nodes(self) -> tuple[PageNode, ...]:
         nodes = tuple(

@@ -341,7 +341,10 @@ class PdfDocument(
 
     @property
     def pages(self) -> tuple[PageT, ...]:
-        return self.caches.get("pages", self.build_page_tree)
+        try:
+            return self.caches.content["pages"]
+        except KeyError:
+            return self.caches.get("pages", self.build_page_tree)
 
     def build_page_tree(self) -> tuple[PageT, ...]:
         return self.build_pages(self.iter_recovered_page_nodes())
@@ -416,7 +419,10 @@ class PdfDocument(
 
     @property
     def page_lookup(self) -> PageLookup[PageT]:
-        return self.caches.get("page_lookup", self.build_page_lookup)
+        try:
+            return self.caches.content["page_lookup"]
+        except KeyError:
+            return self.caches.get("page_lookup", self.build_page_lookup)
 
     def build_page_lookup(self) -> PageLookup[PageT]:
         return PageLookup(self)

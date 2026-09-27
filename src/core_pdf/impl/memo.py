@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from core_pdf.impl.caches import MISSING
 
@@ -14,7 +14,7 @@ class DocumentCaches:
     __slots__ = ("content", "xref")
 
     def __init__(self) -> None:
-        self.content: dict[str, object] = {}
+        self.content: dict[str, Any] = {}
         self.xref: dict[str, tuple[object, object]] = {}
 
     def get[V](self, name: str, build: Callable[[], V]) -> V:
