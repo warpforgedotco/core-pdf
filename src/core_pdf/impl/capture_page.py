@@ -64,7 +64,7 @@ def should_render(document: ResolverHost, annot: dict) -> bool:
     subtype = document.resolver.name_at(annot, "Subtype") or ""
     if subtype in SKIPPED_SUBTYPES:
         return False
-    flags = document.resolver.int_at(annot, "F") or 0
+    flags = document.resolver.int_at(annot, "F", 0)
     if flags & (ANNOTATION_FLAG_HIDDEN | ANNOTATION_FLAG_NO_VIEW):
         return False
     if subtype == "Widget":

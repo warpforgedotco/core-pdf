@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 from core_pdf.impl.document_contracts import DocumentState
 from core_pdf.impl.document_page import PAGE_INHERITED_KEYS
@@ -44,6 +44,17 @@ def infer_page_tree_node_type(
         if node.get(key) is not None:
             return "Page"
     return None
+
+
+def page_tree_extent(
+    resolve: Callable[[object], object], pages: PdfDict
+) -> tuple[list[object] | None, int | None]:
+    kids = resolve(pages.get("Kids"))
+    count = resolve(pages.get("Count"))
+    return (
+        kids if isinstance(kids, list) else None,
+        count if type(count) is int and count >= 0 else None,
+    )
 
 
 class PageTreeRecovery(DocumentState):
@@ -118,11 +129,10 @@ class PageTreeRecovery(DocumentState):
         if node_type != "Pages":
             return -100
         score = 20
-        kids = self.resolver.resolve_or_none(obj.get("Kids"))
-        if isinstance(kids, list):
+        kids, count = page_tree_extent(self.resolver.resolve_or_none, obj)
+        if kids is not None:
             score += min(len(kids), 20)
-        count = self.resolver.resolve_or_none(obj.get("Count"))
-        if type(count) is int and count >= 0:
+        if count is not None:
             score += min(count, 20)
         if obj.get("Resources") is not None:
             score += 5

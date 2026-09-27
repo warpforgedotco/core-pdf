@@ -17,6 +17,7 @@ from core_pdf.impl.document_contracts import DocumentState
 from core_pdf.impl.document_page_tree import (
     MAX_PAGE_TREE_DEPTH,
     infer_page_tree_node_type,
+    page_tree_extent,
     resolve_page_tree_node_type,
 )
 from core_pdf.impl.document_standards import find_pdf_header
@@ -270,9 +271,8 @@ class XRefRecovery(DocumentState):
             node_type = resolve_page_tree_node_type(resolver, pages)
             if node_type != "Pages":
                 return False
-            kids = resolver.resolve(pages.get("Kids"))
-            count = resolver.resolve(pages.get("Count"))
-            return isinstance(kids, list) or (type(count) is int and count >= 0)
+            kids, count = page_tree_extent(resolver.resolve, pages)
+            return kids is not None or count is not None
         except Exception:
             return False
         finally:
