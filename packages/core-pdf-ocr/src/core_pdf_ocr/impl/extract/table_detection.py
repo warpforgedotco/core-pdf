@@ -4,36 +4,53 @@ from __future__ import annotations
 
 import re
 from copy import replace
+from typing import cast
 
 import numpy
 
 from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
-from core_pdf.impl.extract_table_detection import (
-    TableAnalysis,
-    detect_tables,
-    finalize_tables,
-)
+from core_pdf.impl.extract_contracts import PageAnalysis as NativePageAnalysis
+from core_pdf.impl.extract_table_core import TableCandidate, TableContext
+from core_pdf.impl.extract_table_detection import TableDetector
 from core_pdf.impl.geometry import bbox_union, finite_rect, overlap_ratio_min_exact
 from core_pdf.impl.output_model import Table, TableCell
 from core_pdf.impl.spatial import band_rows
 from core_pdf.impl.text import text_word_tokens
 from core_pdf.impl.types import Rectangle
-from core_pdf_ocr.impl.extract.contracts import PageAnalysis
+from core_pdf_ocr.impl.extract.contracts import PageAnalysis, PageEvidence
 
 CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$")
 CHART_DUPLICATE_OVERLAP = 0.5
 
 
+def vector_text_untrusted(capture: NativePageAnalysis) -> bool:
+    evidence = cast(PageEvidence, capture.evidence)
+    return not (evidence.vector_text_trusted or evidence.stroked_vector_text.trusted)
+
+
+class ChartTableSource:
+    __slots__ = ()
+
+    def detect(self, context: TableContext, _start_order: int) -> tuple[TableCandidate, ...]:
+        capture = cast(PageAnalysis, context.capture)
+        chart_table = extract_chart_table(capture, context.analysis.observations)
+        return () if chart_table is None else (TableCandidate(chart_table),)
+
+    def admit(
+        self, accepted: list[TableCandidate], found: tuple[TableCandidate, ...]
+    ) -> list[TableCandidate]:
+        return [*accepted, *found]
+
+
+OCR_TABLES = replace(
+    TableDetector.native(),
+    gate=vector_text_untrusted,
+    supplements=(ChartTableSource(),),
+)
+
+
 def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
-    evidence = capture.evidence
-    if evidence.vector_text_trusted or evidence.stroked_vector_text.trusted:
-        return ()
-    analysis = TableAnalysis.build(observations, capture.width)
-    tables = detect_tables(capture, analysis)
-    chart_table = extract_chart_table(capture, observations)
-    if chart_table is not None:
-        tables = (*tables, chart_table)
-    return finalize_tables(tables, analysis)
+    return OCR_TABLES.extract(capture, observations)
 
 
 def chart_cell_texts(text: str) -> tuple[str, ...]:
