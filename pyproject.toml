@@ -375,6 +375,7 @@ source_modules = [
     "core_pdf.impl.render_patterns",
     "core_pdf.impl.render_raster_state",
     "core_pdf.impl.render_resources",
+    "core_pdf.impl.render_strokes",
     "core_pdf.impl.render_target",
 ]
 forbidden_modules = [
@@ -436,6 +437,7 @@ forbidden_modules = [
     "core_pdf.impl.render_patterns",
     "core_pdf.impl.render_raster_state",
     "core_pdf.impl.render_resources",
+    "core_pdf.impl.render_strokes",
     "core_pdf.impl.render_target",
 ]
 layers = [
@@ -556,6 +558,7 @@ forbidden_modules = [
     "core_pdf.impl.render_patterns",
     "core_pdf.impl.render_raster_state",
     "core_pdf.impl.render_resources",
+    "core_pdf.impl.render_strokes",
     "core_pdf.impl.render_target",
     "core_pdf.impl.array_views",
     "core_pdf.impl.caches",
@@ -755,6 +758,7 @@ forbidden_modules = [
     "core_pdf.impl.render_patterns",
     "core_pdf.impl.render_raster_state",
     "core_pdf.impl.render_resources",
+    "core_pdf.impl.render_strokes",
     "core_pdf.impl.render_target",
 ]
 
@@ -1004,6 +1008,7 @@ forbidden_modules = [
     "core_pdf.impl.render_patterns",
     "core_pdf.impl.render_raster_state",
     "core_pdf.impl.render_resources",
+    "core_pdf.impl.render_strokes",
     "core_pdf.impl.render_target",
     "core_pdf.impl.output_model",
     "core_pdf.impl.output_serialize",
@@ -1073,6 +1078,7 @@ forbidden_modules = [
     "core_pdf.impl.render_patterns",
     "core_pdf.impl.render_raster_state",
     "core_pdf.impl.render_resources",
+    "core_pdf.impl.render_strokes",
     "core_pdf.impl.render_target",
     "core_pdf.impl.output_model",
     "core_pdf.impl.output_serialize",
@@ -1165,6 +1171,7 @@ forbidden_modules = [
     "core_pdf.impl.render_patterns",
     "core_pdf.impl.render_raster_state",
     "core_pdf.impl.render_resources",
+    "core_pdf.impl.render_strokes",
     "core_pdf.impl.render_target",
     "core_pdf.impl.output_model",
     "core_pdf.impl.output_serialize",

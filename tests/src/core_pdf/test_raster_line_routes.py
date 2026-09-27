@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from core_pdf.impl import render_target as render_target
+from core_pdf.impl import render_strokes
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
 from tests.src.core_pdf.raster_support import make_target
 
@@ -35,7 +35,7 @@ def test_line_routes_preserve_pixels_alpha_and_shape(
     coverage = expected_coverage(clipped)
     for route in ("scalar", "vector", "blend"):
         monkeypatch.setattr(
-            render_target, "RASTER_KERNEL_MIN_PIXEL_AREA", 10_000 if route == "scalar" else 0
+            render_strokes, "RASTER_KERNEL_MIN_PIXEL_AREA", 10_000 if route == "scalar" else 0
         )
         target = make_target(16, 16)
         target.push_group(bytearray(16 * 16 * 4), None, None, isolated=False, track_shape=True)

@@ -80,7 +80,7 @@ def test_leaving_the_last_group_stops_the_tracking() -> None:
 
 def test_a_stroke_records_its_own_region_rather_than_the_scratch_it_uses() -> None:
     from core_pdf.impl.capture_records import CapturedPath
-    from core_pdf.impl.render_target import paint_stroke_once
+    from core_pdf.impl.render_strokes import paint_stroke_once
 
     target = grouped_target()
     path = CapturedPath()
@@ -125,7 +125,7 @@ def test_a_diagonal_line_with_no_plane_recording_extends_the_window() -> None:
 
 def test_a_stroke_leaves_its_reused_scratch_zeroed() -> None:
     from core_pdf.impl.capture_records import CapturedPath
-    from core_pdf.impl.render_target import paint_stroke_once
+    from core_pdf.impl.render_strokes import paint_stroke_once
 
     def stroke(target: RasterTarget, x0: float, y0: float, x1: float, y1: float) -> None:
         path = CapturedPath()
