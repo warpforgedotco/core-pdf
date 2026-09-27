@@ -16,7 +16,7 @@ PAGE_LIMIT = 3
 def fixture_paths() -> list[str]:
     return sorted(
         path.relative_to(FIXTURES).as_posix()
-        for path in FIXTURES.rglob("*.pdf")
+        for path in FIXTURES.rglob("*.pdf", recurse_symlinks=True)
         if "specifications" not in path.relative_to(FIXTURES).parts
     )
 
