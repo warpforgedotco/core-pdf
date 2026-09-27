@@ -146,6 +146,14 @@ def mutable_init_template(names: list[str]) -> list[str]:
     return [f"def __init__({', '.join(['self', *names])}):", *(body or ["    pass"])]
 
 
+def post_init_template(names: list[str]) -> list[str]:
+    return [*init_template(names), "    self.__post_init__()"]
+
+
+def mutable_post_init_template(names: list[str]) -> list[str]:
+    return [*mutable_init_template(names), "    self.__post_init__()"]
+
+
 def eq_template(names: list[str]) -> list[str]:
     compare = " and ".join(f"self.{name} == other.{name}" for name in names) or "True"
     return [
@@ -191,6 +199,8 @@ def getstate_template(names: list[str]) -> list[str]:
 SOURCES: dict[str, Callable[[list[str]], list[str]]] = {
     "init": init_template,
     "mutable_init": mutable_init_template,
+    "post_init": post_init_template,
+    "mutable_post_init": mutable_post_init_template,
     "__eq__": eq_template,
     "__hash__": hash_template,
     "__repr__": repr_template,
@@ -309,13 +319,14 @@ def build_init(cls: type, specs: FieldSpecs, frozen: bool) -> FunctionType:
         elif defaults:
             message = f"non-default field {name!r} follows a default field in {cls.__qualname__}"
             raise TypeError(message)
+    kind = "post_init" if hasattr(cls, "__post_init__") else "init"
     if frozen:
         scope = dict(BUILTINS)
         for index, name in enumerate(fields):
             scope[f"__set_{index}"] = slot_setter(cls, name)
-        function = specialise(cls, "init", fields, scope, tuple(defaults) or None)
+        function = specialise(cls, kind, fields, scope, tuple(defaults) or None)
     else:
-        function = specialise(cls, "mutable_init", fields, BUILTINS, tuple(defaults) or None)
+        function = specialise(cls, f"mutable_{kind}", fields, BUILTINS, tuple(defaults) or None)
     function.__annotations__ = {name: annotation for name, (_, annotation) in specs.items()}
     function.__annotations__["return"] = "None"
     return function

@@ -353,3 +353,22 @@ def test_replace_stays_shared_when_the_initialiser_reorders_fields() -> None:
 
     assert "__replace__" not in KeywordOnly.__dict__
     assert KeywordOnly.__replace__ is ReplaceFields.__replace__
+
+
+def test_the_generated_initialiser_ends_with_post_init() -> None:
+    class Normalised(GeneratedRecord):
+        items: tuple[int, ...] = ()
+
+        def __post_init__(self) -> None:
+            frozen_setattr(self, "items", tuple(sorted(self.items)))
+
+    class Filled(ReprFields, metaclass=RecordType, frozen=False):
+        items: list[int]
+
+        def __post_init__(self) -> None:
+            if not self.items:
+                self.items = [0]
+
+    assert Normalised((3, 1, 2)).items == (1, 2, 3)
+    assert Filled([]).items == [0]
+    assert Filled([5]).items == [5]

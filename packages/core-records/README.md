@@ -11,7 +11,8 @@ four. A class declares `__fields__` and writes its own `__init__`, `__eq__` and
 boilerplate from the class body instead. The annotated names, excluding
 `ClassVar`, are the fields in order, and a value assigned to one in the body is its
 default. For each class it builds `__slots__`, `__fields__`, `__match_args__`, an
-`__init__` that stores through the slot descriptors, `__eq__` (identity shortcut,
+`__init__` that stores through the slot descriptors (and then calls `__post_init__`
+when the class has one), `__eq__` (identity shortcut,
 exact class check, field-by-field `and`), `__hash__` over the field tuple, and its
 own `__repr__`, `__replace__` and `__getstate__` in place of the shared mixin
 methods. Every generated method is a separate code object per class, so the
