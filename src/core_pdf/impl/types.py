@@ -15,8 +15,10 @@ from core_pdf_spec.types import (
     Rectangle,
 )
 from core_records import FrozenFields as FrozenFields
+from core_records import GeneratedRecord as GeneratedRecord
 from core_records import PickleFields as PickleFields
 from core_records import Record as Record
+from core_records import RecordType as RecordType
 from core_records import ReplaceFields as ReplaceFields
 from core_records import ReprFields as ReprFields
 from core_records import frozen_setattr as frozen_setattr
