@@ -170,6 +170,10 @@ line-length = 100
 # Content operator handlers and semantic-sink callbacks share fixed signatures.
 "src/core_pdf/impl/capture_tolerant_state.py" = ["ARG002"]
 "src/core_pdf/impl/capture_recording.py" = ["ARG002"]
+"src/core_pdf/impl/capture_image_sink.py" = ["ARG002"]
+"src/core_pdf/impl/capture_path_sink.py" = ["ARG002"]
+"src/core_pdf/impl/capture_scopes.py" = ["ARG002"]
+"src/core_pdf/impl/capture_text_sink.py" = ["ARG002"]
 # Documented parsing extension hooks keep their signatures, in the strict base
 # and in the recovery overrides.
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/lexer.py" = ["ARG002"]
@@ -443,6 +447,12 @@ forbidden_modules = [
     "core_pdf.impl.capture_glyph_boxes",
     "core_pdf.impl.capture_glyph_geometry",
     "core_pdf.impl.capture_glyphs",
+    "core_pdf.impl.capture_host",
+    "core_pdf.impl.capture_image_sink",
+    "core_pdf.impl.capture_paints",
+    "core_pdf.impl.capture_path_sink",
+    "core_pdf.impl.capture_scopes",
+    "core_pdf.impl.capture_text_sink",
     "core_pdf.impl.capture_page",
     "core_pdf.impl.capture_program",
     "core_pdf.impl.capture_recording",
@@ -607,6 +617,12 @@ forbidden_modules = [
     "core_pdf.impl.capture_glyph_boxes",
     "core_pdf.impl.capture_glyph_geometry",
     "core_pdf.impl.capture_glyphs",
+    "core_pdf.impl.capture_host",
+    "core_pdf.impl.capture_image_sink",
+    "core_pdf.impl.capture_paints",
+    "core_pdf.impl.capture_path_sink",
+    "core_pdf.impl.capture_scopes",
+    "core_pdf.impl.capture_text_sink",
     "core_pdf.impl.capture_page",
     "core_pdf.impl.capture_program",
     "core_pdf.impl.capture_recording",
@@ -849,6 +865,12 @@ forbidden_modules = [
     "core_pdf.impl.capture_glyph_boxes",
     "core_pdf.impl.capture_glyph_geometry",
     "core_pdf.impl.capture_glyphs",
+    "core_pdf.impl.capture_host",
+    "core_pdf.impl.capture_image_sink",
+    "core_pdf.impl.capture_paints",
+    "core_pdf.impl.capture_path_sink",
+    "core_pdf.impl.capture_scopes",
+    "core_pdf.impl.capture_text_sink",
     "core_pdf.impl.capture_page",
     "core_pdf.impl.capture_program",
     "core_pdf.impl.capture_recording",
@@ -889,6 +911,12 @@ source_modules = [
     "core_pdf.impl.capture_glyph_boxes",
     "core_pdf.impl.capture_glyph_geometry",
     "core_pdf.impl.capture_glyphs",
+    "core_pdf.impl.capture_host",
+    "core_pdf.impl.capture_image_sink",
+    "core_pdf.impl.capture_paints",
+    "core_pdf.impl.capture_path_sink",
+    "core_pdf.impl.capture_scopes",
+    "core_pdf.impl.capture_text_sink",
     "core_pdf.impl.capture_page",
     "core_pdf.impl.capture_program",
     "core_pdf.impl.capture_recording",
@@ -954,6 +982,12 @@ forbidden_modules = [
     "core_pdf.impl.capture_glyph_boxes",
     "core_pdf.impl.capture_glyph_geometry",
     "core_pdf.impl.capture_glyphs",
+    "core_pdf.impl.capture_host",
+    "core_pdf.impl.capture_image_sink",
+    "core_pdf.impl.capture_paints",
+    "core_pdf.impl.capture_path_sink",
+    "core_pdf.impl.capture_scopes",
+    "core_pdf.impl.capture_text_sink",
     "core_pdf.impl.capture_page",
     "core_pdf.impl.capture_program",
     "core_pdf.impl.capture_recording",
