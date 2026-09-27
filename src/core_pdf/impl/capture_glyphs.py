@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field  # noqa: TID251
 
 from core_pdf.impl.capture_glyph_boxes import (
     TextBasis,
