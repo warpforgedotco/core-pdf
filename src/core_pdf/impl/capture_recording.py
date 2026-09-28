@@ -15,7 +15,9 @@ from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_glyphs import GlyphCapture, GlyphPaint, capture_glyphs, glyph_style
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CapturedProgram, CaptureOptions
 from core_pdf.impl.capture_records import (
+    EMPTY_DRAWING_ITEMS,
     EMPTY_LINES,
+    PATH_PAINT_DEFAULTS,
     CapturedDrawing,
     CapturedInlineImage,
     CapturedLines,
@@ -56,7 +58,7 @@ from core_pdf.impl.types import (
     ReplaceFields,
     ReprFields,
 )
-from core_pdf_cythonized import flatten_path_commands
+from core_pdf_cythonized import SlotLayout, flatten_path_commands
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content import model
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -289,6 +291,18 @@ def state_key(value: object) -> object:
 
 
 CaptureColorMemo: TypeAlias = tuple[object, tuple[float, ...], object, object, tuple[float, ...]]
+
+
+DRAWING_LAYOUT = SlotLayout(CapturedDrawing, CapturedDrawing.__fields__)
+DRAWING_RAW_DATA = PATH_PAINT_DEFAULTS["raw_data"]
+DRAWING_DICTIONARY = PATH_PAINT_DEFAULTS["dictionary"]
+DRAWING_IMAGE_SOURCE = PATH_PAINT_DEFAULTS["image_source"]
+DRAWING_IMAGE_CLIP = PATH_PAINT_DEFAULTS["image_clip"]
+DRAWING_BBOX = PATH_PAINT_DEFAULTS["bbox"]
+DRAWING_COLOR_RENDERING = PATH_PAINT_DEFAULTS["color_rendering"]
+DRAWING_PAINTS = PATH_PAINT_DEFAULTS["paints"]
+DRAWING_GROUP_ISOLATED = PATH_PAINT_DEFAULTS["group_isolated"]
+DRAWING_GROUP_KNOCKOUT = PATH_PAINT_DEFAULTS["group_knockout"]
 
 
 # color_space_paints is True for every other kind.
@@ -1003,33 +1017,47 @@ class TextState(RecoveringTextState):
         fill_pattern = graphics.fill_pattern
         stroke_pattern = graphics.stroke_pattern
         self.drawings.append(
-            CapturedDrawing.path_paint(
-                self.sequence,
-                self.capture_color(stroke=False),
-                graphics.fill_opacity,
-                self.capture_pattern(fill_pattern)
-                if fill_paints and fills and fill_pattern is not None
-                else None,
-                self.capture_color(stroke=True),
-                self.capture_pattern(stroke_pattern)
-                if stroke_paints and strokes and stroke_pattern is not None
-                else None,
-                graphics.stroke_opacity,
-                line_width,
-                graphics.line_cap,
-                graphics.line_join,
-                self.transformed_dash_pattern() if graphics.dash_pattern else None,
-                fill_rule,
-                graphics.blend_mode,
-                self.group_alpha,
-                painted,
-                path,
-                self.stream_order,
-                self.xobject_depth,
-                fill_paints,
-                stroke_paints,
-                graphics.alpha_is_shape,
-                self.capture_graphics_soft_mask() if graphics.soft_mask is not None else None,
+            # Built by its slots: CapturedDrawing's __init__ only assigns them, and its
+            # __post_init__ keeps the default empty items as they are.
+            DRAWING_LAYOUT.build(
+                (
+                    self.sequence,
+                    self.capture_color(stroke=False),
+                    graphics.fill_opacity,
+                    self.capture_pattern(fill_pattern)
+                    if fill_paints and fills and fill_pattern is not None
+                    else None,
+                    self.capture_color(stroke=True),
+                    self.capture_pattern(stroke_pattern)
+                    if stroke_paints and strokes and stroke_pattern is not None
+                    else None,
+                    graphics.stroke_opacity,
+                    line_width,
+                    graphics.line_cap,
+                    graphics.line_join,
+                    self.transformed_dash_pattern() if graphics.dash_pattern else None,
+                    fill_rule,
+                    graphics.blend_mode,
+                    self.group_alpha,
+                    DRAWING_RAW_DATA,
+                    DRAWING_DICTIONARY,
+                    DRAWING_IMAGE_SOURCE,
+                    DRAWING_IMAGE_CLIP,
+                    painted,
+                    EMPTY_DRAWING_ITEMS,
+                    path,
+                    DRAWING_BBOX,
+                    self.stream_order,
+                    self.xobject_depth,
+                    DRAWING_COLOR_RENDERING,
+                    DRAWING_PAINTS,
+                    fill_paints,
+                    stroke_paints,
+                    DRAWING_GROUP_ISOLATED,
+                    DRAWING_GROUP_KNOCKOUT,
+                    graphics.alpha_is_shape,
+                    self.capture_graphics_soft_mask() if graphics.soft_mask is not None else None,
+                )
             )
         )
         self.sequence += 1

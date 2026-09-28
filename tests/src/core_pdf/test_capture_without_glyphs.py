@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from core_pdf import PdfDocument
@@ -30,3 +32,16 @@ def test_drawings_keep_their_sequence_without_glyphs(document: str) -> None:
     assert [(d.seqno, d.kind, d.rect) for d in lean.drawings] == [
         (d.seqno, d.kind, d.rect) for d in full.drawings
     ]
+
+
+def test_painted_paths_are_the_records_the_constructor_builds() -> None:
+    from core_pdf.impl.capture_recording import DRAWING_LAYOUT, PATH_PAINT_DEFAULTS
+    from core_pdf.impl.capture_records import CapturedDrawing
+
+    values: dict[str, Any] = {name: object() for name in CapturedDrawing.__fields__}
+    values.update(PATH_PAINT_DEFAULTS)
+    values["items"] = ()
+    built = DRAWING_LAYOUT.build(tuple(values[name] for name in CapturedDrawing.__fields__))
+    constructed = CapturedDrawing(**values)
+    for name in CapturedDrawing.__fields__:
+        assert getattr(built, name) is getattr(constructed, name), name

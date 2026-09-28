@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, Literal, Self, TypeAlias, overload
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, overload
 
 import numpy
 
@@ -455,69 +455,6 @@ class CapturedDrawing(ReprFields, ReplaceFields, metaclass=RecordType, frozen=Fa
     def __post_init__(self) -> None:
         if not self.items:
             self.items = EMPTY_DRAWING_ITEMS
-
-    @classmethod
-    def path_paint(
-        cls,
-        seqno: int,
-        fill: tuple[float, ...] | None,
-        fill_opacity: float | None,
-        fill_pattern: PatternPaint | None,
-        stroke_color: tuple[float, ...] | None,
-        stroke_pattern: PatternPaint | None,
-        stroke_opacity: float | None,
-        line_width: float,
-        line_cap: int,
-        line_join: int,
-        dash_pattern: tuple[list[float], float] | None,
-        fill_rule: str,
-        blend_mode: str | None,
-        soft_mask_alpha: float | None,
-        kind: DrawingKind,
-        path: CapturedPath,
-        stream_order: int,
-        xobject_depth: int,
-        fill_paints: bool,
-        stroke_paints: bool,
-        alpha_is_shape: bool,
-        graphics_soft_mask: CapturedSoftMask | None,
-    ) -> Self:
-        """A painted path, built positionally: keyword construction costs twice as much."""
-        defaults = PATH_PAINT_DEFAULTS
-        return cls(
-            seqno,
-            fill,
-            fill_opacity,
-            fill_pattern,
-            stroke_color,
-            stroke_pattern,
-            stroke_opacity,
-            line_width,
-            line_cap,
-            line_join,
-            dash_pattern,
-            fill_rule,
-            blend_mode,
-            soft_mask_alpha,
-            defaults["raw_data"],
-            defaults["dictionary"],
-            defaults["image_source"],
-            defaults["image_clip"],
-            kind,
-            defaults["items"],
-            path,
-            defaults["bbox"],
-            stream_order,
-            xobject_depth,
-            defaults["color_rendering"],
-            defaults["paints"],
-            fill_paints,
-            stroke_paints,
-            defaults["group_isolated"],
-            defaults["group_knockout"],
-            alpha_is_shape,
-            graphics_soft_mask,
-        )
 
     def stroke_style_key(self) -> StrokeStyleKey | None:
         if self.stroke_pattern is not None:
