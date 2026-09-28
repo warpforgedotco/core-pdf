@@ -1000,7 +1000,13 @@ class TextState(RecoveringTextState):
         ctm = graphics.ctm
         line_width = max(0.0, graphics.line_width)
         if line_width != 0:
-            line_width *= self.graphics_scale()
+            # graphics_scale, with its cache check inlined.
+            scale_cache = self.scale_cache
+            line_width *= (
+                scale_cache[1]
+                if scale_cache is not None and scale_cache[0] is ctm
+                else self.graphics_scale()
+            )
         else:
             line_width = 0.0
         xs, ys, spans, bbox, has_segments = flatten_path_commands(
@@ -1016,18 +1022,49 @@ class TextState(RecoveringTextState):
         path = CapturedPath.deferred_flattened(xs, ys, spans, bbox, has_segments)
         fill_pattern = graphics.fill_pattern
         stroke_pattern = graphics.stroke_pattern
+        # capture_color's memo, checked inline for the common repeated paint.
+        intent = graphics.render_intent
+        black_point = graphics.black_point_compensation
+        fill_color = graphics.fill_color
+        last = self.last_fill_color
+        if fill_color is None or fill_space is None:
+            captured_fill = fill_color
+        elif (
+            last is not None
+            and last[0] is fill_space
+            and last[1] is fill_color
+            and last[2] == intent
+            and last[3] == black_point
+        ):
+            captured_fill = last[4]
+        else:
+            captured_fill = self.capture_color(stroke=False)
+        stroke_color = graphics.stroke_color
+        last = self.last_stroke_color
+        if stroke_color is None or stroke_space is None:
+            captured_stroke = stroke_color
+        elif (
+            last is not None
+            and last[0] is stroke_space
+            and last[1] is stroke_color
+            and last[2] == intent
+            and last[3] == black_point
+        ):
+            captured_stroke = last[4]
+        else:
+            captured_stroke = self.capture_color(stroke=True)
         self.drawings.append(
             # Built by its slots: CapturedDrawing's __init__ only assigns them, and its
             # __post_init__ keeps the default empty items as they are.
             DRAWING_LAYOUT.build(
                 (
                     self.sequence,
-                    self.capture_color(stroke=False),
+                    captured_fill,
                     graphics.fill_opacity,
                     self.capture_pattern(fill_pattern)
                     if fill_paints and fills and fill_pattern is not None
                     else None,
-                    self.capture_color(stroke=True),
+                    captured_stroke,
                     self.capture_pattern(stroke_pattern)
                     if stroke_paints and strokes and stroke_pattern is not None
                     else None,
