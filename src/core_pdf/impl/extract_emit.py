@@ -152,7 +152,9 @@ def normalize_blocks(
 ) -> list[Block]:
     candidates: list[tuple[float, float, float]] = []
     append_candidate = candidates.append
-    for drawing in drawings:
+    # Decorations only mark lines; with no lines, no drawing needs a box.
+    has_lines = any(parsed_block.lines for parsed_block in parsed_blocks)
+    for drawing in drawings if has_lines else ():
         if drawing.kind not in DECORATION_KINDS:
             continue
         # A drawing's own bbox as given, else its path's, normalized as
@@ -167,9 +169,21 @@ def normalize_blocks(
                 continue
             if not (box[0] <= box[2] and box[1] <= box[3]):
                 box = normalize_rect(box)
-        bbox = rect_tuple(box)
-        if bbox is not None and bbox[2] - bbox[0] >= 2.0 and bbox[3] - bbox[1] <= 2.5:
-            append_candidate((bbox[0], bbox[2], (bbox[1] + bbox[3]) * 0.5))
+        # rect_tuple, inlined for the float tuple a captured drawing usually has.
+        if not (
+            type(box) is tuple
+            and len(box) == 4
+            and type(box[0]) is float
+            and type(box[1]) is float
+            and type(box[2]) is float
+            and type(box[3]) is float
+        ):
+            box = rect_tuple(box)
+            if box is None:
+                continue
+        x0, y0, x1, y1 = box
+        if x1 - x0 >= 2.0 and y1 - y0 <= 2.5:
+            append_candidate((x0, x1, (y0 + y1) * 0.5))
     decoration_boxes = tuple(sorted(candidates, key=lambda box: box[2]))
     decoration_centers = tuple(box[2] for box in decoration_boxes)
     blocks: list[Block] = []
