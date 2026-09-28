@@ -242,13 +242,13 @@ def glyph_name_part_to_unicode(name: str, *, unknown_name: str | None = None) ->
 def is_uni_sequence(name: str) -> bool:
     if len(name) < 7 or not name.startswith("uni") or (len(name) - 3) % 4 != 0:
         return False
-    return all(ch in HEX_DIGITS for ch in name[3:])
+    return HEX_DIGITS.issuperset(name[3:])
 
 
 def is_u_codepoint(name: str) -> bool:
     if len(name) < 5 or len(name) > 7 or not name.startswith("u"):
         return False
-    return all(ch in HEX_DIGITS for ch in name[1:])
+    return HEX_DIGITS.issuperset(name[1:])
 
 
 def split_single_letter_modifier(name: str) -> tuple[str, str] | None:

@@ -119,25 +119,7 @@ def line_text_segment(
     text: str,
     separator_before: str,
 ) -> LayoutLineTextSegment:
-    return LayoutLineTextSegment(
-        text=text,
-        separator_before=separator_before,
-        advance_bbox=run.advance_bbox,
-        rotation_angle=run.rotation_angle,
-    )
-
-
-def line_text_segment_from_atom(
-    atom: LayoutLineTextAtom,
-    separator_before: str,
-) -> LayoutLineTextSegment:
-    run = atom.run
-    return LayoutLineTextSegment(
-        text=atom.text,
-        separator_before=separator_before,
-        advance_bbox=atom.advance_bbox,
-        rotation_angle=run.rotation_angle,
-    )
+    return LayoutLineTextSegment(text, separator_before, run.advance_bbox, run.rotation_angle)
 
 
 def render_single_run_text(run: TextRun) -> str:
@@ -323,9 +305,8 @@ class GlyphLineBuilder:
                         append_part(separator_before)
                 append_part(atom_text)
                 append_segment(
-                    line_text_segment_from_atom(
-                        atom,
-                        separator_before,
+                    LayoutLineTextSegment(
+                        atom_text, separator_before, atom.advance_bbox, run.rotation_angle
                     )
                 )
                 prev_atom = atom
@@ -361,31 +342,17 @@ class GlyphLineBuilder:
         if (
             clusters
             and text == run.text
-            and "".join(cluster.text for cluster in clusters) == run.text
             and not any(map(str.isspace, text))
+            and "".join([cluster.text for cluster in clusters]) == text
         ):
-            atoms = [
-                LayoutLineTextAtom(
-                    text=cluster.text,
-                    run=run,
-                    advance_bbox=cluster.advance_bbox,
-                    baseline=cluster.baseline,
-                    has_glyph_geometry=True,
-                )
+            atoms = tuple(
+                LayoutLineTextAtom(cluster.text, run, cluster.advance_bbox, cluster.baseline, True)
                 for cluster in clusters
                 if cluster.text
-            ]
+            )
             if atoms:
-                return tuple(atoms)
-        return (
-            LayoutLineTextAtom(
-                text=text,
-                run=run,
-                advance_bbox=run.advance_bbox,
-                baseline=run.baseline,
-                has_glyph_geometry=False,
-            ),
-        )
+                return atoms
+        return (LayoutLineTextAtom(text, run, run.advance_bbox, run.baseline, False),)
 
     def prepare_explicit_space_context(self) -> None:
         runs = self.runs

@@ -711,7 +711,7 @@ def script_digit_text(text: str) -> bool:
     if len(text) == 1:
         return text in SCRIPT_DIGITS
     stripped = text.strip()
-    return bool(stripped) and all(ch in SCRIPT_DIGITS for ch in stripped)
+    return bool(stripped) and SCRIPT_DIGITS.issuperset(stripped)
 
 
 def inline_marker_text(text: str) -> bool:

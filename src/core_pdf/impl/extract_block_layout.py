@@ -269,10 +269,12 @@ def build_lines(
                 prefix = " "
             span_values.append(
                 TextSpan(
-                    text=prefix + reference_text,
-                    bold=reference_bold,
-                    italic=reference_italic,
-                    mark=emphasis_mark(getattr(reference, "fill_color", None)),
+                    prefix + reference_text,
+                    reference_bold,
+                    reference_italic,
+                    False,
+                    False,
+                    emphasis_mark(getattr(reference, "fill_color", None)),
                 )
             )
             pending_space = reference.text.endswith(SPAN_TRAILING_SPACE)
