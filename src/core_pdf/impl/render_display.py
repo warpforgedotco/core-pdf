@@ -21,6 +21,7 @@ from core_pdf.impl.render_model import (
     is_plain_fill,
     path_paint_fields,
 )
+from core_pdf_cythonized import SlotLayout
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
@@ -145,6 +146,9 @@ def plain_fill_members_box(
             if by1 > y1:
                 y1 = by1
     return True, ((x0, y0, x1, y1) if found else None)
+
+
+PATH_PAINT_LAYOUT = SlotLayout(PathPaintItem, PathPaintItem.__fields__)
 
 
 class DisplayList:
@@ -296,8 +300,10 @@ class DisplayList:
             self.glyph_paint_fields[id(style)] = (style, fields)
         else:
             fields = cached[1]
-        item = PathPaintItem(paint_kind, seqno, bbox, path, *fields, edge_array)  # type: ignore[call-arg]  # ty: ignore[too-many-positional-arguments]
-        self.items.append(item)
+        # PathPaintItem's __init__ only assigns its fields, in this order.
+        self.items.append(
+            PATH_PAINT_LAYOUT.build((paint_kind, seqno, bbox, path, *fields, edge_array))
+        )
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
         graphics_mask = data.get("graphics_soft_mask")

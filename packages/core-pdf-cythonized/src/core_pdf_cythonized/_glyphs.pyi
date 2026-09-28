@@ -40,6 +40,7 @@ class SlotLayout:
     cls: type
     count: int
     def __init__(self, cls: type, names: tuple[str, ...]) -> None: ...
+    def build(self, values: tuple[Any, ...]) -> Any: ...
 
 def capture_horizontal_glyphs(
     text: str,

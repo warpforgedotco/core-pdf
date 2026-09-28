@@ -420,6 +420,17 @@ cdef class SlotLayout:
     def __dealloc__(self):
         free(self.offsets)
 
+    def build(self, tuple values):
+        """A new instance of the class with the named slots set to values, in order,
+        and no __init__ run: for classes whose __init__ only assigns its fields."""
+        if len(values) != self.count:
+            raise ValueError("one value is needed per slot")
+        instance = self.cls.__new__(self.cls)
+        cdef Py_ssize_t index
+        for index in range(self.count):
+            slot_init(instance, self.offsets[index], values[index])
+        return instance
+
 
 cdef inline object slot_get(object obj, Py_ssize_t offset):
     cdef PyObject* value = (<PyObject**> (<char*> <PyObject*> obj + offset))[0]
