@@ -72,3 +72,18 @@ def test_candidate_regions_match_the_per_region_check() -> None:
             )
         ]
         assert xref_stream_candidates(data, starts, len(data)) == expected
+
+
+def test_recovery_yields_only_qualifying_stream_dictionaries() -> None:
+    xref_dictionary = b"<< /Type /XRef /W [1 2 1] /Size 4 /Root 1 0 R /ID [<aa> <bb>] /Length 0 >>"
+    data, _ = build_document(xref_dictionary)
+    decoy = b"5 0 obj\n<< /Length 8 /Filter /None >>\nstream\n#W#Size#\nendstream\nendobj\n"
+    escaped = b"6 0 obj\n<< /Type /XRe#66 /Length 0 >>\nstream\n\nendstream\nendobj\n"
+    marker = data.index(b"trailer")
+    data = data[:marker] + decoy + escaped + data[marker:]
+    with PdfDocument(data) as document:
+        document.xref[5 << 16] = document.xref[4 << 16]._replace(offset=data.index(b"5 0 obj"))
+        document.xref[6 << 16] = document.xref[4 << 16]._replace(offset=data.index(b"6 0 obj"))
+        found = list(document.iter_recoverable_xref_stream_dictionaries())
+    assert [dictionary.get("Size") for dictionary in found] == [4, None]
+    assert len(found) == 2

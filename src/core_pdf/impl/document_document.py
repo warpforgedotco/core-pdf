@@ -112,6 +112,12 @@ if TYPE_CHECKING:
 XREF_STREAM_MARKERS = (b"#", b"XRef", b"/W", b"/Size")
 
 
+def is_xref_stream_dictionary(dictionary: PdfDict) -> bool:
+    return recover_pdf_name(dictionary.get("Type")) == "XRef" or (
+        dictionary.get("W") is not None and dictionary.get("Size") is not None
+    )
+
+
 def xref_stream_candidates(
     data: bytes | mmap.mmap, starts: Sequence[int], data_len: int
 ) -> list[int]:
@@ -1829,7 +1835,20 @@ class PdfDocument(Generic[PageT]):
         lexer = PdfLexer(data, semantic_context=self.xref_context)
         try:
             for index in xref_stream_candidates(data, starts, data_len):
-                lexer.rewind(starts[index])
+                start = starts[index]
+                # Only a stream's dictionary decides; a dictionary that parses and
+                # does not qualify is passed over without parsing its stream.
+                lexer.rewind(start)
+                try:
+                    lexer.read_indirect_header()
+                    lexer.pos = lexer.skip_ignored_at(lexer.pos)
+                    if data[lexer.pos : lexer.pos + 2] == b"<<" and not is_xref_stream_dictionary(
+                        lexer.parse_dictionary()
+                    ):
+                        continue
+                except Exception:
+                    pass
+                lexer.rewind(start)
                 try:
                     obj = lexer.parse_indirect_object()
                 except Exception:
@@ -1837,9 +1856,7 @@ class PdfDocument(Generic[PageT]):
                 if not isinstance(obj, PdfStream):
                     continue
                 dictionary = obj.dictionary
-                if recover_pdf_name(dictionary.get("Type")) == "XRef" or (
-                    dictionary.get("W") is not None and dictionary.get("Size") is not None
-                ):
+                if is_xref_stream_dictionary(dictionary):
                     yield dictionary
         finally:
             lexer.close()
