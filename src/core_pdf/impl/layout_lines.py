@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from itertools import islice
+from math import isfinite
 from typing import TYPE_CHECKING
 
 from core_pdf.impl.runs import TextRun
@@ -109,32 +111,72 @@ class LayoutLine:
             flush_word()
             append_part(" ")
 
+        def merge_box(bx0: float, by0: float, bx1: float, by1: float) -> None:
+            nonlocal word_x0, word_y0, word_x1, word_y1
+            if word:
+                if bx0 < word_x0:
+                    word_x0 = bx0
+                if by0 < word_y0:
+                    word_y0 = by0
+                if bx1 > word_x1:
+                    word_x1 = bx1
+                if by1 > word_y1:
+                    word_y1 = by1
+            else:
+                word_x0, word_y0, word_x1, word_y1 = bx0, by0, bx1, by1
+
         for segment in reconstructed.segments:
             if segment.separator_before:
                 append_space()
             text = segment.text
             text_length = len(text)
-            for index, char in enumerate(text):
-                if char.isspace():
+            step_box = even_char_steps(segment, text_length)
+            if step_box is None:
+                for index, char in enumerate(text):
+                    if char.isspace():
+                        append_space()
+                        continue
+                    merge_box(*layout_line_segment_char_bbox(segment, index, text_length))
+                    word += char
+                    append_part(char)
+                continue
+            vertical, low, step, fixed_low, fixed_high = step_box
+            for match in TEXT_RUNS.finditer(text):
+                chunk = match.group()
+                if chunk[0].isspace():
                     append_space()
                     continue
-                bx0, by0, bx1, by1 = layout_line_segment_char_bbox(segment, index, text_length)
-                if word:
-                    if bx0 < word_x0:
-                        word_x0 = bx0
-                    if by0 < word_y0:
-                        word_y0 = by0
-                    if bx1 > word_x1:
-                        word_x1 = bx1
-                    if by1 > word_y1:
-                        word_y1 = by1
+                first_low = low + step * match.start()
+                last_high = (low + step * (match.end() - 1)) + step
+                if vertical:
+                    merge_box(fixed_low, first_low, fixed_high, last_high)
                 else:
-                    word_x0, word_y0, word_x1, word_y1 = bx0, by0, bx1, by1
-                word += char
-                append_part(char)
+                    merge_box(first_low, fixed_low, last_high, fixed_high)
+                word += chunk
+                append_part(chunk)
 
         flush_word()
         return "".join(parts).rstrip(), tuple(words)
+
+
+TEXT_RUNS = re.compile(r"\S+|\s+")
+
+
+def even_char_steps(
+    segment: LayoutLineTextSegment, text_length: int
+) -> tuple[bool, float, float, float, float] | None:
+    """The per-character box layout of a segment, when a run of characters can be
+    boxed from its ends alone: more than one character, finite, and increasing."""
+    if text_length <= 1:
+        return None
+    x0, y0, x1, y1 = segment.advance_bbox
+    if not (isfinite(x0) and isfinite(y0) and isfinite(x1) and isfinite(y1)):
+        return None
+    if segment.rotation_angle in (90, 270):
+        step = (y1 - y0) / text_length
+        return (True, y0, step, x0, x1) if step > 0 else None
+    step = (x1 - x0) / text_length
+    return (False, x0, step, y0, y1) if step > 0 else None
 
 
 def layout_line_segment_char_bbox(
