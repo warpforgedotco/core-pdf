@@ -866,9 +866,12 @@ class ContentInterpreter:
         self, operands: ContentOperands, space: ColorSpace, *, stroke: bool
     ) -> None:
         count = len(space.component_ranges)
-        if self.type3_uncolored or len(operands) < count:
+        operand_count = len(operands)
+        if self.type3_uncolored or operand_count < count:
             return
-        normalized = self.normalize_color_components(space, operands[:count])
+        normalized = self.normalize_color_components(
+            space, operands if operand_count == count else operands[:count]
+        )
         if normalized is None:
             return
         self.set_paint(space, normalized, None, stroke=stroke)
@@ -1094,6 +1097,12 @@ class ContentInterpreter:
         if len(operands) < count:
             return self.reject(PdfParseError("missing numeric operand"), "numeric-operands", None)
         if len(operands) == count and type(operands) is tuple:
+            if count == 1 and type(operands[0]) is int:
+                # A lone integer, as in "1 w"; a converted integer is always finite.
+                try:
+                    return (float(operands[0]),)
+                except OverflowError:
+                    pass
             for value in operands:
                 if type(value) is not float or not isfinite(value):
                     break

@@ -184,3 +184,10 @@ def test_both_dispatch_routes_read_one_operation_table(text_pdf_bytes: bytes) ->
 
 def test_the_default_table_is_returned_as_is_without_overrides(state) -> None:
     assert state.operation_table() is state.default_handlers
+
+
+@pytest.mark.parametrize("value", [0, 3, -7, 2**60])
+def test_lone_integer_operand_converts_to_float(state, value):
+    converted = state.as_floats((value,), 1)
+    assert converted == (float(value),)
+    assert type(converted[0]) is float
