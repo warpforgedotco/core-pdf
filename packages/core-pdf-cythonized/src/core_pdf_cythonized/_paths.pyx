@@ -11,6 +11,7 @@ from core_pdf_cythonized._ndarray cimport empty_float64, float64_data
 from core_pdf_cythonized._pymath cimport check_integral, py_max, py_min
 
 import numpy
+from math import hypot as math_hypot
 
 cnp.import_array()
 
@@ -184,6 +185,10 @@ cdef int add_curve(PathBuilder path, const double *values, hypot) except -1:
 def flatten_path_commands(ops, coords, matrix, hypot, array.array line_rows, double line_width):
     cdef const unsigned char* op_data
     cdef Py_ssize_t op_count
+    # The raw-pointer path holds no buffer export, so it is taken only when the one
+    # callback made during the walk, hypot, is math.hypot and cannot resize them.
+    if hypot is not math_hypot:
+        return flatten_path_command_views(ops, coords, matrix, hypot, line_rows, line_width)
     if type(ops) is bytearray:
         op_data = <const unsigned char*> PyByteArray_AS_STRING(ops)
         op_count = PyByteArray_GET_SIZE(ops)

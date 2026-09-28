@@ -605,26 +605,27 @@ class TextState(RecoveringTextState):
                 provenance=(*captured.provenance, ("unicode_source", "actual_text")),
             )
         )
-        self.glyphs.append(
-            GlyphObservation(
-                text=actual_text,
-                ink_bbox=captured.advance_bbox,
-                advance_bbox=captured.advance_bbox,
-                seqno=captured.seqno,
-                font_name=captured.font_name,
-                font_size=captured.font_size,
-                baseline=captured.baseline,
-                rotation_angle=captured.rotation_angle,
-                fill=captured.fill_color,
-                visible=captured.visible,
-                confidence=captured.confidence,
-                unicode_source="actual_text",
-                font_decoder=entry.font_decoder,
-                effective_font_size=captured.font_size,
-                effective_font_height=entry.effective_font_height,
-                provenance=captured.provenance,
+        if self.options.glyphs:
+            self.glyphs.append(
+                GlyphObservation(
+                    text=actual_text,
+                    ink_bbox=captured.advance_bbox,
+                    advance_bbox=captured.advance_bbox,
+                    seqno=captured.seqno,
+                    font_name=captured.font_name,
+                    font_size=captured.font_size,
+                    baseline=captured.baseline,
+                    rotation_angle=captured.rotation_angle,
+                    fill=captured.fill_color,
+                    visible=captured.visible,
+                    confidence=captured.confidence,
+                    unicode_source="actual_text",
+                    font_decoder=entry.font_decoder,
+                    effective_font_size=captured.font_size,
+                    effective_font_height=entry.effective_font_height,
+                    provenance=captured.provenance,
+                )
             )
-        )
 
     def new_text_layout(
         self,
@@ -805,7 +806,8 @@ class TextState(RecoveringTextState):
                 self.glyph_cluster_count,
                 self.options,
             )
-            self.glyphs.extend(captured.glyphs)
+            if options.glyphs:
+                self.glyphs.extend(captured.glyphs)
             self.glyph_cluster_count += captured.cluster_count
             if not self.options.text_runs:
                 self.sequence = seqno + 1

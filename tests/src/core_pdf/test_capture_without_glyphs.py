@@ -45,3 +45,18 @@ def test_painted_paths_are_the_records_the_constructor_builds() -> None:
     constructed = CapturedDrawing(**values)
     for name in CapturedDrawing.__fields__:
         assert getattr(built, name) is getattr(constructed, name), name
+
+
+def test_glyphs_off_keeps_runs_but_records_no_glyphs() -> None:
+    path = FIXTURES / "pdfminer.six/samples/nonfree/i1040nr.pdf"
+    if not path.is_file() or path.stat().st_size == 0:
+        pytest.skip("fixture corpus not initialized")
+    with PdfDocument(path.read_bytes()) as pdf:
+        page = pdf.pages[0]
+        full = page.get_page_program()
+        runs_only = page.get_page_program(options=CaptureOptions(glyphs=False))
+    assert full.glyphs
+    assert not runs_only.glyphs
+    assert [(run.text, run.advance_bbox) for run in runs_only.runs] == [
+        (run.text, run.advance_bbox) for run in full.runs
+    ]
