@@ -116,6 +116,33 @@ def _pdfminer_layout_figure_box(
     return (x0, y0, x1, y1)
 
 
+def pdfminer_projected_widths(
+    glyph: Any, width_code: int | None, glyph_text: str | None
+) -> tuple[float | None, float]:
+    """The glyph's font width and its pdfminer advance width, both in text space units."""
+    width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
+    font_width = (
+        float(width_lookup(width_code)) * 0.001
+        if width_code is not None and callable(width_lookup)
+        else None
+    )
+    normalized_width = 0.0
+    if font_width is not None:
+        normalized_width = font_width
+        builtin_width = _pdfminer_builtin_width(glyph, glyph_text)
+        if builtin_width is not None:
+            normalized_width = builtin_width * 0.001
+        base_font = str(_font_value(glyph.font_decoder.font, "BaseFont"))
+        glyph_name = decoder_encoding_differences(glyph.font_decoder).get(glyph.char_code)
+        if (
+            glyph_name
+            and _font_value(glyph.font_decoder.font, "Widths") is None
+            and base_font.split("+")[-1] in {"Symbol", "ZapfDingbats"}
+        ):
+            normalized_width = 0.0
+    return font_width, normalized_width
+
+
 def project_page(
     page: PdfPage,
     params: LAParams,
@@ -147,6 +174,11 @@ def project_page(
     )
     vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
     provenance_dicts: dict[int, tuple[object, dict[str, Any]]] = {}
+    # A page repeats a few hundred distinct glyphs; their pdfminer text, widths and
+    # descent depend only on the font decoder and the glyph fields in these keys.
+    glyph_texts: dict[tuple[Any, ...], str] = {}
+    glyph_widths: dict[tuple[Any, ...], tuple[float | None, float]] = {}
+    descents: dict[int, tuple[Any, float]] = {}
     for glyph_index, glyph in enumerate(projected_glyphs):
         if policy.strict_resources and pdfminer_embedded_cmap_is_unusable(glyph):
             continue
@@ -171,7 +203,20 @@ def project_page(
         ligature = ligatures.get(id(glyph))
         x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
         baseline = ligature[2] if ligature is not None else glyph.baseline
-        glyph_text = pdfminer_glyph_text(glyph) if ligature is None else None
+        glyph_key = (
+            glyph.font_decoder,
+            glyph.char_code,
+            glyph.cid,
+            glyph.code_bytes,
+            glyph.unicode_source,
+            glyph.text,
+            glyph.alternates,
+        )
+        glyph_text: str | None = None
+        if ligature is None:
+            glyph_text = glyph_texts.get(glyph_key)
+            if glyph_text is None:
+                glyph_text = glyph_texts[glyph_key] = pdfminer_glyph_text(glyph)
         text = ligature[0] if ligature is not None else glyph_text
         if not text:
             continue
@@ -200,39 +245,25 @@ def project_page(
             if glyph.char_code is not None
             else glyph.cid
         )
-        width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
-        font_width = (
-            float(width_lookup(width_code)) * 0.001
-            if width_code is not None and callable(width_lookup)
-            else None
-        )
+        widths_key = (*glyph_key, glyph_text is None)
+        known_widths = glyph_widths.get(widths_key)
+        if known_widths is None:
+            known_widths = glyph_widths[widths_key] = pdfminer_projected_widths(
+                glyph, width_code, glyph_text
+            )
+        font_width, normalized_width = known_widths
         if (
             glyph.rotation_angle % 180 == 0
             and baseline is not None
             and not glyph.effective_font_size
             and font_width is not None
+            and font_width > 0
         ):
-            normalized_width = font_width
-            if normalized_width > 0:
-                baseline_x0, baseline_y0, baseline_x1, baseline_y1 = baseline
-                baseline_length = (
-                    (baseline_x1 - baseline_x0) ** 2 + (baseline_y1 - baseline_y0) ** 2
-                ) ** 0.5
-                effective_font_size = baseline_length / normalized_width
-        normalized_width = 0.0
-        if font_width is not None:
-            normalized_width = font_width
-            builtin_width = _pdfminer_builtin_width(glyph, glyph_text)
-            if builtin_width is not None:
-                normalized_width = builtin_width * 0.001
-            base_font = str(_font_value(glyph.font_decoder.font, "BaseFont"))
-            glyph_name = decoder_encoding_differences(glyph.font_decoder).get(glyph.char_code)
-            if (
-                glyph_name
-                and _font_value(glyph.font_decoder.font, "Widths") is None
-                and base_font.split("+")[-1] in {"Symbol", "ZapfDingbats"}
-            ):
-                normalized_width = 0.0
+            baseline_x0, baseline_y0, baseline_x1, baseline_y1 = baseline
+            baseline_length = (
+                (baseline_x1 - baseline_x0) ** 2 + (baseline_y1 - baseline_y0) ** 2
+            ) ** 0.5
+            effective_font_size = baseline_length / font_width
         orientation = glyph.rotation_angle % 360
         text_matrix = glyph_provenance.get("text_matrix")
         if isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 6:
@@ -319,7 +350,11 @@ def project_page(
                 ),
             )
             text_rise = float(glyph_provenance.get("text_rise", 0.0))
-            descent = pdfminer_descent(glyph) * glyph.font_size + text_rise
+            decoder = glyph.font_decoder
+            known_descent = descents.get(id(decoder))
+            if known_descent is None or known_descent[0] is not decoder:
+                known_descent = descents[id(decoder)] = (decoder, pdfminer_descent(glyph))
+            descent = known_descent[1] * glyph.font_size + text_rise
             top = descent + glyph.font_size
             advance = normalized_width * horizontal_scale * glyph.font_size
             media_left, media_bottom, _media_right, _media_top = page_media_box
