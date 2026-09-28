@@ -49,3 +49,26 @@ def test_hex_escaped_name_falls_through_to_parsing():
     )
     with PdfDocument(data) as document:
         assert document.may_be_xref_stream(document.raw_data, xref_offset, len(document.raw_data))
+
+
+def test_candidate_regions_match_the_per_region_check() -> None:
+    import random
+
+    from core_pdf.impl.document_document import PdfDocument, xref_stream_candidates
+
+    rng = random.Random(3)
+    pieces = (b"#", b"XRef", b"/W", b"/Size", b"X", b"R", b"/", b"S", b"ze", b"ef", b"W")
+    for _ in range(3000):
+        data = b"".join(rng.choice(pieces) for _ in range(rng.randint(1, 200)))
+        starts = sorted({rng.randint(0, len(data) - 1) for _ in range(rng.randint(0, 20))})
+        expected = [
+            index
+            for index, offset in enumerate(starts)
+            if PdfDocument.may_be_xref_stream(
+                None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                data,
+                offset,
+                starts[index + 1] if index + 1 < len(starts) else len(data),
+            )
+        ]
+        assert xref_stream_candidates(data, starts, len(data)) == expected

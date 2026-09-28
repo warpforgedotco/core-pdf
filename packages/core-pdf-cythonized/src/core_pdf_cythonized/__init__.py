@@ -40,6 +40,7 @@ from core_pdf_cythonized._knockout import (
     composite_knockout_element,
     composite_knockout_group,
 )
+from core_pdf_cythonized._markers import markers_present, regions_with_markers
 from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import outline_edges, translated_outline_edges
 from core_pdf_cythonized._paths import fill_edge_rows, flatten_path_commands, path_bounds
@@ -60,6 +61,8 @@ from core_pdf_cythonized._type2 import type2_glyph_geometry
 from core_pdf_cythonized._xref_headers import object_headers_match
 
 __all__ = (
+    "markers_present",
+    "regions_with_markers",
     "DECODED_GLYPH_FIELDS",
     "OBSERVATION_FIELDS",
     "SlotLayout",

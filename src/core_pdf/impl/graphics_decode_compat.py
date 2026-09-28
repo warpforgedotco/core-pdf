@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from typing import Any
 
 from core_pdf.impl.graphics_filter_registry import (
     CCITT_FILTERS,
@@ -10,7 +11,7 @@ from core_pdf.impl.graphics_filter_registry import (
     PREDICTOR_FILTERS,
 )
 from core_pdf.impl.pdf_values import lenient_int, recover_pdf_name
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_spec.s_07_filters import decode_spec
 from core_pdf_spec.s_07_filters.decode_spec import FilterStep, StreamDecodeSpec
 from core_pdf_spec.s_07_filters.errors import FilterParseError
@@ -90,9 +91,32 @@ def with_ccitt_image_rows(parms: object, dictionary: object) -> object:
 PARAMETERIZED_FILTERS = PREDICTOR_FILTERS | CCITT_FILTERS | {"JBIG2Decode"}
 
 
+SINGLE_FILTER_SPECS: dict[PdfName, StreamDecodeSpec] = {}
+
+
 def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     if not isinstance(dictionary, dict):
         raise FilterParseError("invalid stream dictionary")
+    # A lone filter name without parameters decodes the same way in every stream.
+    only_filter = dictionary.get("Filter")
+    if (
+        type(only_filter) is PdfName
+        and is_pdf_null(dictionary.get("DecodeParms"))
+        and is_pdf_null(dictionary.get("FDecodeParms"))
+        and is_pdf_null(dictionary.get("DP"))
+    ):
+        spec = SINGLE_FILTER_SPECS.get(only_filter)
+        if spec is None:
+            spec = decode_spec_for(dictionary)
+            if len(SINGLE_FILTER_SPECS) < 64 and not any(
+                step.name in CCITT_FILTERS for step in spec.steps
+            ):
+                SINGLE_FILTER_SPECS[only_filter] = spec
+        return spec
+    return decode_spec_for(dictionary)
+
+
+def decode_spec_for(dictionary: dict[Any, Any]) -> StreamDecodeSpec:
     raw_filters = dictionary.get("Filter")
     if is_pdf_null(raw_filters):
         raw_filters = dictionary.get("FFilter")
