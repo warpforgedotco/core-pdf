@@ -432,13 +432,10 @@ def recognize_page_with_reserved_raster(
                     & (centers_y <= grid_box[3])
                 )
                 replaced_alnum = sum(
-                    sum(character.isalnum() for character in prior.text[index])
+                    sum(map(str.isalnum, prior.text[index]))
                     for index in numpy.flatnonzero(~outside)
                 )
-                cell_alnum = sum(
-                    sum(character.isalnum() for character in text)
-                    for text in cell_observations.text
-                )
+                cell_alnum = sum(sum(map(str.isalnum, text)) for text in cell_observations.text)
                 if cell_alnum < replaced_alnum * 0.8:
                     return selected.observations
                 retained = prior.take(numpy.flatnonzero(outside))

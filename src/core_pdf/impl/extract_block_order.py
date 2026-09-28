@@ -211,8 +211,8 @@ def transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[ParsedBloc
             output.append(block)
             continue
         text = " ".join(line.line.text for line in block.lines)
-        numeric = sum(character.isdigit() for character in text)
-        alphanumeric = sum(character.isalnum() for character in text)
+        numeric = sum(map(str.isdigit, text))
+        alphanumeric = sum(map(str.isalnum, text))
         if numeric / max(1, alphanumeric) < rules.transpose_min_digit_ratio:
             output.append(block)
             continue

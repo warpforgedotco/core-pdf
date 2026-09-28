@@ -730,7 +730,7 @@ def compact_unit_suffix_should_join(
 ) -> bool:
     prev = previous.strip()
     text = current.strip()
-    if text != "V" or not prev or not any(ch.isdigit() for ch in prev):
+    if text != "V" or not prev or not any(map(str.isdigit, prev)):
         return False
     if prev[-1:] not in {"k", "K", "m", "M"}:
         return False

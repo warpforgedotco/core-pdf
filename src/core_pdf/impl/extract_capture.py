@@ -389,9 +389,7 @@ def glyph_evidence_fields(
         if confidence is None or confidence < 0.50:
             low_confidence += count
     actual_text_characters = sum(
-        sum(not character.isspace() for character in run.text)
-        for run in runs
-        if run_uses_actual_text(run)
+        len(run.text) - sum(map(str.isspace, run.text)) for run in runs if run_uses_actual_text(run)
     )
     return GlyphEvidence(
         glyph_count=glyph_count,

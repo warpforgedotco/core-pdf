@@ -93,9 +93,7 @@ def reconstruct_layout_line_text(
         elif run.text_is_space:
             has_explicit_spaces = True
 
-    alnum_text_runs = sum(
-        1 for run in non_space_runs if any(ch.isalnum() for ch in run.stripped_text)
-    )
+    alnum_text_runs = sum(1 for run in non_space_runs if any(map(str.isalnum, run.stripped_text)))
     is_table_like_line = (len(sorted_runs) >= 4 and digit_text_runs >= 2) or (
         len(non_space_runs) >= 3 and alnum_text_runs >= 3 and len(sorted_runs) >= 5
     )
@@ -364,7 +362,7 @@ class GlyphLineBuilder:
             clusters
             and text == run.text
             and "".join(cluster.text for cluster in clusters) == run.text
-            and not any(character.isspace() for character in text)
+            and not any(map(str.isspace, text))
         ):
             atoms = [
                 LayoutLineTextAtom(

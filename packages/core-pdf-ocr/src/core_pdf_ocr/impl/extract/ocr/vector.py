@@ -361,7 +361,7 @@ def remap_stroked_vector_observations(
 
 def isolated_pin_label(text: str) -> bool:
     stripped = text.strip()
-    return 1 <= len(stripped) <= 4 and any(character.isdigit() for character in stripped)
+    return 1 <= len(stripped) <= 4 and any(map(str.isdigit, stripped))
 
 
 def remap_stroked_vector_candidate(
@@ -461,8 +461,8 @@ def stroked_vector_substitution(
         and 2 <= len(right) <= 12
         and abs(len(left) - len(right)) <= 1
         and left[0] == right[0]
-        and any(character.isalnum() for character in left)
-        and any(character.isalnum() for character in right)
+        and any(map(str.isalnum, left))
+        and any(map(str.isalnum, right))
         and bounded_edit_distance(left, right, 2) <= 2
     )
 

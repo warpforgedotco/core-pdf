@@ -202,7 +202,7 @@ def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
     nonspace = [char for char in text if not char.isspace()]
     if len(nonspace) < 2:
         return False
-    punctuation = sum(not char.isalnum() for char in nonspace)
+    punctuation = len(nonspace) - sum(map(str.isalnum, nonspace))
     return punctuation >= 1 and punctuation / len(nonspace) >= 0.25
 
 

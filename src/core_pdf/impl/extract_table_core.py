@@ -54,7 +54,7 @@ def numeric_cell(text: str) -> bool:
 
 
 def digit_bearing_cell(text: str) -> bool:
-    return numeric_cell(text) or any(character.isdigit() for character in text)
+    return numeric_cell(text) or any(map(str.isdigit, text))
 
 
 def short_digit_cell(text: str) -> bool:
@@ -64,7 +64,7 @@ def short_digit_cell(text: str) -> bool:
 
 
 def character_spaced_cell(text: str) -> bool:
-    tokens = [token for token in text.split() if any(character.isalpha() for character in token)]
+    tokens = [token for token in text.split() if any(map(str.isalpha, token))]
     if len(tokens) < 4:
         return False
     single_character = sum(len(token) == 1 for token in tokens)
@@ -365,10 +365,7 @@ def aligned_column_clusters(
     for cluster in clusters:
         row_support = {row_index for row_index, _ in cluster}
         widths = [all_widths[index] for _, index in cluster]
-        alphanumeric = sum(
-            any(character.isalnum() for character in observations.text[index])
-            for _, index in cluster
-        )
+        alphanumeric = sum(any(map(str.isalnum, observations.text[index])) for _, index in cluster)
         if (
             len(row_support) >= minimum_rows
             and finite_median(numpy.asarray(widths, dtype=numpy.float32)) <= page_width * 0.48

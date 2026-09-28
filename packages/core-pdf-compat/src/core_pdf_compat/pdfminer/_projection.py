@@ -520,7 +520,7 @@ def project_page(
             if (
                 merged_snippets
                 and snippet
-                and not any(character.isalnum() for character in snippet)
+                and not any(map(str.isalnum, snippet))
                 and not any(character.isalnum() for character in merged_snippets[-1])
                 and merged_snippets[-1][-1] == snippet[0]
             ):
