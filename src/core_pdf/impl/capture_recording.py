@@ -930,11 +930,27 @@ class TextState(RecoveringTextState):
     ) -> None:
         # paint_path ignores empty paths, so an empty path with no clip pending
         # is kept rather than replaced; it was never handed to a sink.
-        if not close and self.pending_clip_rule_value is None and not self.current_path.ops:
+        path = self.current_path
+        if not close and self.pending_clip_rule_value is None and not path.ops:
             self.current_point = None
             self.subpath_start = None
             return
-        super().complete_path(kind, fill_rule, close=close)
+        if self.sink is not self:
+            super().complete_path(kind, fill_rule, close=close)
+            return
+        if close:
+            self.close_current_subpath()
+        if kind is not None:
+            self.paint_path(self, path, kind, fill_rule)
+        if self.pending_clip_rule_value is not None:
+            self.clip_path(self, path, self.pending_clip_rule_value)
+        # paint_path and clip_path copy the path as they flatten it, so it is emptied
+        # for the next one rather than replaced.
+        del path.ops[:]
+        del path.coords[:]
+        self.current_point = None
+        self.subpath_start = None
+        self.pending_clip_rule_value = None
 
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         if not source.ops:
