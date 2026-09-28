@@ -26,6 +26,7 @@ from core_pdf_cythonized._distinct_rows import (
     gather_uint8_rows,
 )
 from core_pdf_cythonized._downsample import box_downsample_blocks
+from core_pdf_cythonized._features import cell_distance_map
 from core_pdf_cythonized._glyph_bitmap import glyph_bitmap_rows
 from core_pdf_cythonized._glyphs import (
     DECODED_GLYPH_FIELDS,
@@ -61,6 +62,7 @@ from core_pdf_cythonized._type2 import type2_glyph_geometry
 from core_pdf_cythonized._xref_headers import object_headers_match
 
 __all__ = (
+    "cell_distance_map",
     "markers_present",
     "regions_with_markers",
     "DECODED_GLYPH_FIELDS",

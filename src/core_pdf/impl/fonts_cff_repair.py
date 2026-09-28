@@ -13,6 +13,7 @@ from core_pdf.impl.fonts_raster_kernel import (
 )
 from core_pdf.impl.geometry import points_bbox
 from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
+from core_pdf_cythonized import cell_distance_map
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_program_cff import CFFFont
@@ -326,37 +327,6 @@ FeatureArrays: TypeAlias = tuple[
     numpy.ndarray[Any, Any],
     numpy.ndarray[Any, Any],
 ]
-
-
-def cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int, ...]:
-    if not cells:
-        return ()
-    limit = FEATURE_GRID_WIDTH + FEATURE_GRID_HEIGHT
-    distances = numpy.full((FEATURE_GRID_HEIGHT, FEATURE_GRID_WIDTH), limit, dtype=numpy.int64)
-    for x, y in cells:
-        if 0 <= x < FEATURE_GRID_WIDTH and 0 <= y < FEATURE_GRID_HEIGHT:
-            distances[y, x] = 0
-    for axis, extent in ((1, FEATURE_GRID_WIDTH), (0, FEATURE_GRID_HEIGHT)):
-        offsets = numpy.arange(extent, dtype=numpy.int64)
-        if axis == 0:
-            offsets = offsets[:, None]
-        forward = numpy.minimum.accumulate(distances - offsets, axis=axis) + offsets
-        reversed_slice: tuple[Any, ...] = (
-            (slice(None, None, -1),)
-            if axis == 0
-            else (
-                slice(None),
-                slice(None, None, -1),
-            )
-        )
-        backward = (
-            numpy.minimum.accumulate((distances + offsets)[reversed_slice], axis=axis)[
-                reversed_slice
-            ]
-            - offsets
-        )
-        distances = numpy.minimum(forward, backward)
-    return tuple(distances.reshape(-1).tolist())
 
 
 def average_nearest_distance(
