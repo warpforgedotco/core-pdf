@@ -897,7 +897,8 @@ class RasterTarget:
             (ix1 - ix0) * (iy1 - iy0) < 10_000 and self.clip.clip_paths_are_axis_aligned_rects()
         ):
             return False
-        self.set_shape_alpha(rgba[3] / 255.0)
+        self.shape_alpha = clamp01(rgba[3] / 255.0) if self.paint_alpha_is_shape else 1.0
+        backdrop = parent.backdrop
         drawn = fill_glyph_knockout_at(
             edge_array,
             self.crop_x0,
@@ -909,15 +910,21 @@ class RasterTarget:
             iy1 - iy0,
             rgba,
             parent.view,
-            self.pixel_view(parent.backdrop),
+            self.page_pixels if backdrop is self.page_buffer else self.pixel_view(backdrop),
             parent.source_alpha,
             parent.source_shape,
             self.shape_alpha,
         )
         if drawn is None:
             return True
-        if parent.painted_boxes is not None:
-            self.record_knockout_paint((ix0, iy0, ix1, iy1))
+        boxes = parent.painted_boxes
+        if boxes is not None:
+            # record_knockout_paint, inlined; a drawn window is never empty.
+            if len(boxes) >= self.KNOCKOUT_DISJOINT_LIMIT:
+                boxes.clear()
+                boxes.append((0, 0, self.width, self.height))
+            else:
+                boxes.append((ix0, iy0, ix1, iy1))
         self.extend_paint_box(iy0, iy1, ix0, ix1)
         return True
 
@@ -2963,8 +2970,20 @@ class RasterTarget:
                 elementary_group = knockout or mask_alpha is not None
                 boxes = self.buffer_stack[-1].painted_boxes
                 skip_box = None
-                if knockout and boxes is not None and mask_alpha is None:
-                    skip_box = self.knockout_skip_box(item, boxes)
+                if knockout and boxes is not None and mask_alpha is None and is_plain_fill(item):
+                    # knockout_skip_box, inlined: a plain fill painting pixels no earlier
+                    # member touched needs no elementary group.
+                    clipped = self.clip.clipped_pixel_box(item.bbox)
+                    if clipped is None:
+                        skip_box = EMPTY_PIXEL_BOX
+                    else:
+                        skip_box = clipped[1]
+                        if skip_box != EMPTY_PIXEL_BOX:
+                            x0, y0, x1, y1 = skip_box
+                            for bx0, by0, bx1, by1 in boxes:
+                                if x0 < bx1 and bx0 < x1 and y0 < by1 and by0 < y1:
+                                    skip_box = None
+                                    break
                     if skip_box is not None:
                         elementary_group = False
                 if (
