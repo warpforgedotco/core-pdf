@@ -519,3 +519,43 @@ def test_cubic_point_interpolates_and_hits_both_endpoints() -> None:
     assert midpoint == (5.0, 7.5)
     xs = [cubic_point(p0, p1, p2, p3, t / 8)[0] for t in range(9)]
     assert xs == sorted(xs)
+
+
+def encoded_index(items: list[bytes], off_size: int) -> bytes:
+    offsets = [1]
+    for item in items:
+        offsets.append(offsets[-1] + len(item))
+    header = len(items).to_bytes(2, "big") + bytes([off_size])
+    return header + b"".join(o.to_bytes(off_size, "big") for o in offsets) + b"".join(items)
+
+
+def test_lazy_index_reads_the_items_an_eager_parse_does() -> None:
+    import random
+
+    from core_adobe_fonts.cff.font import CFFFont, CFFIndex
+
+    rng = random.Random(5)
+    for _ in range(500):
+        items = [
+            bytes(rng.randrange(256) for _ in range(rng.randint(0, 6)))
+            for _ in range(rng.randint(1, 30))
+        ]
+        off_size = rng.choice([1, 2, 3, 4])
+        if sum(map(len, items)) + 1 >= 1 << (8 * off_size):
+            continue
+        prefix = bytes(rng.randrange(256) for _ in range(rng.randint(0, 5)))
+        raw = prefix + encoded_index(items, off_size) + b"tail"
+        for data in (raw, memoryview(raw)):
+            font = CFFFont.__new__(CFFFont)
+            font.data = data
+            index, end = font.read_lazy_index(len(prefix))
+            assert isinstance(index, CFFIndex)
+            assert len(index) == len(items)
+            assert list(index) == items
+            assert index == items
+            assert index[-1] == items[-1]
+            assert index[1:3] == items[1:3]
+            assert raw[end:] == b"tail"
+            assert font.read_index(len(prefix)) == (items, end)
+            with pytest.raises(IndexError):
+                index[len(items)]

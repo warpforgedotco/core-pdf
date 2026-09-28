@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import operator
+from collections.abc import Sequence
 from itertools import islice
 from math import isfinite
 from operator import le
 from struct import unpack
-from typing import NamedTuple
+from typing import NamedTuple, overload
 
 from core_adobe_fonts._vendor.font_data.cff_tables import (
     CFF_EXPERT_STRINGS,
@@ -113,6 +115,44 @@ def cff_font_matrix(
     return CffFontMatrix(*numbers)
 
 
+class CFFIndex(Sequence[bytes]):
+    """A CFF INDEX's items, each sliced from the font data when first read."""
+
+    __slots__ = ("source", "offsets", "shift")
+
+    def __init__(self, source: bytes, offsets: list[int], shift: int = 0) -> None:
+        self.source = source
+        self.offsets = offsets
+        self.shift = shift
+
+    def __len__(self) -> int:
+        return len(self.offsets) - 1
+
+    @overload
+    def __getitem__(self, index: int) -> bytes: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[bytes]: ...
+
+    def __getitem__(self, index: int | slice) -> bytes | list[bytes]:
+        if isinstance(index, slice):
+            return [self[position] for position in range(*index.indices(len(self)))]
+        count = len(self.offsets) - 1
+        if index < 0:
+            index += count
+        if not 0 <= index < count:
+            raise IndexError("CFF INDEX item out of range")
+        shift = self.shift
+        return self.source[shift + self.offsets[index] : shift + self.offsets[index + 1]]
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, (CFFIndex, list, tuple)):
+            return len(self) == len(other) and all(map(operator.eq, self, other, strict=True))
+        return NotImplemented
+
+    __hash__ = None  # type: ignore[assignment]
+
+
 class CFFFont:
     __slots__ = (
         "data",
@@ -126,6 +166,8 @@ class CFFFont:
         "fd_select",
         "font_dicts",
     )
+
+    charstrings: Sequence[bytes]
 
     def __init__(self, data: bytes | memoryview | None) -> None:
         if data is None:
@@ -145,7 +187,7 @@ class CFFFont:
             raise ValueError("invalid CFF top dict")
         self.top_dict = self.parse_dict(top_index[0])
         self.is_cid_keyed = (12, 30) in self.top_dict
-        self.charstrings, ignored_pos = self.read_index(self.dict_offset(17))
+        self.charstrings, ignored_pos = self.read_lazy_index(self.dict_offset(17))
         self.cid_to_gid = self.read_charset(self.dict_offset(15, default=0), len(self.charstrings))
         self.fd_select = self.read_fd_select()
         self.font_dicts = self.read_font_dicts()
@@ -166,13 +208,17 @@ class CFFFont:
         return cff_offset(values, "dictionary offset")
 
     def read_index(self, pos: int) -> tuple[list[bytes], int]:
+        index, end = self.read_lazy_index(pos)
+        return list(index), end
+
+    def read_lazy_index(self, pos: int) -> tuple[CFFIndex, int]:
         data = memoryview(self.data)
         if pos < 0 or pos + 2 > len(data):
             raise ValueError("invalid CFF INDEX")
         count = int.from_bytes(data[pos : pos + 2], "big")
         pos += 2
         if count == 0:
-            return ([], pos)
+            return (CFFIndex(b"", [1]), pos)
         if pos >= len(data):
             raise ValueError("invalid CFF INDEX")
         off_size = data[pos]
@@ -197,13 +243,9 @@ class CFFFont:
         end = base + offsets[-1] - 1
         if end > len(data):
             raise ValueError("invalid CFF INDEX")
-        items = bytes(data[base - 1 : end])
-        return (
-            list(
-                map(items.__getitem__, map(slice, offsets, islice(offsets, 1, None), strict=False))
-            ),
-            end,
-        )
+        if type(self.data) is bytes:
+            return (CFFIndex(self.data, offsets, base - 1), end)
+        return (CFFIndex(bytes(data[base - 1 : end]), offsets), end)
 
     @staticmethod
     def parse_number(item: bytes, pos: int, *, dict_number: bool = False) -> tuple[float, int]:
