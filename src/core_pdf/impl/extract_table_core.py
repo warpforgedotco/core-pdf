@@ -26,7 +26,10 @@ def cell_text(
     observations: ObservationBatch,
     indexes: list[int],
 ) -> str:
-    if len(indexes) == 1:
+    count = len(indexes)
+    if count == 0:
+        return ""
+    if count == 1:
         return collapse_ws(observations.text[indexes[0]])
     boxes = observations.bbox[indexes]
     centers = ((boxes[:, 1] + boxes[:, 3]) * 0.5).tolist()
