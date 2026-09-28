@@ -2,7 +2,7 @@
 
 from cpython cimport array
 from cpython.bytearray cimport PyByteArray_AS_STRING, PyByteArray_GET_SIZE, PyByteArray_Resize
-from cpython.bytes cimport PyBytes_FromStringAndSize
+from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_FromStringAndSize
 from cpython.float cimport PyFloat_AsDouble
 from cpython.list cimport PyList_Append, PyList_AsTuple, PyList_GET_SIZE
 from cpython.long cimport PyLong_FromString
@@ -35,7 +35,16 @@ cdef bint IS_DELIM[256]
 cdef bint IS_NUMERIC_START[256]
 cdef bint IS_DIGIT[256]
 
+cdef unsigned char HEX_NIBBLE[256]
+
 cdef int _i
+for _i in range(256):
+    HEX_NIBBLE[_i] = 255
+for _i in range(10):
+    HEX_NIBBLE[0x30 + _i] = _i
+for _i in range(6):
+    HEX_NIBBLE[0x41 + _i] = 10 + _i
+    HEX_NIBBLE[0x61 + _i] = 10 + _i
 for _i in range(256):
     IS_SPACE[_i] = 0
     IS_DELIM[_i] = 0
@@ -86,6 +95,7 @@ cdef class ContentScanner:
     cdef dict names
     cdef dict operators
     cdef readonly list operands
+    cdef object string_type
 
     cdef Py_ssize_t pending
     cdef double pending_value[OPERAND_CAPACITY]
@@ -122,6 +132,7 @@ cdef class ContentScanner:
         self.path_state = None
         self.paths_loaded = False
         self.paths_changed = False
+        self.string_type = None
 
     @property
     def pos(self):
@@ -316,6 +327,46 @@ cdef class ContentScanner:
         self.paths_changed = True
         return True
 
+    def enable_strings(self, string_type):
+        """Parse plain literal and hex strings as string_type(data, is_literal=...)."""
+        self.string_type = string_type
+
+    cdef object scan_string(self, Py_ssize_t p, Py_ssize_t* end_out):
+        # Only strings every lexer reads the same way: a literal string with no
+        # escape, nesting or line end, or an even run of hex digits. None otherwise.
+        cdef const unsigned char* b = self.buf
+        cdef Py_ssize_t n = self.size
+        cdef Py_ssize_t q = p + 1
+        cdef unsigned char c
+        cdef bytes data
+        cdef char* out
+        cdef Py_ssize_t i
+        if self.string_type is None:
+            return None
+        if b[p] == 0x28:
+            while q < n:
+                c = b[q]
+                if c == 0x29:
+                    end_out[0] = q + 1
+                    data = PyBytes_FromStringAndSize(<const char*> (b + p + 1), q - p - 1)
+                    return self.string_type(data, is_literal=True)
+                if c == 0x28 or c == 0x5C or c == 0x0D or c == 0x0A:
+                    return None
+                q += 1
+            return None
+        if b[p] != 0x3C or (q < n and b[q] == 0x3C):
+            return None
+        while q < n and HEX_NIBBLE[b[q]] != 255:
+            q += 1
+        if q >= n or b[q] != 0x3E or (q - p - 1) & 1:
+            return None
+        data = PyBytes_FromStringAndSize(NULL, (q - p - 1) // 2)
+        out = PyBytes_AS_STRING(data)
+        for i in range((q - p - 1) // 2):
+            out[i] = <char> ((HEX_NIBBLE[b[p + 1 + 2 * i]] << 4) | HEX_NIBBLE[b[p + 2 + 2 * i]])
+        end_out[0] = q + 1
+        return self.string_type(data, is_literal=False)
+
     cdef object scan_numeric_array(self, Py_ssize_t p):
         cdef const unsigned char* b = self.buf
         cdef Py_ssize_t n = self.size
@@ -323,6 +374,8 @@ cdef class ContentScanner:
         cdef bint has_dot
         cdef char* end
         cdef bytes word
+        cdef object value
+        cdef Py_ssize_t string_end = 0
         cdef list values = []
         p += 1
         while True:
@@ -333,6 +386,13 @@ cdef class ContentScanner:
             if b[p] == 0x5D:
                 self.cursor = p + 1
                 return values
+            if b[p] == 0x28 or b[p] == 0x3C:
+                value = self.scan_string(p, &string_end)
+                if value is None:
+                    return None
+                PyList_Append(values, value)
+                p = string_end
+                continue
             if not IS_NUMERIC_START[b[p]]:
                 return None
             start = p
@@ -352,7 +412,7 @@ cdef class ContentScanner:
                     digits_after += 1
             if digits_before == 0 and not (has_dot and digits_after > 0):
                 return None
-            if p >= n or not (IS_SPACE[b[p]] or b[p] == 0x5D):
+            if p >= n or not (IS_SPACE[b[p]] or b[p] == 0x5D or b[p] == 0x28 or b[p] == 0x3C):
                 return None
             if p - start >= NUMBER_LIMIT:
                 return None
@@ -499,6 +559,17 @@ cdef class ContentScanner:
                 value = self.names.get(word)
                 if value is None:
                     value = self.names[word] = self.make_name(word[1:])
+                if PyList_GET_SIZE(operands) + self.pending < OPERAND_LIMIT:
+                    if self.pending:
+                        self.materialize()
+                    PyList_Append(operands, value)
+                continue
+
+            if c == 0x28 or c == 0x3C:
+                value = self.scan_string(p, &q)
+                if value is None:
+                    return p
+                self.cursor = q
                 if PyList_GET_SIZE(operands) + self.pending < OPERAND_LIMIT:
                     if self.pending:
                         self.materialize()

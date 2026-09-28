@@ -15,6 +15,7 @@ from core_pdf.impl.capture_recording import (
 from core_pdf.impl.capture_recovery import ContentFallback, content_scanner, iter_content_operations
 from core_pdf.impl.types import PdfName
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
+from core_pdf_spec.types import PdfString
 
 GOLDEN_PATH = Path(__file__).parent / "content_scanner_golden.pkl.gz"
 GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
@@ -181,3 +182,76 @@ def test_compiled_dispatch_resumes_after_a_child_frame():
     seen, stops = dispatched(data, stop_at="Q")
     assert seen == operations(data)
     assert stops == [("Q", data.index(b"Q") + 1), ("Q", len(data))]
+
+
+STRING_PIECES = (
+    b"(abc)",
+    b"()",
+    b"(a\\)b)",
+    b"(a(b)c)",
+    b"(line\nend)",
+    b"(cr\rlf)",
+    b"(\\101)",
+    b"<4142>",
+    b"<>",
+    b"<414>",
+    b"<41 42>",
+    b"<4G>",
+    b"<<",
+    b">>",
+    b"(unterminated",
+    b"<41",
+    b"[(a)-20(b)]",
+    b"[(a) 3 <4142>]",
+    b"[<41>(x)]",
+    b"[(a\\n)]",
+    b"[1(a)]",
+    b"[(a)",
+    b"-20",
+    b"3.5",
+    b"/F1",
+    b"Tj",
+    b"TJ",
+    b"'",
+    b" ",
+    b"\n",
+    b"%c\n",
+)
+
+
+def strictly(value):
+    if isinstance(value, PdfString):
+        return ("string", value.data, value.is_literal)
+    if isinstance(value, (list, tuple)):
+        return ("seq", tuple(strictly(item) for item in value))
+    return normalize(value)
+
+
+def strict_operations(data):
+    return [
+        (name, tuple(strictly(operand) for operand in operands))
+        for name, operands in iter_content_operations(PdfLexer(data))
+    ]
+
+
+def test_string_fast_path_matches_the_python_lexer(monkeypatch):
+    import random
+
+    from core_pdf.impl import capture_recovery
+
+    rng = random.Random(11)
+    plain = capture_recovery.ContentScanner
+    for _ in range(3000):
+        data = b" ".join(rng.choice(STRING_PIECES) for _ in range(rng.randint(1, 8)))
+        fast = strict_operations(data)
+
+        class WithoutStrings(plain):
+            def enable_strings(self, string_type):
+                pass
+
+        monkeypatch.setattr(capture_recovery, "ContentScanner", WithoutStrings)
+        try:
+            slow = strict_operations(data)
+        finally:
+            monkeypatch.setattr(capture_recovery, "ContentScanner", plain)
+        assert fast == slow, data

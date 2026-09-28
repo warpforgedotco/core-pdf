@@ -19,6 +19,7 @@ from core_pdf_spec.s_07_content.operations import (
 )
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax_primitives.tokens import WHITESPACE
+from core_pdf_spec.types import PdfString
 
 
 def recover_inline_image_position(
@@ -130,6 +131,8 @@ def iter_content_operations(
 
 def content_scanner(lexer: PdfLexer, path_state: object | None = None) -> ContentScanner:
     scanner = ContentScanner(lexer.raw_data, KEYWORD_TOKENS, OBJECT_KEYWORDS, PdfName.of)
+    if lexer.decipher is None or lexer.current_obj_num is None:
+        scanner.enable_strings(PdfString)
     if path_state is not None:
         scanner.set_path_state(path_state)
     return scanner
