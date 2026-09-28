@@ -722,8 +722,8 @@ class ContentInterpreter:
 
     def op_d(self, operands: ContentOperands, depth: int) -> None:
         if len(operands) == 2 and type(operands[0]) in (list, tuple):
-            numbers = typing.cast("typing.Sequence[float]", operands[0])
-            phase_number = typing.cast("float", operands[1])
+            numbers: typing.Sequence[float] = operands[0]  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            phase_number: float = operands[1]  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
             if type(phase_number) in NUMERIC_TYPES and NUMERIC_TYPES.issuperset(map(type, numbers)):
                 try:
                     dash_array = tuple(map(float, numbers))
