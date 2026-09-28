@@ -55,7 +55,10 @@ def reconstruct_layout_line_text(
         text = render_single_run_text(run)
         if not text:
             return EMPTY_LAYOUT_LINE_TEXT
-        return LayoutLineText(text, (line_text_segment(run, text, ""),))
+        return LayoutLineText(
+            text,
+            (LayoutLineTextSegment(text, "", run.advance_bbox, run.rotation_angle),),
+        )
 
     angle = runs[0].rotation_angle
     if angle == 0 and layout_text_rules.runs_are_left_to_right(runs):
@@ -114,14 +117,6 @@ def reconstruct_layout_line_text(
     ).build()
 
 
-def line_text_segment(
-    run: TextRun,
-    text: str,
-    separator_before: str,
-) -> LayoutLineTextSegment:
-    return LayoutLineTextSegment(text, separator_before, run.advance_bbox, run.rotation_angle)
-
-
 def render_single_run_text(run: TextRun) -> str:
     text = run.text
     if not text:
@@ -149,7 +144,9 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
         if text.isspace():
             if parts and parts[-1] != " ":
                 parts.append(" ")
-                segments.append(line_text_segment(run, " ", " "))
+                segments.append(
+                    LayoutLineTextSegment(" ", " ", run.advance_bbox, run.rotation_angle)
+                )
             previous_run = run
             continue
         if not run.has_text:
@@ -172,7 +169,9 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
                 parts.append(" ")
                 separator = " "
             parts.append(text)
-            segments.append(line_text_segment(run, text, separator))
+            segments.append(
+                LayoutLineTextSegment(text, separator, run.advance_bbox, run.rotation_angle)
+            )
             previous_run = run
     combined = layout_text_rules.split_glued_numeric_label_boundaries("".join(parts))
     if not combined:
