@@ -26,6 +26,8 @@ def cell_text(
     observations: ObservationBatch,
     indexes: list[int],
 ) -> str:
+    if len(indexes) == 1:
+        return collapse_ws(observations.text[indexes[0]])
     boxes = observations.bbox[indexes]
     centers = ((boxes[:, 1] + boxes[:, 3]) * 0.5).tolist()
     lefts = boxes[:, 0].tolist()
@@ -46,8 +48,8 @@ SHORT_DIGIT_CELL_CHARACTERS = 25
 
 
 def numeric_cell(text: str) -> bool:
-    alphanumeric = sum(character.isalnum() for character in text)
-    digits = sum(character.isdigit() for character in text)
+    alphanumeric = sum(map(str.isalnum, text))
+    digits = sum(map(str.isdigit, text))
     return bool(digits and digits * 2 >= max(1, alphanumeric))
 
 
