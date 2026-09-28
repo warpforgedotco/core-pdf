@@ -1265,6 +1265,12 @@ class PdfDocument(Generic[PageT]):
             score += 5
         return score
 
+    def recovered_inherited_values(self, page_dict: PdfDict) -> InheritedValueMap:
+        for node in self.recovered_page_nodes():
+            if node.dictionary is page_dict:
+                return dict(node.inherited_values)
+        return self.recovered_page_values(page_dict, [])
+
     def recovered_page_values(
         self, page_dict: PdfDict, pages_nodes: list[PdfDict]
     ) -> InheritedValueMap:
@@ -1345,6 +1351,7 @@ class PdfDocument(Generic[PageT]):
                     node_type=lambda node: resolve_page_tree_node_type(self.resolver, node),
                     on_invalid_child=lambda _node: True,
                     max_depth=MAX_PAGE_TREE_DEPTH,
+                    lazy_inherited=True,
                 )
             )
         except PdfParseError, ValueError:

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from copy import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.capture_page import capture_page_program
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
@@ -79,7 +79,6 @@ class PdfPage:
     page_dict: PdfDict
     page_number: int
     contents: CachedPdfObject | None
-    inherited_values: InheritedValueMap
 
     def __init__(
         self,
@@ -87,15 +86,32 @@ class PdfPage:
         page_dict: PdfDict,
         page_number: int,
         *,
-        inherited_values: InheritedValueMap | None = None,
+        inherited_values: Mapping[str, object] | None = None,
     ) -> None:
         self.document = document
         self.page_dict = page_dict
         self.page_number = page_number
         self.contents = self.page_dict.get("Contents")
-        self.inherited_values = (
-            self.collect_inherited_values() if inherited_values is None else dict(inherited_values)
-        )
+        # Resolved on first use: opening a document should not load every page's resources.
+        self.inherited_source = inherited_values
+        self.resolved_inherited: InheritedValueMap | None = None
+
+    @property
+    def inherited_values(self) -> InheritedValueMap:
+        values = self.resolved_inherited
+        if values is None:
+            source = self.inherited_source
+            if source is None:
+                values = self.collect_inherited_values()
+            else:
+                try:
+                    values = cast("InheritedValueMap", dict(source))
+                except PdfParseError, ValueError:
+                    # Opening used to resolve these eagerly and, on this error, fall
+                    # back to the recovered page tree; use that page's values instead.
+                    values = self.document.recovered_inherited_values(self.page_dict)
+            self.resolved_inherited = values
+        return values
 
     @property
     def media_box(self) -> tuple[float, float, float, float] | None:
