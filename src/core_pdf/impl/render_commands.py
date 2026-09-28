@@ -72,20 +72,45 @@ def append_glyph_paint(
     *,
     include_paint: bool = True,
 ) -> bool:
-    if glyph.visible is False and not glyph.clip_glyph:
+    style = glyph.style
+    visible = glyph.visible
+    if visible is False and not style.clip_glyph:
         return True
-    mode = int(glyph.text_render_mode)
+    mode = int(style.text_render_mode)
     if mode == 3:
         return True
     if not include_paint and mode < 4:
         return True
-    outline = glyph_outline_path(glyph)
-    if outline is None:
+    # glyph_outline_path and transformed_outline, inlined for the per-glyph path.
+    if not glyph.paint_glyph:
         return False
-    path, bbox, edge_array = outline
+    transform = glyph.glyph_transform
+    decoder = style.font_decoder
+    if transform is None or decoder is None:
+        return False
+    code = glyph.bitmap_code
+    if code is None:
+        code = glyph.cid if glyph.cid is not None else glyph.char_code
+    if code is None:
+        return False
+    array_resolver = getattr(decoder, "glyph_outline_arrays", None)
+    if not callable(array_resolver):
+        return False
+    arrays = array_resolver(code, glyph.gid, glyph.text)
+    if arrays is None:
+        return False
+    a, b, c, d, e, f = transform
+    linear_x, linear_y = arrays.linear_columns(a, b, c, d)
+    column_x, column_y, edge_array, kept, dropped, bounds = translated_outline_edges(
+        linear_x, linear_y, e, f, arrays.spans
+    )
+    if edge_array is None:
+        return False
+    path = CapturedPath.deferred_outline(column_x, column_y, kept)
+    bbox = path.bbox() if dropped else bounds
     if mode >= 4:
         clipping_subpaths.extend(path.subpaths)
-    if not include_paint or mode in NON_PAINTING_RENDER_MODES or glyph.visible is False:
+    if not include_paint or mode in NON_PAINTING_RENDER_MODES or visible is False:
         return True
     paint_kind = (
         PathPaintKind.FILL
@@ -94,7 +119,7 @@ def append_glyph_paint(
         if mode in {1, 5}
         else PathPaintKind.FILL_STROKE
     )
-    display_list.append_glyph_paint(paint_kind, glyph.seqno, bbox, path, edge_array, glyph.style)
+    display_list.append_glyph_paint(paint_kind, glyph.seqno, bbox, path, edge_array, style)
     return True
 
 
@@ -243,7 +268,8 @@ class ProgramLowering:
     def lower_glyph(self, glyph: GlyphObservation) -> None:
         include_text = self.include_text
         text = self.text
-        glyph_text_object_id = glyph.text_object_id
+        style = glyph.style
+        glyph_text_object_id = style.text_object_id
         if (
             not self.explicit_text_boundaries
             and text.object_id is not None
@@ -253,7 +279,7 @@ class ProgramLowering:
         text.object_id = glyph_text_object_id
         glyph_paints = (
             include_text
-            and glyph.text_render_mode not in NON_PAINTING_RENDER_MODES
+            and style.text_render_mode not in NON_PAINTING_RENDER_MODES
             and glyph.visible is not False
         )
         if glyph_paints:
