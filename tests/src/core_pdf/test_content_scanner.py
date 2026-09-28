@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from core_pdf.impl.capture_recovery import iter_content_operations
+from core_pdf.impl.capture_recording import (
+    GLYPH_PAINT_KEEPING_OPERATORS,
+    LINE_MOVING_OPERATORS,
+    TEXT_LAYOUT_KEEPING_OPERATORS,
+)
+from core_pdf.impl.capture_recovery import ContentFallback, content_scanner, iter_content_operations
 from core_pdf.impl.types import PdfName
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 
@@ -125,3 +130,54 @@ def test_the_tokenizer_uses_the_kernel():
     from core_pdf_cythonized import ContentScanner
 
     assert capture_recovery.ContentScanner is ContentScanner
+
+
+class DispatchState:
+    shared_glyph_paint = None
+    text_layout = None
+
+
+def dispatched(data, *, stop_at=None):
+    lexer = PdfLexer(data)
+    scanner = content_scanner(lexer)
+    fallback = ContentFallback(lexer, scanner.operands, None, None)
+    seen = []
+    names = {name for case in GOLDEN for name, _ in case["ops"]} | {"q", "Q", "cm", "BI"}
+
+    def handler_for(name):
+        def handler(operands, depth):
+            seen.append((name, tuple(normalize(operand) for operand in operands)))
+            return (name, lexer.pos) if name == stop_at else None
+
+        return handler
+
+    handlers = {name: handler_for(name) for name in names}
+    stops = []
+    while True:
+        child = scanner.run(
+            lexer,
+            handlers,
+            fallback,
+            DispatchState(),
+            0,
+            GLYPH_PAINT_KEEPING_OPERATORS,
+            LINE_MOVING_OPERATORS,
+            TEXT_LAYOUT_KEEPING_OPERATORS,
+        )
+        if child is None:
+            return seen, stops
+        stops.append(child)
+
+
+@pytest.mark.parametrize("index", range(len(GOLDEN)))
+def test_compiled_dispatch_sees_the_iterated_operations(index):
+    case = GOLDEN[index]
+    seen, _ = dispatched(case["data"])
+    assert seen == case["ops"], case["origin"]
+
+
+def test_compiled_dispatch_resumes_after_a_child_frame():
+    data = b"q 1 0 0 1 5 5 cm Q q Q"
+    seen, stops = dispatched(data, stop_at="Q")
+    assert seen == operations(data)
+    assert stops == [("Q", data.index(b"Q") + 1), ("Q", len(data))]

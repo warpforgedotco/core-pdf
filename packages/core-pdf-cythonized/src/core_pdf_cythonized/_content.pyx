@@ -362,6 +362,57 @@ cdef class ContentScanner:
                 word = PyBytes_FromStringAndSize(<const char*> (b + start), p - start)
                 PyList_Append(values, PyLong_FromString(word, NULL, 10))
 
+    def run(
+        self,
+        lexer,
+        dict handlers,
+        fallback,
+        state,
+        depth,
+        frozenset keep_paint,
+        frozenset line_moving,
+        frozenset keep_layout,
+    ):
+        """Scan and dispatch operations until a handler returns a child frame.
+
+        fallback parses a token the scanner hands back: it returns the next
+        operation, False to resume scanning, or None at the end of the stream.
+        lexer.pos is kept at the end of the current operation.
+        """
+        cdef object result, name, operands, handler, child, layout
+        while True:
+            self.cursor = lexer.pos
+            try:
+                result = self.scan_operation()
+            finally:
+                if self.pending:
+                    self.materialize()
+                self.flush_paths()
+            if type(result) is tuple:
+                lexer.pos = self.cursor
+            else:
+                result = fallback(result)
+                if result is None:
+                    return None
+                if result is False:
+                    continue
+            name, operands = result
+            handler = handlers.get(name)
+            if handler is None:
+                continue
+            if name not in keep_paint:
+                state.shared_glyph_paint = None
+                state.text_layout = None
+            elif name in line_moving:
+                layout = state.text_layout
+                if layout is not None:
+                    layout.style = None
+            elif name not in keep_layout:
+                state.text_layout = None
+            child = handler(operands, depth)
+            if child is not None:
+                return child
+
     def next_operation(self):
         try:
             return self.scan_operation()

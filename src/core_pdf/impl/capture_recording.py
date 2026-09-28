@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from contextlib import suppress
 from copy import copy, replace
 from math import hypot, isfinite
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy
 
@@ -29,7 +29,11 @@ from core_pdf.impl.capture_records import (
     TilingPattern,
     marker_drawing,
 )
-from core_pdf.impl.capture_recovery import CaptureRecovery, iter_content_operations
+from core_pdf.impl.capture_recovery import (
+    CaptureRecovery,
+    ContentFallback,
+    content_scanner,
+)
 from core_pdf.impl.capture_text_runs import RunAccumulator, is_garbage_text
 from core_pdf.impl.capture_tolerant_state import CaptureCaches, RecoveringTextState
 from core_pdf.impl.fonts_decoder import DecodedGlyph, FontDecoder
@@ -284,6 +288,9 @@ def state_key(value: object) -> object:
     return ("identity", id(value))
 
 
+CaptureColorMemo: TypeAlias = tuple[object, tuple[float, ...], object, object, tuple[float, ...]]
+
+
 GLYPH_PAINT_KEEPING_OPERATORS = frozenset(
     ("BT", "Td", "TD", "Tm", "T*", "Tj", "TJ", "'", '"', "Tc", "Tw", "Tz", "TL", "Ts", "Tf")
 )
@@ -355,28 +362,26 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         state = self.state
         assert frame.lexer is not None
         handlers = state.operation_table()
-        depth = frame.depth
-        for name, operands in iter_content_operations(
-            frame.lexer,
-            recovery=state.content_recovery,
-            is_operator=self.operator_names(handlers).__contains__,
-            path_state=state if applies_paths_natively(handlers, state) else None,
-        ):
-            handler = handlers.get(name)
-            if handler is None:
-                continue
-            if name not in GLYPH_PAINT_KEEPING_OPERATORS:
-                state.shared_glyph_paint = None
-                state.text_layout = None
-            elif name in LINE_MOVING_OPERATORS:
-                if (layout := state.text_layout) is not None:
-                    layout.style = None
-            elif name not in TEXT_LAYOUT_KEEPING_OPERATORS:
-                state.text_layout = None
-            child = handler(operands, depth)
-            if child is not None:
-                return child
-        return None
+        lexer = frame.lexer
+        scanner = content_scanner(lexer, state if applies_paths_natively(handlers, state) else None)
+        fallback = ContentFallback(
+            lexer,
+            scanner.operands,
+            state.content_recovery,
+            self.operator_names(handlers).__contains__,
+        )
+        return scanner.run(
+            lexer,
+            cast("dict[str, OperationHandler]", handlers)
+            if type(handlers) is dict
+            else dict(handlers),
+            fallback,
+            state,
+            frame.depth,
+            GLYPH_PAINT_KEEPING_OPERATORS,
+            LINE_MOVING_OPERATORS,
+            TEXT_LAYOUT_KEEPING_OPERATORS,
+        )
 
     def handle_parse_error(self, frame: ContentStreamFrame, error: PdfParseError) -> None:
         if not frame.is_form:
@@ -455,6 +460,8 @@ class TextState(RecoveringTextState):
         self.capture_marked_entries = {}
         self.capture_frames = {}
         self.capture_patterns = IdentityCache()
+        self.last_fill_color: CaptureColorMemo | None = None
+        self.last_stroke_color: CaptureColorMemo | None = None
 
         def font_provider(font: PdfDict, resources: PdfDict) -> FontDecoder:
             return FontDecoder(
@@ -913,6 +920,17 @@ class TextState(RecoveringTextState):
         if captured is not None:
             self.emit_actual_text_span(captured)
 
+    def complete_path(
+        self, kind: str | None, fill_rule: str = "nonzero", *, close: bool = False
+    ) -> None:
+        # paint_path ignores empty paths, so an empty path with no clip pending
+        # is kept rather than replaced; it was never handed to a sink.
+        if not close and self.pending_clip_rule_value is None and not self.current_path.ops:
+            self.current_point = None
+            self.subpath_start = None
+            return
+        super().complete_path(kind, fill_rule, close=close)
+
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         if not source.ops:
             return
@@ -935,35 +953,31 @@ class TextState(RecoveringTextState):
         if not path.has_segments():
             return
         self.drawings.append(
-            CapturedDrawing(
-                seqno=self.sequence,
-                fill=self.capture_color(stroke=False),
-                fill_pattern=self.capture_pattern(graphics.fill_pattern)
-                if fill_paints and fills
-                else None,
-                fill_opacity=graphics.fill_opacity,
-                stroke_color=self.capture_color(stroke=True),
-                stroke_pattern=self.capture_pattern(graphics.stroke_pattern)
+            CapturedDrawing.path_paint(
+                self.sequence,
+                self.capture_color(stroke=False),
+                graphics.fill_opacity,
+                self.capture_pattern(graphics.fill_pattern) if fill_paints and fills else None,
+                self.capture_color(stroke=True),
+                self.capture_pattern(graphics.stroke_pattern)
                 if stroke_paints and strokes
                 else None,
-                stroke_opacity=graphics.stroke_opacity,
-                line_width=line_width,
-                line_cap=graphics.line_cap,
-                line_join=graphics.line_join,
-                dash_pattern=self.transformed_dash_pattern() if graphics.dash_pattern else None,
-                fill_rule=fill_rule,
-                blend_mode=graphics.blend_mode,
-                soft_mask_alpha=self.group_alpha,
-                alpha_is_shape=graphics.alpha_is_shape,
-                kind=painted,
-                graphics_soft_mask=self.capture_graphics_soft_mask()
-                if graphics.soft_mask is not None
-                else None,
-                fill_paints=fill_paints,
-                stroke_paints=stroke_paints,
-                path=path,
-                stream_order=self.stream_order,
-                xobject_depth=self.xobject_depth,
+                graphics.stroke_opacity,
+                line_width,
+                graphics.line_cap,
+                graphics.line_join,
+                self.transformed_dash_pattern() if graphics.dash_pattern else None,
+                fill_rule,
+                graphics.blend_mode,
+                self.group_alpha,
+                painted,
+                path,
+                self.stream_order,
+                self.xobject_depth,
+                fill_paints,
+                stroke_paints,
+                graphics.alpha_is_shape,
+                self.capture_graphics_soft_mask() if graphics.soft_mask is not None else None,
             )
         )
         self.sequence += 1
@@ -1289,18 +1303,38 @@ class TextState(RecoveringTextState):
         else:
             color = graphics.fill_color
             spec = graphics.fill_space
-        if color is None or spec is None or not color_space_paints(spec):
+        if color is None or spec is None:
             return color
         intent = graphics.render_intent
         black_point = graphics.black_point_compensation
+        # Consecutive paints usually reuse the very same color and space objects.
+        last = self.last_stroke_color if stroke else self.last_fill_color
+        if (
+            last is not None
+            and last[0] is spec
+            and last[1] is color
+            and last[2] == intent
+            and last[3] == black_point
+        ):
+            return last[4]
+        if not color_space_paints(spec):
+            return color
         key = (id(spec), color, intent, black_point)
         caches = self.caches
         previous = caches.capture_colors.get(key)
         if previous is not None:
-            return previous[1]
-        converted = color_operands_to_srgb(spec, list(color), rendering=graphics.color_rendering)
-        result = converted if converted is not None else color
-        caches.capture_colors.put(key, (spec, result))
+            result = previous[1]
+        else:
+            converted = color_operands_to_srgb(
+                spec, list(color), rendering=graphics.color_rendering
+            )
+            result = converted if converted is not None else color
+            caches.capture_colors.put(key, (spec, result))
+        memo = (spec, color, intent, black_point, result)
+        if stroke:
+            self.last_stroke_color = memo
+        else:
+            self.last_fill_color = memo
         return result
 
     def capture_shading_dictionary(self, dictionary: dict) -> dict:

@@ -721,6 +721,19 @@ class ContentInterpreter:
             self.graphics.miter_limit = max(1.0, values[0])
 
     def op_d(self, operands: ContentOperands, depth: int) -> None:
+        if len(operands) == 2 and type(operands[0]) in (list, tuple):
+            numbers = typing.cast("typing.Sequence[float]", operands[0])
+            phase_number = typing.cast("float", operands[1])
+            if type(phase_number) in NUMERIC_TYPES and NUMERIC_TYPES.issuperset(map(type, numbers)):
+                try:
+                    dash_array = tuple(map(float, numbers))
+                    phase_value = float(phase_number)
+                except OverflowError:
+                    pass
+                else:
+                    if isfinite(phase_value) and all(map(isfinite, dash_array)):
+                        self.graphics.dash_pattern = (dash_array, phase_value)
+                        return
         if len(operands) != 2:
             self.reject(PdfParseError("d requires two operands"), "dash-pattern", None)
             if len(operands) < 2:
