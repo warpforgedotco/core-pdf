@@ -730,6 +730,11 @@ class TextState(RecoveringTextState):
         actual_text_span = layout.actual_text_span
         captured: GlyphCapture | None = None
         if actual_text_span is None:
+            options = self.options
+            if not options.glyphs and not options.text_runs:
+                # Neither glyphs nor runs are wanted: only the sequence advances.
+                self.sequence = seqno + 1
+                return
             style = layout.style
             if style is None:
                 graphics = self.graphics

@@ -169,7 +169,9 @@ def _source(value: PdfInput, password: str = "") -> PdfDocument:
         raise PdfminerException(exc) from exc
 
 
-DRAWINGS_CAPTURE = CaptureOptions(ink_bounds=False, text_runs=False, render_details=False)
+DRAWINGS_CAPTURE = CaptureOptions(
+    ink_bounds=False, text_runs=False, render_details=False, glyphs=False
+)
 
 
 class EnginePageAdapter:
@@ -395,7 +397,7 @@ class EnginePageAdapter:
 
     def page_program(self) -> Any:
         # Only drawings and images are read from this program (characters come from
-        # the pdfminer capture), so text is captured without boxes, runs or details.
+        # the pdfminer capture), so it captures no glyphs or text runs.
         if self._program is None:
             self._program = self.page.get_page_program(options=DRAWINGS_CAPTURE)
         return self._program

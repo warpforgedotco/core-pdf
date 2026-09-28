@@ -119,29 +119,29 @@ class PdfminerTextState(TextState):
             for decoded in decoder.decode_glyphs(value.data):
                 if needs_spacing:
                     self.cursor += char_space
-                self.text_matrix = self.text_matrix._replace(
-                    e=self.cursor * self.line_matrix.a + self.line_matrix.e,
-                    f=self.cursor * self.line_matrix.b + self.line_matrix.f,
+                matrix = self.text_matrix
+                line = self.line_matrix
+                self.text_matrix = type(matrix)(
+                    matrix.a,
+                    matrix.b,
+                    matrix.c,
+                    matrix.d,
+                    self.cursor * line.a + line.e,
+                    self.cursor * line.b + line.f,
                 )
                 start = len(self.glyphs)
-                advance_x, advance_y = decoder.glyph_advance_vector(
-                    decoded.width_code,
-                    font_size=self.graphics.font_size,
-                    char_space=self.graphics.char_space,
-                    word_space=self.graphics.word_space,
-                    horizontal_scale=self.graphics.horizontal_scale,
-                    encoded_space=decoded.code_bytes == b" ",
-                )
                 if paint is None:
                     paint = self.glyph_paint(self.capture_color(stroke=False))
+                # This capture records no text runs, and show_text reads the glyph
+                # advance only for runs, so it is not computed.
                 self.show_text(
                     self,
                     decoded.unicode,
                     decoded.code_bytes,
                     (decoded,),
                     decoder,
-                    advance_x,
-                    advance_y,
+                    0.0,
+                    0.0,
                     glyph_paint=paint,
                 )
                 if len(self.glyphs) > start:
