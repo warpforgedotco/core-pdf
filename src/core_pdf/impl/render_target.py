@@ -644,6 +644,7 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
 
 class RasterTarget:
     __slots__ = (
+        "fill_memo",
         "pixels",
         "pixel_array",
         "semantic_context",
@@ -734,6 +735,7 @@ class RasterTarget:
         self.scope_stack = []
         self.resources = RenderResources() if resources is None else resources
         self.elementary_scratch = {}
+        self.fill_memo: tuple[object, object, object, tuple[int, int, int, int]] | None = None
         self.group_member_boxes = None
         self.stroke_scratch = None
         if group_alpha is not None:
@@ -886,7 +888,21 @@ class RasterTarget:
             return False
         if item.path.axis_aligned_rect() is not None:
             return False
-        rgba = item.fill_rgba()
+        # Consecutive glyphs of one style share these objects; fill_rgba reads only them.
+        fill = item.fill
+        fill_opacity = item.fill_opacity
+        soft_mask_alpha = item.soft_mask_alpha
+        memo = self.fill_memo
+        if (
+            memo is not None
+            and memo[0] is fill
+            and memo[1] is fill_opacity
+            and memo[2] is soft_mask_alpha
+        ):
+            rgba = memo[3]
+        else:
+            rgba = item.fill_rgba()
+            self.fill_memo = (fill, fill_opacity, soft_mask_alpha, rgba)
         if len(edge_array) == 0:
             return True
         clipped = self.clip.clipped_pixel_box(bbox)
