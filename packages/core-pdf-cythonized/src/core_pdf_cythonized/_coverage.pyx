@@ -3,6 +3,7 @@
 cimport numpy as cnp
 from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
 from libc.math cimport ceil, fabs, floor, rint
+from libc.string cimport memcpy, memset
 
 from core_pdf_cythonized._alpha_blend cimport accumulate_plane, blend_one, opaque_channel
 from core_pdf_cythonized._byte_clamp cimport unit_to_byte
@@ -12,6 +13,14 @@ from core_pdf_cythonized._pymath cimport py_max, py_min
 import numpy
 
 cnp.import_array()
+
+
+cdef enum:
+    STACK_PIECES = 512
+    # Glyph fills keep their device edges and accumulation cells on the stack
+    # up to these sizes; typical glyphs have about a hundred edges in a 5x7 window.
+    STACK_EDGES = 256
+    STACK_CELLS = 1024
 
 
 cdef struct BytePlane:
@@ -76,13 +85,19 @@ cdef object _coverage_from_device(const double* e, Py_ssize_t count, int width, 
     return result
 
 
-cdef double* _zeroed_cells(Py_ssize_t cells) except NULL:
-    cdef double* acc = <double*> PyMem_Malloc((cells if cells > 0 else 1) * sizeof(double))
-    if acc == NULL:
-        raise MemoryError
-    cdef Py_ssize_t i
-    for i in range(cells):
-        acc[i] = 0.0
+cdef double* _zeroed_cells(
+    Py_ssize_t cells, double* scratch=NULL, Py_ssize_t scratch_cells=0
+) except NULL:
+    """cells zeroed doubles: scratch when they fit in it, else a PyMem block."""
+    cdef double* acc
+    if cells <= scratch_cells:
+        acc = scratch
+    else:
+        acc = <double*> PyMem_Malloc((cells if cells > 0 else 1) * sizeof(double))
+        if acc == NULL:
+            raise MemoryError
+    if cells > 0:
+        memset(acc, 0, cells * sizeof(double))
     return acc
 
 
@@ -91,13 +106,14 @@ cdef int _accumulate_device(
 ) except -1:
     cdef Py_ssize_t stride = width + 2
 
-    cdef Py_ssize_t capacity = 1024, pieces = 0
-    cdef Py_ssize_t* idx = <Py_ssize_t*> PyMem_Malloc(capacity * sizeof(Py_ssize_t))
-    cdef double* left_w = <double*> PyMem_Malloc(capacity * sizeof(double))
-    cdef double* right_w = <double*> PyMem_Malloc(capacity * sizeof(double))
-    if idx == NULL or left_w == NULL or right_w == NULL:
-        PyMem_Free(idx); PyMem_Free(left_w); PyMem_Free(right_w)
-        raise MemoryError
+    # Each piece adds its left weight to its cell now and its right weight to the
+    # next cell after every left weight is in, the order the sums were defined in.
+    # The right weights wait in stack buffers, moved to the heap past STACK_PIECES.
+    cdef Py_ssize_t idx_stack[STACK_PIECES]
+    cdef double right_stack[STACK_PIECES]
+    cdef Py_ssize_t capacity = STACK_PIECES, pieces = 0
+    cdef Py_ssize_t* idx = idx_stack
+    cdef double* right_w = right_stack
 
     cdef Py_ssize_t i, r, first_row, last_row, column, column_count, column_offset
     cdef double sx, sy, ex, ey, direction, top_x, top_y, bottom_x, bottom_y, slope
@@ -107,7 +123,6 @@ cdef int _accumulate_device(
     cdef double midpoint, offset_in_cell, signed_height
     cdef bint vertical
     cdef Py_ssize_t* new_idx
-    cdef double* new_left
     cdef double* new_right
 
     try:
@@ -159,29 +174,30 @@ cdef int _accumulate_device(
                     signed_height = direction * fragment_height
 
                     if pieces == capacity:
-                        capacity *= 2
-                        new_idx = <Py_ssize_t*> PyMem_Realloc(
-                            idx, capacity * sizeof(Py_ssize_t))
-                        new_left = <double*> PyMem_Realloc(left_w, capacity * sizeof(double))
-                        new_right = <double*> PyMem_Realloc(right_w, capacity * sizeof(double))
-                        if new_idx == NULL or new_left == NULL or new_right == NULL:
-                            if new_idx != NULL: idx = new_idx
-                            if new_left != NULL: left_w = new_left
-                            if new_right != NULL: right_w = new_right
+                        new_idx = <Py_ssize_t*> PyMem_Malloc(
+                            2 * capacity * sizeof(Py_ssize_t))
+                        new_right = <double*> PyMem_Malloc(2 * capacity * sizeof(double))
+                        if new_idx == NULL or new_right == NULL:
+                            PyMem_Free(new_idx); PyMem_Free(new_right)
                             raise MemoryError
-                        idx = new_idx; left_w = new_left; right_w = new_right
-                    idx[pieces] = r * stride + column
-                    left_w[pieces] = signed_height * (1.0 - offset_in_cell)
+                        memcpy(new_idx, idx, capacity * sizeof(Py_ssize_t))
+                        memcpy(new_right, right_w, capacity * sizeof(double))
+                        if idx != idx_stack:
+                            PyMem_Free(idx); PyMem_Free(right_w)
+                        idx = new_idx; right_w = new_right
+                        capacity *= 2
+                    column = r * stride + column
+                    acc[column] += signed_height * (1.0 - offset_in_cell)
+                    idx[pieces] = column
                     right_w[pieces] = signed_height * offset_in_cell
                     pieces += 1
 
         with nogil:
             for i in range(pieces):
-                acc[idx[i]] += left_w[i]
-            for i in range(pieces):
                 acc[idx[i] + 1] += right_w[i]
     finally:
-        PyMem_Free(idx); PyMem_Free(left_w); PyMem_Free(right_w)
+        if idx != idx_stack:
+            PyMem_Free(idx); PyMem_Free(right_w)
     return 0
 
 
@@ -234,12 +250,19 @@ cdef double* _device_edges(
     double scale,
     double ix0,
     double iy0,
+    double* scratch=NULL,
+    Py_ssize_t scratch_edges=0,
 ) except NULL:
+    """The kept edges in device space: in scratch when they fit, else a PyMem block."""
     cdef const double* view = edge_data(rows)
     cdef Py_ssize_t count = edge_count(rows), width = edge_width(rows)
-    cdef double* device = <double*> PyMem_Malloc(kept * 4 * sizeof(double))
-    if device == NULL:
-        raise MemoryError
+    cdef double* device
+    if kept <= scratch_edges:
+        device = scratch
+    else:
+        device = <double*> PyMem_Malloc(kept * 4 * sizeof(double))
+        if device == NULL:
+            raise MemoryError
     cdef Py_ssize_t i, out = 0
     cdef const double* row
     cdef double sy, ey
@@ -372,7 +395,11 @@ cdef int _coverage_fill(
     cdef unsigned char opaque_green = opaque_channel(green)
     cdef unsigned char opaque_blue = opaque_channel(blue)
     cdef Py_ssize_t stride = width + 2
-    cdef double* device = _device_edges(rows, kept, crop_x0, crop_y1, scale, ix0, iy0)
+    cdef double device_stack[STACK_EDGES * 4]
+    cdef double acc_stack[STACK_CELLS]
+    cdef double* device = _device_edges(
+        rows, kept, crop_x0, crop_y1, scale, ix0, iy0, device_stack, STACK_EDGES
+    )
     cdef double* acc = NULL
     cdef Py_ssize_t r, c
     cdef Py_ssize_t channel = pixels.channel
@@ -381,7 +408,7 @@ cdef int _coverage_fill(
     cdef unsigned char* pixel
     cdef float* cell
     try:
-        acc = _zeroed_cells(height * stride)
+        acc = _zeroed_cells(height * stride, acc_stack, STACK_CELLS)
         _accumulate_device(device, kept, width, height, acc)
         with nogil:
             for r in range(height):
@@ -410,8 +437,10 @@ cdef int _coverage_fill(
                         cell = <float*> (<char*> shape_plane.data + r * shape_plane.row + c * shape_plane.column)
                         cell[0] = accumulate_plane(cell[0], shape, shape_scale)
     finally:
-        PyMem_Free(device)
-        PyMem_Free(acc)
+        if device != device_stack:
+            PyMem_Free(device)
+        if acc != acc_stack:
+            PyMem_Free(acc)
     return 0
 
 
@@ -581,7 +610,11 @@ cdef int _knockout_fill(
     cdef unsigned char opaque_green = opaque_channel(green)
     cdef unsigned char opaque_blue = opaque_channel(blue)
     cdef Py_ssize_t stride = width + 2
-    cdef double* device = _device_edges(rows, kept, crop_x0, crop_y1, scale, ix0, iy0)
+    cdef double device_stack[STACK_EDGES * 4]
+    cdef double acc_stack[STACK_CELLS]
+    cdef double* device = _device_edges(
+        rows, kept, crop_x0, crop_y1, scale, ix0, iy0, device_stack, STACK_EDGES
+    )
     cdef double* acc = NULL
     cdef Py_ssize_t r, c, k
     cdef double running, coverage, scaled, eff, sh, remaining, rga, ra, complete, initial, ec
@@ -597,7 +630,7 @@ cdef int _knockout_fill(
     cdef float ONE = 1.0
     cdef float source_alpha, source_shape, previous
     try:
-        acc = _zeroed_cells(height * stride)
+        acc = _zeroed_cells(height * stride, acc_stack, STACK_CELLS)
         _accumulate_device(device, kept, width, height, acc)
         with nogil:
             for r in range(height):
@@ -667,6 +700,8 @@ cdef int _knockout_fill(
                         previous = parent_shape[0]
                         parent_shape[0] = previous + (ONE - previous) * source_shape
     finally:
-        PyMem_Free(device)
-        PyMem_Free(acc)
+        if device != device_stack:
+            PyMem_Free(device)
+        if acc != acc_stack:
+            PyMem_Free(acc)
     return 0
