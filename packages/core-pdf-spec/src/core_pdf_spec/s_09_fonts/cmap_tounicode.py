@@ -126,17 +126,10 @@ class ToUnicodeCMap:
         self.mappings = dict(parent.mappings) if parent else {}
         self.mappings.update(parsed.mappings)
         self.validate_mappings()
-        self.decode_lengths = tuple(
-            sorted(
-                length
-                for length in (
-                    {len(end) for _, end in self.code_space_ranges}
-                    | {len(k) for k in self.mappings}
-                )
-                if length > 0
-            )
-            or {1}
-        )
+        lengths = set(map(len, self.mappings))
+        lengths.update(len(end) for _, end in self.code_space_ranges)
+        lengths.discard(0)
+        self.decode_lengths = tuple(sorted(lengths)) or (1,)
 
     @staticmethod
     def parse_program(data: bytes) -> ParsedToUnicodeCMap:

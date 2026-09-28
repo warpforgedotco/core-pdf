@@ -46,11 +46,18 @@ def single_code_mapping(
     to_unicode: ToUnicodeCMap, cmap: CMapDecoder | None, limit: int | None = None
 ) -> dict[bytes, tuple[int, str]]:
     mapping: dict[bytes, tuple[int, str]] = {}
+    # An identity CMap decodes a code of its own width to its value, and a one-byte
+    # code in a two-byte identity to CID 0, so it need not decode each code.
+    identity = cmap.identity_width() if cmap is not None else None
     for code_bytes, value in to_unicode.mappings.items():
-        if len(code_bytes) not in {1, 2}:
+        width = len(code_bytes)
+        if width not in {1, 2}:
             continue
         cid = int.from_bytes(code_bytes, "big")
-        if cmap is not None:
+        if identity is not None:
+            if identity == 2 and width == 1:
+                cid = 0
+        elif cmap is not None:
             decoded = cmap.decode_entries(code_bytes)
             if len(decoded) == 1 and decoded[0][0] == code_bytes:
                 cid = decoded[0][1]
