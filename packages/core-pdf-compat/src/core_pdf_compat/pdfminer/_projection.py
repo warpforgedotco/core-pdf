@@ -342,7 +342,7 @@ def project_page(
             and isinstance(text_matrix, (tuple, list))
             and len(text_matrix) == 4
         ):
-            matrix_a, matrix_b, matrix_c, matrix_d = (float(value) for value in text_matrix)
+            matrix_a, matrix_b, matrix_c, matrix_d = map(float, text_matrix)
             origin_x, origin_y = _pdfminer_layout_origin(
                 baseline,
                 normalize_noise=(
