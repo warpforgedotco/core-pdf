@@ -291,6 +291,10 @@ def state_key(value: object) -> object:
 CaptureColorMemo: TypeAlias = tuple[object, tuple[float, ...], object, object, tuple[float, ...]]
 
 
+# color_space_paints is True for every other kind.
+SPACES_THAT_MAY_NOT_PAINT = frozenset(("Indexed", "Pattern", "Separation", "DeviceN"))
+
+
 GLYPH_PAINT_KEEPING_OPERATORS = frozenset(
     ("BT", "Td", "TD", "Tm", "T*", "Tj", "TJ", "'", '"', "Tc", "Tw", "Tz", "TL", "Ts", "Tf")
 )
@@ -955,33 +959,60 @@ class TextState(RecoveringTextState):
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         if not source.ops:
             return
-        if not self.is_graphics_visible():
+        if self.marked_content_stack and not self.is_graphics_visible():
             return
         graphics = self.graphics
-        fills = kind != "stroke" and not self.initial_pattern(stroke=False)
-        strokes = kind != "fill" and not self.initial_pattern(stroke=True)
+        fill_space = graphics.fill_space
+        stroke_space = graphics.stroke_space
+        # initial_pattern, color_space_paints and transformed_line_width, inlined.
+        fills = kind != "stroke" and not (
+            fill_space.kind == "Pattern" and graphics.fill_pattern is None
+        )
+        strokes = kind != "fill" and not (
+            stroke_space.kind == "Pattern" and graphics.stroke_pattern is None
+        )
         if not fills and not strokes:
             return
         painted: PaintedDrawingKind = (
             "fillstroke" if fills and strokes else "fill" if fills else "stroke"
         )
-        fill_paints = color_space_paints(graphics.fill_space)
-        stroke_paints = color_space_paints(graphics.stroke_space)
+        fill_paints = fill_space.kind not in SPACES_THAT_MAY_NOT_PAINT or color_space_paints(
+            fill_space
+        )
+        stroke_paints = stroke_space.kind not in SPACES_THAT_MAY_NOT_PAINT or color_space_paints(
+            stroke_space
+        )
 
         ctm = graphics.ctm
-        line_width = self.transformed_line_width()
-        path = flatten_path(source, None if ctm == IDENTITY_MATRIX else ctm, self.lines, line_width)
-        if not path.has_segments():
+        line_width = max(0.0, graphics.line_width)
+        if line_width != 0:
+            line_width *= self.graphics_scale()
+        else:
+            line_width = 0.0
+        xs, ys, spans, bbox, has_segments = flatten_path_commands(
+            source.ops,
+            source.coords,
+            None if ctm == IDENTITY_MATRIX else ctm,
+            hypot,
+            self.lines.rows,
+            line_width,
+        )
+        if not has_segments:
             return
+        path = CapturedPath.deferred_flattened(xs, ys, spans, bbox, has_segments)
+        fill_pattern = graphics.fill_pattern
+        stroke_pattern = graphics.stroke_pattern
         self.drawings.append(
             CapturedDrawing.path_paint(
                 self.sequence,
                 self.capture_color(stroke=False),
                 graphics.fill_opacity,
-                self.capture_pattern(graphics.fill_pattern) if fill_paints and fills else None,
+                self.capture_pattern(fill_pattern)
+                if fill_paints and fills and fill_pattern is not None
+                else None,
                 self.capture_color(stroke=True),
-                self.capture_pattern(graphics.stroke_pattern)
-                if stroke_paints and strokes
+                self.capture_pattern(stroke_pattern)
+                if stroke_paints and strokes and stroke_pattern is not None
                 else None,
                 graphics.stroke_opacity,
                 line_width,
