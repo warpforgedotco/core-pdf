@@ -178,6 +178,14 @@ def discard_duplicate_layer_runs(
     primary_indices: list[int],
     candidate_groups: Iterable[list[int]],
 ) -> tuple[TextRun, ...]:
+    # Only groups with enough tokens are compared, and often there are none.
+    qualifying: list[dict[int, tuple[str, ...]]] = []
+    for indices in candidate_groups:
+        tokens_by_index = {index: normalized_tokens((runs[index],)) for index in indices}
+        if sum(map(len, tokens_by_index.values())) >= DUPLICATE_LAYER_MIN_TOKENS:
+            qualifying.append(tokens_by_index)
+    if not qualifying:
+        return runs
     primary_runs = [runs[index] for index in primary_indices]
     primary_geometry = numpy.asarray(
         [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs], dtype=numpy.float64
@@ -188,10 +196,7 @@ def discard_duplicate_layer_runs(
     primary_tokens = [normalized_tokens((run,)) for run in primary_runs]
     primary_text = [collapse_ws(run.text) for run in primary_runs]
     duplicate_indices: set[int] = set()
-    for indices in candidate_groups:
-        tokens_by_index = {index: normalized_tokens((runs[index],)) for index in indices}
-        if sum(map(len, tokens_by_index.values())) < DUPLICATE_LAYER_MIN_TOKENS:
-            continue
+    for tokens_by_index in qualifying:
         matched_indices: list[int] = []
         matched_tokens = 0
         covered_primary: set[int] = set()
