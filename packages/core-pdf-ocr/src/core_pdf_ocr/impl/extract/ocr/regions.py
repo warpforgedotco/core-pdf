@@ -291,7 +291,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
         center_y = (box[1] + box[3]) * 0.5
         column = min(columns - 1, max(0, int(center_x * columns / max(1.0, page_width))))
         row = min(rows - 1, max(0, int(center_y * rows / max(1.0, page_height))))
-        native_counts[row * columns + column] += sum(not char.isspace() for char in text)
+        native_counts[row * columns + column] += len(text) - sum(map(str.isspace, text))
 
     for cell, density in enumerate(vector_density):
         if density <= 0.0:

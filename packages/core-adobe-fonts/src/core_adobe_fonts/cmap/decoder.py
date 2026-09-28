@@ -326,6 +326,23 @@ class CMapDecoder:
     def mapped_notdef(self, code: bytes) -> int | None:
         return mapped_code(code, self.notdef_mappings, self.notdef_ranges_by_lead_byte)
 
+    def identity_width(self) -> int | None:
+        """1 or 2 when decode_entries reads every code as its own CID, one or two bytes wide."""
+        if (
+            self.default_to_identity
+            and not self.cid_mappings
+            and not self.cid_ranges
+            and not self.notdef_mappings
+            and not self.notdef_ranges
+            and len(self.code_space_ranges) == 1
+        ):
+            start, end = self.code_space_ranges[0]
+            if start == b"\x00" and end == b"\xff" and self.decode_lengths == (1,):
+                return 1
+            if start == b"\x00\x00" and end == b"\xff\xff" and self.decode_lengths == (2,):
+                return 2
+        return None
+
     def decode_entries(self, data: bytes) -> list[tuple[bytes, int]]:
         if not data:
             return []

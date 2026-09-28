@@ -71,6 +71,8 @@ class PdfminerTextState(TextState):
         )
         self.cursor = 0.0
         self.frame_cursors: dict[int, float] = {}
+        # A glyph's pdfminer advance depends only on its decoder and these fields.
+        self.glyph_widths: dict[tuple[Any, ...], float] = {}
 
     def enter_stream(self, state: object, frame: ContentStreamFrame) -> None:
         self.frame_cursors[id(frame)] = self.cursor
@@ -117,36 +119,48 @@ class PdfminerTextState(TextState):
             for decoded in decoder.decode_glyphs(value.data):
                 if needs_spacing:
                     self.cursor += char_space
-                self.text_matrix = self.text_matrix._replace(
-                    e=self.cursor * self.line_matrix.a + self.line_matrix.e,
-                    f=self.cursor * self.line_matrix.b + self.line_matrix.f,
+                matrix = self.text_matrix
+                line = self.line_matrix
+                self.text_matrix = type(matrix)(
+                    matrix.a,
+                    matrix.b,
+                    matrix.c,
+                    matrix.d,
+                    self.cursor * line.a + line.e,
+                    self.cursor * line.b + line.f,
                 )
                 start = len(self.glyphs)
-                advance_x, advance_y = decoder.glyph_advance_vector(
-                    decoded.width_code,
-                    font_size=self.graphics.font_size,
-                    char_space=self.graphics.char_space,
-                    word_space=self.graphics.word_space,
-                    horizontal_scale=self.graphics.horizontal_scale,
-                    encoded_space=decoded.code_bytes == b" ",
-                )
                 if paint is None:
                     paint = self.glyph_paint(self.capture_color(stroke=False))
+                # This capture records no text runs, and show_text reads the glyph
+                # advance only for runs, so it is not computed.
                 self.show_text(
                     self,
                     decoded.unicode,
                     decoded.code_bytes,
                     (decoded,),
                     decoder,
-                    advance_x,
-                    advance_y,
+                    0.0,
+                    0.0,
                     glyph_paint=paint,
                 )
                 if len(self.glyphs) > start:
                     glyph = self.glyphs[start]
-                    width = pdfminer_normalized_width(glyph)
-                    if pdfminer_embedded_cmap_is_unusable(glyph):
-                        width = 0.0
+                    key = (
+                        glyph.font_decoder,
+                        glyph.char_code,
+                        glyph.cid,
+                        glyph.code_bytes,
+                        glyph.unicode_source,
+                        glyph.text,
+                        glyph.alternates,
+                    )
+                    width = self.glyph_widths.get(key)
+                    if width is None:
+                        width = pdfminer_normalized_width(glyph)
+                        if pdfminer_embedded_cmap_is_unusable(glyph):
+                            width = 0.0
+                        self.glyph_widths[key] = width
                     self.cursor += width * self.graphics.font_size * scale
                 if decoded.width_code == 32:
                     self.cursor += word_space

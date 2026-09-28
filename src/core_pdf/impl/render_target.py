@@ -89,8 +89,8 @@ from core_pdf_cythonized import (
     composite_knockout_group,
     composite_masked_normal,
     composite_normal_group,
-    fill_glyph_coverage,
-    fill_glyph_knockout,
+    fill_glyph_coverage_at,
+    fill_glyph_knockout_at,
     fill_rect_coverage,
     sample_opaque_pixels,
     shading_blend,
@@ -644,6 +644,7 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
 
 class RasterTarget:
     __slots__ = (
+        "fill_memo",
         "pixels",
         "pixel_array",
         "semantic_context",
@@ -734,6 +735,7 @@ class RasterTarget:
         self.scope_stack = []
         self.resources = RenderResources() if resources is None else resources
         self.elementary_scratch = {}
+        self.fill_memo: tuple[object, object, object, tuple[int, int, int, int]] | None = None
         self.group_member_boxes = None
         self.stroke_scratch = None
         if group_alpha is not None:
@@ -886,7 +888,21 @@ class RasterTarget:
             return False
         if item.path.axis_aligned_rect() is not None:
             return False
-        rgba = item.fill_rgba()
+        # Consecutive glyphs of one style share these objects; fill_rgba reads only them.
+        fill = item.fill
+        fill_opacity = item.fill_opacity
+        soft_mask_alpha = item.soft_mask_alpha
+        memo = self.fill_memo
+        if (
+            memo is not None
+            and memo[0] is fill
+            and memo[1] is fill_opacity
+            and memo[2] is soft_mask_alpha
+        ):
+            rgba = memo[3]
+        else:
+            rgba = item.fill_rgba()
+            self.fill_memo = (fill, fill_opacity, soft_mask_alpha, rgba)
         if len(edge_array) == 0:
             return True
         clipped = self.clip.clipped_pixel_box(bbox)
@@ -897,10 +913,9 @@ class RasterTarget:
             (ix1 - ix0) * (iy1 - iy0) < 10_000 and self.clip.clip_paths_are_axis_aligned_rects()
         ):
             return False
-        self.set_shape_alpha(rgba[3] / 255.0)
-        rows = slice(iy0, iy1)
-        columns = slice(ix0, ix1)
-        drawn = fill_glyph_knockout(
+        self.shape_alpha = clamp01(rgba[3] / 255.0) if self.paint_alpha_is_shape else 1.0
+        backdrop = parent.backdrop
+        drawn = fill_glyph_knockout_at(
             edge_array,
             self.crop_x0,
             self.crop_y1,
@@ -910,16 +925,22 @@ class RasterTarget:
             ix1 - ix0,
             iy1 - iy0,
             rgba,
-            parent.view[rows, columns],
-            self.pixel_view(parent.backdrop)[rows, columns],
-            parent.source_alpha[rows, columns],
-            parent.source_shape[rows, columns],
+            parent.view,
+            self.page_pixels if backdrop is self.page_buffer else self.pixel_view(backdrop),
+            parent.source_alpha,
+            parent.source_shape,
             self.shape_alpha,
         )
         if drawn is None:
             return True
-        if parent.painted_boxes is not None:
-            self.record_knockout_paint((ix0, iy0, ix1, iy1))
+        boxes = parent.painted_boxes
+        if boxes is not None:
+            # record_knockout_paint, inlined; a drawn window is never empty.
+            if len(boxes) >= self.KNOCKOUT_DISJOINT_LIMIT:
+                boxes.clear()
+                boxes.append((0, 0, self.width, self.height))
+            else:
+                boxes.append((ix0, iy0, ix1, iy1))
         self.extend_paint_box(iy0, iy1, ix0, ix1)
         return True
 
@@ -1933,11 +1954,7 @@ class RasterTarget:
                 else numpy.asarray(edges, dtype=numpy.float64)
             )
             if normal_fast and rectangular_clip and fill_rule == "nonzero":
-                rows = slice(iy0, iy1)
-                columns = slice(ix0, ix1)
-                source_alpha = self.group_source_alpha
-                source_shape = self.group_source_shape
-                drawn = fill_glyph_coverage(
+                drawn = fill_glyph_coverage_at(
                     source,
                     crop_x0,
                     crop_y1,
@@ -1947,9 +1964,9 @@ class RasterTarget:
                     ix1 - ix0,
                     iy1 - iy0,
                     rgba,
-                    self.pixel_array[rows, columns],
-                    source_alpha[rows, columns] if source_alpha is not None else None,
-                    source_shape[rows, columns] if source_shape is not None else None,
+                    self.pixel_array,
+                    self.group_source_alpha,
+                    self.group_source_shape,
                     self.shape_alpha,
                 )
                 if drawn is not None:
@@ -2969,8 +2986,20 @@ class RasterTarget:
                 elementary_group = knockout or mask_alpha is not None
                 boxes = self.buffer_stack[-1].painted_boxes
                 skip_box = None
-                if knockout and boxes is not None and mask_alpha is None:
-                    skip_box = self.knockout_skip_box(item, boxes)
+                if knockout and boxes is not None and mask_alpha is None and is_plain_fill(item):
+                    # knockout_skip_box, inlined: a plain fill painting pixels no earlier
+                    # member touched needs no elementary group.
+                    clipped = self.clip.clipped_pixel_box(item.bbox)
+                    if clipped is None:
+                        skip_box = EMPTY_PIXEL_BOX
+                    else:
+                        skip_box = clipped[1]
+                        if skip_box != EMPTY_PIXEL_BOX:
+                            x0, y0, x1, y1 = skip_box
+                            for bx0, by0, bx1, by1 in boxes:
+                                if x0 < bx1 and bx0 < x1 and y0 < by1 and by0 < y1:
+                                    skip_box = None
+                                    break
                     if skip_box is not None:
                         elementary_group = False
                 if (

@@ -191,3 +191,26 @@ def test_no_line_table_collects_no_lines():
     )
     assert xs.tolist() == [0.0, 5.0]
     assert has_segments
+
+
+def test_a_python_hypot_takes_the_buffer_holding_path_with_the_same_result():
+    commands = [
+        identity("m", (0.0, 0.0)),
+        identity("c", (0.0, 0.0, 1.0, 1.0, 2.0, 1.0, 3.0, 0.0)),
+        identity("l", (4.0, 2.0)),
+    ]
+    encoded = encode(commands)
+    assert encoded is not None
+    ops, coords = encoded
+
+    def resizing_hypot(x, y):
+        # Growing the inputs mid-walk must not move the buffers being read.
+        with pytest.raises(BufferError):
+            ops.append(0)
+        return math.hypot(x, y)
+
+    compiled = flatten_path_commands(ops, coords, None, math.hypot, None, 1.0)
+    guarded = flatten_path_commands(ops, coords, None, resizing_hypot, None, 1.0)
+    assert compiled[0].tolist() == guarded[0].tolist()
+    assert compiled[1].tolist() == guarded[1].tolist()
+    assert compiled[2:] == guarded[2:]

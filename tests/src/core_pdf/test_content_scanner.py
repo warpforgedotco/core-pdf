@@ -7,9 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from core_pdf.impl.capture_recovery import iter_content_operations
+from core_pdf.impl.capture_recording import (
+    GLYPH_PAINT_KEEPING_OPERATORS,
+    LINE_MOVING_OPERATORS,
+    TEXT_LAYOUT_KEEPING_OPERATORS,
+)
+from core_pdf.impl.capture_recovery import ContentFallback, content_scanner, iter_content_operations
 from core_pdf.impl.types import PdfName
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
+from core_pdf_spec.types import PdfString
 
 GOLDEN_PATH = Path(__file__).parent / "content_scanner_golden.pkl.gz"
 GOLDEN = pickle.loads(gzip.decompress(GOLDEN_PATH.read_bytes()))
@@ -125,3 +131,127 @@ def test_the_tokenizer_uses_the_kernel():
     from core_pdf_cythonized import ContentScanner
 
     assert capture_recovery.ContentScanner is ContentScanner
+
+
+class DispatchState:
+    shared_glyph_paint = None
+    text_layout = None
+
+
+def dispatched(data, *, stop_at=None):
+    lexer = PdfLexer(data)
+    scanner = content_scanner(lexer)
+    fallback = ContentFallback(lexer, scanner.operands, None, None)
+    seen = []
+    names = {name for case in GOLDEN for name, _ in case["ops"]} | {"q", "Q", "cm", "BI"}
+
+    def handler_for(name):
+        def handler(operands, depth):
+            seen.append((name, tuple(normalize(operand) for operand in operands)))
+            return (name, lexer.pos) if name == stop_at else None
+
+        return handler
+
+    handlers = {name: handler_for(name) for name in names}
+    stops = []
+    while True:
+        child = scanner.run(
+            lexer,
+            handlers,
+            fallback,
+            DispatchState(),
+            0,
+            GLYPH_PAINT_KEEPING_OPERATORS,
+            LINE_MOVING_OPERATORS,
+            TEXT_LAYOUT_KEEPING_OPERATORS,
+        )
+        if child is None:
+            return seen, stops
+        stops.append(child)
+
+
+@pytest.mark.parametrize("index", range(len(GOLDEN)))
+def test_compiled_dispatch_sees_the_iterated_operations(index):
+    case = GOLDEN[index]
+    seen, _ = dispatched(case["data"])
+    assert seen == case["ops"], case["origin"]
+
+
+def test_compiled_dispatch_resumes_after_a_child_frame():
+    data = b"q 1 0 0 1 5 5 cm Q q Q"
+    seen, stops = dispatched(data, stop_at="Q")
+    assert seen == operations(data)
+    assert stops == [("Q", data.index(b"Q") + 1), ("Q", len(data))]
+
+
+STRING_PIECES = (
+    b"(abc)",
+    b"()",
+    b"(a\\)b)",
+    b"(a(b)c)",
+    b"(line\nend)",
+    b"(cr\rlf)",
+    b"(\\101)",
+    b"<4142>",
+    b"<>",
+    b"<414>",
+    b"<41 42>",
+    b"<4G>",
+    b"<<",
+    b">>",
+    b"(unterminated",
+    b"<41",
+    b"[(a)-20(b)]",
+    b"[(a) 3 <4142>]",
+    b"[<41>(x)]",
+    b"[(a\\n)]",
+    b"[1(a)]",
+    b"[(a)",
+    b"-20",
+    b"3.5",
+    b"/F1",
+    b"Tj",
+    b"TJ",
+    b"'",
+    b" ",
+    b"\n",
+    b"%c\n",
+)
+
+
+def strictly(value):
+    if isinstance(value, PdfString):
+        return ("string", value.data, value.is_literal)
+    if isinstance(value, (list, tuple)):
+        return ("seq", tuple(strictly(item) for item in value))
+    return normalize(value)
+
+
+def strict_operations(data):
+    return [
+        (name, tuple(strictly(operand) for operand in operands))
+        for name, operands in iter_content_operations(PdfLexer(data))
+    ]
+
+
+def test_string_fast_path_matches_the_python_lexer(monkeypatch):
+    import random
+
+    from core_pdf.impl import capture_recovery
+
+    rng = random.Random(11)
+    plain = capture_recovery.ContentScanner
+    for _ in range(3000):
+        data = b" ".join(rng.choice(STRING_PIECES) for _ in range(rng.randint(1, 8)))
+        fast = strict_operations(data)
+
+        class WithoutStrings(plain):
+            def enable_strings(self, string_type):
+                pass
+
+        monkeypatch.setattr(capture_recovery, "ContentScanner", WithoutStrings)
+        try:
+            slow = strict_operations(data)
+        finally:
+            monkeypatch.setattr(capture_recovery, "ContentScanner", plain)
+        assert fast == slow, data

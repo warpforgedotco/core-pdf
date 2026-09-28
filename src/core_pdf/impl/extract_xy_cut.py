@@ -180,19 +180,29 @@ def interval_crossing_counts(boxes: numpy.ndarray, positions: numpy.ndarray) -> 
     )
 
 
-def column_gap_minimum(region_boxes: numpy.ndarray) -> float:
+def median_box_width(region_boxes: numpy.ndarray) -> float | None:
+    if not len(region_boxes):
+        return None
+    return finite_median(region_boxes[:, 2] - region_boxes[:, 0])
+
+
+def column_gap_minimum(region_boxes: numpy.ndarray, median_width: float | None = None) -> float:
     rules = XY_CUT
     if not len(region_boxes):
         return rules.column_gap_floor
-    median_width = finite_median(region_boxes[:, 2] - region_boxes[:, 0])
+    if median_width is None:
+        median_width = finite_median(region_boxes[:, 2] - region_boxes[:, 0])
     return max(rules.column_gap_floor, median_width * rules.column_gap_width_ratio)
 
 
-def narrow_column_gap_minimum(region_boxes: numpy.ndarray) -> float:
+def narrow_column_gap_minimum(
+    region_boxes: numpy.ndarray, median_width: float | None = None
+) -> float:
     rules = XY_CUT
     if not len(region_boxes):
         return rules.column_gap_floor
-    median_width = finite_median(region_boxes[:, 2] - region_boxes[:, 0])
+    if median_width is None:
+        median_width = finite_median(region_boxes[:, 2] - region_boxes[:, 0])
     median_height = finite_median(region_boxes[:, 3] - region_boxes[:, 1])
     return max(
         rules.narrow_gap_floor,
@@ -226,9 +236,17 @@ def columnar_split_alignment(region_boxes: numpy.ndarray, cut: float) -> bool:
 
 def narrow_projection_gap(
     region_boxes: numpy.ndarray,
+    column_minimum: float | None = None,
+    median_width: float | None = None,
 ) -> tuple[float, float] | None:
-    narrow_minimum = narrow_column_gap_minimum(region_boxes)
-    if narrow_minimum >= column_gap_minimum(region_boxes):
+    """column_minimum and median_width, when given, are column_gap_minimum and
+    median_box_width of region_boxes, which the caller already has."""
+    if median_width is None:
+        median_width = median_box_width(region_boxes)
+    narrow_minimum = narrow_column_gap_minimum(region_boxes, median_width)
+    if column_minimum is None:
+        column_minimum = column_gap_minimum(region_boxes, median_width)
+    if narrow_minimum >= column_minimum:
         return None
     narrow = best_projection_gap(region_boxes, 0, narrow_minimum)
     if narrow is None or not columnar_split_alignment(region_boxes, narrow[1]):
@@ -271,9 +289,11 @@ def peel_spanning_band(
         if len(remainder_indexes) < 2:
             return None
         remainder = boxes[remainder_indexes]
-        gutter = best_projection_gap(remainder, 0, column_gap_minimum(remainder))
+        remainder_width = median_box_width(remainder)
+        remainder_minimum = column_gap_minimum(remainder, remainder_width)
+        gutter = best_projection_gap(remainder, 0, remainder_minimum)
         if gutter is None:
-            gutter = narrow_projection_gap(remainder)
+            gutter = narrow_projection_gap(remainder, remainder_minimum, remainder_width)
         if gutter is not None:
             if from_bottom:
                 if not columnar_split_alignment(remainder, gutter[1]):
@@ -407,17 +427,17 @@ def xy_cut_regions(
         return [region for group in groups for region in recurse(group, next_used_obstacles)]
 
     region_boxes = boxes[indexes]
+    region_width = median_box_width(region_boxes)
+    region_column_minimum = column_gap_minimum(region_boxes, region_width)
     horizontal = best_region_projection_gap(
         geometry,
         current_region,
         1,
         max(rules.horizontal_gap_floor, median_height * rules.horizontal_gap_ratio),
     )
-    vertical = best_region_projection_gap(
-        geometry, current_region, 0, column_gap_minimum(region_boxes)
-    )
+    vertical = best_region_projection_gap(geometry, current_region, 0, region_column_minimum)
     if vertical is None:
-        vertical = narrow_projection_gap(region_boxes)
+        vertical = narrow_projection_gap(region_boxes, region_column_minimum, region_width)
     candidates: list[tuple[float, int, float]] = []
     if horizontal is not None:
         candidates.append(
@@ -426,9 +446,7 @@ def xy_cut_regions(
     if vertical is not None:
         candidates.append((vertical[0] / median_height, 0, vertical[1]))
     if not candidates:
-        tolerant_cut = gutter_tolerating_contained_boxes(
-            region_boxes, column_gap_minimum(region_boxes)
-        )
+        tolerant_cut = gutter_tolerating_contained_boxes(region_boxes, region_column_minimum)
         if tolerant_cut is not None:
             centers_x = geometry.x_centers[indexes]
             left = indexes[centers_x < tolerant_cut]

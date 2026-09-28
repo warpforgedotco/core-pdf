@@ -177,7 +177,7 @@ def seed_text(seed: StrokedTextSeed) -> str | None:
     if (
         seed.confidence < STROKED_TEXT_SEED_MIN_CONFIDENCE
         or not 2 <= len(text) <= STROKED_TEXT_MAX_TOKEN_CHARACTERS
-        or any(character.isspace() for character in text)
+        or any(map(str.isspace, text))
         or any(character not in STROKED_TEXT_ALLOWED_CHARACTERS for character in text)
     ):
         return None
@@ -543,7 +543,7 @@ def decode_runs(
         if any(signature is None or signature not in mapping for signature in signatures):
             continue
         text = "".join(mapping[signature] for signature in signatures if signature is not None)
-        if not any(character.isalnum() for character in text):
+        if not any(map(str.isalnum, text)):
             continue
         bbox = run.bbox
         if len(signatures) == 1 and (bbox[2] - bbox[0]) / max(0.01, bbox[3] - bbox[1]) < (

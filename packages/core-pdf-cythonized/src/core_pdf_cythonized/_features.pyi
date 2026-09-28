@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+def cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int, ...]: ...

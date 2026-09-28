@@ -8,10 +8,12 @@ license-files = ["LICENSE.txt"]
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 classifiers = ["Development Status :: 3 - Alpha"]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "numpy>=2.5.1",
+]
 
 [build-system]
-requires = ["setuptools>=80", "wheel", "Cython>=3.1"]
+requires = ["setuptools>=80", "wheel", "Cython>=3.1", "numpy>=2.5.1"]
 build-backend = "setuptools.build_meta"
 
 [project.urls]

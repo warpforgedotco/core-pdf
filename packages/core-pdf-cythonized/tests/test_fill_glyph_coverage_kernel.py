@@ -12,6 +12,7 @@ from core_pdf_cythonized import (
     accumulate_source_plane,
     blend_normal_alpha_array_numpy,
     fill_glyph_coverage,
+    fill_glyph_coverage_at,
     glyph_coverage_plane,
 )
 
@@ -113,3 +114,70 @@ def test_a_mismatched_target_is_refused():
         fill_glyph_coverage(
             edges, 0.0, 10.0, 1.0, 0, 0, 4, 4, (0, 0, 0, 255), target, None, None, 1.0
         )
+
+
+def optional_plane(rng, shape, present):
+    return rng.random(shape, dtype=numpy.float32) if present else None
+
+
+def copied_plane(plane):
+    return None if plane is None else plane.copy()
+
+
+def assert_same_plane(have, want):
+    if want is None:
+        assert have is None
+    else:
+        assert have is not None
+        assert have.tobytes() == want.tobytes()
+
+
+@pytest.mark.parametrize("index", range(len(GOLDEN)))
+def test_whole_plane_entry_matches_the_windowed_one(index):
+    case = GOLDEN[index]
+    height, width = case["h"], case["w"]
+    ix0, iy0 = int(case["ix0"]), int(case["iy0"])
+    rng = numpy.random.default_rng(2000 + index)
+    arguments = (case["src"], case["crop_x0"], case["crop_y1"], case["scale"], ix0, iy0)
+    rows = slice(iy0, iy0 + height)
+    columns = slice(ix0, ix0 + width)
+    for rgba in PAINTS[:3]:
+        for with_alpha, with_shape in ((False, False), (True, False), (True, True)):
+            shape = (max(iy0, 0) + height + 2, max(ix0, 0) + width + 2)
+            target = rng.integers(0, 256, (*shape, 4), dtype=numpy.uint8)
+            source_alpha = optional_plane(rng, shape, with_alpha)
+            source_shape = optional_plane(rng, shape, with_shape)
+            whole_target = target.copy()
+            whole_alpha = copied_plane(source_alpha)
+            whole_shape = copied_plane(source_shape)
+            try:
+                expected = fill_glyph_coverage(
+                    *arguments,
+                    width,
+                    height,
+                    rgba,
+                    target[rows, columns],
+                    None if source_alpha is None else source_alpha[rows, columns],
+                    None if source_shape is None else source_shape[rows, columns],
+                    0.75,
+                )
+            except ValueError:
+                with pytest.raises(ValueError):
+                    fill_glyph_coverage_at(
+                        *arguments,
+                        width,
+                        height,
+                        rgba,
+                        whole_target,
+                        whole_alpha,
+                        whole_shape,
+                        0.75,
+                    )
+                continue
+            got = fill_glyph_coverage_at(
+                *arguments, width, height, rgba, whole_target, whole_alpha, whole_shape, 0.75
+            )
+            assert got == expected
+            assert whole_target.tobytes() == target.tobytes()
+            assert_same_plane(whole_alpha, source_alpha)
+            assert_same_plane(whole_shape, source_shape)

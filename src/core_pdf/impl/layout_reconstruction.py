@@ -55,7 +55,10 @@ def reconstruct_layout_line_text(
         text = render_single_run_text(run)
         if not text:
             return EMPTY_LAYOUT_LINE_TEXT
-        return LayoutLineText(text, (line_text_segment(run, text, ""),))
+        return LayoutLineText(
+            text,
+            (LayoutLineTextSegment(text, "", run.advance_bbox, run.rotation_angle),),
+        )
 
     angle = runs[0].rotation_angle
     if angle == 0 and layout_text_rules.runs_are_left_to_right(runs):
@@ -93,9 +96,7 @@ def reconstruct_layout_line_text(
         elif run.text_is_space:
             has_explicit_spaces = True
 
-    alnum_text_runs = sum(
-        1 for run in non_space_runs if any(ch.isalnum() for ch in run.stripped_text)
-    )
+    alnum_text_runs = sum(1 for run in non_space_runs if any(map(str.isalnum, run.stripped_text)))
     is_table_like_line = (len(sorted_runs) >= 4 and digit_text_runs >= 2) or (
         len(non_space_runs) >= 3 and alnum_text_runs >= 3 and len(sorted_runs) >= 5
     )
@@ -114,32 +115,6 @@ def reconstruct_layout_line_text(
         is_formula_like_line=is_formula_like_line,
         suppress_tiny_page_footer=(len(sorted_runs) <= 3 and max_text_font_size <= 5.0),
     ).build()
-
-
-def line_text_segment(
-    run: TextRun,
-    text: str,
-    separator_before: str,
-) -> LayoutLineTextSegment:
-    return LayoutLineTextSegment(
-        text=text,
-        separator_before=separator_before,
-        advance_bbox=run.advance_bbox,
-        rotation_angle=run.rotation_angle,
-    )
-
-
-def line_text_segment_from_atom(
-    atom: LayoutLineTextAtom,
-    separator_before: str,
-) -> LayoutLineTextSegment:
-    run = atom.run
-    return LayoutLineTextSegment(
-        text=atom.text,
-        separator_before=separator_before,
-        advance_bbox=atom.advance_bbox,
-        rotation_angle=run.rotation_angle,
-    )
 
 
 def render_single_run_text(run: TextRun) -> str:
@@ -169,7 +144,9 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
         if text.isspace():
             if parts and parts[-1] != " ":
                 parts.append(" ")
-                segments.append(line_text_segment(run, " ", " "))
+                segments.append(
+                    LayoutLineTextSegment(" ", " ", run.advance_bbox, run.rotation_angle)
+                )
             previous_run = run
             continue
         if not run.has_text:
@@ -192,7 +169,9 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
                 parts.append(" ")
                 separator = " "
             parts.append(text)
-            segments.append(line_text_segment(run, text, separator))
+            segments.append(
+                LayoutLineTextSegment(text, separator, run.advance_bbox, run.rotation_angle)
+            )
             previous_run = run
     combined = layout_text_rules.split_glued_numeric_label_boundaries("".join(parts))
     if not combined:
@@ -325,9 +304,8 @@ class GlyphLineBuilder:
                         append_part(separator_before)
                 append_part(atom_text)
                 append_segment(
-                    line_text_segment_from_atom(
-                        atom,
-                        separator_before,
+                    LayoutLineTextSegment(
+                        atom_text, separator_before, atom.advance_bbox, run.rotation_angle
                     )
                 )
                 prev_atom = atom
@@ -363,31 +341,17 @@ class GlyphLineBuilder:
         if (
             clusters
             and text == run.text
-            and "".join(cluster.text for cluster in clusters) == run.text
-            and not any(character.isspace() for character in text)
+            and not any(map(str.isspace, text))
+            and "".join([cluster.text for cluster in clusters]) == text
         ):
-            atoms = [
-                LayoutLineTextAtom(
-                    text=cluster.text,
-                    run=run,
-                    advance_bbox=cluster.advance_bbox,
-                    baseline=cluster.baseline,
-                    has_glyph_geometry=True,
-                )
+            atoms = tuple(
+                LayoutLineTextAtom(cluster.text, run, cluster.advance_bbox, cluster.baseline, True)
                 for cluster in clusters
                 if cluster.text
-            ]
+            )
             if atoms:
-                return tuple(atoms)
-        return (
-            LayoutLineTextAtom(
-                text=text,
-                run=run,
-                advance_bbox=run.advance_bbox,
-                baseline=run.baseline,
-                has_glyph_geometry=False,
-            ),
-        )
+                return atoms
+        return (LayoutLineTextAtom(text, run, run.advance_bbox, run.baseline, False),)
 
     def prepare_explicit_space_context(self) -> None:
         runs = self.runs

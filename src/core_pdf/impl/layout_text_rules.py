@@ -711,7 +711,7 @@ def script_digit_text(text: str) -> bool:
     if len(text) == 1:
         return text in SCRIPT_DIGITS
     stripped = text.strip()
-    return bool(stripped) and all(ch in SCRIPT_DIGITS for ch in stripped)
+    return bool(stripped) and SCRIPT_DIGITS.issuperset(stripped)
 
 
 def inline_marker_text(text: str) -> bool:
@@ -730,7 +730,7 @@ def compact_unit_suffix_should_join(
 ) -> bool:
     prev = previous.strip()
     text = current.strip()
-    if text != "V" or not prev or not any(ch.isdigit() for ch in prev):
+    if text != "V" or not prev or not any(map(str.isdigit, prev)):
         return False
     if prev[-1:] not in {"k", "K", "m", "M"}:
         return False

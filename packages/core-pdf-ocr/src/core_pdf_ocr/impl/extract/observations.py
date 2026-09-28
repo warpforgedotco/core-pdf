@@ -633,7 +633,7 @@ def fuse_observations(
     confidence_mask = ocr.confidence >= minimum_confidence
     if plan.image_regions_only or plan.fusion_policy is FusionPolicy.UNCOVERED_VECTOR:
         alphanumeric_mask = numpy.fromiter(
-            (sum(character.isalnum() for character in text) >= 1 for text in ocr.text),
+            (sum(map(str.isalnum, text)) >= 1 for text in ocr.text),
             dtype=numpy.bool_,
             count=len(ocr),
         )

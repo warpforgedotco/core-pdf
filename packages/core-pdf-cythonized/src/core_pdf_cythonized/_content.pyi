@@ -15,4 +15,16 @@ class ContentScanner:
         make_name: Callable[[bytes], Any],
     ) -> None: ...
     def set_path_state(self, state: Any) -> None: ...
+    def enable_strings(self, string_type: Callable[..., Any]) -> None: ...
     def next_operation(self) -> tuple[str, tuple[Any, ...]] | int: ...
+    def run(
+        self,
+        lexer: Any,
+        handlers: dict[str, Callable[..., Any]],
+        fallback: Callable[[int], tuple[str, tuple[Any, ...]] | bool | None],
+        state: Any,
+        depth: int,
+        keep_paint: frozenset[str],
+        line_moving: frozenset[str],
+        keep_layout: frozenset[str],
+    ) -> Any: ...

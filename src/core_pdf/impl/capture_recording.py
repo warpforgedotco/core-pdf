@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from contextlib import suppress
 from copy import copy, replace
 from math import hypot, isfinite
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy
 
@@ -15,7 +15,9 @@ from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_glyphs import GlyphCapture, GlyphPaint, capture_glyphs, glyph_style
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CapturedProgram, CaptureOptions
 from core_pdf.impl.capture_records import (
+    EMPTY_DRAWING_ITEMS,
     EMPTY_LINES,
+    PATH_PAINT_DEFAULTS,
     CapturedDrawing,
     CapturedInlineImage,
     CapturedLines,
@@ -29,7 +31,11 @@ from core_pdf.impl.capture_records import (
     TilingPattern,
     marker_drawing,
 )
-from core_pdf.impl.capture_recovery import CaptureRecovery, iter_content_operations
+from core_pdf.impl.capture_recovery import (
+    CaptureRecovery,
+    ContentFallback,
+    content_scanner,
+)
 from core_pdf.impl.capture_text_runs import RunAccumulator, is_garbage_text
 from core_pdf.impl.capture_tolerant_state import CaptureCaches, RecoveringTextState
 from core_pdf.impl.fonts_decoder import DecodedGlyph, FontDecoder
@@ -52,7 +58,7 @@ from core_pdf.impl.types import (
     ReplaceFields,
     ReprFields,
 )
-from core_pdf_cythonized import flatten_path_commands
+from core_pdf_cythonized import SlotLayout, flatten_path_commands
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content import model
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -284,6 +290,25 @@ def state_key(value: object) -> object:
     return ("identity", id(value))
 
 
+CaptureColorMemo: TypeAlias = tuple[object, tuple[float, ...], object, object, tuple[float, ...]]
+
+
+DRAWING_LAYOUT = SlotLayout(CapturedDrawing, CapturedDrawing.__fields__)
+DRAWING_RAW_DATA = PATH_PAINT_DEFAULTS["raw_data"]
+DRAWING_DICTIONARY = PATH_PAINT_DEFAULTS["dictionary"]
+DRAWING_IMAGE_SOURCE = PATH_PAINT_DEFAULTS["image_source"]
+DRAWING_IMAGE_CLIP = PATH_PAINT_DEFAULTS["image_clip"]
+DRAWING_BBOX = PATH_PAINT_DEFAULTS["bbox"]
+DRAWING_COLOR_RENDERING = PATH_PAINT_DEFAULTS["color_rendering"]
+DRAWING_PAINTS = PATH_PAINT_DEFAULTS["paints"]
+DRAWING_GROUP_ISOLATED = PATH_PAINT_DEFAULTS["group_isolated"]
+DRAWING_GROUP_KNOCKOUT = PATH_PAINT_DEFAULTS["group_knockout"]
+
+
+# color_space_paints is True for every other kind.
+SPACES_THAT_MAY_NOT_PAINT = frozenset(("Indexed", "Pattern", "Separation", "DeviceN"))
+
+
 GLYPH_PAINT_KEEPING_OPERATORS = frozenset(
     ("BT", "Td", "TD", "Tm", "T*", "Tj", "TJ", "'", '"', "Tc", "Tw", "Tz", "TL", "Ts", "Tf")
 )
@@ -355,28 +380,26 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         state = self.state
         assert frame.lexer is not None
         handlers = state.operation_table()
-        depth = frame.depth
-        for name, operands in iter_content_operations(
-            frame.lexer,
-            recovery=state.content_recovery,
-            is_operator=self.operator_names(handlers).__contains__,
-            path_state=state if applies_paths_natively(handlers, state) else None,
-        ):
-            handler = handlers.get(name)
-            if handler is None:
-                continue
-            if name not in GLYPH_PAINT_KEEPING_OPERATORS:
-                state.shared_glyph_paint = None
-                state.text_layout = None
-            elif name in LINE_MOVING_OPERATORS:
-                if (layout := state.text_layout) is not None:
-                    layout.style = None
-            elif name not in TEXT_LAYOUT_KEEPING_OPERATORS:
-                state.text_layout = None
-            child = handler(operands, depth)
-            if child is not None:
-                return child
-        return None
+        lexer = frame.lexer
+        scanner = content_scanner(lexer, state if applies_paths_natively(handlers, state) else None)
+        fallback = ContentFallback(
+            lexer,
+            scanner.operands,
+            state.content_recovery,
+            self.operator_names(handlers).__contains__,
+        )
+        return scanner.run(
+            lexer,
+            cast("dict[str, OperationHandler]", handlers)
+            if type(handlers) is dict
+            else dict(handlers),
+            fallback,
+            state,
+            frame.depth,
+            GLYPH_PAINT_KEEPING_OPERATORS,
+            LINE_MOVING_OPERATORS,
+            TEXT_LAYOUT_KEEPING_OPERATORS,
+        )
 
     def handle_parse_error(self, frame: ContentStreamFrame, error: PdfParseError) -> None:
         if not frame.is_form:
@@ -455,6 +478,8 @@ class TextState(RecoveringTextState):
         self.capture_marked_entries = {}
         self.capture_frames = {}
         self.capture_patterns = IdentityCache()
+        self.last_fill_color: CaptureColorMemo | None = None
+        self.last_stroke_color: CaptureColorMemo | None = None
 
         def font_provider(font: PdfDict, resources: PdfDict) -> FontDecoder:
             return FontDecoder(
@@ -580,26 +605,27 @@ class TextState(RecoveringTextState):
                 provenance=(*captured.provenance, ("unicode_source", "actual_text")),
             )
         )
-        self.glyphs.append(
-            GlyphObservation(
-                text=actual_text,
-                ink_bbox=captured.advance_bbox,
-                advance_bbox=captured.advance_bbox,
-                seqno=captured.seqno,
-                font_name=captured.font_name,
-                font_size=captured.font_size,
-                baseline=captured.baseline,
-                rotation_angle=captured.rotation_angle,
-                fill=captured.fill_color,
-                visible=captured.visible,
-                confidence=captured.confidence,
-                unicode_source="actual_text",
-                font_decoder=entry.font_decoder,
-                effective_font_size=captured.font_size,
-                effective_font_height=entry.effective_font_height,
-                provenance=captured.provenance,
+        if self.options.glyphs:
+            self.glyphs.append(
+                GlyphObservation(
+                    text=actual_text,
+                    ink_bbox=captured.advance_bbox,
+                    advance_bbox=captured.advance_bbox,
+                    seqno=captured.seqno,
+                    font_name=captured.font_name,
+                    font_size=captured.font_size,
+                    baseline=captured.baseline,
+                    rotation_angle=captured.rotation_angle,
+                    fill=captured.fill_color,
+                    visible=captured.visible,
+                    confidence=captured.confidence,
+                    unicode_source="actual_text",
+                    font_decoder=entry.font_decoder,
+                    effective_font_size=captured.font_size,
+                    effective_font_height=entry.effective_font_height,
+                    provenance=captured.provenance,
+                )
             )
-        )
 
     def new_text_layout(
         self,
@@ -723,6 +749,11 @@ class TextState(RecoveringTextState):
         actual_text_span = layout.actual_text_span
         captured: GlyphCapture | None = None
         if actual_text_span is None:
+            options = self.options
+            if not options.glyphs and not options.text_runs:
+                # Neither glyphs nor runs are wanted: only the sequence advances.
+                self.sequence = seqno + 1
+                return
             style = layout.style
             if style is None:
                 graphics = self.graphics
@@ -775,7 +806,8 @@ class TextState(RecoveringTextState):
                 self.glyph_cluster_count,
                 self.options,
             )
-            self.glyphs.extend(captured.glyphs)
+            if options.glyphs:
+                self.glyphs.extend(captured.glyphs)
             self.glyph_cluster_count += captured.cluster_count
             if not self.options.text_runs:
                 self.sequence = seqno + 1
@@ -913,57 +945,158 @@ class TextState(RecoveringTextState):
         if captured is not None:
             self.emit_actual_text_span(captured)
 
+    def complete_path(
+        self, kind: str | None, fill_rule: str = "nonzero", *, close: bool = False
+    ) -> None:
+        # paint_path ignores empty paths, so an empty path with no clip pending
+        # is kept rather than replaced; it was never handed to a sink.
+        path = self.current_path
+        if not close and self.pending_clip_rule_value is None and not path.ops:
+            self.current_point = None
+            self.subpath_start = None
+            return
+        if self.sink is not self:
+            super().complete_path(kind, fill_rule, close=close)
+            return
+        if close:
+            self.close_current_subpath()
+        if kind is not None:
+            self.paint_path(self, path, kind, fill_rule)
+        if self.pending_clip_rule_value is not None:
+            self.clip_path(self, path, self.pending_clip_rule_value)
+        # paint_path and clip_path copy the path as they flatten it, so it is emptied
+        # for the next one rather than replaced.
+        del path.ops[:]
+        del path.coords[:]
+        self.current_point = None
+        self.subpath_start = None
+        self.pending_clip_rule_value = None
+
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         if not source.ops:
             return
-        if not self.is_graphics_visible():
+        if self.marked_content_stack and not self.is_graphics_visible():
             return
         graphics = self.graphics
-        fills = kind != "stroke" and not self.initial_pattern(stroke=False)
-        strokes = kind != "fill" and not self.initial_pattern(stroke=True)
+        fill_space = graphics.fill_space
+        stroke_space = graphics.stroke_space
+        # initial_pattern, color_space_paints and transformed_line_width, inlined.
+        fills = kind != "stroke" and not (
+            fill_space.kind == "Pattern" and graphics.fill_pattern is None
+        )
+        strokes = kind != "fill" and not (
+            stroke_space.kind == "Pattern" and graphics.stroke_pattern is None
+        )
         if not fills and not strokes:
             return
         painted: PaintedDrawingKind = (
             "fillstroke" if fills and strokes else "fill" if fills else "stroke"
         )
-        fill_paints = color_space_paints(graphics.fill_space)
-        stroke_paints = color_space_paints(graphics.stroke_space)
+        fill_paints = fill_space.kind not in SPACES_THAT_MAY_NOT_PAINT or color_space_paints(
+            fill_space
+        )
+        stroke_paints = stroke_space.kind not in SPACES_THAT_MAY_NOT_PAINT or color_space_paints(
+            stroke_space
+        )
 
         ctm = graphics.ctm
-        line_width = self.transformed_line_width()
-        path = flatten_path(source, None if ctm == IDENTITY_MATRIX else ctm, self.lines, line_width)
-        if not path.has_segments():
+        line_width = max(0.0, graphics.line_width)
+        if line_width != 0:
+            # graphics_scale, with its cache check inlined.
+            scale_cache = self.scale_cache
+            line_width *= (
+                scale_cache[1]
+                if scale_cache is not None and scale_cache[0] is ctm
+                else self.graphics_scale()
+            )
+        else:
+            line_width = 0.0
+        xs, ys, spans, bbox, has_segments = flatten_path_commands(
+            source.ops,
+            source.coords,
+            None if ctm == IDENTITY_MATRIX else ctm,
+            hypot,
+            self.lines.rows,
+            line_width,
+        )
+        if not has_segments:
             return
+        path = CapturedPath.deferred_flattened(xs, ys, spans, bbox, has_segments)
+        fill_pattern = graphics.fill_pattern
+        stroke_pattern = graphics.stroke_pattern
+        # capture_color's memo, checked inline for the common repeated paint.
+        intent = graphics.render_intent
+        black_point = graphics.black_point_compensation
+        fill_color = graphics.fill_color
+        last = self.last_fill_color
+        if fill_color is None or fill_space is None:
+            captured_fill = fill_color
+        elif (
+            last is not None
+            and last[0] is fill_space
+            and last[1] is fill_color
+            and last[2] == intent
+            and last[3] == black_point
+        ):
+            captured_fill = last[4]
+        else:
+            captured_fill = self.capture_color(stroke=False)
+        stroke_color = graphics.stroke_color
+        last = self.last_stroke_color
+        if stroke_color is None or stroke_space is None:
+            captured_stroke = stroke_color
+        elif (
+            last is not None
+            and last[0] is stroke_space
+            and last[1] is stroke_color
+            and last[2] == intent
+            and last[3] == black_point
+        ):
+            captured_stroke = last[4]
+        else:
+            captured_stroke = self.capture_color(stroke=True)
         self.drawings.append(
-            CapturedDrawing(
-                seqno=self.sequence,
-                fill=self.capture_color(stroke=False),
-                fill_pattern=self.capture_pattern(graphics.fill_pattern)
-                if fill_paints and fills
-                else None,
-                fill_opacity=graphics.fill_opacity,
-                stroke_color=self.capture_color(stroke=True),
-                stroke_pattern=self.capture_pattern(graphics.stroke_pattern)
-                if stroke_paints and strokes
-                else None,
-                stroke_opacity=graphics.stroke_opacity,
-                line_width=line_width,
-                line_cap=graphics.line_cap,
-                line_join=graphics.line_join,
-                dash_pattern=self.transformed_dash_pattern() if graphics.dash_pattern else None,
-                fill_rule=fill_rule,
-                blend_mode=graphics.blend_mode,
-                soft_mask_alpha=self.group_alpha,
-                alpha_is_shape=graphics.alpha_is_shape,
-                kind=painted,
-                graphics_soft_mask=self.capture_graphics_soft_mask()
-                if graphics.soft_mask is not None
-                else None,
-                fill_paints=fill_paints,
-                stroke_paints=stroke_paints,
-                path=path,
-                stream_order=self.stream_order,
-                xobject_depth=self.xobject_depth,
+            # Built by its slots: CapturedDrawing's __init__ only assigns them, and its
+            # __post_init__ keeps the default empty items as they are.
+            DRAWING_LAYOUT.build(
+                (
+                    self.sequence,
+                    captured_fill,
+                    graphics.fill_opacity,
+                    self.capture_pattern(fill_pattern)
+                    if fill_paints and fills and fill_pattern is not None
+                    else None,
+                    captured_stroke,
+                    self.capture_pattern(stroke_pattern)
+                    if stroke_paints and strokes and stroke_pattern is not None
+                    else None,
+                    graphics.stroke_opacity,
+                    line_width,
+                    graphics.line_cap,
+                    graphics.line_join,
+                    self.transformed_dash_pattern() if graphics.dash_pattern else None,
+                    fill_rule,
+                    graphics.blend_mode,
+                    self.group_alpha,
+                    DRAWING_RAW_DATA,
+                    DRAWING_DICTIONARY,
+                    DRAWING_IMAGE_SOURCE,
+                    DRAWING_IMAGE_CLIP,
+                    painted,
+                    EMPTY_DRAWING_ITEMS,
+                    path,
+                    DRAWING_BBOX,
+                    self.stream_order,
+                    self.xobject_depth,
+                    DRAWING_COLOR_RENDERING,
+                    DRAWING_PAINTS,
+                    fill_paints,
+                    stroke_paints,
+                    DRAWING_GROUP_ISOLATED,
+                    DRAWING_GROUP_KNOCKOUT,
+                    graphics.alpha_is_shape,
+                    self.capture_graphics_soft_mask() if graphics.soft_mask is not None else None,
+                )
             )
         )
         self.sequence += 1
@@ -1289,18 +1422,38 @@ class TextState(RecoveringTextState):
         else:
             color = graphics.fill_color
             spec = graphics.fill_space
-        if color is None or spec is None or not color_space_paints(spec):
+        if color is None or spec is None:
             return color
         intent = graphics.render_intent
         black_point = graphics.black_point_compensation
+        # Consecutive paints usually reuse the very same color and space objects.
+        last = self.last_stroke_color if stroke else self.last_fill_color
+        if (
+            last is not None
+            and last[0] is spec
+            and last[1] is color
+            and last[2] == intent
+            and last[3] == black_point
+        ):
+            return last[4]
+        if not color_space_paints(spec):
+            return color
         key = (id(spec), color, intent, black_point)
         caches = self.caches
         previous = caches.capture_colors.get(key)
         if previous is not None:
-            return previous[1]
-        converted = color_operands_to_srgb(spec, list(color), rendering=graphics.color_rendering)
-        result = converted if converted is not None else color
-        caches.capture_colors.put(key, (spec, result))
+            result = previous[1]
+        else:
+            converted = color_operands_to_srgb(
+                spec, list(color), rendering=graphics.color_rendering
+            )
+            result = converted if converted is not None else color
+            caches.capture_colors.put(key, (spec, result))
+        memo = (spec, color, intent, black_point, result)
+        if stroke:
+            self.last_stroke_color = memo
+        else:
+            self.last_fill_color = memo
         return result
 
     def capture_shading_dictionary(self, dictionary: dict) -> dict:
@@ -1473,6 +1626,9 @@ class TextState(RecoveringTextState):
         if not dash_pattern:
             return None
         dash_array, phase = dash_pattern
+        if not dash_array and phase == 0:
+            # A solid line: a zero phase scales to the same zero.
+            return [], float(phase)
         scale = self.graphics_scale()
         return [max(0.0, float(value) * scale) for value in dash_array], float(phase) * scale
 

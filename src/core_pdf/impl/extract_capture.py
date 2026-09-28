@@ -178,6 +178,14 @@ def discard_duplicate_layer_runs(
     primary_indices: list[int],
     candidate_groups: Iterable[list[int]],
 ) -> tuple[TextRun, ...]:
+    # Only groups with enough tokens are compared, and often there are none.
+    qualifying: list[dict[int, tuple[str, ...]]] = []
+    for indices in candidate_groups:
+        tokens_by_index = {index: normalized_tokens((runs[index],)) for index in indices}
+        if sum(map(len, tokens_by_index.values())) >= DUPLICATE_LAYER_MIN_TOKENS:
+            qualifying.append(tokens_by_index)
+    if not qualifying:
+        return runs
     primary_runs = [runs[index] for index in primary_indices]
     primary_geometry = numpy.asarray(
         [(run.x0, run.y0, run.x1, run.y1) for run in primary_runs], dtype=numpy.float64
@@ -188,10 +196,7 @@ def discard_duplicate_layer_runs(
     primary_tokens = [normalized_tokens((run,)) for run in primary_runs]
     primary_text = [collapse_ws(run.text) for run in primary_runs]
     duplicate_indices: set[int] = set()
-    for indices in candidate_groups:
-        tokens_by_index = {index: normalized_tokens((runs[index],)) for index in indices}
-        if sum(map(len, tokens_by_index.values())) < DUPLICATE_LAYER_MIN_TOKENS:
-            continue
+    for tokens_by_index in qualifying:
         matched_indices: list[int] = []
         matched_tokens = 0
         covered_primary: set[int] = set()
@@ -366,25 +371,25 @@ def glyph_evidence_fields(
     unsupported = 0
     low_confidence = 0
     glyph_count = 0
-    for glyph_text, unicode_source, confidence in glyph_fields:
+    # Only the tallies matter, and a page repeats few distinct fields: each distinct
+    # triple is classified once and counted as often as it occurs.
+    for (glyph_text, unicode_source, confidence), count in Counter(glyph_fields).items():
         if not glyph_text or glyph_text.isspace():
             continue
-        glyph_count += 1
+        glyph_count += count
         semantics = glyph_unicode_semantics(glyph_text, unicode_source)
         if semantics is GlyphUnicodeSemantics.AUTHORITATIVE:
-            authoritative += 1
+            authoritative += count
         elif semantics is GlyphUnicodeSemantics.HEURISTIC:
-            heuristic += 1
+            heuristic += count
         elif semantics is GlyphUnicodeSemantics.UNSUPPORTED:
-            unsupported += 1
+            unsupported += count
         else:
-            unknown += 1
+            unknown += count
         if confidence is None or confidence < 0.50:
-            low_confidence += 1
+            low_confidence += count
     actual_text_characters = sum(
-        sum(not character.isspace() for character in run.text)
-        for run in runs
-        if run_uses_actual_text(run)
+        len(run.text) - sum(map(str.isspace, run.text)) for run in runs if run_uses_actual_text(run)
     )
     return GlyphEvidence(
         glyph_count=glyph_count,

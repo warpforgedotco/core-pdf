@@ -487,6 +487,15 @@ class CapturedDrawing(ReprFields, ReplaceFields, metaclass=RecordType, frozen=Fa
         return normalize_rect(bbox)
 
 
+PATH_PAINT_DEFAULTS: dict[str, Any] = dict(
+    zip(
+        CapturedDrawing.__fields__[-len(CapturedDrawing.__init__.__defaults__ or ()) :],
+        CapturedDrawing.__init__.__defaults__ or (),
+        strict=True,
+    )
+)
+
+
 def marker_drawing(
     kind: MarkerDrawingKind,
     seqno: int,

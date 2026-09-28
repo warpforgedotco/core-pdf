@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field  # noqa: TID251
+from typing import Any
 
 from core_pdf.impl.capture_program import CaptureOptions
 from core_pdf.impl.fonts_decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts_helpers import LEGITIMATE_MULTI_CHAR_GLYPHS
+from core_pdf.impl.fonts_metrics import FontMetricsModel
 from core_pdf.impl.geometry import transform_bbox
 from core_pdf.impl.glyphs import (
+    CONFIDENCE_CACHE,
     GlyphClusterLike,
     GlyphObservation,
     GlyphStyle,
@@ -18,7 +22,13 @@ from core_pdf.impl.glyphs import (
     min_optional_confidence,
 )
 from core_pdf.impl.types import RecordType, Rectangle, ReplaceFields, ReprFields
-from core_pdf_cythonized import horizontal_glyph_geometry
+from core_pdf_cythonized import (
+    DECODED_GLYPH_FIELDS,
+    OBSERVATION_FIELDS,
+    SlotLayout,
+    capture_horizontal_glyphs,
+    horizontal_glyph_geometry,
+)
 
 TextBasis = tuple[float, float, float, float, float, float]
 
@@ -176,6 +186,9 @@ GLYPH_BITMAP_REPAIR_LABELS = frozenset(
 SUSPICIOUS_GLYPH_BITMAP_TEXT = {"\ufffd", "\ufffc"}
 
 
+GLYPH_BITMAP_LABELS = GLYPH_BITMAP_REPAIR_LABELS | SUSPICIOUS_GLYPH_BITMAP_TEXT
+
+
 def should_capture_glyph_bitmap(text: str) -> bool:
     if len(text) != 1:
         return False
@@ -193,8 +206,12 @@ def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
     nonspace = [char for char in text if not char.isspace()]
     if len(nonspace) < 2:
         return False
-    punctuation = sum(not char.isalnum() for char in nonspace)
+    punctuation = len(nonspace) - sum(map(str.isalnum, nonspace))
     return punctuation >= 1 and punctuation / len(nonspace) >= 0.25
+
+
+DECODED_GLYPH_LAYOUT = SlotLayout(DecodedGlyph, DECODED_GLYPH_FIELDS)
+OBSERVATION_LAYOUT = SlotLayout(GlyphObservation, OBSERVATION_FIELDS)
 
 
 class RunGeometry(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False, eq=False):
@@ -297,6 +314,22 @@ def glyph_style(
     )
 
 
+def glyph_width_source(
+    glyph_width: Callable[[int], float],
+) -> Callable[[int], float] | tuple[dict[Any, float], float]:
+    """What capture_horizontal_glyphs reads widths from: the (widths, default) pair
+    behind a plain FontMetricsModel.glyph_width, looked up without a call per
+    glyph, or the callable itself."""
+    metrics = getattr(glyph_width, "__self__", None)
+    if (
+        type(metrics) is FontMetricsModel
+        and getattr(glyph_width, "__func__", None) is FontMetricsModel.glyph_width
+        and type(metrics.widths) is dict
+    ):
+        return metrics.widths, metrics.default_width
+    return glyph_width
+
+
 def capture_glyphs(
     text: str,
     glyphs: tuple[DecodedGlyph, ...],
@@ -326,6 +359,49 @@ def capture_glyphs(
         return result
     effective_font_name = decoder.font_name or font_name
     is_vertical = decoder.is_vertical
+    if not is_vertical:
+        captured = capture_horizontal_glyphs(
+            text,
+            glyphs,
+            DECODED_GLYPH_LAYOUT,
+            OBSERVATION_LAYOUT,
+            glyph_width_source(decoder.glyph_width),
+            decoder.glyph_bbox if options.ink_bounds else None,
+            font_size,
+            char_space,
+            word_space,
+            horizontal_scale,
+            options.render_details,
+            options.text_runs,
+            text_basis,
+            font_ascent,
+            font_descent,
+            rise,
+            font_scale,
+            advance_scale,
+            clip_bbox,
+            page_clip,
+            visible,
+            style,
+            seqno,
+            effective_font_name,
+            cluster_start,
+            (CONFIDENCE_CACHE, glyph_unicode_confidence),
+            should_capture_suspicious_multi_glyph_bitmap,
+            GLYPH_BITMAP_LABELS,
+            result.glyphs,
+            result.clusters,
+        )
+        if captured is not None:
+            kept_count, kept_advance, kept_ink, kept_confidence = captured
+            if options.text_runs and kept_advance is not None and kept_ink is not None:
+                geometry = result.geometry
+                geometry.started = True
+                geometry.advance = kept_advance
+                geometry.ink = kept_ink
+                geometry.confidence = kept_confidence
+            result.cluster_count = kept_count
+            return result
     glyph_width = decoder.glyph_width
     glyph_bbox_for_code = decoder.glyph_bbox
     vertical_position = decoder.vertical_glyph_position

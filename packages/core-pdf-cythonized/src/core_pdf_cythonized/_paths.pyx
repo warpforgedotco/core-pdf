@@ -1,12 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+cimport numpy as cnp
 from cpython cimport array
+from cpython.bytearray cimport PyByteArray_AS_STRING, PyByteArray_GET_SIZE
+from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_GET_SIZE
 from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
 from libc.math cimport ceil, fabs
 
+from core_pdf_cythonized._ndarray cimport empty_float64, float64_data
 from core_pdf_cythonized._pymath cimport check_integral, py_max, py_min
 
 import numpy
+from math import hypot as math_hypot
+
+cnp.import_array()
 
 
 cdef double INF = float("inf")
@@ -175,7 +182,36 @@ cdef int add_curve(PathBuilder path, const double *values, hypot) except -1:
     return 0
 
 
-def flatten_path_commands(
+def flatten_path_commands(ops, coords, matrix, hypot, array.array line_rows, double line_width):
+    cdef const unsigned char* op_data
+    cdef Py_ssize_t op_count
+    # The raw-pointer path holds no buffer export, so it is taken only when the one
+    # callback made during the walk, hypot, is math.hypot and cannot resize them.
+    if hypot is not math_hypot:
+        return flatten_path_command_views(ops, coords, matrix, hypot, line_rows, line_width)
+    if type(ops) is bytearray:
+        op_data = <const unsigned char*> PyByteArray_AS_STRING(ops)
+        op_count = PyByteArray_GET_SIZE(ops)
+    elif type(ops) is bytes:
+        op_data = <const unsigned char*> PyBytes_AS_STRING(ops)
+        op_count = PyBytes_GET_SIZE(ops)
+    else:
+        return flatten_path_command_views(ops, coords, matrix, hypot, line_rows, line_width)
+    if type(coords) is not array.array or (<array.array> coords).ob_descr.typecode != c'd':
+        return flatten_path_command_views(ops, coords, matrix, hypot, line_rows, line_width)
+    return _flatten_path_commands(
+        op_data,
+        op_count,
+        (<array.array> coords).data.as_doubles,
+        len(coords),
+        matrix,
+        hypot,
+        line_rows,
+        line_width,
+    )
+
+
+def flatten_path_command_views(
     const unsigned char[::1] ops,
     const double[::1] coords,
     matrix,
@@ -183,10 +219,32 @@ def flatten_path_commands(
     array.array line_rows,
     double line_width,
 ):
+    return _flatten_path_commands(
+        &ops[0] if ops.shape[0] else NULL,
+        ops.shape[0],
+        &coords[0] if coords.shape[0] else NULL,
+        coords.shape[0],
+        matrix,
+        hypot,
+        line_rows,
+        line_width,
+    )
+
+
+cdef tuple _flatten_path_commands(
+    const unsigned char* ops,
+    Py_ssize_t op_count,
+    const double* coords,
+    Py_ssize_t available,
+    matrix,
+    hypot,
+    array.array line_rows,
+    double line_width,
+):
     cdef PathBuilder path = PathBuilder()
-    cdef Py_ssize_t op_index, at = 0, available = coords.shape[0]
+    cdef Py_ssize_t op_index, at = 0
     cdef unsigned char op
-    for op_index in range(ops.shape[0]):
+    for op_index in range(op_count):
         op = ops[op_index]
         if op == 109:
             if at + 2 > available:
@@ -227,10 +285,10 @@ def flatten_path_commands(
             px[i] = x * a + y * c + e
             py[i] = x * b + y * d + f
 
-    xs = numpy.empty(count, dtype=numpy.float64)
-    ys = numpy.empty(count, dtype=numpy.float64)
-    cdef double[::1] out_x = xs
-    cdef double[::1] out_y = ys
+    xs = empty_float64(count)
+    ys = empty_float64(count)
+    cdef double* out_x = float64_data(xs)
+    cdef double* out_y = float64_data(ys)
     for i in range(count):
         out_x[i] = px[i]
         out_y[i] = py[i]

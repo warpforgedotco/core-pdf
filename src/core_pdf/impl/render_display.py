@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from math import isfinite
 from typing import Any, ClassVar, Self
 
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath, CapturedSoftMask
@@ -20,6 +21,7 @@ from core_pdf.impl.render_model import (
     is_plain_fill,
     path_paint_fields,
 )
+from core_pdf_cythonized import SlotLayout
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
@@ -105,18 +107,48 @@ def image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
 def plain_fill_members_box(
     items: list[DisplayItem], start: int
 ) -> tuple[bool, tuple[float, float, float, float] | None]:
-    box: tuple[float, float, float, float] | None = None
+    found = False
+    x0 = y0 = x1 = y1 = 0.0
     for index in range(start, len(items)):
         item = items[index]
         if type(item) is DisplayListItem and item.kind == "text":
             continue
         if not is_plain_fill(item):
             return False, None
-        item_box = finite_rect(item.bbox, require_positive=False)
-        if item_box is None:
-            return False, None
-        box = union_bbox(box, item_box)
-    return True, box
+        bbox = item.bbox
+        if (
+            type(bbox) is tuple
+            and len(bbox) == 4
+            and type(bbox[0]) is float
+            and type(bbox[1]) is float
+            and type(bbox[2]) is float
+            and type(bbox[3]) is float
+        ):
+            bx0, by0, bx1, by1 = bbox
+            if not (isfinite(bx0) and isfinite(by0) and isfinite(bx1) and isfinite(by1)):
+                return False, None
+        else:
+            item_box = finite_rect(bbox, require_positive=False)
+            if item_box is None:
+                return False, None
+            bx0, by0, bx1, by1 = item_box
+        if not found:
+            found = True
+            x0, y0, x1, y1 = bx0, by0, bx1, by1
+        else:
+            # min() and max() keep the running value on ties, as union_bbox did.
+            if bx0 < x0:
+                x0 = bx0
+            if by0 < y0:
+                y0 = by0
+            if bx1 > x1:
+                x1 = bx1
+            if by1 > y1:
+                y1 = by1
+    return True, ((x0, y0, x1, y1) if found else None)
+
+
+PATH_PAINT_LAYOUT = SlotLayout(PathPaintItem, PathPaintItem.__fields__)
 
 
 class DisplayList:
@@ -268,8 +300,10 @@ class DisplayList:
             self.glyph_paint_fields[id(style)] = (style, fields)
         else:
             fields = cached[1]
-        item = PathPaintItem(paint_kind, seqno, bbox, path, *fields, edge_array)  # type: ignore[call-arg]  # ty: ignore[too-many-positional-arguments]
-        self.items.append(item)
+        # PathPaintItem's __init__ only assigns its fields, in this order.
+        self.items.append(
+            PATH_PAINT_LAYOUT.build((paint_kind, seqno, bbox, path, *fields, edge_array))
+        )
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
         graphics_mask = data.get("graphics_soft_mask")

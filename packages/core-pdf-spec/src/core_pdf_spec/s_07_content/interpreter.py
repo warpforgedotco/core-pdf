@@ -108,6 +108,7 @@ class ContentInterpreter:
         self.marked_content_stack: list[MarkedContentEntry] = []
         self.type3_uncolored = False
         self.resources: PdfDict = {}
+        self.color_space_cache: dict[int, tuple[object, ColorSpace]] = {}
         self.operator_overrides: dict[str, OperationHandler] = {}
         self.default_handlers: dict[str, OperationHandler] = {
             name: getattr(self, handler) for name, handler in CONTENT_OPERATOR_HANDLERS.items()
@@ -720,6 +721,23 @@ class ContentInterpreter:
             self.graphics.miter_limit = max(1.0, values[0])
 
     def op_d(self, operands: ContentOperands, depth: int) -> None:
+        if len(operands) == 2 and type(operands[0]) in (list, tuple):
+            numbers: typing.Sequence[float] = operands[0]  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            phase_number: float = operands[1]  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            if not numbers and phase_number == 0 and type(phase_number) in NUMERIC_TYPES:
+                # "[] 0 d", the solid line reset, is by far the most common dash.
+                self.graphics.dash_pattern = ((), float(phase_number))
+                return
+            if type(phase_number) in NUMERIC_TYPES and NUMERIC_TYPES.issuperset(map(type, numbers)):
+                try:
+                    dash_array = tuple(map(float, numbers))
+                    phase_value = float(phase_number)
+                except OverflowError:
+                    pass
+                else:
+                    if isfinite(phase_value) and all(map(isfinite, dash_array)):
+                        self.graphics.dash_pattern = (dash_array, phase_value)
+                        return
         if len(operands) != 2:
             self.reject(PdfParseError("d requires two operands"), "dash-pattern", None)
             if len(operands) < 2:
@@ -848,9 +866,12 @@ class ContentInterpreter:
         self, operands: ContentOperands, space: ColorSpace, *, stroke: bool
     ) -> None:
         count = len(space.component_ranges)
-        if self.type3_uncolored or len(operands) < count:
+        operand_count = len(operands)
+        if self.type3_uncolored or operand_count < count:
             return
-        normalized = self.normalize_color_components(space, operands[:count])
+        normalized = self.normalize_color_components(
+            space, operands if operand_count == count else operands[:count]
+        )
         if normalized is None:
             return
         self.set_paint(space, normalized, None, stroke=stroke)
@@ -881,18 +902,32 @@ class ContentInterpreter:
             return self.reject(
                 PdfParseError("color space operand must be a name"), "color-space", DEVICE_GRAY
             )
-        value = (
-            name
-            if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}
-            else self.resolver.deep_resolve(self.lookup_page_resource("ColorSpace", name))
-        )
+        if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}:
+            return self.parse_named_color_space(name, name)
+        raw = self.lookup_page_resource("ColorSpace", name)
+        cache = self.color_space_cache if type(raw) is PdfReference else None
+        if cache is not None:
+            cached = cache.get(id(raw))
+            if cached is not None and cached[0] is raw:
+                return cached[1]
+        value: object = self.resolver.deep_resolve(raw)
         if value is None:
             value = self.reject(PdfParseError("missing color space resource"), "color-space", name)
-        return self.parse_named_color_space(value, name)
+            return self.parse_named_color_space(value, name)
+        try:
+            space = self.parse_color_space_value(value)
+        except ValueError, TypeError:
+            return self.parse_named_color_space(value, name)
+        if cache is not None:
+            cache[id(raw)] = (raw, space)
+        return space
+
+    def parse_color_space_value(self, value: object) -> ColorSpace:
+        return parse_color_space(value)
 
     def parse_named_color_space(self, value: object, name: str) -> ColorSpace:
         try:
-            return parse_color_space(value)
+            return self.parse_color_space_value(value)
         except (ValueError, TypeError) as error:
             return self.reject(parse_error_from(error), "color-space", ColorSpace(name, ()))
 
@@ -1062,6 +1097,12 @@ class ContentInterpreter:
         if len(operands) < count:
             return self.reject(PdfParseError("missing numeric operand"), "numeric-operands", None)
         if len(operands) == count and type(operands) is tuple:
+            if count == 1 and type(operands[0]) is int:
+                # A lone integer, as in "1 w"; a converted integer is always finite.
+                try:
+                    return (float(operands[0]),)
+                except OverflowError:
+                    pass
             for value in operands:
                 if type(value) is not float or not isfinite(value):
                     break

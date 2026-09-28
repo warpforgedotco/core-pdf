@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable, Mapping
 from copy import replace
 from types import MappingProxyType
+from typing import cast
 
 import numpy
 
@@ -132,12 +133,12 @@ def style_enabled(reference: object, name: str) -> bool:
 
 def group_text_and_words(
     observations: ObservationBatch,
-    indexes: numpy.ndarray,
+    indexes: numpy.ndarray | list[int],
 ) -> tuple[str, tuple[TextWord, ...]]:
-    references = tuple(observations.references[index] for index in indexes)
+    all_references = observations.references
+    references = [all_references[index] for index in indexes]
     if references and all(isinstance(reference, TextRun) for reference in references):
-        runs = list(references)
-        line = LayoutLine(runs)
+        line = LayoutLine(cast("list[TextRun]", references))
         reconstructed = line.reconstructed_text()
         text = reconstructed.text.strip()
         layout_words = line.text_and_words(reconstructed)[1]
@@ -172,6 +173,34 @@ def color_is_emphasis(color: object) -> bool:
             return False
         components.append(float(component))
     return max(components) - min(components) >= 0.15
+
+
+def group_font_size_medians(
+    font_sizes: numpy.ndarray,
+    starts: numpy.ndarray,
+    stops: numpy.ndarray,
+    group_count: int,
+) -> list[float | None]:
+    """Each contiguous group's median positive finite font size, as finite_median
+    would give it, or None when the group has none."""
+    group_ids = numpy.repeat(numpy.arange(group_count, dtype=numpy.intp), stops - starts)
+    valid = numpy.isfinite(font_sizes) & (font_sizes > 0)
+    valid_ids = group_ids[valid]
+    valid_sizes = font_sizes[valid]
+    ordered = valid_sizes[numpy.lexsort((valid_sizes, valid_ids))].tolist()
+    counts = numpy.bincount(valid_ids, minlength=group_count).tolist()
+    medians: list[float | None] = []
+    offset = 0
+    for count in counts:
+        if not count:
+            medians.append(None)
+            continue
+        middle = offset + count // 2
+        medians.append(
+            ordered[middle] if count & 1 else (ordered[middle - 1] + ordered[middle]) * 0.5
+        )
+        offset += count
+    return medians
 
 
 def build_lines(
@@ -219,28 +248,40 @@ def build_lines(
             mark = color_marks[color] = color_is_emphasis(color)
         return mark
 
+    group_count = len(starts)
+    selected_confidences = observations.confidence[selected]
+    finite_confidence_counts = numpy.add.reduceat(
+        numpy.isfinite(selected_confidences), starts, dtype=numpy.intp
+    ).tolist()
+    font_size_medians = group_font_size_medians(
+        observations.font_size[selected], starts, line_groups.stops, group_count
+    )
+    group_rotations = observations.rotation[selected[starts]].tolist()
+    selected_indexes = selected.tolist()
+    all_references = observations.references
     output: list[ParsedLine] = []
     output_boxes: list[numpy.ndarray] = []
-    for group_index, (start, stop) in enumerate(
-        zip(line_groups.starts, line_groups.stops, strict=True)
-    ):
-        indexes = selected[int(start) : int(stop)]
-        all_native = source_minimum[group_index] == source_maximum[group_index] == NATIVE_SOURCE
-        text_indexes = (
-            group_order(observations, indexes)
-            if group_order is not None and not all_native
-            else indexes
+    for group_index, (start, stop, source_low, source_high) in enumerate(
+        zip(
+            starts.tolist(),
+            line_groups.stops.tolist(),
+            source_minimum.tolist(),
+            source_maximum.tolist(),
+            strict=True,
         )
-        text, words = group_text_and_words(observations, text_indexes)
+    ):
+        group_indexes = selected_indexes[start:stop]
+        if group_order is not None and not source_low == source_high == NATIVE_SOURCE:
+            text, words = group_text_and_words(
+                observations, group_order(observations, selected[start:stop])
+            )
+        else:
+            text, words = group_text_and_words(observations, group_indexes)
         if not text:
             continue
-        confidences = observations.confidence[indexes]
-        font_sizes = observations.font_size[indexes]
-        finite_confidences = confidences[numpy.isfinite(confidences)]
-        finite_font_sizes = font_sizes[numpy.isfinite(font_sizes) & (font_sizes > 0)]
         native_references = [
             reference
-            for reference in (observations.references[index] for index in indexes)
+            for reference in [all_references[index] for index in group_indexes]
             if reference is not None
         ]
         reference_styles = [reference_style(reference) for reference in native_references]
@@ -269,15 +310,15 @@ def build_lines(
                 prefix = " "
             span_values.append(
                 TextSpan(
-                    text=prefix + reference_text,
-                    bold=reference_bold,
-                    italic=reference_italic,
-                    mark=emphasis_mark(getattr(reference, "fill_color", None)),
+                    prefix + reference_text,
+                    reference_bold,
+                    reference_italic,
+                    False,
+                    False,
+                    emphasis_mark(getattr(reference, "fill_color", None)),
                 )
             )
             pending_space = reference.text.endswith(SPAN_TRAILING_SPACE)
-        source_low = int(source_minimum[group_index])
-        source_high = int(source_maximum[group_index])
         source = labels.get(source_low, "hybrid") if source_low == source_high else "hybrid"
         words = tuple(
             type(word)(
@@ -299,7 +340,15 @@ def build_lines(
                     bbox=bbox_tuple(group_box),
                     source=source,
                     confidence=(
-                        float(numpy.mean(finite_confidences)) if len(finite_confidences) else None
+                        float(
+                            numpy.mean(
+                                selected_confidences[start:stop][
+                                    numpy.isfinite(selected_confidences[start:stop])
+                                ]
+                            )
+                        )
+                        if finite_confidence_counts[group_index]
+                        else None
                     ),
                     bold=bold,
                     italic=italic,
@@ -307,8 +356,8 @@ def build_lines(
                     words=words,
                 ),
                 sequence=int(group_sequences[group_index]),
-                rotation=int(observations.rotation[indexes[0]]),
-                font_size=(finite_median(finite_font_sizes) if len(finite_font_sizes) else None),
+                rotation=group_rotations[group_index],
+                font_size=font_size_medians[group_index],
             )
         )
         output_boxes.append(group_box)

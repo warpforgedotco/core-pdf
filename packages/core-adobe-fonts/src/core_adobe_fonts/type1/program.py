@@ -28,7 +28,7 @@ def eexec_ciphertext(data: bytes, length1: int | None, *, tolerant: bool = False
             raise ValueError("Type 1 eexec section is missing")
         encrypted = data[marker + len(b"currentfile eexec") :].lstrip()
     sample = encrypted[: 512 if tolerant else 4]
-    if sample and all(byte in HEX_BYTES for byte in sample):
+    if sample and HEX_BYTES.issuperset(sample):
         compact = bytes(byte for byte in encrypted if byte not in b" \t\r\n")
         if len(compact) % 2:
             if not tolerant:

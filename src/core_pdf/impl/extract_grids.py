@@ -13,6 +13,7 @@ from core_pdf.impl.extract_table_core import cell_text
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.output_model import Table, TableCell
 from core_pdf.impl.spatial import DisjointSet
+from core_pdf_cythonized import merge_collinear_rows
 
 AXIS_TOLERANCE = 1.5
 
@@ -158,21 +159,14 @@ def merge_collinear_segments(
     if not numpy.any(can_merge):
         return sorted_segs.astype(numpy.float32, copy=False)
 
-    merged: list[list[float]] = []
-    for values in sorted_segs:
-        current = [float(value) for value in values]
-        if merged:
-            previous = merged[-1]
-            if (
-                abs(current[coordinate] - previous[coordinate]) <= AXIS_TOLERANCE
-                and current[start] <= previous[end] + AXIS_TOLERANCE * 2.0
-            ):
-                previous[start] = min(previous[start], current[start])
-                previous[end] = max(previous[end], current[end])
-                previous[coordinate] = (previous[coordinate] + current[coordinate]) * 0.5
-                continue
-        merged.append(current)
-    return numpy.asarray(merged, dtype=numpy.float32).reshape((-1, 3))
+    return merge_collinear_rows(
+        numpy.ascontiguousarray(sorted_segs, dtype=numpy.float64),
+        coordinate,
+        start,
+        end,
+        AXIS_TOLERANCE,
+        AXIS_TOLERANCE * 2.0,
+    )
 
 
 def merge_grid_cells(

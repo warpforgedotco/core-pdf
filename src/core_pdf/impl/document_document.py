@@ -73,7 +73,7 @@ from core_pdf.impl.types import (
     PdfSource,
     PdfString,
 )
-from core_pdf_cythonized import object_headers_match
+from core_pdf_cythonized import markers_present, object_headers_match, regions_with_markers
 from core_pdf_spec.s_07_document import document_labels
 from core_pdf_spec.s_07_document.document_labels import PageLabelStyle
 from core_pdf_spec.s_07_document.fields import field_children, qualified_field_name
@@ -107,6 +107,23 @@ from core_pdf_spec.standards import DocumentStandards, PdfVersion, SemanticConte
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_fallback import RasterFontProviderLike
     from core_pdf_spec.s_07_syntax.types import Decipher
+
+
+XREF_STREAM_MARKERS = (b"#", b"XRef", b"/W", b"/Size")
+
+
+def is_xref_stream_dictionary(dictionary: PdfDict) -> bool:
+    return recover_pdf_name(dictionary.get("Type")) == "XRef" or (
+        dictionary.get("W") is not None and dictionary.get("Size") is not None
+    )
+
+
+def xref_stream_candidates(
+    data: bytes | mmap.mmap, starts: Sequence[int], data_len: int
+) -> list[int]:
+    """Indexes of the regions a may_be_xref_stream check would accept, in ascending order."""
+    hashes, xrefs, widths, sizes = regions_with_markers(data, XREF_STREAM_MARKERS, starts, data_len)
+    return sorted(hashes | xrefs | (widths & sizes))
 
 
 class FieldResolver(PdfValueResolver, Protocol):
@@ -1254,6 +1271,12 @@ class PdfDocument(Generic[PageT]):
             score += 5
         return score
 
+    def recovered_inherited_values(self, page_dict: PdfDict) -> InheritedValueMap:
+        for node in self.recovered_page_nodes():
+            if node.dictionary is page_dict:
+                return dict(node.inherited_values)
+        return self.recovered_page_values(page_dict, [])
+
     def recovered_page_values(
         self, page_dict: PdfDict, pages_nodes: list[PdfDict]
     ) -> InheritedValueMap:
@@ -1334,6 +1357,7 @@ class PdfDocument(Generic[PageT]):
                     node_type=lambda node: resolve_page_tree_node_type(self.resolver, node),
                     on_invalid_child=lambda _node: True,
                     max_depth=MAX_PAGE_TREE_DEPTH,
+                    lazy_inherited=True,
                 )
             )
         except PdfParseError, ValueError:
@@ -1724,7 +1748,9 @@ class PdfDocument(Generic[PageT]):
         if not missing_keys:
             return trailer
         if not self.xref_was_recovered and not any(
-            self.raw_data.find(b"/" + key.encode("ascii")) >= 0 for key in missing_keys
+            markers_present(
+                self.raw_data, tuple(b"/" + key.encode("ascii") for key in missing_keys)
+            )
         ):
             return trailer
         if missing_keys == ["Encrypt"] and not self.xref_was_recovered:
@@ -1806,14 +1832,23 @@ class PdfDocument(Generic[PageT]):
                 if entry.in_use and entry.object_stream is None and 0 <= entry.offset < data_len
             }
         )
-        last = len(starts) - 1
         lexer = PdfLexer(data, semantic_context=self.xref_context)
         try:
-            for index, offset in enumerate(starts):
-                end = starts[index + 1] if index < last else data_len
-                if not self.may_be_xref_stream(data, offset, end):
-                    continue
-                lexer.rewind(offset)
+            for index in xref_stream_candidates(data, starts, data_len):
+                start = starts[index]
+                # Only a stream's dictionary decides; a dictionary that parses and
+                # does not qualify is passed over without parsing its stream.
+                lexer.rewind(start)
+                try:
+                    lexer.read_indirect_header()
+                    lexer.pos = lexer.skip_ignored_at(lexer.pos)
+                    if data[lexer.pos : lexer.pos + 2] == b"<<" and not is_xref_stream_dictionary(
+                        lexer.parse_dictionary()
+                    ):
+                        continue
+                except Exception:
+                    pass
+                lexer.rewind(start)
                 try:
                     obj = lexer.parse_indirect_object()
                 except Exception:
@@ -1821,9 +1856,7 @@ class PdfDocument(Generic[PageT]):
                 if not isinstance(obj, PdfStream):
                     continue
                 dictionary = obj.dictionary
-                if recover_pdf_name(dictionary.get("Type")) == "XRef" or (
-                    dictionary.get("W") is not None and dictionary.get("Size") is not None
-                ):
+                if is_xref_stream_dictionary(dictionary):
                     yield dictionary
         finally:
             lexer.close()

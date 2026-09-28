@@ -250,7 +250,7 @@ def augment_candidate(
     observations = supplement.observations
     confidence = observations.confidence
     informative = numpy.fromiter(
-        (sum(character.isalnum() for character in text) >= 1 for text in observations.text),
+        (sum(map(str.isalnum, text)) >= 1 for text in observations.text),
         dtype=numpy.bool_,
         count=len(observations),
     )

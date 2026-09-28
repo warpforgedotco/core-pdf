@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from math import isfinite
 
 from core_pdf_spec.s_07_syntax.inherited_values import add_inherited_values
@@ -62,6 +62,40 @@ def page_inherited_values(
     return values
 
 
+class LazyInheritedValues(Mapping[str, object]):
+    """A page's inherited values, resolved from its tree path when first read."""
+
+    __slots__ = ("nodes", "resolver", "inherited_keys", "resolved_values")
+
+    def __init__(
+        self,
+        nodes: tuple[PdfDict, ...],
+        resolve: Callable[[object], object],
+        keys: tuple[str, ...],
+    ) -> None:
+        self.nodes = nodes
+        self.resolver = resolve
+        self.inherited_keys = keys
+        self.resolved_values: InheritedValueMap | None = None
+
+    def resolved(self) -> InheritedValueMap:
+        values = self.resolved_values
+        if values is None:
+            values = self.resolved_values = page_inherited_values(
+                self.nodes, self.resolver, self.inherited_keys
+            )
+        return values
+
+    def __getitem__(self, key: str) -> object:
+        return self.resolved()[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.resolved())
+
+    def __len__(self) -> int:
+        return len(self.resolved())
+
+
 def iter_page_nodes(
     root: object,
     resolve: Callable[[object], object],
@@ -70,6 +104,7 @@ def iter_page_nodes(
     node_type: Callable[[PdfDict], str | None] | None = None,
     on_invalid_child: Callable[[object], bool] | None = None,
     max_depth: int | None = None,
+    lazy_inherited: bool = False,
 ) -> Iterator[PageNode]:
     stack: list[tuple[object, int, tuple[PdfDict, ...], frozenset[int]]] = [
         (root, 0, (), frozenset())
@@ -90,7 +125,10 @@ def iter_page_nodes(
         )
         if kind == "Page":
             yield PageNode(
-                current, page_inherited_values((current, *parents), resolve, inherited_keys)
+                current,
+                LazyInheritedValues((current, *parents), resolve, inherited_keys)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                if lazy_inherited
+                else page_inherited_values((current, *parents), resolve, inherited_keys),
             )
         elif kind == "Pages":
             kids = resolve(current.get("Kids"))
@@ -105,6 +143,7 @@ def iter_page_nodes(
 
 __all__ = (
     "PAGE_INHERITED_KEYS",
+    "LazyInheritedValues",
     "PageNode",
     "iter_page_nodes",
     "page_clip",

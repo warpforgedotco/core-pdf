@@ -13,7 +13,9 @@ from core_pdf_cythonized._composite import (
 from core_pdf_cythonized._content import ContentScanner
 from core_pdf_cythonized._coverage import (
     fill_glyph_coverage,
+    fill_glyph_coverage_at,
     fill_glyph_knockout,
+    fill_glyph_knockout_at,
     glyph_coverage_plane,
     signed_area_coverage,
 )
@@ -24,14 +26,22 @@ from core_pdf_cythonized._distinct_rows import (
     gather_uint8_rows,
 )
 from core_pdf_cythonized._downsample import box_downsample_blocks
+from core_pdf_cythonized._features import cell_distance_map
 from core_pdf_cythonized._glyph_bitmap import glyph_bitmap_rows
-from core_pdf_cythonized._glyphs import horizontal_glyph_geometry
+from core_pdf_cythonized._glyphs import (
+    DECODED_GLYPH_FIELDS,
+    OBSERVATION_FIELDS,
+    SlotLayout,
+    capture_horizontal_glyphs,
+    horizontal_glyph_geometry,
+)
 from core_pdf_cythonized._jbig2 import decode_arithmetic_generic_template0
 from core_pdf_cythonized._knockout import (
     composite_elementary_knockout,
     composite_knockout_element,
     composite_knockout_group,
 )
+from core_pdf_cythonized._markers import markers_present, regions_with_markers
 from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import outline_edges, translated_outline_edges
 from core_pdf_cythonized._paths import fill_edge_rows, flatten_path_commands, path_bounds
@@ -41,6 +51,7 @@ from core_pdf_cythonized._sample_blit import (
     interleave_soft_mask,
     sample_opaque_pixels,
 )
+from core_pdf_cythonized._segments import merge_collinear_rows
 from core_pdf_cythonized._shading import shading_blend, shading_t, shading_values
 from core_pdf_cythonized._source_plane import accumulate_source_plane
 from core_pdf_cythonized._stroke import stroke_polylines
@@ -52,6 +63,14 @@ from core_pdf_cythonized._type2 import type2_glyph_geometry
 from core_pdf_cythonized._xref_headers import object_headers_match
 
 __all__ = (
+    "cell_distance_map",
+    "merge_collinear_rows",
+    "markers_present",
+    "regions_with_markers",
+    "DECODED_GLYPH_FIELDS",
+    "OBSERVATION_FIELDS",
+    "SlotLayout",
+    "capture_horizontal_glyphs",
     "ContentScanner",
     "ObjectScanner",
     "accumulate_source_plane",
@@ -73,7 +92,9 @@ __all__ = (
     "distinct_uint16_rows",
     "fill_edge_rows",
     "fill_glyph_coverage",
+    "fill_glyph_coverage_at",
     "fill_glyph_knockout",
+    "fill_glyph_knockout_at",
     "fill_rect_coverage",
     "flatten_path_commands",
     "gather_uint8_rows",

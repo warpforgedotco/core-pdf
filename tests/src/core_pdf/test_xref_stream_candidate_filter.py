@@ -49,3 +49,41 @@ def test_hex_escaped_name_falls_through_to_parsing():
     )
     with PdfDocument(data) as document:
         assert document.may_be_xref_stream(document.raw_data, xref_offset, len(document.raw_data))
+
+
+def test_candidate_regions_match_the_per_region_check() -> None:
+    import random
+
+    from core_pdf.impl.document_document import PdfDocument, xref_stream_candidates
+
+    rng = random.Random(3)
+    pieces = (b"#", b"XRef", b"/W", b"/Size", b"X", b"R", b"/", b"S", b"ze", b"ef", b"W")
+    for _ in range(3000):
+        data = b"".join(rng.choice(pieces) for _ in range(rng.randint(1, 200)))
+        starts = sorted({rng.randint(0, len(data) - 1) for _ in range(rng.randint(0, 20))})
+        expected = [
+            index
+            for index, offset in enumerate(starts)
+            if PdfDocument.may_be_xref_stream(
+                None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                data,
+                offset,
+                starts[index + 1] if index + 1 < len(starts) else len(data),
+            )
+        ]
+        assert xref_stream_candidates(data, starts, len(data)) == expected
+
+
+def test_recovery_yields_only_qualifying_stream_dictionaries() -> None:
+    xref_dictionary = b"<< /Type /XRef /W [1 2 1] /Size 4 /Root 1 0 R /ID [<aa> <bb>] /Length 0 >>"
+    data, _ = build_document(xref_dictionary)
+    decoy = b"5 0 obj\n<< /Length 8 /Filter /None >>\nstream\n#W#Size#\nendstream\nendobj\n"
+    escaped = b"6 0 obj\n<< /Type /XRe#66 /Length 0 >>\nstream\n\nendstream\nendobj\n"
+    marker = data.index(b"trailer")
+    data = data[:marker] + decoy + escaped + data[marker:]
+    with PdfDocument(data) as document:
+        document.xref[5 << 16] = document.xref[4 << 16]._replace(offset=data.index(b"5 0 obj"))
+        document.xref[6 << 16] = document.xref[4 << 16]._replace(offset=data.index(b"6 0 obj"))
+        found = list(document.iter_recoverable_xref_stream_dictionaries())
+    assert [dictionary.get("Size") for dictionary in found] == [4, None]
+    assert len(found) == 2

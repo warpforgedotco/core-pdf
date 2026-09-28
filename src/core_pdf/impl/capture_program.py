@@ -27,6 +27,7 @@ class CaptureOptions(GeneratedRecord):
     ink_bounds: bool = True
     text_runs: bool = True
     render_details: bool = True
+    glyphs: bool = True
 
 
 DEFAULT_CAPTURE = CaptureOptions()

@@ -27,7 +27,17 @@ EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
 Provenance: TypeAlias = tuple[tuple[str, object], ...]
 
 
-class TextRun(ReprFields, metaclass=RecordType, frozen=False, eq=False):
+class DerivedRunText:
+    """Values derived from a run's text once, since layout reads them per comparison.
+    Change a run's text with TextRun.set_text so they stay current."""
+
+    __slots__ = ("stripped_text", "has_text")
+
+    stripped_text: str
+    has_text: bool
+
+
+class TextRun(DerivedRunText, ReprFields, metaclass=RecordType, frozen=False, eq=False):
     text: str
     x0: float
     y0: float
@@ -64,17 +74,6 @@ class TextRun(ReprFields, metaclass=RecordType, frozen=False, eq=False):
     @property
     def height(self) -> float:
         return self.y1 - self.y0
-
-    @property
-    def stripped_text(self) -> str:
-        text = self.text
-        if text and text[0] > " " and text[-1] > " ":
-            return text
-        return text.strip()
-
-    @property
-    def has_text(self) -> bool:
-        return bool(self.stripped_text)
 
     @property
     def text_is_space(self) -> bool:
@@ -123,7 +122,7 @@ class TextRun(ReprFields, metaclass=RecordType, frozen=False, eq=False):
         self.ty = ty
         self.font_size = font_size
         self.space_width = space_width
-        self.text = text
+        self.set_text(text)
         self.font_name = font_name
         self.order = order
         self.stream_order = stream_order
@@ -141,6 +140,12 @@ class TextRun(ReprFields, metaclass=RecordType, frozen=False, eq=False):
         self.provenance = provenance
         self.confidence = confidence
         self.glyph_clusters = glyph_clusters
+
+    def set_text(self, text: str) -> None:
+        self.text = text
+        stripped = text if text and text[0] > " " and text[-1] > " " else text.strip()
+        self.stripped_text = stripped
+        self.has_text = bool(stripped)
 
     def absorb_extent(self, other: TextRun) -> None:
         self.x0 = min(self.x0, other.x0)

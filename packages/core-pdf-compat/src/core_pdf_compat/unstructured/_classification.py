@@ -142,8 +142,8 @@ def simple_element_class(
 
 
 def has_classifiable_text(text: str) -> bool:
-    alphabetic = sum(character.isalpha() for character in text)
-    non_space = sum(not character.isspace() for character in text)
+    alphabetic = sum(map(str.isalpha, text))
+    non_space = len(text) - sum(map(str.isspace, text))
     return alphabetic / max(non_space, 1) >= 0.5 and not text.isnumeric()
 
 

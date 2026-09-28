@@ -232,6 +232,9 @@ class RecoveringTextState(ContentInterpreter):
             data = text.encode("latin-1", "replace")
             self.append_decoded_text(text, data, decoder.decode_glyphs(data), decoder)
 
+    def parse_color_space_value(self, value: object) -> ColorSpace:
+        return parse_color_space(value)
+
     def parse_named_color_space(self, value: object, name: str) -> ColorSpace:
         try:
             return parse_color_space(value)

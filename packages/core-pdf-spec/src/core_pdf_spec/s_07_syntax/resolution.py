@@ -8,6 +8,7 @@ from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.types import PdfReference
 
 CONTAINER_TYPES = (dict, list, tuple, PdfStream)
+GRAPH_TYPES = frozenset({*CONTAINER_TYPES, PdfReference})
 
 
 def resolve_reference_chain(value: object, resolve: Callable[[object], object]) -> object:
@@ -64,6 +65,9 @@ def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> 
             values = list(original)  # type: ignore[call-overload]  # ty: ignore[invalid-argument-type]
             node.changed = type(original) is tuple
 
+        if GRAPH_TYPES.isdisjoint(map(type, values)):
+            node.values = values
+            continue
         for item in values:
             resolved = resolve_reference_chain(item, resolve_once)
             node.values.append(resolved)

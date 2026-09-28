@@ -50,7 +50,7 @@ class PendingRun:
 
     def finish(self) -> TextRun:
         if len(self.parts) > 1:
-            self.run.text = "".join(self.parts)
+            self.run.set_text("".join(self.parts))
             self.run.glyph_clusters = tuple(chain.from_iterable(self.clusters))
         return self.run
 

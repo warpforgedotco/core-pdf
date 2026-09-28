@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import TypeGuard, overload
+from typing import TypeGuard, cast, overload
 
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax_primitives.numbers import parse_integer_token, parse_real_token
@@ -41,6 +41,23 @@ def require_pdf_number(value: object, message: str = "expected PDF number") -> f
     return result
 
 
+PDF_NUMBER_TYPES = frozenset({int, float})
+
+
+def require_pdf_numbers(
+    values: list[object] | tuple[object, ...], message: str = "expected PDF number"
+) -> tuple[float, ...]:
+    if PDF_NUMBER_TYPES.issuperset(map(type, values)):
+        try:
+            result = tuple(map(float, cast("list[float] | tuple[float, ...]", values)))
+        except OverflowError:
+            pass
+        else:
+            if math.isfinite(sum(result)):
+                return result
+    return tuple([require_pdf_number(item, message) for item in values])
+
+
 def require_pdf_integer(value: object, message: str = "expected PDF integer") -> int:
     if type(value) is not int:
         raise ValueError(message)
@@ -52,7 +69,7 @@ def require_pdf_number_array(
 ) -> tuple[float, ...]:
     if not isinstance(value, (list, tuple)):
         raise ValueError(message)
-    return tuple(require_pdf_number(item, message) for item in value)
+    return require_pdf_numbers(value, message)
 
 
 def require_pdf_number_pairs(
@@ -242,6 +259,7 @@ __all__ = (
     "require_pdf_number",
     "require_pdf_number_array",
     "require_pdf_number_pairs",
+    "require_pdf_numbers",
     "parse_text_string",
     "scalar_text",
 )

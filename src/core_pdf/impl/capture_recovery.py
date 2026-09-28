@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 from collections.abc import Callable, Iterator
+from typing import Literal
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.types import PdfName
@@ -18,6 +19,7 @@ from core_pdf_spec.s_07_content.operations import (
 )
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax_primitives.tokens import WHITESPACE
+from core_pdf_spec.types import PdfString
 
 
 def recover_inline_image_position(
@@ -110,11 +112,8 @@ def iter_content_operations(
     is_operator: Callable[[bytes], bool] | None = None,
     path_state: object | None = None,
 ) -> Iterator[ContentOperation]:
-    recovery = recovery if recovery is not None else CaptureRecovery()
-    scanner = ContentScanner(lexer.raw_data, KEYWORD_TOKENS, OBJECT_KEYWORDS, PdfName.of)
-    if path_state is not None:
-        scanner.set_path_state(path_state)
-    operands: list[ContentOperand] = scanner.operands
+    scanner = content_scanner(lexer, path_state)
+    step = ContentFallback(lexer, scanner.operands, recovery, is_operator)
     scan = scanner.next_operation
     while True:
         scanner.pos = lexer.pos
@@ -123,7 +122,47 @@ def iter_content_operations(
             lexer.pos = scanner.pos
             yield result
             continue
-        lexer.pos = cursor = result
+        operation = step(result)
+        if operation is None:
+            return
+        if operation is not False:
+            yield operation
+
+
+def content_scanner(lexer: PdfLexer, path_state: object | None = None) -> ContentScanner:
+    scanner = ContentScanner(lexer.raw_data, KEYWORD_TOKENS, OBJECT_KEYWORDS, PdfName.of)
+    if lexer.decipher is None or lexer.current_obj_num is None:
+        scanner.enable_strings(PdfString)
+    if path_state is not None:
+        scanner.set_path_state(path_state)
+    return scanner
+
+
+class ContentFallback:
+    """Parses one token the scanner hands back, with the Python lexer and its recovery.
+
+    Called with the scanner's stop position, it returns the next operation, False
+    when scanning should resume, or None at the end of the stream.
+    """
+
+    __slots__ = ("lexer", "operands", "recovery", "is_operator")
+
+    def __init__(
+        self,
+        lexer: PdfLexer,
+        operands: list[ContentOperand],
+        recovery: CaptureRecovery | None,
+        is_operator: Callable[[bytes], bool] | None,
+    ) -> None:
+        self.lexer = lexer
+        self.operands = operands
+        self.recovery = recovery if recovery is not None else CaptureRecovery()
+        self.is_operator = is_operator
+
+    def __call__(self, cursor: int) -> ContentOperation | Literal[False] | None:
+        lexer = self.lexer
+        operands = self.operands
+        lexer.pos = cursor
         try:
             try:
                 token = parse_content_token(lexer)
@@ -135,7 +174,7 @@ def iter_content_operations(
             prefix = bytes(lexer.raw_data[start : start + 2])
             if str(error) == "unexpected delimiter in content stream":
                 lexer.pos = start + (2 if prefix == b">>" else 1)
-                continue
+                return False
             kind = (
                 "inline-image"
                 if prefix == b"BI"
@@ -145,21 +184,21 @@ def iter_content_operations(
                 if prefix.startswith(b"[")
                 else "token"
             )
-            resumed = recovery.resume(
+            resumed = self.recovery.resume(
                 lexer,
                 error,
                 kind,
                 start,
-                is_operator,
+                self.is_operator,
             )
             if resumed is None:
                 raise
             lexer.pos = resumed
             if kind == "inline-image":
                 operands.clear()
-            continue
+            return False
         if token is None:
-            return
+            return None
         if isinstance(token.value, InlineImage):
             if len(operands) < 16:
                 operands.append(token.value)
@@ -169,8 +208,9 @@ def iter_content_operations(
         else:
             if len(operands) < 16:
                 operands.append(token.value)
-            continue
+            return False
         operation = (op_name, tuple(operands))
         operands.clear()
-        if op_name not in OBJECT_KEYWORDS:
-            yield operation
+        if op_name in OBJECT_KEYWORDS:
+            return False
+        return operation
