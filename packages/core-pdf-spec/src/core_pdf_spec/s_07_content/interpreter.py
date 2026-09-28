@@ -724,6 +724,10 @@ class ContentInterpreter:
         if len(operands) == 2 and type(operands[0]) in (list, tuple):
             numbers: typing.Sequence[float] = operands[0]  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
             phase_number: float = operands[1]  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            if not numbers and phase_number == 0 and type(phase_number) in NUMERIC_TYPES:
+                # "[] 0 d", the solid line reset, is by far the most common dash.
+                self.graphics.dash_pattern = ((), float(phase_number))
+                return
             if type(phase_number) in NUMERIC_TYPES and NUMERIC_TYPES.issuperset(map(type, numbers)):
                 try:
                     dash_array = tuple(map(float, numbers))

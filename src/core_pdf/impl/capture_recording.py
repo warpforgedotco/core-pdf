@@ -1587,6 +1587,9 @@ class TextState(RecoveringTextState):
         if not dash_pattern:
             return None
         dash_array, phase = dash_pattern
+        if not dash_array and phase == 0:
+            # A solid line: a zero phase scales to the same zero.
+            return [], float(phase)
         scale = self.graphics_scale()
         return [max(0.0, float(value) * scale) for value in dash_array], float(phase) * scale
 

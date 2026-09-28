@@ -85,6 +85,29 @@ def test_dash_recovery_retains_previous_pattern_on_invalid_numbers(state, operan
     assert bool(state.errors) is (operands != ([1, 2], 3))
 
 
+@pytest.mark.parametrize(
+    ("operands", "expected"),
+    [(([], 0), ((), 0.0)), (([], 0.0), ((), 0.0)), (((), -0.0), ((), -0.0))],
+)
+def test_solid_dash_reset_sets_an_empty_pattern(state, operands, expected):
+    state.graphics.dash_pattern = ((2, 3), 4)
+    state.op_d(operands, 0)
+    pattern = state.graphics.dash_pattern
+    assert pattern == expected
+    assert type(pattern[1]) is float
+    assert str(pattern[1]) == str(expected[1])
+    assert state.transformed_dash_pattern() == ([], expected[1])
+    assert state.errors == []
+
+
+@pytest.mark.parametrize("operands", [([], True), ([], float("nan"))])
+def test_empty_dash_with_invalid_phase_is_rejected(state, operands):
+    state.graphics.dash_pattern = ((2, 3), 4)
+    state.op_d(operands, 0)
+    assert state.graphics.dash_pattern == ((2, 3), 4)
+    assert state.errors
+
+
 @pytest.mark.parametrize("operator", ["l", "v", "y"])
 def test_unstarted_path_segments_are_ignored(state, operator):
     state.execute_operation(operator, (1, 2, 3, 4), 0)
