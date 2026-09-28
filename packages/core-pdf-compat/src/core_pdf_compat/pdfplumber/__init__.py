@@ -264,13 +264,36 @@ class EnginePageAdapter:
         projected_glyphs: tuple[Any, ...] = pdfminer_page_program(self.page).glyphs
         ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
         provenances: dict[int, tuple[object, bool, dict[str, Any]]] = {}
+        # A page repeats a few hundred glyphs thousands of times; these depend only on
+        # the font decoder and the glyph fields in the key.
+        glyph_texts: dict[tuple[Any, ...], str] = {}
+        widths: dict[tuple[Any, ...], float] = {}
+        descents: dict[int, tuple[Any, float]] = {}
+
+        def glyph_key(glyph: Any) -> tuple[Any, ...]:
+            return (
+                glyph.font_decoder,
+                glyph.char_code,
+                glyph.cid,
+                glyph.code_bytes,
+                glyph.unicode_source,
+                glyph.text,
+                glyph.alternates,
+            )
+
         for glyph in projected_glyphs:
             if pdfminer_embedded_cmap_is_unusable(glyph):
                 continue
             if id(glyph) in skipped_ligature_parts:
                 continue
             ligature = ligatures.get(id(glyph))
-            text = ligature[0] if ligature is not None else pdfminer_glyph_text(glyph)
+            key = glyph_key(glyph)
+            if ligature is not None:
+                text = ligature[0]
+            else:
+                text = glyph_texts.get(key)  # type: ignore[assignment]
+                if text is None:
+                    text = glyph_texts[key] = pdfminer_glyph_text(glyph)
             if not text:
                 continue
             source_provenance = glyph.provenance
@@ -301,27 +324,39 @@ class EnginePageAdapter:
                         horizontal = (left, left + glyph.font_size)
                         vertical = (glyph.font_size + advance, glyph.font_size)
                     else:
-                        descent = pdfminer_descent(glyph) * glyph.font_size
+                        decoder = glyph.font_decoder
+                        known_descent = descents.get(id(decoder))
+                        if known_descent is None or known_descent[0] is not decoder:
+                            known_descent = descents[id(decoder)] = (
+                                decoder,
+                                pdfminer_descent(glyph),
+                            )
+                        descent = known_descent[1] * glyph.font_size
                         descent += float(provenance.get("text_rise", 0.0))
-                        advance = (
-                            pdfminer_normalized_width(glyph, None if ligature else text)
-                            * glyph.font_size
-                            * scaling
-                        )
+                        projected = None if ligature else text
+                        width_key = (*key, projected)
+                        width = widths.get(width_key)
+                        if width is None:
+                            width = widths[width_key] = pdfminer_normalized_width(glyph, projected)
+                        advance = width * glyph.font_size * scaling
                         horizontal = (0.0, advance)
                         vertical = (descent, descent + glyph.font_size)
-                    corners = [
-                        (
-                            along * a + across * c + baseline[0],
-                            along * b + across * d + baseline[1],
-                        )
-                        for along in horizontal
-                        for across in vertical
-                    ]
-                    x0 = min(point[0] for point in corners)
-                    y0 = min(point[1] for point in corners)
-                    x1 = max(point[0] for point in corners)
-                    y1 = max(point[1] for point in corners)
+                    near, far = horizontal
+                    low, high = vertical
+                    origin_x, origin_y = baseline[0], baseline[1]
+                    # The corners in the order (near, low), (near, high), (far, low), (far, high).
+                    ax = near * a + low * c + origin_x
+                    ay = near * b + low * d + origin_y
+                    bx = near * a + high * c + origin_x
+                    by = near * b + high * d + origin_y
+                    cx = far * a + low * c + origin_x
+                    cy = far * b + low * d + origin_y
+                    dx = far * a + high * c + origin_x
+                    dy = far * b + high * d + origin_y
+                    x0 = min(ax, bx, cx, dx)
+                    y0 = min(ay, by, cy, dy)
+                    x1 = max(ax, bx, cx, dx)
+                    y1 = max(ay, by, cy, dy)
                     font_height = (
                         x1 - x0
                         if glyph.font_decoder.is_vertical or glyph.rotation_angle % 180

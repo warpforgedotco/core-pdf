@@ -71,6 +71,8 @@ class PdfminerTextState(TextState):
         )
         self.cursor = 0.0
         self.frame_cursors: dict[int, float] = {}
+        # A glyph's pdfminer advance depends only on its decoder and these fields.
+        self.glyph_widths: dict[tuple[Any, ...], float] = {}
 
     def enter_stream(self, state: object, frame: ContentStreamFrame) -> None:
         self.frame_cursors[id(frame)] = self.cursor
@@ -144,9 +146,21 @@ class PdfminerTextState(TextState):
                 )
                 if len(self.glyphs) > start:
                     glyph = self.glyphs[start]
-                    width = pdfminer_normalized_width(glyph)
-                    if pdfminer_embedded_cmap_is_unusable(glyph):
-                        width = 0.0
+                    key = (
+                        glyph.font_decoder,
+                        glyph.char_code,
+                        glyph.cid,
+                        glyph.code_bytes,
+                        glyph.unicode_source,
+                        glyph.text,
+                        glyph.alternates,
+                    )
+                    width = self.glyph_widths.get(key)
+                    if width is None:
+                        width = pdfminer_normalized_width(glyph)
+                        if pdfminer_embedded_cmap_is_unusable(glyph):
+                            width = 0.0
+                        self.glyph_widths[key] = width
                     self.cursor += width * self.graphics.font_size * scale
                 if decoded.width_code == 32:
                     self.cursor += word_space
