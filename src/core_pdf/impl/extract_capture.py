@@ -366,21 +366,23 @@ def glyph_evidence_fields(
     unsupported = 0
     low_confidence = 0
     glyph_count = 0
-    for glyph_text, unicode_source, confidence in glyph_fields:
+    # Only the tallies matter, and a page repeats few distinct fields: each distinct
+    # triple is classified once and counted as often as it occurs.
+    for (glyph_text, unicode_source, confidence), count in Counter(glyph_fields).items():
         if not glyph_text or glyph_text.isspace():
             continue
-        glyph_count += 1
+        glyph_count += count
         semantics = glyph_unicode_semantics(glyph_text, unicode_source)
         if semantics is GlyphUnicodeSemantics.AUTHORITATIVE:
-            authoritative += 1
+            authoritative += count
         elif semantics is GlyphUnicodeSemantics.HEURISTIC:
-            heuristic += 1
+            heuristic += count
         elif semantics is GlyphUnicodeSemantics.UNSUPPORTED:
-            unsupported += 1
+            unsupported += count
         else:
-            unknown += 1
+            unknown += count
         if confidence is None or confidence < 0.50:
-            low_confidence += 1
+            low_confidence += count
     actual_text_characters = sum(
         sum(not character.isspace() for character in run.text)
         for run in runs
