@@ -47,7 +47,7 @@ def capture_horizontal_glyphs(
     glyphs: tuple[Any, ...],
     glyph_layout: SlotLayout,
     observation_layout: SlotLayout,
-    glyph_width: Callable[[int], float],
+    glyph_width: Callable[[int], float] | tuple[dict[Any, float], float],
     glyph_bbox: Callable[[int], Rectangle | None] | None,
     font_size: float,
     char_space: float,
@@ -68,7 +68,8 @@ def capture_horizontal_glyphs(
     seqno: int,
     font_name: str | None,
     cluster_start: int,
-    confidence_of: Callable[[str, str, tuple[str, ...]], float],
+    confidence_of: Callable[[str, str, tuple[str, ...]], float]
+    | tuple[dict[Any, float], Callable[[str, str, tuple[str, ...]], float]],
     suspicious_multi: Callable[[str], bool],
     bitmap_labels: frozenset[str],
     out_glyphs: list[Any],

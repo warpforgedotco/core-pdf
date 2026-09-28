@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+from cpython.dict cimport PyDict_Check, PyDict_GetItemWithError
 from cpython.object cimport PyObject
 from cpython.ref cimport Py_INCREF
 from libc.math cimport ceil, isnan
@@ -514,8 +515,12 @@ def capture_horizontal_glyphs(
 ):
     """capture_glyphs for horizontal text, or None when a glyph needs its text split.
 
-    Appends one observation per kept glyph to out_glyphs (and out_clusters when
-    want_runs) and returns (kept, advance_union, ink_union, run_confidence).
+    glyph_width is a callable from width code to width, or a (widths, default) pair
+    that it would compute as widths.get(code, default). confidence_of is a callable,
+    or a (cache, callable) pair whose cache maps (text, source, alternates) to what
+    the callable returns for them. Appends one observation per
+    kept glyph to out_glyphs (and out_clusters when want_runs) and returns
+    (kept, advance_union, ink_union, run_confidence).
     """
     cdef Py_ssize_t n = len(glyphs)
     cdef Py_ssize_t i, kept = 0, cursor = 0, chunk_length
@@ -549,13 +554,29 @@ def capture_horizontal_glyphs(
     cdef object chunk_text, glyph, spacing, bbox, observation, confidence
     cdef object run_confidence = None
     cdef object empty = ()
-    cdef object transform
+    cdef object transform, width_code
+    cdef dict width_table = None
+    cdef object default_width = None
+    if type(glyph_width) is tuple:
+        width_table, default_width = glyph_width
+    cdef object confidence_cache = None
+    cdef PyObject* cached_confidence
+    if type(confidence_of) is tuple:
+        confidence_cache, confidence_of = confidence_of
+        if not PyDict_Check(confidence_cache):
+            raise TypeError("a confidence cache must be a dict")
     try:
         for i in range(n):
             glyph = glyphs[i]
             spacing = char_space + (word_space if slot_get(glyph, gs[G_CODE_BYTES]) == b" " else 0.0)
+            width_code = slot_get(glyph, gs[G_WIDTH_CODE])
             advance = (
-                glyph_width(slot_get(glyph, gs[G_WIDTH_CODE])) * font_size / 1000.0 + spacing
+                (
+                    width_table.get(width_code, default_width)
+                    if width_table is not None
+                    else glyph_width(width_code)
+                )
+                * font_size / 1000.0 + spacing
             ) * horizontal_scale / 100.0
             chunk_text = slot_get(glyph, gs[G_UNICODE])
             if not chunk_text:
@@ -599,11 +620,27 @@ def capture_horizontal_glyphs(
             )
             union_into(advance_union, geometry.ax0, geometry.ay0, geometry.ax1, geometry.ay1, i == 0)
             union_into(ink_union, geometry.ix0, geometry.iy0, geometry.ix1, geometry.iy1, i == 0)
-            confidence = confidence_of(
-                chunk_text,
-                slot_get(glyph, gs[G_UNICODE_SOURCE]),
-                slot_get(glyph, gs[G_ALTERNATES]),
-            )
+            confidence = None
+            if confidence_cache is not None:
+                try:
+                    cached_confidence = PyDict_GetItemWithError(
+                        confidence_cache,
+                        (
+                            chunk_text,
+                            slot_get(glyph, gs[G_UNICODE_SOURCE]),
+                            slot_get(glyph, gs[G_ALTERNATES]),
+                        ),
+                    )
+                except TypeError:
+                    cached_confidence = NULL
+                if cached_confidence is not NULL:
+                    confidence = <object> cached_confidence
+            if confidence is None:
+                confidence = confidence_of(
+                    chunk_text,
+                    slot_get(glyph, gs[G_UNICODE_SOURCE]),
+                    slot_get(glyph, gs[G_ALTERNATES]),
+                )
             transform = (
                 (g.transform_a, g.transform_b, g.transform_c, g.transform_d, geometry.tx, geometry.ty)
                 if want_render

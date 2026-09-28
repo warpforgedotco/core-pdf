@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field  # noqa: TID251
+from typing import Any
 
 from core_pdf.impl.capture_program import CaptureOptions
 from core_pdf.impl.fonts_decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts_helpers import LEGITIMATE_MULTI_CHAR_GLYPHS
+from core_pdf.impl.fonts_metrics import FontMetricsModel
 from core_pdf.impl.geometry import transform_bbox
 from core_pdf.impl.glyphs import (
+    CONFIDENCE_CACHE,
     GlyphClusterLike,
     GlyphObservation,
     GlyphStyle,
@@ -310,6 +314,22 @@ def glyph_style(
     )
 
 
+def glyph_width_source(
+    glyph_width: Callable[[int], float],
+) -> Callable[[int], float] | tuple[dict[Any, float], float]:
+    """What capture_horizontal_glyphs reads widths from: the (widths, default) pair
+    behind a plain FontMetricsModel.glyph_width, looked up without a call per
+    glyph, or the callable itself."""
+    metrics = getattr(glyph_width, "__self__", None)
+    if (
+        type(metrics) is FontMetricsModel
+        and getattr(glyph_width, "__func__", None) is FontMetricsModel.glyph_width
+        and type(metrics.widths) is dict
+    ):
+        return metrics.widths, metrics.default_width
+    return glyph_width
+
+
 def capture_glyphs(
     text: str,
     glyphs: tuple[DecodedGlyph, ...],
@@ -345,7 +365,7 @@ def capture_glyphs(
             glyphs,
             DECODED_GLYPH_LAYOUT,
             OBSERVATION_LAYOUT,
-            decoder.glyph_width,
+            glyph_width_source(decoder.glyph_width),
             decoder.glyph_bbox if options.ink_bounds else None,
             font_size,
             char_space,
@@ -366,7 +386,7 @@ def capture_glyphs(
             seqno,
             effective_font_name,
             cluster_start,
-            glyph_unicode_confidence,
+            (CONFIDENCE_CACHE, glyph_unicode_confidence),
             should_capture_suspicious_multi_glyph_bitmap,
             GLYPH_BITMAP_LABELS,
             result.glyphs,
