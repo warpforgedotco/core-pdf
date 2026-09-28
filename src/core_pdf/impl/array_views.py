@@ -24,10 +24,12 @@ def finite_median(values: numpy.ndarray[Any, Any]) -> float:
     if size == 0:
         raise ValueError("finite_median requires at least one value")
     middle = size // 2
+    # numpy.partition on a flattened copy, without its Python-level dispatch.
+    partitioned = values.flatten()
     if size & 1:
-        partitioned = numpy.partition(values, middle)
+        partitioned.partition(middle)
         return float(partitioned[middle])
-    partitioned = numpy.partition(values, (middle - 1, middle))
+    partitioned.partition((middle - 1, middle))
     return (float(partitioned[middle - 1]) + float(partitioned[middle])) * 0.5
 
 
