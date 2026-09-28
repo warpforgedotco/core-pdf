@@ -16,6 +16,7 @@ from typing import Any, ClassVar, TypeAlias, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl import output_model
+from core_pdf.impl.capture_program import CaptureOptions
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.geometry import (
     bbox_contains,
@@ -166,6 +167,9 @@ def _source(value: PdfInput, password: str = "") -> PdfDocument:
         )
     except Exception as exc:
         raise PdfminerException(exc) from exc
+
+
+DRAWINGS_CAPTURE = CaptureOptions(ink_bounds=False, text_runs=False, render_details=False)
 
 
 class EnginePageAdapter:
@@ -390,8 +394,10 @@ class EnginePageAdapter:
             )
 
     def page_program(self) -> Any:
+        # Only drawings and images are read from this program (characters come from
+        # the pdfminer capture), so text is captured without boxes, runs or details.
         if self._program is None:
-            self._program = self.page.get_page_program()
+            self._program = self.page.get_page_program(options=DRAWINGS_CAPTURE)
         return self._program
 
     def flush_program(self) -> None:
