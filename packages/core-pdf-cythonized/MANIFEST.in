@@ -2,7 +2,6 @@
 # golden vectors are the only check that a source build on an untested
 # platform produces the same floats as the reference implementations did.
 recursive-include tests *.json *.gz
-include src/core_pdf_cythonized/*.pyx
 # .pxd too: _type2 cimports _bezier's C sampler, so a source build needs
 # the declaration as much as the implementation.
 include src/core_pdf_cythonized/*.pxd

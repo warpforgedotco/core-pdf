@@ -18,6 +18,9 @@ def source_roots() -> tuple[pathlib.Path, ...]:
 
 SOURCE_ROOTS = source_roots()
 EXTENSION_SUFFIXES = (".so", ".pyd", ".dylib")
+# Cython pure-mode sources: the extension built from each .py is meant to shadow
+# it, so only an extension older than its source is a stale snapshot.
+CYTHON_SOURCE_ROOT = REPOSITORY_ROOT / "packages/core-pdf-cythonized/src"
 
 
 @pytest.fixture
@@ -41,8 +44,13 @@ def shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
             if not path.is_file() or path.suffix not in EXTENSION_SUFFIXES:
                 continue
             source = path.parent / f"{path.name.split('.')[0]}.py"
-            if source.is_file():
-                shadowed.append((path, source))
+            if not source.is_file():
+                continue
+            if path.is_relative_to(CYTHON_SOURCE_ROOT) and (
+                path.stat().st_mtime >= source.stat().st_mtime
+            ):
+                continue
+            shadowed.append((path, source))
     return shadowed
 
 
@@ -59,5 +67,9 @@ def pytest_configure() -> None:
         f"  {extension.relative_to(REPOSITORY_ROOT)} shadows {source.relative_to(REPOSITORY_ROOT)}"
         for extension, source in shadowed
     ]
-    lines += ["", "Delete the extension modules and re-run."]
+    lines += [
+        "",
+        "Delete the extension modules and re-run; rebuild stale Cython extensions with",
+        "`python setup.py build_ext --inplace` in packages/core-pdf-cythonized.",
+    ]
     raise pytest.UsageError("\n".join(lines))

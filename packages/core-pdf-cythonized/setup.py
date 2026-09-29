@@ -17,7 +17,14 @@ OPTIMIZATION_FLAGS = {
     "msvc": ["/O2"],
 }
 
-SOURCES = sorted(str(path) for path in Path("src").rglob("*.pyx"))
+# Pure Python mode sources: every module but a package's __init__ is a kernel.
+# Remaining .pyx files (if any) compile alongside them.
+SOURCES = sorted(
+    str(path)
+    for pattern in ("*.py", "*.pyx")
+    for path in Path("src").rglob(pattern)
+    if path.name != "__init__.py"
+)
 
 
 class BuildExtWithStrictFloats(build_ext):

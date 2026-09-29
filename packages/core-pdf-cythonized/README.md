@@ -7,6 +7,48 @@ no pure-Python fallback: when a kernel lands here, the Python it replaced is
 deleted -- with three exceptions, `ObjectScanner`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
+## Source form
+
+The kernels are written in Cython's [pure Python mode](https://cython.readthedocs.io/en/latest/src/tutorial/pure.html):
+each `_*.py` module is Python syntax with PEP 484/526 annotations (`cython.int`,
+`cython.uchar[:, :]`, `cython.pointer[...]`), `@cython.cfunc`/`@cython.inline`/
+`@cython.nogil` decorators and `from cython.cimports... import` C imports. The
+`.py` files are still compile-only: they cimport C functions and use pointers,
+so importing one uncompiled fails; the built extension shadows it.
+
+What pure mode cannot spell stays in `.pxd` files. A module's own `.pxd`
+augments it with `cdef enum` constants, `cdef extern` blocks and the
+declarations other modules cimport. The header-only `.pxd` files
+(`_alpha_blend`, `_byte_clamp`, `_knockout_math`, `_ndarray`, `_pixel_blend`,
+`_pymath`) hold shared `cdef inline` helpers. They are inlined into each caller
+only because their bodies live in a `.pxd`; moving them into a `.py` module
+would turn every per-pixel call into a cross-module function-pointer call.
+
+The conversion from `.pyx` kept the generated C function-for-function; the
+pure-mode spellings that differ from what one would guess:
+
+- `except -1` is `@cython.exceptval(-1, check=False)`. A bare
+  `exceptval(-1)` means `except? -1`, and its callers pay a
+  `PyErr_Occurred()` on every -1.
+- `noexcept` is `@cython.exceptval(check=False)`.
+- An argument annotated with a Python type or a memoryview rejects `None`
+  unless it is `typing.Optional[...]` or defaults to `None`.
+- Module-level annotations are ignored: type a C global with
+  `NAME = cython.declare(T, value)`.
+- A variable read or address-taken before its first assignment (C arrays,
+  out-parameters) is `x = cython.declare(T)`, not a bare annotation.
+- `cython.declare(T[A][B])` is C `T[B][A]`.
+- An array size must be a single constant name or literal; derive products
+  as further enum members in the `.pxd`.
+- Ruff's rewrites of chained comparisons into `in`, and of conditional
+  expressions into `min()`/`max()`, change the C, so those rules are ignored
+  for the kernel sources in the root `pyproject.toml`.
+
+Rebuild in place after editing a kernel:
+`python setup.py build_ext --inplace` in this directory, with Cython and
+setuptools available. The root `conftest.py` refuses to run tests against an
+extension older than its source.
+
 ## Two kernels own their algorithms
 
 `composite_knockout_element` is the exception to everything below. It is not
