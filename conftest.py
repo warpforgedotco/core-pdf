@@ -19,7 +19,7 @@ def source_roots() -> tuple[pathlib.Path, ...]:
 SOURCE_ROOTS = source_roots()
 EXTENSION_SUFFIXES = (".so", ".pyd", ".dylib")
 # Cython pure-mode sources: the extension built from each .py is meant to shadow
-# it, so only an extension older than its source is a stale snapshot.
+# it, so only an extension older than one of its inputs is a stale snapshot.
 CYTHON_SOURCE_ROOT = REPOSITORY_ROOT / "packages/core-pdf-cythonized/src"
 
 
@@ -37,6 +37,12 @@ def text_pdf_bytes() -> bytes:
     return serialize_pdf(objects)
 
 
+def newest_cython_input(source: pathlib.Path) -> pathlib.Path:
+    # Any .pxd beside the source may be compiled in: the module's own augmenting
+    # declarations and the shared cdef inline helpers alike.
+    return max((source, *source.parent.glob("*.pxd")), key=lambda path: path.stat().st_mtime)
+
+
 def shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
     shadowed: list[tuple[pathlib.Path, pathlib.Path]] = []
     for root in SOURCE_ROOTS:
@@ -46,10 +52,11 @@ def shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
             source = path.parent / f"{path.name.split('.')[0]}.py"
             if not source.is_file():
                 continue
-            if path.is_relative_to(CYTHON_SOURCE_ROOT) and (
-                path.stat().st_mtime >= source.stat().st_mtime
-            ):
-                continue
+            if path.is_relative_to(CYTHON_SOURCE_ROOT):
+                newest = newest_cython_input(source)
+                if path.stat().st_mtime >= newest.stat().st_mtime:
+                    continue
+                source = newest
             shadowed.append((path, source))
     return shadowed
 
