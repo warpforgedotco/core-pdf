@@ -1,10 +1,12 @@
 import hashlib
+import tomllib
 from copy import deepcopy
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 
-from scripts.check_coverage import check_coverage
+from scripts.check_coverage import OMIT, check_coverage, is_cython_kernel
 from scripts.install_ocr_ci import install_model
 
 
@@ -26,6 +28,15 @@ def report():
 @pytest.fixture
 def baseline():
     return {"statements": {"covered": 82, "total": 100}, "branches": {"covered": 71, "total": 100}}
+
+
+def test_only_compiled_cython_kernels_leave_the_inventory():
+    kernels = Path("packages/core-pdf-cythonized/src/core_pdf_cythonized")
+    assert is_cython_kernel(kernels / "_rect.py")
+    assert not is_cython_kernel(kernels / "__init__.py")
+    assert not is_cython_kernel(Path("src/core_pdf/impl/_rect.py"))
+    with Path("pyproject.toml").open("rb") as handle:
+        assert tomllib.load(handle)["tool"]["coverage"]["run"]["omit"] == OMIT
 
 
 def test_complete_report_passes_without_rounding_up_floor(report, baseline):

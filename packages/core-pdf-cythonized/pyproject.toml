@@ -27,7 +27,7 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-core_pdf_cythonized = ["py.typed", "*.pyi", "*.pyx"]
+core_pdf_cythonized = ["py.typed", "*.pyi"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["**/__pycache__/*", "**/*.pyc"]

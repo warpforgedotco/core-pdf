@@ -130,7 +130,9 @@ source = [
     "packages/core-records/src/core_records",
     "packages/core-pdf-cythonized/src/core_pdf_cythonized",
 ]
-omit = ["*/_vendor/*"]
+# The Cython pure-mode kernels never run as Python: their compiled extensions
+# shadow them. __init__.py does run, and stays measured.
+omit = ["*/_vendor/*", "*/core_pdf_cythonized/_[a-z]*.py"]
 relative_files = true
 
 [tool.coverage.report]
@@ -158,6 +160,20 @@ line-length = 100
 "packages/core-pdf-compat/src/core_pdf_compat/pdfminer/_capture.py" = ["ARG002"]
 # Stream filters share the FilterFn signature: (data, parms).
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_filters/codecs.py" = ["ARG001"]
+# Cython pure-mode kernels: each rewrite these rules suggest (`in` for chained
+# comparisons, min()/max() for conditional expressions, merged branches, ...)
+# compiles to different C, and the kernels are pinned to their C by golden vectors.
+"packages/core-pdf-cythonized/src/core_pdf_cythonized/_[a-z]*.py" = [
+    "FURB110",
+    "FURB136",
+    "PERF401",
+    "PLR1714",
+    "SIM109",
+    "SIM113",
+    "SIM114",
+    "SIM210",
+    "SIM300",
+]
 "src/core_pdf/impl/graphics_stream_decoding.py" = ["ARG001"]
 # Colour converters share one (values, space, context) signature.
 "src/core_pdf/impl/graphics_image_samples.py" = ["ARG001"]
@@ -259,6 +275,10 @@ exclude = [
     # Runs in the isolated PEP 517 build environment, where Cython is present
     # and the dev venv it would be checked against is not.
     "packages/core-pdf-cythonized/setup.py",
+    # Cython pure-mode sources: they compile against C declarations (cimports,
+    # pointers, C arrays) that no Python type checker models; the .pyi stubs
+    # beside them are the checked interface.
+    "packages/core-pdf-cythonized/src/core_pdf_cythonized/_[a-z]*.py",
 ]
 
 [tool.setuptools]
