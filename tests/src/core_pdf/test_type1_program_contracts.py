@@ -1,5 +1,6 @@
 import pytest
 
+from core_pdf.impl import fonts_program_type1
 from core_pdf.impl.fonts_program_type1 import Type1FontProgram
 
 SQUARE = bytes((139, 248, 136, 13, 239, 139, 21, 247, 192, 139, 5, 139, 248, 36, 5, 9, 14))
@@ -39,3 +40,16 @@ def test_every_lenIV_decodes_the_same_outline(len_iv: int | None) -> None:
     contours = program.normalized_glyph_contours(glyph_id)
     assert contours
     assert contours == reference.normalized_glyph_contours(glyph_id)
+
+
+@pytest.mark.parametrize("len_iv", [None, 4, -1])
+def test_compiled_bounds_match_the_fonttools_drawing(monkeypatch, len_iv: int | None) -> None:
+    program = Type1FontProgram(type1_program(len_iv))
+    glyph_id = program.glyph_id_for_name("square")
+    assert glyph_id is not None
+    compiled = program.glyph_bbox_for_gid(glyph_id)
+    assert compiled is not None
+    monkeypatch.setattr(fonts_program_type1, "type1_glyph_bounds", lambda *args: None)
+    drawn = Type1FontProgram(type1_program(len_iv)).glyph_bbox_for_gid(glyph_id)
+    assert drawn is not None
+    assert [float(v).hex() for v in compiled] == [float(v).hex() for v in drawn]

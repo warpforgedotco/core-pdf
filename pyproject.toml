@@ -279,7 +279,7 @@ core_pdf = ["py.typed"]
     "*.md",
     "LICENSE*",
 ]
-"core_pdf.impl.data" = ["raster_fonts/**"]
+"core_pdf.impl.data" = ["raster_fonts/**", "cid_unicode/*.bin.gz"]
 
 [tool.importlinter]
 root_packages = [

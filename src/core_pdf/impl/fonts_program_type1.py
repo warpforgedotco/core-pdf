@@ -18,7 +18,7 @@ from core_pdf.impl.fonts_raster_kernel import (
     transform_contours,
 )
 from core_pdf.impl.types import Rectangle
-from core_pdf_cythonized import decrypt_type1
+from core_pdf_cythonized import decrypt_type1, type1_glyph_bounds
 
 LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
 FONT_MATRIX_RE = re.compile(
@@ -30,10 +30,10 @@ CHARSTRING_RE = re.compile(rb"/([^\s/]+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
 MAX_SUBROUTINES = 4096
 
 
-def type1_charstring(encrypted: bytes, len_iv: int, subrs: list[T1CharString]) -> T1CharString:
+def type1_charstring_data(encrypted: bytes, len_iv: int) -> bytes:
     if len_iv == -1:
-        return T1CharString(encrypted, subrs=subrs)
-    return T1CharString(decrypt_type1(encrypted, 4330)[len_iv:], subrs=subrs)
+        return encrypted
+    return decrypt_type1(encrypted, 4330)[len_iv:]
 
 
 def eexec_payload(data: bytes, length1: int | None) -> bytes:
@@ -46,10 +46,12 @@ def eexec_payload(data: bytes, length1: int | None) -> bytes:
 class Type1FontProgram(GlyphProgram):
     __slots__ = (
         "builtin_encoding",
+        "charstring_data",
         "charstrings",
         "font_matrix",
         "glyph_names",
         "glyph_name_to_id",
+        "subr_data",
         "subrs",
     )
 
@@ -67,21 +69,26 @@ class Type1FontProgram(GlyphProgram):
         subr_count = max(subr_data, default=-1) + 1
         if subr_count > MAX_SUBROUTINES:
             raise ValueError("Type 1 subroutine index exceeds decoder limit")
+        # fontTools drops a charstring's bytes once it has drawn it, so the
+        # compiled bounds kernel reads these copies.
+        decrypted_subrs = [b"\x0b"] * subr_count
+        for index, encrypted in subr_data.items():
+            decrypted_subrs[index] = type1_charstring_data(encrypted, len_iv)
+        self.subr_data = tuple(decrypted_subrs)
         empty = T1CharString(b"\x0b", subrs=[])
         subrs = [empty for _ in range(subr_count)]
-        for index, encrypted in subr_data.items():
-            subrs[index] = type1_charstring(encrypted, len_iv, subrs)
+        for index in subr_data:
+            subrs[index] = T1CharString(decrypted_subrs[index], subrs=subrs)
         for subr in subrs:
             subr.subrs = subrs
         self.subrs = subrs
 
-        charstrings = {
-            name.decode("latin-1"): payload
+        self.charstring_data = {
+            name.decode("latin-1"): type1_charstring_data(payload, len_iv)
             for name, payload in binary_entries(private, CHARSTRING_RE, skip_truncated=True)
         }
         self.charstrings = {
-            name: type1_charstring(encrypted, len_iv, subrs)
-            for name, encrypted in charstrings.items()
+            name: T1CharString(data, subrs=subrs) for name, data in self.charstring_data.items()
         }
         if not self.charstrings:
             raise ValueError("Type 1 CharStrings are missing")
@@ -120,12 +127,15 @@ class Type1FontProgram(GlyphProgram):
             charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")
             if charstring is None:
                 return None
-            bounds_pen = BoundsPen(self.charstrings)
             a, b, c, d, e, f = self.font_matrix
-            normalized_pen = TransformPen(
-                bounds_pen,
-                (a * 1000.0, b * 1000.0, c * 1000.0, d * 1000.0, e * 1000.0, f * 1000.0),
+            normalizing = (a * 1000.0, b * 1000.0, c * 1000.0, d * 1000.0, e * 1000.0, f * 1000.0)
+            compiled = type1_glyph_bounds(
+                self.charstring_data[glyph_name], self.subr_data, normalizing
             )
+            if compiled is not None:
+                return compiled or None
+            bounds_pen = BoundsPen(self.charstrings)
+            normalized_pen = TransformPen(bounds_pen, normalizing)
             charstring.draw(normalized_pen)
             bounds = bounds_pen.bounds
             if bounds is None:

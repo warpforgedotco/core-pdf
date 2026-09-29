@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import gzip
+import struct
 import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable
 from functools import cache
+from importlib.resources import files
+from itertools import islice
 from typing import Any
 
 from core_adobe_fonts.cmap.ranges import (
@@ -186,6 +190,12 @@ class CIDUnicodeMap:
             return text
 
     def vote(self, cid: int) -> str | None:
+        table = packaged_cid_unicode_table(self.registry, self.ordering, vertical=self.vertical)
+        if table is not None:
+            return table.get(cid)
+        return self.vote_from_sources(cid)
+
+    def vote_from_sources(self, cid: int) -> str | None:
         override = CID_COLLECTION_UNICODE_OVERRIDES.get((self.registry, self.ordering), {}).get(cid)
         if override is not None:
             return override
@@ -206,6 +216,65 @@ class CIDUnicodeMap:
             for text, weight in candidates.items()
         }
         return max(ranked, key=ranked.__getitem__)
+
+
+# The votes of every packaged collection, precomputed by
+# scripts/build_cid_unicode_tables.py from the sources above: casting one live
+# parses and expands every weighted CMap of the collection, some 300 ms for
+# Adobe-Japan1. A table holds the horizontal votes, then the vertical ones that
+# differ, as (CID, code point) pairs; code point 0 is a CID with no vertical vote.
+CID_UNICODE_TABLE_DIRECTORY = "cid_unicode"
+CID_UNICODE_TABLE_MAGIC = b"CPCIDU01"
+CID_UNICODE_TABLE_HEADER = struct.Struct("<8sII")
+CID_UNICODE_TABLE_ENTRY = struct.Struct("<II")
+
+
+def cid_unicode_table_name(registry: str, ordering: str) -> str:
+    return f"{registry}-{ordering}.bin.gz"
+
+
+def encode_cid_unicode_table(horizontal: dict[int, str], vertical: dict[int, str]) -> bytes:
+    changes = {
+        cid: vertical.get(cid, "")
+        for cid in sorted(horizontal.keys() | vertical.keys())
+        if vertical.get(cid) != horizontal.get(cid)
+    }
+    payload = bytearray(
+        CID_UNICODE_TABLE_HEADER.pack(CID_UNICODE_TABLE_MAGIC, len(horizontal), len(changes))
+    )
+    for cid, text in sorted(horizontal.items()):
+        payload += CID_UNICODE_TABLE_ENTRY.pack(cid, ord(text))
+    for cid, text in changes.items():
+        payload += CID_UNICODE_TABLE_ENTRY.pack(cid, ord(text) if text else 0)
+    return gzip.compress(bytes(payload), mtime=0)
+
+
+def decode_cid_unicode_table(data: bytes, *, vertical: bool) -> dict[int, str]:
+    payload = gzip.decompress(data)
+    magic, horizontal_count, change_count = CID_UNICODE_TABLE_HEADER.unpack_from(payload)
+    if magic != CID_UNICODE_TABLE_MAGIC:
+        raise ValueError("not a CID Unicode table")
+    entries = CID_UNICODE_TABLE_ENTRY.iter_unpack(payload[CID_UNICODE_TABLE_HEADER.size :])
+    table = {cid: chr(codepoint) for cid, codepoint in islice(entries, horizontal_count)}
+    if vertical:
+        for cid, codepoint in islice(entries, change_count):
+            if codepoint:
+                table[cid] = chr(codepoint)
+            else:
+                table.pop(cid, None)
+    return table
+
+
+@cache
+def packaged_cid_unicode_table(
+    registry: str, ordering: str, *, vertical: bool
+) -> dict[int, str] | None:
+    resource = files(__package__).joinpath(
+        "data", CID_UNICODE_TABLE_DIRECTORY, cid_unicode_table_name(registry, ordering)
+    )
+    if not resource.is_file():
+        return None
+    return decode_cid_unicode_table(resource.read_bytes(), vertical=vertical)
 
 
 def tally_cid_votes(
