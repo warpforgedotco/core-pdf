@@ -137,6 +137,8 @@ the wheel.
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render_target` (both deleted) | 7.06x on the fused wrapper |
 | `decode_arithmetic_generic_template0` | `core_jbig2.codec` (deleted, with `JBIG2MQDecoder` and the `MQ_*` tables) | 69x over the 18 generic regions the JBIG2 fixtures decode (168 to 2.4 ns/px); render of no_bad_redactions.4.1 1424 to 77 ms, the two SCORE-Bench JBIG2 scans -31% and -40% |
 | `merge_collinear_rows` | the sequential merge loop over `tolist()` rows in `core_pdf.impl.extract_grids.merge_collinear_segments` (deleted); the same comparisons, `min`/`max` and averaging in double precision, pinned to that loop by a randomized test | table detection on issue-301 (18,560 ruled segments) 11.2 to 4.8 ms per first-page extract |
+| `glyph_feature_cells` | the numpy cell measurement of `core_pdf.impl.fonts_cff_repair.feature_from_contours` (deleted), which keeps `feature_from_points` for the non-finite inputs the kernel declines | 57 to 18 us per glyph feature over the NASA CMap sample's CFF repair glyphs (about 200 points each), where some twenty array operations ran on arrays too small to amortize them |
+| `outline_coordinate_arrays` | the list build and two `numpy.asarray` calls of `core_pdf.impl.fonts_glyph_geometry.outline_arrays` (deleted) | 16.8 to 3.0 us per glyph outline over 919 corpus render outlines (median 202 points) |
 
 `glyph_coverage_plane`, `fill_glyph_coverage` and `signed_area_coverage` share one accumulation core;
 `glyph_coverage_plane` is kept as the golden-pinned reference the fused fill is checked against.

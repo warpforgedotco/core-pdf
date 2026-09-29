@@ -7,17 +7,15 @@ from typing import Any
 from core_adobe_fonts.cff import font
 from core_adobe_fonts.cff.font import (
     CFF_EXPERT_ENCODING_CODES,
+    CFF_EXPERT_STRINGS,
+    CFF_EXPERT_SUBSET_STRINGS,
+    CFF_ISO_ADOBE_STRINGS,
     CFF_STANDARD_STRING_COUNT,
     DEFAULT_CFF_FONT_MATRIX,
     STANDARD_GLYPH_SIDS,
     CffFontMatrix,
 )
-from core_pdf._vendor.fontTools.cffLib import (
-    cffExpertSubsetStrings,
-    cffIExpertStrings,
-    cffISOAdobeStrings,
-)
-from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
+from core_adobe_fonts.encodings import STANDARD_ENCODING_GLYPH_NAMES
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_cff_repair import (
     EMPTY_FEATURE,
@@ -90,14 +88,14 @@ class CFFFont(font.CFFFont, GlyphProgram):
             raise ValueError("CID-keyed CFF font uses a predefined charset")
         if glyph_count == 1:
             return {0: 0}
-        glyph_names: list[str] | None
+        glyph_names: tuple[str, ...] | None
         match pos:
             case 0:
-                glyph_names = cffISOAdobeStrings
+                glyph_names = CFF_ISO_ADOBE_STRINGS
             case 1:
-                glyph_names = cffIExpertStrings
+                glyph_names = CFF_EXPERT_STRINGS
             case 2:
-                glyph_names = cffExpertSubsetStrings
+                glyph_names = CFF_EXPERT_SUBSET_STRINGS
             case _:
                 glyph_names = None
         if glyph_names is not None:
@@ -221,7 +219,7 @@ class CFFFont(font.CFFFont, GlyphProgram):
                 code: name
                 for code, name in zip(
                     CFF_EXPERT_ENCODING_CODES,
-                    cffIExpertStrings[1:],
+                    CFF_EXPERT_STRINGS[1:],
                     strict=True,
                 )
                 if STANDARD_GLYPH_SIDS[name] in sid_to_gid
@@ -386,9 +384,9 @@ class CFFFont(font.CFFFont, GlyphProgram):
             (base_code, 0.0, 0.0),
             (accent_code, accent_dx, accent_dy),
         ):
-            if not 0 <= code < len(StandardEncoding):
+            if not 0 <= code < len(STANDARD_ENCODING_GLYPH_NAMES):
                 continue
-            sid = STANDARD_GLYPH_SIDS.get(StandardEncoding[code])
+            sid = STANDARD_GLYPH_SIDS.get(STANDARD_ENCODING_GLYPH_NAMES[code])
             glyph_id = self.cid_to_gid.get(sid) if sid is not None else None
             if glyph_id is None or not 0 <= glyph_id < len(self.charstrings):
                 continue

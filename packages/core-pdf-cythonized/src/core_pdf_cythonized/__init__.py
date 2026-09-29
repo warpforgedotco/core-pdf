@@ -26,7 +26,7 @@ from core_pdf_cythonized._distinct_rows import (
     gather_uint8_rows,
 )
 from core_pdf_cythonized._downsample import box_downsample_blocks
-from core_pdf_cythonized._features import cell_distance_map
+from core_pdf_cythonized._features import cell_distance_map, glyph_feature_cells
 from core_pdf_cythonized._glyph_bitmap import glyph_bitmap_rows
 from core_pdf_cythonized._glyphs import (
     DECODED_GLYPH_FIELDS,
@@ -43,7 +43,11 @@ from core_pdf_cythonized._knockout import (
 )
 from core_pdf_cythonized._markers import markers_present, regions_with_markers
 from core_pdf_cythonized._objects import ObjectScanner
-from core_pdf_cythonized._outline import outline_edges, translated_outline_edges
+from core_pdf_cythonized._outline import (
+    outline_coordinate_arrays,
+    outline_edges,
+    translated_outline_edges,
+)
 from core_pdf_cythonized._paths import fill_edge_rows, flatten_path_commands, path_bounds
 from core_pdf_cythonized._rect import fill_rect_coverage
 from core_pdf_cythonized._sample_blit import (
@@ -64,6 +68,7 @@ from core_pdf_cythonized._xref_headers import object_headers_match
 
 __all__ = (
     "cell_distance_map",
+    "glyph_feature_cells",
     "merge_collinear_rows",
     "markers_present",
     "regions_with_markers",
@@ -103,6 +108,7 @@ __all__ = (
     "horizontal_glyph_geometry",
     "interleave_soft_mask",
     "object_headers_match",
+    "outline_coordinate_arrays",
     "outline_edges",
     "path_bounds",
     "sample_opaque_pixels",

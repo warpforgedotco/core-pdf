@@ -83,6 +83,11 @@ def build_cff_unicode_repair_index(
     font_file = recover_font_file(recover_descriptor(descendant.get("FontDescriptor")), "FontFile3")
     if font_file is None or font_program.source_size > 750_000:
         return None
+    if not any(
+        len(code_bytes) in {1, 2} and is_repairable_to_unicode_label(value)
+        for code_bytes, value in to_unicode.mappings.items()
+    ):
+        return None
     mapping = single_code_mapping(to_unicode, cmap)
     if not any(is_repairable_to_unicode_label(value) for _, value in mapping.values()):
         return None

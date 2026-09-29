@@ -1,3 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 def cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int, ...]: ...
+def glyph_feature_cells(
+    contours: object,
+) -> tuple[tuple[tuple[int, int], ...], float, float] | tuple[()] | None: ...

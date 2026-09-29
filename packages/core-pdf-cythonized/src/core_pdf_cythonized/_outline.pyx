@@ -163,3 +163,32 @@ cdef tuple _translated_outline_edges(
         column_extreme(ys, count, column_y, True, high_y, flags_y),
     )
     return column_x, column_y, edges, kept, dropped, bounds
+
+
+def outline_coordinate_arrays(contours):
+    """The x and y columns of every contour with at least two points, and each
+    such contour's (start, end) span in them; None when no contour qualifies."""
+    cdef Py_ssize_t total = 0, index = 0, start
+    cdef double *xs_data
+    cdef double *ys_data
+    for contour in contours:
+        if len(contour) >= 2:
+            total += len(contour)
+    if total == 0:
+        return None
+    xs = empty_float64(total)
+    ys = empty_float64(total)
+    xs_data = float64_data(xs)
+    ys_data = float64_data(ys)
+    spans = []
+    for contour in contours:
+        if len(contour) < 2:
+            continue
+        start = index
+        for point in contour:
+            x, y = point
+            xs_data[index] = x
+            ys_data[index] = y
+            index += 1
+        spans.append((start, index))
+    return xs, ys, tuple(spans)
