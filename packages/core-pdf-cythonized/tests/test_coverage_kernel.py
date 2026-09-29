@@ -41,3 +41,10 @@ def test_coverage_is_bounded_to_unit_range():
     for case in GOLDEN:
         out = signed_area_coverage(case["edges"], case["width"], case["height"])
         assert out.size == 0 or (out.min() >= 0.0 and out.max() <= 1.0)
+
+
+@pytest.mark.parametrize("columns", [3, 5])
+def test_edges_without_four_columns_are_refused(columns):
+    edges = numpy.ones((2, columns))
+    with pytest.raises(ValueError, match="four columns"):
+        signed_area_coverage(edges, 4, 4)

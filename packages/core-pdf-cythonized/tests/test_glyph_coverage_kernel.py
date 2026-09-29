@@ -76,3 +76,14 @@ def test_an_empty_plane_matches_the_device_space_entry_point():
     empty = glyph_coverage_plane(src, 0.0, 10.0, 1.0, 0.0, 0.0, 0, 0)
     assert empty is not None
     assert empty.shape == (0, 0)
+
+
+@pytest.mark.parametrize("columns", [3, 5])
+def test_glyph_edges_without_four_columns_are_refused(columns):
+    edges = numpy.ones((2, columns))
+    with pytest.raises(ValueError, match="four columns"):
+        glyph_coverage_plane(edges, 0.0, 10.0, 1.0, 0.0, 0.0, 5, 10)
+
+
+def test_glyph_edges_with_no_rows_need_no_columns():
+    assert glyph_coverage_plane(numpy.empty((0, 0)), 0.0, 10.0, 1.0, 0.0, 0.0, 5, 10) is None

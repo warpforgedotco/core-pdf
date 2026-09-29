@@ -52,6 +52,12 @@ def edge_rows(edges: object) -> object:
         edges = numpy.ascontiguousarray(edges, dtype=numpy.float64)
         if cnp.PyArray_NDIM(cython.cast(cnp.ndarray, edges)) != 2:
             _require_edge_matrix(edges)
+    # The kernels read each edge as four consecutive doubles.
+    if (
+        cnp.PyArray_DIM(cython.cast(cnp.ndarray, edges), 0) != 0
+        and cnp.PyArray_DIM(cython.cast(cnp.ndarray, edges), 1) != 4
+    ):
+        raise ValueError("edges must have four columns")
     return edges
 
 
@@ -300,6 +306,8 @@ def signed_area_coverage(edges, width: cython.int, height: cython.int):
         return numpy.zeros((max(height, 0), max(width, 0)), numpy.float64)
 
     view: cython.double[:, ::1] = numpy.ascontiguousarray(edges, dtype=numpy.float64)
+    if view.shape[1] != 4:
+        raise ValueError("edges must have four columns")
     return _coverage_from_device(cython.address(view[0, 0]), view.shape[0], width, height)
 
 

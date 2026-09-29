@@ -38,3 +38,8 @@ def test_empty_needles_are_refused():
         markers_present(b"abc", (b"",))
     with pytest.raises(ValueError):
         regions_with_markers(b"abc", (b"",), [0], 3)
+
+
+def test_negative_starts_are_refused():
+    with pytest.raises(ValueError, match="negative"):
+        regions_with_markers(b"XRef", (b"XRef",), [-1], 4)
