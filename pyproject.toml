@@ -130,7 +130,9 @@ source = [
     "packages/core-records/src/core_records",
     "packages/core-pdf-cythonized/src/core_pdf_cythonized",
 ]
-omit = ["*/_vendor/*"]
+# The Cython pure-mode kernels never run as Python: their compiled extensions
+# shadow them. __init__.py does run, and stays measured.
+omit = ["*/_vendor/*", "*/core_pdf_cythonized/_[a-z]*.py"]
 relative_files = true
 
 [tool.coverage.report]
@@ -161,7 +163,7 @@ line-length = 100
 # Cython pure-mode kernels: each rewrite these rules suggest (`in` for chained
 # comparisons, min()/max() for conditional expressions, merged branches, ...)
 # compiles to different C, and the kernels are pinned to their C by golden vectors.
-"packages/core-pdf-cythonized/src/core_pdf_cythonized/_*.py" = [
+"packages/core-pdf-cythonized/src/core_pdf_cythonized/_[a-z]*.py" = [
     "FURB110",
     "FURB136",
     "PERF401",
@@ -276,7 +278,7 @@ exclude = [
     # Cython pure-mode sources: they compile against C declarations (cimports,
     # pointers, C arrays) that no Python type checker models; the .pyi stubs
     # beside them are the checked interface.
-    "packages/core-pdf-cythonized/src/core_pdf_cythonized/_*.py",
+    "packages/core-pdf-cythonized/src/core_pdf_cythonized/_[a-z]*.py",
 ]
 
 [tool.setuptools]
