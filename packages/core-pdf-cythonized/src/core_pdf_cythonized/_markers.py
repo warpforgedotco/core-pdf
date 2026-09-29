@@ -120,6 +120,8 @@ def regions_with_markers(
     try:
         for index in range(count):
             offsets[index] = starts[index]
+            if offsets[index] < 0:
+                raise ValueError("starts must not be negative")
         for needle in needles:
             length = len(needle)
             if length == 0:
