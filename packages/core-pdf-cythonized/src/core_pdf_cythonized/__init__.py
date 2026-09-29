@@ -42,6 +42,10 @@ from core_pdf_cythonized._knockout import (
     composite_knockout_group,
 )
 from core_pdf_cythonized._markers import markers_present, regions_with_markers
+from core_pdf_cythonized._nonisolated import (
+    composite_nonisolated_blend,
+    remove_group_backdrop_samples,
+)
 from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import (
     outline_coordinate_arrays,
@@ -91,6 +95,7 @@ __all__ = (
     "composite_knockout_element",
     "composite_knockout_group",
     "composite_masked_normal",
+    "composite_nonisolated_blend",
     "composite_normal_group",
     "cubic_sample_times",
     "decode_arithmetic_generic_template0",
@@ -113,6 +118,7 @@ __all__ = (
     "outline_coordinate_arrays",
     "outline_edges",
     "path_bounds",
+    "remove_group_backdrop_samples",
     "sample_opaque_pixels",
     "scan_to_unicode_cmap",
     "shading_blend",
