@@ -20,6 +20,8 @@ from cython.cimports.core_pdf_cythonized._truetype import (
     Y_SAME,
     Y_SHORT,
 )
+from cython.cimports.cpython.ref import Py_INCREF
+from cython.cimports.cpython.tuple import PyTuple_New, PyTuple_SET_ITEM
 from cython.cimports.libc.stdlib import free, malloc, realloc
 
 __all__ = ("truetype_contours",)
@@ -747,6 +749,47 @@ def composite_body(
     return DONE
 
 
+@cython.cfunc
+def contour_tuples(r: cython.pointer[Recording], scale: cython.double) -> tuple:
+    """Each recorded contour of three or more points as a tuple of (x, y) floats.
+
+    Built straight into preallocated tuples: the kept contours are counted first,
+    and each point pair is a C double pair, scaled unless scale is exactly 1.
+    """
+    start: cython.Py_ssize_t = 0
+    end: cython.Py_ssize_t
+    k: cython.Py_ssize_t
+    i: cython.Py_ssize_t
+    kept: cython.Py_ssize_t = 0
+    for k in range(r.contours):
+        end = r.ends[k]
+        if end - start >= 3:
+            kept += 1
+        start = end
+    contours: tuple = PyTuple_New(kept)
+    points: tuple
+    point: tuple
+    unscaled: cython.bint = scale == 1.0
+    kept = 0
+    start = 0
+    for k in range(r.contours):
+        end = r.ends[k]
+        if end - start >= 3:
+            points = PyTuple_New(end - start)
+            for i in range(start, end):
+                if unscaled:
+                    point = (r.points[2 * i], r.points[2 * i + 1])
+                else:
+                    point = (r.points[2 * i] * scale, r.points[2 * i + 1] * scale)
+                Py_INCREF(point)
+                PyTuple_SET_ITEM(points, i - start, point)
+            Py_INCREF(points)
+            PyTuple_SET_ITEM(contours, kept, points)
+            kept += 1
+        start = end
+    return contours
+
+
 def truetype_contours(
     glyf: cython.const[cython.uchar][::1],
     loca: cython.const[cython.longlong][::1],
@@ -796,26 +839,7 @@ def truetype_contours(
             raise MemoryError
         if status != DONE:
             return None
-        contours = []
-        start = 0
-        for k in range(r.contours):
-            end = r.ends[k]
-            if end - start >= 3:
-                if scale == 1.0:
-                    contours.append(
-                        tuple([(r.points[2 * i], r.points[2 * i + 1]) for i in range(start, end)])
-                    )
-                else:
-                    contours.append(
-                        tuple(
-                            [
-                                (r.points[2 * i] * scale, r.points[2 * i + 1] * scale)
-                                for i in range(start, end)
-                            ]
-                        )
-                    )
-            start = end
-        return tuple(contours)
+        return contour_tuples(cython.address(r), scale)
     finally:
         free(r.points)
         free(r.ends)
