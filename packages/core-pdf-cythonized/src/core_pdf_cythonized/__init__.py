@@ -10,7 +10,7 @@ from core_pdf_cythonized._composite import (
     composite_masked_normal,
     composite_normal_group,
 )
-from core_pdf_cythonized._content import ContentScanner
+from core_pdf_cythonized._content import ContentScanner, NativeOperators
 from core_pdf_cythonized._coverage import (
     fill_glyph_coverage,
     fill_glyph_coverage_at,
@@ -77,6 +77,7 @@ __all__ = (
     "SlotLayout",
     "capture_horizontal_glyphs",
     "ContentScanner",
+    "NativeOperators",
     "ObjectScanner",
     "accumulate_source_plane",
     "alpha_channel",

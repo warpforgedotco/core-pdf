@@ -3,6 +3,19 @@
 from collections.abc import Callable, Set
 from typing import Any
 
+class NativeOperators:
+    def __init__(
+        self,
+        operators: Set[str],
+        keep_paint: frozenset[str],
+        line_moving: frozenset[str],
+        keep_layout: frozenset[str],
+        gray: Any,
+        rgb: Any,
+        cmyk: Any,
+        matrix_type: type,
+    ) -> None: ...
+
 class ContentScanner:
     pos: int
     @property
@@ -15,6 +28,7 @@ class ContentScanner:
         make_name: Callable[[bytes], Any],
     ) -> None: ...
     def set_path_state(self, state: Any) -> None: ...
+    def set_native_state(self, state: Any, native: NativeOperators | None) -> None: ...
     def enable_strings(self, string_type: Callable[..., Any]) -> None: ...
     def next_operation(self) -> tuple[str, tuple[Any, ...]] | int: ...
     def run(

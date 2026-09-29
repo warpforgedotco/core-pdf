@@ -58,7 +58,7 @@ from core_pdf.impl.types import (
     ReplaceFields,
     ReprFields,
 )
-from core_pdf_cythonized import SlotLayout, flatten_path_commands
+from core_pdf_cythonized import NativeOperators, SlotLayout, flatten_path_commands
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content import model
 from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
@@ -75,6 +75,7 @@ from core_pdf_spec.s_08_graphics.color_rendering import (
     ColorRendering,
     override_color_rendering,
 )
+from core_pdf_spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
@@ -344,9 +345,66 @@ def applies_paths_natively(handlers: Mapping[str, OperationHandler], state: obje
     return True
 
 
+NATIVE_STATE_HANDLERS: dict[str, Callable[..., None]] = {
+    "G": ContentInterpreter.op_G,
+    "g": ContentInterpreter.op_g,
+    "RG": ContentInterpreter.op_RG,
+    "rg": ContentInterpreter.op_rg,
+    "K": ContentInterpreter.op_K,
+    "k": ContentInterpreter.op_k,
+    "w": ContentInterpreter.op_w,
+    "d": ContentInterpreter.op_d,
+    "J": ContentInterpreter.op_J,
+    "j": ContentInterpreter.op_j,
+    "M": ContentInterpreter.op_M,
+    "Td": ContentInterpreter.op_Td,
+    "TD": ContentInterpreter.op_TD,
+    "Tm": ContentInterpreter.op_Tm,
+    "T*": ContentInterpreter.op_T_star,
+    "TL": ContentInterpreter.op_TL,
+}
+
+
+# The methods those handlers reach for the operands the scanner applies itself.
+NATIVE_STATE_METHODS: dict[str, Callable[..., object]] = {
+    "as_floats": ContentInterpreter.as_floats,
+    "as_int_operand": ContentInterpreter.as_int_operand,
+    "reject": RecoveringTextState.reject,
+    "set_device_color": ContentInterpreter.set_device_color,
+    "set_paint": ContentInterpreter.set_paint,
+    "normalize_color_components": RecoveringTextState.normalize_color_components,
+    "color_component_values": RecoveringTextState.color_component_values,
+    "move_text": ContentInterpreter.move_text,
+}
+
+
+def native_state_operators(
+    handlers: Mapping[str, OperationHandler], state: object
+) -> frozenset[str]:
+    """The operators ContentScanner may apply to state instead of calling their handlers.
+
+    Only the spec handlers, over the helpers they are known to call, and only
+    on a GraphicsState: anything overridden keeps its handler.
+    """
+    kind = type(state)
+    if type(getattr(state, "graphics", None)) is not GraphicsState:
+        return frozenset()
+    for name, function in NATIVE_STATE_METHODS.items():
+        if getattr(kind, name, None) is not function:
+            return frozenset()
+    if getattr(kind, "as_float", None) not in (ContentInterpreter.as_float, TextState.as_float):
+        return frozenset()
+    return frozenset(
+        name
+        for name, function in NATIVE_STATE_HANDLERS.items()
+        if getattr(handlers.get(name), "__func__", None) is function
+    )
+
+
 class CaptureStreamExecutor(ContentStreamExecutor):
     state: TextState
     _operator_names: frozenset[bytes] | None = None
+    _native_operators: tuple[object, NativeOperators | None] | None = None
 
     max_depth = 10
 
@@ -376,12 +434,42 @@ class CaptureStreamExecutor(ContentStreamExecutor):
             names = self._operator_names = frozenset(name.encode("latin-1") for name in table)
         return names
 
+    def native_operators(self, table: Mapping[str, OperationHandler]) -> NativeOperators | None:
+        state = self.state
+        if type(state.graphics) is not GraphicsState:
+            return None
+        cached = self._native_operators
+        default = table is state.default_handlers
+        if default and cached is not None and cached[0] is table:
+            return cached[1]
+        operators = native_state_operators(table, state)
+        native = (
+            NativeOperators(
+                operators,
+                GLYPH_PAINT_KEEPING_OPERATORS,
+                LINE_MOVING_OPERATORS,
+                TEXT_LAYOUT_KEEPING_OPERATORS,
+                DEVICE_GRAY,
+                DEVICE_RGB,
+                DEVICE_CMYK,
+                Matrix,
+            )
+            if operators
+            else None
+        )
+        if default:
+            self._native_operators = (table, native)
+        return native
+
     def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
         state = self.state
         assert frame.lexer is not None
         handlers = state.operation_table()
         lexer = frame.lexer
         scanner = content_scanner(lexer, state if applies_paths_natively(handlers, state) else None)
+        native = self.native_operators(handlers)
+        if native is not None:
+            scanner.set_native_state(state, native)
         fallback = ContentFallback(
             lexer,
             scanner.operands,
@@ -1652,4 +1740,5 @@ __all__ = (
     "CaptureStreamExecutor",
     "TextState",
     "applies_paths_natively",
+    "native_state_operators",
 )
