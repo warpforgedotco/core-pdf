@@ -41,7 +41,10 @@ cdef enum:
     NATIVE_TEXT_MATRIX = 14
     NATIVE_NEXT_LINE = 15
     NATIVE_LEADING = 16
-    NATIVE_COUNT = 17
+    NATIVE_SAVE = 17
+    NATIVE_RESTORE = 18
+    NATIVE_CONCAT = 19
+    NATIVE_COUNT = 20
 
 # What the dispatch loop does to the glyph paint and text layout before a handler.
 cdef enum:

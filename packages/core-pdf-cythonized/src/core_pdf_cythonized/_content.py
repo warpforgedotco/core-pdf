@@ -7,6 +7,7 @@ from cython.cimports.core_pdf_cythonized._content import (
     CLEAR_LAYOUT,
     CLEAR_PAINT,
     KEEP_LAYOUT,
+    NATIVE_CONCAT,
     NATIVE_COUNT,
     NATIVE_DASH,
     NATIVE_FILL_CMYK,
@@ -20,6 +21,8 @@ from cython.cimports.core_pdf_cythonized._content import (
     NATIVE_MOVE_TEXT,
     NATIVE_MOVE_TEXT_LEADING,
     NATIVE_NEXT_LINE,
+    NATIVE_RESTORE,
+    NATIVE_SAVE,
     NATIVE_STROKE_CMYK,
     NATIVE_STROKE_GRAY,
     NATIVE_STROKE_RGB,
@@ -145,6 +148,10 @@ def native_operator(word: cython.p_const_uchar, length: cython.Py_ssize_t) -> cy
             return NATIVE_LINE_JOIN
         if word[0] == 0x4D:
             return NATIVE_MITER_LIMIT
+        if word[0] == 0x71:
+            return NATIVE_SAVE
+        if word[0] == 0x51:
+            return NATIVE_RESTORE
         return NOT_NATIVE
     if length != 2:
         return NOT_NATIVE
@@ -166,6 +173,8 @@ def native_operator(word: cython.p_const_uchar, length: cython.Py_ssize_t) -> cy
         return NOT_NATIVE
     if word[1] == 0x67 and word[0] == 0x72:
         return NATIVE_FILL_RGB
+    if word[0] == 0x63 and word[1] == 0x6D:
+        return NATIVE_CONCAT
     return NOT_NATIVE
 
 
@@ -182,7 +191,7 @@ def native_operand_count(op: cython.int) -> cython.Py_ssize_t:
         return 4
     if op == NATIVE_MOVE_TEXT or op == NATIVE_MOVE_TEXT_LEADING:
         return 2
-    if op == NATIVE_TEXT_MATRIX:
+    if op == NATIVE_TEXT_MATRIX or op == NATIVE_CONCAT:
         return 6
     return 1
 
@@ -373,17 +382,7 @@ class ContentScanner:
         tx_object: object
         state.sink.text_boundary(state, "move")
         lm = state.line_matrix
-        if (
-            ty_object is None
-            and type(lm) is self.native.matrix_type
-            and len(lm) == 6
-            and type(lm[0]) is float
-            and type(lm[1]) is float
-            and type(lm[2]) is float
-            and type(lm[3]) is float
-            and type(lm[4]) is float
-            and type(lm[5]) is float
-        ):
+        if ty_object is None and self.float_matrix(lm):
             m = cython.cast(tuple, lm)
             e = PyFloat_FromDouble(
                 tx * PyFloat_AS_DOUBLE(m[0])
@@ -412,6 +411,80 @@ class ContentScanner:
 
     @cython.cfunc
     @cython.exceptval(-1, check=False)
+    def float_matrix(self, value: object) -> cython.bint:
+        # A matrix_type whose six entries are floats.
+        if type(value) is not self.native.matrix_type or len(value) != 6:
+            return False
+        m: tuple = cython.cast(tuple, value)
+        return (
+            type(m[0]) is float
+            and type(m[1]) is float
+            and type(m[2]) is float
+            and type(m[3]) is float
+            and type(m[4]) is float
+            and type(m[5]) is float
+        )
+
+    @cython.cfunc
+    def concatenated(self, ctm: object) -> object:
+        # Matrix(*operands).multiply(ctm), for a float_matrix ctm: the same
+        # identity shortcuts, and multiply_affine's products in its order.
+        v: cython.p_double = self.pending_value
+        r = cython.declare(cython.double[6])
+        i: cython.Py_ssize_t
+        for i in range(6):
+            r[i] = PyFloat_AS_DOUBLE(cython.cast(tuple, ctm)[i])
+        if (
+            r[0] == 1.0
+            and r[1] == 0.0
+            and r[2] == 0.0
+            and r[3] == 1.0
+            and r[4] == 0.0
+            and r[5] == 0.0
+        ):
+            return self.new_matrix(v[0], v[1], v[2], v[3], v[4], v[5])
+        if (
+            v[0] == 1.0
+            and v[1] == 0.0
+            and v[2] == 0.0
+            and v[3] == 1.0
+            and v[4] == 0.0
+            and v[5] == 0.0
+        ):
+            return ctm
+        return self.new_matrix(
+            v[0] * r[0] + v[1] * r[2],
+            v[0] * r[1] + v[1] * r[3],
+            v[2] * r[0] + v[3] * r[2],
+            v[2] * r[1] + v[3] * r[3],
+            v[4] * r[0] + v[5] * r[2] + r[4],
+            v[4] * r[1] + v[5] * r[3] + r[5],
+        )
+
+    @cython.cfunc
+    def new_matrix(
+        self,
+        a: cython.double,
+        b: cython.double,
+        c: cython.double,
+        d: cython.double,
+        e: cython.double,
+        f: cython.double,
+    ) -> object:
+        return tuple.__new__(
+            self.native.matrix_type,
+            (
+                PyFloat_FromDouble(a),
+                PyFloat_FromDouble(b),
+                PyFloat_FromDouble(c),
+                PyFloat_FromDouble(d),
+                PyFloat_FromDouble(e),
+                PyFloat_FromDouble(f),
+            ),
+        )
+
+    @cython.cfunc
+    @cython.exceptval(-1, check=False)
     def apply_native(self, op: cython.int) -> cython.bint:
         # The handler's effect on native_state, or False before touching
         # anything when the operands are not ones it is known to accept.
@@ -435,6 +508,18 @@ class ContentScanner:
                 return False
         elif op == NATIVE_LINE_CAP or op == NATIVE_LINE_JOIN:
             if listed or count != 1 or not self.pending_integer[0]:
+                return False
+        elif op == NATIVE_SAVE or op == NATIVE_RESTORE:
+            stack = state.stack
+            if type(stack) is not list:
+                return False
+            if op == NATIVE_RESTORE and PyList_GET_SIZE(stack) <= state.graphics_stack_floor:
+                return False
+        elif op == NATIVE_CONCAT:
+            if listed or count != 6:
+                return False
+            ctm = state.graphics.ctm
+            if not self.float_matrix(ctm):
                 return False
         elif op != NATIVE_NEXT_LINE and (listed or count != native_operand_count(op)):
             return False
@@ -508,19 +593,18 @@ class ContentScanner:
                 self.move_text(state, 0.0, -PyFloat_AS_DOUBLE(leading), None)
             else:
                 self.move_text(state, 0.0, 0.0, -leading)
+        elif op == NATIVE_SAVE:
+            PyList_Append(stack, state.graphics.__copy__())
+            state.sink.save_graphics(state)
+        elif op == NATIVE_RESTORE:
+            saved = stack.pop()
+            state.sink.restore_graphics(state)
+            state.graphics = saved
+        elif op == NATIVE_CONCAT:
+            state.graphics.ctm = self.concatenated(ctm)
         else:
             state.sink.text_boundary(state, "matrix")
-            matrix = tuple.__new__(
-                self.native.matrix_type,
-                (
-                    PyFloat_FromDouble(v[0]),
-                    PyFloat_FromDouble(v[1]),
-                    PyFloat_FromDouble(v[2]),
-                    PyFloat_FromDouble(v[3]),
-                    PyFloat_FromDouble(v[4]),
-                    PyFloat_FromDouble(v[5]),
-                ),
-            )
+            matrix = self.new_matrix(v[0], v[1], v[2], v[3], v[4], v[5])
             state.text_matrix = matrix
             state.line_matrix = matrix
         return True

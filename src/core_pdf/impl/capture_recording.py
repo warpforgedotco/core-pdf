@@ -362,6 +362,9 @@ NATIVE_STATE_HANDLERS: dict[str, Callable[..., None]] = {
     "Tm": ContentInterpreter.op_Tm,
     "T*": ContentInterpreter.op_T_star,
     "TL": ContentInterpreter.op_TL,
+    "q": ContentInterpreter.op_q,
+    "Q": ContentInterpreter.op_Q,
+    "cm": ContentInterpreter.op_cm,
 }
 
 
@@ -375,6 +378,7 @@ NATIVE_STATE_METHODS: dict[str, Callable[..., object]] = {
     "normalize_color_components": RecoveringTextState.normalize_color_components,
     "color_component_values": RecoveringTextState.color_component_values,
     "move_text": ContentInterpreter.move_text,
+    "pop_graphics_save": ContentInterpreter.pop_graphics_save,
 }
 
 

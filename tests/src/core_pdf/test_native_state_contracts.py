@@ -106,6 +106,9 @@ def state_key(state: Any) -> object:
         len(state.runs),
         len(state.text_boundaries),
         state.type3_uncolored,
+        len(state.capture_graphics_stack),
+        exact(state.clip_bbox),
+        exact(state.group_alpha),
     )
 
 
@@ -340,6 +343,16 @@ def test_random_operands_capture_as_the_handlers_do(
         ),
         pytest.param(b"0 0 6 0 0 d1 1 0 0 rg 0.5 G 0 0 m 5 5 l B", id="type3-uncolored"),
         pytest.param(b"q 1 0 0 rg 3 w Q 0 0 m 5 5 l B q 2 0 0 2 5 5 cm 10 w Q", id="saved-state"),
+        pytest.param(
+            # 0.1 * 0.1 + 0.1 * 0.1 + 0.1 rounds differently grouped the other way.
+            b"0.1 0 0.1 1 0.1 0 cm 1 0 0 1 0.1 0.1 cm 0.7 -0.8 0.9 1.1 0.3 0.1 cm 0 0 m 5 5 l S "
+            b"1 0 0 1 0 0 cm 1 0 -0.0 1 0 0 cm 2 0 0 2 1 1 cm 0 0 m 5 5 c S",
+            id="concatenation",
+        ),
+        pytest.param(
+            b"Q q q 0.5 g 1 0 0 1 3 3 cm Q 0 0 m 5 5 l S Q Q 0 0 m 5 5 l S 1 2 cm q 1 Q",
+            id="unbalanced-saves",
+        ),
     ],
 )
 def test_native_state_captures_as_the_handlers_do(
@@ -352,17 +365,20 @@ def test_every_native_operator_is_applied_without_its_handler(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     content = (
-        b"0.5 G 0.5 g 1 0 0 RG 0 1 0 rg 0 0 0 1 K 0 0 0 1 k 2 w [1 2] 0 d 1 J 1 j 3 M "
-        b"BT /F1 9 Tf 12 TL 1 2 Td 1 -12 TD 1 0 0 1 5 5 Tm T* (a) Tj ET"
+        b"q 2 0 0 2 5 5 cm 0.5 G 0.5 g 1 0 0 RG 0 1 0 rg 0 0 0 1 K 0 0 0 1 k 2 w [1 2] 0 d "
+        b"1 J 1 j 3 M BT /F1 9 Tf 12 TL 1 2 Td 1 -12 TD 1 0 0 1 5 5 Tm T* (a) Tj ET Q"
     )
     codes = {
         getattr(function, "__code__", None): name
         for name, function in NATIVE_STATE_HANDLERS.items()
     }
+    dispatch = capture_recording.CaptureStreamExecutor.dispatch_frame.__code__
     called: set[str] = set()
 
     def profile(frame: Any, event: str, arg: object) -> None:
-        if event == "call" and frame.f_code in codes:
+        # Handlers the scanner calls are called from dispatch_frame's frame;
+        # capture also calls some itself, around forms and pages.
+        if event == "call" and frame.f_code in codes and frame.f_back.f_code is dispatch:
             called.add(codes[frame.f_code])
 
     sys.setprofile(profile)
