@@ -244,14 +244,37 @@ class FontToolsProgram(GlyphProgram):
         return self.outlines.glyph_bbox_for_gid(glyph_id)
 
 
+class UnicodeGlyphMaps:
+    """A font's Unicode cmap and its inverse, read on first use and shared by the
+    variants of one program: a CID font with a ToUnicode never reads either."""
+
+    __slots__ = ("font", "cmap", "inverse")
+
+    def __init__(self, font: TTFont) -> None:
+        self.font = font
+        self.cmap: dict[int, int] | None = None
+        self.inverse: dict[int, str] | None = None
+
+    def unicode_cmap(self) -> dict[int, int]:
+        cmap = self.cmap
+        if cmap is None:
+            cmap = self.cmap = best_unicode_gid_cmap(self.font)
+        return cmap
+
+    def glyph_to_unicode(self) -> dict[int, str]:
+        inverse = self.inverse
+        if inverse is None:
+            inverse = self.inverse = invert_unicode_cmap(self.unicode_cmap())
+        return inverse
+
+
 class TrueTypeFontProgram(FontToolsProgram):
     __slots__ = (
         "data",
         "units_per_em",
         "cid_to_gid",
         "cmap",
-        "unicode_cmap",
-        "glyph_to_unicode",
+        "unicode_maps",
         "glyph_locations",
         "glyph_table_data",
         "composite_bbox_cache",
@@ -275,9 +298,12 @@ class TrueTypeFontProgram(FontToolsProgram):
         self.glyph_table_data = glyph_data if glyph_data is not None else b""
         self.outlines = FontToolsOutlineAccess(self.font, glyph_data)
         self.cid_to_gid = cid_to_gid
-        self.unicode_cmap = best_unicode_gid_cmap(self.font)
-        self.glyph_to_unicode = invert_unicode_cmap(self.unicode_cmap)
+        self.unicode_maps = UnicodeGlyphMaps(self.font)
         self.cmap = self.selected_cmap(use_cmap=use_cmap)
+
+    @property
+    def unicode_cmap(self) -> dict[int, int]:
+        return self.unicode_maps.unicode_cmap()
 
     def selected_cmap(self, *, use_cmap: bool) -> dict[int, int]:
         return (self.unicode_cmap or code_gid_cmap(self.font)) if use_cmap else {}
@@ -313,7 +339,7 @@ class TrueTypeFontProgram(FontToolsProgram):
         return 0
 
     def unicode_for_gid(self, gid: int) -> str:
-        return self.glyph_to_unicode.get(gid, "")
+        return self.unicode_maps.glyph_to_unicode().get(gid, "")
 
     def code_bbox(self, code: int) -> Rectangle | None:
         return self.glyph_bbox_for_gid(self.mapped_glyph_id(code))

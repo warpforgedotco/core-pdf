@@ -23,3 +23,8 @@ def translated_outline_edges(
     bool,
     tuple[float, float, float, float] | None,
 ]: ...
+def outline_coordinate_arrays(
+    contours: object,
+) -> (
+    tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], tuple[tuple[int, int], ...]] | None
+): ...

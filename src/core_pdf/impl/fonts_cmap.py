@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from binascii import unhexlify
 from collections.abc import Iterable
+from functools import lru_cache
 
 from core_adobe_fonts.cmap import decoder, tokenizer
 from core_adobe_fonts.cmap.decoder import CMapResourceResolver
@@ -264,6 +265,7 @@ PREDEFINED_CMAP_UNICODE_CODECS: dict[str, str] = {
 }
 
 
+@lru_cache(maxsize=64)
 def resolve_cmap_decoder(name: str) -> CMapDecoder | None:
     if name in {"Identity-H", "Identity-V"}:
         return CMapDecoder.identity(byte_width=2, wmode=int(name.endswith("-V")))

@@ -4,7 +4,7 @@ Compiled kernels for `core-pdf` hot paths.
 
 `core-pdf` depends on this distribution and imports from it directly. There is
 no pure-Python fallback: when a kernel lands here, the Python it replaced is
-deleted -- with two exceptions, `ObjectScanner` and `scan_to_unicode_cmap`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
+deleted -- with three exceptions, `ObjectScanner`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
 ## Two kernels own their algorithms
@@ -32,7 +32,7 @@ did MMR and text regions. Core's `RecoveryJBIG2PageDecoder` checks the region
 header and calls the kernel. The one conformance test the decoder had moved
 here with it; spec's test now asserts that it declines.
 
-## Two kernels keep their Python
+## Three kernels keep their Python
 
 `ObjectScanner` is the other exception, in the opposite direction: it mirrors
 code that is not deleted. The Python it mirrors is `core-pdf-spec`'s object
@@ -65,6 +65,17 @@ parsers it always used. `test_tounicode_scanner_kernel.py` pins the accepted
 results and the declined inputs over corpus streams, synthetic cases and
 mutations of both; `tests/src/core_pdf/test_tounicode_scanner_contracts.py`
 compares the composed parser with the Python alone, error for error.
+
+`type1_glyph_bounds` keeps its Python on the same terms. It interprets a Type 1
+charstring and measures it the way fontTools' `T1CharString.draw` into a
+`BoundsPen` behind a `TransformPen` does -- their operand stack, their flex and
+hint-replacement handling, their cubic extrema and their min/max tie order -- so
+the bounds are the same doubles. `seac`, a malformed operand count, a subr index
+Python would resolve differently (negative, fractional, out of range), division
+by zero and truncated numbers return None, and
+`core_pdf.impl.fonts_program_type1` draws the same glyph through fontTools.
+`test_type1_bounds_kernel.py` pins the results and the declined inputs over
+corpus glyphs and mutations of them, bit for bit.
 
 ## What belongs here
 
@@ -137,6 +148,9 @@ the wheel.
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf_spec.s_11_transparency.groups` and `core_pdf.impl.render_target` (both deleted) | 7.06x on the fused wrapper |
 | `decode_arithmetic_generic_template0` | `core_jbig2.codec` (deleted, with `JBIG2MQDecoder` and the `MQ_*` tables) | 69x over the 18 generic regions the JBIG2 fixtures decode (168 to 2.4 ns/px); render of no_bad_redactions.4.1 1424 to 77 ms, the two SCORE-Bench JBIG2 scans -31% and -40% |
 | `merge_collinear_rows` | the sequential merge loop over `tolist()` rows in `core_pdf.impl.extract_grids.merge_collinear_segments` (deleted); the same comparisons, `min`/`max` and averaging in double precision, pinned to that loop by a randomized test | table detection on issue-301 (18,560 ruled segments) 11.2 to 4.8 ms per first-page extract |
+| `type1_glyph_bounds` | nothing deleted: mirrors fontTools' `T1CharString.draw` into a `BoundsPen`, which `core_pdf.impl.fonts_program_type1.Type1FontProgram.glyph_bbox_for_gid` keeps for what it declines | about 500 us per glyph in Python, 99% of 10,222 corpus Type 1 glyphs taking the compiled path with bit-identical bounds; 3-page extract of layout-parser-paper 72 to 44 ms, Type1-Font-Format 92 to 64 ms, 2201.00069 143 to 119 ms |
+| `glyph_feature_cells` | the numpy cell measurement of `core_pdf.impl.fonts_cff_repair.feature_from_contours` (deleted), which keeps `feature_from_points` for the non-finite inputs the kernel declines | 57 to 18 us per glyph feature over the NASA CMap sample's CFF repair glyphs (about 200 points each), where some twenty array operations ran on arrays too small to amortize them |
+| `outline_coordinate_arrays` | the list build and two `numpy.asarray` calls of `core_pdf.impl.fonts_glyph_geometry.outline_arrays` (deleted) | 16.8 to 3.0 us per glyph outline over 919 corpus render outlines (median 202 points) |
 
 `glyph_coverage_plane`, `fill_glyph_coverage` and `signed_area_coverage` share one accumulation core;
 `glyph_coverage_plane` is kept as the golden-pinned reference the fused fill is checked against.

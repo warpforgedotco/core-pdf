@@ -13,6 +13,7 @@ from core_pdf.impl.fonts_metrics import FontMetricsModel
 from core_pdf.impl.fonts_program_base import NULL_PROGRAM, GlyphProgram
 from core_pdf.impl.fonts_raster_kernel import Contours
 from core_pdf.impl.types import Rectangle
+from core_pdf_cythonized import outline_coordinate_arrays
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_fallback import RasterFontProviderLike
@@ -53,22 +54,8 @@ LINEAR_CACHE_LIMIT = 256
 def outline_arrays(
     contours: tuple[tuple[tuple[float, float], ...], ...],
 ) -> GlyphOutlineArrays | None:
-    xs: list[float] = []
-    ys: list[float] = []
-    spans: list[tuple[int, int]] = []
-    for contour in contours:
-        if len(contour) < 2:
-            continue
-        start = len(xs)
-        for x, y in contour:
-            xs.append(x)
-            ys.append(y)
-        spans.append((start, len(xs)))
-    if not spans:
-        return None
-    return GlyphOutlineArrays(
-        numpy.asarray(xs, dtype=numpy.float64), numpy.asarray(ys, dtype=numpy.float64), tuple(spans)
-    )
+    arrays = outline_coordinate_arrays(contours)
+    return GlyphOutlineArrays(*arrays) if arrays is not None else None
 
 
 class GlyphGeometry:
