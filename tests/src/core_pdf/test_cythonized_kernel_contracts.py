@@ -24,6 +24,7 @@ KERNEL_USES = [
     ("core_pdf.impl.render_target", "composite_elementary_normal"),
     ("core_pdf.impl.render_target", "composite_knockout_group"),
     ("core_pdf.impl.render_target", "composite_masked_normal"),
+    ("core_pdf.impl.render_target", "composite_nonisolated_blend"),
     ("core_pdf.impl.render_target", "composite_normal_group"),
     ("core_pdf.impl.render_target", "fill_glyph_coverage_at"),
     ("core_pdf.impl.render_target", "fill_glyph_knockout_at"),

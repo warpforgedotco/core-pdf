@@ -88,6 +88,7 @@ from core_pdf_cythonized import (
     composite_elementary_normal,
     composite_knockout_group,
     composite_masked_normal,
+    composite_nonisolated_blend,
     composite_normal_group,
     fill_glyph_coverage_at,
     fill_glyph_knockout_at,
@@ -102,8 +103,7 @@ from core_pdf_cythonized import (
 from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf_spec.s_08_graphics.image_spec import ImageSource
-from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_component
-from core_pdf_spec.s_11_transparency.groups import remove_group_backdrop
+from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_component, revised_blending
 from core_pdf_spec.standards import SemanticContext
 
 SoftMaskKey = tuple[int, int, tuple[float, float]]
@@ -320,41 +320,16 @@ def composite_nonisolated_group(
     normal = mode is None or mode is BlendOp.NORMAL
     if opacity == 1.0 and normal and mask_alpha is None:
         return composite_elementary_normal(destination, rendered, source_alpha)
-    scaled_alpha = source_alpha.astype(numpy.float64) * opacity * 255.0
-    if mask_alpha is not None:
-        scaled_alpha *= mask_alpha
-    effective_alpha = numpy.rint(scaled_alpha).astype(numpy.uint8)
-    visible = effective_alpha > 0
-    if not numpy.any(visible):
-        return effective_alpha
-    if opacity == 1.0 and normal:
-        unchanged_alpha = visible & (mask_alpha == 1.0)
-        destination[unchanged_alpha] = rendered[unchanged_alpha]
-        visible &= ~unchanged_alpha
-        if not numpy.any(visible):
-            return effective_alpha
-    backdrop = destination[visible].astype(numpy.float64)
-    result = rendered[visible].astype(numpy.float64) / 255.0
-    colors, _ = remove_group_backdrop(
-        result[..., :3],
-        result[..., 3],
-        backdrop[..., :3] / 255.0,
-        backdrop[..., 3] / 255.0,
-        source_alpha[visible],
-        validate=False,
-    )
-    colors = numpy.clip(colors, 0.0, 1.0)
-    blend_visible_pixels(
+    return composite_nonisolated_blend(
         destination,
-        visible,
-        colors[..., 0],
-        colors[..., 1],
-        colors[..., 2],
-        effective_alpha[visible].astype(numpy.float64) / 255.0,
-        mode,
-        semantic_context=semantic_context,
+        rendered,
+        source_alpha,
+        opacity,
+        mask_alpha,
+        kernel_blend_code(mode),
+        opacity == 1.0 and normal,
+        revised_blending(blend_context(semantic_context)),
     )
-    return effective_alpha
 
 
 def composite_masked_group(
