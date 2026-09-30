@@ -29,7 +29,7 @@ pdfplumber = [
 ]
 
 [project.urls]
-Repository = "https://github.com/core-experiments/core-pdf"
+Repository = "https://github.com/warpforgedotco/core-pdf"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
