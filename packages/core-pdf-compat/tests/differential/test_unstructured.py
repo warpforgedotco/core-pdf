@@ -3,13 +3,16 @@ from pathlib import Path
 
 import pytest
 
-import core_pdf_compat.unstructured
-from core_pdf_compat.unstructured import _classification
-
 from .support import call_pair, differential_pdfs, pdf_id
 
+# Skip before importing the facade: without the reference library its spaCy
+# requirement is usually absent too, and the facade's import would fail first.
 real_partition = pytest.importorskip("unstructured.partition.pdf").partition_pdf
 real_tokenize = pytest.importorskip("unstructured.nlp.tokenize")
+
+import core_pdf_compat.unstructured  # noqa: E402
+from core_pdf_compat.unstructured import _classification  # noqa: E402
+
 pytestmark = pytest.mark.compat_differential
 
 
