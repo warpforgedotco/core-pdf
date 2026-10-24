@@ -246,7 +246,9 @@ def encode_cid_unicode_table(horizontal: dict[int, str], vertical: dict[int, str
         payload += CID_UNICODE_TABLE_ENTRY.pack(cid, ord(text))
     for cid, text in changes.items():
         payload += CID_UNICODE_TABLE_ENTRY.pack(cid, ord(text) if text else 0)
-    return gzip.compress(bytes(payload), mtime=0)
+    # The level is explicit because the packaged tables are compared byte for
+    # byte, and Python 3.15 lowered gzip.compress's default from 9 to 6.
+    return gzip.compress(bytes(payload), compresslevel=9, mtime=0)
 
 
 def decode_cid_unicode_table(data: bytes, *, vertical: bool) -> dict[int, str]:
