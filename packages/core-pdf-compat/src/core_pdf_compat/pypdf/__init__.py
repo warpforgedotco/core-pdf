@@ -26,6 +26,7 @@ PAGE_TREE_MAXIMUM_ENTRIES = 100_000
 
 # pypdf._reader.PdfReader._MAX_STARTXREF_RECOVERY_LINES.
 STARTXREF_RECOVERY_LINES = 1000
+LINE_SEARCH_WINDOW = 4096
 TRUNCATED_EOF_MARKERS = (b"%%EO", b"%%E", b"%%", b"%")
 
 
@@ -34,7 +35,17 @@ def previous_line(data: bytes | mmap, position: int) -> tuple[bytes, int]:
     position after skipping the line breaks above it."""
     if position == 0:
         raise ValueError("stream has ended unexpectedly")
-    line_break = max(data.rfind(b"\n", 0, position), data.rfind(b"\r", 0, position))
+    # Search back in windows so each call stops at the nearest line break: a
+    # search to the start of the data for the other break byte would make a file
+    # with no marker quadratic.
+    line_break = -1
+    start = end = position
+    while start > 0:
+        start = max(0, start - LINE_SEARCH_WINDOW)
+        line_break = max(data.rfind(b"\n", start, end), data.rfind(b"\r", start, end))
+        if line_break >= 0:
+            break
+        end = start
     line = data[line_break + 1 : position]
     while line_break >= 0 and data[line_break] in b"\r\n":
         line_break -= 1
