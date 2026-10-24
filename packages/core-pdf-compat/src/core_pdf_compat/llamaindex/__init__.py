@@ -12,8 +12,8 @@ from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_spec.s_07_content.inline_images import validate_inline_images
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 
-from ..pypdf import validate_pypdf_page_tree
-from ._operator_text import OperatorTextProjection
+from ..pypdf import finds_startxref, validate_pypdf_page_tree
+from ..pypdf._text import LegacyTextCaches, extract_legacy_text
 
 
 class MetadataMode(StrEnum):
@@ -285,7 +285,7 @@ def load_data(
     del kwargs, max_characters
     source_path = Path(source)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     source_data = source_path.read_bytes()
-    if b"startxref" not in source_data or b"%%EOF" not in source_data:
+    if not finds_startxref(source_data):
         raise ValueError("incomplete PDF cross-reference terminator")
     if XRefScanner.find_startxref(source_data) is None:
         raise ValueError("PDF does not contain a startxref marker")
@@ -297,9 +297,11 @@ def load_data(
                 with contextlib.suppress(FilterParseError):
                     validate_inline_images(stream.data)
         labels = pdf.build_page_labels(page_count=len(pages)) if pages else None
+        # llama-index's PDFReader returns pypdf's extract_text() for each page.
+        caches = LegacyTextCaches()
         return [
             Document(
-                OperatorTextProjection(page).extract_text(),
+                extract_legacy_text(page, caches),
                 {
                     **(dict(extra_info) if extra_info is not None else {}),
                     "page_label": (labels[page_number - 1] if labels else None) or str(page_number),

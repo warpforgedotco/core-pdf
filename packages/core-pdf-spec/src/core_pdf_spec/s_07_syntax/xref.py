@@ -360,7 +360,7 @@ class XRefScanner:
         index = dictionary.get("Index")
         if index is None:
             index = [0, size]
-        return decode_xref_rows(stream.data, widths, index, size), dictionary  # type: ignore[arg-type]
+        return decode_xref_rows(stream.data, widths, index, size), dictionary  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 def validate_xref_widths(widths: Sequence[object]) -> int:

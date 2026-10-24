@@ -1,9 +1,8 @@
-from typing import Any
-
 import pytest
 
 from core_pdf.impl.document_document import PdfDocument
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfDict
 
 
 @pytest.mark.parametrize("unicode_name", [None, b"", b"unicode.txt"])
@@ -15,10 +14,10 @@ def test_attachment_name_and_stream_precedence_preserve_identity(
     with PdfDocument(text_pdf_bytes) as document:
         legacy = PdfStream({}, b"legacy payload")
         unicode = PdfStream({}, b"unicode payload")
-        streams = {"F": legacy}
+        streams: PdfDict = {"F": legacy}
         if unicode_stream:
             streams["UF"] = unicode
-        spec = {"UF": unicode_name, "F": legacy_name, "EF": streams}
+        spec: PdfDict = {"UF": unicode_name, "F": legacy_name, "EF": streams}
         document.catalog()["Names"] = {"EmbeddedFiles": {"Names": [b"entry", spec]}}
         (record,) = document.embedded_files()
         assert record.name == "entry"
@@ -32,7 +31,7 @@ def test_attachment_name_and_stream_precedence_preserve_identity(
 @pytest.mark.parametrize("recover", [False, True])
 def test_attachment_recovery_retains_valid_name_tree_siblings(text_pdf_bytes, invalid, recover):
     with PdfDocument(text_pdf_bytes) as document:
-        good = {"F": b"good.txt", "EF": {"F": PdfStream({}, b"data")}}
+        good: PdfDict = {"F": b"good.txt", "EF": {"F": PdfStream({}, b"data")}}
         document.catalog()["Names"] = {"EmbeddedFiles": {"Names": [b"bad", invalid, b"good", good]}}
         document.xref_was_recovered = recover
         if recover:
@@ -61,7 +60,7 @@ def test_invalid_attachment_tree_type_is_rejected(text_pdf_bytes, tree):
 def test_attachment_aliases_share_original_filespec_and_stream(text_pdf_bytes):
     with PdfDocument(text_pdf_bytes) as document:
         stream = PdfStream({}, b"same bytes")
-        spec: dict[str, Any] = {"EF": {"F": stream}}
+        spec: PdfDict = {"EF": {"F": stream}}
         document.catalog()["Names"] = {"EmbeddedFiles": {"Names": [b"a", spec, b"b", spec]}}
         a, b = document.embedded_files()
         assert a.name == a.filename == "a"

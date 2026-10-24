@@ -24,7 +24,7 @@ def make_stream(data: bytes) -> PdfStream:
 def test_content_streams_flatten_nested_arrays_in_source_order(text_pdf_bytes: bytes) -> None:
     with PdfDocument(text_pdf_bytes) as document:
         page = document.pages[0]
-        page.contents = [make_stream(b"first"), [object(), make_stream(b"second")]]
+        page.contents = [make_stream(b"first"), [object(), make_stream(b"second")]]  # ty: ignore[invalid-assignment]
         assert [stream.data for stream in page.content_streams] == [b"first", b"second"]
 
 

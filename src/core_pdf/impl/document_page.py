@@ -185,9 +185,6 @@ class PdfPage:
 
     def get_links(self, annots: Iterable[PdfDict] | None = None) -> list[RawLink]:
         annots = self._annotation_dicts(strict=False) if annots is None else annots
-        if not annots:
-            return []
-
         resolver = self.document.resolver
         records: list[RawLink] = []
         for annot in annots:

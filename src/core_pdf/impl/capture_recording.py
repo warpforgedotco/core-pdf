@@ -406,7 +406,7 @@ def native_state_operators(
 
 
 class CaptureStreamExecutor(ContentStreamExecutor):
-    state: TextState
+    state: TextState  # ty: ignore[invalid-mutable-override]
     _operator_names: frozenset[bytes] | None = None
     _native_operators: tuple[object, NativeOperators | None] | None = None
 
@@ -1166,7 +1166,7 @@ class TextState(RecoveringTextState):
                     line_width,
                     graphics.line_cap,
                     graphics.line_join,
-                    self.transformed_dash_pattern() if graphics.dash_pattern else None,
+                    self.transformed_dash_pattern(),
                     fill_rule,
                     graphics.blend_mode,
                     self.group_alpha,
@@ -1713,11 +1713,8 @@ class TextState(RecoveringTextState):
             return 0.0
         return line_width * self.graphics_scale()
 
-    def transformed_dash_pattern(self) -> tuple[list[float], float] | None:
-        dash_pattern = self.graphics.dash_pattern
-        if not dash_pattern:
-            return None
-        dash_array, phase = dash_pattern
+    def transformed_dash_pattern(self) -> tuple[list[float], float]:
+        dash_array, phase = self.graphics.dash_pattern
         if not dash_array and phase == 0:
             # A solid line: a zero phase scales to the same zero.
             return [], float(phase)

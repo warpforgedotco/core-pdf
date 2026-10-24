@@ -69,7 +69,7 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
         raise ValueError("invalid sampled function size")
     if any(type(value) is not int for value in size_obj):
         raise ValueError("invalid sampled function size")
-    sizes: tuple[int, ...] = tuple(size_obj)  # type: ignore[arg-type]
+    sizes: tuple[int, ...] = tuple(size_obj)  # type: ignore[arg-type]  # ty: ignore[invalid-assignment]
     if not sizes or any(size <= 0 for size in sizes):
         raise ValueError("invalid sampled function size")
     domains = require_pdf_number_pairs(

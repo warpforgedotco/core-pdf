@@ -1,10 +1,12 @@
+from typing import Any
+
 import pytest
 
 from core_pdf.impl.document_records import RawFormField
 from core_pdf.impl.types import PdfName, PdfString
 
 
-def field_with_options(*options: object) -> RawFormField:
+def field_with_options(*options: Any) -> RawFormField:
     return RawFormField("choice", "Ch", None, "", None, {PdfName.of("Opt"): list(options)})
 
 

@@ -103,7 +103,10 @@ def test_render_budget_accounts_for_user_units_crop_and_rounding(
             return RasterImage(bytes(w * h), w, h, 1)
 
     expected_crop = crop
-    capture = replace(ocr_capture, page=SimpleNamespace(width=600, height=800, user_unit=user_unit))
+    capture = replace(
+        ocr_capture,
+        page=SimpleNamespace(width=600, height=800, user_unit=user_unit),  # ty: ignore[invalid-argument-type]
+    )
     result = raster.rendered_page_raster(capture, 8, rendered=Rendered(), crop=crop, max_pixels=20)
     assert result is not None
     assert result.width * result.height <= 20

@@ -43,7 +43,7 @@ runs:
     # LFS objects (105 MB of its 109 MB), so this covers the LFS pull too.
     - name: Restore submodule object stores
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: .git/modules
         key: submodules-${{ runner.os }}-${{ steps.key.outputs.value }}

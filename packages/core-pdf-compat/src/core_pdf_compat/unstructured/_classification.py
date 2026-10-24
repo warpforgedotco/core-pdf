@@ -9,11 +9,22 @@ from typing import Any
 
 BULLET_CHARS = "\x95•‣⁃ㅤ⁌⁍∙○●◘◦☙❥❧⦾⦿-–\uf0b7*·"
 
-BULLET = re.compile(rf"^\s*[{re.escape(BULLET_CHARS)}](?![{re.escape(BULLET_CHARS)}])")
+# Since unstructured 0.27, "-" and "–" are bullets only when whitespace or the end of the
+# text follows them, so a leading minus sign or hyphenated value is not a list item.
+AMBIGUOUS_BULLET_CHARS = "-–"
+
+UNAMBIGUOUS_BULLET_CHARS = "".join(
+    char for char in BULLET_CHARS if char not in AMBIGUOUS_BULLET_CHARS
+)
+
+BULLET = re.compile(
+    rf"^\s*(?:[{re.escape(UNAMBIGUOUS_BULLET_CHARS)}]|[{AMBIGUOUS_BULLET_CHARS}](?=\s|$))"
+    rf"(?![{re.escape(BULLET_CHARS)}])"
+)
 
 NUMBERED = re.compile(r"^\s*\d+(?:\.|\))\s+.+")
 
-EMAIL = re.compile(r"[a-z0-9.\-+_]+@[a-z0-9.\-+_]+\.[a-z]+", re.IGNORECASE)
+EMAIL = re.compile(r"[a-z0-9.\-+_]+@[a-z0-9.\-+_]+\.[a-z]+")
 
 ADDRESS = re.compile(
     r"^(?:[A-Z][a-z.\-]{1,15} ?){1,5},\s?"
@@ -132,7 +143,8 @@ def simple_element_class(
         return Footer
     if BULLET.match(text) or NUMBERED.match(text):
         return ListItem
-    if EMAIL.match(text.strip()):
+    # unstructured 0.27 requires the whole text to be one address.
+    if EMAIL.fullmatch(text.strip()):
         return EmailAddress
     if ADDRESS.search(text):
         return Address

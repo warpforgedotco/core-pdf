@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+import re
+from collections.abc import Iterator, Mapping
 from copy import replace
 from io import BytesIO
+from mmap import mmap
 from typing import Any, cast
 
 from core_pdf import PdfDocument
@@ -14,7 +16,107 @@ from core_pdf.impl.output_model import (
 from core_pdf.impl.types import PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pypdf._text import LegacyTextCaches, extract_legacy_text
+from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
+
+# pypdf Configuration.page_tree_maximum_depth and page_tree_maximum_entries.
+PAGE_TREE_MAXIMUM_DEPTH = 100
+PAGE_TREE_MAXIMUM_ENTRIES = 100_000
+
+
+# pypdf._reader.PdfReader._MAX_STARTXREF_RECOVERY_LINES.
+STARTXREF_RECOVERY_LINES = 1000
+LINE_SEARCH_WINDOW = 4096
+TRUNCATED_EOF_MARKERS = (b"%%EO", b"%%E", b"%%", b"%")
+
+
+def previous_line(data: bytes | mmap, position: int) -> tuple[bytes, int]:
+    """pypdf's read_previous_line: the line ending at ``position``, and the
+    position after skipping the line breaks above it."""
+    if position == 0:
+        raise ValueError("stream has ended unexpectedly")
+    # Search back in windows so each call stops at the nearest line break: a
+    # search to the start of the data for the other break byte would make a file
+    # with no marker quadratic.
+    line_break = -1
+    start = end = position
+    while start > 0:
+        start = max(0, start - LINE_SEARCH_WINDOW)
+        line_break = max(data.rfind(b"\n", start, end), data.rfind(b"\r", start, end))
+        if line_break >= 0:
+            break
+        end = start
+    line = data[line_break + 1 : position]
+    while line_break >= 0 and data[line_break] in b"\r\n":
+        line_break -= 1
+    return line, line_break + 1
+
+
+def is_startxref_value(value: bytes) -> bool:
+    return re.fullmatch(rb"[+-]?[0-9]+(?:_[0-9]+)*", value) is not None
+
+
+def finds_startxref(data: bytes | mmap) -> bool:
+    """Whether pypdf (non-strict) locates %%EOF and the startxref offset above it.
+
+    Mirrors PdfReader._find_eof_marker and _find_startxref_pos: the last line
+    may carry the marker inline (py-pdf/pypdf#4127) or truncated, duplicate
+    markers above it are skipped (#4008), and a corrupt trailing pointer falls
+    back to the previous intact startxref (#3238).
+    """
+    try:
+        position = end_position = len(data)
+        line = b""
+        last = True
+        while True:
+            marker = line.find(b"%%EOF")
+            if marker == 0:
+                break
+            if marker > 0 and last:
+                if line[:marker].lstrip(b" \t\n\r\x00\x0c"):
+                    position = end_position - len(line) + marker
+                break
+            if line and last:
+                if line.strip().endswith(TRUNCATED_EOF_MARKERS):
+                    break
+                last = False
+            end_position = position
+            line, position = previous_line(data, position)
+
+        line, position = previous_line(data, position)
+        for _ in range(STARTXREF_RECOVERY_LINES):
+            if not line.startswith(b"%%EOF") or position == 0:
+                break
+            line, position = previous_line(data, position)
+        try:
+            int(line)
+        except ValueError:
+            return line.startswith(b"startxref") and is_startxref_value(line[9:].strip())
+        line, position = previous_line(data, position)
+        if line.startswith(b"startxref"):
+            return True
+
+        offset_found = False
+        for _ in range(STARTXREF_RECOVERY_LINES):
+            if position <= 0:
+                break
+            line, position = previous_line(data, position)
+            if not line.startswith(b"startxref"):
+                try:
+                    int(line)
+                except ValueError:
+                    offset_found = False
+                else:
+                    offset_found = True
+                continue
+            if len(line) > 9:
+                if is_startxref_value(line[9:].strip()):
+                    return True
+                continue
+            return offset_found
+        return False
+    except ValueError:
+        return False
 
 
 def validate_pypdf_page_tree(pdf: PdfDocument) -> None:
@@ -28,23 +130,51 @@ def validate_pypdf_page_tree(pdf: PdfDocument) -> None:
         elif latest_root is not None and not isinstance(latest_root, dict):
             raise ValueError("invalid catalog root")
 
-    seen: set[tuple[int, int]] = set()
+    root = pdf.resolver.as_dict(pdf.catalog().get("Pages"))
+    if root is None:
+        raise ValueError("invalid object in /Pages")
+    # pypdf walks the tree iteratively. A cycle is a /Pages node reached again
+    # while it is still an ancestor; a page shared by two parents is valid.
+    # Entries that are not dictionaries, and empty ones, are skipped.
+    entries = 0
+    ancestors: set[int] = set()
+    stack: list[tuple[PdfDict, Iterator[object], int]] = []
 
-    def visit(value: object) -> None:
-        if isinstance(value, PdfReference):
-            key = (value.object_number, value.generation_number)
-            if key in seen:
-                raise ValueError("detected cyclic page references")
-            seen.add(key)
-        node = pdf.resolver.as_dict(value)
-        if node is None:
-            raise ValueError("invalid object in page tree")
+    def enter(node: PdfDict, depth: int) -> None:
+        if depth > PAGE_TREE_MAXIMUM_DEPTH:
+            raise ValueError(f"maximum page tree depth reached: {depth}")
+        declared_type = node.get("Type")
+        if declared_type is not None:
+            node_type = str(declared_type)
+        else:
+            node_type = "Page" if "Kids" not in node else "Pages"
+        if node_type != "Pages":
+            return
         kids = pdf.resolver.resolve(node.get("Kids"))
-        if isinstance(kids, (list, tuple)):
-            for kid in kids:
-                visit(kid)
+        if kids is None:
+            kids = []
+        elif not isinstance(kids, (list, tuple)):
+            raise ValueError("expected /Kids to be an array")
+        ancestors.add(id(node))
+        stack.append((node, iter(kids), depth))
 
-    visit(pdf.catalog().get("Pages"))
+    enter(root, 0)
+    while stack:
+        parent, kids, depth = stack[-1]
+        for kid in kids:
+            child = pdf.resolver.as_dict(kid)
+            if not child:
+                continue
+            if id(child) in ancestors:
+                raise ValueError("detected cyclic page references")
+            entries += 1
+            if entries > PAGE_TREE_MAXIMUM_ENTRIES:
+                raise ValueError(f"maximum page tree entry limit reached: {entries}")
+            enter(child, depth + 1)
+            break
+        else:
+            stack.pop()
+            ancestors.discard(id(parent))
 
 
 class StructuredState(ClosingMixin):
@@ -63,7 +193,7 @@ class StructuredState(ClosingMixin):
     def open(cls, source: PdfInput, *, password: str = "") -> StructuredState:
         pdf = PdfDocument.open(source, password=password)
         try:
-            if pdf.raw_data.find(b"startxref") < 0:
+            if not finds_startxref(pdf.raw_data):
                 raise ValueError("startxref not found")
             validate_pypdf_page_tree(pdf)
         except Exception:
@@ -233,7 +363,10 @@ class PdfPageObject:
 
     def set_cropbox(self, box: tuple[float, float, float, float]) -> PdfPageObject:
         rectangle = Rectangle(*box)
-        self._page = replace(self._page, cropbox=tuple(rectangle))
+        self._page = replace(
+            self._page,
+            cropbox=(rectangle.left, rectangle.bottom, rectangle.right, rectangle.top),
+        )
         self.cropbox = rectangle
         return self
 

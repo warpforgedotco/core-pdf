@@ -533,7 +533,7 @@ class Page(ViewCache, GeneratedRecord):
         "diagnostics",
         "cropbox",
     )
-    __repr_fields__: ClassVar[tuple[str, ...]] = (*__match_args__, "user_unit")
+    __repr_fields__: ClassVar[tuple[str, ...] | None] = (*__match_args__, "user_unit")
 
     def __init__(
         self,

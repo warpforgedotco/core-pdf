@@ -60,7 +60,7 @@ def make_text(text: str, y: float = 0, angle: int = 0) -> tuple[CapturedDrawing,
         ("maximum_error", 0.10001),
     ],
 )
-def test_trust_requires_all_page_evidence(field: str, value: float) -> None:
+def test_trust_requires_all_page_evidence(field: str, value: Any) -> None:
     trusted = newstroke.NewstrokeDecode(
         candidate_segments=10000,
         matched_segments=10000,

@@ -7,6 +7,7 @@ from _content_support import NullSink, make_interpreter
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.model import TilingPattern
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfArray
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.s_08_graphics.color import (
     initial_color_components,
@@ -357,7 +358,7 @@ def test_pattern_selection_matches_underlying_space(
     base: str | None, paint_type: int, components: tuple[float, ...], valid: bool
 ) -> None:
     state = make_interpreter(NullSink())
-    space = [PdfName.of("Pattern")] + ([PdfName.of(base)] if base else [])
+    space: PdfArray = [PdfName.of("Pattern")] + ([PdfName.of(base)] if base else [])
     state.resources = {
         "ColorSpace": {"P": space},
         "Pattern": {"Tile": make_pattern(paint_type)},

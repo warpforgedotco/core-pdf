@@ -4,9 +4,10 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl.types import PdfName
+from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
 
 
-def annotation() -> dict[str, Any]:
+def annotation() -> PdfDict:
     return {"Subtype": PdfName(b"Link"), "Rect": [10, 20, 30, 40], "Contents": b"note"}
 
 
@@ -58,7 +59,7 @@ def test_annotation_destination_precedence_and_action_identity(
 ) -> None:
     with PdfDocument(text_pdf_bytes) as document:
         annot = annotation()
-        action = (
+        action: PdfObject = (
             {"S": PdfName(action_kind.encode()), "D": b"action-target"} if action_kind else None
         )
         annot["A"] = action

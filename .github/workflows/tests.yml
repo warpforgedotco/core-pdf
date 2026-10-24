@@ -21,9 +21,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: "0.12.17"
+          version: "0.13.5"
           python-version: "3.14"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -46,7 +46,7 @@ jobs:
       # repositories. Their revisions are pinned in prek.toml, so its hash is
       # an exact key.
       - name: Restore prek hook repositories
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/prek
           key: prek-${{ runner.os }}-${{ hashFiles('prek.toml') }}
@@ -75,15 +75,15 @@ jobs:
           paths: tests/fixtures/pypdf tests/fixtures/pdf20examples
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: "0.12.17"
+          version: "0.13.5"
           python-version: "3.14"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
       - name: Install Java 17
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "17"
@@ -106,7 +106,7 @@ jobs:
           --cov --cov-config=pyproject.toml --cov-report=term -ra
 
       - name: Upload validator coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-data-verapdf
           path: .coverage.verapdf
@@ -138,9 +138,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: "0.12.17"
+          version: "0.13.5"
           python-version: "3.14"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -170,9 +170,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: "0.12.17"
+          version: "0.13.5"
           python-version: "3.14"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -202,9 +202,9 @@ jobs:
         uses: ./.github/actions/cache-submodules
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: "0.12.17"
+          version: "0.13.5"
           python-version: "3.14"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -225,7 +225,7 @@ jobs:
           --cov --cov-config=pyproject.toml --cov-report=term -ra
 
       - name: Upload workspace coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-data-workspace
           path: .coverage.workspace
@@ -237,12 +237,13 @@ jobs:
         run: uv cache prune --ci
 
   workspace-next:
-    # The same suite on the newest CPython, without the Unstructured facade:
-    # vendor-test gates unstructured[pdf] to Python < 3.15 because onnxruntime
-    # publishes no cp315 wheels yet, and the unstructured extra is left out
-    # because spaCy's tokenizer fails to load any model on 3.15
-    # (explosion/spaCy#14047). Its differential tests skip here. Coverage is
-    # collected on 3.14 only, so this job uploads none.
+    # The same suite on the newest CPython, without the Unstructured and x-ray
+    # references: vendor-test gates unstructured[pdf] and pymupdf (whose 2.x
+    # requires it) to Python < 3.15 because onnxruntime publishes no cp315
+    # wheels yet, and the unstructured extra is left out because spaCy's
+    # tokenizer fails to load any model on 3.15 (explosion/spaCy#14047). Their
+    # differential tests skip here. Coverage is collected on 3.14 only, so this
+    # job uploads none.
     name: Workspace suite / Python 3.15
     runs-on: ubuntu-latest
 
@@ -254,9 +255,9 @@ jobs:
         uses: ./.github/actions/cache-submodules
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: "0.12.17"
+          version: "0.13.5"
           python-version: "3.15"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -291,15 +292,15 @@ jobs:
         run: test "$WORKSPACE_RESULT" = success && test "$VALIDATOR_RESULT" = success
 
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: "0.12.17"
+          version: "0.13.5"
           python-version: "3.14"
 
       - name: Install coverage tools
         run: uv sync --locked --only-group test
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: coverage-data-*
           merge-multiple: true
@@ -313,7 +314,7 @@ jobs:
           uv run --locked --no-sync coverage report
 
       - name: Publish coverage reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: workspace-coverage
           path: |

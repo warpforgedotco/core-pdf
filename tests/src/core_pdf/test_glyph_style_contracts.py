@@ -73,7 +73,8 @@ def test_every_style_field_reads_through_to_the_shared_style() -> None:
 def test_setting_a_style_field_changes_only_that_glyph() -> None:
     shared = style()
     first, second = styled(shared, "a"), styled(shared, "b")
-    first.fill = (1.0, 0.0, 0.0)
+    # Style fields are properties attached at import time (glyphs.style_field_property).
+    first.fill = (1.0, 0.0, 0.0)  # ty: ignore[missing-slot]
     assert first.fill == (1.0, 0.0, 0.0)
     assert second.fill == (0.0, 0.0, 0.0)
     assert shared.fill == (0.0, 0.0, 0.0)

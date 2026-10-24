@@ -251,7 +251,7 @@ def vector_capture(ocr_capture: PageAnalysis) -> tuple[PageAnalysis, StrokedText
     profile = profile_stroked_text(drawings, range(4))
     capture = replace(
         ocr_capture,
-        page=SimpleNamespace(width=600, height=800, page_number=1),
+        page=SimpleNamespace(width=600, height=800, page_number=1),  # ty: ignore[invalid-argument-type]
         program=PageProgram(CapturedProgram(drawings=drawings)),
         evidence=replace(
             ocr_capture.evidence,

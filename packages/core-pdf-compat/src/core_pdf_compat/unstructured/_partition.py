@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from os import PathLike
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf_compat.pdfminer._extract import extract_document_pages
 from core_pdf_compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
 from core_pdf_compat.pdfminer._projection import UNSTRUCTURED_POLICY
+from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 from ._classification import (
     BULLET,
@@ -38,6 +40,14 @@ GRAPHICS_OPS = re.compile(
 
 TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)")
 
+MAX_RAW_STREAM_BYTES = 50 * 1024 * 1024
+
+MAX_CONTENT_ARRAY_ENTRIES = 10_000
+
+MAX_TOTAL_STREAM_BYTES = 1024 * 1024 * 1024
+
+MAX_TOTAL_ARRAY_ENTRIES = 1_000_000
+
 
 def pdf_too_complex(filename: object, password: str) -> bool:
     with PdfDocument.open(filename, password=password) as document:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
@@ -60,10 +70,45 @@ def pdf_too_complex(filename: object, password: str) -> bool:
                     and font.get("DescendantFonts") is None
                 ):
                     return True
-        if len(document.raw_data) < 1_048_576:
-            return False
+        # unstructured 0.27 inspects every file rather than only those over 1 MB, and fails
+        # closed on oversized pages and documents (CVE-2026-33123). It reads only the
+        # streams directly in /Contents, without descending into nested arrays, and
+        # charges every array slot to the document total.
+        resolver = document.resolver
+        total_bytes = 0
+        total_entries = 0
         for page in document.pages:
-            raw_data = b"".join(stream.data for stream in page.content_streams)
+            try:
+                contents = resolver.resolve(page.contents)
+            except PdfError:
+                continue
+            if isinstance(contents, (list, tuple)):
+                if len(contents) > MAX_CONTENT_ARRAY_ENTRIES:
+                    return True
+                total_entries += len(contents)
+                if total_entries > MAX_TOTAL_ARRAY_ENTRIES:
+                    return True
+                entries: Sequence[object] = contents
+            else:
+                entries = (contents,)
+            chunks: list[bytes] = []
+            size = 0
+            for entry in entries:
+                try:
+                    stream = resolver.resolve(entry)
+                    if not isinstance(stream, PdfStream):
+                        continue
+                    chunk = resolver.resolve_stream(stream).data
+                except PdfError, ValueError:
+                    continue
+                total_bytes += len(chunk)
+                if total_bytes > MAX_TOTAL_STREAM_BYTES:
+                    return True
+                size += len(chunk)
+                if size > MAX_RAW_STREAM_BYTES:
+                    return True
+                chunks.append(chunk)
+            raw_data = b"".join(chunks)
             if len(raw_data) < 100_000:
                 continue
             graphics = len(GRAPHICS_OPS.findall(raw_data))

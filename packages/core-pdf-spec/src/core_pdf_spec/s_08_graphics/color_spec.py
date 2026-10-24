@@ -36,7 +36,7 @@ class ColorSpace(GeneratedRecord, eq=False):
     icc_profile: bytes | None
     devicen_attributes: DeviceNAttributes | None
 
-    __repr_fields__: ClassVar[tuple[str, ...]] = (
+    __repr_fields__: ClassVar[tuple[str, ...] | None] = (
         "kind",
         "component_ranges",
         "params",

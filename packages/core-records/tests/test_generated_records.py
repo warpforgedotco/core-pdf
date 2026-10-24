@@ -55,7 +55,7 @@ class Named(Point, metaclass=RecordType):
 
 
 class Quiet(Point):
-    __repr_fields__: ClassVar[tuple[str, ...]] = ("label",)
+    __repr_fields__: ClassVar[tuple[str, ...] | None] = ("label",)
 
 
 class Mutable(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
@@ -214,7 +214,7 @@ def test_replace_passes_every_field_positionally() -> None:
 
 def test_replace_refuses_unknown_fields() -> None:
     with pytest.raises(TypeError, match=r"unexpected keyword arguments \['z'\]"):
-        copy.replace(Point(1, 2), z=3)
+        copy.replace(Point(1, 2), z=3)  # ty: ignore[unknown-argument]
 
 
 def test_subclass_fields_extend_the_parent() -> None:
@@ -266,7 +266,7 @@ def test_mutable_records_assign_and_are_unhashable() -> None:
 def test_a_mutable_record_cannot_extend_a_frozen_one() -> None:
     with pytest.raises(TypeError, match="cannot inherit a frozen"):
 
-        class Thawed(Point, metaclass=RecordType, frozen=False):  # ty: ignore[invalid-frozen-dataclass-subclass]
+        class Thawed(Point, metaclass=RecordType, frozen=False):
             extra: int = 0
 
 
@@ -341,7 +341,7 @@ def test_a_written_field_list_must_agree_with_the_annotations() -> None:
 
 def test_init_false_keeps_the_inherited_initialiser() -> None:
     class Parsed(Custom, init=False):
-        __repr_fields__: ClassVar[tuple[str, ...]] = ()
+        __repr_fields__: ClassVar[tuple[str, ...] | None] = ()
 
     assert "__init__" not in Parsed.__dict__
     assert Parsed("5").value == 5

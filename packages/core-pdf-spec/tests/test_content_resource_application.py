@@ -19,7 +19,7 @@ from core_pdf_spec.types import PdfName, PdfReference
 @pytest.mark.parametrize("entry_point", ["operator", "application"])
 def test_extgstate_updates_only_present_fields_and_clamps_opacity(entry_point: str) -> None:
     state = make_interpreter()
-    values = {"ca": -0.5, "CA": 1.5, "BM": [PdfName.of("Multiply"), PdfName.of("Screen")]}
+    values: Any = {"ca": -0.5, "CA": 1.5, "BM": [PdfName.of("Multiply"), PdfName.of("Screen")]}
     if entry_point == "operator":
         state.resources = {"ExtGState": {"G": values}}
         state.execute_operation("gs", (PdfName.of("G"),), 0)
@@ -49,7 +49,7 @@ def test_extgstate_keeps_earlier_fields_when_a_later_field_is_invalid(entry_poin
     state = make_interpreter()
     state.graphics.stroke_opacity = 0.75
     state.graphics.blend_mode = "Screen"
-    values = {"ca": 0.5, "CA": "invalid", "BM": PdfName.of("Multiply")}
+    values: Any = {"ca": 0.5, "CA": "invalid", "BM": PdfName.of("Multiply")}
     with pytest.raises(PdfParseError, match="numeric operand"):
         if entry_point == "operator":
             state.resources = {"ExtGState": {"G": values}}
@@ -137,7 +137,7 @@ def test_pattern_resource_lookup_preserves_source_identity_and_laziness(
 
 
 @pytest.mark.parametrize("resource", [None, 42, [], PdfName.of("Invalid")])
-def test_pattern_selection_rejects_resources_without_a_dictionary(resource: object) -> None:
+def test_pattern_selection_rejects_resources_without_a_dictionary(resource: Any) -> None:
     state = make_interpreter()
     state.resources = {"Pattern": {"P": resource}}
     assert state.resolve_pattern_resource(PdfName.of("P")) is None

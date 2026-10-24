@@ -13,6 +13,7 @@ from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_07_syntax.types import PdfArray
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf_spec.types import PdfName
 
@@ -222,7 +223,7 @@ def test_nested_failure_unwinds_every_entered_frame(
 
 def test_graphics_save_restores_ctm_and_dash_without_restoring_text_matrices() -> None:
     state, _ = new_state()
-    dash = [2, 3]
+    dash: PdfArray = [2, 3]
     state.execute_operation("d", (dash, 1), 0)
     state.execute_operation("q", (), 0)
     dash[0] = 99

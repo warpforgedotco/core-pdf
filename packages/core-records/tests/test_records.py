@@ -35,7 +35,7 @@ class Point(Record):
 class Labelled(Point):
     __slots__ = ("label",)
     __fields__: ClassVar[tuple[str, ...]] = ("x", "y", "label")
-    __repr_fields__: ClassVar[tuple[str, ...]] = ("label",)
+    __repr_fields__: ClassVar[tuple[str, ...] | None] = ("label",)
 
     label: str
 
