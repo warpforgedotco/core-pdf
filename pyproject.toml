@@ -28,6 +28,11 @@ core-pdf = "core_pdf.cli:main"
 
 [tool.uv]
 python-preference = "system"
+# unstructured 0.27.34 caps filelock below 4, but every 3.x release from 3.20.4
+# is affected by GHSA-v4x8-3wr5-3wq8, GHSA-9vhv-jxww-xfm5 and GHSA-567q-5qvw-pf92,
+# fixed in 4.2.1. filelock reaches only the vendor-test reference libraries.
+# Drop this once unstructured allows filelock 4.
+override-dependencies = ["filelock>=4.2.1"]
 
 [tool.uv.workspace]
 members = [
