@@ -45,9 +45,9 @@ jobs:
             tests/fixtures/unstructured
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: "0.12.17"
+          version: "0.13.5"
           python-version: "3.14"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -58,7 +58,7 @@ jobs:
       # Simulation mode counts instructions under valgrind rather than timing
       # the run, so results do not depend on how loaded the runner is.
       - name: Run benchmarks
-        uses: CodSpeedHQ/action@88472375d0a4572cf70a9f1fe3a4e0ab8da1b924 # v5.0.1
+        uses: CodSpeedHQ/action@78102a468f96d8e0ccb92d0ec49425753fc42062 # v5.6.0
         env:
           # Fail rather than skip if a corpus file is missing, so a broken
           # submodule checkout cannot pass as a run that measured nothing.
