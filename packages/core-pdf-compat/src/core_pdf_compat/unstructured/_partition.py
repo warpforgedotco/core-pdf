@@ -38,6 +38,10 @@ GRAPHICS_OPS = re.compile(
 
 TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)")
 
+MAX_RAW_STREAM_BYTES = 50 * 1024 * 1024
+
+MAX_CONTENT_ARRAY_ENTRIES = 10_000
+
 
 def pdf_too_complex(filename: object, password: str) -> bool:
     with PdfDocument.open(filename, password=password) as document:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
@@ -60,10 +64,27 @@ def pdf_too_complex(filename: object, password: str) -> bool:
                     and font.get("DescendantFonts") is None
                 ):
                     return True
-        if len(document.raw_data) < 1_048_576:
-            return False
+        # unstructured 0.27 inspects every file rather than only those over 1 MB, and fails
+        # closed on oversized pages (CVE-2026-33123).
         for page in document.pages:
-            raw_data = b"".join(stream.data for stream in page.content_streams)
+            try:
+                contents = document.resolver.resolve(page.contents)
+            except PdfError:
+                continue
+            if isinstance(contents, (list, tuple)) and len(contents) > MAX_CONTENT_ARRAY_ENTRIES:
+                return True
+            chunks: list[bytes] = []
+            size = 0
+            for stream in page.content_streams:
+                try:
+                    chunk = stream.data
+                except PdfError, ValueError:
+                    continue
+                size += len(chunk)
+                if size > MAX_RAW_STREAM_BYTES:
+                    return True
+                chunks.append(chunk)
+            raw_data = b"".join(chunks)
             if len(raw_data) < 100_000:
                 continue
             graphics = len(GRAPHICS_OPS.findall(raw_data))
