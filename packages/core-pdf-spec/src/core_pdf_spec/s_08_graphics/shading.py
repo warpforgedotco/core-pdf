@@ -23,7 +23,7 @@ class ShadingSpec(GeneratedRecord):
     bbox: tuple[float, float, float, float] | None
     evaluator: PdfFunctionEvaluator
 
-    __repr_fields__: ClassVar[tuple[str, ...]] = (
+    __repr_fields__: ClassVar[tuple[str, ...] | None] = (
         "shading_type",
         "coords",
         "domain",

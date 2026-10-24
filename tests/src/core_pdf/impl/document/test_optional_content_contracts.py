@@ -1,17 +1,16 @@
-from typing import Any
-
 import pytest
 
 from core_pdf.impl.document_document import PdfDocument
 from core_pdf.impl.types import PdfName
+from core_pdf_spec.s_07_syntax.types import PdfDict
 
 
 @pytest.mark.parametrize("base", [None, "ON", "OFF", "Unchanged"])
 @pytest.mark.parametrize("override", [None, "ON", "OFF", "both"])
 def test_layer_visibility_applies_overrides_in_order(text_pdf_bytes, base, override):
     with PdfDocument(text_pdf_bytes) as document:
-        layer = {"Name": b"Layer"}
-        config: dict[str, Any] = {}
+        layer: PdfDict = {"Name": b"Layer"}
+        config: PdfDict = {}
         if base is not None:
             config["BaseState"] = PdfName(base.encode())
         if override in {"ON", "both"}:

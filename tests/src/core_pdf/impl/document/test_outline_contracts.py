@@ -2,13 +2,14 @@ import pytest
 
 from core_pdf.impl.document_document import PdfDocument
 from core_pdf.impl.types import PdfName
+from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict
 
 
 @pytest.mark.parametrize("action", [False, True])
 def test_outline_children_and_siblings_preserve_order(text_pdf_bytes, action):
     with PdfDocument(text_pdf_bytes) as document:
-        destination = [document.build_page_dicts()[0], PdfName(b"Fit")]
-        entry = {"Title": b"first", "Count": -1}
+        destination: PdfArray = [document.build_page_dicts()[0], PdfName(b"Fit")]
+        entry: PdfDict = {"Title": b"first", "Count": -1}
         if action:
             entry["A"] = {"S": PdfName(b"GoTo"), "D": destination}
         else:
@@ -40,7 +41,7 @@ def test_outline_recovery_retains_valid_siblings(
 ):
     with PdfDocument(text_pdf_bytes) as document:
         document.xref_was_recovered = recover
-        first = {"Title": b"first", "Next": {"Title": b"last"}, **invalid}
+        first: PdfDict = {"Title": b"first", "Next": {"Title": b"last"}, **invalid}
         document.catalog()["Outlines"] = {"First": first}
         if recover:
             assert [x.title for x in document.iter_outlines()] == retained

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import heapq
 import math
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
 from copy import replace
 from typing import Any
@@ -1252,7 +1252,7 @@ class RasterTarget:
     @contextmanager
     def detached_buffer(
         self, buffer: bytearray, window: PixelWindow | None = None
-    ) -> Iterator[None]:
+    ) -> Generator[None]:
         self.pixels = buffer
         self.pixel_array = self.pixel_view(buffer)
         self.group_source_alpha = None

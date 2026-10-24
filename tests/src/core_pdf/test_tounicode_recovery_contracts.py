@@ -155,7 +155,9 @@ def test_usecmap_chains_stop_at_the_inheritance_depth_limit():
 
     cmap = ToUnicodeCMap(b"/P usecmap\n", usecmap_resolver=resolve)
     assert cmap.decode(b"\1") == "A"
-    assert len(calls) == ToUnicodeCMap.max_inheritance_depth + 1
+    depth = ToUnicodeCMap.max_inheritance_depth
+    assert depth is not None
+    assert len(calls) == depth + 1
 
 
 @pytest.mark.parametrize("base", ["", "A", "prefixA", "\ud800A", "\U0010ffff"])

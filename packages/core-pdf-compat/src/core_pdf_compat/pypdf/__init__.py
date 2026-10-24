@@ -233,7 +233,10 @@ class PdfPageObject:
 
     def set_cropbox(self, box: tuple[float, float, float, float]) -> PdfPageObject:
         rectangle = Rectangle(*box)
-        self._page = replace(self._page, cropbox=tuple(rectangle))
+        self._page = replace(
+            self._page,
+            cropbox=(rectangle.left, rectangle.bottom, rectangle.right, rectangle.top),
+        )
         self.cropbox = rectangle
         return self
 

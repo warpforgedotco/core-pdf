@@ -75,7 +75,7 @@ OCR_PIPELINE = (
 
 
 class PageExtraction(extract_pipeline.PageExtraction):
-    capture_page_fn = staticmethod(capture_page)
+    capture_page_fn = staticmethod(capture_page)  # ty: ignore[invalid-mutable-override]
     pipeline: ClassVar[PagePipeline] = OCR_PIPELINE
 
     @property

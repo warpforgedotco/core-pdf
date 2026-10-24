@@ -41,7 +41,7 @@ def test_degenerate_dashed_subpaths_have_no_stroked_segments(points):
 
 @pytest.mark.parametrize("closed_duplicate", [False, True])
 def test_solid_dash_covering_closed_path_retains_closure(closed_duplicate):
-    points = [(0, 0), (4, 0), (4, 4), (0, 4)]
+    points: list[tuple[float, float]] = [(0, 0), (4, 0), (4, 4), (0, 4)]
     path = CapturedSubpath(points + ([points[0]] if closed_duplicate else []), closed=True)
     (piece,) = render_paths.dash_subpath(path, ([20, 1], 0))
     assert piece.closed

@@ -1,4 +1,5 @@
 from copy import replace
+from typing import Any
 
 import pytest
 
@@ -65,7 +66,7 @@ def test_vector_complexity_counts_paints_and_segments_but_not_control_records() 
         ("dash_pattern", ([1.0], 0.0)),
     ],
 )
-def test_stroke_style_rejects_ineligible_paints(field: str, value: object) -> None:
+def test_stroke_style_rejects_ineligible_paints(field: str, value: Any) -> None:
     assert capture.stroked_vector_style(replace(stroke(0), **{field: value})) is None
 
 
@@ -219,7 +220,7 @@ def test_numeric_hidden_layer_verification_requires_clean_mapped_scan_evidence(
     ocr_capture: PageAnalysis,
     section: str,
     field: str,
-    value: object,
+    value: Any,
 ) -> None:
     from core_pdf.impl.extract_contracts import GlyphEvidence, TextQualityStats
 

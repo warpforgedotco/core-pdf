@@ -36,7 +36,7 @@ class PreparedShading(GeneratedRecord):
     evaluator: Callable[[float], tuple[float, ...]]
     color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
 
-    __repr_fields__: ClassVar[tuple[str, ...]] = (
+    __repr_fields__: ClassVar[tuple[str, ...] | None] = (
         "shading_type",
         "coords",
         "domain",

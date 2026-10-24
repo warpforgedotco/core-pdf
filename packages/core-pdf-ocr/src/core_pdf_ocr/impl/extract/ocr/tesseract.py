@@ -10,7 +10,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager, suppress
 from copy import replace
 from html.parser import HTMLParser
@@ -304,7 +304,7 @@ def recognized_symbols(api: Any, task: OcrTask) -> ObservationBatch:
 
 
 @contextmanager
-def suppress_c_stderr() -> Iterator[None]:
+def suppress_c_stderr() -> Generator[None]:
     devnull_fd = None
     stderr_fd = None
     with suppress(OSError):
@@ -333,7 +333,7 @@ def recognition_timeout(task: OcrTask) -> int:
 
 
 @contextmanager
-def owned_api(mode: int) -> Iterator[Any]:
+def owned_api(mode: int) -> Generator[Any]:
     api = open_tesseract_api(mode)
     try:
         yield api

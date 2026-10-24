@@ -365,7 +365,7 @@ def test_resource_operator_looks_up_and_resolves_once(
 
 @pytest.mark.parametrize("name", ["gs", "sh"])
 @pytest.mark.parametrize("resource", [None, 1, [], PdfName.of("Invalid")])
-def test_resource_handlers_reject_missing_or_invalid_resources(name: str, resource: object) -> None:
+def test_resource_handlers_reject_missing_or_invalid_resources(name: str, resource: Any) -> None:
     state, _ = state_with_sink()
     category = "ExtGState" if name == "gs" else "Shading"
     state.resources = {category: {"Resource": resource}}

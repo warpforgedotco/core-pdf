@@ -4,6 +4,7 @@ import pytest
 
 from core_pdf.impl.document_document import PdfDocument
 from core_pdf.impl.types import PdfName
+from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict
 
 
 @pytest.mark.parametrize(
@@ -22,7 +23,7 @@ from core_pdf.impl.types import PdfName
 )
 def test_page_label_styles_and_reader_defaults(text_pdf_bytes, style, start, expected):
     with PdfDocument(text_pdf_bytes) as document:
-        spec: dict[str, Any] = {"P": b"P", "St": start}
+        spec: PdfDict = {"P": b"P", "St": start}
         if style is not None:
             spec["S"] = PdfName(style.encode())
         document.catalog()["PageLabels"] = {"Nums": [0, spec]}
@@ -98,7 +99,7 @@ def test_cyclic_destination_wrappers_are_rejected(text_pdf_bytes, cycle_size):
 
 def test_named_destinations_share_aliases_and_isolate_bad_entries(text_pdf_bytes):
     with PdfDocument(text_pdf_bytes) as document:
-        target = [document.build_page_dicts()[0], PdfName(b"Fit")]
+        target: PdfArray = [document.build_page_dicts()[0], PdfName(b"Fit")]
         document.catalog()["Names"] = {
             "Dests": {"Names": [b"alias", b"target", b"broken", [], b"target", target]}
         }

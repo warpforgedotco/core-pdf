@@ -9,7 +9,7 @@ from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf_spec.s_07_content.streams import ContentStreamExecutor, ContentStreamFrame, StreamKey
 from core_pdf_spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf_spec.types import PdfName, PdfReference, Rectangle
@@ -24,7 +24,7 @@ def test_frame_keeps_resolved_local_bbox_and_original_operand(
     state = make_interpreter()
     resolver = state.resolver
     values = [5, 7, 1, 2]
-    array = []
+    array: PdfArray = []
     for index, value in enumerate(values, 10):
         resolver.objects[key_for(index, 0)] = value  # ty: ignore[unresolved-attribute]
         array.append(PdfReference(index, 0) if indirect_components else value)
@@ -107,7 +107,7 @@ def test_frame_normalizes_corner_order_without_discarding_empty_bounds(
     ],
 )
 def test_frame_retains_local_bounds_separately_from_transformed_envelope(
-    form_matrix: list[float] | None,
+    form_matrix: PdfArray | None,
     parent_matrix: Matrix,
     expected_ctm: Matrix,
     expected_envelope: Rectangle,

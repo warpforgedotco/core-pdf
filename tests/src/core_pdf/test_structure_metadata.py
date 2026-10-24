@@ -13,7 +13,7 @@ from core_pdf.impl.document_structure import (
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
 from core_pdf_spec.standards import PdfVersion, SemanticContext
 
@@ -196,7 +196,7 @@ def test_page_structure_preserves_shared_parent_identity_and_sequence_semantics(
 
 
 def test_parent_tree_preserves_values_and_caches_number_tree_results(document):
-    parents = [{"S": PdfName(b"P")}, None]
+    parents: PdfArray = [{"S": PdfName(b"P")}, None]
     tree = StructureTree(document, {"ParentTree": {"Kids": [{"Nums": [4, parents]}]}})
     assert tree.parent_tree == {4: parents}
     assert tree.parent_tree[4] is parents

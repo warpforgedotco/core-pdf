@@ -28,7 +28,7 @@ class LexicalRules(FrozenFields, PickleFields, ReprFields, metaclass=RecordType)
     split_whitespace_compatible: bool
     content_token_re: re.Pattern[bytes]
 
-    __repr_fields__: ClassVar[tuple[str, ...]] = (
+    __repr_fields__: ClassVar[tuple[str, ...] | None] = (
         "whitespace",
         "name_escapes",
         "delimiters",
