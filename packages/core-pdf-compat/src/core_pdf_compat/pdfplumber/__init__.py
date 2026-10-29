@@ -174,10 +174,30 @@ DRAWINGS_CAPTURE = CaptureOptions(
 )
 
 
+class LatestCapture:
+    # A document keeps the pdfminer capture of only its most recently walked page, so
+    # chars and layout of one page share a walk without every page retaining its own.
+    __slots__ = ("adapter",)
+
+    def __init__(self) -> None:
+        self.adapter: EnginePageAdapter | None = None
+
+    def hold(self, adapter: EnginePageAdapter) -> None:
+        previous, self.adapter = self.adapter, adapter
+        if previous is not None and previous is not adapter:
+            previous._pdfminer_program = None
+
+
 class EnginePageAdapter:
-    def __init__(self, page: Any, unicode_norm: str | None = None) -> None:
+    def __init__(
+        self,
+        page: Any,
+        unicode_norm: str | None = None,
+        latest_capture: LatestCapture | None = None,
+    ) -> None:
         self.page = page
         self.unicode_norm = unicode_norm
+        self.latest_capture = latest_capture
         self._program: Any | None = None
         self._pdfminer_program: CapturedProgram | None = None
         width: int | float = page.width
@@ -401,13 +421,15 @@ class EnginePageAdapter:
         return self._program
 
     def pdfminer_program(self) -> CapturedProgram:
-        # Characters and the pdfminer layout both read pdfminer's own text walk of
-        # the page; it is interpreted once and kept until the page's caches are flushed.
-        if self._pdfminer_program is None:
+        # Characters and the pdfminer layout both read pdfminer's own text walk of the page.
+        program = self._pdfminer_program
+        if program is None:
             from ..pdfminer._capture import pdfminer_page_program
 
-            self._pdfminer_program = pdfminer_page_program(self.page)
-        return self._pdfminer_program
+            program = self._pdfminer_program = pdfminer_page_program(self.page)
+            if self.latest_capture is not None:
+                self.latest_capture.hold(self)
+        return program
 
     def flush_program(self) -> None:
         self._program = None
@@ -617,6 +639,7 @@ class Page:
         self._adapter = EnginePageAdapter(
             pdf._document.pages[index] if engine_page is None else engine_page,
             pdf._unicode_norm,
+            pdf._latest_capture,
         )
         self.rotation = self._adapter.info.rotation % 360
         self.mediabox = self._box_from_page("media_box") or (0.0, 0.0, self.width, self.height)
@@ -1912,6 +1935,7 @@ class PDF(ClosingMixin):
         unicode_norm: str | None = None,
     ) -> None:
         self._unicode_norm = unicode_norm
+        self._latest_capture = LatestCapture()
         opened_here = source is None
         if source is None:
             source = cast(PdfInput, document)
