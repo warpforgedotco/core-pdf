@@ -240,10 +240,11 @@ jobs:
     # The same suite on the newest CPython, without the Unstructured and x-ray
     # references: vendor-test gates unstructured[pdf] and pymupdf (whose 2.x
     # requires it) to Python < 3.15 because onnxruntime publishes no cp315
-    # wheels yet, and the unstructured extra is left out because spaCy's
-    # tokenizer fails to load any model on 3.15 (explosion/spaCy#14047). Their
-    # differential tests skip here. Coverage is collected on 3.14 only, so this
-    # job uploads none.
+    # wheels yet (1.31.1 has none). The unstructured extra is left out: spaCy
+    # 3.8.18 loads its models on 3.15, but the extra's only tests compare against
+    # the unstructured reference, which cannot install here, so it would add
+    # install time and no coverage. Their differential tests skip here.
+    # Coverage is collected on 3.14 only, so this job uploads none.
     name: Workspace suite / Python 3.15
     runs-on: ubuntu-latest
 
