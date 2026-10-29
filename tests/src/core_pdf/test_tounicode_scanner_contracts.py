@@ -18,6 +18,10 @@ LARGE_RANGES = [
     b"1 beginbfrange <0000> <FFFF> <00410042> endbfrange",
     b"1 beginbfrange <000000> <010000> <0041> endbfrange 1 beginbfchar <01> <0042> endbfchar",
     b"2 beginbfrange <00000000> <FFFFFFFF> <0041> <0000> <0001> <0042> endbfrange",
+    b"3 beginbfrange <0000> <FFFF> <0041> <0000> <FFFF> <0042> <0000> <FFFF> <0043> endbfrange",
+    b"20 beginbfrange "
+    + b"".join(b"<%04x0000> <%04xd7ff> <00000000> " % (i, i) for i in range(20))
+    + b"endbfrange",
 ]
 
 

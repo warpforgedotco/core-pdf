@@ -402,16 +402,17 @@ def parse_codespace_ranges(
 def parse_mapping_blocks(program: CMapProgram, mappings: dict[bytes, str]) -> None:
     invalid_range_count = 0
     valid_range_count = 0
+    budget = ExpansionBudget()
     for block in cmap_mapping_blocks(program, include_cid_ranges=True):
         match block.operator:
             case b"beginbfchar":
                 parse_bfchar_block(block, mappings)
             case b"beginbfrange":
-                block_invalid, block_valid = parse_bfrange_block(block, mappings)
+                block_invalid, block_valid = parse_bfrange_block(block, mappings, budget)
                 invalid_range_count += block_invalid
                 valid_range_count += block_valid
             case b"begincidrange":
-                parse_cidrange_block(block, mappings)
+                parse_cidrange_block(block, mappings, budget)
     if invalid_range_count and not valid_range_count:
         raise ValueError("invalid ToUnicode CMap bfrange")
 
@@ -451,7 +452,9 @@ def parse_bfchar_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> N
         mappings[src] = dst
 
 
-def parse_bfrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> tuple[int, int]:
+def parse_bfrange_block(
+    block: CMapMappingBlock, mappings: dict[bytes, str], budget: ExpansionBudget
+) -> tuple[int, int]:
     invalid_range_count = int(bool(block.trailing_operand_count))
     valid_range_count = 0
     for record in block.records():
@@ -488,6 +491,10 @@ def parse_bfrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> 
         elif t3.startswith((b"<", b"(")):
             try:
                 base_dst = decode_utf16be_text(decode_cmap_token(t3))
+                if source_range.count <= MAX_CMAP_RANGE_SPAN and not budget.take(
+                    source_range.count
+                ):
+                    raise ValueError("ToUnicode CMap range expansion budget exhausted")
                 expanded = expand_range(
                     source_range.first, source_range.last, source_range.width, base_dst
                 )
@@ -501,7 +508,9 @@ def parse_bfrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> 
     return invalid_range_count, valid_range_count
 
 
-def parse_cidrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) -> None:
+def parse_cidrange_block(
+    block: CMapMappingBlock, mappings: dict[bytes, str], budget: ExpansionBudget
+) -> None:
     for record in block.records():
         assert record.source_end is not None
         try:
@@ -511,7 +520,7 @@ def parse_cidrange_block(block: CMapMappingBlock, mappings: dict[bytes, str]) ->
             destination = int(record.destination)
         except ValueError, UnicodeDecodeError:
             continue
-        if source_range.count > MAX_CMAP_RANGE_SPAN:
+        if source_range.count > MAX_CMAP_RANGE_SPAN or not budget.take(source_range.count):
             continue
         for offset in range(source_range.count):
             mappings[source_range.source_at(offset)] = unicode_scalar_or_replacement(
@@ -620,6 +629,24 @@ def to_unicode_cmap(
 
 
 MAX_CMAP_RANGE_SPAN = 65536
+
+# One CMap expands at most this many codes from its ranges: twice the largest real use
+# (one full two-byte range, as in Identity-H). A few bytes per range otherwise buy up
+# to MAX_CMAP_RANGE_SPAN mappings each without limit. core_pdf_cythonized._cmap mirrors it.
+MAX_CMAP_EXPANSION = 1 << 17
+
+
+class ExpansionBudget:
+    __slots__ = ("remaining",)
+
+    def __init__(self) -> None:
+        self.remaining = MAX_CMAP_EXPANSION
+
+    def take(self, count: int) -> bool:
+        if count > self.remaining:
+            return False
+        self.remaining -= count
+        return True
 
 
 def unicode_scalar_or_replacement(codepoint: int) -> str:

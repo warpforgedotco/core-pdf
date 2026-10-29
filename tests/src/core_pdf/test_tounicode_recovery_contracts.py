@@ -1,6 +1,11 @@
 import pytest
 
-from core_pdf.impl.fonts_cmap import ToUnicodeCMap, decode_utf16be_text, expand_range
+from core_pdf.impl.fonts_cmap import (
+    MAX_CMAP_EXPANSION,
+    ToUnicodeCMap,
+    decode_utf16be_text,
+    expand_range,
+)
 
 
 def block(kind, records):
@@ -210,3 +215,24 @@ def test_unusable_numeric_cid_ranges_are_skipped(records):
 def test_range_expansion_rejects_reversed_overflowing_and_excessive_ranges(start, end, width):
     with pytest.raises(ValueError, match="bfrange"):
         expand_range(start, end, width, "A")
+
+
+def test_two_full_two_byte_ranges_fit_the_expansion_budget():
+    cmap = ToUnicodeCMap(block(b"bfrange", b"<0000> <FFFF> <0041> <0000> <FFFF> <0042>"))
+    assert len(cmap.mappings) == 65536
+    assert cmap.mappings[b"\0\0"] == "B"
+
+
+@pytest.mark.parametrize("kind", [b"bfrange", b"cidrange"])
+def test_ranges_past_the_expansion_budget_are_skipped_and_later_mappings_kept(kind):
+    destination = b"<0041>" if kind == b"bfrange" else b"65"
+    ranges = b" ".join(b"<%02x0000> <%02xffff> " % (i, i) + destination for i in range(64))
+    cmap = ToUnicodeCMap(
+        block(b"codespacerange", b"<000000> <ffffff>")
+        + block(kind, ranges)
+        + block(b"bfchar", b"<ff0000> <0058>")
+    )
+    assert len(cmap.mappings) == MAX_CMAP_EXPANSION + 1
+    assert b"\1\xff\xff" in cmap.mappings
+    assert b"\2\0\0" not in cmap.mappings
+    assert cmap.mappings[b"\xff\0\0"] == "X"

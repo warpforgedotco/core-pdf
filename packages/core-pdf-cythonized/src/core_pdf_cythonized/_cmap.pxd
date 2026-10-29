@@ -17,6 +17,7 @@ cdef enum:
     DELIMITER = 5
     MAX_DEPTH = 64
     MAX_RANGE_SPAN = 65536
+    MAX_EXPANSION = 131072
 
 cdef enum:
     NO_BLOCK = 0
