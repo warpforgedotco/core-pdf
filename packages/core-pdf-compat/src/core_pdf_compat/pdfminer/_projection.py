@@ -4,6 +4,7 @@ from bisect import bisect_left, bisect_right
 from typing import Any
 
 from core_pdf import PdfPage
+from core_pdf.impl.capture_program import CapturedProgram
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.geometry import bbox_union, overlap_ratio_of
 from core_pdf.impl.types import GeneratedRecord
@@ -148,6 +149,7 @@ def project_page(
     params: LAParams,
     *,
     policy: ProjectionPolicy = PDFMINER_POLICY,
+    products: CapturedProgram | None = None,
 ) -> LTPage:
     page_width = abs(page.width)
     page_height = abs(page.height)
@@ -155,7 +157,8 @@ def project_page(
     chars: list[LTChar] = []
     if policy.strict_resources:
         pdfminer_validate_page_resources(page)
-    products = pdfminer_page_program(page)
+    if products is None:
+        products = pdfminer_page_program(page)
     projected_glyphs: tuple[Any, ...] = products.glyphs
     ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
     runs = sorted(products.runs, key=lambda run: run.seqno)

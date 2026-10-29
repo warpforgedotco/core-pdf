@@ -16,7 +16,7 @@ from typing import Any, ClassVar, TypeAlias, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl import output_model
-from core_pdf.impl.capture_program import CaptureOptions
+from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.geometry import (
     bbox_contains,
@@ -174,11 +174,32 @@ DRAWINGS_CAPTURE = CaptureOptions(
 )
 
 
+class LatestCapture:
+    # A document keeps the pdfminer capture of only its most recently walked page, so
+    # chars and layout of one page share a walk without every page retaining its own.
+    __slots__ = ("adapter",)
+
+    def __init__(self) -> None:
+        self.adapter: EnginePageAdapter | None = None
+
+    def hold(self, adapter: EnginePageAdapter) -> None:
+        previous, self.adapter = self.adapter, adapter
+        if previous is not None and previous is not adapter:
+            previous._pdfminer_program = None
+
+
 class EnginePageAdapter:
-    def __init__(self, page: Any, unicode_norm: str | None = None) -> None:
+    def __init__(
+        self,
+        page: Any,
+        unicode_norm: str | None = None,
+        latest_capture: LatestCapture | None = None,
+    ) -> None:
         self.page = page
         self.unicode_norm = unicode_norm
+        self.latest_capture = latest_capture
         self._program: Any | None = None
+        self._pdfminer_program: CapturedProgram | None = None
         width: int | float = page.width
         height: int | float = page.height
         media_left: int | float = 0
@@ -253,10 +274,7 @@ class EnginePageAdapter:
         )
 
     def text_characters(self) -> Iterator[Any]:
-        from ..pdfminer._capture import (
-            pdfminer_page_program,
-            pdfminer_validate_page_resources,
-        )
+        from ..pdfminer._capture import pdfminer_validate_page_resources
         from ..pdfminer._fonts import (
             pdfminer_descent,
             pdfminer_embedded_cmap_is_unusable,
@@ -267,7 +285,7 @@ class EnginePageAdapter:
         )
 
         pdfminer_validate_page_resources(self.page)
-        projected_glyphs: tuple[Any, ...] = pdfminer_page_program(self.page).glyphs
+        projected_glyphs: tuple[Any, ...] = self.pdfminer_program().glyphs
         ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
         provenances: dict[int, tuple[object, bool, dict[str, Any]]] = {}
         # A page repeats a few hundred glyphs thousands of times; these depend only on
@@ -402,8 +420,20 @@ class EnginePageAdapter:
             self._program = self.page.get_page_program(options=DRAWINGS_CAPTURE)
         return self._program
 
+    def pdfminer_program(self) -> CapturedProgram:
+        # Characters and the pdfminer layout both read pdfminer's own text walk of the page.
+        program = self._pdfminer_program
+        if program is None:
+            from ..pdfminer._capture import pdfminer_page_program
+
+            program = self._pdfminer_program = pdfminer_page_program(self.page)
+            if self.latest_capture is not None:
+                self.latest_capture.hold(self)
+        return program
+
     def flush_program(self) -> None:
         self._program = None
+        self._pdfminer_program = None
 
     def drawings(self, program: Any | None = None) -> tuple[DrawingRecord, ...]:
         if program is None:
@@ -609,6 +639,7 @@ class Page:
         self._adapter = EnginePageAdapter(
             pdf._document.pages[index] if engine_page is None else engine_page,
             pdf._unicode_norm,
+            pdf._latest_capture,
         )
         self.rotation = self._adapter.info.rotation % 360
         self.mediabox = self._box_from_page("media_box") or (0.0, 0.0, self.width, self.height)
@@ -884,7 +915,11 @@ class Page:
             if self.pdf._opened_as_pdfminer:
                 engine_page = self._adapter.page
                 self._layout = (
-                    project_page(engine_page, laparams or LAParams())
+                    project_page(
+                        engine_page,
+                        laparams or LAParams(),
+                        products=self._adapter.pdfminer_program(),
+                    )
                     if engine_page.page_number == self.page_number
                     else None
                 )
@@ -1900,6 +1935,7 @@ class PDF(ClosingMixin):
         unicode_norm: str | None = None,
     ) -> None:
         self._unicode_norm = unicode_norm
+        self._latest_capture = LatestCapture()
         opened_here = source is None
         if source is None:
             source = cast(PdfInput, document)
