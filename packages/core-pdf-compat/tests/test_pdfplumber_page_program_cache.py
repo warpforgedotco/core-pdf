@@ -52,3 +52,20 @@ def test_only_the_most_recently_walked_page_keeps_its_pdfminer_capture(monkeypat
         assert first.layout is not None
         assert calls == [1, 2, 1]
         assert second._adapter._pdfminer_program is None
+
+
+def test_layout_of_a_password_opened_pdf_reads_the_open_document(monkeypatch):
+    import core_pdf_compat.pdfminer
+
+    def reopen(*args, **kwargs):
+        raise AssertionError("Page.layout reopened the source")
+
+    monkeypatch.setattr(core_pdf_compat.pdfminer, "extract_pages", reopen)
+    with core_pdf_compat.pdfplumber.open(
+        FIXTURE.with_name("password-example.pdf"), password="test"
+    ) as pdf:
+        layouts = [page.layout for page in pdf.pages]
+    assert [layout.pageid for layout in layouts] == [1, 2, 3, 4]
+    assert "Backup4all" in "".join(
+        item.get_text() for item in layouts[0] if hasattr(item, "get_text")
+    )

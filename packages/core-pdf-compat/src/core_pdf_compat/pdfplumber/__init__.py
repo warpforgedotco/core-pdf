@@ -1967,7 +1967,7 @@ class PDF(ClosingMixin):
         **_: Any,
     ) -> PDF:
         pdf = cls(_source(source, password), source, pages, laparams, unicode_norm)
-        pdf._opened_as_pdfminer = password == ""
+        pdf._opened_as_pdfminer = True
         return pdf
 
     @property
