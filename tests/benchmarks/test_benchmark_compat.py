@@ -10,10 +10,10 @@ from tests.benchmarks.corpus import COMPAT_SAMPLES, Sample
 
 REQUIRE_FIXTURES = os.environ.get("CORE_PDF_BENCHMARK_REQUIRE_FIXTURES") == "1"
 
-# Two full two-byte ranges: the most a ToUnicode CMap may expand from ranges.
+# Two disjoint full ranges: the most a ToUnicode CMap may expand from ranges.
 LARGEST_ACCEPTED_CMAP = (
-    b"1 begincodespacerange <0000> <ffff> endcodespacerange\n"
-    b"2 beginbfrange <0000> <ffff> <0041> <0000> <ffff> <0042> endbfrange"
+    b"1 begincodespacerange <000000> <ffffff> endcodespacerange\n"
+    b"2 beginbfrange <000000> <00ffff> <0041> <010000> <01ffff> <0042> endbfrange"
 )
 
 
@@ -44,4 +44,4 @@ def test_pdfplumber_chars_then_layout(benchmark: BenchmarkFixture, sample: Sampl
 
 def test_parse_largest_accepted_tounicode_cmap(benchmark: BenchmarkFixture) -> None:
     cmap = benchmark(ToUnicodeCMap, LARGEST_ACCEPTED_CMAP)
-    assert len(cmap.mappings) == MAX_CMAP_EXPANSION // 2
+    assert len(cmap.mappings) == MAX_CMAP_EXPANSION

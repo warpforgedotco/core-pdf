@@ -7,10 +7,10 @@ name the directory explicitly to run them.
 
 ```sh
 # plain timings, no CodSpeed runner needed
-uv run --group benchmark pytest tests/benchmarks --codspeed
+uv run --all-packages --group test --group benchmark pytest tests/benchmarks --codspeed
 
 # recorded run, deterministic instruction counts and flamegraphs
-codspeed run -m simulation -- uv run --group benchmark pytest tests/benchmarks --codspeed
+codspeed run -m simulation -- uv run --all-packages --group test --group benchmark pytest tests/benchmarks --codspeed
 ```
 
 Simulation mode needs Linux and CodSpeed's patched valgrind, so recorded runs
@@ -72,6 +72,7 @@ Measured from the CodSpeed job itself, which is the number that matters:
 | ----- | ---------: | -------------: |
 | extraction only | 12 | 7.2 min |
 | plus rendering  | 18 | 10.4 min |
+| plus compat and CMap | 24 | 9.3 min |
 
 Budget from that table, not from the modelled values the report prints. Those
 are instruction-derived and do not scale to wall clock: the six rendering
@@ -79,6 +80,11 @@ benchmarks report 8.2 s between them -- `test_rasterize_page[tables-…]` alone
 reports 4.7 s, the most expensive entry in the suite -- yet cost 3.2 minutes of
 job time. Rasterizing is instruction-dense rather than call-dense, so it
 inflates the modelled figure far more than the clock.
+
+The compat and CMap row is the first recorded run of those three benchmarks. The
+run on `main` just before, with 21 benchmarks, took 8.0 min, so the three cost
+about 1.3 min. Job wall clock also varies with cache restores, so the earlier
+rows are not comparable with it to the minute.
 
 Two earlier attempts at a rule of thumb here were both wrong and are worth
 recording as such: "roughly 45x native", taken from timing one file end to
