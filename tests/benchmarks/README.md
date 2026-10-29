@@ -39,7 +39,7 @@ from sweeping all 795 fixture PDFs, so the samples span the shapes that actually
 drive cost -- text density, tables, figures, sparse pages -- rather than the
 largest files. The module docstring has the details.
 
-Four axes are covered:
+These axes are covered:
 
 - `test_open_document` -- xref parsing, trailer and page tree, no content.
 - `test_extract_first_page` -- one page, across the shape spread.
@@ -55,6 +55,14 @@ Four axes are covered:
   the other: the glyph caches moved extraction alone, the rasterizer kernels
   moved rendering alone. Until these existed, rendering had no recorded
   measurement at all and its numbers came from laptop wall clock.
+- `test_pdfplumber_chars_then_layout` -- the pdfplumber facade's `chars` and then
+  `layout` of one page, with the document open and the page's caches flushed
+  each round. The two share one pdfminer text walk, and `layout` runs
+  `project_page`, the per-glyph projection the pdfminer and unstructured
+  facades also use.
+- `test_parse_largest_accepted_tounicode_cmap` -- the most a ToUnicode CMap may
+  expand from ranges (two full two-byte ranges, `MAX_CMAP_EXPANSION`), so the
+  worst accepted parse cost stays measured.
 
 ## What a recorded run costs
 

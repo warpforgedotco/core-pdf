@@ -139,6 +139,21 @@ RENDER_SAMPLES = (
     ),
 )
 
+COMPAT_SAMPLES = (
+    Sample(
+        "llama_index/docs/examples/data/10k/lyft_2021.pdf",
+        "text",
+        63,
+        "pdfplumber chars then layout of one page; the dominant real-world shape",
+    ),
+    Sample(
+        "pdfminer.six/samples/nonfree/i1040nr.pdf",
+        "text",
+        80,
+        "pdfplumber chars then layout of the densest text page in the corpus",
+    ),
+)
+
 
 DEEP_DIVE = (
     Sample(
