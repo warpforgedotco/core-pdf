@@ -110,6 +110,33 @@ def test_tounicode_uses_utf16be_and_local_mapping_overrides_parent() -> None:
         ToUnicodeCMap(CODESPACE + b"1 beginbfchar <01> <41> endbfchar")
 
 
+def test_tounicode_bfrange_increments_the_last_destination_byte() -> None:
+    cmap = ToUnicodeCMap(CODESPACE + b"1 beginbfrange <fd> <ff> <D83DDEFD> endbfrange")
+    assert cmap.lookup(b"\xfd") == "\U0001f6fd"
+    assert cmap.lookup(b"\xff") == "\U0001f6ff"
+
+
+@pytest.mark.parametrize(
+    "mapping",
+    [
+        # ISO 32000-2 9.10.3: the last dstString byte shall be <= 255 - (srcCode2 - srcCode1).
+        b"<00> <01> <00FF>",
+        b"<00> <ff> <0001>",
+        b"<00> <00> <>",
+    ],
+)
+def test_tounicode_bfrange_rejects_destination_past_its_last_byte(mapping: bytes) -> None:
+    with pytest.raises(ValueError, match="invalid ToUnicode bfrange destination"):
+        ToUnicodeCMap(CODESPACE + b"1 beginbfrange " + mapping + b" endbfrange")
+
+
+def test_tounicode_bfrange_over_a_four_byte_codespace_is_rejected_without_expansion() -> None:
+    codespace = b"1 begincodespacerange <00000000> <ffffffff> endcodespacerange\n"
+    data = codespace + b"1 beginbfrange <00000000> <ffffffff> <00000000> endbfrange"
+    with pytest.raises(ValueError, match="invalid ToUnicode bfrange destination"):
+        ToUnicodeCMap(data)
+
+
 def test_static_annex_d_glyph_names_preserve_exact_character_slots() -> None:
     standard = BASE_ENCODING_GLYPH_NAMES["StandardEncoding"]
     mac = BASE_ENCODING_GLYPH_NAMES["MacRomanEncoding"]

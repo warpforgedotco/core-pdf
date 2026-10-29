@@ -209,10 +209,15 @@ def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
                 texts = [decode_utf16be(decode_cmap_hex_token(item)) for item in destinations]
             else:
                 base = decode_cmap_hex_token(destination)
-                texts = []
-                for offset in range(source_range.count):
-                    incremented = (int.from_bytes(base, "big") + offset).to_bytes(len(base), "big")
-                    texts.append(decode_utf16be(incremented))
+                # ISO 32000-2 9.10.3: the last byte of dstString shall be <= 255 - (srcCode2 -
+                # srcCode1), so only that byte is incremented and a range spans at most 256 codes.
+                if not base or base[-1] + source_range.count - 1 > 0xFF:
+                    raise ValueError("invalid ToUnicode bfrange destination")
+                prefix, final = base[:-1], base[-1]
+                texts = [
+                    decode_utf16be(prefix + bytes((final + offset,)))
+                    for offset in range(source_range.count)
+                ]
             mappings.update(
                 (source_range.source_at(offset), text) for offset, text in enumerate(texts)
             )
