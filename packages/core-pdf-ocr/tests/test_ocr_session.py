@@ -198,7 +198,7 @@ def test_timeout_recovery_retries_smaller_raster_without_recursing(
     )
     calls = []
 
-    def recognize(group, *, raise_if_cancelled):
+    def recognize(group, *, raise_if_cancelled, engine=None):
         raise_if_cancelled()
         calls.append(group)
         if len(calls) == 1:

@@ -332,15 +332,38 @@ def recognition_timeout(task: OcrTask) -> int:
     return min(OCR_TIMEOUT_MAX_MILLISECONDS, budget)
 
 
+def end_api(api: Any) -> None:
+    end = getattr(api, "End", None)
+    if callable(end):
+        end()
+
+
 @contextmanager
 def owned_api(mode: int) -> Generator[Any]:
     api = open_tesseract_api(mode)
     try:
         yield api
     finally:
-        end = getattr(api, "End", None)
-        if callable(end):
-            end()
+        end_api(api)
+
+
+class SharedEngine:
+    # Loading the model dominates small groups, so a page's groups share one engine;
+    # recognize resets the page segmentation mode and adaptive classifier per task.
+    __slots__ = ("api",)
+
+    def __init__(self) -> None:
+        self.api: Any | None = None
+
+    def acquire(self, mode: int) -> Any:
+        if self.api is None:
+            self.api = open_tesseract_api(mode)
+        return self.api
+
+    def close(self) -> None:
+        api, self.api = self.api, None
+        if api is not None:
+            end_api(api)
 
 
 def recognize(
@@ -496,19 +519,30 @@ def recognize_group(
     tasks: tuple[OcrTask, ...],
     *,
     raise_if_cancelled: Callable[[], None] | None = None,
+    engine: SharedEngine | None = None,
 ) -> tuple[Candidate, ...]:
     if not tasks:
         return ()
     if raise_if_cancelled is not None:
         raise_if_cancelled()
     first = tasks[0]
-    with owned_api(first.mode) as api:
-        candidates = [recognize(first, api_override=api)]
-        for task in tasks[1:]:
-            if raise_if_cancelled is not None:
-                raise_if_cancelled()
-            candidates.append(recognize(task, api_override=api, image_prepared=True))
-        return tuple(candidates)
+    if engine is None:
+        with owned_api(first.mode) as api:
+            return recognize_on(api, tasks, raise_if_cancelled)
+    return recognize_on(engine.acquire(first.mode), tasks, raise_if_cancelled)
+
+
+def recognize_on(
+    api: Any,
+    tasks: tuple[OcrTask, ...],
+    raise_if_cancelled: Callable[[], None] | None,
+) -> tuple[Candidate, ...]:
+    candidates = [recognize(tasks[0], api_override=api)]
+    for task in tasks[1:]:
+        if raise_if_cancelled is not None:
+            raise_if_cancelled()
+        candidates.append(recognize(task, api_override=api, image_prepared=True))
+    return tuple(candidates)
 
 
 def timeout_recovery_task(task: OcrTask) -> OcrTask | None:

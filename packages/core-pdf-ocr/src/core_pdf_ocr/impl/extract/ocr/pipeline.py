@@ -187,13 +187,23 @@ def recognize_page_with_reserved_raster(
         image_filters = capture.evidence.image_filters
         if any("JPX" in str(filter_name).upper() for filter_name in image_filters):
             compact_image = "grayscale"
-    session = OcrSession(
-        capture,
-        plan,
-        compact_image,
-        context,
-        stroked_profile,
-    )
+    session = OcrSession(capture, plan, compact_image, context, stroked_profile)
+    try:
+        return recognize_session_page(
+            session, capture, plan, context, compact_image, stroked_profile
+        )
+    finally:
+        session.close()
+
+
+def recognize_session_page(
+    session: OcrSession,
+    capture: PageAnalysis,
+    plan: WorkPlan,
+    context: ExtractionScope,
+    compact_image: bool | str,
+    stroked_profile: StrokedTextProfile | None,
+) -> ObservationBatch:
     page_box = session.page_box
     pass_state = OcrPassState()
     adaptive_rescue_used = False

@@ -80,6 +80,9 @@ def test_adaptive_retry_selects_scope_and_preserves_best_content(
     )
 
     class Session:
+        def close(self) -> None:
+            pass
+
         page_box = source.page_box
 
         def __init__(self, *args):
@@ -154,6 +157,9 @@ def test_hidden_layer_verification_short_circuits_only_after_matching_preview(
     )
 
     class Session:
+        def close(self) -> None:
+            pass
+
         page_box = source.page_box
 
         def __init__(self, capture, plan, compact, context, profile):
@@ -228,6 +234,9 @@ def test_ruled_table_retry_preserves_outside_text_and_rejects_worse_cell_reads(
     calls = []
 
     class Session:
+        def close(self) -> None:
+            pass
+
         page_box = source.page_box
 
         def __init__(self, *args):
@@ -288,6 +297,9 @@ def test_packed_vector_pipeline_remaps_seeds_and_chooses_isolated_or_full_fallba
     calls = []
 
     class Session:
+        def close(self) -> None:
+            pass
+
         page_box = source.page_box
 
         def __init__(self, *args):
@@ -355,6 +367,9 @@ def test_pipeline_returns_empty_when_no_pass_materializes_tasks(
     monkeypatch: pytest.MonkeyPatch, ocr_capture, unavailable: bool
 ) -> None:
     class Session:
+        def close(self) -> None:
+            pass
+
         page_box = (0, 0, 100, 100)
 
         def __init__(self, *args):
@@ -383,6 +398,9 @@ def test_page_augmentation_retains_original_text_except_for_complex_vector_pages
     extra = make_result("additional text", box=(40, 0, 80, 10))
 
     class Session:
+        def close(self) -> None:
+            pass
+
         page_box = source.page_box
 
         def __init__(self, *args):

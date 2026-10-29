@@ -157,6 +157,9 @@ def test_pipeline_schedules_fallbacks_with_winning_task_provenance(
     seen: list[tuple[str, Candidate | None, tuple[OcrTask, ...]]] = []
 
     class Session:
+        def close(self) -> None:
+            pass
+
         page_box = (0, 0, 100, 100)
 
         def __init__(self, *args: object) -> None:
