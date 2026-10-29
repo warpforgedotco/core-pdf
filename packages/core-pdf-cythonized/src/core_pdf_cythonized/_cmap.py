@@ -12,6 +12,7 @@ from cython.cimports.core_pdf_cythonized._cmap import (
     HEX,
     LITERAL,
     MAX_DEPTH,
+    MAX_EXPANSION,
     MAX_RANGE_SPAN,
     NO_BLOCK,
     PROCEDURE,
@@ -378,6 +379,7 @@ class Scan:
     mappings: dict
     invalid: cython.Py_ssize_t
     valid: cython.Py_ssize_t
+    expanded: cython.Py_ssize_t
 
     @cython.cfunc
     @cython.exceptval(-1, check=False)
@@ -481,6 +483,10 @@ class Scan:
             if high - low + 1 > MAX_RANGE_SPAN:
                 self.invalid += 1
                 continue
+            if self.expanded + cython.cast(cython.Py_ssize_t, high - low + 1) > MAX_EXPANSION:
+                self.invalid += 1
+                continue
+            self.expanded += cython.cast(cython.Py_ssize_t, high - low + 1)
             if not base:
                 for value in range(low, high + 1):
                     mappings[range_key(value, start_size)] = ""
@@ -620,6 +626,7 @@ def scan_to_unicode_cmap(data: typing.Optional[bytes]):
         scan.mappings = {}
         scan.invalid = 0
         scan.valid = 0
+        scan.expanded = 0
         for index in range(scope_start, scope_end):
             if block == NO_BLOCK:
                 if tokens.kind[index] != WORD:
