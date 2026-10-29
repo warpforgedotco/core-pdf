@@ -45,6 +45,7 @@ from core_pdf_ocr.impl.extract.ocr.regions import (
 )
 from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextProfile
 from core_pdf_ocr.impl.extract.ocr.tesseract import (
+    SharedEngine,
     recognize_group,
     recover_timed_out_tasks,
 )
@@ -109,6 +110,7 @@ class OcrSession:
         "stroked_profile",
         "rendered_without_text",
         "rendered_with_text",
+        "engine",
     )
 
     def __init__(
@@ -124,9 +126,13 @@ class OcrSession:
         self.compact_image = compact_image
         self.context = context
         self.stroked_profile = stroked_profile
+        self.engine = SharedEngine()
         render_modes = {ocr_pass.include_native_text for ocr_pass in plan.ocr_passes}
         self.rendered_without_text = self.compose(False) if False in render_modes else None
         self.rendered_with_text = self.compose(True) if True in render_modes else None
+
+    def close(self) -> None:
+        self.engine.close()
 
     def compose(self, include_native_text: bool) -> Any:
         capture = self.capture
@@ -162,13 +168,17 @@ class OcrSession:
 
     def recognize_batch(self, tasks: tuple[OcrTask, ...]) -> tuple[Candidate, ...]:
         groups = ocr_task_groups(tasks)
-        return tuple(
-            candidate
-            for group in groups
-            for candidate in recognize_group(
-                group, raise_if_cancelled=self.context.raise_if_cancelled
+        try:
+            return tuple(
+                candidate
+                for group in groups
+                for candidate in recognize_group(
+                    group, raise_if_cancelled=self.context.raise_if_cancelled, engine=self.engine
+                )
             )
-        )
+        except BaseException:
+            self.engine.close()
+            raise
 
     def recognize_tasks(self, tasks: tuple[OcrTask, ...]) -> tuple[Candidate, ...]:
         candidates = self.recognize_batch(tasks)

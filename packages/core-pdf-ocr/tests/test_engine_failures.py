@@ -302,6 +302,54 @@ def test_session_cancellation_between_tasks_closes_engine(
     assert fake_engine.calls.count("end") == 1
 
 
+def test_session_groups_share_one_engine_until_the_session_closes(
+    task: OcrTask,
+    fake_engine: Engine,
+    ocr_capture: PageAnalysis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core_pdf_ocr.impl.extract.ocr.session import OcrSession
+
+    opened: list[int] = []
+    monkeypatch.setattr(
+        tesseract, "open_tesseract_api", lambda mode: opened.append(mode) or fake_engine
+    )
+    other_image = replace(task, mode=6, image=RasterImage(bytes(100), 10, 10, 1))
+    session = OcrSession(ocr_capture, WorkPlan(PageRoute.OCR), True, ExtractionScope(), None)
+    assert len(session.recognize_tasks((task, other_image))) == 2
+    assert len(session.recognize_tasks((task,))) == 1
+    assert opened == [3]
+    assert fake_engine.calls.count("image") == 3
+    assert fake_engine.calls.count("end") == 0
+    session.close()
+    session.close()
+    assert fake_engine.calls.count("end") == 1
+
+
+def test_session_engine_that_fails_is_closed_and_replaced(
+    task: OcrTask,
+    fake_engine: Engine,
+    ocr_capture: PageAnalysis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core_pdf_ocr.impl.extract.ocr.session import OcrSession
+
+    opened: list[int] = []
+    monkeypatch.setattr(
+        tesseract, "open_tesseract_api", lambda mode: opened.append(mode) or fake_engine
+    )
+    session = OcrSession(ocr_capture, WorkPlan(PageRoute.OCR), True, ExtractionScope(), None)
+    fake_engine.error = RuntimeError("engine failed")
+    with pytest.raises(RuntimeError, match="engine failed"):
+        session.recognize_tasks((task,))
+    assert fake_engine.calls.count("end") == 1
+    fake_engine.error = None
+    session.recognize_tasks((task,))
+    session.close()
+    assert opened == [3, 3]
+    assert fake_engine.calls.count("end") == 2
+
+
 @pytest.mark.parametrize(("width", "height"), [(1, 1000), (1000, 1)])
 def test_timeout_retry_budget_holds_for_narrow_rasters(
     monkeypatch: pytest.MonkeyPatch,
