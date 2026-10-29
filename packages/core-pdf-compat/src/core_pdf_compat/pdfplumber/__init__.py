@@ -16,7 +16,7 @@ from typing import Any, ClassVar, TypeAlias, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl import output_model
-from core_pdf.impl.capture_program import CaptureOptions
+from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.geometry import (
     bbox_contains,
@@ -179,6 +179,7 @@ class EnginePageAdapter:
         self.page = page
         self.unicode_norm = unicode_norm
         self._program: Any | None = None
+        self._pdfminer_program: CapturedProgram | None = None
         width: int | float = page.width
         height: int | float = page.height
         media_left: int | float = 0
@@ -253,10 +254,7 @@ class EnginePageAdapter:
         )
 
     def text_characters(self) -> Iterator[Any]:
-        from ..pdfminer._capture import (
-            pdfminer_page_program,
-            pdfminer_validate_page_resources,
-        )
+        from ..pdfminer._capture import pdfminer_validate_page_resources
         from ..pdfminer._fonts import (
             pdfminer_descent,
             pdfminer_embedded_cmap_is_unusable,
@@ -267,7 +265,7 @@ class EnginePageAdapter:
         )
 
         pdfminer_validate_page_resources(self.page)
-        projected_glyphs: tuple[Any, ...] = pdfminer_page_program(self.page).glyphs
+        projected_glyphs: tuple[Any, ...] = self.pdfminer_program().glyphs
         ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
         provenances: dict[int, tuple[object, bool, dict[str, Any]]] = {}
         # A page repeats a few hundred glyphs thousands of times; these depend only on
@@ -402,8 +400,18 @@ class EnginePageAdapter:
             self._program = self.page.get_page_program(options=DRAWINGS_CAPTURE)
         return self._program
 
+    def pdfminer_program(self) -> CapturedProgram:
+        # Characters and the pdfminer layout both read pdfminer's own text walk of
+        # the page; it is interpreted once and kept until the page's caches are flushed.
+        if self._pdfminer_program is None:
+            from ..pdfminer._capture import pdfminer_page_program
+
+            self._pdfminer_program = pdfminer_page_program(self.page)
+        return self._pdfminer_program
+
     def flush_program(self) -> None:
         self._program = None
+        self._pdfminer_program = None
 
     def drawings(self, program: Any | None = None) -> tuple[DrawingRecord, ...]:
         if program is None:
@@ -884,7 +892,11 @@ class Page:
             if self.pdf._opened_as_pdfminer:
                 engine_page = self._adapter.page
                 self._layout = (
-                    project_page(engine_page, laparams or LAParams())
+                    project_page(
+                        engine_page,
+                        laparams or LAParams(),
+                        products=self._adapter.pdfminer_program(),
+                    )
                     if engine_page.page_number == self.page_number
                     else None
                 )
