@@ -182,15 +182,6 @@ class ObservationBatch(GeneratedRecord):
             tuple(self.references[int(index)] for index in indexes),
         )
 
-    def select(self, mask: BoolArray) -> ObservationBatch:
-        validate_selection_mask(mask, len(self))
-        selected = int(numpy.count_nonzero(mask))
-        if selected == len(self):
-            return self
-        if selected == 0:
-            return ObservationBatch.empty()
-        return self.take(numpy.flatnonzero(mask))
-
     @classmethod
     def concatenate(cls, *batches: ObservationBatch) -> ObservationBatch:
         batches = tuple(batch for batch in batches if len(batch))

@@ -1,5 +1,6 @@
 import math
 import random
+from bisect import bisect_left
 
 import pytest
 
@@ -27,6 +28,12 @@ def polygon(rng: random.Random, width: int, height: int) -> CapturedPath:
     return path
 
 
+def pixel_in_clip(clip, px: int, py: int) -> bool:
+    spans = clip.clip_row_visible_spans(py)
+    index = bisect_left(spans, (px + 1, -1))
+    return index > 0 and spans[index - 1][0] <= px < spans[index - 1][1]
+
+
 @pytest.mark.parametrize("seed", range(20))
 def test_mask_is_pixel_in_clip(seed: int) -> None:
     rng = random.Random(seed)
@@ -37,7 +44,7 @@ def test_mask_is_pixel_in_clip(seed: int) -> None:
         ix0, ix1 = sorted(rng.sample(range(41), 2))
         iy0, iy1 = sorted(rng.sample(range(31), 2))
         expected = bytearray(
-            target.clip.pixel_in_clip(px, py) for py in range(iy0, iy1) for px in range(ix0, ix1)
+            pixel_in_clip(target.clip, px, py) for py in range(iy0, iy1) for px in range(ix0, ix1)
         )
         assert target.clip_pixel_mask(ix0, iy0, ix1, iy1) == expected
 

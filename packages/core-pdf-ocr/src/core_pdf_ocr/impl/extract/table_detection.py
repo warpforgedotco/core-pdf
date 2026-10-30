@@ -49,10 +49,6 @@ OCR_TABLES = replace(
 )
 
 
-def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
-    return OCR_TABLES.extract(capture, observations)
-
-
 def chart_cell_texts(text: str) -> tuple[str, ...]:
     tokens = text_word_tokens(text)
     numeric_count = sum(bool(CHART_NUMERIC_TOKEN.fullmatch(part)) for part in tokens)
