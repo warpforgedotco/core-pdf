@@ -5,30 +5,20 @@ from __future__ import annotations
 import gzip
 import struct
 import unicodedata
-from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable
 from functools import cache
 from importlib.resources import files
+from importlib.resources.abc import Traversable
 from itertools import islice
 from typing import Any
 
-from core_adobe_fonts.cmap.ranges import (
-    code_in_ranges,
-    iter_codespace_range,
-)
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_cff_repair import CFFUnicodeRepairIndex, is_repairable_to_unicode_label
 from core_pdf.impl.fonts_cmap import (
-    CID_COLLECTION_UNICODE_OVERRIDES,
-    CID_COLLECTION_UNICODE_SOURCES,
     CMapDecoder,
-    CMapUnicodeSource,
     ToUnicodeCMap,
     predefined_cmap_unicode,
-    resolve_cmap_decoder,
     resolve_cmap_resource,
-    unicode_candidate_preference,
-    unicode_scalar_from_cmap_code,
     unicode_scalar_or_replacement,
 )
 from core_pdf.impl.fonts_encoding import FontEncoding
@@ -121,53 +111,6 @@ def dedupe_alternates(values: Iterable[str], selected: str) -> tuple[str, ...]:
     return tuple(alternates)
 
 
-CompactCMap = dict[int, tuple[bytes, ...]]
-
-
-def compact_cmap_from_decoder(decoder: CMapDecoder) -> CompactCMap:
-    code_space_ranges = decoder.code_space_ranges
-
-    def code_is_decodable(code: bytes) -> bool:
-        return not code_space_ranges or code_in_ranges(code, code_space_ranges)
-
-    effective_codes_by_cid: defaultdict[int, list[bytes]] = defaultdict(list)
-    seen: set[bytes] = set()
-    for code, cid in decoder.cid_mappings.items():
-        if not code_is_decodable(code):
-            continue
-        seen.add(code)
-        effective_codes_by_cid[cid].append(code)
-    for cid_range in reversed(decoder.cid_ranges):
-        for offset, code in enumerate(iter_codespace_range(cid_range.start, cid_range.end)):
-            if code in seen or not code_is_decodable(code):
-                continue
-            seen.add(code)
-            effective_codes_by_cid[cid_range.first_cid + offset].append(code)
-    return {cid: tuple(codes) for cid, codes in effective_codes_by_cid.items()}
-
-
-@cache
-def compact_cmap(name: str) -> CompactCMap | None:
-    if resolve_cmap_resource(name) is None:
-        return None
-    decoder = resolve_cmap_decoder(name)
-    return compact_cmap_from_decoder(decoder) if decoder is not None else None
-
-
-def preferred_unicode_for_cid(cmap_name: str, codec: str, cid: int) -> str | None:
-    cmap = compact_cmap(cmap_name)
-    if cmap is None:
-        return None
-    candidates = {
-        text
-        for code in cmap.get(cid, ())
-        if (text := unicode_scalar_from_cmap_code(code, codec)) is not None
-    }
-    if not candidates:
-        return None
-    return max(candidates, key=lambda text: (unicode_candidate_preference(text), -ord(text)))
-
-
 class CIDUnicodeMap:
     __slots__ = ("_cache", "ordering", "registry", "vertical")
 
@@ -190,36 +133,13 @@ class CIDUnicodeMap:
             return text
 
     def vote(self, cid: int) -> str | None:
-        table = packaged_cid_unicode_table(self.registry, self.ordering, vertical=self.vertical)
-        if table is not None:
-            return table.get(cid)
-        return self.vote_from_sources(cid)
-
-    def vote_from_sources(self, cid: int) -> str | None:
-        override = CID_COLLECTION_UNICODE_OVERRIDES.get((self.registry, self.ordering), {}).get(cid)
-        if override is not None:
-            return override
-        collection = CID_COLLECTION_UNICODE_SOURCES.get((self.registry, self.ordering))
-        if collection is None:
-            return None
-        sources = collection[self.vertical]
-        opposite_sources = collection[not self.vertical]
-        candidates = (
-            tally_cid_votes(sources, cid)
-            or tally_cid_votes(opposite_sources, cid)
-            or tally_cid_votes((*sources, *opposite_sources), cid, unweighted=True)
+        return packaged_cid_unicode_table(self.registry, self.ordering, vertical=self.vertical).get(
+            cid
         )
-        if not candidates:
-            return None
-        ranked = {
-            text: (weight, unicode_candidate_preference(text), -ord(text))
-            for text, weight in candidates.items()
-        }
-        return max(ranked, key=ranked.__getitem__)
 
 
 # The votes of every packaged collection, precomputed by
-# scripts/build_cid_unicode_tables.py from the sources above: casting one live
+# scripts/build_cid_unicode_tables.py: casting one live
 # parses and expands every weighted CMap of the collection, some 300 ms for
 # Adobe-Japan1. A table holds the horizontal votes, then the vertical ones that
 # differ, as (CID, code point) pairs; code point 0 is a CID with no vertical vote.
@@ -231,24 +151,6 @@ CID_UNICODE_TABLE_ENTRY = struct.Struct("<II")
 
 def cid_unicode_table_name(registry: str, ordering: str) -> str:
     return f"{registry}-{ordering}.bin.gz"
-
-
-def encode_cid_unicode_table(horizontal: dict[int, str], vertical: dict[int, str]) -> bytes:
-    changes = {
-        cid: vertical.get(cid, "")
-        for cid in sorted(horizontal.keys() | vertical.keys())
-        if vertical.get(cid) != horizontal.get(cid)
-    }
-    payload = bytearray(
-        CID_UNICODE_TABLE_HEADER.pack(CID_UNICODE_TABLE_MAGIC, len(horizontal), len(changes))
-    )
-    for cid, text in sorted(horizontal.items()):
-        payload += CID_UNICODE_TABLE_ENTRY.pack(cid, ord(text))
-    for cid, text in changes.items():
-        payload += CID_UNICODE_TABLE_ENTRY.pack(cid, ord(text) if text else 0)
-    # The level is explicit because the packaged tables are compared byte for
-    # byte, and Python 3.15 lowered gzip.compress's default from 9 to 6.
-    return gzip.compress(bytes(payload), compresslevel=9, mtime=0)
 
 
 def decode_cid_unicode_table(data: bytes, *, vertical: bool) -> dict[int, str]:
@@ -267,29 +169,16 @@ def decode_cid_unicode_table(data: bytes, *, vertical: bool) -> dict[int, str]:
     return table
 
 
-@cache
-def packaged_cid_unicode_table(
-    registry: str, ordering: str, *, vertical: bool
-) -> dict[int, str] | None:
-    resource = files(__package__).joinpath(
+def cid_unicode_table_resource(registry: str, ordering: str) -> Traversable:
+    return files(__package__).joinpath(
         "data", CID_UNICODE_TABLE_DIRECTORY, cid_unicode_table_name(registry, ordering)
     )
-    if not resource.is_file():
-        return None
-    return decode_cid_unicode_table(resource.read_bytes(), vertical=vertical)
 
 
-def tally_cid_votes(
-    sources: Iterable[CMapUnicodeSource], cid: int, *, unweighted: bool = False
-) -> Counter[str]:
-    candidates: Counter[str] = Counter()
-    for cmap_name, codec, weight in sources:
-        if (weight <= 0) != unweighted:
-            continue
-        text = preferred_unicode_for_cid(cmap_name, codec, cid)
-        if text is not None:
-            candidates[text] += 1 if unweighted else weight
-    return candidates
+@cache
+def packaged_cid_unicode_table(registry: str, ordering: str, *, vertical: bool) -> dict[int, str]:
+    data = cid_unicode_table_resource(registry, ordering).read_bytes()
+    return decode_cid_unicode_table(data, vertical=vertical)
 
 
 @cache
@@ -299,7 +188,7 @@ def resolve_cid_unicode_map(
     *,
     vertical: bool = False,
 ) -> CIDUnicodeMap | None:
-    if (registry, ordering) not in CID_COLLECTION_UNICODE_SOURCES:
+    if not cid_unicode_table_resource(registry, ordering).is_file():
         return None
     return CIDUnicodeMap(registry, ordering, vertical)
 

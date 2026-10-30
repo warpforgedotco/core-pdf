@@ -1,8 +1,12 @@
 import pytest
 
 from core_pdf.impl import fonts_unicode
-from core_pdf.impl.fonts_cmap import CID_COLLECTION_UNICODE_SOURCES
-from scripts.build_cid_unicode_tables import OUTPUT, build_table
+from scripts.build_cid_unicode_tables import (
+    CID_COLLECTION_UNICODE_SOURCES,
+    OUTPUT,
+    build_table,
+    encode_cid_unicode_table,
+)
 
 
 @pytest.mark.parametrize(("registry", "ordering"), sorted(CID_COLLECTION_UNICODE_SOURCES))
@@ -16,16 +20,16 @@ def test_packaged_table_matches_the_live_votes(registry, ordering):
 def test_table_round_trips_vertical_changes_and_removals():
     horizontal = {1: "A", 2: "B", 3: "C"}
     vertical = {1: "A", 2: "︱", 4: "D"}
-    data = fonts_unicode.encode_cid_unicode_table(horizontal, vertical)
+    data = encode_cid_unicode_table(horizontal, vertical)
     assert fonts_unicode.decode_cid_unicode_table(data, vertical=False) == horizontal
     assert fonts_unicode.decode_cid_unicode_table(data, vertical=True) == vertical
 
 
-def test_packaged_collections_are_answered_without_voting(monkeypatch):
-    def refuse(self, cid):
-        raise AssertionError("voted live")
-
-    monkeypatch.setattr(fonts_unicode.CIDUnicodeMap, "vote_from_sources", refuse)
+def test_packaged_collections_are_answered_from_their_tables():
     mapping = fonts_unicode.CIDUnicodeMap("Adobe", "Japan1", False)
     assert mapping.get(34) == "A"
     assert mapping.get(10**6, "missing") == "missing"
+
+
+def test_a_collection_without_a_table_has_no_map():
+    assert fonts_unicode.resolve_cid_unicode_map("Test", "Votes") is None

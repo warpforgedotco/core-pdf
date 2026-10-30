@@ -2,6 +2,7 @@ import pytest
 
 from core_pdf.impl import fonts_unicode
 from core_pdf.impl.fonts_cmap import CMapDecoder, unicode_scalar_from_cmap_code
+from scripts import build_cid_unicode_tables as tables
 
 
 @pytest.mark.parametrize("codespace", [b"", b"1 begincodespacerange <41> <43> endcodespacerange"])
@@ -14,7 +15,7 @@ def test_compact_inversion_respects_later_ranges_explicit_overrides_and_codespac
     2 begincidchar <43> 30 <45> 40 endcidchar
     """
     )
-    result = fonts_unicode.compact_cmap_from_decoder(decoder)
+    result = tables.compact_cmap_from_decoder(decoder)
     expected = {11: (b"A",), 20: (b"B",), 30: (b"C",)}
     if not codespace:
         expected.update({10: (b"@",), 14: (b"D",), 40: (b"E",)})
@@ -54,31 +55,24 @@ def test_unicode_votes_obey_orientation_weight_fallback_and_ties(
         vertical: sources(primary, "p") + sources(fallback, "f"),
         not vertical: sources(opposite, "o"),
     }
-    monkeypatch.setitem(fonts_unicode.CID_COLLECTION_UNICODE_SOURCES, ("Test", "Votes"), collection)
-    monkeypatch.setattr(fonts_unicode, "compact_cmap", maps.get)
-    mapping = fonts_unicode.CIDUnicodeMap("Test", "Votes", vertical)
-    assert mapping.get(7) == expected
-    assert mapping.get(7, "missing") == (expected or "missing")
-    maps.clear()
-    assert mapping.get(7, "another") == (expected or "another")
+    monkeypatch.setitem(tables.CID_COLLECTION_UNICODE_SOURCES, ("Test", "Votes"), collection)
+    monkeypatch.setattr(tables, "compact_cmap", maps.get)
+    assert tables.vote_from_sources("Test", "Votes", vertical, 7) == expected
 
 
 def test_collection_override_precedes_source_votes(monkeypatch):
-    monkeypatch.setitem(
-        fonts_unicode.CID_COLLECTION_UNICODE_OVERRIDES, ("Test", "Override"), {7: "X"}
-    )
-    mapping = fonts_unicode.CIDUnicodeMap("Test", "Override", False)
-    assert mapping.get(7) == "X"
-    assert mapping.get(8, "missing") == "missing"
+    monkeypatch.setitem(tables.CID_COLLECTION_UNICODE_OVERRIDES, ("Test", "Override"), {7: "X"})
+    assert tables.vote_from_sources("Test", "Override", False, 7) == "X"
+    assert tables.vote_from_sources("Test", "Override", False, 8) is None
 
 
 @pytest.mark.parametrize("codes", [(b"B", b"A"), (b"A", b"B"), (b"\xff", b"A"), (b"AB", b"A")])
 def test_unicode_candidate_selection_is_order_independent_and_rejects_non_scalars(
     monkeypatch, codes
 ):
-    monkeypatch.setattr(fonts_unicode, "compact_cmap", lambda name: {7: codes})
-    assert fonts_unicode.preferred_unicode_for_cid("test", "utf-8", 7) == "A"
-    assert fonts_unicode.preferred_unicode_for_cid("test", "utf-8", 8) is None
+    monkeypatch.setattr(tables, "compact_cmap", lambda name: {7: codes})
+    assert tables.preferred_unicode_for_cid("test", "utf-8", 7) == "A"
+    assert tables.preferred_unicode_for_cid("test", "utf-8", 8) is None
 
 
 @pytest.mark.parametrize(
@@ -106,8 +100,8 @@ def test_legacy_cmap_codes_decode_to_exactly_one_unicode_scalar(code, codec, exp
 
 def test_unknown_collections_and_resources_have_no_unicode_mapping():
     assert fonts_unicode.resolve_cid_unicode_map("Unknown", "Unknown") is None
-    assert fonts_unicode.compact_cmap("No-Such-CMap") is None
-    assert fonts_unicode.preferred_unicode_for_cid("No-Such-CMap", "utf-8", 7) is None
+    assert tables.compact_cmap("No-Such-CMap") is None
+    assert tables.preferred_unicode_for_cid("No-Such-CMap", "utf-8", 7) is None
 
 
 @pytest.mark.parametrize("vertical", [False, True])
