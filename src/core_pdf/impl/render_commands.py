@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import numpy
-
 from core_pdf.impl.capture_program import CapturedProgram, PageCommand
 from core_pdf.impl.capture_records import (
     CapturedDrawing,
@@ -15,54 +13,14 @@ from core_pdf.impl.capture_records import (
     CapturedSubpath,
     CapturedTextBoundary,
 )
-from core_pdf.impl.fonts_glyph_geometry import GlyphOutlineArrays
-from core_pdf.impl.glyphs import GlyphObservation, Matrix6
+from core_pdf.impl.glyphs import GlyphObservation
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import PathPaintKind
 from core_pdf.impl.runs import TextRun
-from core_pdf.impl.types import RecordType, Rectangle, ReprFields
+from core_pdf.impl.types import RecordType, ReprFields
 from core_pdf_cythonized import translated_outline_edges
 from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
-
-
-def glyph_outline_path(
-    glyph: GlyphObservation,
-) -> tuple[CapturedPath, Rectangle | None, numpy.ndarray[Any, Any] | None] | None:
-    if not glyph.paint_glyph:
-        return None
-    transform = glyph.glyph_transform
-    decoder = glyph.font_decoder
-    if transform is None or decoder is None:
-        return None
-    code = glyph.bitmap_code
-    if code is None:
-        code = glyph.cid if glyph.cid is not None else glyph.char_code
-    if code is None:
-        return None
-    array_resolver = getattr(decoder, "glyph_outline_arrays", None)
-    if not callable(array_resolver):
-        return None
-    arrays = array_resolver(code, glyph.gid, glyph.text)
-    if arrays is None:
-        return None
-    return transformed_outline(arrays, transform)
-
-
-def transformed_outline(
-    arrays: GlyphOutlineArrays, transform: Matrix6
-) -> tuple[CapturedPath, Rectangle | None, numpy.ndarray[Any, Any] | None] | None:
-    a, b, c, d, e, f = transform
-    linear_x, linear_y = arrays.linear_columns(a, b, c, d)
-    column_x, column_y, edges, kept, dropped, bounds = translated_outline_edges(
-        linear_x, linear_y, e, f, arrays.spans
-    )
-    if edges is None:
-        return None
-    path = CapturedPath.deferred_outline(column_x, column_y, kept)
-    if dropped:
-        return path, path.bbox(), edges
-    return path, bounds, edges
 
 
 def append_glyph_paint(
@@ -81,7 +39,6 @@ def append_glyph_paint(
         return True
     if not include_paint and mode < 4:
         return True
-    # glyph_outline_path and transformed_outline, inlined for the per-glyph path.
     if not glyph.paint_glyph:
         return False
     transform = glyph.glyph_transform

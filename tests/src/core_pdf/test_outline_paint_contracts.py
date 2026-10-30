@@ -6,11 +6,9 @@ import pytest
 from core_pdf.impl.capture_records import CapturedPath, CapturedSubpath
 from core_pdf.impl.fonts_glyph_geometry import outline_arrays
 from core_pdf.impl.glyphs import GlyphObservation
-from core_pdf.impl.render_commands import (
-    append_glyph_paint,
-    glyph_outline_path,
-)
+from core_pdf.impl.render_commands import append_glyph_paint
 from core_pdf.impl.render_display import DisplayList
+from core_pdf.impl.render_model import PathPaintItem
 
 
 class ArrayOutline:
@@ -63,6 +61,15 @@ def make_glyph(decoder):
     )
 
 
+def painted_outline(glyph):
+    display = DisplayList(10, 10)
+    if not append_glyph_paint(display, glyph, []):
+        return None
+    item = display.items[0]
+    assert isinstance(item, PathPaintItem)
+    return item.path, item.bbox, item.edge_array
+
+
 @pytest.mark.parametrize(
     "contours",
     [
@@ -81,7 +88,7 @@ def make_glyph(decoder):
 )
 def test_array_outlines_match_transformed_contour_paths(contours, matrix):
     scalar = reference_outline(contours, matrix)
-    array = glyph_outline_path(replace(make_glyph(ArrayOutline(contours)), glyph_transform=matrix))
+    array = painted_outline(replace(make_glyph(ArrayOutline(contours)), glyph_transform=matrix))
     if scalar is None:
         assert array is None
         return
@@ -131,7 +138,7 @@ def test_text_modes_separate_paint_from_accumulated_clipping(mode, include_paint
 def test_outline_code_precedence_retains_gid_and_text(fields, expected):
     decoder = ArrayOutline((((0, 0), (3, 0), (1, 3)),))
     glyph = replace(make_glyph(decoder), gid=12, **fields)
-    assert glyph_outline_path(glyph) is not None
+    assert painted_outline(glyph) is not None
     assert decoder.calls == [(expected, 12, "A")]
 
 
@@ -148,7 +155,7 @@ def test_outline_code_precedence_retains_gid_and_text(fields, expected):
 def test_missing_outline_inputs_return_no_outline(fields):
     decoder = ArrayOutline((((0, 0), (3, 0), (1, 3)),))
     glyph = replace(make_glyph(decoder), **fields)
-    assert glyph_outline_path(glyph) is None
+    assert painted_outline(glyph) is None
     assert decoder.calls == []
 
 
@@ -162,5 +169,5 @@ def test_missing_outline_requests_bitmap_fallback_without_partial_paint():
 
 def test_decoders_without_outline_arrays_paint_no_outline():
     decoder = ContourOutline((((0, 0), (3, 0), (1, 3)),))
-    assert glyph_outline_path(make_glyph(decoder)) is None
+    assert painted_outline(make_glyph(decoder)) is None
     assert decoder.calls == []
