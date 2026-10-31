@@ -20,6 +20,7 @@ from ._layout import (
     LTTextLine,
     LTTextLineHorizontal,
     LTTextLineVertical,
+    _group_lines,
 )
 
 Point = tuple[float, float]
@@ -94,7 +95,15 @@ class LTContainer(LTComponent):
             obj.analyze(laparams)
 
 
+class LTLayoutContainer(LTContainer):
+    def group_textlines(
+        self, laparams: LAParams, lines: Iterable[LTTextLine]
+    ) -> Iterator[LTTextBox]:
+        return iter(_group_lines(list(lines), laparams.line_margin, self.bbox))
+
+
 __all__ = (
+    "LTLayoutContainer",
     "LAParams",
     "LTAnno",
     "LTChar",
