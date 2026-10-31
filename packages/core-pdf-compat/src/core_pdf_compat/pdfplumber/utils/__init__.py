@@ -5,8 +5,6 @@ from .. import (
     ObjectDict,
     _edges,
     bbox_overlap,
-    cluster_list,
-    cluster_objects,
     crop_to_bbox,
     decode_psl_list,
     filter_edges,
@@ -23,14 +21,26 @@ from .. import (
     within_bbox,
 )
 from . import exceptions, text
-from .text import extract_text, extract_text_simple, extract_words
+from .clustering import cluster_list, cluster_objects, make_cluster_dict
+from .text import (
+    DEFAULT_X_DENSITY,
+    DEFAULT_X_TOLERANCE,
+    DEFAULT_Y_DENSITY,
+    DEFAULT_Y_TOLERANCE,
+    chars_to_textmap,
+    collate_line,
+    dedupe_chars,
+    extract_text,
+    extract_text_simple,
+    extract_words,
+)
 
 get_bbox_overlap = bbox_overlap
 obj_to_edges = _edges
 
 
 def objects_to_bbox(objects: Iterable[ObjectDict]) -> BBox:
-    return merge_bboxes(obj_to_bbox(obj) for obj in objects)
+    return merge_bboxes([obj_to_bbox(obj) for obj in objects])
 
 
 def bbox_to_rect(bbox: BBox) -> dict[str, float]:
@@ -42,6 +52,14 @@ def objects_to_rect(objects: Iterable[ObjectDict]) -> dict[str, float]:
 
 
 __all__ = (
+    "DEFAULT_X_DENSITY",
+    "DEFAULT_X_TOLERANCE",
+    "DEFAULT_Y_DENSITY",
+    "DEFAULT_Y_TOLERANCE",
+    "chars_to_textmap",
+    "collate_line",
+    "dedupe_chars",
+    "make_cluster_dict",
     "bbox_to_rect",
     "cluster_list",
     "cluster_objects",
