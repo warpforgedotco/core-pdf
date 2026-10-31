@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NamedTuple
 
 import core_pdf_spec.s_07_syntax.lexer
 from core_pdf import PdfPage
@@ -13,6 +13,7 @@ from core_pdf.impl.exceptions import PdfError, PdfParseError
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.types import PdfString, Rectangle
+from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_07_content.operations import ContentOperands
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -64,6 +65,18 @@ class PdfminerRecovery(CaptureRecovery):
         return super().resume(lexer, error, kind, start, is_operator)
 
 
+class PaintedPath(NamedTuple):
+    ops: bytes
+    coords: tuple[float, ...]
+    ctm: Any
+    kind: str
+    fill_rule: str
+    line_width: float
+    stroke_color: Any
+    fill_color: Any
+    dash: Any
+
+
 class PdfminerTextState(TextState):
     def __init__(self, document: Any, *, page_clip: Rectangle | None = None) -> None:
         super().__init__(
@@ -73,6 +86,26 @@ class PdfminerTextState(TextState):
         self.frame_cursors: dict[int, float] = {}
         # A glyph's pdfminer advance depends only on its decoder and these fields.
         self.glyph_widths: dict[tuple[Any, ...], float] = {}
+        # Flattening loses the operators pdfminer classifies paths by.
+        self.painted_paths: list[PaintedPath] = []
+
+    def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
+        if source.ops:
+            graphics = self.graphics
+            self.painted_paths.append(
+                PaintedPath(
+                    bytes(source.ops),
+                    tuple(source.coords),
+                    graphics.ctm,
+                    kind,
+                    fill_rule,
+                    graphics.line_width,
+                    self.capture_color(stroke=True),
+                    self.capture_color(stroke=False),
+                    self.transformed_dash_pattern(),
+                )
+            )
+        super().paint_path(state, source, kind, fill_rule)
 
     def enter_stream(self, state: object, frame: ContentStreamFrame) -> None:
         self.frame_cursors[id(frame)] = self.cursor
@@ -172,13 +205,13 @@ class PdfminerTextState(TextState):
         self.text_boundary(self, "shown")
 
 
-def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
+def pdfminer_page_capture(page: PdfPage) -> tuple[CapturedProgram, tuple[PaintedPath, ...]]:
     state = PdfminerTextState(page.document, page_clip=page.effective_page_clip())
     state.lexer_factory = PdfminerContentLexer
     state.content_recovery = PdfminerRecovery()
     page.consume_contents(state)
     state.run_accumulator.flush()
-    return CapturedProgram(
+    program = CapturedProgram(
         runs=tuple(state.runs),
         glyphs=tuple(state.glyphs),
         drawings=tuple(state.drawings),
@@ -187,6 +220,11 @@ def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
         text_boundaries=tuple(state.text_boundaries),
         options=state.options,
     )
+    return program, tuple(state.painted_paths)
+
+
+def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
+    return pdfminer_page_capture(page)[0]
 
 
 def pdfminer_validate_page_resources(page: PdfPage) -> None:
