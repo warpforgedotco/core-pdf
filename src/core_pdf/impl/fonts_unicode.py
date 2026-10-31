@@ -176,6 +176,14 @@ def cid_unicode_table_resource(registry: str, ordering: str) -> Traversable:
 
 
 @cache
+def packaged_cid_unicode_table_names() -> frozenset[str]:
+    directory = files(__package__).joinpath("data", CID_UNICODE_TABLE_DIRECTORY)
+    if not directory.is_dir():
+        return frozenset()
+    return frozenset(entry.name for entry in directory.iterdir())
+
+
+@cache
 def packaged_cid_unicode_table(registry: str, ordering: str, *, vertical: bool) -> dict[int, str]:
     data = cid_unicode_table_resource(registry, ordering).read_bytes()
     return decode_cid_unicode_table(data, vertical=vertical)
@@ -188,7 +196,9 @@ def resolve_cid_unicode_map(
     *,
     vertical: bool = False,
 ) -> CIDUnicodeMap | None:
-    if not cid_unicode_table_resource(registry, ordering).is_file():
+    # Both names come from the PDF, so they are matched against the packaged
+    # tables and never reach a path unchecked.
+    if cid_unicode_table_name(registry, ordering) not in packaged_cid_unicode_table_names():
         return None
     return CIDUnicodeMap(registry, ordering, vertical)
 

@@ -22,7 +22,8 @@ Those tests now drive `append_glyph_paint` and `paint_item` on a real target.
 
 Moved the CID Unicode voter into `scripts/build_cid_unicode_tables.py` with its sources,
 overrides, and preference ranking. Every collection has a packaged table, so runtime
-never voted. `resolve_cid_unicode_map` now gates on the table instead of the source list.
+never voted. `resolve_cid_unicode_map` now gates on the packaged table names instead of
+the source list; the names come from the PDF, so they must not be used to probe a path.
 
 The veraPDF integration tests did not run and the corpus driver was stopped about halfway,
 so a function missing from the production tier is not proof of anything by itself. Rare

@@ -33,3 +33,18 @@ def test_packaged_collections_are_answered_from_their_tables():
 
 def test_a_collection_without_a_table_has_no_map():
     assert fonts_unicode.resolve_cid_unicode_map("Test", "Votes") is None
+
+
+@pytest.mark.parametrize(
+    ("registry", "ordering"),
+    [("../cid_unicode/Adobe", "Japan1"), (str(OUTPUT / "Adobe"), "Japan1")],
+)
+def test_a_pdf_named_collection_cannot_steer_the_table_lookup(registry, ordering):
+    assert fonts_unicode.resolve_cid_unicode_map(registry, ordering) is None
+
+
+def test_every_collection_has_a_listed_table():
+    assert fonts_unicode.packaged_cid_unicode_table_names() == {
+        fonts_unicode.cid_unicode_table_name(registry, ordering)
+        for registry, ordering in CID_COLLECTION_UNICODE_SOURCES
+    }
