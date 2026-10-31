@@ -312,6 +312,22 @@ def load_data(
         ]
 
 
+class PDFReader:
+    def __init__(self, return_full_document: bool | None = False) -> None:
+        self.return_full_document = return_full_document
+
+    def load_data(
+        self, file: object, extra_info: Mapping[str, Any] | None = None, fs: object = None
+    ) -> list[Document]:
+        del fs
+        documents = load_data(file, extra_info=extra_info)
+        if not self.return_full_document:
+            return documents
+        metadata = dict(extra_info) if extra_info is not None else {}
+        metadata["file_name"] = Path(file).name  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        return [Document("\n".join(document.text for document in documents), metadata)]
+
+
 def get_nodes_from_documents(source: object, *, max_characters: int = 2000) -> list[Node]:
     if isinstance(source, (list, tuple)) and all(isinstance(item, Document) for item in source):
         documents = list(source)
@@ -329,6 +345,7 @@ def get_nodes_from_documents(source: object, *, max_characters: int = 2000) -> l
 
 
 __all__ = (
+    "PDFReader",
     "Document",
     "MetadataMode",
     "Node",
