@@ -197,8 +197,8 @@ Together the two render kernels take full `render().rasterize()` down by
 
 `core-pdf` depends on this distribution, so it cannot be installed from source
 without a compiler. `[tool.cibuildwheel]` in `pyproject.toml` configures wheel
-builds for CPython 3.14 and 3.15. Nothing in this repository builds or publishes
-them automatically.
+builds for CPython 3.14 and 3.15, and `.github/workflows/wheels.yml` builds them on
+`v*` tags and pull requests.
 
 Float behaviour is exactly what a different compiler on a different platform
 changes, so `setup.py` picks the contraction flag per compiler -- passing the

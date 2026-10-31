@@ -8,7 +8,7 @@ uv run --all-packages --group lint ruff check .     # lint Python files
 uv run --all-packages --group lint ruff format --check .
 uv run --all-packages --group lint mypy             # static type checking
 uv run --all-packages --group lint lint-imports     # architecture: layer and dependency contracts
-uv run --all-packages --group lint ty check
+uv run --all-packages --group lint --group test ty check
 prek run --all-files                 # run repository hooks across all files
 ```
 
@@ -18,9 +18,9 @@ Never edit `pyproject.toml` or `uv.lock` manually when adding or removing depend
 
 ## Commit & Pull Request Guidelines
 
-Use short Conventional Commit-style subjects such as `feat(ocr): ...` and `fix: ...`. Keep commits focused and explain the user-visible or correctness impact. Pull requests should describe the change, motivation, validation commands, compatibility impacts, and link related issues. Include representative output or screenshots when changing CLI behavior or documentation.
+Use short Conventional Commit-style subjects such as `feat(ocr): ...`, `fix: ...`, and `ci: ...`. Keep commits focused and explain the user-visible or correctness impact. Pull requests should describe the change, motivation, validation commands, compatibility impacts, and link related issues. Include representative output or screenshots when changing CLI behavior or documentation.
 
-## Local Validation
+## Local and CI Validation
 
 To run a reference library's own test suite against its `core_pdf_compat` facade, initialize the submodules under `tests/upstream` with `git submodule update --init --recursive --depth 1`, then run `uv run --group test python scripts/run_upstream_suite.py <suite>`. Add `--reference` to run the same tests on the real library, which separates environment failures from facade gaps. Reports go to `.upstream-results/`.
 

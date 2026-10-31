@@ -456,7 +456,6 @@ source = { editable = "packages/core-pdf-compat" }
 dependencies = [
     { name = "core-adobe-fonts" },
     { name = "core-pdf" },
-    { name = "core-pdf-crypto" },
     { name = "core-pdf-spec" },
     { name = "numpy" },
 ]
@@ -474,7 +473,6 @@ unstructured = [
 requires-dist = [
     { name = "core-adobe-fonts", editable = "packages/core-adobe-fonts" },
     { name = "core-pdf", editable = "." },
-    { name = "core-pdf-crypto", editable = "packages/core-pdf-crypto" },
     { name = "core-pdf-spec", editable = "packages/core-pdf-spec" },
     { name = "en-core-web-sm", marker = "extra == 'unstructured'", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "numpy", specifier = ">=2.5.1" },

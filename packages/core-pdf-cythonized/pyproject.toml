@@ -45,4 +45,5 @@ core_pdf_cythonized = ["py.typed", "*.pyi"]
 build = ["cp314-*", "cp315-*"]
 build-frontend = "build"
 
-# Choose architectures with CIBW_ARCHS.
+# Architectures come from CIBW_ARCHS in .github/workflows/wheels.yml, one
+# native architecture per runner.
