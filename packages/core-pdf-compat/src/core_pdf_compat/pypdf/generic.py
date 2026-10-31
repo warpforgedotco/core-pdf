@@ -280,6 +280,10 @@ class IndirectObject(PdfObject):
     def get_object(self) -> Any:
         return self.pdf.get_object(self)
 
+    def __deepcopy__(self, memo: Any) -> IndirectObject:
+        # A copied reference points at the same document, which is not copied.
+        return IndirectObject(self.idnum, self.generation, self.pdf)
+
     @property
     def indirect_reference(self) -> IndirectObject:  # type: ignore[override]  # ty: ignore[invalid-property-type-override]
         return self

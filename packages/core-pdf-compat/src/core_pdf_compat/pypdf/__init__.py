@@ -704,11 +704,6 @@ class ObjectDeletionFlag(IntFlag):
     IMAGES = XOBJECT_IMAGES | INLINE_IMAGES | DRAWING_IMAGES
 
 
-class Transformation:
-    def __init__(self, *_: object, **__: object) -> None:
-        raise NotImplementedError("core-pdf has no PDF writer")
-
-
 def mult(m: list[float], n: list[float]) -> list[float]:
     return [
         m[0] * n[0] + m[1] * n[2],
@@ -734,4 +729,5 @@ __all__ = (
     "Rectangle",
 )
 
+from ._page_merge import Transformation  # noqa: E402
 from ._writer import PdfWriter  # noqa: E402
