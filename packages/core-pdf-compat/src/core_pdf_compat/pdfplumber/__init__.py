@@ -1926,6 +1926,18 @@ def _encode_png(width: int, height: int, channels: int, pixels: bytes | bytearra
 
 
 class PDF(ClosingMixin):
+    @property
+    def edges(self) -> list[ObjectDict]:
+        return [edge for page in self.pages for edge in page.edges]
+
+    @property
+    def horizontal_edges(self) -> list[ObjectDict]:
+        return [edge for page in self.pages for edge in page.horizontal_edges]
+
+    @property
+    def vertical_edges(self) -> list[ObjectDict]:
+        return [edge for page in self.pages for edge in page.vertical_edges]
+
     def __init__(
         self,
         document: PdfDocument | PdfInput,
@@ -2304,50 +2316,6 @@ def plain_text(chars: Iterable[ObjectDict], **kwargs: Any) -> str:
     return "\n".join(" ".join(word["text"] for word in line) for line in lines)
 
 
-class _TextUtils:
-    extract_words = staticmethod(extract_words)
-    extract_text = staticmethod(plain_text)
-    extract_text_simple = extract_text
-
-
-class _Utils:
-    extract_words = staticmethod(extract_words)
-    extract_text = staticmethod(
-        lambda chars, **kwargs: (
-            _layout_text(
-                chars,
-                kwargs.get("layout_bbox", (0, 0, kwargs.get("layout_width", 1), 1)),
-                width_chars=int(kwargs.get("layout_width_chars", 80)),
-                height_chars=kwargs.get("layout_height_chars"),
-            )
-            if kwargs.get("layout")
-            else plain_text(chars, **kwargs)
-        )
-    )
-    extract_text_simple = extract_text
-    obj_to_bbox = staticmethod(obj_to_bbox)
-    within_bbox = staticmethod(within_bbox)
-    outside_bbox = staticmethod(outside_bbox)
-    crop_to_bbox = staticmethod(crop_to_bbox)
-    intersects_bbox = staticmethod(intersects_bbox)
-    cluster_list = staticmethod(cluster_list)
-    cluster_objects = staticmethod(cluster_objects)
-    merge_bboxes = staticmethod(merge_bboxes)
-    move_object = staticmethod(move_object)
-    resize_object = staticmethod(resize_object)
-    filter_edges = staticmethod(filter_edges)
-    snap_objects = staticmethod(snap_objects)
-    decode_psl_list = staticmethod(decode_psl_list)
-    resolve = staticmethod(resolve)
-    resolve_all = staticmethod(resolve_all)
-    to_list = staticmethod(to_list)
-    text = _TextUtils()
-    exceptions = type("Exceptions", (), {"PdfminerException": PdfminerException})()
-
-
-utils = _Utils()
-
-
 def _edges_for(objs: Iterable[ObjectDict]) -> list[ObjectDict]:
     return [edge for obj in objs for edge in _edges(obj)]
 
@@ -2585,3 +2553,9 @@ __all__ = (
     "utils",
     "PdfminerException",
 )
+
+# Upstream exposes these as attributes after a bare `import pdfplumber`.
+import core_pdf_compat.pdfplumber.page  # noqa: E402, F401
+import core_pdf_compat.pdfplumber.table  # noqa: E402, F401
+
+from . import utils  # noqa: E402
