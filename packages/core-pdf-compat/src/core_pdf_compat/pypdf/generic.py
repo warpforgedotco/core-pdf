@@ -194,6 +194,8 @@ class DictionaryObject(dict[Any, Any], PdfObject):
             if "/Parent" not in node:
                 return default
             node = node["/Parent"]
+            if not isinstance(node, DictionaryObject):
+                return default
 
 
 # The stream classes' behaviour is ported from pypdf, Copyright (c) 2006-2008, Mathieu

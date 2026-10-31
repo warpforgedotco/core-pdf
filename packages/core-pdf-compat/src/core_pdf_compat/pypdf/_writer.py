@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import ABC
 from collections.abc import Iterable, Iterator
 from io import BytesIO
 from pathlib import Path
@@ -12,7 +13,15 @@ from core_pdf.impl.types import PdfReference
 
 from ._doc_common import PdfDocCommon
 from ._generic_trees import EmbeddedFile
-from ._page_merge import Transformation, add_cm, as_matrix, merge_page, transform_page
+from ._page_merge import (
+    Transformation,
+    add_cm,
+    as_matrix,
+    merge_page,
+    merge_resources,
+    scale_page,
+    transform_page,
+)
 from .actions import Action
 from .errors import PageSizeNotDefinedError
 from .generic import (
@@ -32,8 +41,44 @@ from .generic import (
 )
 
 
-class WriterPage(DictionaryObject):
-    """A page held by a writer. pypdf's PageObject is a dictionary too."""
+class PageObject(DictionaryObject, ABC):
+    """A page as a dictionary, like pypdf's. It may be held by a writer or stand alone."""
+
+    def __init__(self, pdf: Any = None, indirect_reference: Any = None) -> None:
+        super().__init__()
+        self._pdf = pdf
+        self.indirect_reference = indirect_reference
+
+    @staticmethod
+    def create_blank_page(
+        pdf: Any = None, width: float | None = None, height: float | None = None
+    ) -> PageObject:
+        if width is None or height is None:
+            if pdf is None or not len(pdf.pages):
+                raise PageSizeNotDefinedError
+            box = pdf.pages[len(pdf.pages) - 1].mediabox
+            width, height = box.width, box.height
+        page = PageObject(pdf)
+        page[NameObject("/Type")] = NameObject("/Page")
+        page[NameObject("/Parent")] = NullObject()
+        page[NameObject("/Resources")] = DictionaryObject()
+        page[NameObject("/MediaBox")] = RectangleObject((0, 0, width, height))
+        return page
+
+    def _merge_resources(
+        self, res1: Any, res2: Any, resource: str, new_res1: bool = True
+    ) -> tuple[DictionaryObject, dict[str, NameObject]]:
+        return merge_resources(self, res1, res2, resource, new_res1)
+
+    def scale(self, sx: float, sy: float) -> None:
+        scale_page(self, sx, sy)
+
+    def scale_by(self, factor: float) -> None:
+        self.scale(factor, factor)
+
+    def scale_to(self, width: float, height: float) -> None:
+        box = self.mediabox
+        self.scale(width / float(box.width), height / float(box.height))
 
     @property
     def mediabox(self) -> RectangleObject:
@@ -64,12 +109,20 @@ class WriterPage(DictionaryObject):
     def rotation(self) -> int:
         return int(self.get_resolved("/Rotate", 0))
 
+    @rotation.setter
+    def rotation(self, angle: int) -> None:
+        # pypdf rounds to the nearest multiple of 90.
+        self[NameObject("/Rotate")] = NumberObject(((int(angle) + 45) // 90 * 90) % 360)
+
     @property
-    def pdf(self) -> PdfWriter:
+    def pdf(self) -> Any:
         reference = self.indirect_reference
-        if reference is None:
-            raise ValueError("The page is not attached to a writer")
-        return reference.pdf
+        return self._pdf if reference is None else reference.pdf
+
+    @property
+    def writer(self) -> PdfWriter | None:
+        pdf = self.pdf
+        return pdf if isinstance(pdf, PdfWriter) else None
 
     @property
     def annotations(self) -> Any:
@@ -84,8 +137,15 @@ class WriterPage(DictionaryObject):
         # Text extraction reads a file, so the page goes through the serialized document.
         from . import PdfReader
 
-        reader = PdfReader(BytesIO(self.pdf._serialized()))
-        return reader.pages[self.page_number].extract_text(*args, **kwargs)
+        writer = self.writer
+        if writer is None:
+            writer = PdfWriter()
+            writer.add_page(self)
+            number = 0
+        else:
+            number = self.page_number
+        reader = PdfReader(BytesIO(writer._serialized()))
+        return reader.pages[number].extract_text(*args, **kwargs)
 
     def get_contents(self) -> ContentStream | None:
         contents = self.get_resolved("/Contents")
@@ -98,7 +158,14 @@ class WriterPage(DictionaryObject):
     def replace_contents(self, content: Any) -> None:
         # Old streams become null objects, so replaced content does not stay in the output.
         # A stream another page still uses is left alone.
-        writer = self.pdf
+        writer = self.writer
+        if writer is None:
+            # Nothing to number it with yet. Adding the page to a writer numbers the streams.
+            if is_null_or_none(content):
+                self.pop(NameObject("/Contents"), None)
+            else:
+                self[NameObject("/Contents")] = content
+            return
         current = self.get_resolved("/Contents")
         slot = self.get("/Contents")
         if isinstance(current, ArrayObject):
@@ -156,21 +223,21 @@ class WriterPage(DictionaryObject):
     def delete_action(self, trigger: Any) -> None:
         Action._delete(self, trigger)
 
-    def rotate(self, angle: int) -> WriterPage:
+    def rotate(self, angle: int) -> PageObject:
         if angle % 90:
             raise ValueError("Rotation angle must be a multiple of 90")
         self[NameObject("/Rotate")] = NumberObject((self.rotation + angle) % 360)
         return self
 
 
-class WriterPages:
+class PageObjects:
     def __init__(self, writer: PdfWriter) -> None:
         self.writer = writer
 
     def __len__(self) -> int:
         return len(self.writer._page_list())
 
-    def __iter__(self) -> Iterator[WriterPage]:
+    def __iter__(self) -> Iterator[PageObject]:
         return iter(self.writer._page_list())
 
     def __getitem__(self, index: Any) -> Any:
@@ -248,7 +315,7 @@ class PdfWriter(PdfDocCommon):
         value.indirect_reference = reference
         return reference
 
-    def _contents_of_other_pages(self, page: WriterPage) -> set[int]:
+    def _contents_of_other_pages(self, page: PageObject) -> set[int]:
         """Stream numbers other pages use. Pages can share a content stream."""
         numbers: set[int] = set()
         for other in self._page_list():
@@ -292,14 +359,14 @@ class PdfWriter(PdfDocCommon):
             self._info[NameObject(key)] = text
 
     @property
-    def pages(self) -> WriterPages:  # ty: ignore[invalid-property-type-override]
-        return WriterPages(self)
+    def pages(self) -> PageObjects:  # ty: ignore[invalid-property-type-override]
+        return PageObjects(self)
 
-    def _page_list(self) -> list[WriterPage]:
+    def _page_list(self) -> list[PageObject]:
         kids = self._pages_object.get_resolved("/Kids")
         return [list.__getitem__(kids, index).get_object() for index in range(len(kids))]
 
-    def _insert(self, page: WriterPage, index: int) -> WriterPage:
+    def _insert(self, page: PageObject, index: int) -> PageObject:
         reference = self._add_object(page)
         page[NameObject("/Parent")] = self._pages_object.indirect_reference
         kids = self._pages_object.get_resolved("/Kids")
@@ -307,26 +374,33 @@ class PdfWriter(PdfDocCommon):
         self._pages_object[NameObject("/Count")] = NumberObject(len(kids))
         return page
 
-    def add_page(self, page: Any, excluded_keys: Iterable[str] = ()) -> WriterPage:
+    def add_page(self, page: Any, excluded_keys: Iterable[str] = ()) -> PageObject:
         return self.insert_page(page, len(self.pages), excluded_keys)
 
     def insert_page(
         self, page: Any, index: int = 0, excluded_keys: Iterable[str] = ()
-    ) -> WriterPage:
+    ) -> PageObject:
         return self._insert(self._import_page(page, set(excluded_keys)), index)
 
-    def add_blank_page(self, width: float | None = None, height: float | None = None) -> WriterPage:
+    def add_blank_page(self, width: float | None = None, height: float | None = None) -> PageObject:
         return self.insert_blank_page(width, height, len(self.pages))
 
     def insert_blank_page(
         self, width: float | None = None, height: float | None = None, index: int = 0
-    ) -> WriterPage:
-        if width is None or height is None:
+    ) -> PageObject:
+        count = len(self.pages)
+        if not -count <= index <= count:
+            raise IndexError(f"Index should be in range [-{count}, {count}]")
+        # As in pypdf, a missing or negative size comes from the neighbouring page.
+        width_unset = width is None or width < 0
+        height_unset = height is None or height < 0
+        if width_unset or height_unset:
             if not len(self.pages):
                 raise PageSizeNotDefinedError
-            box = self.pages[max(index - 1, 0)].mediabox
-            width, height = box.width, box.height
-        page = WriterPage()
+            box = self.pages[min(index, len(self.pages) - 1)].mediabox
+            width = box.width if width_unset else width
+            height = box.height if height_unset else height
+        page = PageObject()
         page[NameObject("/Type")] = NameObject("/Page")
         page[NameObject("/MediaBox")] = RectangleObject((0, 0, width, height))
         page[NameObject("/Resources")] = DictionaryObject()
@@ -338,14 +412,14 @@ class PdfWriter(PdfDocCommon):
         del kids[index]
         self._pages_object[NameObject("/Count")] = NumberObject(len(kids))
 
-    def _import_page(self, page: Any, excluded: set[str]) -> WriterPage:
+    def _import_page(self, page: Any, excluded: set[str]) -> PageObject:
         source = page if isinstance(page, DictionaryObject) else page._generic_dictionary()
         reference = source.indirect_reference
         owner = getattr(reference, "pdf", None)
         copies = self._copies.setdefault(id(owner), {})
         # A link imported earlier may already have reserved this page's number.
         reserved = None if reference is None else copies.get(reference.idnum)
-        output = WriterPage() if reserved is None else reserved.get_object()
+        output = PageObject() if reserved is None else reserved.get_object()
         if reference is not None:
             copies[reference.idnum] = self._add_object(output)
             self._reserved_pages.discard(reference.idnum)
@@ -365,12 +439,16 @@ class PdfWriter(PdfDocCommon):
         if isinstance(value, IndirectObject):
             if value.pdf is self:
                 return value
+            if value.pdf is not owner:
+                # A page built outside a writer can hold references from several documents.
+                owner = value.pdf
+                copies = self._copies.setdefault(id(owner), {})
             if value.idnum in copies:
                 return copies[value.idnum]
             target = value.get_object()
             if isinstance(target, DictionaryObject) and target.get_resolved("/Type") == "/Page":
                 # Hold the number. If this page is never imported, the link goes to null.
-                reference = self._add_object(WriterPage())
+                reference = self._add_object(PageObject())
                 copies[value.idnum] = reference
                 self._reserved_pages.add(value.idnum)
                 return reference
@@ -381,12 +459,13 @@ class PdfWriter(PdfDocCommon):
             return reference
         copy = self._empty_copy(value)
         self._fill_copy(copy, value, owner, copies)
-        return copy
+        # A page built outside a writer can hold a stream directly, which PDF does not allow.
+        return self._add_object(copy) if isinstance(copy, StreamObject) else copy
 
     @staticmethod
     def _empty_copy(value: Any) -> Any:
         if isinstance(value, StreamObject):
-            copy = type(value)()
+            copy = ContentStream(None, None) if isinstance(value, ContentStream) else type(value)()
             # The stored bytes stay encoded, so they keep matching the copied /Filter.
             copy._data = value._stored_data()
             return copy
@@ -486,4 +565,4 @@ class PdfWriter(PdfDocCommon):
         return self._serialized()
 
 
-__all__ = ("PdfWriter", "WriterPage")
+__all__ = ("PdfWriter", "PageObject")

@@ -673,9 +673,6 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return True
 
 
-PageObject = PdfPageObject
-
-
 class PasswordType(IntEnum):
     NOT_DECRYPTED = 0
     USER_PASSWORD = 1
@@ -730,4 +727,6 @@ __all__ = (
 )
 
 from ._page_merge import Transformation  # noqa: E402
-from ._writer import PdfWriter  # noqa: E402
+from ._writer import PageObject, PdfWriter  # noqa: E402
+
+PageObject.register(PdfPageObject)
