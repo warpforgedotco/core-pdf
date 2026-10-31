@@ -8,6 +8,8 @@ from core_pdf.impl.types import Record, frozen_setattr
 class CoordinatesMetadata(NamedTuple):
     points: tuple[tuple[float, float], ...]
     system: str = "PixelSpace"
+    width: float = 0.0
+    height: float = 0.0
 
 
 class ElementMetadata(dict[str, Any]):
