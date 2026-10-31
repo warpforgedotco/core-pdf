@@ -720,11 +720,6 @@ def mult(m: list[float], n: list[float]) -> list[float]:
     ]
 
 
-class PdfWriter:
-    def __init__(self, *_: object, **__: object) -> None:
-        raise NotImplementedError("core-pdf has no PDF writer")
-
-
 __all__ = (
     "mult",
     "ObjectDeletionFlag",
@@ -738,3 +733,5 @@ __all__ = (
     "PdfReader",
     "Rectangle",
 )
+
+from ._writer import PdfWriter  # noqa: E402

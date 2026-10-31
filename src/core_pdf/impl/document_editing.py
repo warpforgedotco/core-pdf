@@ -95,23 +95,10 @@ class EditableDocument:
         version = self.document.raw_data[:8]
         header = bytes(version) if bytes(version).startswith(b"%PDF-") else b"%PDF-1.7"
         output = bytearray(header + b"\n" + BINARY_MARKER)
-        offsets: dict[int, tuple[int, int]] = {}
         reachable = self.reachable_references()
-        for number in sorted(reachable):
-            reference = reachable[number]
-            offsets[number] = (len(output), reference.generation_number)
-            output += serialize_indirect_object(reference, self.get_object(reference))
-        size = max(offsets, default=0) + 1
-        xref_offset = len(output)
-        output += b"xref\n0 %d\n0000000000 65535 f \n" % size
-        for number in range(1, size):
-            offset, generation = offsets.get(number, (0, 65535))
-            marker = b"n" if number in offsets else b"f"
-            output += b"%010d %05d %s \n" % (offset, generation, marker)
-        trailer: dict[Any, Any] = {"Size": size}
-        trailer.update({key: self.trailer[key] for key in TRAILER_KEYS if key in self.trailer})
-        output += b"trailer\n" + serialize_object(trailer)
-        output += b"\nstartxref\n%d\n%%%%EOF\n" % xref_offset
+        objects = {reference: self.get_object(reference) for reference in reachable.values()}
+        trailer = {key: self.trailer[key] for key in TRAILER_KEYS if key in self.trailer}
+        output += serialize_body(len(output), objects, trailer)
         return write_output(bytes(output), target)
 
     def save_incremental(self, target: str | Path | None = None) -> bytes:
@@ -146,6 +133,25 @@ class EditableDocument:
             output += xref_stream_section(offsets, trailer, section_offset, self.next_object_number)
         output += b"\nstartxref\n%d\n%%%%EOF\n" % section_offset
         return write_output(bytes(output), target)
+
+
+def serialize_body(start: int, objects: dict[PdfReference, Any], trailer: dict[Any, Any]) -> bytes:
+    """Write objects, a classic xref table and a trailer, starting at file offset `start`."""
+    output = bytearray()
+    offsets: dict[int, tuple[int, int]] = {}
+    for reference in sorted(objects, key=lambda item: item.object_number):
+        offsets[reference.object_number] = (start + len(output), reference.generation_number)
+        output += serialize_indirect_object(reference, objects[reference])
+    size = max(offsets, default=0) + 1
+    xref_offset = start + len(output)
+    output += b"xref\n0 %d\n0000000000 65535 f \n" % size
+    for number in range(1, size):
+        offset, generation = offsets.get(number, (0, 65535))
+        marker = b"n" if number in offsets else b"f"
+        output += b"%010d %05d %s \n" % (offset, generation, marker)
+    output += b"trailer\n" + serialize_object({"Size": size, **trailer})
+    output += b"\nstartxref\n%d\n%%%%EOF\n" % xref_offset
+    return bytes(output)
 
 
 def write_output(data: bytes, target: str | Path | None) -> bytes:
@@ -202,7 +208,7 @@ def xref_stream_section(
     ).rstrip()
 
 
-__all__ = ("EditableDocument",)
+__all__ = ("BINARY_MARKER", "EditableDocument", "serialize_body")
 
 
-__all__ = ("EditableDocument",)
+__all__ = ("BINARY_MARKER", "EditableDocument", "serialize_body")
