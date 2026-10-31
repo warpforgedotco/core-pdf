@@ -44,6 +44,10 @@ def apply_flate(data: bytes, parms: object) -> bytes:
         raise FilterParseError("invalid FlateDecode stream") from exc
 
 
+def encode_flate(data: bytes, level: int = -1) -> bytes:
+    return zlib.compress(data, level)
+
+
 def apply_run_length(data: bytes, parms: object) -> bytes:
     out = bytearray()
     n = len(data)
