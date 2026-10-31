@@ -3,9 +3,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-MODULES = frozenset(
-    {"llamaindex", "pdfminer", "pdfplumber", "pikepdf", "pypdf", "unstructured", "xray"}
-)
+MODULES = frozenset({"llamaindex", "pdfminer", "pdfplumber", "pypdf", "unstructured", "xray"})
 EXPORTS = {
     **{
         name: ("pdfminer", name)
@@ -28,7 +26,6 @@ EXPORTS = {
             "extract_text_to_fp",
         )
     },
-    "Pdf": ("pikepdf", "Pdf"),
     "PdfReader": ("pypdf", "PdfReader"),
     "get_nodes_from_documents": ("llamaindex", "get_nodes_from_documents"),
     "load_data": ("llamaindex", "load_data"),

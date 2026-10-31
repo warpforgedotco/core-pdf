@@ -6,10 +6,6 @@
 	path = tests/upstream/pdfminer.six
 	url = https://github.com/pdfminer/pdfminer.six.git
 	shallow = true
-[submodule "tests/upstream/pikepdf"]
-	path = tests/upstream/pikepdf
-	url = https://github.com/pikepdf/pikepdf.git
-	shallow = true
 [submodule "tests/upstream/x-ray"]
 	path = tests/upstream/x-ray
 	url = https://github.com/freelawproject/x-ray.git

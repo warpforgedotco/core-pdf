@@ -7,7 +7,7 @@ High-Performance PDF Engine
 > [!TIP]
 > If you want to extract content from PDFs, use
 > [`core-pdf-compat`](packages/core-pdf-compat/README.md). It exposes the engine through
-> the pdfminer, pdfplumber, pypdf, pikepdf, unstructured, llamaindex, and x-ray interfaces.
+> the pdfminer, pdfplumber, pypdf, unstructured, llamaindex, and x-ray interfaces.
 
 ## Packages
 
