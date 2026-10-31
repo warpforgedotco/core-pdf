@@ -68,17 +68,25 @@ lint = [
 compiling = [
     "nuitka>=4.3.1",
 ]
+test = [
+    "pytest>=9.2.0",
+    "pytest-timeout>=2.4.0",
+    "pytest-xdist>=3.8.0",
+]
 
 [tool.ruff]
 src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src", "packages/core-pdf-cythonized/src", "."]
 extend-exclude = [
     "src/core_pdf/_vendor/fontTools",
+    "tests/upstream",
 ]
 line-length = 100
 
 [tool.ruff.lint.per-file-ignores]
 # Scripts accept signatures they do not use.
 "scripts/**" = ["ARG"]
+# Import hook methods share the importlib signatures.
+"tests/compat/**" = ["ARG"]
 # Operator handlers share one dispatch signature: (operands, depth).
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_content/interpreter.py" = ["ARG002"]
 "packages/core-pdf-compat/src/core_pdf_compat/pdfminer/_capture.py" = ["ARG002"]
@@ -192,6 +200,7 @@ root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src",
 [tool.ty.src]
 exclude = [
     "src/core_pdf/_vendor/fontTools",
+    "tests/upstream",
     # Runs in the isolated PEP 517 build environment, where Cython is present
     # and the dev venv it would be checked against is not.
     "packages/core-pdf-cythonized/setup.py",

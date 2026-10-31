@@ -22,6 +22,8 @@ Use short Conventional Commit-style subjects such as `feat(ocr): ...` and `fix: 
 
 ## Local Validation
 
+To run a reference library's own test suite against its `core_pdf_compat` facade, initialize the submodules under `tests/upstream` with `git submodule update --init --recursive --depth 1`, then run `uv run --group test python scripts/run_upstream_suite.py <suite>`. Add `--reference` to run the same tests on the real library, which separates environment failures from facade gaps. Reports go to `.upstream-results/`.
+
 To prove a floor package or spec works alone, install it on its own (`uv sync --locked --package <member>`) and run `scripts/check_package_isolation.py <member>`, which checks that the tiers above it are absent. This replaces `.venv`, so run a full `uv sync --all-packages` afterwards.
 
 To validate against the locked dependencies, use `uv run --locked` with the relevant group, such as `uv run --locked --group lint mypy`. Do not use `--locked` while intentionally changing dependencies; update them with `uv add` or `uv remove` first.

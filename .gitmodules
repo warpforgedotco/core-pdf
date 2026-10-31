@@ -1,0 +1,28 @@
+[submodule "tests/upstream/pypdf"]
+	path = tests/upstream/pypdf
+	url = https://github.com/py-pdf/pypdf.git
+	shallow = true
+[submodule "tests/upstream/pdfminer.six"]
+	path = tests/upstream/pdfminer.six
+	url = https://github.com/pdfminer/pdfminer.six.git
+	shallow = true
+[submodule "tests/upstream/pikepdf"]
+	path = tests/upstream/pikepdf
+	url = https://github.com/pikepdf/pikepdf.git
+	shallow = true
+[submodule "tests/upstream/x-ray"]
+	path = tests/upstream/x-ray
+	url = https://github.com/freelawproject/x-ray.git
+	shallow = true
+[submodule "tests/upstream/unstructured"]
+	path = tests/upstream/unstructured
+	url = https://github.com/Unstructured-IO/unstructured.git
+	shallow = true
+[submodule "tests/upstream/llama_index"]
+	path = tests/upstream/llama_index
+	url = https://github.com/run-llama/llama_index.git
+	shallow = true
+[submodule "tests/upstream/pdfplumber"]
+	path = tests/upstream/pdfplumber
+	url = https://github.com/jsvine/pdfplumber.git
+	shallow = true
