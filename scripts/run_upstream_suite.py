@@ -43,13 +43,6 @@ SUITES = {
         ("pypdf[full]==6.15.0",),
         ("pyyaml", "pillow", "cryptography", "fpdf2", "defusedxml", "pytest-socket"),
     ),
-    "pikepdf": Suite(
-        "pikepdf",
-        ("tests",),
-        "pikepdf=pikepdf",
-        ("pikepdf==10.11.0",),
-        ("hypothesis", "pillow", "psutil", "numpy", "python-dateutil"),
-    ),
     "xray": Suite("x-ray", ("tests",), "xray=xray", ("x-ray",), ("pymupdf", "requests")),
     "unstructured": Suite(
         "unstructured",

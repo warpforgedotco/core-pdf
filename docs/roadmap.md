@@ -66,7 +66,7 @@ intent and PDF 2.0 black-point controls reach the current color-conversion pipel
 ### 6. Compatibility and corpus maturity
 
 - Continue high-level API compatibility for `core_pdf_compat.pdfminer`, `pdfplumber`,
-  `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and `xray` only where it
+  `pypdf`, `unstructured`, `llamaindex`, and `xray` only where it
   maps cleanly to the shared capability model.
 
 ## Dependency policy

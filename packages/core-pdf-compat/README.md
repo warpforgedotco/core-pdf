@@ -1,7 +1,7 @@
 # core-pdf-compat
 
 Local projections of common third-party PDF interfaces for
-[core-pdf](../../README.md): `pdfminer`, `pdfplumber`, `pypdf`, `pikepdf`, `unstructured`,
+[core-pdf](../../README.md): `pdfminer`, `pdfplumber`, `pypdf`, `unstructured`,
 `llamaindex`, and x-ray. Each facade reproduces the useful high-level behavior of its
 reference library on top of the core engine, not every upstream implementation detail or
 private API. The facades never import the reference libraries themselves.

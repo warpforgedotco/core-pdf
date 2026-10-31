@@ -101,7 +101,7 @@ else raises a `TypeError` naming the offending path rather than being stringifie
 ## Compatibility facades
 
 `core_pdf_compat` holds local projections of common third-party PDF interfaces:
-`pdfminer`, `pdfplumber`, `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and x-ray.
+`pdfminer`, `pdfplumber`, `pypdf`, `unstructured`, `llamaindex`, and x-ray.
 Each facade imports independently; the package root resolves its convenience exports
 lazily. They reproduce useful high-level behavior, not every upstream implementation
 detail or private API. The facades ship in the separately installable `core-pdf-compat`
