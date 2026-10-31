@@ -39,6 +39,7 @@ from core_pdf.impl.types import (
 from core_pdf_spec.s_07_content.model import PATH_CLOSE, PATH_CURVE, PATH_OPERAND_COUNTS, PATH_RECT
 
 from .._shared import BBox, ClosingMixin, PdfInput
+from ..pdfminer.pdftypes import DocumentView
 from .convert import Container
 from .exceptions import PdfminerException
 from .repair import RepairSetting, repair, repair_stream
@@ -862,7 +863,7 @@ class Page(Container):
                             "contents",
                             self.pdf.raise_unicode_errors,
                         ),
-                        data=self.pdf._document.resolver.deep_resolve(item.dict),
+                        data=self.pdf.doc.bridge(item.dict),
                         uri=None,
                         title=_annotation_text(
                             item.dict.get(PdfName(b"T")), "title", self.pdf.raise_unicode_errors
@@ -930,45 +931,18 @@ class Page(Container):
 
     @property
     def structure_tree(self) -> list[ObjectDict]:
-        tree = getattr(self.pdf._document, "structure", None)
-        if tree is None:
+        try:
+            return [element.to_dict() for element in structure.PDFStructTree(self.pdf, self)]
+        except structure.StructTreeMissing:
             return []
 
-        def convert(element: Any) -> ObjectDict:
-            try:
-                page_index = getattr(element, "page_index", None)
-            except KeyError, TypeError, ValueError:
-                page_index = None
-            result: ObjectDict = {
-                "type": getattr(element, "type", None),
-                "role": getattr(element, "role", None),
-                "title": getattr(element, "title", None),
-                "page_number": page_index + 1 if isinstance(page_index, int) else None,
-                "actual_text": getattr(element, "actual_text", None),
-                "alt": getattr(element, "alternate_description", None),
-            }
-            try:
-                children = tuple(element)
-            except KeyError, TypeError, ValueError:
-                children = ()
-            result["children"] = [convert(child) for child in children if hasattr(child, "role")]
-            return result
-
-        try:
-            elements = tuple(tree)
-        except KeyError, TypeError, ValueError:
-            elements = ()
-        result = []
-        for element in elements:
-            if not hasattr(element, "role"):
-                continue
-            try:
-                page_index = getattr(element, "page_index", None)
-            except KeyError, TypeError, ValueError:
-                page_index = None
-            if page_index is None or page_index == self.page_number - 1:
-                result.append(convert(element))
-        return result
+    @property
+    def page_obj(self) -> SimpleNamespace:
+        document = self.pdf.doc
+        return SimpleNamespace(
+            pageid=document.page_ids()[self.page_number - 1],
+            attrs=document.bridge(self._adapter.page.page_dict),
+        )
 
     @property
     def layout(self) -> Any:
@@ -1238,14 +1212,21 @@ class CroppedPage(Page):
         self._edges = None
 
     @property
-    def objects(self) -> dict[str, list[ObjectDict]]:
-        if self._objects is not None:
-            return self._objects
-        select = {
+    def _selector(self) -> Callable[[Iterable[ObjectDict], BBox], list[ObjectDict]]:
+        return {
             "within": within_bbox,
             "outside": outside_bbox,
             "intersects": crop_to_bbox,
         }[self._crop_mode]
+
+    def _crop_fn(self, objects: list[ObjectDict]) -> list[ObjectDict]:
+        return self._selector(objects, self._filter_bbox)
+
+    @property
+    def objects(self) -> dict[str, list[ObjectDict]]:
+        if self._objects is not None:
+            return self._objects
+        select = self._selector
         self._objects = {
             kind: select(values, self._filter_bbox)
             for kind, values in self.parent_page.objects.items()
@@ -1599,7 +1580,7 @@ class PDF(ClosingMixin, Container):
             document = _source(source)
         self._document = cast(PdfDocument, document)
         self._opened_as_pdfminer = opened_here
-        self.doc = self._document
+        self.doc = DocumentView(self._document)
         self.source: PdfInput = source
         self.stream = source
         self.path = source if isinstance(source, (str, bytes)) else None
@@ -1705,7 +1686,10 @@ class PDF(ClosingMixin, Container):
 
     @property
     def structure_tree(self) -> list[ObjectDict]:
-        return [node for page in self.pages for node in page.structure_tree]
+        try:
+            return [element.to_dict() for element in structure.PDFStructTree(self)]
+        except structure.StructTreeMissing:
+            return []
 
     def to_dict(self, object_types: list[str] | None = None) -> dict[str, Any]:
         return {
@@ -2002,6 +1986,9 @@ __all__ = (
 # Upstream exposes these as attributes after a bare `import pdfplumber`.
 import core_pdf_compat.pdfplumber.page  # noqa: E402, F401
 
-from . import utils  # noqa: E402
+from . import (  # noqa: E402
+    structure,
+    utils,
+)
 from .table import Table, TableFinder, TableSettings  # noqa: E402
 from .utils.text import extract_words  # noqa: E402
