@@ -563,7 +563,13 @@ class PdfReader(ClosingMixin):
         return True
 
 
+class PdfWriter:
+    def __init__(self, *_: object, **__: object) -> None:
+        raise NotImplementedError("core-pdf has no PDF writer")
+
+
 __all__ = (
+    "PdfWriter",
     "Destination",
     "PdfPageObject",
     "PdfReader",

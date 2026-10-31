@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import NamedTuple
 from xml.etree import ElementTree
@@ -20,6 +21,7 @@ from xml.etree import ElementTree
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM = ROOT / "tests" / "upstream"
 RESULTS = ROOT / ".upstream-results"
+OUT_OF_SCOPE = ROOT / "tests" / "compat" / "out_of_scope.toml"
 
 
 class Suite(NamedTuple):
@@ -34,7 +36,11 @@ LLAMA_READERS = "llama-index-integrations/readers/llama-index-readers-file"
 SUITES = {
     "pdfminer": Suite("pdfminer.six", ("tests",), "pdfminer=pdfminer", ("pdfminer.six==20260107",)),
     "pdfplumber": Suite(
-        "pdfplumber", ("tests",), "pdfplumber=pdfplumber", ("pdfplumber==0.11.10",), ("pandas",)
+        "pdfplumber",
+        ("tests",),
+        "pdfplumber=pdfplumber,pdfminer=pdfminer",
+        ("pdfplumber==0.11.10",),
+        ("pandas",),
     ),
     "pypdf": Suite(
         "pypdf",
@@ -49,18 +55,32 @@ SUITES = {
         ("test_unstructured/partition/pdf_image",),
         "unstructured.partition.pdf=unstructured",
         ("unstructured[pdf]==0.25.2",),
-        ("requests", "pandas", "numpy", "pillow", "unstructured-inference"),
+        (
+            "unstructured[pdf]==0.25.2",
+            "pytest-mock",
+            "spacy>=3.8.15,<3.9.0",
+            "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/"
+            "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+        ),
     ),
     "llamaindex": Suite(
         "llama_index",
         (f"{LLAMA_READERS}/tests",),
         "llama_index.readers.file=llamaindex",
         ("llama-index-readers-file", "pypdf"),
+        ("llama-index-core", "pytest-mock"),
     ),
 }
 
 
-def pytest_command(suite: Suite, *, reference: bool, junit: Path, extra: list[str]) -> list[str]:
+def pytest_command(
+    suite: Suite,
+    *,
+    reference: bool,
+    junit: Path,
+    extra: list[str],
+    excluded_files: tuple[str, ...],
+) -> list[str]:
     base = ["uv", "run", "--python", "3.14"]
     if reference:
         base += ["--no-project", "--isolated"]
@@ -87,6 +107,9 @@ def pytest_command(suite: Suite, *, reference: bool, junit: Path, extra: list[st
         "-q",
         "--continue-on-collection-errors",
         f"--junitxml={junit}",
+        "-p",
+        "compat_scope",
+        *(f"--ignore={path}" for path in excluded_files),
         *extra,
     ]
 
@@ -117,12 +140,21 @@ def main() -> int:
     RESULTS.mkdir(exist_ok=True)
     junit = RESULTS / f"{arguments.suite}-{mode}.xml"
     junit.unlink(missing_ok=True)
-    environment = {**os.environ, "PYTHONPATH": str(ROOT / "tests" / "compat")}
-    if arguments.reference:
-        environment.pop("PYTHONPATH")
-    else:
+    scope = tomllib.loads(OUT_OF_SCOPE.read_text()).get(arguments.suite, {})
+    environment = {
+        **os.environ,
+        "PYTHONPATH": str(ROOT / "tests" / "compat"),
+        "CORE_PDF_COMPAT_OUT_OF_SCOPE": ",".join(scope.get("names", ())),
+    }
+    if not arguments.reference:
         environment["CORE_PDF_COMPAT_ALIASES"] = suite.aliases
-    command = pytest_command(suite, reference=arguments.reference, junit=junit, extra=extra)
+    command = pytest_command(
+        suite,
+        reference=arguments.reference,
+        junit=junit,
+        extra=extra,
+        excluded_files=tuple(scope.get("files", ())),
+    )
     log = RESULTS / f"{arguments.suite}-{mode}.log"
     with log.open("w") as handle:
         code = subprocess.run(

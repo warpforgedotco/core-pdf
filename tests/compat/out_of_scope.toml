@@ -1,0 +1,86 @@
+# Upstream tests the facades do not aim to pass. Paths are relative to the checkout.
+# `names` drops any test whose source mentions one of them. Everything else is in
+# scope, so a failure there is a facade gap. run_upstream_suite.py applies this list to
+# the real library too, so both runs count the same tests.
+
+[pdfminer]
+reason = "pdfminer internals rather than the public extraction API"
+files = [
+    "tests/test_cmapdb.py",
+    "tests/test_cmapdb_security.py",
+    "tests/test_converter.py",
+    "tests/test_encodingdb.py",
+    "tests/test_pdfdocument.py",
+    "tests/test_pdfencoding.py",
+    "tests/test_pdffont.py",
+    "tests/test_pdfminer_ccitt.py",
+    "tests/test_pdfminer_psparser.py",
+    "tests/test_pdfpage.py",
+    "tests/test_tools_conv_cmap_reproducibility.py",
+    "tests/test_tools_dumppdf.py",
+]
+
+[pypdf]
+reason = "needs PdfWriter, the generic object model, or private modules; core-pdf has no writer"
+names = ["PdfWriter"]
+files = [
+    "tests/generic/test_base.py",
+    "tests/generic/test_data_structures.py",
+    "tests/generic/test_files.py",
+    "tests/generic/test_image_inline.py",
+    "tests/generic/test_image_xobject.py",
+    "tests/generic/test_link.py",
+    "tests/scripts/test_make_release.py",
+    "tests/test_actions.py",
+    "tests/test_annotations.py",
+    "tests/test_appearance_stream.py",
+    "tests/test_cmap.py",
+    "tests/test_codecs.py",
+    "tests/test_doc_common.py",
+    "tests/test_encryption.py",
+    "tests/test_filters.py",
+    "tests/test_font.py",
+    "tests/test_generic.py",
+    "tests/test_images.py",
+    "tests/test_javascript.py",
+    "tests/test_merger.py",
+    "tests/test_page.py",
+    "tests/test_page_labels.py",
+    "tests/test_protocols.py",
+    "tests/test_reader.py",
+    "tests/test_text_extraction.py",
+    "tests/test_utils.py",
+    "tests/test_workflows.py",
+    "tests/test_writer.py",
+    "tests/test_xmp.py",
+]
+
+[xray]
+reason = "these helpers take PyMuPDF pages; xray.inspect is the public API"
+names = ["get_good_rectangles", "get_bad_redactions", "get_intersecting_chars"]
+
+[unstructured]
+reason = "OCR, inference and pdfminer-internal helpers rather than partition_pdf"
+files = [
+    "test_unstructured/partition/pdf_image/test_analysis.py",
+    "test_unstructured/partition/pdf_image/test_image.py",
+    "test_unstructured/partition/pdf_image/test_inference_utils.py",
+    "test_unstructured/partition/pdf_image/test_merge_elements.py",
+    "test_unstructured/partition/pdf_image/test_ocr.py",
+    "test_unstructured/partition/pdf_image/test_pdf_image_utils.py",
+    "test_unstructured/partition/pdf_image/test_pdfminer_processing.py",
+    "test_unstructured/partition/pdf_image/test_pdfminer_utils.py",
+]
+
+[llamaindex]
+reason = "non-PDF readers"
+files = [
+    "llama-index-integrations/readers/llama-index-readers-file/tests/test_docs.py",
+    "llama-index-integrations/readers/llama-index-readers-file/tests/test_html_reader.py",
+    "llama-index-integrations/readers/llama-index-readers-file/tests/test_image_vision_llm.py",
+    "llama-index-integrations/readers/llama-index-readers-file/tests/test_markdown.py",
+    "llama-index-integrations/readers/llama-index-readers-file/tests/test_readers_file.py",
+    "llama-index-integrations/readers/llama-index-readers-file/tests/test_rtf.py",
+    "llama-index-integrations/readers/llama-index-readers-file/tests/test_slides.py",
+    "llama-index-integrations/readers/llama-index-readers-file/tests/test_xml.py",
+]
