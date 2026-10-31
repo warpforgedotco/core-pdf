@@ -12,6 +12,7 @@ from core_pdf.impl.types import PdfReference
 
 from ._doc_common import PdfDocCommon
 from ._generic_trees import EmbeddedFile
+from ._page_merge import Transformation, add_cm, as_matrix, merge_page, transform_page
 from .actions import Action
 from .errors import PageSizeNotDefinedError
 from .generic import (
@@ -42,6 +43,22 @@ class WriterPage(DictionaryObject):
     def cropbox(self) -> RectangleObject:
         box = self.get_resolved("/CropBox")
         return self.mediabox if box is None else RectangleObject(box)
+
+    def _box_or_cropbox(self, key: str) -> RectangleObject:
+        box = self.get_resolved(key)
+        return self.cropbox if box is None else RectangleObject(box)
+
+    @property
+    def bleedbox(self) -> RectangleObject:
+        return self._box_or_cropbox("/BleedBox")
+
+    @property
+    def trimbox(self) -> RectangleObject:
+        return self._box_or_cropbox("/TrimBox")
+
+    @property
+    def artbox(self) -> RectangleObject:
+        return self._box_or_cropbox("/ArtBox")
 
     @property
     def rotation(self) -> int:
@@ -74,25 +91,64 @@ class WriterPage(DictionaryObject):
         contents = self.get_resolved("/Contents")
         return None if is_null_or_none(contents) else ContentStream(contents, self.pdf)
 
+    def _get_contents_as_bytes(self) -> bytes | None:
+        contents = self.get_contents()
+        return None if contents is None else contents.get_data()
+
     def replace_contents(self, content: Any) -> None:
         # Old streams become null objects, so replaced content does not stay in the output.
+        # A stream another page still uses is left alone.
         writer = self.pdf
         current = self.get_resolved("/Contents")
-        replaced = (
-            [list.__getitem__(current, index) for index in range(len(current))]
-            if isinstance(current, ArrayObject)
-            else [self.get("/Contents")]
-        )
+        slot = self.get("/Contents")
+        if isinstance(current, ArrayObject):
+            replaced = [list.__getitem__(current, index) for index in range(len(current))]
+        else:
+            replaced = [slot]
+        shared = writer._contents_of_other_pages(self)
         for reference in replaced:
-            if isinstance(reference, IndirectObject):
+            if isinstance(reference, IndirectObject) and reference.idnum not in shared:
                 writer._replace_object(reference, NullObject())
         if is_null_or_none(content):
+            if isinstance(slot, IndirectObject) and slot.idnum not in shared:
+                writer._replace_object(slot, NullObject())
             self.pop(NameObject("/Contents"), None)
-        elif isinstance(content, ArrayObject):
-            items = ArrayObject(writer._add_object(item) for item in content)
-            self[NameObject("/Contents")] = items
+            return
+        if isinstance(content, ArrayObject):
+            content = ArrayObject(writer._add_object(item) for item in content)
+        attached = getattr(content, "indirect_reference", None)
+        if isinstance(slot, IndirectObject) and slot.idnum not in shared and attached is None:
+            # The page keeps its object number, as in pypdf.
+            writer._replace_object(slot, content)
         else:
             self[NameObject("/Contents")] = writer._add_object(content)
+
+    def merge_page(self, page2: Any, expand: bool = False, over: bool = True) -> None:
+        merge_page(self, page2, over=over, expand=expand)
+
+    def merge_transformed_page(
+        self, page2: Any, ctm: Any, over: bool = True, expand: bool = False
+    ) -> None:
+        matrix = as_matrix(ctm)
+        merge_page(self, page2, lambda stream: add_cm(stream, matrix), matrix, over, expand)
+
+    def merge_scaled_page(
+        self, page2: Any, scale: float, over: bool = True, expand: bool = False
+    ) -> None:
+        self.merge_transformed_page(page2, Transformation().scale(scale, scale), over, expand)
+
+    def merge_rotated_page(
+        self, page2: Any, rotation: float, over: bool = True, expand: bool = False
+    ) -> None:
+        self.merge_transformed_page(page2, Transformation().rotate(rotation), over, expand)
+
+    def merge_translated_page(
+        self, page2: Any, tx: float, ty: float, over: bool = True, expand: bool = False
+    ) -> None:
+        self.merge_transformed_page(page2, Transformation().translate(tx, ty), over, expand)
+
+    def add_transformation(self, ctm: Any, expand: bool = False) -> None:
+        transform_page(self, as_matrix(ctm), expand)
 
     def add_action(self, trigger: Any, action: Any) -> None:
         Action._create_new(self, trigger, action)
@@ -191,6 +247,23 @@ class PdfWriter(PdfDocCommon):
         reference = IndirectObject(len(self._objects), 0, self)
         value.indirect_reference = reference
         return reference
+
+    def _contents_of_other_pages(self, page: WriterPage) -> set[int]:
+        """Stream numbers other pages use. Pages can share a content stream."""
+        numbers: set[int] = set()
+        for other in self._page_list():
+            # A deep copy of a page keeps the page's reference, and counts as the same page.
+            same = other.indirect_reference == page.indirect_reference
+            contents = None if same else other.get("/Contents")
+            if isinstance(contents, IndirectObject):
+                numbers.add(contents.idnum)
+                contents = contents.get_object()
+            if isinstance(contents, ArrayObject):
+                for index in range(len(contents)):
+                    item = list.__getitem__(contents, index)
+                    if isinstance(item, IndirectObject):
+                        numbers.add(item.idnum)
+        return numbers
 
     def _replace_object(self, indirect: Any, obj: Any) -> Any:
         self._objects[indirect.idnum - 1] = obj
