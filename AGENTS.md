@@ -18,10 +18,10 @@ Never edit `pyproject.toml` or `uv.lock` manually when adding or removing depend
 
 ## Commit & Pull Request Guidelines
 
-Use short Conventional Commit-style subjects such as `feat(ocr): ...`, `fix: ...`, and `ci: ...`. Keep commits focused and explain the user-visible or correctness impact. Pull requests should describe the change, motivation, validation commands, compatibility impacts, and link related issues. Include representative output or screenshots when changing CLI behavior or documentation.
+Use short Conventional Commit-style subjects such as `feat(ocr): ...` and `fix: ...`. Keep commits focused and explain the user-visible or correctness impact. Pull requests should describe the change, motivation, validation commands, compatibility impacts, and link related issues. Include representative output or screenshots when changing CLI behavior or documentation.
 
-## Local and CI Validation
+## Local Validation
 
-CI also installs each floor package and spec on its own (`uv sync --locked --package <member>`) and runs `scripts/check_package_isolation.py <member>` to prove the tiers above it are absent. Reproduce it locally the same way; it replaces `.venv`, so run a full `uv sync --all-packages` afterwards.
+To prove a floor package or spec works alone, install it on its own (`uv sync --locked --package <member>`) and run `scripts/check_package_isolation.py <member>`, which checks that the tiers above it are absent. This replaces `.venv`, so run a full `uv sync --all-packages` afterwards.
 
-To reproduce CI's locked dependency validation, use `uv run --locked` with the relevant group, such as `uv run --locked --group lint mypy`. Do not use `--locked` while intentionally changing dependencies; update them with `uv add` or `uv remove` first.
+To validate against the locked dependencies, use `uv run --locked` with the relevant group, such as `uv run --locked --group lint mypy`. Do not use `--locked` while intentionally changing dependencies; update them with `uv add` or `uv remove` first.
