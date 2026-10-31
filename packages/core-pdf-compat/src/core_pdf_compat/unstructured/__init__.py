@@ -15,6 +15,7 @@ from ._elements import (
     Title,
     UncategorizedText,
 )
+from ._metadata import get_last_modified_date
 from ._partition import (
     partition_pdf,
 )
@@ -33,6 +34,7 @@ for export in (
     Title,
     UncategorizedText,
     partition_pdf,
+    get_last_modified_date,
     Address,
 ):
     export.__module__ = __name__
@@ -51,5 +53,6 @@ __all__ = (
     "Table",
     "Title",
     "UncategorizedText",
+    "get_last_modified_date",
     "partition_pdf",
 )

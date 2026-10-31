@@ -138,8 +138,9 @@ its distinct page selection and lazy iterator/resource lifetime.
 
 ### Unstructured NLP requirements
 
-The Unstructured facade needs the `unstructured` extra with spaCy and the pinned
-`en_core_web_sm` 3.8.0 model; the [README](../README.md) has the install commands.
+The Unstructured facade needs the `unstructured` extra with spaCy, langdetect,
+python-iso639 and the pinned `en_core_web_sm` 3.8.0 model; the [README](../README.md) has
+the install commands.
 Importing `core_pdf_compat.unstructured`, any of its element classes, or the parent
 package's `partition_pdf` loads that pipeline once and reuses it. A missing dependency
 or model raises an `ImportError` with the original cause. There is no lexical fallback

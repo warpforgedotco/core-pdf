@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Sequence
+from importlib import import_module
 from os import PathLike
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,9 @@ from ._elements import (
     ListItem,
     PageBreak,
 )
+from ._languages import LanguageFallback, apply_languages, check_languages_argument
+from ._links import page_links
+from ._metadata import assign_element_ids
 from ._regions import (
     TextRegion,
     clean_text,
@@ -124,6 +129,13 @@ def pdf_too_complex(filename: object, password: str) -> bool:
 STRATEGIES = frozenset({"auto", "fast", "hi_res", "ocr_only"})
 
 
+def file_last_modified(filename: str | PathLike[str]) -> str | None:
+    # Looked up on the public module, which stands for unstructured.partition.pdf, so
+    # patching it there takes effect as it does upstream.
+    package: Any = import_module("core_pdf_compat.unstructured")
+    return package.get_last_modified_date(filename)
+
+
 def partition_pdf(
     filename: object = None,
     file: Any = None,
@@ -131,20 +143,31 @@ def partition_pdf(
     metadata_filename: str | None = None,
     starting_page_number: int = 1,
     languages: list[str] | None = None,
+    detect_language_per_element: bool = False,
+    metadata_last_modified: str | None = None,
+    unique_element_ids: bool = False,
+    language_fallback: LanguageFallback | None = None,
     **kwargs: object,
 ) -> list[Element]:
     if str(strategy) not in STRATEGIES:
         raise ValueError(f"{strategy} is not a valid strategy.")
     if filename is None and file is None:
         raise ValueError("Exactly one of filename and file must be specified.")
+    check_languages_argument(languages)
     display_name = metadata_filename
     file_directory = None
+    last_modified = metadata_last_modified
     if filename is None:
         file.seek(0)
         filename = file.read()
     elif isinstance(filename, (str, PathLike)) and not str(filename).startswith("%PDF"):
         display_name = metadata_filename or Path(filename).name
         file_directory = str(Path(filename).parent)
+        last_modified = last_modified or file_last_modified(filename)
+    if metadata_filename:
+        # As unstructured does: a path given here also names the directory.
+        named_directory, display_name = os.path.split(metadata_filename)
+        file_directory = named_directory or file_directory
     if (
         isinstance(filename, (str, PathLike))
         and not (isinstance(filename, str) and filename.startswith("%PDF"))
@@ -174,11 +197,12 @@ def partition_pdf(
         for page in pages:
             source_page = next(source_pages, None)
             text_boxes = [item for item in page if isinstance(item, LTTextBox)]
-            regions = layout_regions(text_boxes)
+            links = [] if source_page is None else page_links(source_page, page.height)
+            regions = layout_regions(text_boxes, links, page.height)
             for figure in (item for item in page if isinstance(item, LTFigure)):
                 for figure_text in figure_text_snippets(figure):
                     if cleaned_figure_text := clean_text(figure_text):
-                        regions.append(TextRegion(cleaned_figure_text, figure.bbox))
+                        regions.append(TextRegion(cleaned_figure_text, figure.bbox, links=[]))
             fields: tuple[Any, ...] | list[Any]
             if source_page is None:
                 fields = ()
@@ -209,7 +233,6 @@ def partition_pdf(
                 metadata = (
                     ElementMetadata(
                         {
-                            "element_id": f"p{page.pageid}-e{element_index}",
                             "page_number": page.pageid + starting_page_number - 1,
                             "bbox": bbox,
                             "coordinates": CoordinatesMetadata(
@@ -225,7 +248,8 @@ def partition_pdf(
                             "filename": display_name,
                             "file_directory": file_directory,
                             "filetype": "application/pdf",
-                            "languages": languages or ["eng"],
+                            "last_modified": last_modified,
+                            "links": region.links,
                         }
                     )
                     if include_metadata
@@ -237,12 +261,21 @@ def partition_pdf(
                     PageBreak(
                         "",
                         ElementMetadata(
-                            page_number=page.pageid + starting_page_number - 1,
                             filename=display_name,
                             file_directory=file_directory,
+                            filetype="application/pdf",
+                            last_modified=metadata_last_modified,
                         ),
                     )
                 )
     finally:
         document.close()
+    if include_metadata:
+        apply_languages(
+            result,
+            languages,
+            per_element=detect_language_per_element,
+            fallback=language_fallback,
+        )
+    assign_element_ids(result, unique=unique_element_ids)
     return result
