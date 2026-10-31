@@ -29,7 +29,7 @@ High-Performance PDF Engine
 
 See [AGENTS.md](AGENTS.md) for build, test, and lint commands. Further reading:
 the [API guide](docs/api.md), [standards and validation](docs/standards.md), [coverage](docs/coverage.md),
-[benchmarks](tests/benchmarks/README.md), and the [roadmap](docs/roadmap.md).
+and the [roadmap](docs/roadmap.md).
 
 ## License
 
