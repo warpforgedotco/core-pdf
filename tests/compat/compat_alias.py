@@ -19,6 +19,62 @@ def parse_aliases(value: str) -> dict[str, str]:
     return {upstream: f"core_pdf_compat.{facade}" for upstream, facade in pairs}
 
 
+class UnsupportedBySuite(Exception):
+    """A test reached an API listed as out of scope; compat_scope skips it."""
+
+
+class StubMeta(type):
+    def __call__(cls, *args: object, **kwargs: object) -> object:
+        raise UnsupportedBySuite(cls.__name__)
+
+    def __getattr__(cls, name: str) -> object:
+        if name.startswith("__"):
+            raise AttributeError(name)
+        raise UnsupportedBySuite(f"{cls.__name__}.{name}")
+
+    # Upstream test files index and compare these while collecting.
+    def __getitem__(cls, key: object) -> object:
+        return cls
+
+    def __sub__(cls, other: object) -> object:
+        return cls
+
+    def __lt__(cls, other: object) -> bool:
+        return False
+
+    __gt__ = __le__ = __ge__ = __lt__
+
+
+class StubModule(ModuleType):
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.__path__ = []
+
+    def __call__(self, *args: object, **kwargs: object) -> object:
+        raise UnsupportedBySuite(self.__name__)
+
+    def __getattr__(self, name: str) -> object:
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return StubMeta(name, (), {})
+
+
+class StubFinder(MetaPathFinder, Loader):
+    def __init__(self, names: list[str]) -> None:
+        self.names = names
+
+    def find_spec(self, fullname, path=None, target=None) -> ModuleSpec | None:
+        if any(fullname == name or fullname.startswith(f"{name}.") for name in self.names):
+            return ModuleSpec(fullname, self, is_package=True)
+        return None
+
+    def create_module(self, spec: ModuleSpec) -> ModuleType:
+        return StubModule(spec.name)
+
+    def exec_module(self, module: ModuleType) -> None:
+        return None
+
+
 class FacadeAliasFinder(MetaPathFinder, Loader):
     def __init__(self, aliases: dict[str, str]) -> None:
         self.aliases = aliases
@@ -63,3 +119,6 @@ class FacadeAliasFinder(MetaPathFinder, Loader):
 
 
 sys.meta_path.insert(0, FacadeAliasFinder(parse_aliases(os.environ["CORE_PDF_COMPAT_ALIASES"])))
+_stubs = [name for name in os.environ.get("CORE_PDF_COMPAT_STUBS", "").split(",") if name]
+if _stubs:
+    sys.meta_path.insert(0, StubFinder(_stubs))

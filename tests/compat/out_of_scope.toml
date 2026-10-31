@@ -26,39 +26,27 @@ files = [
 ]
 
 [pypdf]
-reason = "needs PdfWriter, the generic object model, or private modules; core-pdf has no writer"
-names = ["PdfWriter"]
-files = [
-    "tests/generic/test_base.py",
-    "tests/generic/test_data_structures.py",
-    "tests/generic/test_files.py",
-    "tests/generic/test_image_inline.py",
-    "tests/generic/test_image_xobject.py",
-    "tests/generic/test_link.py",
-    "tests/scripts/test_make_release.py",
-    "tests/test_actions.py",
-    "tests/test_annotations.py",
-    "tests/test_appearance_stream.py",
-    "tests/test_cmap.py",
-    "tests/test_codecs.py",
-    "tests/test_doc_common.py",
-    "tests/test_encryption.py",
-    "tests/test_filters.py",
-    "tests/test_font.py",
-    "tests/test_generic.py",
-    "tests/test_images.py",
-    "tests/test_javascript.py",
-    "tests/test_merger.py",
-    "tests/test_page.py",
-    "tests/test_page_labels.py",
-    "tests/test_protocols.py",
-    "tests/test_reader.py",
-    "tests/test_text_extraction.py",
-    "tests/test_utils.py",
-    "tests/test_workflows.py",
-    "tests/test_writer.py",
-    "tests/test_xmp.py",
+reason = "imports these unimplemented modules; a test is skipped only if it reaches one"
+stubs = [
+    "pypdf.generic",
+    "pypdf.annotations",
+    "pypdf.filters",
+    "pypdf.actions",
+    "pypdf.xmp",
+    "pypdf._font",
+    "pypdf._cmap",
+    "pypdf._codecs",
+    "pypdf._page",
+    "pypdf._page_labels",
+    "pypdf._protocols",
+    "pypdf._reader",
+    "pypdf._utils",
+    "pypdf._encryption",
+    "pypdf._crypt_providers",
+    "pypdf._text_extraction",
 ]
+files = ["tests/scripts/test_make_release.py"]
+markers = "not enable_socket"
 
 [xray]
 reason = "these helpers take PyMuPDF pages; xray.inspect is the public API"
@@ -67,7 +55,7 @@ names = ["get_good_rectangles", "get_bad_redactions", "get_intersecting_chars"]
 [unstructured]
 reason = "OCR, inference and pdfminer-internal helpers rather than partition_pdf; hi_res and OCR need inference models the facade has none of, and tests that patch internals"
 names = [
-    "hi_res", "ocr_only", "HI_RES", "OCR_ONLY", "monkeypatch", "mocker", "mock", "patch", "caplog",
+    "hi_res", "ocr_only", "HI_RES", "OCR_ONLY",
     "extractable_elements", "document_to_element_list", "_partition_pdf_or_image_local", "partition_pdf_or_image",
     "check_annotations_within_element", "default_hi_res_model", "_rotation_corrections_from_layout", "is_pdf_too_complex",
 ]

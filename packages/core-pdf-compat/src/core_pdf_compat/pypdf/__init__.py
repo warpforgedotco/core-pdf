@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator, Mapping
 from copy import replace
+from enum import IntEnum, IntFlag, auto
 from io import BytesIO
 from mmap import mmap
 from typing import Any, cast
@@ -563,12 +564,65 @@ class PdfReader(ClosingMixin):
         return True
 
 
+PageObject = PdfPageObject
+
+
+class PasswordType(IntEnum):
+    NOT_DECRYPTED = 0
+    USER_PASSWORD = 1
+    OWNER_PASSWORD = 2
+
+
+class ImageType(IntFlag):
+    NONE = 0
+    XOBJECT_IMAGES = auto()
+    INLINE_IMAGES = auto()
+    DRAWING_IMAGES = auto()
+    ALL = XOBJECT_IMAGES | INLINE_IMAGES | DRAWING_IMAGES
+    IMAGES = ALL
+
+
+class ObjectDeletionFlag(IntFlag):
+    NONE = 0
+    TEXT = auto()
+    LINKS = auto()
+    ATTACHMENTS = auto()
+    OBJECTS_3D = auto()
+    ALL_ANNOTATIONS = auto()
+    XOBJECT_IMAGES = auto()
+    INLINE_IMAGES = auto()
+    DRAWING_IMAGES = auto()
+    IMAGES = XOBJECT_IMAGES | INLINE_IMAGES | DRAWING_IMAGES
+
+
+class Transformation:
+    def __init__(self, *_: object, **__: object) -> None:
+        raise NotImplementedError("core-pdf has no PDF writer")
+
+
+def mult(m: list[float], n: list[float]) -> list[float]:
+    return [
+        m[0] * n[0] + m[1] * n[2],
+        m[0] * n[1] + m[1] * n[3],
+        m[2] * n[0] + m[3] * n[2],
+        m[2] * n[1] + m[3] * n[3],
+        m[4] * n[0] + m[5] * n[2] + n[4],
+        m[4] * n[1] + m[5] * n[3] + n[5],
+    ]
+
+
 class PdfWriter:
     def __init__(self, *_: object, **__: object) -> None:
         raise NotImplementedError("core-pdf has no PDF writer")
 
 
 __all__ = (
+    "mult",
+    "ObjectDeletionFlag",
+    "ImageType",
+    "PageObject",
+    "PasswordType",
+    "Transformation",
     "PdfWriter",
     "Destination",
     "PdfPageObject",
