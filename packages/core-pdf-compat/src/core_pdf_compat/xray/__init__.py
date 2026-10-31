@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import struct
 from collections import defaultdict
-from math import ceil, floor, isfinite
+from math import floor, isfinite
 from os import PathLike
 from pathlib import Path
 from typing import Any
@@ -15,7 +15,6 @@ from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.fonts_cmap import ToUnicodeCMap
 from core_pdf.impl.geometry import (
     bbox_intersects,
-    flip_rect_vertical,
     overlap_ratio_of,
 )
 from core_pdf.impl.render_page import compose_page
@@ -99,11 +98,8 @@ def _path_rectangles(
         top_box = _fitz_box(bbox, crop_box, user_unit)
         if top_box[3] <= 43 or top_box[2] - top_box[0] <= 4 or top_box[3] - top_box[1] <= 4:
             continue
-        outside_page = top_box[2] <= 0 or top_box[3] <= 0
-        same_color_text_is_hidden = drawing.fill == (1.0, 1.0, 1.0)
-        output.append(
-            _Rectangle(bbox, drawing.seqno, drawing.fill, outside_page or same_color_text_is_hidden)
-        )
+        # Text the same color as the rectangle is invisible even when drawn on top of it.
+        output.append(_Rectangle(bbox, drawing.seqno, drawing.fill, True))
     return output
 
 
@@ -134,19 +130,6 @@ def _uniform(raster_page: _PageRaster, box: tuple[float, float, float, float]) -
     first = data[: raster.channels]
     count, remainder = divmod(len(data), raster.channels)
     return remainder == 0 and data == first * count
-
-
-def _pixmap_crop(
-    box: tuple[float, float, float, float], page_height: float, user_unit: float = 1.0
-) -> tuple[float, float, float, float]:
-    top_box = flip_rect_vertical(box, page_height)
-    pixel_box = (
-        (float(floor(top_box[0] * user_unit)) - 1.0) / user_unit,
-        (float(floor(top_box[1] * user_unit)) - 1.0) / user_unit,
-        (float(ceil(top_box[2] * user_unit)) + 1.0) / user_unit,
-        (float(ceil(top_box[3] * user_unit)) + 1.0) / user_unit,
-    )
-    return flip_rect_vertical(pixel_box, page_height)
 
 
 def _fitz_box(
@@ -326,9 +309,7 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
     annotation_boxes = {
         tuple(annotation.rect) for annotation in annotations if annotation.subtype == "Highlight"
     }
-    widget_boxes = {
-        tuple(annotation.rect) for annotation in annotations if annotation.subtype == "Widget"
-    }
+    {tuple(annotation.rect) for annotation in annotations if annotation.subtype == "Widget"}
     non_annotation_rectangles = [
         rectangle for rectangle in rectangles if rectangle.bbox not in annotation_boxes
     ]
@@ -426,26 +407,19 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
         fitz_box = _fitz_box(rectangle.bbox, crop_box, user_unit)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         if rectangle.bbox in annotation_boxes:
             fitz_box = (*fitz_box[:2], _next_float32(fitz_box[2]), fitz_box[3])
-        integer_aligned = all(abs(value * 2 - round(value * 2)) < 0.0001 for value in fitz_box)
-        is_widget = rectangle.bbox in widget_boxes
-        widget_has_later_content = is_widget and any(
-            glyph.seqno >= rectangle.seqno
-            and glyph.ink_bbox is not None
-            and bbox_intersects(glyph.ink_bbox, rectangle.bbox)
-            for glyph in glyphs
-        )
         outside_page = (
             fitz_box[2] <= 0
             or fitz_box[3] <= 0
             or fitz_box[0] >= (crop_box[2] - crop_box[0]) * user_unit
             or fitz_box[1] >= (crop_box[3] - crop_box[1]) * user_unit
         )
+        # Edge pixels are only partly covered by a fractional rectangle, so they are not
+        # evidence of visible text.
         raster_box = (
-            rectangle.bbox
-            if page.rotation
-            or (integer_aligned and not widget_has_later_content)
-            or (is_widget and not widget_has_later_content)
-            else _pixmap_crop(rectangle.bbox, float(page.height), user_unit)
+            rectangle.bbox[0] + 1.0,
+            rectangle.bbox[1] + 1.0,
+            rectangle.bbox[2] - 1.0,
+            rectangle.bbox[3] - 1.0,
         )
         if not page.rotation and not outside_page and not _uniform(raster_page, raster_box):
             continue

@@ -86,6 +86,8 @@ line-length = 100
 # Scripts accept signatures they do not use.
 "scripts/**" = ["ARG"]
 # Ported from pdfplumber and kept close to upstream for comparison.
+"packages/core-pdf-compat/src/core_pdf_compat/xray/pdf_utils.py" = ["ARG001"]
+"packages/core-pdf-compat/src/core_pdf_compat/pypdf/constants.py" = ["E501"]
 "packages/core-pdf-compat/src/core_pdf_compat/pdfminer/utils.py" = ["ARG001", "UP046", "UP047"]
 "packages/core-pdf-compat/src/core_pdf_compat/pdfplumber/utils/text.py" = ["ARG002", "B007", "UP035"]
 "packages/core-pdf-compat/src/core_pdf_compat/pdfplumber/utils/clustering.py" = ["UP035", "UP047"]
