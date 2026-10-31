@@ -43,7 +43,7 @@ Image sample decoding and range enforcement belong to the caller.
 
 The current spec version is `0.14.1`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.14.1,<0.15.0`; changes to that range require core integration and differential validation.
+`>=0.14.1,<0.15.0`; changes to that range require core integration.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are
@@ -303,16 +303,9 @@ When migrating to `0.4.0`:
 - Use `CMapDecoder.decode_entries(bytes(data))` and extract the CIDs from the returned
   `(code_bytes, cid)` pairs in place of the removed `decode_cids_array` method.
 
-From the workspace, run the standalone tests with:
-
-```sh
-uv run --locked --all-packages --group test pytest packages/core-pdf-spec/tests
-```
-
 To prove spec works with only its declared dependencies installed:
 
 ```sh
-uv sync --locked --package core-pdf-spec --group test
+uv sync --locked --package core-pdf-spec
 uv run --locked --no-sync python scripts/check_package_isolation.py core-pdf-spec
-uv run --locked --no-sync pytest packages/core-pdf-spec/tests
 ```

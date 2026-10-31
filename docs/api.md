@@ -131,11 +131,8 @@ and rejects unknown options. Table discovery and debugging share this normalizat
 It uses the same PNG pixels as `save()` and `_repr_png_()`; viewer exceptions propagate.
 Pillow ships in the optional `pdfplumber` extra and is imported only when display is
 requested; without it `show()` raises `ImportError` naming `core-pdf-compat[pdfplumber]`. Rendering,
-drawing, `save()`, and `_repr_png_()` do not require Pillow. Display integration tests
-intercept the viewer call and verify image contents without opening windows.
+drawing, `save()`, and `_repr_png_()` do not require Pillow.
 
-Method-level differential tests cover geometry, cropping, shared object caches, attribute
-selection, basic table grids, image sizing, annotations, merging, and display routing.
 PDFMiner's stale-reference and malformed-xref recovery remains facade policy, including
 its distinct page selection and lazy iterator/resource lifetime.
 
@@ -148,19 +145,6 @@ package's `partition_pdf` loads that pipeline once and reuses it. A missing depe
 or model raises an `ImportError` with the original cause. There is no lexical fallback
 and no runtime model download. Importing `core_pdf`, `core_pdf_compat`, or another
 facade never loads the model.
-
-### Compatibility validation
-
-Differential tests in `packages/core-pdf-compat/tests/differential` compare each facade
-with its reference library. By default each facade runs on its own upstream fixture
-corpus, plus selected cross-corpus redaction cases for x-ray:
-
-```sh
-git submodule update --init --recursive
-uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto
-```
-
-Set `CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1` to run every facade against every fixture.
 
 ## Low-level specification library
 
