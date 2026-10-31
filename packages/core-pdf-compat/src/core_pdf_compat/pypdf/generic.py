@@ -9,7 +9,7 @@ import codecs
 import logging
 from collections.abc import Iterable, Mapping
 from io import BytesIO
-from typing import Any, ClassVar, Self
+from typing import Any, Self
 
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
