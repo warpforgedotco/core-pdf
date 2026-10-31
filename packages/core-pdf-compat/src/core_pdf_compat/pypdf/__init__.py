@@ -325,6 +325,12 @@ class PdfPageObject:
             return None
         return IndirectObject(page_ids[self._page_number - 1], 0, self._reader)
 
+    def get_contents(self) -> Any:
+        from core_pdf_compat.pypdf.generic import ContentStream
+
+        contents = self._generic_dictionary().get("/Contents")
+        return None if is_null_or_none(contents) else ContentStream(contents, self._reader)
+
     def _generic_dictionary(self) -> Any:
         pdf = self._document.pdf
         if pdf is None:
