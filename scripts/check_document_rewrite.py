@@ -1,4 +1,4 @@
-"""Check that rewriting each upstream PDF keeps its pages, text and an edit.
+"""Check that saving each upstream PDF keeps its pages, text and an edit.
 
 uv run --all-packages python scripts/check_document_rewrite.py
 """
@@ -19,6 +19,7 @@ PATTERNS = (
     "tests/upstream/pypdf/resources/*.pdf",
 )
 MAX_PAGES = 5
+INCREMENTAL = "--incremental" in sys.argv
 
 
 def page_texts(document: Any) -> list[str]:
@@ -35,7 +36,11 @@ def check(path: str, counts: collections.Counter[str]) -> None:
         editor = EditableDocument(source)
         info = editor.add_object({"Title": PdfString(b"Rewritten")})
         editor.trailer["Info"] = info
-        output = editor.save()
+        output = editor.save_incremental() if INCREMENTAL else editor.save()
+        original = bytes(source.raw_data)
+    if INCREMENTAL and not output.startswith(original):
+        counts["prefix_changed"] += 1
+        print(f"original bytes changed: {path}")
     with PdfDocument.open(output) as result:
         if len(result.pages) != expected_pages:
             counts["page_mismatch"] += 1
