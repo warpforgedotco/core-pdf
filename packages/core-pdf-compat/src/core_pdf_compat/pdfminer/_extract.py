@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from html import escape
-from io import BytesIO
+from io import TextIOBase
 from typing import Any, BinaryIO, TextIO
 
 from core_pdf import PdfDocument, PdfPage
@@ -108,10 +108,8 @@ def extract_text_to_fp(
         output = _structured_output(inf, output_type, password, page_numbers, maxpages, laparams)
     else:
         raise ValueError(f"unsupported pdfminer output_type: {output_type}")
-    if isinstance(outfp, (BytesIO,)):
-        outfp.write(output.encode(codec))
-    else:
-        outfp.write(output)  # type: ignore[call-overload]  # ty: ignore[no-matching-overload]
+    target: Any = outfp
+    target.write(output if isinstance(outfp, TextIOBase) else output.encode(codec))
 
 
 def _structured_output(

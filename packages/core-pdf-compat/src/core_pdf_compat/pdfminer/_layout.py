@@ -80,8 +80,6 @@ class LAParams(ReprFields, ReplaceFields):
             and self.all_texts == other.all_texts
         )
 
-    __hash__ = None  # type: ignore[assignment]
-
 
 class LTItem:
     def analyze(self, laparams: LAParams) -> None:
@@ -107,7 +105,8 @@ class LTComponent(ReprFields, ReplaceFields, LTItem):
             return NotImplemented
         return self.bbox == other.bbox
 
-    __hash__ = None  # type: ignore[assignment]
+    def __hash__(self) -> int:
+        return id(self)
 
     def _post_init(self) -> None:
         self.x0, self.y0, self.x1, self.y1 = self.bbox
@@ -172,8 +171,6 @@ class LTAnno(ReprFields, ReplaceFields, LTText):
             return NotImplemented
         return self.text == other.text
 
-    __hash__ = None  # type: ignore[assignment]
-
     def get_text(self) -> str:
         return self.text
 
@@ -212,8 +209,6 @@ class LTChar(LTComponent, LTText):
             and self.fontname == other.fontname
             and self.size == other.size
         )
-
-    __hash__ = None  # type: ignore[assignment]
 
     def get_text(self) -> str:
         return self.text
@@ -254,8 +249,6 @@ class _LTTextGroup[ItemT: LTText](LTComponent, LTText):
         if other.__class__ is not self.__class__ or not isinstance(other, _LTTextGroup):
             return NotImplemented
         return self.bbox == other.bbox and self._objs == other._objs
-
-    __hash__ = None  # type: ignore[assignment]
 
     def __iter__(self) -> Iterator[ItemT]:
         return iter(self._objs)
@@ -318,8 +311,6 @@ class LTImage(LTComponent):
             return NotImplemented
         return self.bbox == other.bbox and self.name == other.name and self.stream == other.stream
 
-    __hash__ = None
-
 
 class LTFigure(LTComponent):
     __slots__ = ("name", "_objs", "text_snippets")
@@ -355,8 +346,6 @@ class LTFigure(LTComponent):
             and self._objs == other._objs
             and self.text_snippets == other.text_snippets
         )
-
-    __hash__ = None
 
     def __iter__(self) -> Iterator[LTItem]:
         return iter(self._objs)
@@ -396,8 +385,6 @@ class LTPage(LTComponent):
             and self.rotate == other.rotate
             and self._objs == other._objs
         )
-
-    __hash__ = None
 
     def __iter__(self) -> Iterator[LTItem]:
         return iter(self._objs)
@@ -652,8 +639,6 @@ class _TextGroup(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     children: list[LTTextBox | _TextGroup]
     bbox: tuple[float, float, float, float]
     vertical: bool = False
-
-    __hash__ = None  # type: ignore[assignment]
 
 
 def _reading_order(
