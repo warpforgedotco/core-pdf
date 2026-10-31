@@ -23,13 +23,20 @@ class UnsupportedBySuite(Exception):
     """A test reached an API listed as out of scope; compat_scope skips it."""
 
 
+COLLECTION = {"active": False}
+
+
 class StubMeta(type):
     def __call__(cls, *args: object, **kwargs: object) -> object:
+        if COLLECTION["active"]:
+            return cls
         raise UnsupportedBySuite(cls.__name__)
 
     def __getattr__(cls, name: str) -> object:
         if name.startswith("__"):
             raise AttributeError(name)
+        if COLLECTION["active"]:
+            return cls
         raise UnsupportedBySuite(f"{cls.__name__}.{name}")
 
     # Upstream test files index and compare these while collecting.
@@ -51,6 +58,8 @@ class StubModule(ModuleType):
         self.__path__ = []
 
     def __call__(self, *args: object, **kwargs: object) -> object:
+        if COLLECTION["active"]:
+            return self
         raise UnsupportedBySuite(self.__name__)
 
     def __getattr__(self, name: str) -> object:
