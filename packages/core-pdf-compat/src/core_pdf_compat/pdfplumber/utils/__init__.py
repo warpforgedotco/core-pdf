@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 
+from ...pdfminer.utils import PDFDocEncoding
 from .. import (
     BBox,
     ObjectDict,
@@ -35,6 +36,17 @@ from .text import (
     extract_words,
 )
 
+
+def decode_text(value: bytes | str) -> str:
+    if isinstance(value, bytes) and value.startswith(b"\xfe\xff"):
+        return str(value[2:], "utf-16be", "ignore")
+    try:
+        ordinals = (ord(char) if isinstance(char, str) else char for char in value)
+        return "".join(PDFDocEncoding[ordinal] for ordinal in ordinals)
+    except IndexError:
+        return str(value)
+
+
 get_bbox_overlap = bbox_overlap
 obj_to_edges = _edges
 
@@ -52,6 +64,7 @@ def objects_to_rect(objects: Iterable[ObjectDict]) -> dict[str, float]:
 
 
 __all__ = (
+    "decode_text",
     "DEFAULT_X_DENSITY",
     "DEFAULT_X_TOLERANCE",
     "DEFAULT_Y_DENSITY",

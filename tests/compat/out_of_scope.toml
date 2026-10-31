@@ -3,6 +3,10 @@
 # scope, so a failure there is a facade gap. run_upstream_suite.py applies this list to
 # the real library too, so both runs count the same tests.
 
+[pdfplumber]
+reason = "pdfium's pixel rounding for a rotated MediaBox, and a no-smoothing render mode"
+names = ["force_mediabox", "antialias"]
+
 [pdfminer]
 reason = "pdfminer internals rather than the public extraction API"
 files = [
