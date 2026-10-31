@@ -7,10 +7,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from io import BytesIO
-from typing import Any, ClassVar
+from typing import Any
 
 from core_pdf.impl.pdf_values import decode_pdf_text_string
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf_compat.pypdf.errors import PdfReadError
+from core_pdf_spec.s_07_filters.codecs import encode_flate
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.serialize import serialize_object
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -111,10 +113,13 @@ class DictionaryObject(dict[Any, Any], PdfObject):
         return super().__getitem__(key)
 
 
+# The stream classes' behaviour is ported from pypdf, Copyright (c) 2006-2008, Mathieu
+# Fenniak, under its BSD-style license. core_pdf_spec does the decoding and encoding.
 class StreamObject(DictionaryObject):
     def __init__(self) -> None:
         super().__init__()
         self._data = b""
+        self.decoded_self: DecodedStreamObject | None = None
 
     def get_data(self) -> bytes:
         return self._data
@@ -122,16 +127,65 @@ class StreamObject(DictionaryObject):
     def set_data(self, data: bytes) -> None:
         self._data = data
 
+    def _stored_data(self) -> bytes:
+        """The bytes a file holds for this stream, still encoded by its /Filter."""
+        return self._data
+
+    @staticmethod
+    def initialize_from_dictionary(
+        data: dict[str, Any],
+    ) -> EncodedStreamObject | DecodedStreamObject:
+        stream = EncodedStreamObject() if "/Filter" in data else DecodedStreamObject()
+        stream._data = data.pop("__streamdata__")
+        data.pop("/Length", None)
+        dict.update(stream, data)
+        return stream
+
+    def flate_encode(self, level: int = -1) -> EncodedStreamObject:
+        output = EncodedStreamObject()
+        dict.update(output, self)
+        flate = NameObject("/FlateDecode")
+        if "/Filter" in self:
+            filters = self["/Filter"]
+            names = list(filters) if isinstance(filters, ArrayObject) else [filters]
+            parms = self.get("/DecodeParms", NullObject())
+            parms = list(parms) if isinstance(parms, ArrayObject) else [parms] * len(names)
+            output[NameObject("/Filter")] = ArrayObject([flate, *names])
+            output[NameObject("/DecodeParms")] = ArrayObject([NullObject(), *parms])
+        else:
+            output[NameObject("/Filter")] = flate
+        output._data = encode_flate(self._stored_data(), level)
+        return output
+
 
 class DecodedStreamObject(StreamObject):
     pass
 
 
 class EncodedStreamObject(StreamObject):
-    decoded: ClassVar[bytes | None] = None
-
     def get_data(self) -> bytes:
-        return self._data if self.decoded is None else self.decoded
+        if self.decoded_self is None:
+            decoded = DecodedStreamObject()
+            decoded.set_data(decode_stream(self))
+            for key, value in dict.items(self):
+                if key not in {"/Length", "/Filter", "/DecodeParms"}:
+                    dict.__setitem__(decoded, key, value)
+            self.decoded_self = decoded
+        return self.decoded_self.get_data()
+
+    def set_data(self, data: bytes) -> None:
+        if self.get("/Filter", "") not in ("/FlateDecode", ["/FlateDecode"]):
+            raise PdfReadError(
+                "Streams encoded with a filter different from FlateDecode are not supported"
+            )
+        if not isinstance(data, bytes):
+            raise TypeError("Data must be bytes")
+        self.get_data()
+        assert self.decoded_self is not None
+        self.decoded_self.set_data(data)
+        # The new data has no predictor applied, so the old parameters would corrupt it.
+        self.pop("/DecodeParms", None)
+        self._data = encode_flate(data)
 
 
 class IndirectObject(PdfObject):
@@ -234,11 +288,11 @@ def to_generic(value: Any, pdf: Any = None) -> Any:
     if isinstance(value, PdfReference):
         return IndirectObject(value.object_number, value.generation_number, pdf)
     if isinstance(value, PdfStream):
-        stream = EncodedStreamObject()
-        for key, item in value.dictionary.items():
-            dict.__setitem__(stream, _generic_key(key), to_generic(item, pdf))
-        stream.set_data(bytes(value.raw_data))
-        return stream
+        items: dict[str, Any] = {
+            _generic_key(key): to_generic(item, pdf) for key, item in value.dictionary.items()
+        }
+        items["__streamdata__"] = bytes(value.raw_data)
+        return StreamObject.initialize_from_dictionary(items)
     if isinstance(value, Mapping):
         output = DictionaryObject()
         for key, item in value.items():
@@ -263,6 +317,10 @@ def to_core(value: Any) -> Any:
         return value.value
     if isinstance(value, IndirectObject):
         return PdfReference(value.idnum, value.generation)
+    if isinstance(value, NumberObject):
+        return int(value)
+    if isinstance(value, FloatObject):
+        return float(value)
     if isinstance(value, NameObject):
         return PdfName(value[1:].encode("latin-1"))
     if isinstance(value, ByteStringObject):
@@ -272,7 +330,7 @@ def to_core(value: Any) -> Any:
     if isinstance(value, StreamObject):
         items: dict[str, Any] = dict(dict.items(value))
         dictionary = {key[1:]: to_core(item) for key, item in items.items()}
-        return PdfStream(dictionary, value.get_data())
+        return PdfStream(dictionary, value._stored_data())
     if isinstance(value, Mapping):
         plain: dict[str, Any] = (
             dict(value) if not isinstance(value, dict) else dict(dict.items(value))
@@ -303,10 +361,13 @@ def read_buffer(data: bytes, pdf: Any = None) -> Any:
     return read_object(BytesIO(data), pdf)
 
 
+from core_pdf_compat.pypdf._generic_content import ContentStream, decode_stream  # noqa: E402
+
 __all__ = (
     "ArrayObject",
     "BooleanObject",
     "ByteStringObject",
+    "ContentStream",
     "DecodedStreamObject",
     "DictionaryObject",
     "EncodedStreamObject",

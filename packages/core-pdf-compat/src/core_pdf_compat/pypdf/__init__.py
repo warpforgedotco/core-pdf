@@ -353,8 +353,14 @@ class PdfPageObject:
             return extract_legacy_text(page, self._document.text_caches)
         return "\n".join(line.text for block in self._page.blocks for line in block.lines)
 
+    def get_contents(self) -> Any:
+        from core_pdf_compat.pypdf.generic import ContentStream, is_null_or_none
+
+        contents = self._generic_dictionary().get("/Contents")
+        return None if is_null_or_none(contents) else ContentStream(contents, self._reader)
+
     def _generic_dictionary(self) -> Any:
-        from .generic import to_generic
+        from core_pdf_compat.pypdf.generic import to_generic
 
         pdf = self._document.pdf
         if pdf is None:
@@ -548,7 +554,7 @@ class PdfReader(ClosingMixin):
         raise ValueError("destination does not resolve to a page")
 
     def get_object(self, indirect_reference: Any) -> Any:
-        from .generic import IndirectObject, to_generic
+        from core_pdf_compat.pypdf.generic import IndirectObject, to_generic
 
         source = self._source_document()
         if source is None:
@@ -575,7 +581,7 @@ class PdfReader(ClosingMixin):
 
     @property
     def trailer(self) -> Any:
-        from .generic import to_generic
+        from core_pdf_compat.pypdf.generic import to_generic
 
         cached = self.__dict__.get("_generic_trailer")
         if cached is None:
