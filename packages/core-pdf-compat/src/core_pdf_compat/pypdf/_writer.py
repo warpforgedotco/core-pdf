@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -11,9 +12,11 @@ from core_pdf.impl.types import PdfReference
 
 from ._doc_common import PdfDocCommon
 from ._generic_trees import EmbeddedFile
+from .actions import Action
 from .errors import PageSizeNotDefinedError
 from .generic import (
     ArrayObject,
+    ContentStream,
     DictionaryObject,
     FloatObject,
     IndirectObject,
@@ -23,6 +26,7 @@ from .generic import (
     RectangleObject,
     StreamObject,
     TextStringObject,
+    is_null_or_none,
     to_core,
 )
 
@@ -42,6 +46,59 @@ class WriterPage(DictionaryObject):
     @property
     def rotation(self) -> int:
         return int(self.get_resolved("/Rotate", 0))
+
+    @property
+    def pdf(self) -> PdfWriter:
+        reference = self.indirect_reference
+        if reference is None:
+            raise ValueError("The page is not attached to a writer")
+        return reference.pdf
+
+    @property
+    def annotations(self) -> Any:
+        return self.get_resolved("/Annots")
+
+    @property
+    def page_number(self) -> int:
+        pages = self.pdf._page_list()
+        return next(index for index, page in enumerate(pages) if page is self)
+
+    def extract_text(self, *args: Any, **kwargs: Any) -> str:
+        # Text extraction reads a file, so the page goes through the serialized document.
+        from . import PdfReader
+
+        reader = PdfReader(BytesIO(self.pdf._serialized()))
+        return reader.pages[self.page_number].extract_text(*args, **kwargs)
+
+    def get_contents(self) -> ContentStream | None:
+        contents = self.get_resolved("/Contents")
+        return None if is_null_or_none(contents) else ContentStream(contents, self.pdf)
+
+    def replace_contents(self, content: Any) -> None:
+        # Old streams become null objects, so replaced content does not stay in the output.
+        writer = self.pdf
+        current = self.get_resolved("/Contents")
+        replaced = (
+            [list.__getitem__(current, index) for index in range(len(current))]
+            if isinstance(current, ArrayObject)
+            else [self.get("/Contents")]
+        )
+        for reference in replaced:
+            if isinstance(reference, IndirectObject):
+                writer._replace_object(reference, NullObject())
+        if is_null_or_none(content):
+            self.pop(NameObject("/Contents"), None)
+        elif isinstance(content, ArrayObject):
+            items = ArrayObject(writer._add_object(item) for item in content)
+            self[NameObject("/Contents")] = items
+        else:
+            self[NameObject("/Contents")] = writer._add_object(content)
+
+    def add_action(self, trigger: Any, action: Any) -> None:
+        Action._create_new(self, trigger, action)
+
+    def delete_action(self, trigger: Any) -> None:
+        Action._delete(self, trigger)
 
     def rotate(self, angle: int) -> WriterPage:
         if angle % 90:
@@ -76,7 +133,8 @@ class PdfWriter(PdfDocCommon):
         full: bool = False,
         strict: bool = False,
     ) -> None:
-        del full, strict
+        del full
+        self.strict = strict
         if incremental:
             raise NotImplementedError("core-pdf has no PDF writer: incremental mode")
         self.fileobj = fileobj if isinstance(fileobj, (str, Path)) and fileobj else ""
@@ -133,6 +191,11 @@ class PdfWriter(PdfDocCommon):
         reference = IndirectObject(len(self._objects), 0, self)
         value.indirect_reference = reference
         return reference
+
+    def _replace_object(self, indirect: Any, obj: Any) -> Any:
+        self._objects[indirect.idnum - 1] = obj
+        obj.indirect_reference = indirect
+        return obj
 
     def get_object(self, indirect_reference: Any) -> Any:
         number = getattr(indirect_reference, "idnum", indirect_reference)
