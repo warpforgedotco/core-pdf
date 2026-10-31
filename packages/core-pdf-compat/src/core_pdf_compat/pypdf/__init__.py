@@ -353,6 +353,14 @@ class PdfPageObject:
     def keys(self) -> Any:
         return self._generic_dictionary().keys()
 
+    @property
+    def page_number(self) -> int:
+        return self._page_number - 1
+
+    def compress_content_streams(self, level: int = -1) -> None:
+        del level
+        raise ValueError("Page must be part of a PdfWriter")
+
     def rotate(self, angle: int) -> PdfPageObject:
         self._page = replace(self._page, rotation=(self.rotation + angle) % 360)
         self.rotation = self._page.rotation

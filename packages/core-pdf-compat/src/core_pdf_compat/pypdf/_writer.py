@@ -151,6 +151,14 @@ class PageObject(DictionaryObject, ABC):
         contents = self.get_resolved("/Contents")
         return None if is_null_or_none(contents) else ContentStream(contents, self.pdf)
 
+    def compress_content_streams(self, level: int = -1) -> None:
+        """Join this page's content streams into one Flate-encoded stream."""
+        if self.writer is None:
+            raise ValueError("Page must be part of a PdfWriter")
+        content = self.get_contents()
+        if content is not None:
+            self.replace_contents(content.flate_encode(level))
+
     def _get_contents_as_bytes(self) -> bytes | None:
         contents = self.get_contents()
         return None if contents is None else contents.get_data()
