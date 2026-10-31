@@ -4,6 +4,7 @@ import builtins
 import math
 import re
 import struct
+import warnings
 import zlib
 from bisect import bisect_right
 from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -16,6 +17,7 @@ from typing import Any, ClassVar, TypeAlias, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
+from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.geometry import (
     bbox_contains,
@@ -29,6 +31,7 @@ from core_pdf.impl.types import (
     FrozenFields,
     PdfName,
     PdfReference,
+    PdfString,
     ReplaceFields,
     ReprFields,
     frozen_setattr,
@@ -432,9 +435,23 @@ def _envelope(
     }
 
 
-def _annotation_title(annotation: Mapping[Any, Any]) -> Any:
-    title = annotation.get(PdfName(b"T"))
-    return title.decode("utf-8", "replace") if isinstance(title, (bytes, bytearray)) else title
+def _annotation_text(value: Any, name: str, raise_errors: bool) -> Any:
+    if isinstance(value, PdfString):
+        value = value.data
+    if not isinstance(value, (bytes, bytearray)):
+        return value
+    try:
+        return bytes(value).decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            return bytes(value).decode("utf-16")
+        except UnicodeDecodeError:
+            if raise_errors:
+                raise
+            warnings.warn(
+                f"Could not decode {name} of annotation. {name} will be missing.", stacklevel=2
+            )
+            return value
 
 
 def _raw_color(color: tuple[float, ...] | None) -> tuple[float, ...] | None:
@@ -657,16 +674,12 @@ class Page(Container):
         self.mediabox = self._box_from_page("media_box") or (0.0, 0.0, self.width, self.height)
         self.cropbox = self._box_from_page("crop_box")
         if self.cropbox is None:
-            self.cropbox = (
-                (0.0, 0.0, self._adapter.info.height, self._adapter.info.width)
-                if self.rotation % 180
-                else self.mediabox
-            )
-        self.bbox: BBox = (0, 0, self.width, self.height)
+            self.cropbox = self.mediabox
+        self.bbox: BBox = self.mediabox
         self._objects: dict[str, list[ObjectDict]] | None = None
         self._edges: list[ObjectDict] | None = None
         self._structured_page: Any | None = None
-        self._layout: Any | None = None
+        self._layout_page: Any | None = None
         self.is_original = True
         self.root_page = self
 
@@ -674,13 +687,22 @@ class Page(Container):
         box = getattr(self._adapter.page, name, None)
         if box is None:
             return None
-        return flip_box(box, self._adapter.info.height)
+
+        def normalized(raw: Any) -> BBox:
+            x0, x1 = sorted((raw[0], raw[2]))
+            y0, y1 = sorted((raw[1], raw[3]))
+            return (y0, x0, y1, x1) if self.rotation % 180 else (x0, y0, x1, y1)
+
+        media = normalized(self._adapter.page.media_box)
+        height = media[3] - media[1]
+        x0, y0, x1, y1 = normalized(box)
+        return (x0, height - y1, x1, height - y0)
 
     def close(self) -> None:
         self._objects = None
         self._edges = None
         self._structured_page = None
-        self._layout = None
+        self._layout_page = None
         self._adapter.flush_program()
         self.pdf.flush_merged_objects()
 
@@ -723,31 +745,61 @@ class Page(Container):
     @property
     def objects(self) -> dict[str, list[ObjectDict]]:
         if self._objects is None:
-            objects: dict[str, list[ObjectDict]] = {
-                "char": [
-                    _char(self._adapter, c, self.initial_doctop)
-                    for c in self._adapter.text_characters()
-                ]
-            }
-            program = self._adapter.page_program()
-            for path_object in _path_objects(self._adapter, self.initial_doctop):
-                objects.setdefault(path_object["object_type"], []).append(path_object)
-            for image in self._adapter.images(program):
-                image_record = _image(self._adapter, image, self.initial_doctop)
-                if image_record is not None:
-                    objects.setdefault("image", []).append(image_record)
-            # pdfplumber keeps each type where it first appears in the content stream.
-            ordered = dict(
-                sorted(
-                    ((kind, values) for kind, values in objects.items() if values),
-                    key=lambda item: min(obj["seqno"] for obj in item[1]),
-                )
-            )
-            for values in ordered.values():
-                for value in values:
-                    del value["seqno"]
-            self._objects = ordered
+            try:
+                self._objects = self._parse_objects()
+            except PdfError as error:
+                raise PdfminerException(error) from error
         return self._objects
+
+    def _parse_objects(self) -> dict[str, list[ObjectDict]]:
+        objects: dict[str, list[ObjectDict]] = {
+            "char": [
+                _char(self._adapter, c, self.initial_doctop)
+                for c in self._adapter.text_characters()
+            ]
+        }
+        program = self._adapter.page_program()
+        for path_object in _path_objects(self._adapter, self.initial_doctop):
+            objects.setdefault(path_object["object_type"], []).append(path_object)
+        for image in self._adapter.images(program):
+            image_record = _image(self._adapter, image, self.initial_doctop)
+            if image_record is not None:
+                objects.setdefault("image", []).append(image_record)
+        if self.pdf.laparams is not None and objects.get("char"):
+            objects["char"] = self._chars_in_layout_order(objects["char"])
+        # pdfplumber keeps each type where it first appears in the content stream.
+        ordered = dict(
+            sorted(
+                ((kind, values) for kind, values in objects.items() if values),
+                key=lambda item: min(obj["seqno"] for obj in item[1]),
+            )
+        )
+        for values in ordered.values():
+            for value in values:
+                del value["seqno"]
+        return ordered
+
+    def _chars_in_layout_order(self, chars: list[ObjectDict]) -> list[ObjectDict]:
+        # With laparams, pdfminer's analysis moves characters into text boxes.
+        def key(text: str, x0: float, y0: float) -> tuple[str, float, float]:
+            return text, round(x0, 2), round(y0, 2)
+
+        waiting: dict[tuple[str, float, float], list[ObjectDict]] = {}
+        for char in reversed(chars):
+            waiting.setdefault(key(char["text"], char["x0"], char["y0"]), []).append(char)
+        ordered: list[ObjectDict] = []
+
+        def visit(item: Any) -> None:
+            if hasattr(item, "fontname") and hasattr(item, "bbox"):
+                matches = waiting.get(key(item.get_text(), item.bbox[0], item.bbox[1]))
+                if matches:
+                    ordered.append(matches.pop())
+            for child in getattr(item, "_objs", ()):
+                visit(child)
+
+        visit(self.layout)
+        seen = {id(char) for char in ordered}
+        return ordered + [char for char in chars if id(char) not in seen]
 
     def _objects_for(self, kind: str) -> list[ObjectDict]:
         return self.objects.get(kind, [])
@@ -775,7 +827,10 @@ class Page(Container):
 
     def _structured(self) -> Any:
         if self._structured_page is None:
-            result = self.pdf._document.extract(pages=(self.page_number,))
+            try:
+                result = self.pdf._document.extract(pages=(self.page_number,))
+            except PdfError as error:
+                raise PdfminerException(error) from error
             self._structured_page = result.pages[0]
         return self._structured_page
 
@@ -802,10 +857,16 @@ class Page(Container):
                         self.initial_doctop,
                         y0=top if self.rotation in {180, 270} else item.rect[1],
                         y1=bottom if self.rotation in {180, 270} else item.rect[3],
-                        contents=item.contents,
+                        contents=_annotation_text(
+                            item.dict.get(PdfName(b"Contents")),
+                            "contents",
+                            self.pdf.raise_unicode_errors,
+                        ),
                         data=self.pdf._document.resolver.deep_resolve(item.dict),
                         uri=None,
-                        title=_annotation_title(item.dict),
+                        title=_annotation_text(
+                            item.dict.get(PdfName(b"T")), "title", self.pdf.raise_unicode_errors
+                        ),
                     )
                 )
             if isinstance(self, CroppedPage) and self.bbox != self.root_page.bbox:
@@ -911,7 +972,7 @@ class Page(Container):
 
     @property
     def layout(self) -> Any:
-        if self._layout is None:
+        if self._layout_page is None:
             from ..pdfminer import LAParams, extract_pages
             from ..pdfminer._projection import project_page
 
@@ -921,7 +982,7 @@ class Page(Container):
 
             if self.pdf._opened_as_pdfminer:
                 engine_page = self._adapter.page
-                self._layout = (
+                self._layout_page = (
                     project_page(
                         engine_page,
                         laparams or LAParams(),
@@ -931,7 +992,7 @@ class Page(Container):
                     else None
                 )
             else:
-                self._layout = next(
+                self._layout_page = next(
                     (
                         item
                         for item in extract_pages(
@@ -943,7 +1004,7 @@ class Page(Container):
                     ),
                     None,
                 )
-        return self._layout
+        return self._layout_page
 
     @property
     def edges(self) -> list[ObjectDict]:
@@ -966,6 +1027,10 @@ class Page(Container):
     @property
     def curve_edges(self) -> list[ObjectDict]:
         return _edges_for(self.curves) or _edges_for(self.rects)
+
+    @property
+    def _layout(self) -> Any:
+        return self.layout
 
     def _layout_objects(self, name: str) -> list[ObjectDict]:
         if self.pdf.laparams is None or self.layout is None:
@@ -1007,37 +1072,24 @@ class Page(Container):
     def textlineverticals(self) -> list[ObjectDict]:
         return self._layout_objects("lttextlinevertical")
 
+    def get_textmap(self, **kwargs: Any) -> Any:
+        options: dict[str, Any] = {"layout_bbox": self.bbox}
+        if "layout_width_chars" not in kwargs:
+            options["layout_width"] = self.width
+        if "layout_height_chars" not in kwargs:
+            options["layout_height"] = self.height
+        return utils.chars_to_textmap(self.chars, **{**options, **kwargs})
+
     def extract_text(self, **kwargs: Any) -> str:
-        for name, allowed in (
-            ("line_dir", {"ttb", "btt"}),
-            ("char_dir", {"ltr", "rtl"}),
-            ("line_dir_rotated", {"ttb", "btt"}),
-            ("char_dir_rotated", {"ltr", "rtl"}),
-            ("line_dir_render", {"ttb", "btt"}),
-            ("char_dir_render", {"ltr", "rtl"}),
-        ):
-            if name in kwargs and kwargs[name] not in allowed:
-                raise ValueError(f"{name} must be one of {sorted(allowed)}")
-        if not self.chars:
-            return ""
-        if kwargs.get("layout"):
-            if "layout_width" in kwargs and "layout_width_chars" in kwargs:
-                raise ValueError("Cannot specify both layout_width and layout_width_chars")
-            if "layout_height" in kwargs and "layout_height_chars" in kwargs:
-                raise ValueError("Cannot specify both layout_height and layout_height_chars")
-            return _layout_text(
-                self.chars,
-                self.bbox,
-                width_chars=int(kwargs.get("layout_width_chars", 80)),
-                height_chars=kwargs.get("layout_height_chars"),
-            )
-        return plain_text(self.chars, **kwargs)
+        return self.get_textmap(**kwargs).as_string
 
     def extract_text_simple(self, **kwargs: Any) -> str:
-        return self.extract_text(**kwargs)
+        return utils.extract_text_simple(self.chars, **kwargs)
 
-    def extract_text_lines(self, **kwargs: Any) -> list[ObjectDict]:
-        return _lines(self.chars, return_chars=kwargs.get("return_chars", True))
+    def extract_text_lines(
+        self, strip: bool = True, return_chars: bool = True, **kwargs: Any
+    ) -> list[ObjectDict]:
+        return self.get_textmap(**kwargs).extract_text_lines(strip=strip, return_chars=return_chars)
 
     def to_dict(self, object_types: list[str] | None = None) -> dict[str, Any]:
         names = [*self.objects, "annot"] if object_types is None else object_types
@@ -1054,10 +1106,7 @@ class Page(Container):
         }
 
     def extract_words(self, **kwargs: Any) -> list[ObjectDict]:
-        for name in ("horizontal_ltr", "vertical_ttb"):
-            if name in kwargs and not isinstance(kwargs[name], bool):
-                raise ValueError(f"{name} must be a boolean")
-        return _words(self.chars, **kwargs)
+        return utils.extract_words(self.chars, **kwargs)
 
     def find_tables(
         self, table_settings: Mapping[str, Any] | TableSettings | None = None
@@ -1106,7 +1155,10 @@ class Page(Container):
             resolution = width / max(self.width, 1e-9) * 72.0
         elif height is not None:
             resolution = height / max(self.height, 1e-9) * 72.0
-        raster = self._adapter.render(dpi=resolution or 72.0, antialias=antialias)
+        try:
+            raster = self._adapter.render(dpi=resolution or 72.0, antialias=antialias)
+        except (OverflowError, MemoryError, PdfError) as error:
+            raise PdfminerException(error) from error
         bbox = (
             self.bbox
             if self.bbox != self.mediabox
@@ -1115,56 +1167,23 @@ class Page(Container):
         return PageImage(self, raster, bbox=bbox)
 
     def search(
-        self, pattern: str | re.Pattern[str], regex: bool = True, case: bool = True, **kwargs: Any
+        self,
+        pattern: str | re.Pattern[str],
+        regex: bool = True,
+        case: bool = True,
+        main_group: int = 0,
+        return_chars: bool = True,
+        return_groups: bool = True,
+        **kwargs: Any,
     ) -> list[ObjectDict]:
-        if isinstance(pattern, str) and (not pattern or pattern.isspace()):
-            return []
-        if isinstance(pattern, re.Pattern) and (not regex or not case):
-            raise ValueError("Cannot combine a compiled regex with regex=False or case=False")
-        main_group = kwargs.get("main_group", 0)
-        characters = self.chars
-        text = "".join(char["text"] for char in characters)
-        source_chars = [char for char in characters for _ in char["text"]]
-        expression = (
-            re.sub(r"\\ +", r"\\s+", re.escape(pattern))
-            if regex and isinstance(pattern, str) and " " in pattern
-            else pattern
-            if regex
-            else re.escape(pattern)  # type: ignore[type-var]  # ty: ignore[invalid-argument-type]
+        return self.get_textmap(**kwargs).search(
+            pattern,
+            regex=regex,
+            case=case,
+            main_group=main_group,
+            return_chars=return_chars,
+            return_groups=return_groups,
         )
-        flags = 0 if case else re.IGNORECASE
-
-        def build_result(match: Any, chars: list[ObjectDict]) -> ObjectDict:
-            x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in chars)
-            result: ObjectDict = {
-                "text": match.group(main_group),
-                "x0": x0,
-                "top": top,
-                "x1": x1,
-                "bottom": bottom,
-                "doctop": min(char["doctop"] for char in chars),
-            }
-            if kwargs.get("return_groups", True):
-                result["groups"] = match.groups()
-            if kwargs.get("return_chars", True):
-                result["chars"] = chars
-            return result
-
-        results: list[ObjectDict] = []
-        for match in re.finditer(expression, text, flags):
-            if not match.group(main_group).strip():
-                continue
-            chars = source_chars[match.start(main_group) : match.end(main_group)]
-            results.append(build_result(match, chars))
-        if not results and regex and isinstance(pattern, str) and not kwargs.get("layout"):
-            formatted = self.extract_text()
-            fallback_expression = re.sub(r"\\ +", r"\\s+", re.escape(pattern))
-            if self.chars:
-                results.extend(
-                    build_result(match, self.chars)
-                    for match in re.finditer(fallback_expression, formatted, flags)
-                )
-        return results
 
     def crop(self, bbox: BBox, relative: bool = False, strict: bool = True) -> CroppedPage:
         return CroppedPage(self, bbox, relative, strict, "intersects")
@@ -1179,25 +1198,8 @@ class Page(Container):
         return FilteredPage(self, test_function)
 
     def dedupe_chars(self, **kwargs: Any) -> FilteredPage:
-        tolerance = float(kwargs.get("tolerance", 1))
-        attributes = ("upright", "text", *(kwargs.get("extra_attrs", ("fontname", "size")) or ()))
-        chars = self.chars
-        groups: dict[tuple[Any, ...], list[int]] = {}
-        for index, char in enumerate(chars):
-            groups.setdefault(tuple(char.get(name) for name in attributes), []).append(index)
-        retained: list[int] = []
-
-        def position(index: int) -> tuple[float, float]:
-            return chars[index]["doctop"], chars[index]["x0"]
-
-        for indexes in groups.values():
-            for line in cluster_by(indexes, lambda index: chars[index]["doctop"], tolerance):
-                retained.extend(
-                    min(cluster, key=position)
-                    for cluster in cluster_by(line, lambda index: chars[index]["x0"], tolerance)
-                )
         result = FilteredPage(self, lambda _obj: True)
-        result._objects = {**self.objects, "char": [chars[index] for index in sorted(retained)]}
+        result._objects = {**self.objects, "char": utils.dedupe_chars(self.chars, **kwargs)}
         return result
 
     def _document_source(self) -> PdfInput:
@@ -1312,12 +1314,12 @@ class PageImage:
         if self.bbox != page.root_page.bbox:
             x0, top, x1, bottom = self.bbox
             source_width, source_height = raster.width, raster.height
-            left = max(0, round(x0 / max(page.root_page.width, 1e-9) * source_width))
-            right = min(source_width, round(x1 / max(page.root_page.width, 1e-9) * source_width))
-            upper = max(0, round(top / max(page.root_page.height, 1e-9) * source_height))
-            lower = min(
-                source_height, round(bottom / max(page.root_page.height, 1e-9) * source_height)
-            )
+            scale_x = source_width / max(page.root_page.width, 1e-9)
+            scale_y = source_height / max(page.root_page.height, 1e-9)
+            left = max(0, round(x0 * scale_x))
+            right = min(source_width, left + math.ceil((x1 - x0) * scale_x))
+            upper = max(0, round(top * scale_y))
+            lower = min(source_height, upper + math.ceil((bottom - top) * scale_y))
             row_size = source_width * raster.channels
             cropped = b"".join(
                 bytes(raster.data)[
@@ -1417,8 +1419,8 @@ class PageImage:
         pixels = bytearray(self.raster.data)
         self._render_drawings(pixels)
         png = _encode_png(self.width, self.height, channels, pixels)
-        if kwargs.get("quantize") is False:
-            png += png_chunk(b"tEXt", b"quantize\x00false")
+        if kwargs.get("quantize", True):
+            png = _quantized_png(png)
         if hasattr(path, "write"):
             path.write(png)  # ty: ignore[call-non-callable]
         else:
@@ -1539,6 +1541,19 @@ class PageImage:
             image.show()
 
 
+def _quantized_png(png: bytes) -> bytes:
+    # Like upstream, limit output to 256 colors. Without Pillow, the PNG stays as it is.
+    try:
+        from PIL import Image
+    except ImportError:
+        return png
+    with Image.open(BytesIO(png)) as image:
+        quantized = image.convert("RGB").quantize(256)
+        stream = BytesIO()
+        quantized.save(stream, "PNG")
+        return stream.getvalue()
+
+
 def _encode_png(width: int, height: int, channels: int, pixels: bytes | bytearray) -> bytes:
     stride = width * channels
     scanlines = b"".join(
@@ -1573,8 +1588,10 @@ class PDF(ClosingMixin, Container):
         pages: Iterable[int] | None = None,
         laparams: Any = None,
         unicode_norm: str | None = None,
+        raise_unicode_errors: bool = True,
     ) -> None:
         self._unicode_norm = unicode_norm
+        self.raise_unicode_errors = raise_unicode_errors
         self._latest_capture = LatestCapture()
         opened_here = source is None
         if source is None:
@@ -1607,18 +1624,21 @@ class PDF(ClosingMixin, Container):
         repair: bool = False,
         gs_path: str | None = None,
         repair_setting: RepairSetting = "default",
+        raise_unicode_errors: bool = True,
         **_: Any,
     ) -> PDF:
         if repair:
             # The repaired copy carries no encryption, so the password is not reused.
             source = repair_stream(
-                source,  # type: ignore[arg-type]
+                source,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
                 password=password,
                 gs_path=gs_path,
                 setting=repair_setting,
             )
             password = ""
-        pdf = cls(_source(source, password), source, pages, laparams, unicode_norm)
+        pdf = cls(
+            _source(source, password), source, pages, laparams, unicode_norm, raise_unicode_errors
+        )
         pdf._opened_as_pdfminer = True
         return pdf
 
@@ -1714,10 +1734,6 @@ open = PDF.open
 def extract_text(source: PdfInput, **kwargs: Any) -> str:
     with PDF.open(source, **kwargs) as pdf:
         return "\f".join(page.extract_text(**kwargs) for page in pdf.pages) + "\f"
-
-
-def extract_words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
-    return _words(chars, **kwargs)
 
 
 def within_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
@@ -1905,13 +1921,11 @@ def resolve_all(value: Any) -> Any:
 
 
 def to_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else [value]
-
-
-def plain_text(chars: Iterable[ObjectDict], **kwargs: Any) -> str:
-    words = _words(chars, **kwargs)
-    lines = cluster_by_preserving_order(words, "top", float(kwargs.get("y_tolerance", 3)))
-    return "\n".join(" ".join(word["text"] for word in line) for line in lines)
+    if isinstance(value, list):
+        return value
+    if hasattr(value, "to_dict"):
+        return value.to_dict("records")
+    return list(value)
 
 
 def _edges_for(objs: Iterable[ObjectDict]) -> list[ObjectDict]:
@@ -1965,209 +1979,6 @@ def _edges(obj: ObjectDict) -> list[ObjectDict]:
     return _rect_edges(obj) if kind == "rect" else _curve_edges(obj)
 
 
-def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
-    tolerance = float(kwargs.get("x_tolerance", kwargs.get("tolerance", 3)))
-    ratio = kwargs.get("x_tolerance_ratio")
-    y_tolerance = float(kwargs.get("y_tolerance", kwargs.get("tolerance", 3)))
-    split_value = kwargs.get("split_at_punctuation", "")
-    split_punctuation = (
-        set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~") if split_value is True else set(split_value or "")
-    )
-    keep_blank = bool(kwargs.get("keep_blank_chars", False))
-    expand_ligatures = bool(kwargs.get("expand_ligatures", True))
-    return_chars = bool(kwargs.get("return_chars", False))
-    words: list[ObjectDict] = []
-    extra_attrs = tuple(kwargs.get("extra_attrs", ()))
-    values = list(chars)
-
-    def grouping_key(char: ObjectDict) -> tuple[Any, ...]:
-        return (char.get("upright", True), *(char[name] for name in extra_attrs))
-
-    def emit_word(word_chars: list[ObjectDict], direction: str) -> None:
-        x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in word_chars)
-        first = word_chars[0]
-        doctop_adjustment = first["doctop"] - first["top"]
-        word: ObjectDict = {
-            "text": "".join(
-                LIGATURE_EXPANSIONS.get(str(char["text"] or ""), str(char["text"] or ""))
-                if expand_ligatures
-                else str(char["text"] or "")
-                for char in word_chars
-            ),
-            "x0": x0,
-            "x1": x1,
-            "top": top,
-            "doctop": top + doctop_adjustment,
-            "bottom": bottom,
-            "upright": first.get("upright", True),
-            "height": bottom - top,
-            "width": x1 - x0,
-            "direction": direction,
-        }
-        if return_chars:
-            word["chars"] = list(word_chars)
-        for attribute in extra_attrs:
-            word[attribute] = first[attribute]
-        words.append(word)
-
-    for _, char_group in groupby(values, grouping_key):
-        group = list(char_group)
-        upright = bool(group[0].get("upright", True))
-        direction = (
-            "rtl"
-            if upright and kwargs.get("horizontal_ltr") is False
-            else "btt"
-            if not upright and kwargs.get("vertical_ttb") is False
-            else "ltr"
-            if upright
-            else "ttb"
-        )
-        line_key = "top" if upright else "x0"
-        line_tolerance = y_tolerance if upright else tolerance
-        for line in cluster_by(group, line_key, line_tolerance):
-            if direction == "ltr":
-                char_key = itemgetter("x0")
-                reverse = False
-            elif direction == "rtl":
-                char_key = itemgetter("x1")
-                reverse = True
-            elif direction == "ttb":
-                char_key = itemgetter("top")
-                reverse = False
-            else:
-                char_key = itemgetter("bottom")
-                reverse = True
-            ordered = sorted(line, key=char_key, reverse=reverse)
-            current: list[ObjectDict] = []
-            for char in ordered:
-                text = char["text"]
-                if not keep_blank and text.isspace():
-                    if current:
-                        emit_word(current, direction)
-                        current = []
-                    continue
-                punctuation_boundary = text in split_punctuation
-                previous = current[-1] if current else None
-                if previous is not None:
-                    intra_tolerance = (
-                        float(previous.get("size", 0)) * float(ratio)
-                        if ratio is not None
-                        else tolerance
-                    )
-                    if direction in {"ltr", "rtl"}:
-                        cross_tolerance = y_tolerance
-                        previous_cross = previous["top"]
-                        current_cross = char["top"]
-                        if direction == "ltr":
-                            previous_start = previous["x0"]
-                            previous_end = previous["x1"]
-                            current_start = char["x0"]
-                        else:
-                            previous_start = -previous["x1"]
-                            previous_end = -previous["x0"]
-                            current_start = -char["x1"]
-                    else:
-                        intra_tolerance = y_tolerance
-                        cross_tolerance = tolerance
-                        previous_cross = previous["x0"]
-                        current_cross = char["x0"]
-                        if direction == "ttb":
-                            previous_start = previous["top"]
-                            previous_end = previous["bottom"]
-                            current_start = char["top"]
-                        else:
-                            previous_start = -previous["bottom"]
-                            previous_end = -previous["top"]
-                            current_start = -char["bottom"]
-                    starts_new = (
-                        current_start < previous_start
-                        or current_start > previous_end + intra_tolerance
-                        or abs(current_cross - previous_cross) > cross_tolerance
-                    )
-                    if starts_new or punctuation_boundary:
-                        emit_word(current, direction)
-                        current = []
-                current.append(char)
-                if punctuation_boundary:
-                    emit_word(current, direction)
-                    current = []
-            if current:
-                emit_word(current, direction)
-    return words
-
-
-def _lines(chars: Iterable[ObjectDict], return_chars: bool = True) -> list[ObjectDict]:
-    grouped = _group_chars(chars)
-    lines: list[ObjectDict] = []
-    for group in grouped:
-        x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in group)
-        line: ObjectDict = {
-            "text": _line_text(group).rstrip(),
-            "x0": x0,
-            "top": top,
-            "x1": x1,
-            "bottom": bottom,
-            "doctop": min(char["doctop"] for char in group),
-        }
-        if return_chars:
-            line["chars"] = group
-        lines.append(line)
-    return lines
-
-
-def _group_chars(chars: Iterable[ObjectDict]) -> list[list[ObjectDict]]:
-    ordered = sorted(chars, key=lambda item: (item["top"], item["x0"]))
-    tiny_font = ordered and max(float(item.get("size", 1)) for item in ordered) <= 1
-    line_tolerance = 25 if tiny_font else 3
-    return [
-        group
-        for group in cluster_by(ordered, "top", line_tolerance)
-        if any(item["text"].strip() for item in group)
-    ]
-
-
-def _line_text(chars: Iterable[ObjectDict]) -> str:
-    ordered = sorted(chars, key=lambda item: item["x0"])
-    result: list[str] = []
-    previous: ObjectDict | None = None
-    pending_space = False
-    punctuation_only = all(not char["text"].isalnum() and char["text"] != " " for char in ordered)
-    for char in ordered:
-        if char["text"].isspace():
-            pending_space = True
-            continue
-        gap = char["x0"] - previous["x1"] if previous is not None else 0
-        insert_space = previous is not None and (pending_space or gap > 3) and not punctuation_only
-        if insert_space:
-            result.append(" ")
-        char_text = str(char["text"] or "")
-        result.append(LIGATURE_EXPANSIONS.get(char_text, char_text))
-        previous = char
-        pending_space = False
-    return "".join(result)
-
-
-def _layout_text(
-    chars: Iterable[ObjectDict],
-    bbox: BBox,
-    *,
-    width_chars: int = 80,
-    height_chars: int | None = None,
-) -> str:
-    values = list(chars)
-    x0, top, x1, bottom = bbox
-    width = max(x1 - x0, 1)
-    height = max(bottom - top, 1)
-    rows = height_chars or max(1, round(width_chars * height / width))
-    grid = [[" "] * width_chars for _ in range(rows)]
-    for char in values:
-        row = round((char["top"] - top) / height * max(rows - 1, 1))
-        col = round((char["x0"] - x0) / width * max(width_chars - 1, 1))
-        if 0 <= row < rows and 0 <= col < width_chars:
-            grid[row][col] = char["text"][:1]
-    return "\n".join("".join(row) for row in grid).rstrip("\n")
-
-
 __all__ = (
     "BBox",
     "CroppedPage",
@@ -2193,3 +2004,4 @@ import core_pdf_compat.pdfplumber.page  # noqa: E402, F401
 
 from . import utils  # noqa: E402
 from .table import Table, TableFinder, TableSettings  # noqa: E402
+from .utils.text import extract_words  # noqa: E402
