@@ -31,6 +31,7 @@ from core_pdf.impl.types import (
     ReprFields,
     frozen_setattr,
 )
+from core_pdf_spec.s_07_content.model import PATH_CLOSE, PATH_CURVE, PATH_OPERAND_COUNTS, PATH_RECT
 
 from .._shared import BBox, ClosingMixin, PdfInput
 from .exceptions import PdfminerException
@@ -125,6 +126,7 @@ class EnginePageAdapter:
         self.latest_capture = latest_capture
         self._program: Any | None = None
         self._pdfminer_program: CapturedProgram | None = None
+        self._painted_paths: tuple[Any, ...] = ()
         width: int | float = page.width
         height: int | float = page.height
         media_left: int | float = 0
@@ -349,12 +351,17 @@ class EnginePageAdapter:
         # Characters and the pdfminer layout both read pdfminer's own text walk of the page.
         program = self._pdfminer_program
         if program is None:
-            from ..pdfminer._capture import pdfminer_page_program
+            from ..pdfminer._capture import pdfminer_page_capture
 
-            program = self._pdfminer_program = pdfminer_page_program(self.page)
+            program, self._painted_paths = pdfminer_page_capture(self.page)
+            self._pdfminer_program = program
             if self.latest_capture is not None:
                 self.latest_capture.hold(self)
         return program
+
+    def painted_paths(self) -> tuple[Any, ...]:
+        self.pdfminer_program()
+        return self._painted_paths
 
     def flush_program(self) -> None:
         self._program = None
@@ -516,6 +523,121 @@ def _drawing(page: EnginePageAdapter, drawing: DrawingRecord, doctop: float) -> 
     )
 
 
+def _page_point(page: EnginePageAdapter, point: tuple[float, float]) -> tuple[float, float]:
+    info = page.info
+    x, top = point[0], info.height - point[1]
+    rotation = info.rotation % 360
+    if rotation == 90:
+        x, top = info.height - top, x
+    elif rotation == 180:
+        x, top = info.width - x, info.height - top
+    elif rotation == 270:
+        x, top = top, info.width - x
+    return x + info.media_x0, top + info.media_top
+
+
+def _path_segments(path: Any, media_left: float, media_bottom: float) -> list[tuple[Any, ...]]:
+    matrix = path.ctm
+
+    def device(x: float, y: float) -> tuple[float, float]:
+        return (
+            matrix.a * x + matrix.c * y + matrix.e - media_left,
+            matrix.b * x + matrix.d * y + matrix.f - media_bottom,
+        )
+
+    coords = path.coords
+    position = 0
+    segments: list[tuple[Any, ...]] = []
+    for op in path.ops:
+        if op == PATH_CLOSE:
+            segments.append(("h",))
+        elif op == PATH_RECT:
+            x, y, width, height = coords[position : position + 4]
+            segments += [
+                ("m", device(x, y)),
+                ("l", device(x + width, y)),
+                ("l", device(x + width, y + height)),
+                ("l", device(x, y + height)),
+                ("h",),
+            ]
+        elif op == PATH_CURVE:
+            _, _, x1, y1, x2, y2, x3, y3 = coords[position : position + 8]
+            segments.append(("c", device(x1, y1), device(x2, y2), device(x3, y3)))
+        else:
+            segments.append((chr(op), device(coords[position], coords[position + 1])))
+        position += PATH_OPERAND_COUNTS[op]
+    return segments
+
+
+def _split_subpaths(segments: list[tuple[Any, ...]]) -> list[list[tuple[Any, ...]]]:
+    shape = "".join(segment[0] for segment in segments)
+    if not shape.startswith("m"):
+        return []
+    if shape.count("m") == 1:
+        return [segments]
+    return [segments[match.start() : match.end()] for match in re.finditer(r"m[^m]+", shape)]
+
+
+def _classify_subpath(segments: list[tuple[Any, ...]]) -> tuple[str, list[tuple[float, float]]]:
+    # pdfminer.six's PDFLayoutAnalyzer.paint_path, Copyright (c) 2004-2016 Yusuke Shinyama,
+    # under the MIT License.
+    shape = "".join(segment[0] for segment in segments)
+    points = [segments[0][-1] if segment[0] == "h" else segment[-1] for segment in segments]
+    if len(shape) > 3 and shape.endswith("lh") and points[-2] == points[0]:
+        shape = f"{shape[:-2]}h"
+        points.pop()
+    if shape in {"mlh", "ml"}:
+        return "line", points[:2]
+    if shape in {"mlllh", "mllll"}:
+        (x0, y0), (x1, y1), (x2, y2), (x3, y3), last = points
+        axis_aligned = (x0 == x1 and y1 == y2 and x2 == x3 and y3 == y0) or (
+            y0 == y1 and x1 == x2 and y2 == y3 and x3 == x0
+        )
+        if points[0] == last and axis_aligned:
+            return "rect", [(x0, y0), (x2, y0), (x2, y2), (x0, y2)]
+    return "curve", points
+
+
+def _path_objects(page: EnginePageAdapter, doctop: float) -> list[ObjectDict]:
+    objects: list[ObjectDict] = []
+    for path in page.painted_paths():
+        segments_by_subpath = _split_subpaths(
+            _path_segments(path, page.info.media_left, page.info.media_bottom)
+        )
+        for segments in segments_by_subpath:
+            object_type, points = _classify_subpath(segments)
+            ys = [point[1] for point in points]
+            placed = [_page_point(page, point) for point in points]
+            objects.append(
+                _envelope(
+                    object_type,
+                    page.info.number,
+                    (
+                        min(point[0] for point in placed),
+                        min(point[1] for point in placed),
+                        max(point[0] for point in placed),
+                        max(point[1] for point in placed),
+                    ),
+                    doctop,
+                    y0=min(ys),
+                    y1=max(ys),
+                    pts=placed,
+                    path=[
+                        (segment[0], *(_page_point(page, point) for point in segment[1:]))
+                        for segment in segments
+                    ],
+                    fill=path.kind != "stroke",
+                    stroke=path.kind != "fill",
+                    evenodd=path.fill_rule == "evenodd",
+                    linewidth=path.line_width,
+                    stroking_color=path.stroke_color,
+                    non_stroking_color=path.fill_color,
+                    dash=path.dash,
+                )
+            )
+    return objects
+
+
 def _image(page: EnginePageAdapter, image: ImageRecord, doctop: float) -> ObjectDict | None:
     metadata = image.image_metadata
     box = image.rect or image.image_clip
@@ -645,16 +767,14 @@ class Page:
             program = self._adapter.page_program()
             for drawing in self._adapter.drawings(program):
                 record = _drawing(self._adapter, drawing, self.initial_doctop)
-                if record["object_type"] in {"state-push", "state-pop", "clip", "marked-content"}:
+                if record["object_type"] != "image":
                     continue
-                if record["object_type"] == "stroke":
-                    record["object_type"] = "line"
-                elif record["object_type"] == "fill":
-                    record["object_type"] = "rect"
                 if record["object_type"] == "image":
                     record.setdefault("srcsize", (record["width"], record["height"]))
                     record.setdefault("stream", record.get("data"))
                 objects.setdefault(record["object_type"], []).append(record)
+            for path_object in _path_objects(self._adapter, self.initial_doctop):
+                objects.setdefault(path_object["object_type"], []).append(path_object)
             for image in self._adapter.images(program):
                 image_record = _image(self._adapter, image, self.initial_doctop)
                 if image_record is not None:
