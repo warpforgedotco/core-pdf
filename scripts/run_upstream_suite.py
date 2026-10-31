@@ -153,7 +153,11 @@ def main() -> int:
         suite,
         reference=arguments.reference,
         junit=junit,
-        extra=[*extra, *(("-m", scope["markers"]) if "markers" in scope else ())],
+        extra=[
+            *extra,
+            *(("-m", scope["markers"]) if "markers" in scope else ()),
+            *(f"--deselect={node}" for node in scope.get("deselect", ())),
+        ],
         excluded_files=tuple(scope.get("files", ())),
     )
     log = RESULTS / f"{arguments.suite}-{mode}.log"

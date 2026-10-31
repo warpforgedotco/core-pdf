@@ -1,7 +1,8 @@
 # Upstream tests the facades do not aim to pass. Paths are relative to the checkout.
-# `names` drops any test whose source mentions one of them. Everything else is in
-# scope, so a failure there is a facade gap. run_upstream_suite.py applies this list to
-# the real library too, so both runs count the same tests.
+# `names` drops any test whose source mentions one of them, and `deselect` drops exact
+# pytest node ids. Everything else is in scope, so a failure there is a facade gap.
+# run_upstream_suite.py applies this list to the real library too, so both runs count
+# the same tests.
 
 [pdfplumber]
 reason = "pdfium's pixel rounding for a rotated MediaBox, and a no-smoothing render mode"
@@ -26,7 +27,37 @@ files = [
 ]
 
 [pypdf]
-reason = "imports these unimplemented modules; a test is skipped only if it reaches one"
+reason = "imports these unimplemented modules; a test is skipped only if it reaches one. Tests of pypdf internals are out of scope; the public API stays in scope however hard it is to implement"
+# Private to pypdf: a leading underscore, a member of a private module, or reader
+# caches such as resolved_objects. A test using one is out of scope even if the rest of
+# it is public. Public attributes like trailer, root_object and get_object stay in scope.
+names = [
+    # PdfReader internals
+    "_find_pdf_objects", "_find_pdf_trailers", "_find_previous_startxref_pos", "_get_indirect_object",
+    "_get_page_number_by_indirect", "resolved_objects", "xref_objStm", "_encryption",
+    # PdfDocCommon internals
+    "_get_named_destinations", "_list_attachments",
+    # PageObject internals
+    "_content_stream_images", "_get_fonts", "_get_image",
+    # generic and font internals
+    "_read_unsized_from_stream", "_get_typographic_maps",
+    # Private modules. A subprocess script or pytest.warns block hides a stub from the
+    # skip hook, and extract_inline_default does arithmetic on a stubbed constant.
+    "_appearance_stream", "_font", "_utils", "deprecate_with_replacement", "extract_inline_default",
+]
+# With pypdf._crypt_providers stubbed, HAS_AES is false, so these take a branch that
+# expects DependencyError and compares it to a private constant. The real library never
+# takes it here, and a facade that decrypts AES cannot pass it. The non-AES parameters
+# of this test stay in scope, so `names` cannot express this.
+deselect = [
+    "tests/test_encryption.py::test_encryption[r4-aes-user-password.pdf-True]",
+    "tests/test_encryption.py::test_encryption[r5-empty-password.pdf-True]",
+    "tests/test_encryption.py::test_encryption[r5-user-password.pdf-True]",
+    "tests/test_encryption.py::test_encryption[r5-owner-password.pdf-True]",
+    "tests/test_encryption.py::test_encryption[r6-empty-password.pdf-True]",
+    "tests/test_encryption.py::test_encryption[r6-user-password.pdf-True]",
+    "tests/test_encryption.py::test_encryption[r6-owner-password.pdf-True]",
+]
 stubs = [
     "pypdf.generic",
     "pypdf.annotations",
