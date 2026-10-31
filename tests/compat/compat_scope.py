@@ -114,7 +114,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 
 def real_unstructured_elements(elements: list[Any]) -> list[object]:
     # Upstream tests check real element classes and feed elements to real chunking, so
-    # the facade's elements are rebuilt from their class name, text and metadata.
+    # the facade's elements are rebuilt from their class name, id, text and metadata.
     # Imported by name, because only the suite's own environment has unstructured.
     real: Any = importlib.import_module("unstructured.documents.elements")
     coordinates_module: Any = importlib.import_module("unstructured.documents.coordinates")
@@ -130,7 +130,11 @@ def real_unstructured_elements(elements: list[Any]) -> list[object]:
             )
             values["coordinates"] = real.CoordinatesMetadata(coordinates.points, system)
         cls = getattr(real, type(element).__name__, real.Text)
-        item = cls(text=element.text, metadata=real.ElementMetadata(**values))
+        item = cls(
+            text=element.text,
+            element_id=element.id or None,
+            metadata=real.ElementMetadata(**values),
+        )
         rebuilt.append(item)
     return rebuilt
 
