@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, NamedTuple, TypeAlias
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_content.inline_images import InlineImage, parse_inline_image
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
+from core_pdf_spec.s_07_syntax.serialize import serialize_object
 from core_pdf_spec.s_07_syntax.types import CachedPdfObject
 from core_pdf_spec.s_07_syntax_primitives.coercion import require_pdf_integer, require_pdf_number
 from core_pdf_spec.s_07_syntax_primitives.content_operators import (
@@ -157,6 +158,11 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
         raise PdfParseError("content stream ends with operands")
 
 
+def serialize_content_operation(operator: bytes, operands: Sequence[object]) -> bytes:
+    """7.8.2: write the operands, then the operator that applies to them."""
+    return b" ".join((*map(serialize_object, operands), operator)) + b"\n"
+
+
 __all__ = (
     "ContentOperand",
     "ContentOperands",
@@ -166,4 +172,5 @@ __all__ = (
     "parse_content_token",
     "validate_content_operands",
     "iter_content_operations",
+    "serialize_content_operation",
 )
