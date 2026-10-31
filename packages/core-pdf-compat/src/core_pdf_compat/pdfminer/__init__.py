@@ -48,6 +48,8 @@ for export in (
     export.__module__ = __name__
 
 
+__version__ = "20260107"
+
 __all__ = (
     "LAParams",
     "LTAnno",
