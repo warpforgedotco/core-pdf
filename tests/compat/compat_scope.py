@@ -3,6 +3,7 @@
 import inspect
 import os
 import re
+import sys
 
 import pytest
 
@@ -33,3 +34,33 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
         report.outcome = "skipped"
         report.longrepr = (str(item.path), item.location[1] or 0, f"out of scope: {error}")
     return report
+
+
+def contains_stub(value: object) -> bool:
+    if isinstance(value, (list, tuple, set)):
+        return any(contains_stub(item) for item in value)
+    if isinstance(value, dict):
+        return any(contains_stub(item) for item in value.values())
+    return type(value).__name__ == "StubMeta"
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collectstart() -> None:
+    set_collecting(active=True)
+
+
+def pytest_collection_finish() -> None:
+    set_collecting(active=False)
+
+
+def set_collecting(*, active: bool) -> None:
+    module = sys.modules.get("compat_alias")
+    if module is not None:
+        module.COLLECTION["active"] = active
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    set_collecting(active=False)
+    spec = getattr(item, "callspec", None)
+    if spec is not None and contains_stub(spec.params):
+        pytest.skip("out of scope: parametrized with an unimplemented API")

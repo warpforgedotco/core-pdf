@@ -14,7 +14,7 @@ from core_pdf.impl.output_model import (
     Document,
     Page,
 )
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pypdf._text import LegacyTextCaches, extract_legacy_text
 from core_pdf_spec.s_07_syntax.types import PdfDict
@@ -521,9 +521,47 @@ class PdfReader(ClosingMixin):
             return destination.page
         raise ValueError("destination does not resolve to a page")
 
-    def get_fields(self) -> dict[str, Any]:
+    def _catalog_name(self, key: str) -> str | None:
+        source = self._source_document()
+        if source is None:
+            return None
+        value = source.resolver.resolve(source.catalog().get(key))
+        return f"/{value.value}" if isinstance(value, PdfName) else None
+
+    def _source_document(self) -> Any:
+        document = self.__dict__.get("_document")
+        return None if document is None else document.source_pdf
+
+    @property
+    def page_layout(self) -> str | None:
+        return self._catalog_name("PageLayout")
+
+    @property
+    def page_mode(self) -> str | None:
+        return self._catalog_name("PageMode")
+
+    @property
+    def page_labels(self) -> list[str]:
+        source = self._source_document()
+        if source is None:
+            return []
+        count = len(source.pages)
+        labels = source.build_page_labels(page_count=count) or [None] * count
+        return [label or str(index) for index, label in enumerate(labels, 1)]
+
+    @property
+    def pdf_header(self) -> str:
+        source = self.__dict__.get("_encrypted_source")
+        if not isinstance(source, (bytes, bytearray)):
+            source = bytes(self._source_document().raw_data)
+        return bytes(source[:8]).decode("latin-1")
+
+    def get_fields(
+        self, tree: object = None, retval: dict[str, Any] | None = None, fileobj: Any = None
+    ) -> dict[str, Any]:
+        del tree, fileobj
         if self._document is None:
-            return {}
+            return {} if retval is None else retval
         return {
             item.record.name: item.record
             for item in self._document.source_pdf.extract_form_fields()
