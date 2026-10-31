@@ -110,7 +110,7 @@ class PdfDocCommon:
 
     @property
     def viewer_preferences(self) -> ViewerPreferences | None:
-        preferences = self.root_object.get("/ViewerPreferences")
+        preferences = self.root_object.get_resolved("/ViewerPreferences")
         if preferences is None:
             return None
         if not isinstance(preferences, ViewerPreferences):
@@ -123,11 +123,11 @@ class PdfDocCommon:
 
     @property
     def threads(self) -> ArrayObject | None:
-        return self.root_object.get(Core.THREADS)
+        return self.root_object.get_resolved(Core.THREADS)
 
     @property
     def open_destination(self) -> Any:
-        action = self.root_object.get("/OpenAction")
+        action = self.root_object.get_resolved("/OpenAction")
         if isinstance(action, (bytes, str)):
             return create_string_object(action)
         if not isinstance(action, ArrayObject):
@@ -179,7 +179,7 @@ class PdfDocCommon:
         catalog = self.root_object
         if "/Dests" in catalog:
             return catalog["/Dests"]
-        return catalog["/Names"].get("/Dests") if "/Names" in catalog else None
+        return catalog["/Names"].get_resolved("/Dests") if "/Names" in catalog else None
 
     @staticmethod
     def _destination_array(value: Any) -> Any:
@@ -233,7 +233,7 @@ class PdfDocCommon:
     ) -> list[Any]:
         if outline is None:
             outline = []
-            lines = self.root_object.get(Core.OUTLINES)
+            lines = self.root_object.get_resolved(Core.OUTLINES)
             if isinstance(lines, DictionaryObject) and "/First" in lines:
                 node = lines["/First"]
             self._named_destinations = self._get_named_destinations()
@@ -300,7 +300,7 @@ class PdfDocCommon:
             logger.warning("Removed unexpected destination %r from destination", target)
             item = self._build_destination(title, None)
 
-        color = node.get("/C")
+        color = node.get_resolved("/C")
         if isinstance(color, list):
             item[NameObject("/C")] = ArrayObject(FloatObject(part) for part in color)
         elif color is not None:
@@ -309,7 +309,7 @@ class PdfDocCommon:
             item[NameObject("/F")] = node["/F"]
         if "/Count" in node:
             item[NameObject("/Count")] = node["/Count"]
-        item[NameObject("/%is_open%")] = BooleanObject(node.get("/Count", 0) >= 0)
+        item[NameObject("/%is_open%")] = BooleanObject(node.get_resolved("/Count", 0) >= 0)
         item.node = node
         item.indirect_reference = node.indirect_reference
         return item
@@ -353,32 +353,32 @@ class PdfDocCommon:
             return parent["/TM"]
         if "/Parent" in parent:
             prefix = self._get_qualified_field_name(parent=parent["/Parent"], visited=visited)
-            return f"{prefix}.{parent.get('/T', '')}"
-        return parent.get("/T", "")
+            return f"{prefix}.{parent.get_resolved('/T', '')}"
+        return parent.get_resolved("/T", "")
 
     @staticmethod
     def _normal_appearance(appearance: Any) -> DictionaryObject:
         appearance = appearance.get_object()
         if not isinstance(appearance, DictionaryObject):
             raise PdfReadError(f"Expected appearance dictionary, got {appearance!r}")
-        normal = appearance.get("/N")
+        normal = appearance.get_resolved("/N")
         if not isinstance(normal, DictionaryObject):
             raise PdfReadError(f"Expected /N appearance dictionary, got {normal!r}")
         return normal
 
     def _button_states(self, field: Any) -> ArrayObject | None:
-        if field.get(FA.FT, "") != "/Btn":
+        if field.get_resolved(FA.FT, "") != "/Btn":
             return None
         if "/AP" in field:
             states = ArrayObject(self._normal_appearance(field["/AP"]).keys())
             if "/Off" not in states:
                 states.append(NameObject("/Off"))
             return states
-        flags = field.get(FA.Ff, 0)
+        flags = field.get_resolved(FA.Ff, 0)
         if not flags & FA.FfBits.Radio:
             return None
         states = ArrayObject()
-        for reference in field.get(FA.Kids, ()):
+        for reference in field.get_resolved(FA.Kids, ()):
             kid = reference.get_object()
             if "/AP" not in kid:
                 raise PdfReadError(f"Button field kid missing /AP: {kid!r}")
@@ -397,7 +397,7 @@ class PdfDocCommon:
             self._write_field(fileobj, field)
             fileobj.write("\n")
         output = retval[key] = Field(field)
-        if field.get(FA.FT, "") == "/Ch" and field.get(FA.Opt):
+        if field.get_resolved(FA.FT, "") == "/Ch" and field.get_resolved(FA.Opt):
             output[NameObject("/_States_")] = field[FA.Opt]
         states = self._button_states(field)
         if states is not None:
@@ -407,7 +407,7 @@ class PdfDocCommon:
             logger.warning("%s already parsed", key)
             return
         stack.append(field)
-        for reference in field.get("/Kids", ()):
+        for reference in field.get_resolved("/Kids", ()):
             self.get_fields(reference.get_object(), retval, fileobj, stack)
 
     @staticmethod
@@ -421,7 +421,7 @@ class PdfDocCommon:
                 if value in FIELD_TYPE_NAMES:
                     fileobj.write(f"{label}: {FIELD_TYPE_NAMES[value]}\n")
             elif attribute == FA.Parent:
-                name = value.get(FA.TM) or value.get(FA.T)
+                name = value.get_resolved(FA.TM) or value.get_resolved(FA.T)
                 if name is not None:
                     fileobj.write(f"{label}: {name}\n")
             else:
@@ -430,20 +430,20 @@ class PdfDocCommon:
     def get_form_text_fields(self, full_qualified_name: bool = False) -> dict[str, Any]:
         output: dict[str, Any] = {}
         for name, field in (self.get_fields() or {}).items():
-            if field.get("/FT") != "/Tx":
+            if field.get_resolved("/FT") != "/Tx":
                 continue
-            key = name if full_qualified_name else field.get("/T", name)
+            key = name if full_qualified_name else field.get_resolved("/T", name)
             if key in output and not full_qualified_name:
                 repeats = sum(1 for other in output if other.startswith(f"{key}."))
                 key = f"{key}.{repeats + 2}"
-            output[key] = field.get("/V")
+            output[key] = field.get_resolved("/V")
         return output
 
     def _pages_with_widget(self, widget: Any) -> list[Any]:
         if "/P" in widget:
             return [widget["/P"].get_object()]
         reference = widget.indirect_reference
-        return [page for page in self.pages if reference in page.get("/Annots", ())]
+        return [page for page in self.pages if reference in page.get_resolved("/Annots", ())]
 
     def get_pages_showing_field(self, field: Any) -> list[Any]:
         try:
@@ -452,14 +452,14 @@ class PdfDocCommon:
             raise ValueError("Field type is invalid") from exc
         if is_null_or_none(field.get_inherited(key="/FT", default=None)):
             raise ValueError("Field is not valid")
-        if field.get("/Subtype", "") == "/Widget":
+        if field.get_resolved("/Subtype", "") == "/Widget":
             found = self._pages_with_widget(field)
         else:
             found = []
-            for reference in field.get("/Kids", ()):
+            for reference in field.get_resolved("/Kids", ()):
                 kid = reference.get_object()
                 # A kid without /T is a widget of this field, not a field of its own.
-                if kid.get("/Subtype", "") == "/Widget" and "/T" not in kid:
+                if kid.get_resolved("/Subtype", "") == "/Widget" and "/T" not in kid:
                     found += self._pages_with_widget(kid)
         return [self._page_of(item) for item in found]
 
@@ -470,7 +470,7 @@ class PdfDocCommon:
 
     @property
     def xfa(self) -> dict[str, Any] | None:
-        form = self.root_object.get("/AcroForm")
+        form = self.root_object.get_resolved("/AcroForm")
         if not form:
             return None
         output: dict[str, Any] = {}

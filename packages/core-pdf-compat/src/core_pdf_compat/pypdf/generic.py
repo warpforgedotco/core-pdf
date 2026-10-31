@@ -171,11 +171,13 @@ class DictionaryObject(dict[Any, Any], PdfObject):
         value = super().__getitem__(key)
         return value.get_object() if isinstance(value, IndirectObject) else value
 
-    def get(self, key: Any, default: Any = None) -> Any:
-        return self.__getitem__(key) if dict.__contains__(self, key) else default  # noqa: SIM401
-
     def raw_get(self, key: Any) -> Any:
         return super().__getitem__(key)
+
+    def get_resolved(self, key: Any, default: Any = None) -> Any:
+        # pypdf's get returns references as stored, which a writer needs. Readers that want
+        # the object use this.
+        return self[key] if key in self else default  # noqa: SIM401
 
     def get_inherited(self, key: str, default: Any = None) -> Any:
         """A value from this dictionary or the nearest /Parent that has it."""
@@ -310,6 +312,9 @@ class IndirectObject(PdfObject):
 
     def __getitem__(self, key: Any) -> Any:
         return self.get_object()[key]
+
+    def get_resolved(self, key: Any, default: Any = None) -> Any:
+        return self.get_object().get_resolved(key, default)
 
     def __contains__(self, key: Any) -> bool:
         return key in self.get_object()

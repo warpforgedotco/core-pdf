@@ -340,8 +340,8 @@ class TreeObject(DictionaryObject):
             if id(node) in visited:
                 return
             visited.add(id(node))
-            is_open = node.get("/%is_open%", True) == True  # noqa: E712
-            count = abs(node.get("/Count", 0)) + n
+            is_open = node.get_resolved("/%is_open%", True) == True  # noqa: E712
+            count = abs(node.get_resolved("/Count", 0)) + n
             node[NameObject("/Count")] = NumberObject(count if is_open else -count)
             if not is_open:
                 return
@@ -367,7 +367,7 @@ class TreeObject(DictionaryObject):
             child_obj.pop("/Prev", None)
         else:
             self._link_child(child_obj, reference, before)
-        increment(self, child_obj.get("/Count", 1))
+        increment(self, child_obj.get_resolved("/Count", 1))
         return reference
 
     def _link_child(self, child_obj: Any, reference: Any, before: Any) -> None:
@@ -455,49 +455,49 @@ class Field(TreeObject):
         for attribute in attributes:
             if attribute in data:
                 self[NameObject(attribute)] = data[attribute]
-        value = self.get("/V")
+        value = self.get_resolved("/V")
         if isinstance(value, EncodedStreamObject):
             self[NameObject("/V")] = TextStringObject(value.get_data().decode())
 
     @property
     def field_type(self) -> NameObject | None:
-        return self.get(FieldDictionaryAttributes.FT)
+        return self.get_resolved(FieldDictionaryAttributes.FT)
 
     @property
     def parent(self) -> DictionaryObject | None:
-        return self.get(FieldDictionaryAttributes.Parent)
+        return self.get_resolved(FieldDictionaryAttributes.Parent)
 
     @property
     def kids(self) -> ArrayObject | None:
-        return self.get(FieldDictionaryAttributes.Kids)
+        return self.get_resolved(FieldDictionaryAttributes.Kids)
 
     @property
     def name(self) -> str | None:
-        return self.get(FieldDictionaryAttributes.T)
+        return self.get_resolved(FieldDictionaryAttributes.T)
 
     @property
     def alternate_name(self) -> str | None:
-        return self.get(FieldDictionaryAttributes.TU)
+        return self.get_resolved(FieldDictionaryAttributes.TU)
 
     @property
     def mapping_name(self) -> str | None:
-        return self.get(FieldDictionaryAttributes.TM)
+        return self.get_resolved(FieldDictionaryAttributes.TM)
 
     @property
     def flags(self) -> int | None:
-        return self.get(FieldDictionaryAttributes.Ff)
+        return self.get_resolved(FieldDictionaryAttributes.Ff)
 
     @property
     def value(self) -> Any:
-        return self.get(FieldDictionaryAttributes.V)
+        return self.get_resolved(FieldDictionaryAttributes.V)
 
     @property
     def default_value(self) -> Any:
-        return self.get(FieldDictionaryAttributes.DV)
+        return self.get_resolved(FieldDictionaryAttributes.DV)
 
     @property
     def additional_actions(self) -> DictionaryObject | None:
-        return self.get(FieldDictionaryAttributes.AA)
+        return self.get_resolved(FieldDictionaryAttributes.AA)
 
 
 class Destination(TreeObject):
@@ -544,7 +544,7 @@ class Destination(TreeObject):
 
     @property
     def title(self) -> str | None:
-        return self.get("/Title")
+        return self.get_resolved("/Title")
 
     @property
     def page(self) -> Any:
@@ -552,40 +552,40 @@ class Destination(TreeObject):
 
     @property
     def typ(self) -> str | None:
-        return self.get("/Type")
+        return self.get_resolved("/Type")
 
     @property
     def zoom(self) -> Any:
-        return self.get("/Zoom")
+        return self.get_resolved("/Zoom")
 
     @property
     def left(self) -> Any:
-        return self.get("/Left")
+        return self.get_resolved("/Left")
 
     @property
     def right(self) -> Any:
-        return self.get("/Right")
+        return self.get_resolved("/Right")
 
     @property
     def top(self) -> Any:
-        return self.get("/Top")
+        return self.get_resolved("/Top")
 
     @property
     def bottom(self) -> Any:
-        return self.get("/Bottom")
+        return self.get_resolved("/Bottom")
 
     @property
     def color(self) -> ArrayObject:
         default = ArrayObject([FloatObject(0), FloatObject(0), FloatObject(0)])
-        return self.get("/C", default)
+        return self.get_resolved("/C", default)
 
     @property
     def font_format(self) -> OutlineFontFlag:
-        return OutlineFontFlag(self.get("/F", 0))
+        return OutlineFontFlag(self.get_resolved("/F", 0))
 
     @property
     def outline_count(self) -> int | None:
-        return self.get("/Count")
+        return self.get_resolved("/Count")
 
 
 _FIT_KEYS: dict[str, tuple[str, ...]] = {
@@ -613,7 +613,7 @@ def _flag(key: str, default: BooleanObject | None) -> property:
     def setter(self: DictionaryObject, value: bool) -> None:
         self[NameObject(key)] = BooleanObject(value is True)
 
-    return property(lambda self: self.get(key, default), setter)
+    return property(lambda self: self.get_resolved(key, default), setter)
 
 
 def _name(key: str, allowed: tuple[str, ...] = (), default: NameObject | None = None) -> property:
@@ -624,12 +624,12 @@ def _name(key: str, allowed: tuple[str, ...] = (), default: NameObject | None = 
             raise ValueError(f"{value} is an unacceptable value")
         self[NameObject(key)] = NameObject(value)
 
-    return property(lambda self: self.get(key, default), setter)
+    return property(lambda self: self.get_resolved(key, default), setter)
 
 
 def _array(key: str, *, empty_default: bool = False) -> property:
     def getter(self: DictionaryObject) -> ArrayObject | None:
-        return self.get(key, ArrayObject() if empty_default else None)
+        return self.get_resolved(key, ArrayObject() if empty_default else None)
 
     def setter(self: DictionaryObject, value: ArrayObject | None) -> None:
         if value is None:
@@ -646,7 +646,7 @@ def _number(key: str) -> property:
     def setter(self: DictionaryObject, value: int) -> None:
         self[NameObject(key)] = NumberObject(value)
 
-    return property(lambda self: self.get(key), setter)
+    return property(lambda self: self.get_resolved(key), setter)
 
 
 NOT_SET = BooleanObject(False)
@@ -782,7 +782,7 @@ class EmbeddedFile:
         if "/EmbeddedFiles" in names_dict:
             # A flat list keeps insertion simple. The file objects stay where they are.
             for kid in names_dict["/EmbeddedFiles"]["/Kids"].get_object():
-                names.extend(kid.get_object().get("/Names", []))
+                names.extend(kid.get_object().get_resolved("/Names", []))
         flat = DictionaryObject({NameObject("/Names"): names})
         names_dict[NameObject("/EmbeddedFiles")] = writer._add_object(flat)
         return names
@@ -814,7 +814,7 @@ class EmbeddedFile:
 
     @property
     def description(self) -> str | None:
-        return _none_if_null(self.pdf_object.get("/Desc"))
+        return _none_if_null(self.pdf_object.get_resolved("/Desc"))
 
     @description.setter
     def description(self, value: TextStringObject | None) -> None:
@@ -822,7 +822,7 @@ class EmbeddedFile:
 
     @property
     def associated_file_relationship(self) -> str:
-        return self.pdf_object.get("/AFRelationship", NameObject("/Unspecified"))
+        return self.pdf_object.get_resolved("/AFRelationship", NameObject("/Unspecified"))
 
     @associated_file_relationship.setter
     def associated_file_relationship(self, value: NameObject) -> None:
@@ -840,7 +840,7 @@ class EmbeddedFile:
 
     @property
     def _params(self) -> DictionaryObject:
-        return self._embedded_file.get("/Params", DictionaryObject()).get_object()
+        return self._embedded_file.get_resolved("/Params", DictionaryObject()).get_object()
 
     @cached_property
     def _ensure_params(self) -> DictionaryObject:
@@ -851,7 +851,7 @@ class EmbeddedFile:
 
     @property
     def subtype(self) -> str | None:
-        return _none_if_null(self._embedded_file.get("/Subtype"))
+        return _none_if_null(self._embedded_file.get_resolved("/Subtype"))
 
     @subtype.setter
     def subtype(self, value: NameObject | None) -> None:
@@ -868,7 +868,7 @@ class EmbeddedFile:
 
     @property
     def size(self) -> int | None:
-        return _none_if_null(self._params.get("/Size"))
+        return _none_if_null(self._params.get_resolved("/Size"))
 
     @size.setter
     def size(self, value: NumberObject | None) -> None:
@@ -880,7 +880,7 @@ class EmbeddedFile:
 
     @property
     def creation_date(self) -> datetime | None:
-        return _parse_pdf_date(self._params.get("/CreationDate"))
+        return _parse_pdf_date(self._params.get_resolved("/CreationDate"))
 
     @creation_date.setter
     def creation_date(self, value: datetime | None) -> None:
@@ -888,7 +888,7 @@ class EmbeddedFile:
 
     @property
     def modification_date(self) -> datetime | None:
-        return _parse_pdf_date(self._params.get("/ModDate"))
+        return _parse_pdf_date(self._params.get_resolved("/ModDate"))
 
     @modification_date.setter
     def modification_date(self, value: datetime | None) -> None:
@@ -896,7 +896,7 @@ class EmbeddedFile:
 
     @property
     def checksum(self) -> bytes | None:
-        return _none_if_null(self._params.get("/CheckSum"))
+        return _none_if_null(self._params.get_resolved("/CheckSum"))
 
     @checksum.setter
     def checksum(self, value: ByteStringObject | None) -> None:

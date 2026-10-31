@@ -328,7 +328,7 @@ class PdfPageObject:
     def get_contents(self) -> Any:
         from core_pdf_compat.pypdf.generic import ContentStream
 
-        contents = self._generic_dictionary().get("/Contents")
+        contents = self._generic_dictionary().get_resolved("/Contents")
         return None if is_null_or_none(contents) else ContentStream(contents, self._reader)
 
     def _generic_dictionary(self) -> Any:
@@ -563,7 +563,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return max((*file_numbers, *(number for _, number in self.resolved_objects))) + 1
 
     def add_form_topname(self, name: str) -> DictionaryObject | None:
-        form = self.root_object.get("/AcroForm")
+        form = self.root_object.get_resolved("/AcroForm")
         if not isinstance(form, DictionaryObject) or "/Fields" not in form:
             return None
         group = DictionaryObject()
@@ -583,7 +583,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return group
 
     def rename_form_topname(self, name: str) -> DictionaryObject | None:
-        form = self.root_object.get("/AcroForm")
+        form = self.root_object.get_resolved("/AcroForm")
         if not isinstance(form, DictionaryObject) or "/Fields" not in form:
             return None
         group = form["/Fields"][0].get_object()
