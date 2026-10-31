@@ -40,8 +40,8 @@ objects are dropped by a full rewrite and kept by an incremental update.
 
 ### Encrypted input
 
-Editing an encrypted file needs a stated policy. The first version saves decrypted output
-only when the caller asks for it, and otherwise refuses.
+`EditableDocument` refuses an encrypted file. Milestone 6 adds a stated policy for
+decrypted and encrypted output.
 
 ## Milestones
 
