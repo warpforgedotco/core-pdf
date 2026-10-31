@@ -3,6 +3,7 @@ from collections.abc import Iterable
 from .. import (
     BBox,
     ObjectDict,
+    _edges,
     bbox_overlap,
     cluster_list,
     cluster_objects,
@@ -25,6 +26,7 @@ from . import exceptions, text
 from .text import extract_text, extract_text_simple, extract_words
 
 get_bbox_overlap = bbox_overlap
+obj_to_edges = _edges
 
 
 def objects_to_bbox(objects: Iterable[ObjectDict]) -> BBox:
@@ -55,6 +57,7 @@ __all__ = (
     "merge_bboxes",
     "move_object",
     "obj_to_bbox",
+    "obj_to_edges",
     "objects_to_bbox",
     "objects_to_rect",
     "outside_bbox",

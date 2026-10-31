@@ -5,8 +5,7 @@ import math
 import re
 import struct
 import zlib
-from bisect import bisect_left
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Set
+from collections.abc import Callable, Iterable, Iterator, Mapping, Set
 from copy import copy
 from io import BytesIO
 from itertools import accumulate, groupby, pairwise
@@ -15,7 +14,6 @@ from types import SimpleNamespace
 from typing import Any, ClassVar, TypeAlias, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl import output_model
 from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.geometry import (
@@ -24,10 +22,8 @@ from core_pdf.impl.geometry import (
     flip_rect_vertical,
 )
 from core_pdf.impl.graphics_stream_decoding import PNG_SIGNATURE, png_chunk
-from core_pdf.impl.output_model import TableCell
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.raw_media import DrawingRecord, ImageRecord
-from core_pdf.impl.render_paths import intersect_box
 from core_pdf.impl.types import (
     FrozenFields,
     PdfReference,
@@ -85,77 +81,6 @@ def cluster_by_preserving_order(
             groups[-1].append(item)
         previous_cluster = cluster
     return groups
-
-
-class TableSettings:
-    snap_x_tolerance: float
-    snap_y_tolerance: float
-    join_x_tolerance: float
-    join_y_tolerance: float
-    edge_min_length: float
-    edge_min_length_prefilter: float
-    vertical_strategy: str
-    horizontal_strategy: str
-    text_settings: dict[str, Any]
-
-    def __init__(self, **values: Any) -> None:
-        defaults = {
-            "vertical_strategy": "lines",
-            "horizontal_strategy": "lines",
-            "explicit_vertical_lines": None,
-            "explicit_horizontal_lines": None,
-            "snap_tolerance": 3,
-            "snap_x_tolerance": None,
-            "snap_y_tolerance": None,
-            "join_tolerance": 3,
-            "join_x_tolerance": None,
-            "join_y_tolerance": None,
-            "edge_min_length": 3,
-            "edge_min_length_prefilter": 1,
-            "min_words_vertical": 3,
-            "min_words_horizontal": 1,
-            "intersection_tolerance": 3,
-            "intersection_x_tolerance": None,
-            "intersection_y_tolerance": None,
-            "text_settings": None,
-        }
-        unknown = set(values) - defaults.keys() - {"text_layout"}
-        if unknown:
-            raise TypeError(f"Unknown table setting: {min(unknown)}")
-        self.__dict__.update(defaults | values)
-        self.text_settings = dict(self.text_settings or {})
-        text_tolerance = self.text_settings.pop("tolerance", 3)
-        for axis in ("x", "y"):
-            self.text_settings.setdefault(f"{axis}_tolerance", text_tolerance)
-            for family in ("snap", "join", "intersection"):
-                name = f"{family}_{axis}_tolerance"
-                if name not in values:
-                    setattr(self, name, getattr(self, f"{family}_tolerance"))
-        for name, value in self.__dict__.items():
-            if (
-                (name.endswith("tolerance") or name.startswith(("edge_min_length", "min_words")))
-                and isinstance(value, (int, float))
-                and value < 0
-            ):
-                raise ValueError(f"{name} must be non-negative")
-        for strategy in (self.vertical_strategy, self.horizontal_strategy):
-            if strategy not in {"lines", "lines_strict", "text", "explicit"}:
-                raise ValueError(f"unknown table strategy: {strategy}")
-
-    @classmethod
-    def resolve(cls, settings: Mapping[str, Any] | TableSettings | None) -> TableSettings:
-        if settings is None:
-            return cls()
-        if isinstance(settings, cls):
-            return settings
-        if not isinstance(settings, Mapping):
-            raise ValueError("table settings must be a mapping or TableSettings")
-        raw = {str(key): value for key, value in settings.items()}
-        text_values = {key[5:]: value for key, value in raw.items() if key.startswith("text_")}
-        values = {key: value for key, value in raw.items() if not key.startswith("text_")}
-        if text_values:
-            values["text_settings"] = text_values
-        return cls(**values)
 
 
 def _source(value: PdfInput, password: str = "") -> PdfDocument:
@@ -730,16 +655,10 @@ class Page:
                     record.setdefault("srcsize", (record["width"], record["height"]))
                     record.setdefault("stream", record.get("data"))
                 objects.setdefault(record["object_type"], []).append(record)
-                if record["object_type"] == "rect" and (record.get("path") or record.get("items")):
-                    curve = dict(record)
-                    curve["object_type"] = "curve"
-                    objects.setdefault("curve", []).append(curve)
             for image in self._adapter.images(program):
                 image_record = _image(self._adapter, image, self.initial_doctop)
                 if image_record is not None:
                     objects.setdefault("image", []).append(image_record)
-            if not objects.get("curve") and objects.get("rect"):
-                objects["curve"] = [{**rect, "object_type": "curve"} for rect in objects["rect"]]
             self._objects = objects
         return self._objects
 
@@ -1065,201 +984,35 @@ class Page:
     def find_tables(
         self, table_settings: Mapping[str, Any] | TableSettings | None = None
     ) -> list[Table]:
-        settings = TableSettings.resolve(table_settings)
-        for axis in ("vertical", "horizontal"):
-            if (
-                getattr(settings, f"{axis}_strategy") == "explicit"
-                and len(getattr(settings, f"explicit_{axis}_lines") or []) < 2
-            ):
-                raise ValueError(f"explicit {axis} strategy requires at least two lines")
-        tables: tuple[output_model.Table | _CompatNativeTable, ...] = self._structured().tables
-        if tables:
-            if len(tables) == 1:
-                table_box = tables[0].bbox
-                if table_box is not None and table_box[3] - table_box[1] < self.height * 0.05:
-                    body = [char for char in self.chars if char["bottom"] < self.height - 45]
-                    if len(body) > 500:
-                        body_box = (
-                            self.bbox[0],
-                            self.bbox[1],
-                            self.bbox[2],
-                            max(char["bottom"] for char in body),
-                        )
-                        tables = (_CompatNativeTable(body_box, list(tables[0].rows)),)
-            if len(tables) > 1:
-                first = tables[0]
-                first_box = first.bbox
-                boxes = [box for table in tables if (box := table.bbox) is not None]
-                same_columns = (
-                    first_box is not None
-                    and len(boxes) == len(tables)
-                    and all(
-                        abs(box[0] - first_box[0]) < 2 and abs(box[2] - first_box[2]) < 2
-                        for box in boxes[1:]
-                    )
-                )
-                if same_columns and first_box is not None:
-                    merged_rows = [row for table in tables for row in table.rows]
-                    if all(any(cell.bbox is not None for cell in row) for row in merged_rows):
-                        merged_rows.sort(
-                            key=lambda merged_row: min(
-                                cell.bbox[1] for cell in merged_row if cell.bbox is not None
-                            ),
-                            reverse=True,
-                        )
-                    tables = (
-                        _CompatNativeTable(
-                            (
-                                first_box[0],
-                                min(box[1] for box in boxes),
-                                first_box[2],
-                                max(box[3] for box in boxes),
-                            ),
-                            merged_rows,
-                        ),
-                    )
-            wrapped = [Table(table) for table in tables]
-            for table in wrapped:
-                table.page = self
-            return wrapped
-        return self._fallback_tables(settings)
+        return TableFinder(self, TableSettings.resolve(table_settings)).tables
 
-    def _fallback_tables(self, settings: TableSettings) -> list[Table]:
-        chars = self.chars
-        middles = sorted(
-            (middle, index)
-            for index, char in enumerate(chars)
-            if char.get("object_type") == "char"
-            and (middle := (char["top"] + char["bottom"]) / 2) == middle
-        )
-        middle_tops = [middle for middle, _index in middles]
-
-        def cell_text(bbox: BBox) -> str:
-            left, top, right, bottom = bbox
-            band = middles[bisect_left(middle_tops, top) : bisect_left(middle_tops, bottom)]
-            selected = self.filter(lambda _obj: True)
-            selected._objects = {
-                "char": [
-                    chars[index]
-                    for index in sorted(
-                        index
-                        for _middle, index in band
-                        if left <= (chars[index]["x0"] + chars[index]["x1"]) / 2 < right
-                    )
-                ]
-            }
-            return selected.extract_text(**settings.text_settings)
-
-        words = self.extract_words(return_chars=False, **settings.text_settings)
-        if words and settings.vertical_strategy == settings.horizontal_strategy == "text":
-            lines: list[list[ObjectDict]] = []
-            for word in words:
-                if not lines or abs(word["top"] - lines[-1][0]["top"]) > 5:
-                    lines.append([word])
-                else:
-                    lines[-1].append(word)
-            header = sorted(lines[0], key=lambda word: word["x0"])
-            if len(header) >= 2:
-                table_lines = [lines[0]]
-                for line in lines[1:]:
-                    if line[0]["top"] - table_lines[-1][0]["top"] > 20:
-                        break
-                    table_lines.append(line)
-                boundaries: list[float] = [self.bbox[0]]
-                boundaries.extend(
-                    (left["x1"] + right["x0"]) / 2 for left, right in zip(header, header[1:])
-                )
-                boundaries.append(self.bbox[2])
-                rows: list[list[_CompatCell]] = []
-                for index, line in enumerate(table_lines):
-                    top = max(self.bbox[1], line[0]["top"] - 2)
-                    bottom = (
-                        min(self.bbox[3], table_lines[index + 1][0]["top"] - 2)
-                        if index + 1 < len(table_lines)
-                        else min(
-                            self.bbox[3],
-                            line[0]["top"]
-                            + (line[0]["top"] - table_lines[index - 1][0]["top"] if index else 16),
-                        )
-                    )
-                    cell_row: list[_CompatCell] = []
-                    for left, right in zip(boundaries, boundaries[1:]):
-                        bbox = (left, top, right, bottom)
-                        cell_row.append(_CompatCell(bbox, cell_text(bbox)))
-                    rows.append(cell_row)
-                table = Table(
-                    _CompatNativeTable(
-                        (boundaries[0], self.bbox[1], boundaries[-1], self.bbox[3]), rows
-                    )
-                )
-                table.page = self
-                return [table]
-        finder = object.__new__(TableFinder)
-        finder.page = self
-        finder.settings = settings
-        finder.edges = finder._select_edges()
-        if self.rotation == 90:
-            rotated: list[ObjectDict] = []
-            for edge in finder.edges:
-                x0, x1 = sorted((edge["top"], edge["bottom"]))
-                top, bottom = sorted((edge["x0"], edge["x1"]))
-                rotated.append(
-                    {
-                        **edge,
-                        "x0": x0,
-                        "x1": x1,
-                        "top": top,
-                        "bottom": bottom,
-                        "width": x1 - x0,
-                        "height": bottom - top,
-                        "orientation": "v" if edge["orientation"] == "h" else "h",
-                    }
-                )
-            finder.edges = rotated
-        vertical = sorted({edge["x0"] for edge in finder.edges if edge["orientation"] == "v"})
-        horizontal = sorted({edge["top"] for edge in finder.edges if edge["orientation"] == "h"})
-        if len(vertical) < 2 or len(horizontal) < 2:
-            return []
-        grid_rows: list[list[_CompatCell]] = []
-        for top, bottom in zip(horizontal, horizontal[1:]):
-            grid_row: list[_CompatCell] = []
-            for left, right in zip(vertical, vertical[1:]):
-                cell_bbox = intersect_box((left, top, right, bottom), self.bbox)
-                if cell_bbox is None:
-                    continue
-                grid_row.append(_CompatCell(cell_bbox, cell_text(cell_bbox)))
-            grid_rows.append(grid_row)
-        if not grid_rows:
-            return []
-        table_bbox = (
-            max(vertical[0], self.bbox[0]),
-            max(horizontal[0], self.bbox[1]),
-            min(vertical[-1], self.bbox[2]),
-            min(horizontal[-1], self.bbox[3]),
-        )
-        return [Table(_CompatNativeTable(table_bbox, grid_rows))]
-
-    def debug_tablefinder(self, table_settings: Mapping[str, Any] | None = None) -> TableFinder:
+    def debug_tablefinder(
+        self, table_settings: Mapping[str, Any] | TableFinder | None = None
+    ) -> TableFinder:
         if isinstance(table_settings, TableFinder):
             return table_settings
         return TableFinder(self, TableSettings.resolve(table_settings))
 
-    def find_table(self, table_settings: Mapping[str, Any] | None = None) -> Table | None:
+    def find_table(
+        self, table_settings: Mapping[str, Any] | TableSettings | None = None
+    ) -> Table | None:
         tables = self.find_tables(table_settings)
         if not tables:
             return None
-        return max(tables, key=lambda table: len(table.cells))
+        return min(tables, key=lambda table: (-len(table.cells), table.bbox[1], table.bbox[0]))
 
     def extract_tables(
-        self, table_settings: Mapping[str, Any] | None = None
+        self, table_settings: Mapping[str, Any] | TableSettings | None = None
     ) -> list[list[list[str | None]]]:
-        return [table.extract() for table in self.find_tables(table_settings)]
+        settings = TableSettings.resolve(table_settings)
+        return [table.extract(**settings.text_settings) for table in self.find_tables(settings)]
 
     def extract_table(
-        self, table_settings: Mapping[str, Any] | None = None
+        self, table_settings: Mapping[str, Any] | TableSettings | None = None
     ) -> list[list[str | None]] | None:
-        table = self.find_table(table_settings)
-        return table.extract() if table is not None else None
+        settings = TableSettings.resolve(table_settings)
+        table = self.find_table(settings)
+        return None if table is None else table.extract(**settings.text_settings)
 
     def to_image(
         self,
@@ -1439,209 +1192,6 @@ class FilteredPage(Page):
         }
         self._objects = result
         return result
-
-
-class _CompatCell:
-    def __init__(self, bbox: BBox, text: str) -> None:
-        self.bbox = bbox
-        self.text = text
-
-
-class _CompatNativeTable:
-    def __init__(self, bbox: BBox, rows: Sequence[Sequence[TableCell | _CompatCell]]) -> None:
-        self.bbox = bbox
-        self.rows = rows
-
-
-class CellGroup:
-    def __init__(self, cells: list[BBox | None]) -> None:
-        self.cells = cells
-
-    def __iter__(self) -> Iterator[BBox | None]:
-        return iter(self.cells)
-
-    def __len__(self) -> int:
-        return len(self.cells)
-
-    def __getitem__(self, index: int) -> BBox | None:
-        return self.cells[index]
-
-
-class Row(CellGroup):
-    pass
-
-
-class Column(CellGroup):
-    pass
-
-
-class Table:
-    def __init__(self, native: output_model.Table | _CompatNativeTable) -> None:
-        self._native = native
-        self.page: Page | None = None
-
-    @property
-    def cells(self) -> list[BBox | None]:
-        return [cell.bbox for row in self._native.rows for cell in row]
-
-    @property
-    def bbox(self) -> BBox:
-        box = self._native.bbox
-        return box if box is not None else (0.0, 0.0, 0.0, 0.0)
-
-    @property
-    def rows(self) -> list[Row]:
-        return [Row([cell.bbox for cell in row]) for row in self._native.rows]
-
-    @property
-    def columns(self) -> list[Column]:
-        return [
-            Column([row[index].bbox if index < len(row) else None for row in self._native.rows])
-            for index in range(max((len(row) for row in self._native.rows), default=0))
-        ]
-
-    def extract(self, **_: Any) -> list[list[str | None]]:
-        width = max((len(row) for row in self._native.rows), default=0)
-        rows: list[list[str | None]] = []
-        for row in self._native.rows:
-            values: list[str | None] = [
-                self.page.crop(cell.bbox, strict=False).extract_text(layout=True)
-                if _.get("text_layout") and self.page is not None and cell.bbox is not None
-                else cell.text
-                if cell.text is not None
-                else ""
-                for cell in row
-            ]
-            values.extend([""] * (width - len(row)))
-            rows.append(values)
-        return rows
-
-
-class TableFinder:
-    def __init__(self, page: Page, settings: TableSettings | None = None) -> None:
-        self.page = page
-        self.settings = TableSettings.resolve(settings)
-        self.edges = self._select_edges()
-        self.intersections = self._intersections()
-        self.tables = page.find_tables(self.settings)
-        self.cells = [cell for table in self.tables for cell in table.cells]
-
-    def get_edges(self) -> list[ObjectDict]:
-        return list(self.edges)
-
-    def get_intersections(self) -> dict[tuple[float, float], dict[str, Any]]:
-        return dict(self.intersections)
-
-    def _select_edges(self) -> list[ObjectDict]:
-        selected: list[ObjectDict] = []
-        for edge in self.page.edges:
-            orientation = edge["orientation"]
-            strategy = (
-                self.settings.vertical_strategy
-                if orientation == "v"
-                else self.settings.horizontal_strategy
-            )
-            if strategy.startswith("lines"):
-                if strategy == "lines_strict" and edge.get("object_type") != "line":
-                    continue
-                minimum = float(self.settings.edge_min_length_prefilter)
-                length = edge["height"] if orientation == "v" else edge["width"]
-                if length >= minimum:
-                    selected.append(edge)
-        for orientation, name in (
-            ("v", "explicit_vertical_lines"),
-            ("h", "explicit_horizontal_lines"),
-        ):
-            strategy = (
-                self.settings.vertical_strategy
-                if orientation == "v"
-                else self.settings.horizontal_strategy
-            )
-            if strategy != "explicit":
-                continue
-            for value in getattr(self.settings, name, []) or []:
-                if isinstance(value, Mapping):
-                    selected.extend(
-                        edge
-                        for edge in _edges(value)  # type: ignore[arg-type]
-                        if edge["orientation"] == orientation
-                    )
-                    continue
-                if orientation == "v":
-                    selected.append(
-                        {
-                            "x0": float(value),
-                            "x1": float(value),
-                            "top": self.page.bbox[1],
-                            "bottom": self.page.bbox[3],
-                            "width": 0.0,
-                            "height": self.page.height,
-                            "orientation": "v",
-                        }
-                    )
-                else:
-                    selected.append(
-                        {
-                            "x0": self.page.bbox[0],
-                            "x1": self.page.bbox[2],
-                            "top": float(value),
-                            "bottom": float(value),
-                            "width": self.page.width,
-                            "height": 0.0,
-                            "orientation": "h",
-                        }
-                    )
-        if self.settings.vertical_strategy == "text" or self.settings.horizontal_strategy == "text":
-            for word in self.page.extract_words(return_chars=False):
-                if self.settings.vertical_strategy == "text":
-                    selected.append(
-                        {
-                            "x0": word["x0"],
-                            "x1": word["x0"],
-                            "top": word["top"],
-                            "bottom": word["bottom"],
-                            "width": 0.0,
-                            "height": word["height"],
-                            "orientation": "v",
-                        }
-                    )
-                if self.settings.horizontal_strategy == "text":
-                    selected.append(
-                        {
-                            "x0": word["x0"],
-                            "x1": word["x1"],
-                            "top": word["bottom"],
-                            "bottom": word["bottom"],
-                            "width": word["width"],
-                            "height": 0.0,
-                            "orientation": "h",
-                        }
-                    )
-        return filter_edges(
-            merge_edges(
-                selected,
-                self.settings.snap_x_tolerance,
-                self.settings.snap_y_tolerance,
-                self.settings.join_x_tolerance,
-                self.settings.join_y_tolerance,
-            ),
-            min_length=self.settings.edge_min_length,
-        )
-
-    def _intersections(self) -> dict[tuple[float, float], dict[str, Any]]:
-        intersections: dict[tuple[float, float], dict[str, Any]] = {}
-        horizontal = [edge for edge in self.edges if edge["orientation"] == "h"]
-        vertical = [edge for edge in self.edges if edge["orientation"] == "v"]
-        for h_edge in horizontal:
-            for v_edge in vertical:
-                if (
-                    v_edge["x0"] >= h_edge["x0"]
-                    and v_edge["x0"] <= h_edge["x1"]
-                    and h_edge["top"] >= v_edge["top"]
-                    and h_edge["top"] <= v_edge["bottom"]
-                ):
-                    intersections[(v_edge["x0"], h_edge["top"])] = {"v": [v_edge], "h": [h_edge]}
-        return intersections
 
 
 class _ImageOriginal(FrozenFields, ReprFields, ReplaceFields):
@@ -2320,16 +1870,51 @@ def _edges_for(objs: Iterable[ObjectDict]) -> list[ObjectDict]:
     return [edge for obj in objs for edge in _edges(obj)]
 
 
-def _edges(obj: ObjectDict) -> list[ObjectDict]:
-    x0, top, x1, bottom = obj["x0"], obj["top"], obj["x1"], obj["bottom"]
-    if obj["object_type"] == "line":
-        return [{**obj, "orientation": "h" if abs(bottom - top) <= abs(x1 - x0) else "v"}]
+def _line_edge(line: ObjectDict) -> ObjectDict:
+    return {**line, "orientation": "h" if line["top"] == line["bottom"] else "v"}
+
+
+def _rect_edges(rect: ObjectDict) -> list[ObjectDict]:
+    rect_edge = {**rect, "object_type": "rect_edge"}
     return [
-        {**obj, "x0": x0, "x1": x1, "top": top, "bottom": top, "orientation": "h"},
-        {**obj, "x0": x0, "x1": x1, "top": bottom, "bottom": bottom, "orientation": "h"},
-        {**obj, "x0": x0, "x1": x0, "top": top, "bottom": bottom, "orientation": "v"},
-        {**obj, "x0": x1, "x1": x1, "top": top, "bottom": bottom, "orientation": "v"},
+        {**rect_edge, "height": 0, "y0": rect["y1"], "bottom": rect["top"], "orientation": "h"},
+        {
+            **rect_edge,
+            "height": 0,
+            "y1": rect["y0"],
+            "top": rect["top"] + rect["height"],
+            "doctop": rect["doctop"] + rect["height"],
+            "orientation": "h",
+        },
+        {**rect_edge, "width": 0, "x1": rect["x0"], "orientation": "v"},
+        {**rect_edge, "width": 0, "x0": rect["x1"], "orientation": "v"},
     ]
+
+
+def _curve_edges(curve: ObjectDict) -> list[ObjectDict]:
+    return [
+        {
+            "object_type": "curve_edge",
+            "x0": min(start[0], end[0]),
+            "x1": max(start[0], end[0]),
+            "top": min(start[1], end[1]),
+            "doctop": min(start[1], end[1]) + (curve["doctop"] - curve["top"]),
+            "bottom": max(start[1], end[1]),
+            "width": abs(start[0] - end[0]),
+            "height": abs(start[1] - end[1]),
+            "orientation": "v" if start[0] == end[0] else "h" if start[1] == end[1] else None,
+        }
+        for start, end in pairwise(curve.get("pts", ()))
+    ]
+
+
+def _edges(obj: ObjectDict) -> list[ObjectDict]:
+    kind = obj["object_type"]
+    if "_edge" in kind:
+        return [obj]
+    if kind == "line":
+        return [_line_edge(obj)]
+    return _rect_edges(obj) if kind == "rect" else _curve_edges(obj)
 
 
 def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
@@ -2556,6 +2141,6 @@ __all__ = (
 
 # Upstream exposes these as attributes after a bare `import pdfplumber`.
 import core_pdf_compat.pdfplumber.page  # noqa: E402, F401
-import core_pdf_compat.pdfplumber.table  # noqa: E402, F401
 
 from . import utils  # noqa: E402
+from .table import Table, TableFinder, TableSettings  # noqa: E402
