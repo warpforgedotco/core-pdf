@@ -35,8 +35,10 @@ types. The rest of the facades pass their in-scope suites.
 
 `EditableDocument` wraps a `PdfDocument`. Reading an object goes through the resolver. The
 first write to an object copies it into an overlay keyed by object number, and new objects
-take numbers past the highest in the file. Saving walks from the trailer, so unreferenced
-objects are dropped by a full rewrite and kept by an incremental update.
+take numbers past the highest in the file. `save` walks from the trailer, so unreferenced
+objects and old revisions are dropped. `save_incremental` appends changed objects after the
+original bytes, so signatures survive, but earlier data stays in the file. Use `save` when
+removing data.
 
 ### Encrypted input
 

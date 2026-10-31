@@ -77,6 +77,7 @@ test = [
 [tool.ruff]
 src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src", "packages/core-pdf-cythonized/src", "."]
 extend-exclude = [
+    ".claude/worktrees",
     "src/core_pdf/_vendor/fontTools",
     "tests/upstream",
 ]
@@ -206,6 +207,7 @@ root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src",
 
 [tool.ty.src]
 exclude = [
+    ".claude/worktrees",
     "src/core_pdf/_vendor/fontTools",
     "tests/upstream",
     # Runs in the isolated PEP 517 build environment, where Cython is present

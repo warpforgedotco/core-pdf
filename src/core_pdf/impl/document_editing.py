@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.recovery_xref import XRefScanner
+from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_spec.s_07_syntax.serialize import serialize_indirect_object, serialize_object
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
@@ -111,10 +112,97 @@ class EditableDocument:
         trailer.update({key: self.trailer[key] for key in TRAILER_KEYS if key in self.trailer})
         output += b"trailer\n" + serialize_object(trailer)
         output += b"\nstartxref\n%d\n%%%%EOF\n" % xref_offset
-        result = bytes(output)
-        if target is not None:
-            Path(target).write_bytes(result)
-        return result
+        return write_output(bytes(output), target)
+
+    def save_incremental(self, target: str | Path | None = None) -> bytes:
+        """Append changed objects after the original bytes, which stay identical.
+
+        Earlier revisions remain readable in the file, so this is not a way to remove data.
+        """
+        original = bytes(self.document.raw_data)
+        previous = XRefScanner.find_startxref(original)
+        if previous is None:
+            raise PdfUnsupportedError("an incremental update needs a readable startxref")
+        output = bytearray(original)
+        if not output.endswith(b"\n"):
+            output += b"\n"
+        offsets: dict[int, tuple[int, int]] = {}
+        reachable = self.reachable_references()
+        for number in sorted(self.overlay):
+            existing = reachable.get(number)
+            generation = 0 if existing is None else existing.generation_number
+            offsets[number] = (len(output), generation)
+            reference = PdfReference(number, generation)
+            output += serialize_indirect_object(reference, self.overlay[number])
+        trailer: dict[Any, Any] = {
+            key: self.trailer[key] for key in TRAILER_KEYS if key in self.trailer
+        }
+        trailer["Prev"] = previous
+        section_offset = len(output)
+        if original[previous : previous + 4] == b"xref":
+            trailer["Size"] = max(self.next_object_number, max(offsets, default=0) + 1)
+            output += table_section(offsets) + b"trailer\n" + serialize_object(trailer)
+        else:
+            output += xref_stream_section(offsets, trailer, section_offset, self.next_object_number)
+        output += b"\nstartxref\n%d\n%%%%EOF\n" % section_offset
+        return write_output(bytes(output), target)
+
+
+def write_output(data: bytes, target: str | Path | None) -> bytes:
+    if target is not None:
+        Path(target).write_bytes(data)
+    return data
+
+
+def table_section(offsets: dict[int, tuple[int, int]]) -> bytes:
+    section = bytearray(b"xref\n")
+    numbers = sorted(offsets)
+    start = 0
+    while start < len(numbers):
+        end = start
+        while end + 1 < len(numbers) and numbers[end + 1] == numbers[end] + 1:
+            end += 1
+        section += b"%d %d\n" % (numbers[start], end - start + 1)
+        for number in numbers[start : end + 1]:
+            offset, generation = offsets[number]
+            section += b"%010d %05d n \n" % (offset, generation)
+        start = end + 1
+    return bytes(section)
+
+
+def xref_stream_section(
+    offsets: dict[int, tuple[int, int]],
+    trailer: dict[Any, Any],
+    own_offset: int,
+    next_number: int,
+) -> bytes:
+    # A file indexed by xref streams has to be continued by one (ISO 32000-2 7.5.8.4).
+    own_number = max(next_number, max(offsets, default=0) + 1)
+    entries = {**offsets, own_number: (own_offset, 0)}
+    numbers = sorted(entries)
+    index: list[int] = []
+    for number in numbers:
+        if index and index[-2] + index[-1] == number:
+            index[-1] += 1
+        else:
+            index += [number, 1]
+    data = b"".join(
+        b"\x01" + entries[number][0].to_bytes(4, "big") + entries[number][1].to_bytes(2, "big")
+        for number in numbers
+    )
+    dictionary = {
+        **trailer,
+        "Type": PdfName(b"XRef"),
+        "Size": own_number + 1,
+        "W": [1, 4, 2],
+        "Index": index,
+    }
+    return serialize_indirect_object(
+        PdfReference(own_number, 0), PdfStream(dictionary, data)
+    ).rstrip()
+
+
+__all__ = ("EditableDocument",)
 
 
 __all__ = ("EditableDocument",)
