@@ -127,7 +127,7 @@ def test_trusted_vector_text_bypasses_table_detection(ocr_capture, stroked) -> N
         stroked_vector_text=replace(ocr_capture.evidence.stroked_vector_text, trusted=stroked),
     )
     assert (
-        table_detection.extract_tables(
+        table_detection.OCR_TABLES.extract(
             replace(ocr_capture, evidence=evidence), make_observations(("a", "b", "c"))
         )
         == ()
@@ -136,7 +136,7 @@ def test_trusted_vector_text_bypasses_table_detection(ocr_capture, stroked) -> N
 
 def test_chart_table_passes_through_shared_finalization(ocr_capture) -> None:
     observations = make_observations(("a", "b", "c"))
-    result = table_detection.extract_tables(chart_capture(ocr_capture), observations)
+    result = table_detection.OCR_TABLES.extract(chart_capture(ocr_capture), observations)
     charts = [table for table in result if table.metadata.get("source") == "chart-ocr"]
     assert len(charts) == 1
     assert charts[0].order == 0

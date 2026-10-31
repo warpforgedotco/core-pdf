@@ -5,6 +5,30 @@
 > For current coverage floors see [`coverage-baseline.json`](coverage-baseline.json), and
 > for how to run and read coverage see [`coverage.md`](coverage.md).
 
+## Runtime-tier audit: test-only and build-time code
+
+Coverage was split into a production tier (differential suite, tests importing only
+public API, and a reflective public-API driver over part of the PDF corpus, 84.0% of
+statements) and the complete suite (93.9%), then joined with a static reachability pass
+from `__all__`, export tables, and CLI entry points that resolves imports. Functions
+reached only by tests were audited for callers by hand. The combined suite alone could
+not separate these: a build script and its staleness test kept the CID voter covered.
+
+Removed `ObservationBatch.select` (no callers), both module-level `extract_tables`
+wrappers, and `ClipState.pixel_in_clip`, now a helper in its test. Removed
+`glyph_outline_path`, `transformed_outline`, `knockout_skip_box`, and
+`knockout_paint_box`: production had inlined all four, so their tests exercised a copy.
+Those tests now drive `append_glyph_paint` and `paint_item` on a real target.
+
+Moved the CID Unicode voter into `scripts/build_cid_unicode_tables.py` with its sources,
+overrides, and preference ranking. Every collection has a packaged table, so runtime
+never voted. `resolve_cid_unicode_map` now gates on the packaged table names instead of
+the source list; the names come from the PDF, so they must not be used to probe a path.
+
+The veraPDF integration tests did not run and the corpus driver was stopped about halfway,
+so a function missing from the production tier is not proof of anything by itself. Rare
+recovery paths with real callers stayed, as did facade methods mirroring reference APIs.
+
 ## Dash expansion has one owner
 
 Removed the private `fill_line(dash_pattern=...)` option and its callback into

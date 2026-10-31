@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 
-from types import SimpleNamespace
 from typing import Any
 
 import numpy
@@ -16,19 +15,6 @@ from core_pdf.impl.render_model import (
 )
 from core_pdf.impl.render_target import RasterTarget
 from tests.src.core_pdf import raster_support
-
-
-def make_target() -> RasterTarget:
-    target = RasterTarget.__new__(RasterTarget)
-    target.clip = SimpleNamespace(  # ty: ignore[invalid-assignment]
-        clipped_pixel_box=lambda bbox: (
-            None,
-            (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])),
-        )
-    )
-    target.width = 10_000
-    target.height = 10_000
-    return target
 
 
 def fill_item(bbox, *, edge_array=True, kind=PathPaintKind.FILL, pattern=None, blend=None):
@@ -61,47 +47,64 @@ def knockout_group() -> RasterGroup:
     return RasterGroup(bytearray(4), view=pixel_view(), knockout=True, painted_boxes=[])
 
 
-def needs_group(target: RasterTarget, group: RasterGroup, item: Any) -> bool:
-    target.buffer_stack = [group]
-    boxes = group.painted_boxes
-    assert boxes is not None
-    box = target.knockout_skip_box(item, boxes)
-    if box is not None:
-        target.record_knockout_paint(box)
-    return box is None
+def knockout_target(width: int = 40, height: int = 40) -> RasterTarget:
+    target = raster_support.make_target(width=width, height=height)
+    target.push_group(bytearray(width * height * 4), None, None, isolated=True, knockout=True)
+    return target
+
+
+def painted_boxes(target: RasterTarget) -> list[Any] | None:
+    return target.buffer_stack[-1].painted_boxes
+
+
+class TookGroup(Exception):
+    pass
+
+
+def needs_group(target: RasterTarget, item: Any, monkeypatch: pytest.MonkeyPatch) -> bool:
+    def refuse(self: RasterTarget, *args: Any, **kwargs: Any) -> None:
+        raise TookGroup
+
+    with monkeypatch.context() as patch:
+        patch.setattr(RasterTarget, "push_scratch_group", refuse)
+        try:
+            target.paint_item(item)
+        except TookGroup:
+            return True
+    return False
 
 
 def test_a_group_that_does_not_knock_out_records_nothing() -> None:
     assert RasterGroup(bytearray(4), view=pixel_view()).painted_boxes is None
 
 
-def test_disjoint_fills_skip_and_are_remembered() -> None:
-    target, group = make_target(), knockout_group()
-    assert needs_group(target, group, fill_item((0, 0, 10, 10))) is False
-    assert needs_group(target, group, fill_item((20, 0, 30, 10))) is False
-    assert group.painted_boxes == [(0, 0, 10, 10), (20, 0, 30, 10)]
+def test_disjoint_fills_skip_and_are_remembered(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = knockout_target()
+    assert needs_group(target, fill_item((0, 0, 10, 10)), monkeypatch) is False
+    assert needs_group(target, fill_item((20, 0, 30, 10)), monkeypatch) is False
+    # Device rows run downward: page y 0 to 10 are the bottom rows of the 40-high target.
+    assert painted_boxes(target) == [(0, 30, 10, 40), (20, 30, 30, 40)]
 
 
-def test_an_overlapping_fill_takes_the_group() -> None:
-    target, group = make_target(), knockout_group()
-    assert needs_group(target, group, fill_item((0, 0, 10, 10))) is False
-    assert needs_group(target, group, fill_item((9, 0, 20, 10))) is True
+def test_an_overlapping_fill_takes_the_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = knockout_target()
+    assert needs_group(target, fill_item((0, 0, 10, 10)), monkeypatch) is False
+    assert needs_group(target, fill_item((9, 0, 20, 10)), monkeypatch) is True
 
 
-def test_boxes_that_merely_touch_are_disjoint() -> None:
-    target, group = make_target(), knockout_group()
-    assert needs_group(target, group, fill_item((0, 0, 10, 10))) is False
-    assert needs_group(target, group, fill_item((10, 0, 20, 10))) is False
+def test_boxes_that_merely_touch_are_disjoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = knockout_target()
+    assert needs_group(target, fill_item((0, 0, 10, 10)), monkeypatch) is False
+    assert needs_group(target, fill_item((10, 0, 20, 10)), monkeypatch) is False
 
 
-def test_separation_in_either_axis_is_enough() -> None:
-    target, group = make_target(), knockout_group()
-    assert needs_group(target, group, fill_item((0, 0, 10, 10))) is False
-    assert needs_group(target, group, fill_item((0, 10, 10, 20))) is False
+def test_separation_in_either_axis_is_enough(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = knockout_target()
+    assert needs_group(target, fill_item((0, 0, 10, 10)), monkeypatch) is False
+    assert needs_group(target, fill_item((0, 10, 10, 20)), monkeypatch) is False
 
 
-def test_only_plain_edge_array_fills_are_eligible() -> None:
-    target = make_target()
+def test_only_plain_edge_array_fills_are_eligible(monkeypatch: pytest.MonkeyPatch) -> None:
     for item in (
         fill_item((0, 0, 10, 10), edge_array=False),
         fill_item((0, 0, 10, 10), kind=PathPaintKind.STROKE),
@@ -110,25 +113,28 @@ def test_only_plain_edge_array_fills_are_eligible() -> None:
         fill_item((0, 0, 10, 10), blend="Multiply"),
         fill_item(None),
     ):
-        group = knockout_group()
-        assert needs_group(target, group, item) is True
-        assert group.painted_boxes == []
+        target = knockout_target()
+        assert needs_group(target, item, monkeypatch) is True
+        assert painted_boxes(target) == []
 
 
-def test_a_fill_that_lands_nowhere_records_nothing() -> None:
-    target, group = make_target(), knockout_group()
-    target.clip = SimpleNamespace(clipped_pixel_box=lambda bbox: None)  # ty: ignore[invalid-assignment]
-    assert needs_group(target, group, fill_item((0, 0, 10, 10))) is False
-    assert group.painted_boxes == []
+def test_a_fill_that_lands_nowhere_records_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = knockout_target()
+    assert needs_group(target, fill_item((100, 100, 110, 110)), monkeypatch) is False
+    assert painted_boxes(target) == []
 
 
-def test_the_scan_gives_up_past_its_limit() -> None:
-    target, group = make_target(), knockout_group()
-    for index in range(RasterTarget.KNOCKOUT_DISJOINT_LIMIT):
-        assert needs_group(target, group, fill_item((index * 2, 0, index * 2 + 1, 1))) is False
-    assert needs_group(target, group, fill_item((5_000, 5_000, 5_001, 5_001))) is False
-    assert group.painted_boxes == [(0, 0, target.width, target.height)]
-    assert needs_group(target, group, fill_item((9_000, 9_000, 9_001, 9_001))) is True
+def test_the_scan_gives_up_past_its_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    limit = RasterTarget.KNOCKOUT_DISJOINT_LIMIT
+    width = limit * 2 + 8
+    target = knockout_target(width, 8)
+    for index in range(limit):
+        item = fill_item((index * 2, 0, index * 2 + 1, 1))
+        assert needs_group(target, item, monkeypatch) is False
+    last = limit * 2
+    assert needs_group(target, fill_item((last, 4, last + 1, 5)), monkeypatch) is False
+    assert painted_boxes(target) == [(0, 0, width, 8)]
+    assert needs_group(target, fill_item((last + 2, 6, last + 3, 7)), monkeypatch) is True
 
 
 def grouped(target: RasterTarget, items: list[Any], monkeypatch: pytest.MonkeyPatch) -> list[bool]:
@@ -144,12 +150,6 @@ def grouped(target: RasterTarget, items: list[Any], monkeypatch: pytest.MonkeyPa
         used.append(False)
         target.paint_item(item)
     return used
-
-
-def knockout_target() -> RasterTarget:
-    target = raster_support.make_target(width=40, height=40)
-    target.push_group(bytearray(40 * 40 * 4), None, None, isolated=True, knockout=True)
-    return target
 
 
 def stroke_item(x0: float, y0: float, x1: float, y1: float) -> PathPaintItem:

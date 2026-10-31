@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from bisect import bisect_left
 from collections.abc import Iterable
 from math import ceil, floor
 from typing import Any
@@ -328,11 +327,6 @@ class ClipState:
     @staticmethod
     def path_bbox(path: Any) -> tuple[float, float, float, float] | None:
         return path.bbox() if type(path) is CapturedPath else None
-
-    def pixel_in_clip(self, px: int, py: int) -> bool:
-        spans = self.clip_row_visible_spans(py)
-        index = bisect_left(spans, (px + 1, -1))
-        return index > 0 and spans[index - 1][0] <= px < spans[index - 1][1]
 
     def clip_row_visible_spans(self, py: int) -> RowSpans:
         if py < 0 or py >= self.height:

@@ -130,10 +130,6 @@ class TableDetector(GeneratedRecord):
 NATIVE_TABLES = TableDetector.native()
 
 
-def extract_tables(capture: PageAnalysis, observations: ObservationBatch) -> tuple[Table, ...]:
-    return NATIVE_TABLES.extract(capture, observations)
-
-
 def finalize_tables(
     tables: tuple[Table, ...],
     analysis: TableAnalysis,

@@ -930,14 +930,6 @@ class RasterTarget:
         clipped = self.clip.clipped_pixel_box(bbox) if bbox is not None else None
         return EMPTY_PIXEL_BOX if clipped is None else clipped[1]
 
-    def knockout_paint_box(self, item: DisplayItem) -> PixelBox | None:
-        if not is_plain_fill(item):
-            return None
-        clipped = self.clip.clipped_pixel_box(item.bbox)
-        if clipped is None:
-            return EMPTY_PIXEL_BOX
-        return clipped[1]
-
     def record_knockout_paint(self, box: PixelBox) -> None:
         boxes = self.buffer_stack[-1].painted_boxes
         if boxes is None or box == EMPTY_PIXEL_BOX:
@@ -947,16 +939,6 @@ class RasterTarget:
             boxes.append((0, 0, self.width, self.height))
         else:
             boxes.append(box)
-
-    def knockout_skip_box(self, item: DisplayItem, boxes: list[PixelBox]) -> PixelBox | None:
-        box = self.knockout_paint_box(item)
-        if box is None or box == EMPTY_PIXEL_BOX:
-            return box
-        x0, y0, x1, y1 = box
-        for bx0, by0, bx1, by1 in boxes:
-            if x0 < bx1 and bx0 < x1 and y0 < by1 and by0 < y1:
-                return None
-        return box
 
     def group_window(self, group: RasterGroup) -> tuple[slice, slice] | None:
         return group.paint_window.slices()
@@ -2962,8 +2944,8 @@ class RasterTarget:
                 boxes = self.buffer_stack[-1].painted_boxes
                 skip_box = None
                 if knockout and boxes is not None and mask_alpha is None and is_plain_fill(item):
-                    # knockout_skip_box, inlined: a plain fill painting pixels no earlier
-                    # member touched needs no elementary group.
+                    # A plain fill painting pixels no earlier member touched needs no
+                    # elementary group.
                     clipped = self.clip.clipped_pixel_box(item.bbox)
                     if clipped is None:
                         skip_box = EMPTY_PIXEL_BOX
