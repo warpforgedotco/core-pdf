@@ -5,6 +5,7 @@ import math
 import re
 import struct
 import zlib
+from bisect import bisect_right
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from copy import copy
 from io import BytesIO
@@ -23,9 +24,10 @@ from core_pdf.impl.geometry import (
 )
 from core_pdf.impl.graphics_stream_decoding import PNG_SIGNATURE, png_chunk
 from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf.impl.raw_media import DrawingRecord, ImageRecord
+from core_pdf.impl.raw_media import ImageRecord
 from core_pdf.impl.types import (
     FrozenFields,
+    PdfName,
     PdfReference,
     ReplaceFields,
     ReprFields,
@@ -128,6 +130,7 @@ class EnginePageAdapter:
         self._program: Any | None = None
         self._pdfminer_program: CapturedProgram | None = None
         self._painted_paths: tuple[Any, ...] = ()
+        self._text_marks: tuple[Any, ...] = ()
         width: int | float = page.width
         height: int | float = page.height
         media_left: int | float = 0
@@ -233,7 +236,9 @@ class EnginePageAdapter:
                 glyph.alternates,
             )
 
-        for glyph in projected_glyphs:
+        marks = self._text_marks
+        mark_starts = [mark.glyph_index for mark in marks]
+        for glyph_index, glyph in enumerate(projected_glyphs):
             if pdfminer_embedded_cmap_is_unusable(glyph):
                 continue
             if id(glyph) in skipped_ligature_parts:
@@ -262,6 +267,7 @@ class EnginePageAdapter:
             font_height = glyph.effective_font_height or glyph.font_size
             provenance = known[2]
             matrix = provenance.get("text_matrix")
+            text_matrix: tuple[float, ...] | None = None
             upright = glyph.rotation_angle % 180 == 0
             advance = x1 - x0
             if isinstance(matrix, (tuple, list)) and len(matrix) == 4:
@@ -296,6 +302,7 @@ class EnginePageAdapter:
                     near, far = horizontal
                     low, high = vertical
                     origin_x, origin_y = baseline[0], baseline[1]
+                    text_matrix = (a, b, c, d, origin_x, origin_y)
                     # The corners in the order (near, low), (near, high), (far, low), (far, high).
                     ax = near * a + low * c + origin_x
                     ay = near * b + low * d + origin_y
@@ -339,6 +346,8 @@ class EnginePageAdapter:
                 upright=upright,
                 advance=advance,
                 sequence=glyph.seqno,
+                matrix=text_matrix,
+                mark=marks[bisect_right(mark_starts, glyph_index) - 1] if marks else None,
             )
 
     def page_program(self) -> Any:
@@ -354,7 +363,7 @@ class EnginePageAdapter:
         if program is None:
             from ..pdfminer._capture import pdfminer_page_capture
 
-            program, self._painted_paths = pdfminer_page_capture(self.page)
+            program, self._painted_paths, self._text_marks = pdfminer_page_capture(self.page)
             self._pdfminer_program = program
             if self.latest_capture is not None:
                 self.latest_capture.hold(self)
@@ -367,11 +376,6 @@ class EnginePageAdapter:
     def flush_program(self) -> None:
         self._program = None
         self._pdfminer_program = None
-
-    def drawings(self, program: Any | None = None) -> tuple[DrawingRecord, ...]:
-        if program is None:
-            program = self.page_program()
-        return self.page.drawing_records(program.drawings)
 
     def images(self, program: Any | None = None) -> tuple[ImageRecord, ...]:
         if program is None:
@@ -427,6 +431,18 @@ def _envelope(
     }
 
 
+def _annotation_title(annotation: Mapping[Any, Any]) -> Any:
+    title = annotation.get(PdfName(b"T"))
+    return title.decode("utf-8", "replace") if isinstance(title, (bytes, bytearray)) else title
+
+
+def _raw_color(color: tuple[float, ...] | None) -> tuple[float, ...] | None:
+    # pdfminer keeps operands as written, and a bare gray operand is an integer.
+    if color is not None and len(color) == 1 and color[0] == int(color[0]):
+        return (int(color[0]),)
+    return color
+
+
 def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
     x0, top, x1, bottom = flip_box(
         (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1), page.info.height
@@ -466,37 +482,15 @@ def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
         y1=item.bbox.y1,
         fontname=item.font_name,
         size=item.font_size or 0.0,
-        stroking_color=item.color,
-        non_stroking_color=item.color,
+        stroking_color=item.color if item.mark is None else _raw_color(item.mark.stroke_color),
+        non_stroking_color=item.color if item.mark is None else _raw_color(item.mark.fill_color),
         upright=item.upright,
         adv=item.advance,
         seqno=item.sequence,
-    )
-
-
-def _drawing(page: EnginePageAdapter, drawing: DrawingRecord, doctop: float) -> ObjectDict:
-    box = drawing.rect
-    x0, top, x1, bottom = flip_box(box, page.info.height) if box else (0, 0, 0, 0)
-    return _envelope(
-        drawing.kind.lower(),
-        page.info.number,
-        (x0, top, x1, bottom),
-        doctop,
-        y0=box[1] if box else 0.0,
-        y1=box[3] if box else 0.0,
-        fill=drawing.fill,
-        non_stroking_color=drawing.fill,
-        stroke=drawing.stroke_color,
-        stroking_color=drawing.stroke_color,
-        fill_opacity=drawing.fill_opacity,
-        stroke_opacity=drawing.stroke_opacity,
-        seqno=drawing.seqno,
-        items=[],
-        path=None,
-        dash=drawing.dash_pattern,
-        linewidth=drawing.line_width,
-        linecap=drawing.line_cap,
-        linejoin=drawing.line_join,
+        matrix=item.matrix,
+        ncs=None if item.mark is None else item.mark.color_space,
+        mcid=None if item.mark is None else item.mark.mcid,
+        tag=None if item.mark is None else item.mark.tag,
     )
 
 
@@ -610,6 +604,9 @@ def _path_objects(page: EnginePageAdapter, doctop: float) -> list[ObjectDict]:
                     stroking_color=path.stroke_color,
                     non_stroking_color=path.fill_color,
                     dash=path.dash,
+                    mcid=path.mcid,
+                    tag=path.tag,
+                    seqno=path.sequence,
                 )
             )
     return objects
@@ -623,6 +620,7 @@ def _image(page: EnginePageAdapter, image: ImageRecord, doctop: float) -> Object
     data = image.data
     payload = bytes(data) if isinstance(data, (bytes, bytearray, memoryview)) else None
     x0, top, x1, bottom = flip_box(box, page.info.height)
+    dictionary = image.dictionary or {}
     return _envelope(
         "image",
         page.info.number,
@@ -630,26 +628,15 @@ def _image(page: EnginePageAdapter, image: ImageRecord, doctop: float) -> Object
         doctop,
         y0=box[1],
         y1=box[3],
-        fill=None,
-        non_stroking_color=None,
-        stroke=None,
-        stroking_color=None,
-        fill_opacity=None,
-        stroke_opacity=None,
         seqno=image.seqno or 0,
-        items=[],
-        path=None,
-        dash=None,
-        linewidth=None,
-        linecap=None,
-        linejoin=None,
-        width=metadata.width,
-        height=metadata.height,
+        name=None,
         srcsize=(metadata.width, metadata.height),
         stream=payload,
-        data=payload,
+        imagemask=dictionary.get(PdfName(b"ImageMask")),
         colorspace=metadata.color_model,
-        bits=metadata.channels,
+        bits=dictionary.get(PdfName(b"BitsPerComponent")),
+        mcid=None,
+        tag=None,
     )
 
 
@@ -742,21 +729,23 @@ class Page(Container):
                 ]
             }
             program = self._adapter.page_program()
-            for drawing in self._adapter.drawings(program):
-                record = _drawing(self._adapter, drawing, self.initial_doctop)
-                if record["object_type"] != "image":
-                    continue
-                if record["object_type"] == "image":
-                    record.setdefault("srcsize", (record["width"], record["height"]))
-                    record.setdefault("stream", record.get("data"))
-                objects.setdefault(record["object_type"], []).append(record)
             for path_object in _path_objects(self._adapter, self.initial_doctop):
                 objects.setdefault(path_object["object_type"], []).append(path_object)
             for image in self._adapter.images(program):
                 image_record = _image(self._adapter, image, self.initial_doctop)
                 if image_record is not None:
                     objects.setdefault("image", []).append(image_record)
-            self._objects = objects
+            # pdfplumber keeps each type where it first appears in the content stream.
+            ordered = dict(
+                sorted(
+                    ((kind, values) for kind, values in objects.items() if values),
+                    key=lambda item: min(obj["seqno"] for obj in item[1]),
+                )
+            )
+            for values in ordered.values():
+                for value in values:
+                    del value["seqno"]
+            self._objects = ordered
         return self._objects
 
     def _objects_for(self, kind: str) -> list[ObjectDict]:
@@ -815,6 +804,7 @@ class Page(Container):
                         contents=item.contents,
                         data=self.pdf._document.resolver.deep_resolve(item.dict),
                         uri=None,
+                        title=_annotation_title(item.dict),
                     )
                 )
             if isinstance(self, CroppedPage) and self.bbox != self.root_page.bbox:
