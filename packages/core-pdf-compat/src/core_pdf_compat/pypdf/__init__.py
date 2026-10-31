@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterator, Mapping
 from copy import replace
@@ -17,9 +18,24 @@ from core_pdf.impl.output_model import (
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
+from core_pdf_compat.pypdf._doc_common import PdfDocCommon
 from core_pdf_compat.pypdf._text import LegacyTextCaches, extract_legacy_text
+from core_pdf_compat.pypdf.errors import FileNotDecryptedError
+from core_pdf_compat.pypdf.generic import (
+    ArrayObject,
+    Destination,
+    DictionaryObject,
+    IndirectObject,
+    NameObject,
+    RectangleObject,
+    TextStringObject,
+    is_null_or_none,
+    to_generic,
+)
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
+
+logger = logging.getLogger(__name__)
 
 # pypdf Configuration.page_tree_maximum_depth and page_tree_maximum_entries.
 PAGE_TREE_MAXIMUM_DEPTH = 100
@@ -242,60 +258,7 @@ class StructuredState(ClosingMixin):
             self.pdf.close()
 
 
-class Destination:
-    def __init__(self, title: str, page: int | None, level: int = 0) -> None:
-        self.title = title
-        self.page = page
-        self.level = level
-
-    @property
-    def typ(self) -> str:
-        return "/Fit"
-
-
-class Rectangle(tuple[float, float, float, float]):
-    def __new__(cls, left: float, bottom: float, right: float, top: float) -> Rectangle:
-        return super().__new__(cls, (float(left), float(bottom), float(right), float(top)))
-
-    @property
-    def left(self) -> float:
-        return self[0]
-
-    @property
-    def bottom(self) -> float:
-        return self[1]
-
-    @property
-    def right(self) -> float:
-        return self[2]
-
-    @property
-    def top(self) -> float:
-        return self[3]
-
-    @property
-    def lower_left(self) -> tuple[float, float]:
-        return (self.left, self.bottom)
-
-    @property
-    def lower_right(self) -> tuple[float, float]:
-        return (self.right, self.bottom)
-
-    @property
-    def upper_left(self) -> tuple[float, float]:
-        return (self.left, self.top)
-
-    @property
-    def upper_right(self) -> tuple[float, float]:
-        return (self.right, self.top)
-
-    @property
-    def width(self) -> float:
-        return self.right - self.left
-
-    @property
-    def height(self) -> float:
-        return self.top - self.bottom
+Rectangle = RectangleObject
 
 
 class PdfPageObject:
@@ -311,8 +274,8 @@ class PdfPageObject:
             source_page = document.pdf.pages[self._page_number - 1]
             media_box = source_page.media_box or (0.0, 0.0, self._page.width, self._page.height)
             crop_box = source_page.crop_box or media_box
-            self.mediabox = Rectangle(*media_box)
-            self.cropbox = Rectangle(*crop_box)
+            self.mediabox = Rectangle(media_box)
+            self.cropbox = Rectangle(crop_box)
             self.user_unit = source_page.user_unit
             raw_rotation = source_page.inherited_values.get("Rotate")
             self.rotation = (
@@ -322,8 +285,8 @@ class PdfPageObject:
             )
         else:
             page = self._page
-            self.mediabox = Rectangle(0, 0, page.width, page.height)
-            self.cropbox = Rectangle(*(page.cropbox or self.mediabox))
+            self.mediabox = Rectangle((0, 0, page.width, page.height))
+            self.cropbox = Rectangle(page.cropbox or self.mediabox)
             self.user_unit = page.user_unit
             self.rotation = page.rotation
 
@@ -353,9 +316,22 @@ class PdfPageObject:
             return extract_legacy_text(page, self._document.text_caches)
         return "\n".join(line.text for block in self._page.blocks for line in block.lines)
 
-    def _generic_dictionary(self) -> Any:
-        from .generic import to_generic
+    @property
+    def indirect_reference(self) -> IndirectObject | None:
+        if self._reader is None:
+            return None
+        page_ids = self._reader.page_object_numbers()
+        if not 0 < self._page_number <= len(page_ids):
+            return None
+        return IndirectObject(page_ids[self._page_number - 1], 0, self._reader)
 
+    def get_contents(self) -> Any:
+        from core_pdf_compat.pypdf.generic import ContentStream
+
+        contents = self._generic_dictionary().get("/Contents")
+        return None if is_null_or_none(contents) else ContentStream(contents, self._reader)
+
+    def _generic_dictionary(self) -> Any:
         pdf = self._document.pdf
         if pdf is None:
             return to_generic({}, self._reader)
@@ -384,12 +360,12 @@ class PdfPageObject:
 
     def scale_to(self, width: float, height: float) -> PdfPageObject:
         self._page = replace(self._page, width=width, height=height)
-        self.mediabox = Rectangle(0, 0, width, height)
+        self.mediabox = Rectangle((0, 0, width, height))
         self.cropbox = self.mediabox
         return self
 
     def set_cropbox(self, box: tuple[float, float, float, float]) -> PdfPageObject:
-        rectangle = Rectangle(*box)
+        rectangle = Rectangle(box)
         self._page = replace(
             self._page,
             cropbox=(rectangle.left, rectangle.bottom, rectangle.right, rectangle.top),
@@ -399,8 +375,8 @@ class PdfPageObject:
 
     def transfer_rotation_to_content(self) -> None:
         if self.rotation % 180:
-            self.mediabox = Rectangle(0, 0, self.mediabox.height, self.mediabox.width)
-            self.cropbox = Rectangle(0, 0, self.cropbox.height, self.cropbox.width)
+            self.mediabox = Rectangle((0, 0, self.mediabox.height, self.mediabox.width))
+            self.cropbox = Rectangle((0, 0, self.cropbox.height, self.cropbox.width))
         self._page = replace(self._page, rotation=0)
         self.rotation = 0
 
@@ -453,18 +429,21 @@ class LockedPages:
         raise PdfUnsupportedError("file has not been decrypted")
 
 
-class PdfReader(ClosingMixin):
+class PdfReader(PdfDocCommon, ClosingMixin):
     pages: Any
     metadata: dict[str, Any]
 
     def __init__(
         self,
         stream: PdfInput,
+        strict: bool = False,
         password: str | None = None,
-        strict: bool = True,
         **kwargs: object,
     ) -> None:
-        del strict, kwargs
+        del kwargs
+        self.strict = strict
+        self.resolved_objects: dict[tuple[int, int], Any] = {}
+        self._named_destinations_cache: dict[str, Destination] | None = None
         self._encrypted_source = stream.getvalue() if isinstance(stream, BytesIO) else stream
         try:
             document = StructuredState.open(self._encrypted_source, password=password or "")
@@ -484,6 +463,9 @@ class PdfReader(ClosingMixin):
         self.__dict__.pop("pages", None)
         self.__dict__.pop("metadata", None)
         self.__dict__.pop("_page_indexes", None)
+        self.__dict__.pop("_generic_trailer", None)
+        self.resolved_objects = {}
+        self._named_destinations_cache = None
 
     def __getattr__(self, name: str) -> Any:
         if name in {"pages", "metadata"} and self.__dict__.get("_document") is not None:
@@ -529,27 +511,30 @@ class PdfReader(ClosingMixin):
                 return index
         raise ValueError("page is not part of this reader")
 
-    @property
-    def outline(self) -> list[Destination]:
-        if self._document is None:
-            return []
-        return [
-            Destination(item.title, item.page_index, item.level)
-            for item in self._document.source_pdf.iter_outlines()
-        ]
+    def _get_named_destinations(
+        self,
+        *,
+        tree: Any = None,
+        retval: dict[str, Destination] | None = None,
+        visited: set[int] | None = None,
+    ) -> dict[str, Destination]:
+        if tree is not None or retval is not None or visited is not None:
+            return super()._get_named_destinations(tree=tree, retval=retval, visited=visited)
+        if self._named_destinations_cache is None:
+            self._named_destinations_cache = super()._get_named_destinations()
+        return self._named_destinations_cache
 
-    @property
-    def outlines(self) -> list[Destination]:
-        return self.outline
-
-    def get_destination_page_number(self, destination: object) -> int:
-        if isinstance(destination, Destination) and destination.page is not None:
-            return destination.page
-        raise ValueError("destination does not resolve to a page")
+    def _get_page_number_by_indirect(self, indirect_reference: Any) -> int | None:
+        if is_null_or_none(indirect_reference):
+            return None
+        number = getattr(indirect_reference, "idnum", indirect_reference)
+        numbers = self.__dict__.get("_page_numbers")
+        if numbers is None:
+            numbers = {idnum: index for index, idnum in enumerate(self.page_object_numbers())}
+            self.__dict__["_page_numbers"] = numbers
+        return numbers.get(number)
 
     def get_object(self, indirect_reference: Any) -> Any:
-        from .generic import IndirectObject, to_generic
-
         source = self._source_document()
         if source is None:
             return None
@@ -557,13 +542,53 @@ class PdfReader(ClosingMixin):
             number, generation = indirect_reference.idnum, indirect_reference.generation
         else:
             number, generation = int(indirect_reference), 0
-        generic = self.__dict__.setdefault("_generic_objects", {})
-        if number not in generic:
+        key = (generation, number)
+        if key not in self.resolved_objects:
             resolved = source.resolver.resolve(PdfReference(number, generation))
             item = to_generic(resolved, self)
             item.indirect_reference = IndirectObject(number, generation, self)
-            generic[number] = item
-        return generic[number]
+            self.resolved_objects[key] = item
+        return self.resolved_objects[key]
+
+    def _replace_object(self, indirect: IndirectObject, obj: Any) -> Any:
+        key = (indirect.generation, indirect.idnum)
+        if key not in self.resolved_objects:
+            raise ValueError("Cannot replace an object that has not been read")
+        self.resolved_objects[key] = obj
+        obj.indirect_reference = indirect
+        return obj
+
+    def _next_object_number(self) -> int:
+        file_numbers = (key >> 16 for key in self._source_document().xref)
+        return max((*file_numbers, *(number for _, number in self.resolved_objects))) + 1
+
+    def add_form_topname(self, name: str) -> DictionaryObject | None:
+        form = self.root_object.get("/AcroForm")
+        if not isinstance(form, DictionaryObject) or "/Fields" not in form:
+            return None
+        group = DictionaryObject()
+        group[NameObject("/T")] = TextStringObject(name)
+        group[NameObject("/Kids")] = form["/Fields"]
+        reference = IndirectObject(self._next_object_number(), 0, self)
+        group.indirect_reference = reference
+        self.resolved_objects[(0, reference.idnum)] = group
+        form[NameObject("/Fields")] = ArrayObject([reference])
+        for field in group["/Kids"]:
+            item = field.get_object()
+            if "/Parent" in item:
+                logger.warning(
+                    "Top Level Form Field %s has a non-expected parent", item.indirect_reference
+                )
+            item[NameObject("/Parent")] = reference
+        return group
+
+    def rename_form_topname(self, name: str) -> DictionaryObject | None:
+        form = self.root_object.get("/AcroForm")
+        if not isinstance(form, DictionaryObject) or "/Fields" not in form:
+            return None
+        group = form["/Fields"][0].get_object()
+        group[NameObject("/T")] = TextStringObject(name)
+        return group
 
     def page_object_numbers(self) -> list[int]:
         numbers = self.__dict__.get("_page_object_numbers")
@@ -575,8 +600,6 @@ class PdfReader(ClosingMixin):
 
     @property
     def trailer(self) -> Any:
-        from .generic import to_generic
-
         cached = self.__dict__.get("_generic_trailer")
         if cached is None:
             source = self._source_document()
@@ -586,6 +609,8 @@ class PdfReader(ClosingMixin):
 
     @property
     def root_object(self) -> Any:
+        if self._decryption_pending:
+            raise FileNotDecryptedError("File has not been decrypted")
         return self.trailer["/Root"]
 
     def _catalog_name(self, key: str) -> str | None:
@@ -622,27 +647,6 @@ class PdfReader(ClosingMixin):
         if not isinstance(source, (bytes, bytearray)):
             source = bytes(self._source_document().raw_data)
         return bytes(source[:8]).decode("latin-1")
-
-    def get_fields(
-        self, tree: object = None, retval: dict[str, Any] | None = None, fileobj: Any = None
-    ) -> dict[str, Any]:
-        del tree, fileobj
-        if self._document is None:
-            return {} if retval is None else retval
-        return {
-            item.record.name: item.record
-            for item in self._document.source_pdf.extract_form_fields()
-        }
-
-    def get_form_text_fields(self) -> dict[str, str]:
-        if self._document is None:
-            return {}
-        return {
-            field.name: field.value_text
-            for item in self._document.source_pdf.extract_form_fields()
-            for field in (item.record,)
-            if field.type.casefold() in {"text", "tx"}
-        }
 
     def get_form_xfa(self) -> None:
         return None

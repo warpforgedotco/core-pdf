@@ -10,6 +10,7 @@ from core_pdf_spec.s_07_filters.decode_spec import (
 )
 from core_pdf_spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
+from core_pdf_spec.s_07_syntax.serialize import serialize_name, serialize_object
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfObject
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     decoded_name,
@@ -164,6 +165,11 @@ def filtered_inline_image_data_end(
 
 
 def parse_inline_image(lexer: PdfLexer) -> InlineImage:
+    return parse_inline_image_data(lexer, parse_inline_image_dictionary(lexer))
+
+
+def parse_inline_image_dictionary(lexer: PdfLexer) -> PdfDict:
+    """Read the entries after BI as written, stopping after ID."""
     dictionary: PdfDict = {}
     while True:
         lexer.skip_ignored()
@@ -171,12 +177,14 @@ def parse_inline_image(lexer: PdfLexer) -> InlineImage:
             raise PdfParseError("unterminated inline image")
         if lexer.raw_data[lexer.pos : lexer.pos + 2] == b"ID":
             lexer.advance(2)
-            break
+            return dictionary
         if lexer.raw_data[lexer.pos] != 47:
             raise PdfParseError("inline image keys must be names")
         key = PdfName.of(lexer.read_name())
         dictionary[key] = lexer.parse_object()
 
+
+def parse_inline_image_data(lexer: PdfLexer, dictionary: PdfDict) -> InlineImage:
     if not skip_inline_image_separator(lexer):
         raise PdfParseError("expected inline image data separator")
     start = lexer.pos
@@ -298,6 +306,15 @@ def next_inline_image(
     return None
 
 
+def serialize_inline_image(dictionary: PdfDict, data: bytes) -> bytes:
+    """Write BI, ID and EI, the inverse of parse_inline_image."""
+    entries = (
+        serialize_name(key) + b" " + serialize_object(item) for key, item in dictionary.items()
+    )
+    # The scan for EI needs white space before it, and drops that one byte.
+    return b" ".join((b"BI", *entries, b"ID")) + b" " + data + b"\nEI\n"
+
+
 def validate_inline_images(
     data: bytes | memoryview, *, context: SemanticContext | None = None
 ) -> None:
@@ -323,5 +340,8 @@ __all__ = (
     "InlineImageDataLengthError",
     "scan_inline_image_data",
     "parse_inline_image",
+    "parse_inline_image_data",
+    "parse_inline_image_dictionary",
+    "serialize_inline_image",
     "validate_inline_images",
 )
