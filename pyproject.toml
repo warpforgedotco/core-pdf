@@ -148,7 +148,6 @@ select = [
     "PLR1714", # repeated equality comparison
     "PLR5501", # collapsible else-if
     "PLR0402", # Name compared with itself like `foo == foo`
-    "PT",      # flake8-pytest-style
     "RET504",  # unnecessary assignment before return
     "RET505",  # superfluous else after return
     "SIM",     # flake8-simplify
@@ -171,8 +170,6 @@ ignore = [
     # is an intentional pairwise zip(xs, xs[1:]); strict=True would be wrong.
     "B905",   # zip() without an explicit strict=
     "COM812", # over aggressively insists on trailing commas where not desirable
-    "PT011",  # pytest.raises({exc}) too broad, use match param or more specific exception
-    "PT012",  # pytest.raises() block should contain a single simple statement
     "SIM108", # ignore encouraging use of ternary operator
     "SIM117", # merge `with` statements for context managers that have same scope
 ]
