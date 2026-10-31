@@ -38,6 +38,7 @@ from core_pdf_spec.s_07_content.model import PATH_CLOSE, PATH_CURVE, PATH_OPERAN
 from .._shared import BBox, ClosingMixin, PdfInput
 from .convert import Container
 from .exceptions import PdfminerException
+from .repair import RepairSetting, repair, repair_stream
 
 ObjectDict: TypeAlias = dict[str, Any]
 LIGATURE_EXPANSIONS = {**LIGATURE_TEXT_OVERRIDES, "ﬅ": "ft", "ﬆ": "st"}
@@ -1603,8 +1604,20 @@ class PDF(ClosingMixin, Container):
         password: str = "",
         unicode_norm: str | None = None,
         laparams: Any = None,
+        repair: bool = False,
+        gs_path: str | None = None,
+        repair_setting: RepairSetting = "default",
         **_: Any,
     ) -> PDF:
+        if repair:
+            # The repaired copy carries no encryption, so the password is not reused.
+            source = repair_stream(
+                source,  # type: ignore[arg-type]
+                password=password,
+                gs_path=gs_path,
+                setting=repair_setting,
+            )
+            password = ""
         pdf = cls(_source(source, password), source, pages, laparams, unicode_norm)
         pdf._opened_as_pdfminer = True
         return pdf
@@ -2169,6 +2182,7 @@ __all__ = (
     "extract_words",
     "open",
     "outside_bbox",
+    "repair",
     "within_bbox",
     "utils",
     "PdfminerException",
