@@ -1,0 +1,89 @@
+name: Wheels
+
+# core-pdf-cythonized is the only workspace member shipping a C extension, and
+# core-pdf depends on it, so core-pdf cannot be installed from source without a
+# compiler. These are the wheels that make that unnecessary.
+#
+# No macOS wheels: macOS builds from the sdist, which carries the kernels'
+# sources.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - "packages/core-pdf-cythonized/**"
+      - ".github/workflows/wheels.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wheels:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    # Each runner builds its native architecture only, so no job needs QEMU.
+    # CIBW_ARCHS is the one place the architectures are named.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, label: "linux x86_64", archs: x86_64 }
+          - { os: ubuntu-24.04-arm, label: "linux aarch64", archs: aarch64 }
+          - { os: windows-latest, label: "windows AMD64", archs: AMD64 }
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v4.3.4
+        with:
+          package-dir: packages/core-pdf-cythonized
+        env:
+          CIBW_ARCHS: ${{ matrix.archs }}
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.archs }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.6"
+
+      - name: Build sdist
+        run: uv build --sdist --package core-pdf-cythonized --out-dir dist
+
+      # Consumers without a matching wheel install from this, compiling the
+      # kernels themselves. Unpack it somewhere else entirely, so the check
+      # fails if the sdist is missing sources rather than quietly falling back
+      # on the repo checkout.
+      - name: Check the sdist builds standalone
+        run: |
+          uv venv --python 3.14 /tmp/sdist-check
+          uv pip install --python /tmp/sdist-check/bin/python --no-binary :all: dist/*.tar.gz
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
