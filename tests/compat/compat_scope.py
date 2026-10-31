@@ -1,9 +1,11 @@
 """Deselect upstream tests whose source mentions a name in CORE_PDF_COMPAT_OUT_OF_SCOPE."""
 
+import importlib
 import inspect
 import os
 import re
 import sys
+from typing import Any
 
 import pytest
 
@@ -64,3 +66,40 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     spec = getattr(item, "callspec", None)
     if spec is not None and contains_stub(spec.params):
         pytest.skip("out of scope: parametrized with an unimplemented API")
+
+
+def real_unstructured_elements(elements: list[Any]) -> list[object]:
+    # Upstream tests check real element classes and feed elements to real chunking, so
+    # the facade's elements are rebuilt from their class name, text and metadata.
+    # Imported by name, because only the suite's own environment has unstructured.
+    real: Any = importlib.import_module("unstructured.documents.elements")
+    coordinates_module: Any = importlib.import_module("unstructured.documents.coordinates")
+
+    fields = set(real.ElementMetadata.__annotations__)
+    rebuilt: list[object] = []
+    for element in elements:
+        values = {key: value for key, value in element.metadata.items() if key in fields}
+        coordinates = values.pop("coordinates", None)
+        if coordinates is not None:
+            system = coordinates_module.PixelSpace(
+                width=coordinates.width, height=coordinates.height
+            )
+            values["coordinates"] = real.CoordinatesMetadata(coordinates.points, system)
+        cls = getattr(real, type(element).__name__, real.Text)
+        item = cls(text=element.text, metadata=real.ElementMetadata(**values))
+        rebuilt.append(item)
+    return rebuilt
+
+
+def pytest_configure() -> None:
+    if "unstructured.partition.pdf" not in os.environ.get("CORE_PDF_COMPAT_ALIASES", ""):
+        return
+    import core_pdf_compat.unstructured as facade  # noqa: PLC0415
+
+    module: Any = facade
+    partition = module.partition_pdf
+
+    def partition_pdf(*args: Any, **kwargs: Any) -> list[object]:
+        return real_unstructured_elements(partition(*args, **kwargs))
+
+    module.partition_pdf = partition_pdf

@@ -218,7 +218,9 @@ def partition_pdf(
                                     (bbox[0], page.height - bbox[1]),
                                     (bbox[2], page.height - bbox[1]),
                                     (bbox[2], page.height - bbox[3]),
-                                )
+                                ),
+                                width=page.width,
+                                height=page.height,
                             ),
                             "filename": display_name,
                             "file_directory": file_directory,

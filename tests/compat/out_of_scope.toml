@@ -55,7 +55,8 @@ names = ["get_good_rectangles", "get_bad_redactions", "get_intersecting_chars"]
 [unstructured]
 reason = "OCR, inference and pdfminer-internal helpers rather than partition_pdf; hi_res and OCR need inference models the facade has none of, and tests that patch internals"
 names = [
-    "hi_res", "ocr_only", "HI_RES", "OCR_ONLY",
+    "hi_res", "ocr_only", "HI_RES", "OCR_ONLY", "mock_process_file_with_model",
+    "chunking_strategy", "PDF_CHAR_DUPLICATE_THRESHOLD",
     "extractable_elements", "document_to_element_list", "_partition_pdf_or_image_local", "partition_pdf_or_image",
     "check_annotations_within_element", "default_hi_res_model", "_rotation_corrections_from_layout", "is_pdf_too_complex",
 ]
