@@ -36,7 +36,7 @@ def normalized(value: Any) -> Any:
         return str(value)
     if hasattr(value, "value_bytes"):
         return value.value
-    return round(value, 8) if isinstance(value, float) else value
+    return value
 
 
 def reparsed(value: Any) -> Any:

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
+from decimal import Decimal
 
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
@@ -58,8 +59,11 @@ def serialize_string(string: PdfString) -> bytes:
 def serialize_real(value: float) -> bytes:
     if not math.isfinite(value):
         raise ValueError("PDF real numbers must be finite")
-    # 7.3.3: exponent notation is not allowed.
-    text = f"{value:.10f}".rstrip("0").rstrip(".")
+    # 7.3.3: exponent notation is not allowed. repr gives the shortest text that reads back
+    # as exactly this value, so no precision is lost.
+    text = format(Decimal(repr(value)), "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
     return (text if text not in {"", "-", "-0"} else "0").encode("ascii")
 
 
