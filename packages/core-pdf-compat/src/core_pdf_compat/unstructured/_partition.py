@@ -19,6 +19,7 @@ from ._classification import (
     classify_element,
 )
 from ._elements import (
+    CoordinatesMetadata,
     Element,
     ElementMetadata,
     ListItem,
@@ -120,7 +121,30 @@ def pdf_too_complex(filename: object, password: str) -> bool:
     return False
 
 
-def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
+STRATEGIES = frozenset({"auto", "fast", "hi_res", "ocr_only"})
+
+
+def partition_pdf(
+    filename: object = None,
+    file: Any = None,
+    strategy: object = "auto",
+    metadata_filename: str | None = None,
+    starting_page_number: int = 1,
+    languages: list[str] | None = None,
+    **kwargs: object,
+) -> list[Element]:
+    if str(strategy) not in STRATEGIES:
+        raise ValueError(f"{strategy} is not a valid strategy.")
+    if filename is None and file is None:
+        raise ValueError("Exactly one of filename and file must be specified.")
+    display_name = metadata_filename
+    file_directory = None
+    if filename is None:
+        file.seek(0)
+        filename = file.read()
+    elif isinstance(filename, (str, PathLike)) and not str(filename).startswith("%PDF"):
+        display_name = metadata_filename or Path(filename).name
+        file_directory = str(Path(filename).parent)
     if (
         isinstance(filename, (str, PathLike))
         and not (isinstance(filename, str) and filename.startswith("%PDF"))
@@ -186,8 +210,20 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
                     ElementMetadata(
                         {
                             "element_id": f"p{page.pageid}-e{element_index}",
-                            "page_number": page.pageid,
+                            "page_number": page.pageid + starting_page_number - 1,
                             "bbox": bbox,
+                            "coordinates": CoordinatesMetadata(
+                                (
+                                    (bbox[0], page.height - bbox[3]),
+                                    (bbox[0], page.height - bbox[1]),
+                                    (bbox[2], page.height - bbox[1]),
+                                    (bbox[2], page.height - bbox[3]),
+                                )
+                            ),
+                            "filename": display_name,
+                            "file_directory": file_directory,
+                            "filetype": "application/pdf",
+                            "languages": languages or ["eng"],
                         }
                     )
                     if include_metadata
@@ -195,7 +231,16 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
                 )
                 result.append(element_class(text, metadata))
             if include_page_breaks:
-                result.append(PageBreak("", ElementMetadata(page_number=page.pageid)))
+                result.append(
+                    PageBreak(
+                        "",
+                        ElementMetadata(
+                            page_number=page.pageid + starting_page_number - 1,
+                            filename=display_name,
+                            file_directory=file_directory,
+                        ),
+                    )
+                )
     finally:
         document.close()
     return result
