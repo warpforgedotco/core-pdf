@@ -295,7 +295,6 @@ class EnginePageAdapter:
                                 pdfminer_descent(glyph),
                             )
                         descent = known_descent[1] * glyph.font_size
-                        descent += float(provenance.get("text_rise", 0.0))
                         projected = None if ligature else text
                         width_key = (*key, projected)
                         width = widths.get(width_key)
