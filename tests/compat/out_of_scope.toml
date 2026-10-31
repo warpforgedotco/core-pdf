@@ -76,7 +76,6 @@ stubs = [
     "pypdf.generic._viewerpref",
     "pypdf.annotations",
     "pypdf.filters",
-    "pypdf.actions",
     "pypdf.xmp",
     "pypdf._font",
     "pypdf._cmap",

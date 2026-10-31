@@ -90,6 +90,7 @@ PARTIAL = {name for name in os.environ.get("CORE_PDF_COMPAT_PARTIAL", "").split(
 class FacadeAliasFinder(MetaPathFinder, Loader):
     def __init__(self, aliases: dict[str, str]) -> None:
         self.aliases = aliases
+        self.facade_specs: dict[str, ModuleSpec | None] = {}
 
     def resolve(self, name: str) -> str | None:
         for upstream, facade in self.aliases.items():
@@ -116,6 +117,7 @@ class FacadeAliasFinder(MetaPathFinder, Loader):
     def create_module(self, spec: ModuleSpec) -> ModuleType:
         assert spec.origin is not None
         module = importlib.import_module(spec.origin)
+        self.facade_specs[spec.name] = module.__spec__
         if spec.name in PARTIAL:
             # Names the facade does not have yet become stand-ins, so importing them is fine
             # and a test is skipped only if it reaches one.
@@ -125,7 +127,11 @@ class FacadeAliasFinder(MetaPathFinder, Loader):
         return module
 
     def exec_module(self, module: ModuleType) -> None:
-        return None
+        # The import system gave the facade module the upstream name's spec. Put its own back,
+        # or its relative imports warn that __package__ and __spec__.parent disagree.
+        spec = module.__spec__
+        assert spec is not None
+        module.__spec__ = self.facade_specs[spec.name]
 
     def get_code(self, fullname: str) -> CodeType | None:
         # `python -m upstream.module` runs the facade module's own code.
