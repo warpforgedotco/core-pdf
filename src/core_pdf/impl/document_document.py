@@ -282,18 +282,19 @@ def load_source(source: PdfSource) -> tuple[PdfByteBuffer, BinaryIO | None]:
     if isinstance(source, (str, PathLike)):
         if isinstance(source, str) and source.startswith("%PDF"):
             return source.encode("latin-1"), None
-        file_handle = open(source, "rb")  # noqa: SIM115
-        try:
-            return mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ), file_handle
-        except (OSError, ValueError) as exc:
+        # The mapping holds its own reference, so the file need not stay open. Keeping it
+        # open leaked a handle from every document that was never closed explicitly.
+        with open(source, "rb") as file_handle:
             try:
-                is_empty = file_handle.seek(0, 2) == 0
-            except OSError:
-                is_empty = False
-            file_handle.close()
-            if is_empty:
-                raise PdfEmptySourceError("PDF source is empty") from exc
-            raise PdfSourceError(str(exc)) from exc
+                return mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ), None
+            except (OSError, ValueError) as exc:
+                try:
+                    is_empty = file_handle.seek(0, 2) == 0
+                except OSError:
+                    is_empty = False
+                if is_empty:
+                    raise PdfEmptySourceError("PDF source is empty") from exc
+                raise PdfSourceError(str(exc)) from exc
     if isinstance(source, bytes):
         return source, None
     if isinstance(source, (memoryview, bytearray)):

@@ -145,6 +145,7 @@ def main() -> int:
         **os.environ,
         "PYTHONPATH": str(ROOT / "tests" / "compat"),
         "CORE_PDF_COMPAT_OUT_OF_SCOPE": ",".join(scope.get("names", ())),
+        "CORE_PDF_COMPAT_KEEP": ",".join(scope.get("keep", ())),
     }
     if not arguments.reference:
         environment["CORE_PDF_COMPAT_ALIASES"] = suite.aliases
@@ -153,7 +154,11 @@ def main() -> int:
         suite,
         reference=arguments.reference,
         junit=junit,
-        extra=[*extra, *(("-m", scope["markers"]) if "markers" in scope else ())],
+        extra=[
+            *extra,
+            *(("-m", scope["markers"]) if "markers" in scope else ()),
+            *(f"--deselect={node}" for node in scope.get("deselect", ())),
+        ],
         excluded_files=tuple(scope.get("files", ())),
     )
     log = RESULTS / f"{arguments.suite}-{mode}.log"
