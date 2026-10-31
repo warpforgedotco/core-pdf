@@ -59,7 +59,18 @@ deselect = [
     "tests/test_encryption.py::test_encryption[r6-owner-password.pdf-True]",
 ]
 stubs = [
-    "pypdf.generic",
+    "pypdf.generic._appearance_stream",
+    "pypdf.generic._base",
+    "pypdf.generic._data_structures",
+    "pypdf.generic._files",
+    "pypdf.generic._fit",
+    "pypdf.generic._image_inline",
+    "pypdf.generic._image_xobject",
+    "pypdf.generic._link",
+    "pypdf.generic._outline",
+    "pypdf.generic._rectangle",
+    "pypdf.generic._utils",
+    "pypdf.generic._viewerpref",
     "pypdf.annotations",
     "pypdf.filters",
     "pypdf.actions",
@@ -77,6 +88,7 @@ stubs = [
     "pypdf._text_extraction",
 ]
 files = ["tests/scripts/test_make_release.py"]
+partial = ["pypdf.generic"]
 markers = "not enable_socket"
 # These also touch a private name, but they are the only tests of public features the
 # facade lacks: viewer_preferences, attachment_list and named_destinations.

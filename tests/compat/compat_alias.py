@@ -84,6 +84,9 @@ class StubFinder(MetaPathFinder, Loader):
         return None
 
 
+PARTIAL = {name for name in os.environ.get("CORE_PDF_COMPAT_PARTIAL", "").split(",") if name}
+
+
 class FacadeAliasFinder(MetaPathFinder, Loader):
     def __init__(self, aliases: dict[str, str]) -> None:
         self.aliases = aliases
@@ -112,7 +115,14 @@ class FacadeAliasFinder(MetaPathFinder, Loader):
 
     def create_module(self, spec: ModuleSpec) -> ModuleType:
         assert spec.origin is not None
-        return importlib.import_module(spec.origin)
+        module = importlib.import_module(spec.origin)
+        if spec.name in PARTIAL:
+            # Names the facade does not have yet become stand-ins, so importing them is fine
+            # and a test is skipped only if it reaches one.
+            vars(module)["__getattr__"] = StubModule(spec.name).__getattr__
+            if not hasattr(module, "__path__"):
+                module.__path__ = []
+        return module
 
     def exec_module(self, module: ModuleType) -> None:
         return None

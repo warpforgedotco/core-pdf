@@ -16,6 +16,7 @@ from core_pdf.impl.output_model import (
 )
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
+from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf._text import LegacyTextCaches, extract_legacy_text
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
@@ -305,6 +306,7 @@ class PdfPageObject:
         self._loaded_page = page
         self._page_number = page.page_number if page is not None else page_number or 0
         self.text_override: str | None = None
+        self._reader: Any = None
         if document.pdf is not None and 0 < self._page_number <= len(document.pdf.pages):
             source_page = document.pdf.pages[self._page_number - 1]
             media_box = source_page.media_box or (0.0, 0.0, self._page.width, self._page.height)
@@ -350,6 +352,30 @@ class PdfPageObject:
             page = self._document.capability_page(self._page_number)
             return extract_legacy_text(page, self._document.text_caches)
         return "\n".join(line.text for block in self._page.blocks for line in block.lines)
+
+    def _generic_dictionary(self) -> Any:
+        from .generic import to_generic
+
+        pdf = self._document.pdf
+        if pdf is None:
+            return to_generic({}, self._reader)
+        if self._reader is not None:
+            page_ids = self._reader.page_object_numbers()
+            if self._page_number <= len(page_ids):
+                return self._reader.get_object(page_ids[self._page_number - 1])
+        return to_generic(pdf.pages[self._page_number - 1].page_dict, self._reader)
+
+    def __getitem__(self, key: str) -> Any:
+        return self._generic_dictionary()[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._generic_dictionary()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._generic_dictionary().get(key, default)
+
+    def keys(self) -> Any:
+        return self._generic_dictionary().keys()
 
     def rotate(self, angle: int) -> PdfPageObject:
         self._page = replace(self._page, rotation=(self.rotation + angle) % 360)
@@ -448,12 +474,10 @@ class PdfReader(ClosingMixin):
             self._document = None
             self.pages = LockedPages()
             self.metadata: dict[str, Any] = {}
-            self.trailer: dict[str, Any] = {}
             self._decryption_pending = True
             return
         self._decryption_pending = False
         self._bind(document)
-        self.trailer = {}
 
     def _bind(self, document: StructuredState) -> None:
         self._document = document  # type: ignore[assignment]
@@ -473,6 +497,8 @@ class PdfReader(ClosingMixin):
             PdfPageObject(document, None, page_number)
             for page_number in range(1, document.page_count() + 1)
         )
+        for page in self.pages:
+            page._reader = self
         self._page_indexes = {id(page): index for index, page in enumerate(self.pages)}
         raw_metadata = document.source_pdf.get_metadata()
         info = raw_metadata.get("info", {}) if isinstance(raw_metadata, dict) else {}
@@ -520,6 +546,47 @@ class PdfReader(ClosingMixin):
         if isinstance(destination, Destination) and destination.page is not None:
             return destination.page
         raise ValueError("destination does not resolve to a page")
+
+    def get_object(self, indirect_reference: Any) -> Any:
+        from .generic import IndirectObject, to_generic
+
+        source = self._source_document()
+        if source is None:
+            return None
+        if isinstance(indirect_reference, IndirectObject):
+            number, generation = indirect_reference.idnum, indirect_reference.generation
+        else:
+            number, generation = int(indirect_reference), 0
+        generic = self.__dict__.setdefault("_generic_objects", {})
+        if number not in generic:
+            resolved = source.resolver.resolve(PdfReference(number, generation))
+            item = to_generic(resolved, self)
+            item.indirect_reference = IndirectObject(number, generation, self)
+            generic[number] = item
+        return generic[number]
+
+    def page_object_numbers(self) -> list[int]:
+        numbers = self.__dict__.get("_page_object_numbers")
+        if numbers is None:
+            source = self._source_document()
+            numbers = [] if source is None else DocumentView(source).page_ids()
+            self.__dict__["_page_object_numbers"] = numbers
+        return numbers
+
+    @property
+    def trailer(self) -> Any:
+        from .generic import to_generic
+
+        cached = self.__dict__.get("_generic_trailer")
+        if cached is None:
+            source = self._source_document()
+            cached = to_generic(source.trailer_dict if source is not None else {}, self)
+            self.__dict__["_generic_trailer"] = cached
+        return cached
+
+    @property
+    def root_object(self) -> Any:
+        return self.trailer["/Root"]
 
     def _catalog_name(self, key: str) -> str | None:
         source = self._source_document()
