@@ -1,8 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 from core_pdf.impl.types import Record, frozen_setattr
+
+
+class CoordinatesMetadata(NamedTuple):
+    points: tuple[tuple[float, float], ...]
+    system: str = "PixelSpace"
 
 
 class ElementMetadata(dict[str, Any]):
@@ -10,7 +15,10 @@ class ElementMetadata(dict[str, Any]):
         try:
             return self[name]
         except KeyError as exc:
-            raise AttributeError(name) from exc
+            # Unstructured's metadata reports unset fields as None.
+            if name.startswith("__"):
+                raise AttributeError(name) from exc
+            return None
 
     def to_dict(self) -> dict[str, Any]:
         return dict(self)
@@ -63,7 +71,7 @@ class Element(Record):
 
     @property
     def coordinates(self) -> tuple[float, float, float, float] | None:
-        value = self.metadata.get("coordinates", self.metadata.get("bbox"))
+        value = self.metadata.get("bbox")
         return tuple(value) if isinstance(value, (tuple, list)) and len(value) == 4 else None
 
     @property
