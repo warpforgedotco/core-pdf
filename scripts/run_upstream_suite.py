@@ -150,6 +150,7 @@ def main() -> int:
     if not arguments.reference:
         environment["CORE_PDF_COMPAT_ALIASES"] = suite.aliases
         environment["CORE_PDF_COMPAT_STUBS"] = ",".join(scope.get("stubs", ()))
+        environment["CORE_PDF_COMPAT_PARTIAL"] = ",".join(scope.get("partial", ()))
     command = pytest_command(
         suite,
         reference=arguments.reference,
