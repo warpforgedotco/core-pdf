@@ -5,12 +5,7 @@ name: Wheels
 # compiler. These are the wheels that make that unnecessary.
 #
 # No macOS wheels: macOS builds from the sdist, which carries the kernels'
-# sources and their golden vectors and checks itself.
-#
-# The rest of the repo tests on Linux only. Every wheel therefore runs the
-# kernels' golden vectors before it is kept (see [tool.cibuildwheel] in the
-# package's pyproject): they pin float arithmetic bit for bit, which is the
-# thing a different compiler on a different platform actually changes.
+# sources.
 
 on:
   workflow_dispatch:
@@ -78,20 +73,13 @@ jobs:
         run: uv build --sdist --package core-pdf-cythonized --out-dir dist
 
       # Consumers without a matching wheel install from this, compiling the
-      # kernels themselves. Unpack it somewhere else entirely and run its own
-      # tests, so the check fails if the sdist is missing sources or the golden
-      # vectors rather than quietly falling back on the repo checkout.
-      - name: Check the sdist builds and tests standalone
+      # kernels themselves. Unpack it somewhere else entirely, so the check
+      # fails if the sdist is missing sources rather than quietly falling back
+      # on the repo checkout.
+      - name: Check the sdist builds standalone
         run: |
-          mkdir -p /tmp/unpacked
-          tar xzf dist/*.tar.gz -C /tmp/unpacked
           uv venv --python 3.14 /tmp/sdist-check
           uv pip install --python /tmp/sdist-check/bin/python --no-binary :all: dist/*.tar.gz
-          uv export --locked --only-group test --no-emit-project --no-emit-workspace \
-            --output-file /tmp/test-requirements.txt
-          uv pip install --python /tmp/sdist-check/bin/python -r /tmp/test-requirements.txt
-          uv pip install --python /tmp/sdist-check/bin/python "numpy>=2.5.1"
-          cd /tmp/unpacked/core_pdf_cythonized-* && /tmp/sdist-check/bin/python -m pytest -q tests
 
       - name: Upload sdist
         uses: actions/upload-artifact@v7

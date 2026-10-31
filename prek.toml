@@ -1,8 +1,4 @@
 default_install_hook_types = ["pre-commit", "pre-push"]
-# The reference specifications are redistributed verbatim under licences that
-# require it (CC BY-ND forbids distributing modified copies), so the
-# whitespace and end-of-file fixers must not touch them.
-exclude = "^tests/fixtures/specifications/"
 
 [[repos]]
 repo = "https://github.com/pre-commit/pre-commit-hooks"
@@ -45,9 +41,8 @@ hooks = [
   ], require_serial = true },
   # Run the ty pinned by uv.lock so local hooks and CI check with one version.
   # ty checks the whole project rather than the staged files: a change in one
-  # module can surface diagnostics in another. The test and vendor-test groups
-  # supply what the tests import, which ty must resolve.
-  { id = "ty", name = "ty", entry = "uv run --all-packages --group lint --group test --group vendor-test ty check", language = "system", pass_filenames = false, types_or = [
+  # module can surface diagnostics in another.
+  { id = "ty", name = "ty", entry = "uv run --all-packages --group lint ty check", language = "system", pass_filenames = false, types_or = [
     "python",
     "pyi",
   ], stages = [

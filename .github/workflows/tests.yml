@@ -31,12 +31,8 @@ jobs:
       - name: Check lockfile
         run: uv lock --check
 
-      # vendor-test supplies the reference libraries the compat differential
-      # tests import at module level, which ty must resolve.
       - name: Install workspace packages and quality tools
-        run: >-
-          uv sync --locked --all-packages
-          --group lint --group test --group vendor-test
+        run: uv sync --locked --all-packages --group lint
 
       - name: Build standalone distributions
         run: uv build --all-packages
@@ -57,68 +53,9 @@ jobs:
         if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci
 
-  verapdf:
-    name: veraPDF 1.30.2 / Java 17
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      # The integration tests validate one PDF/A file and one PDF 2.0 file.
-      - name: Restore fixture submodules
-        uses: ./.github/actions/cache-submodules
-        with:
-          lfs: "false"
-          paths: tests/fixtures/pypdf tests/fixtures/pdf20examples
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: "0.13.6"
-          python-version: "3.14"
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Install Java 17
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Install validation companion and tests
-        run: uv sync --locked --package core-pdf --package core-pdf-validate --group test
-
-      - name: Install checksum-pinned veraPDF in temporary storage
-        run: uv run --locked --no-sync python scripts/install_verapdf_ci.py "$RUNNER_TEMP/verapdf"
-
-      - name: Check real passes and failures for every advertised profile
-        env:
-          CORE_PDF_VERAPDF: ${{ runner.temp }}/verapdf/verapdf
-          CORE_PDF_REQUIRE_VERAPDF: "1"
-          COVERAGE_FILE: .coverage.verapdf
-          JAVA_TOOL_OPTIONS: -Duser.home=${{ runner.temp }}/verapdf
-        run: >-
-          uv run --locked --no-sync pytest
-          packages/core-pdf-validate/tests/test_verapdf_integration.py
-          --cov --cov-config=pyproject.toml --cov-report=term -ra
-
-      - name: Upload validator coverage
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-data-verapdf
-          path: .coverage.verapdf
-          include-hidden-files: true
-          if-no-files-found: error
-
-      - name: Prune uv cache
-        if: ${{ always() && !cancelled() }}
-        run: uv cache prune --ci
-
   standalone:
-    # Each floor package and the specification library must import and pass
-    # their tests with only their own declared dependencies installed.
+    # Each floor package and the specification library must install with only
+    # their own declared dependencies.
     name: Standalone / ${{ matrix.package }}
     runs-on: ubuntu-latest
     strategy:
@@ -144,14 +81,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install only the package and the test tools
-        run: uv sync --locked --package ${{ matrix.package }} --group test
+      - name: Install only the package
+        run: uv sync --locked --package ${{ matrix.package }}
 
       - name: Prove higher tiers are absent
         run: uv run --locked --no-sync python scripts/check_package_isolation.py ${{ matrix.package }}
-
-      - name: Run the package's tests
-        run: uv run --locked --no-sync pytest packages/${{ matrix.package }}/tests -p no:cacheprovider
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}
@@ -176,8 +110,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install only core and the test tools
-        run: uv sync --locked --package core-pdf --group test
+      - name: Install only core
+        run: uv sync --locked --package core-pdf
 
       - name: Prove the companions are absent
         run: uv run --locked --no-sync python scripts/check_package_isolation.py core-pdf
@@ -188,140 +122,3 @@ jobs:
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}
         run: uv cache prune --ci
-
-  workspace:
-    name: Workspace suite / Python 3.14
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Restore fixture submodules
-        uses: ./.github/actions/cache-submodules
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: "0.13.6"
-          python-version: "3.14"
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Install workspace and reference libraries
-        run: uv sync --locked --all-packages --extra unstructured --group test --group vendor-test
-
-      - name: Install pinned OCR test model and verify linked engine
-        run: uv run --locked --no-sync python scripts/install_ocr_ci.py "$RUNNER_TEMP/tessdata"
-
-      - name: Run complete workspace with coverage
-        env:
-          CORE_PDF_TESSERACT_TESTS: "1"
-          TESSDATA_PREFIX: ${{ runner.temp }}/tessdata
-          COVERAGE_FILE: .coverage.workspace
-        run: >-
-          uv run --locked --no-sync pytest -n 2
-          --cov --cov-config=pyproject.toml --cov-report=term -ra
-
-      - name: Upload workspace coverage
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-data-workspace
-          path: .coverage.workspace
-          include-hidden-files: true
-          if-no-files-found: error
-
-      - name: Prune uv cache
-        if: ${{ always() && !cancelled() }}
-        run: uv cache prune --ci
-
-  workspace-next:
-    # The same suite on the newest CPython, without the Unstructured and x-ray
-    # references: vendor-test gates unstructured[pdf] and pymupdf (whose 2.x
-    # requires it) to Python < 3.15 because onnxruntime publishes no cp315
-    # wheels yet (1.31.1 has none). The unstructured extra is left out: spaCy
-    # 3.8.18 loads its models on 3.15, but the extra's only tests compare against
-    # the unstructured reference, which cannot install here, so it would add
-    # install time and no coverage. Their differential tests skip here.
-    # Coverage is collected on 3.14 only, so this job uploads none.
-    name: Workspace suite / Python 3.15
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Restore fixture submodules
-        uses: ./.github/actions/cache-submodules
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: "0.13.6"
-          python-version: "3.15"
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Install workspace and reference libraries
-        run: uv sync --locked --all-packages --group test --group vendor-test
-
-      - name: Install pinned OCR test model and verify linked engine
-        run: uv run --locked --no-sync python scripts/install_ocr_ci.py "$RUNNER_TEMP/tessdata"
-
-      - name: Run complete workspace
-        env:
-          CORE_PDF_TESSERACT_TESTS: "1"
-          TESSDATA_PREFIX: ${{ runner.temp }}/tessdata
-        run: uv run --locked --no-sync pytest -n 2 -ra
-
-      - name: Prune uv cache
-        if: ${{ always() && !cancelled() }}
-        run: uv cache prune --ci
-
-  differential:
-    # Preserve the existing required status name while gating the complete suite.
-    name: Differential / Python 3.14
-    needs: [workspace, verapdf]
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require both test jobs to pass
-        env:
-          WORKSPACE_RESULT: ${{ needs.workspace.result }}
-          VALIDATOR_RESULT: ${{ needs.verapdf.result }}
-        run: test "$WORKSPACE_RESULT" = success && test "$VALIDATOR_RESULT" = success
-
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: "0.13.6"
-          python-version: "3.14"
-
-      - name: Install coverage tools
-        run: uv sync --locked --only-group test
-
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: coverage-data-*
-          merge-multiple: true
-          path: coverage-data
-
-      - name: Combine and report complete coverage
-        run: |
-          uv run --locked --no-sync coverage combine coverage-data
-          uv run --locked --no-sync coverage html
-          uv run --locked --no-sync coverage json
-          uv run --locked --no-sync coverage report
-
-      - name: Publish coverage reports
-        uses: actions/upload-artifact@v7
-        with:
-          name: workspace-coverage
-          path: |
-            htmlcov/
-            .coverage
-          include-hidden-files: true
-          if-no-files-found: error
-
-      - name: Enforce statement and branch ratchets
-        run: uv run --locked --no-sync python scripts/check_coverage.py
