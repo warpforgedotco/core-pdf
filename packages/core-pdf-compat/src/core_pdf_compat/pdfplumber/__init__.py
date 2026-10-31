@@ -5,7 +5,7 @@ import math
 import re
 import struct
 import zlib
-from collections.abc import Callable, Iterable, Iterator, Mapping, Set
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from copy import copy
 from io import BytesIO
 from itertools import accumulate, groupby, pairwise
@@ -34,6 +34,7 @@ from core_pdf.impl.types import (
 from core_pdf_spec.s_07_content.model import PATH_CLOSE, PATH_CURVE, PATH_OPERAND_COUNTS, PATH_RECT
 
 from .._shared import BBox, ClosingMixin, PdfInput
+from .convert import Container
 from .exceptions import PdfminerException
 
 ObjectDict: TypeAlias = dict[str, Any]
@@ -426,30 +427,6 @@ def _envelope(
     }
 
 
-def _filtered_rows(
-    rows: Iterable[Any], include: Iterable[str] | None, exclude: Set[str]
-) -> list[Any]:
-    allowed = set(include) | {"object_type"} if include is not None else None
-    return [
-        {
-            key: value
-            for key, value in row.items()
-            if (allowed is None or key in allowed) and key not in exclude
-        }
-        if isinstance(row, dict)
-        else row
-        for row in rows
-    ]
-
-
-def _filter_objects(
-    value: dict[str, Any], include: Iterable[str] | None, exclude: Set[str]
-) -> None:
-    for kind, objects in value.items():
-        if isinstance(objects, list):
-            value[kind] = _filtered_rows(objects, include, exclude)
-
-
 def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
     x0, top, x1, bottom = flip_box(
         (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1), page.info.height
@@ -676,7 +653,7 @@ def _image(page: EnginePageAdapter, image: ImageRecord, doctop: float) -> Object
     )
 
 
-class Page:
+class Page(Container):
     def __init__(
         self, pdf: PDF, index: int, doctop: float = 0.0, engine_page: Any | None = None
     ) -> None:
@@ -1072,28 +1049,18 @@ class Page:
         return _lines(self.chars, return_chars=kwargs.get("return_chars", True))
 
     def to_dict(self, object_types: list[str] | None = None) -> dict[str, Any]:
-        selected = set(object_types) if object_types is not None else None
+        names = [*self.objects, "annot"] if object_types is None else object_types
         return {
             "page_number": self.page_number,
             "initial_doctop": self.initial_doctop,
+            "rotation": self.rotation,
+            "cropbox": self.cropbox,
+            "mediabox": self.mediabox,
             "bbox": self.bbox,
             "width": self.width,
             "height": self.height,
-            **{
-                kind + "s": values
-                for kind, values in self.objects.items()
-                if selected is None or kind in selected
-            },
+            **{f"{name}s": getattr(self, f"{name}s") for name in names},
         }
-
-    def to_json(self, object_types: list[str] | None = None, **kwargs: Any) -> str:
-        import json
-
-        include = kwargs.pop("include_attrs", None)
-        exclude = set(kwargs.pop("exclude_attrs", ()) or ())
-        value = self.to_dict(object_types)
-        _filter_objects(value, include, exclude)
-        return json.dumps(value, **kwargs)
 
     def extract_words(self, **kwargs: Any) -> list[ObjectDict]:
         for name in ("horizontal_ltr", "vertical_ttb"):
@@ -1595,7 +1562,7 @@ def _encode_png(width: int, height: int, channels: int, pixels: bytes | bytearra
     )
 
 
-class PDF(ClosingMixin):
+class PDF(ClosingMixin, Container):
     @property
     def edges(self) -> list[ObjectDict]:
         return [edge for page in self.pages for edge in page.edges]
@@ -1722,48 +1689,6 @@ class PDF(ClosingMixin):
             "metadata": self.metadata,
             "pages": [page.to_dict(object_types) for page in self.pages],
         }
-
-    def to_json(self, object_types: list[str] | None = None, **kwargs: Any) -> str:
-        import json
-
-        include = kwargs.pop("include_attrs", None)
-        exclude = set(kwargs.pop("exclude_attrs", ()) or ())
-        value = self.to_dict(object_types)
-        for page in value["pages"]:
-            _filter_objects(page, include, exclude)
-        return json.dumps(value, **kwargs)
-
-    def to_csv(self, object_types: list[str] | None = None, **kwargs: Any) -> str:
-        import csv
-        from io import StringIO
-
-        rows = [obj for page in self.pages for values in page.objects.values() for obj in values]
-        if object_types is not None:
-            allowed = set(object_types)
-            rows = [obj for obj in rows if obj.get("object_type") in allowed]
-        rows = _filtered_rows(
-            rows, kwargs.get("include_attrs"), set(kwargs.get("exclude_attrs", ()) or ())
-        )
-        precision = kwargs.get("precision")
-        fields: list[str] = []
-        for row in rows:
-            for key, value in row.items():
-                if not isinstance(value, (dict, list)) and key not in fields:
-                    fields.append(key)
-        if precision is not None:
-            digits = int(precision)
-            rows = [
-                {
-                    key: round(value, digits) if isinstance(value, float) else value
-                    for key, value in row.items()
-                }
-                for row in rows
-            ]
-        output = StringIO()
-        writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
-        return output.getvalue()
 
     def close(self) -> None:
         self.flush_cache()

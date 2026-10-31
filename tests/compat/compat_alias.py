@@ -6,11 +6,12 @@ facade raises ModuleNotFoundError, so a gap fails instead of reaching a real lib
 """
 
 import importlib
+import importlib.util
 import os
 import sys
-from importlib.abc import Loader, MetaPathFinder
+from importlib.abc import InspectLoader, Loader, MetaPathFinder
 from importlib.machinery import ModuleSpec
-from types import ModuleType
+from types import CodeType, ModuleType
 
 
 def parse_aliases(value: str) -> dict[str, str]:
@@ -50,6 +51,15 @@ class FacadeAliasFinder(MetaPathFinder, Loader):
 
     def exec_module(self, module: ModuleType) -> None:
         return None
+
+    def get_code(self, fullname: str) -> CodeType | None:
+        # `python -m upstream.module` runs the facade module's own code.
+        facade = self.resolve(fullname)
+        assert facade is not None
+        spec = importlib.util.find_spec(facade)
+        assert spec is not None
+        assert isinstance(spec.loader, InspectLoader)
+        return spec.loader.get_code(facade)
 
 
 sys.meta_path.insert(0, FacadeAliasFinder(parse_aliases(os.environ["CORE_PDF_COMPAT_ALIASES"])))
