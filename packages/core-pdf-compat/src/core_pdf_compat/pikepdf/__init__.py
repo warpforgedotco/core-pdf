@@ -394,4 +394,6 @@ class Pdf(PdfReader):
         return self._attachments
 
 
-__all__ = ("Attachments", "DocumentInfo", "Pdf")
+open = Pdf.open  # noqa: A001
+
+__all__ = ("Attachments", "DocumentInfo", "Pdf", "open")
