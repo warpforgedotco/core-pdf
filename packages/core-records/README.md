@@ -46,10 +46,3 @@ class Labelled(Point, metaclass=RecordType):
 
 This distribution is the lowest workspace floor package of `core-pdf`: it imports no
 other workspace package, and every other one may import it.
-
-Run its tests without the rest of the workspace installed:
-
-```sh
-uv sync --locked --package core-records --group test
-uv run --locked --no-sync pytest packages/core-records/tests
-```

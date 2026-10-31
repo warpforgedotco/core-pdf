@@ -86,7 +86,7 @@ line-length = 100
 "packages/core-pdf-spec/src/core_pdf_spec/s_07_filters/codecs.py" = ["ARG001"]
 # Cython pure-mode kernels: each rewrite these rules suggest (`in` for chained
 # comparisons, min()/max() for conditional expressions, merged branches, ...)
-# compiles to different C, and the kernels are pinned to their C by golden vectors.
+# compiles to different C.
 "packages/core-pdf-cythonized/src/core_pdf_cythonized/_[a-z]*.py" = [
     "FURB110",
     "FURB136",

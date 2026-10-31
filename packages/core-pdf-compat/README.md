@@ -53,12 +53,5 @@ Rendering, drawing, `save()`, and `_repr_png_()` work without Pillow.
 From the repository root:
 
 ```sh
-git submodule update --init --recursive
 uv sync --all-packages --all-groups --extra unstructured
-uv run --locked --all-packages --extra unstructured --group test --group vendor-test \
-  pytest packages/core-pdf-compat/tests -n auto
 ```
-
-The differential tests under `tests/differential` compare each facade with its reference
-library over that library's own fixture corpus. Set `CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1`
-to run every facade against every fixture.

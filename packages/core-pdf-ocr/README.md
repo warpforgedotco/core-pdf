@@ -31,7 +31,5 @@ For development from the repository root:
 uv sync --all-packages --all-groups
 ```
 
-See the repository's [differential testing guide](../../docs/api.md) for validation commands.
-
 Licensed under AGPL-3.0-only; see [LICENSE.txt](LICENSE.txt). The vendored Newstroke
 templates retain their original copyright and license notices.

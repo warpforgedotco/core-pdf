@@ -46,15 +46,13 @@ pure-mode spellings that differ from what one would guess:
 
 Rebuild in place after editing a kernel:
 `python setup.py build_ext --inplace` in this directory, with Cython and
-setuptools available. The root `conftest.py` refuses to run tests against an
-extension older than its source.
+setuptools available.
 
 ## Two kernels own their algorithms
 
 `composite_knockout_element` is the exception to everything below. It is not
 a mirror of code owned elsewhere — it *is* the ISO 32000-2 11.4.x knockout
-algorithm, moved out of `core-pdf-spec` rather than copied, and its
-conformance tests (`test_knockout_groups.py`) moved with it. That was a
+algorithm, moved out of `core-pdf-spec` rather than copied. That was a
 deliberate trade: spec dropped a declared `__all__` export, and in exchange
 spec stays pure Python instead of becoming a compiled distribution.
 
@@ -71,8 +69,7 @@ two decoders to drift. So `core-jbig2` 0.2.0 dropped `JBIG2MQDecoder`, the
 `MQ_*` tables and both `decode_arithmetic_generic_*` functions, and its base
 decoder now reports arithmetic generic regions as unsupported, as it already
 did MMR and text regions. Core's `RecoveryJBIG2PageDecoder` checks the region
-header and calls the kernel. The one conformance test the decoder had moved
-here with it; spec's test now asserts that it declines.
+header and calls the kernel.
 
 ## Three kernels keep their Python
 
@@ -84,11 +81,8 @@ scanner owns a subset of the grammar exactly -- well-formed dictionaries and
 arrays under the reader's rules -- and returns None for the rest, after which
 the reader parses the same bytes in Python from the same position.
 
-That makes divergence possible where elsewhere it is not, and two guards stand
-against it. `test_object_scanner_kernel.py` pins both the accepted results and
-which inputs are declined, standalone, on every wheel.
-`tests/src/core_pdf/test_object_scanner_contracts.py` compares the composed
-reader -- scanner, fallback and all -- with the Python alone, error for error.
+That makes divergence possible where elsewhere it is not, so a change to either
+side has to be made in both.
 
 It also looks like it breaks the object-churn rule below, and does not: it
 builds dicts, lists, ints and floats, which cost the same from C as from the
@@ -103,10 +97,7 @@ with array destinations. Anything else -- literal operands, whitespace or an
 odd digit count inside a hex string, `cidrange` blocks, an unterminated token,
 a `bfrange` block that would be rejected -- returns None, and
 `core_pdf.impl.fonts_cmap` parses the same bytes with the tokenizer and block
-parsers it always used. `test_tounicode_scanner_kernel.py` pins the accepted
-results and the declined inputs over corpus streams, synthetic cases and
-mutations of both; `tests/src/core_pdf/test_tounicode_scanner_contracts.py`
-compares the composed parser with the Python alone, error for error.
+parsers it always used.
 
 `type1_glyph_bounds` keeps its Python on the same terms. It interprets a Type 1
 charstring and measures it the way fontTools' `T1CharString.draw` into a
@@ -116,12 +107,10 @@ the bounds are the same doubles. `seac`, a malformed operand count, a subr index
 Python would resolve differently (negative, fractional, out of range), division
 by zero and truncated numbers return None, and
 `core_pdf.impl.fonts_program_type1` draws the same glyph through fontTools.
-`test_type1_bounds_kernel.py` pins the results and the declined inputs over
-corpus glyphs and mutations of them, bit for bit.
 
 ## What belongs here
 
-A kernel earns its place by clearing three bars, in order:
+A kernel earns its place by clearing two bars, in order:
 
 1. **Measured.** The function is a named share of a profiled workload, and
    compiling it is worth a stated percentage of a real page. Compiling things
@@ -138,9 +127,6 @@ A kernel earns its place by clearing three bars, in order:
    What does *not* belong here is Python object churn. Cython loses to
    CPython's specializing interpreter on object-heavy code — measured at about
    2x slower for per-item construction.
-3. **Pinned.** Before the Python original is deleted, it generates a golden
-   vector file, and a test drives the kernel over those vectors demanding
-   identical output. That file becomes the definition of correct.
 
 ## Float arithmetic is part of the contract
 
@@ -154,8 +140,7 @@ The kernels must also reproduce CPython's float semantics bit for bit, and a C
 compiler will not do that on its own. Left alone it contracts expressions like
 `b*b - 4*a*c` into an FMA — more accurate, and wrong here, because it moves a
 root by one ULP. `setup.py` builds with `-ffp-contract=off` for that reason.
-The golden vectors are what catch a regression, on whichever platform built
-the wheel.
+Nothing checks the result on the platforms that build wheels.
 
 ## Current contents
 
@@ -164,7 +149,7 @@ the wheel.
 | `cubic_sample_times` | `cubic_sample_times` and its `cubic_is_flat` helper in `core_pdf.impl.fonts_font_program` (deleted) | 7.57x on the kernel; 3.7% of a glyph-outline page, 0% on pages needing no outlines |
 | `signed_area_coverage` | `signed_area_coverage` and `group_offsets` in `core_pdf.impl.render_paths` (deleted) | 4.26x on the kernel; ~20% off full render on glyph-heavy pages |
 | `blend_normal_alpha_array_numpy` | `blend_normal_alpha_array_numpy` in `core_pdf.impl.render_blend` (deleted) | 9.04x on the kernel, over 26,315 calls averaging 38 elements |
-| `fill_rect_coverage` | the blend and group-plane records of `fill_rect`'s partially covered rectangles, and their two coverage-plane calls (deleted; the coverage plane was first `rect_coverage_plane`, 8.57x over the numpy `rect_coverage_plane` in `core_pdf.impl.render_paths`, -21% on a vector-heavy page render, and is now pinned by its golden vectors through this kernel) | five kernel round trips per rectangle become one pass; -5% render on final-r3-report-emergency p4, test_2533, chinese-tables |
+| `fill_rect_coverage` | the blend and group-plane records of `fill_rect`'s partially covered rectangles, and their two coverage-plane calls (deleted; the coverage plane was first `rect_coverage_plane`, 8.57x over the numpy `rect_coverage_plane` in `core_pdf.impl.render_paths`, -21% on a vector-heavy page render) | five kernel round trips per rectangle become one pass; -5% render on final-r3-report-emergency p4, test_2533, chinese-tables |
 | `outline_edges` | `core_pdf.impl.render_commands` (edge half only) | 2.01x on the kernel; -2.5 to -4.4% on text-page render |
 | `translated_outline_edges` | the translation and the four numpy bound reductions around `outline_edges` in `core_pdf.impl.render_commands.transformed_outline` (deleted) | six array operations per drawn glyph become one call; -5% on ISO 32000-2 text-page render. The four bounds are one pass per column since, not four scans whose runtime min-or-max select kept the compiler from vectorizing: 3.1 to 2.1 us on a 58-point glyph, -7% on lyft text-page render |
 | `glyph_coverage_plane` | the device-edge preparation in `core_pdf.impl.render_target.fill_path` (deleted) | 8.3us of numpy prep per call removed, against 3.3us of actual coverage; -10.6% / -7.5% on text-page render |
@@ -177,7 +162,7 @@ the wheel.
 | `composite_elementary_normal` | the opaque-normal branch of `core_pdf.impl.render_target.composite_nonisolated_group` (deleted) | nine numpy passes over an 8-to-32-pixel plane removed; -4.2 to -4.8% on text-page render |
 | `composite_elementary_knockout` | `core_pdf.impl.render_target.composite_group`'s element copy, its two kernel calls and the numpy shape update for an opaque normal elementary group in a knockout parent (deleted for that case) | one pass instead of three kernels and three array operations per glyph in a text knockout group; -8% on lyft text-page render |
 | `fill_glyph_knockout` | the backdrop copy, the two zeroed float32 planes and the `fill_glyph_coverage` + `composite_elementary_knockout` pair in `core_pdf.impl.render_target.knockout_glyph_fill` (deleted); both kernels stay, and the composition of them is the reference it is tested against | three scratch arrays and two passes per glyph of a text knockout group become one pass; -4% on lyft text-page render |
-| `shading_values`, `shading_blend`, `shading_t` | `core_pdf.impl.render_target.paint_shading`'s per-pixel loop and `core_pdf.impl.render_patterns.axial_shading_t`/`radial_shading_t` (all deleted): the parameter, the extend clamps, and `blend_px`'s blending and plane records for every mode it knows, including where the loop failed part way; the colour of each distinct value stays in Python. `shading_t` is pinned to the deleted functions by golden vectors | -30% on PyMuPDF test_4466 render (0.82 to 0.58 s); every corpus shading paints the same |
+| `shading_values`, `shading_blend`, `shading_t` | `core_pdf.impl.render_target.paint_shading`'s per-pixel loop and `core_pdf.impl.render_patterns.axial_shading_t`/`radial_shading_t` (all deleted): the parameter, the extend clamps, and `blend_px`'s blending and plane records for every mode it knows, including where the loop failed part way; the colour of each distinct value stays in Python. | -30% on PyMuPDF test_4466 render (0.82 to 0.58 s); every corpus shading paints the same |
 | `composite_normal_group` | `core_pdf.impl.render_blend.composite_normal_group_numpy` (deleted), all four of its routes | 9.3x on 256 corpus groups (9.56 to 1.03 ns/px); test_3450's 2,556 isolated groups |
 | `composite_masked_normal` | the isolated normal branch of `core_pdf.impl.render_target.composite_masked_group` (deleted) | 16.6x on the kernel over 400 corpus planes (39.4 to 2.4 ns/px); every soft-masked group on test_3450 |
 | `composite_nonisolated_blend` | the general branch of `core_pdf.impl.render_target.composite_nonisolated_group` (deleted): the effective-alpha quantization, the boolean gathers into float64, the clip and the `blend_visible_pixels` scatter, for every blend mode it reaches. Its backdrop removal mirrors `core_pdf_spec.s_11_transparency.groups.remove_group_backdrop`, which spec keeps; `remove_group_backdrop_samples` exposes the copy, and `tests/src/core_pdf/test_nonisolated_backdrop_contracts.py` pins it to spec's function and the whole kernel to the spec composition it replaced | 14.3x over the 114 non-isolated groups a census of the fixture corpus reaches (79.3 to 5.6 ns/px); PyMuPDF test_4479 render 46.6 to 19.0 ms (-59%, one 428x951 Darken group), test_2885 251 to 227 ms (-10%) |
@@ -196,10 +181,7 @@ the wheel.
 | `outline_coordinate_arrays` | the list build and two `numpy.asarray` calls of `core_pdf.impl.fonts_glyph_geometry.outline_arrays` (deleted) | 16.8 to 3.0 us per glyph outline over 919 corpus render outlines (median 202 points) |
 
 `glyph_coverage_plane`, `fill_glyph_coverage` and `signed_area_coverage` share one accumulation core;
-`glyph_coverage_plane` is kept as the golden-pinned reference the fused fill is checked against.
-Core reaches it through the fused entry point only; the device-space entry stays
-public because it is what the coverage golden vectors pin directly, and pinning
-the core through an affine transform instead would weaken them.
+Core reaches it through the fused entry point only.
 
 Together the two render kernels take full `render().rasterize()` down by
 21-32% across the corpus, with byte-identical pixels:
@@ -217,24 +199,17 @@ Together the two render kernels take full `render().rasterize()` down by
 without a compiler. `.github/workflows/wheels.yml` builds wheels with
 cibuildwheel for CPython 3.14 and 3.15 on Linux (x86_64, aarch64) and Windows
 (AMD64), plus an sdist for everything else. macOS installs from the sdist, which carries
-the kernel sources and their golden vectors and checks itself.
+the kernel sources.
 
-Every wheel runs the golden vectors before it is kept. That is not ceremony:
-the rest of the repo tests on Linux only, and float behaviour is exactly what
-a different compiler on a different platform changes. `setup.py` picks the
-contraction flag per compiler for the same reason -- passing the GCC/Clang
-spelling to MSVC would be worse than passing nothing, because MSVC warns and
-carries on, and the build would succeed with semantics the vectors do not
-describe.
+Float behaviour is exactly what a different compiler on a different platform
+changes, so `setup.py` picks the contraction flag per compiler -- passing the
+GCC/Clang spelling to MSVC would be worse than passing nothing, because MSVC
+warns and carries on, and the build would succeed with the wrong semantics.
 
-The sdist carries the tests and their golden data, so a source build can check
-itself on a platform no wheel covers.
-
-## Building and testing
+## Building
 
 Needs a C compiler. From the workspace root:
 
 ```sh
 uv sync --all-packages --all-groups
-uv run --locked --no-sync pytest packages/core-pdf-cythonized/tests
 ```

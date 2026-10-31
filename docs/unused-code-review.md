@@ -2,8 +2,7 @@
 
 > Historical log. Each entry records one review as it stood when written, including the
 > test counts and coverage figures of that run; paths and numbers are not kept current.
-> For current coverage floors see [`coverage-baseline.json`](coverage-baseline.json), and
-> for how to run and read coverage see [`coverage.md`](coverage.md).
+> The test suite, coverage floors, and coverage guide it refers to have since been removed.
 
 ## Runtime-tier audit: test-only and build-time code
 
@@ -2476,7 +2475,7 @@ model. Authored image-only PDFs exercise upright and rotated image placement thr
 public OCR API; a raster crop checks actual recognition and coordinates. A delegating
 wrapper verifies real API release on success and cancellation. All three fixture files
 reproduce byte-for-byte with the checked-in generator. See the
-[fixture and engine instructions](../packages/core-pdf-ocr/tests/fixtures/README.md).
+fixture and engine instructions.
 
 | Area | Statement coverage before → after | Branch coverage before → after |
 | --- | ---: | ---: |
@@ -2490,7 +2489,7 @@ reproduce byte-for-byte with the checked-in generator. See the
 The final scan includes the opt-in real-engine tests; the preceding baseline did not.
 The combined statement/branch headline is **68.92%**: 28,553 of 39,300 statements and
 9,019 of 15,212 branches execute. Reproduce this scan by prefixing the full command in
-[coverage.md](coverage.md) with `CORE_PDF_TESSERACT_TESTS=1` in the pinned environment.
+the coverage guide with `CORE_PDF_TESSERACT_TESTS=1` in the pinned environment.
 Generated HTML and JSON reports describe this final run.
 
 Ruff lint/format, mypy, ty, all 19 import contracts, repository hooks, and diff checks
@@ -2600,7 +2599,7 @@ Baseline: `fdd52fee`, with coverage configuration and test dependencies added in
 working tree. Run completed September 13, 2026 (America/Bogota), using Python 3.13.14,
 coverage.py 7.16.1, pytest-cov 7.1.0, and eight xdist workers.
 
-The [configured coverage run](coverage.md) passed: **2,608 passed, 32 skipped in 196.12s**.
+The configured coverage run passed: **2,608 passed, 32 skipped in 196.12s**.
 The skipped tests are the opt-in installed veraPDF integration cases. This was the default
 facade-owned differential matrix, not the exhaustive cross-corpus matrix.
 

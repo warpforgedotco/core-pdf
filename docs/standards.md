@@ -157,12 +157,9 @@ results with `"not_checked"` conformance. A machine pass does not cover requirem
 needing human judgment, such as semantic accessibility. Reports keep the engine
 version, rule references, profile edition, locations, raw XML, stderr, and coverage
 limitations. The adapter verifies the report's profile, engine and model versions,
-completion, and rule counts against the exit status; changing supported engine
-versions requires report-contract tests.
+completion, and rule counts against the exit status.
 
-A dedicated CI job installs checksum-pinned veraPDF 1.30.2 with Java 17 and runs
-real-engine positive and negative tests for every advertised target. See the
-[companion README](../packages/core-pdf-validate/README.md) for local reproduction.
+See the [companion README](../packages/core-pdf-validate/README.md) for details.
 
 ## References and maintenance
 
@@ -174,7 +171,5 @@ real-engine positive and negative tests for every advertised target. See the
 
 Arlington is a reference for structural and version metadata, not a runtime dependency
 or a substitute for the content-stream, lexical, encryption, or file-layout
-algorithms. New semantic differences need chapter-local implementations with cited
-regression tests; new validator targets need explicit backend coverage and realistic
-report fixtures. The wheel checks verify that spec works without core and that
-explicit validation imports neither core nor an installed engine.
+algorithms. New semantic differences need chapter-local implementations with spec citations;
+new validator targets need explicit backend support.

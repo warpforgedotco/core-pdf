@@ -1,4 +1,4 @@
-# Build, Test, and Development Commands
+# Build and Development Commands
 
 Use `uv` for environments and locked dependencies:
 
@@ -18,7 +18,7 @@ Never edit `pyproject.toml` or `uv.lock` manually when adding or removing depend
 
 ## Commit & Pull Request Guidelines
 
-Use short Conventional Commit-style subjects such as `feat(ocr): ...`, `fix: ...`, `test(corpus): ...`, and `ci: ...`. Keep commits focused and explain the user-visible or correctness impact. Pull requests should describe the change, motivation, validation commands, fixture or compatibility impacts, and link related issues. Include representative output or screenshots when changing CLI behavior or documentation.
+Use short Conventional Commit-style subjects such as `feat(ocr): ...`, `fix: ...`, and `ci: ...`. Keep commits focused and explain the user-visible or correctness impact. Pull requests should describe the change, motivation, validation commands, compatibility impacts, and link related issues. Include representative output or screenshots when changing CLI behavior or documentation.
 
 ## Local and CI Validation
 

@@ -41,7 +41,6 @@ Page UserUnit now reaches physical rendering and OCR sizing while retaining raw 
 geometry. Historical PDFDocEncoding/WinAnsi assignments select verified earlier rules;
 the font audit records where the sources do not justify a version branch. Rendering
 intent and PDF 2.0 black-point controls reach the current color-conversion pipeline.
-Real veraPDF positive and negative fixtures cover all 15 advertised targets.
 
 - Validate PDF/UA table headers, row/column semantics, reading order, artifacts, and
   annotation appearance states beyond the current high-level checks.
@@ -69,10 +68,6 @@ Real veraPDF positive and negative fixtures cover all 15 advertised targets.
 - Continue high-level API compatibility for `core_pdf_compat.pdfminer`, `pdfplumber`,
   `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and `xray` only where it
   maps cleanly to the shared capability model.
-- Maintain differential comparisons in `packages/core-pdf-compat/tests/differential` against
-  each reference corpus using `uv run --locked --all-packages --extra unstructured --group test --group vendor-test pytest -n auto`.
-- Expand differential comparisons over malformed, security-sensitive, and real-world PDFs.
-  Set `CORE_PDF_COMPAT_DIFFERENTIAL_FULL=1` to run the exhaustive facade/fixture matrix.
 
 ## Dependency policy
 
