@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.geometry import flip_rect_vertical, interval_overlap
+from core_pdf.impl.geometry import flip_rect_vertical
 from core_pdf.impl.types import GeneratedRecord
 from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTTextBox
 
@@ -17,12 +17,15 @@ from ._elements import (
     Element,
     ListItem,
 )
+from ._links import ElementLink, PageLink, box_links, duplicate_character
 
 
 class TextRegion(GeneratedRecord):
     text: str
     bbox: tuple[float, float, float, float]
     element_class: type[Element] | None = None
+    # None for a form field, which unstructured gives no links at all.
+    links: list[ElementLink] | None = None
 
 
 def clean_text(text: str) -> str:
@@ -35,26 +38,18 @@ def clean_text(text: str) -> str:
     return re.sub(r" {2,}", " ", cleaned).strip()
 
 
-def layout_regions(items: list[LTTextBox]) -> list[TextRegion]:
-    return [
-        TextRegion(text, item.bbox)
-        for item in items
-        if (text := clean_text(deduplicated_box_text(item)))
-    ]
-
-
-def duplicate_character(first: LTChar, second: LTChar, threshold: float = 2.0) -> bool:
-    if first.get_text() != second.get_text():
-        return False
-    if abs(first.x0 - second.x0) >= threshold or abs(first.y0 - second.y0) >= threshold:
-        return False
-    first_width = first.x1 - first.x0
-    second_width = second.x1 - second.x0
-    average_width = (first_width + second_width) / 2.0
-    if average_width <= 0:
-        return False
-    overlap = interval_overlap(first.x0, first.x1, second.x0, second.x1)
-    return overlap / average_width > 0.5
+def layout_regions(
+    items: list[LTTextBox],
+    links: list[PageLink],
+    page_height: float,
+) -> list[TextRegion]:
+    regions: list[TextRegion] = []
+    for item in items:
+        raw_text = deduplicated_box_text(item)
+        if text := clean_text(raw_text):
+            item_links = box_links(item, raw_text, links, page_height)
+            regions.append(TextRegion(text, item.bbox, links=item_links))
+    return regions
 
 
 def deduplicated_box_text(box: LTTextBox) -> str:
@@ -172,6 +167,7 @@ def combine_list_regions(
     anchor_bbox: tuple[float, float, float, float] | None = None
     active_bbox: tuple[float, float, float, float] | None = None
     anchor_position: int | None = None
+    anchor_links: list[ElementLink] | None = None
     element_classes = classify_elements(
         ((region.text, region.bbox) for region in regions), page_height
     )
@@ -181,7 +177,8 @@ def combine_list_regions(
             anchor_text = BULLET.sub("", text, count=1).strip()
             anchor_bbox = bbox
             active_bbox = bbox
-            combined.append(TextRegion(anchor_text, bbox, ListItem))
+            anchor_links = region.links
+            combined.append(TextRegion(anchor_text, bbox, ListItem, anchor_links))
             anchor_position = len(combined) - 1
             continue
         if anchor_text is not None and anchor_bbox is not None and active_bbox is not None:
@@ -203,7 +200,9 @@ def combine_list_regions(
                     max(active_right, current_right),
                     max(active_top, current_top),
                 )
-                merged_region = TextRegion(f"{anchor_text} {text}", merged_bbox, ListItem)
+                merged_region = TextRegion(
+                    f"{anchor_text} {text}", merged_bbox, ListItem, anchor_links
+                )
                 if anchor_position is not None:
                     combined[anchor_position] = merged_region
                 if combined:
@@ -213,5 +212,5 @@ def combine_list_regions(
                 combined.append(merged_region)
                 active_bbox = merged_bbox
                 continue
-        combined.append(TextRegion(text, bbox, element_class))
+        combined.append(TextRegion(text, bbox, element_class, region.links))
     return combined

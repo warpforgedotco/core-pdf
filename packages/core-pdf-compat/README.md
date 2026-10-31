@@ -27,15 +27,16 @@ compatible core-pdf release because the facades use internal core stages.
 
 ## Optional extras
 
-The Unstructured facade requires spaCy and the pinned `en_core_web_sm` 3.8.0 model. The
-model wheel is not on PyPI, so install it from its release URL alongside the extra:
+The Unstructured facade requires spaCy, the pinned `en_core_web_sm` 3.8.0 model, and
+langdetect and python-iso639 for language metadata. The model wheel is not on PyPI, so
+install it from its release URL alongside the extra:
 
 ```sh
 pip install "core-pdf-compat[unstructured]" \
   "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
 ```
 
-Importing `core_pdf_compat.unstructured` raises `ImportError` if the model cannot load.
+Importing `core_pdf_compat.unstructured` raises `ImportError` if any of these cannot load.
 The facade never downloads models at runtime. Native core and other facades do not require
 the extra.
 
