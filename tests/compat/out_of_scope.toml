@@ -1,6 +1,9 @@
 # Upstream tests the facades do not aim to pass. Paths are relative to the checkout.
-# `names` drops any test whose source mentions one of them, and `deselect` drops exact
-# pytest node ids. Everything else is in scope, so a failure there is a facade gap.
+# `names` drops any test whose source mentions one of them, unless it is in `keep`, and
+# `deselect` drops exact pytest node ids. `strategies` drops only the test cases that run
+# one: a parameter value equal to it, or the test body naming it, so a parametrized test
+# keeps its other cases. `strategy_agnostic` exempts tests from `strategies`. Everything
+# else is in scope, so a failure there is a facade gap.
 # run_upstream_suite.py applies this list to the real library too, so both runs count
 # the same tests.
 
@@ -92,11 +95,20 @@ names = ["get_good_rectangles", "get_bad_redactions", "get_intersecting_chars"]
 
 [unstructured]
 reason = "OCR, inference and pdfminer-internal helpers rather than partition_pdf; hi_res and OCR need inference models the facade has none of, and tests that patch internals"
+strategies = ["hi_res", "ocr_only"]
+strategy_agnostic = [
+    # languages is validated before a strategy runs, so the TypeError needs no model.
+    "test_partition_pdf_raises_TypeError_for_invalid_languages",
+]
 names = [
-    "hi_res", "ocr_only", "HI_RES", "OCR_ONLY", "mock_process_file_with_model",
+    "mock_process_file_with_model",
     "chunking_strategy", "PDF_CHAR_DUPLICATE_THRESHOLD",
     "extractable_elements", "document_to_element_list", "_partition_pdf_or_image_local", "partition_pdf_or_image",
     "check_annotations_within_element", "default_hi_res_model", "_rotation_corrections_from_layout", "is_pdf_too_complex",
+    # Imported from unstructured itself, so these pass without touching the facade.
+    "get_uris_from_annots",
+    # extract_image_block_types makes auto resolve to hi_res on the real library.
+    "test_partition_pdf_element_extraction",
 ]
 files = [
     "test_unstructured/partition/pdf_image/test_analysis.py",

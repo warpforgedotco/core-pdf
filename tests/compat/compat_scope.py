@@ -1,28 +1,70 @@
-"""Deselect upstream tests whose source mentions a name in CORE_PDF_COMPAT_OUT_OF_SCOPE."""
+"""Deselect the upstream tests that out_of_scope.toml rules out, one test case at a time.
 
+CORE_PDF_COMPAT_OUT_OF_SCOPE lists names that drop a test mentioning them anywhere in its
+source. CORE_PDF_COMPAT_STRATEGIES lists strategies that drop only the cases running them:
+see uses_strategy. CORE_PDF_COMPAT_STRATEGY_AGNOSTIC lists the tests exempt from that.
+"""
+
+import ast
 import importlib
 import inspect
 import os
 import re
 import sys
+import textwrap
 from typing import Any
 
 import pytest
 
 
+def env_list(name: str) -> list[str]:
+    return [value for value in os.environ.get(name, "").split(",") if value]
+
+
+def uses_strategy(item: pytest.Item, strategies: set[str]) -> bool:
+    # A case uses a strategy when one is among its parameter values, or when the code in
+    # the test's body names it. Decorators are left out, so the other cases of a
+    # parametrized test stay in, and so are comments and any prose in docstrings.
+    if not strategies:
+        return False
+    spec = getattr(item, "callspec", None)
+    if spec is not None and any(
+        isinstance(value, str) and value in strategies for value in spec.params.values()
+    ):
+        return True
+    function = getattr(item, "function", None)
+    if function is None:
+        return False
+    definition = ast.parse(textwrap.dedent(inspect.getsource(function))).body[0]
+    if not isinstance(definition, ast.FunctionDef):
+        return False
+    for statement in definition.body:
+        for node in ast.walk(statement):
+            if isinstance(node, ast.Attribute) and node.attr.lower() in strategies:
+                return True
+            if isinstance(node, ast.Constant) and node.value in strategies:
+                return True
+    return False
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    names = [name for name in os.environ.get("CORE_PDF_COMPAT_OUT_OF_SCOPE", "").split(",") if name]
-    if not names:
+    names = env_list("CORE_PDF_COMPAT_OUT_OF_SCOPE")
+    strategies = set(env_list("CORE_PDF_COMPAT_STRATEGIES"))
+    agnostic = set(env_list("CORE_PDF_COMPAT_STRATEGY_AGNOSTIC"))
+    if not names and not strategies:
         return
-    pattern = re.compile(rf"\b({'|'.join(map(re.escape, names))})\b")
-    keep = set(os.environ.get("CORE_PDF_COMPAT_KEEP", "").split(","))
+    pattern = re.compile(rf"\b({'|'.join(map(re.escape, names))})\b") if names else None
+    keep = set(env_list("CORE_PDF_COMPAT_KEEP"))
     selected: list[pytest.Item] = []
     deselected: list[pytest.Item] = []
     for item in items:
         function = getattr(item, "function", None)
         source = inspect.getsource(function) if function is not None else ""
         kept = getattr(item, "originalname", item.name) in keep
-        (deselected if pattern.search(source) and not kept else selected).append(item)
+        mentioned = pattern is not None and pattern.search(source) is not None and not kept
+        exempt = function is not None and function.__name__ in agnostic
+        dropped = mentioned or (not exempt and uses_strategy(item, strategies))
+        (deselected if dropped else selected).append(item)
     config.hook.pytest_deselected(items=deselected)
     items[:] = selected
 
