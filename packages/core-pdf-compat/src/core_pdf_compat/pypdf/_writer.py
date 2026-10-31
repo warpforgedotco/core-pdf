@@ -10,6 +10,8 @@ from core_pdf.impl.document_editing import BINARY_MARKER, serialize_body
 from core_pdf.impl.types import PdfReference
 
 from ._doc_common import PdfDocCommon
+from ._generic_trees import EmbeddedFile
+from .errors import PageSizeNotDefinedError
 from .generic import (
     ArrayObject,
     DictionaryObject,
@@ -85,6 +87,8 @@ class PdfWriter(PdfDocCommon):
         if source is None and path is not None and path.exists() and path.stat().st_size:
             source = fileobj
         self._objects: list[Any] = []
+        self._copies: dict[int, dict[int, Any]] = {}
+        self._reserved_pages: set[int] = set()
         self._pages_object = self._new_pages_tree()
         catalog = DictionaryObject()
         catalog[NameObject("/Type")] = NameObject("/Catalog")
@@ -183,7 +187,7 @@ class PdfWriter(PdfDocCommon):
     ) -> WriterPage:
         if width is None or height is None:
             if not len(self.pages):
-                raise ValueError("Page size must be given when the document has no pages")
+                raise PageSizeNotDefinedError
             box = self.pages[max(index - 1, 0)].mediabox
             width, height = box.width, box.height
         page = WriterPage()
@@ -200,20 +204,25 @@ class PdfWriter(PdfDocCommon):
 
     def _import_page(self, page: Any, excluded: set[str]) -> WriterPage:
         source = page if isinstance(page, DictionaryObject) else page._generic_dictionary()
-        owner = getattr(source.indirect_reference, "pdf", None)
-        copies: dict[int, Any] = {}
-        output = WriterPage()
+        reference = source.indirect_reference
+        owner = getattr(reference, "pdf", None)
+        copies = self._copies.setdefault(id(owner), {})
+        # A link imported earlier may already have reserved this page's number.
+        reserved = None if reference is None else copies.get(reference.idnum)
+        output = WriterPage() if reserved is None else reserved.get_object()
+        if reference is not None:
+            copies[reference.idnum] = self._add_object(output)
+            self._reserved_pages.discard(reference.idnum)
         for key, value in dict.items(source):
-            if key in {"/Parent", "/Annots", *excluded}:
+            if key in {"/Parent", *excluded}:
                 continue
             dict.__setitem__(output, key, self._import(value, owner, copies))
         for key in ("/Resources", "/MediaBox", "/CropBox", "/Rotate"):
             if key not in output and key not in excluded and hasattr(source, "get_inherited"):
                 inherited = source.get_inherited(key)
                 if inherited is not None:
-                    dict.__setitem__(
-                        output, NameObject(key), self._import(inherited, owner, copies)
-                    )
+                    imported = self._import(inherited, owner, copies)
+                    dict.__setitem__(output, NameObject(key), imported)
         return output
 
     def _import(self, value: Any, owner: Any, copies: dict[int, Any]) -> Any:
@@ -224,7 +233,11 @@ class PdfWriter(PdfDocCommon):
                 return copies[value.idnum]
             target = value.get_object()
             if isinstance(target, DictionaryObject) and target.get_resolved("/Type") == "/Page":
-                return NullObject()
+                # Hold the number. If this page is never imported, the link goes to null.
+                reference = self._add_object(WriterPage())
+                copies[value.idnum] = reference
+                self._reserved_pages.add(value.idnum)
+                return reference
             copy = self._empty_copy(target)
             reference = self._add_object(copy)
             copies[value.idnum] = reference
@@ -263,8 +276,34 @@ class PdfWriter(PdfDocCommon):
 
         reader = source if isinstance(source, PdfReader) else self._reader_for(source)
         indexes = range(len(reader.pages)) if pages is None else self._page_indexes(pages, reader)
-        for index in indexes:
+        selected = list(indexes)
+        for index in selected:
             self.add_page(reader.pages[index])
+        # Only a whole document keeps its outline: a partial append must not carry titles
+        # from pages it left out.
+        if len(set(selected)) == len(reader.pages):
+            self._import_outline(reader)
+        self._drop_unimported_pages(reader)
+
+    def _import_outline(self, reader: Any) -> None:
+        root = reader.root_object
+        outline = root.raw_get("/Outlines") if "/Outlines" in root else None
+        if outline is None or "/Outlines" in self._root_object:
+            return
+        copies = self._copies.setdefault(id(reader), {})
+        imported = self._import(outline, reader, copies)
+        self._root_object[NameObject("/Outlines")] = imported
+
+    def _drop_unimported_pages(self, reader: Any) -> None:
+        copies = self._copies.setdefault(id(reader), {})
+        for number in self._reserved_pages:
+            reference = copies.get(number)
+            if reference is not None:
+                self._objects[reference.idnum - 1] = NullObject()
+        self._reserved_pages.clear()
+
+    def add_attachment(self, filename: str, data: str | bytes) -> EmbeddedFile:
+        return EmbeddedFile._create_new(self, filename, data)
 
     @staticmethod
     def _page_indexes(pages: Any, reader: Any) -> Iterable[int]:
