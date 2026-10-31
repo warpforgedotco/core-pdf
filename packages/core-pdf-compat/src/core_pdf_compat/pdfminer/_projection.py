@@ -294,7 +294,7 @@ def project_page(
             local_left = -float(metric[1]) * local_font_size * 0.001
             # The engine's baseline already sits at the vertical origin, so the glyph's
             # top is one font size above it.
-            local_top = local_font_size + float(glyph_provenance.get("text_rise", 0.0))
+            local_top = local_font_size
             local_advance = float(metric[0]) * local_font_size * 0.001 * horizontal_scale
             corners = tuple(
                 (
@@ -323,12 +323,12 @@ def project_page(
                     bool(glyph_index) and projected_glyphs[glyph_index - 1].font_decoder.is_vertical
                 ),
             )
-            text_rise = float(glyph_provenance.get("text_rise", 0.0))
             decoder = glyph.font_decoder
             known_descent = descents.get(id(decoder))
             if known_descent is None or known_descent[0] is not decoder:
                 known_descent = descents[id(decoder)] = (decoder, pdfminer_descent(glyph))
-            descent = known_descent[1] * glyph.font_size + text_rise
+            # The engine's baseline already includes text rise.
+            descent = known_descent[1] * glyph.font_size
             top = descent + glyph.font_size
             advance = normalized_width * horizontal_scale * glyph.font_size
             media_left, media_bottom, _media_right, _media_top = page_media_box

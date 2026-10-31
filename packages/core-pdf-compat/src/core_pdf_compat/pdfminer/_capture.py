@@ -100,6 +100,8 @@ class PdfminerTextState(TextState):
         self.glyph_widths: dict[tuple[Any, ...], float] = {}
         # Flattening loses the operators pdfminer classifies paths by.
         self.painted_paths: list[PaintedPath] = []
+        self.vertical_line: Any = None
+        self.vertical_offset = (0.0, 0.0)
         self.text_marks: list[TextMark] = []
         self.current_mcid: int | None = None
         self.current_tag: str | None = None
@@ -185,8 +187,18 @@ class PdfminerTextState(TextState):
 
     def append_tj_array(self, array: Any) -> None:
         decoder = self.get_decoder()
+        if self.vertical_line is not self.line_matrix:
+            self.vertical_line = self.line_matrix
+            self.vertical_offset = (0.0, 0.0)
         if decoder.is_vertical:
+            before = self.text_matrix
             super().append_tj_array(array)
+            after = self.text_matrix
+            # Later horizontal text continues from where this vertical run ended.
+            self.vertical_offset = (
+                self.vertical_offset[0] + after.e - before.e,
+                self.vertical_offset[1] + after.f - before.f,
+            )
             return
         if not isinstance(array, (list, tuple)):
             return
@@ -213,8 +225,8 @@ class PdfminerTextState(TextState):
                     matrix.b,
                     matrix.c,
                     matrix.d,
-                    self.cursor * line.a + line.e,
-                    self.cursor * line.b + line.f,
+                    self.cursor * line.a + line.e + self.vertical_offset[0],
+                    self.cursor * line.b + line.f + self.vertical_offset[1],
                 )
                 start = len(self.glyphs)
                 if paint is None:
@@ -253,8 +265,8 @@ class PdfminerTextState(TextState):
                     self.cursor += word_space
                 needs_spacing = True
         self.text_matrix = self.text_matrix._replace(
-            e=self.cursor * self.line_matrix.a + self.line_matrix.e,
-            f=self.cursor * self.line_matrix.b + self.line_matrix.f,
+            e=self.cursor * self.line_matrix.a + self.line_matrix.e + self.vertical_offset[0],
+            f=self.cursor * self.line_matrix.b + self.line_matrix.f + self.vertical_offset[1],
         )
         self.text_boundary(self, "shown")
 
