@@ -148,11 +148,12 @@ def main() -> int:
     }
     if not arguments.reference:
         environment["CORE_PDF_COMPAT_ALIASES"] = suite.aliases
+        environment["CORE_PDF_COMPAT_STUBS"] = ",".join(scope.get("stubs", ()))
     command = pytest_command(
         suite,
         reference=arguments.reference,
         junit=junit,
-        extra=extra,
+        extra=[*extra, *(("-m", scope["markers"]) if "markers" in scope else ())],
         excluded_files=tuple(scope.get("files", ())),
     )
     log = RESULTS / f"{arguments.suite}-{mode}.log"
