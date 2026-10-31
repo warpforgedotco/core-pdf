@@ -16,6 +16,7 @@ from core_pdf.impl.output_model import (
 )
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
+from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf._text import LegacyTextCaches, extract_legacy_text
 from core_pdf_spec.s_07_syntax.types import PdfDict
 from core_pdf_spec.s_07_syntax.xref import key_for
@@ -358,6 +359,10 @@ class PdfPageObject:
         pdf = self._document.pdf
         if pdf is None:
             return to_generic({}, self._reader)
+        if self._reader is not None:
+            page_ids = self._reader.page_object_numbers()
+            if self._page_number <= len(page_ids):
+                return self._reader.get_object(page_ids[self._page_number - 1])
         return to_generic(pdf.pages[self._page_number - 1].page_dict, self._reader)
 
     def __getitem__(self, key: str) -> Any:
@@ -560,12 +565,24 @@ class PdfReader(ClosingMixin):
             generic[number] = item
         return generic[number]
 
+    def page_object_numbers(self) -> list[int]:
+        numbers = self.__dict__.get("_page_object_numbers")
+        if numbers is None:
+            source = self._source_document()
+            numbers = [] if source is None else DocumentView(source).page_ids()
+            self.__dict__["_page_object_numbers"] = numbers
+        return numbers
+
     @property
     def trailer(self) -> Any:
         from .generic import to_generic
 
-        source = self._source_document()
-        return to_generic(source.trailer_dict if source is not None else {}, self)
+        cached = self.__dict__.get("_generic_trailer")
+        if cached is None:
+            source = self._source_document()
+            cached = to_generic(source.trailer_dict if source is not None else {}, self)
+            self.__dict__["_generic_trailer"] = cached
+        return cached
 
     @property
     def root_object(self) -> Any:
