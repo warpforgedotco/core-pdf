@@ -233,3 +233,6 @@ __marimo__/
 packages/core-pdf-cythonized/src/**/*.c
 packages/core-pdf-cythonized/src/**/*.so
 packages/core-pdf-cythonized/build/
+
+# Upstream suite reports
+.upstream-results/
