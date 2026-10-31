@@ -8,7 +8,8 @@ reason = "pdfium's pixel rounding for a rotated MediaBox, and a no-smoothing ren
 names = ["force_mediabox", "antialias"]
 
 [pdfminer]
-reason = "pdfminer internals rather than the public extraction API"
+reason = "pdfminer internals, and its byte-exact JBIG2 file wrapper"
+names = ["XIPLAYER0"]
 files = [
     "tests/test_cmapdb.py",
     "tests/test_cmapdb_security.py",

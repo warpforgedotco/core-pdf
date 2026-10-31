@@ -3,7 +3,7 @@ from __future__ import annotations
 import heapq
 from collections.abc import Iterator
 from math import ceil
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
@@ -236,11 +236,16 @@ class _LTTextGroup[ItemT: LTText](LTComponent, LTText):
 
     def __init__(
         self,
-        bbox: tuple[float, float, float, float],
+        bbox: tuple[float, float, float, float] | float = (0.0, 0.0, 0.0, 0.0),
         _objs: list[ItemT] | None = None,
     ) -> None:
-        self.bbox = bbox
+        # pdfminer builds an empty line from its word margin, then sets the box.
+        self.bbox = (0.0, 0.0, 0.0, 0.0) if isinstance(bbox, (int, float)) else bbox
         self._objs = [] if _objs is None else _objs
+        self._post_init()
+
+    def set_bbox(self, bbox: tuple[float, float, float, float]) -> None:
+        self.bbox = bbox
         self._post_init()
 
     def __eq__(self, other: object) -> bool:
@@ -249,6 +254,9 @@ class _LTTextGroup[ItemT: LTText](LTComponent, LTText):
         if other.__class__ is not self.__class__ or not isinstance(other, _LTTextGroup):
             return NotImplemented
         return self.bbox == other.bbox and self._objs == other._objs
+
+    def __hash__(self) -> int:
+        return id(self)
 
     def __iter__(self) -> Iterator[ItemT]:
         return iter(self._objs)
@@ -259,6 +267,19 @@ class _LTTextGroup[ItemT: LTText](LTComponent, LTText):
 
 class LTTextLine(_LTTextGroup[LTText]):
     __slots__ = ()
+
+    def find_neighbors(self, plane: Any, ratio: float) -> list[LTTextLine]:
+        margin = ratio * (self.width if isinstance(self, LTTextLineVertical) else self.height)
+        query = (
+            (self.x0 - margin, self.y0, self.x1 + margin, self.y1)
+            if isinstance(self, LTTextLineVertical)
+            else (self.x0, self.y0 - margin, self.x1, self.y1 + margin)
+        )
+        return [
+            item
+            for item in plane.find(query)
+            if type(item) is type(self) and _lines_are_neighbors(self, item, ratio)
+        ]
 
 
 class LTTextLineHorizontal(LTTextLine):

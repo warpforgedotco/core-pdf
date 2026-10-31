@@ -2,10 +2,9 @@ from core_pdf_spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
 
 
 def ascii85decode(data: bytes) -> bytes:
-    start = data.find(b"<~")
-    body = data[start + 2 :] if start >= 0 else data
-    end = body.find(b"~>")
-    return apply_ascii85((body if end < 0 else body[:end]) + b"~>", None)
+    # pdfminer accepts a missing or broken end marker and the optional opening marker.
+    body = data[2:] if data.startswith(b"<~") else data
+    return apply_ascii85(body.partition(b"~")[0] + b"~>", None)
 
 
 def asciihexdecode(data: bytes) -> bytes:

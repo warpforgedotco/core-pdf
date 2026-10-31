@@ -292,9 +292,9 @@ def project_page(
             )
             local_font_size = glyph.font_size
             local_left = -float(metric[1]) * local_font_size * 0.001
-            local_top = (1000.0 - float(metric[2])) * local_font_size * 0.001 + float(
-                glyph_provenance.get("text_rise", 0.0)
-            )
+            # The engine's baseline already sits at the vertical origin, so the glyph's
+            # top is one font size above it.
+            local_top = local_font_size + float(glyph_provenance.get("text_rise", 0.0))
             local_advance = float(metric[0]) * local_font_size * 0.001 * horizontal_scale
             corners = tuple(
                 (
@@ -304,42 +304,13 @@ def project_page(
                 for local_horizontal in (local_left, local_left + local_font_size)
                 for local_vertical in (local_top + local_advance, local_top)
             )
-            x0 = min(point[0] for point in corners)
-            y0 = min(point[1] for point in corners)
-            x1 = max(point[0] for point in corners)
-            y1 = max(point[1] for point in corners)
+            # Rounded so that glyphs one half-size apart do not count as overlapping by a
+            # fraction of the last float bit, which merges them into a line.
+            x0 = round(min(point[0] for point in corners), 9)
+            y0 = round(min(point[1] for point in corners), 9)
+            x1 = round(max(point[0] for point in corners), 9)
+            y1 = round(max(point[1] for point in corners), 9)
             effective_font_height = x1 - x0
-            line_origin = glyph_provenance.get("line_matrix_origin")
-            if isinstance(line_origin, (tuple, list)) and len(line_origin) == 2:
-                matrix_a, matrix_b, matrix_c, matrix_d, _matrix_e, _matrix_f = (
-                    float(value) for value in resolved_text_matrix
-                )
-                determinant = matrix_a * matrix_d - matrix_b * matrix_c
-                if determinant:
-                    translate_x, translate_y = (float(value) for value in line_origin)
-                    baseline_x0, baseline_y0, baseline_x1, baseline_y1 = baseline
-                    advance_x = baseline_x1 - baseline_x0
-                    advance_y = baseline_y1 - baseline_y0
-                    local_advance = (-matrix_b * advance_x + matrix_a * advance_y) / determinant
-                    half_width = float(metric[1]) * glyph.font_size * 0.001
-                    local_top = (1000.0 - float(metric[2])) * glyph.font_size * 0.001 + float(
-                        glyph_provenance.get("text_rise", 0.0)
-                    )
-                    corners = tuple(
-                        (
-                            matrix_a * local_horizontal + matrix_c * local_vertical + translate_x,
-                            matrix_b * local_horizontal + matrix_d * local_vertical + translate_y,
-                        )
-                        for local_horizontal in (
-                            -half_width,
-                            -half_width + glyph.font_size,
-                        )
-                        for local_vertical in (local_top + local_advance, local_top)
-                    )
-                    x0 = min(point[0] for point in corners)
-                    y0 = min(point[1] for point in corners)
-                    x1 = max(point[0] for point in corners)
-                    y1 = max(point[1] for point in corners)
         elif (
             baseline is not None
             and isinstance(text_matrix, (tuple, list))
