@@ -121,14 +121,30 @@ names = [
     "get_uris_from_annots",
     # extract_image_block_types makes auto resolve to hi_res on the real library.
     "test_partition_pdf_element_extraction",
+    # Since 0.27: decides whether hi_res and ocr_only can use the text layer, so fast never
+    # reaches it. A sibling of extractable_elements, and the second name is the only way
+    # the parametrized agreement test mentions it.
+    "pdf_has_extractable_text", "_text_extractable_by_presence_check",
+    # hi_res, ocr_only and partition_image must raise onnxruntime's load error. The
+    # strategy is inside a dict parameter, which `strategies` cannot see. The fast and auto
+    # tests in this file stay in scope.
+    "test_inference_strategies_still_raise_the_raw_load_error",
+    # Imported from unstructured itself, so these pass without touching the facade.
+    "test_merge_text_cleaning_honors_remove_control_characters_patches",
+    "test_remove_control_characters_alias_is_importable",
+    "test_remove_control_characters_alias_loads_inference_only_when_called",
 ]
 files = [
     "test_unstructured/partition/pdf_image/test_analysis.py",
+    # save_elements on image blocks, imported from unstructured itself.
+    "test_unstructured/partition/pdf_image/test_extracted_image_memory.py",
     "test_unstructured/partition/pdf_image/test_image.py",
     "test_unstructured/partition/pdf_image/test_inference_utils.py",
     "test_unstructured/partition/pdf_image/test_merge_elements.py",
     "test_unstructured/partition/pdf_image/test_ocr.py",
     "test_unstructured/partition/pdf_image/test_pdf_image_utils.py",
+    # Rendering and OCR internals: pdf_image_utils, ocr and the ocr_only path.
+    "test_unstructured/partition/pdf_image/test_pdf_streaming_memory.py",
     "test_unstructured/partition/pdf_image/test_pdfminer_processing.py",
     "test_unstructured/partition/pdf_image/test_pdfminer_utils.py",
 ]

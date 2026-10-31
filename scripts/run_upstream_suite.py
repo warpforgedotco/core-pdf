@@ -54,9 +54,9 @@ SUITES = {
         "unstructured",
         ("test_unstructured/partition/pdf_image",),
         "unstructured.partition.pdf=unstructured",
-        ("unstructured[pdf]==0.25.2",),
+        ("unstructured[pdf]==0.27.36",),
         (
-            "unstructured[pdf]==0.25.2",
+            "unstructured[pdf]==0.27.36",
             "pytest-mock",
             "spacy>=3.8.15,<3.9.0",
             "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/"

@@ -12,8 +12,8 @@ from ._elements import (
     NarrativeText,
     PageBreak,
     Table,
+    Text,
     Title,
-    UncategorizedText,
 )
 from ._metadata import get_last_modified_date
 from ._partition import (
@@ -32,7 +32,7 @@ for export in (
     PageBreak,
     Table,
     Title,
-    UncategorizedText,
+    Text,
     partition_pdf,
     get_last_modified_date,
     Address,
@@ -52,7 +52,7 @@ __all__ = (
     "PageBreak",
     "Table",
     "Title",
-    "UncategorizedText",
+    "Text",
     "get_last_modified_date",
     "partition_pdf",
 )
