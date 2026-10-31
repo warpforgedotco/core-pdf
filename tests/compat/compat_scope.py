@@ -13,12 +13,14 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     if not names:
         return
     pattern = re.compile(rf"\b({'|'.join(map(re.escape, names))})\b")
+    keep = set(os.environ.get("CORE_PDF_COMPAT_KEEP", "").split(","))
     selected: list[pytest.Item] = []
     deselected: list[pytest.Item] = []
     for item in items:
         function = getattr(item, "function", None)
         source = inspect.getsource(function) if function is not None else ""
-        (deselected if pattern.search(source) else selected).append(item)
+        kept = getattr(item, "originalname", item.name) in keep
+        (deselected if pattern.search(source) and not kept else selected).append(item)
     config.hook.pytest_deselected(items=deselected)
     items[:] = selected
 

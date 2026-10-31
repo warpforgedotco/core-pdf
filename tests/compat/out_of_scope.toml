@@ -78,6 +78,13 @@ stubs = [
 ]
 files = ["tests/scripts/test_make_release.py"]
 markers = "not enable_socket"
+# These also touch a private name, but they are the only tests of public features the
+# facade lacks: viewer_preferences, attachment_list and named_destinations.
+keep = [
+    "test_viewer_preferences__indirect_reference",
+    "test_attachments",
+    "test_named_destinations_cache",
+]
 
 [xray]
 reason = "these helpers take PyMuPDF pages; xray.inspect is the public API"

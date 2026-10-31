@@ -145,6 +145,7 @@ def main() -> int:
         **os.environ,
         "PYTHONPATH": str(ROOT / "tests" / "compat"),
         "CORE_PDF_COMPAT_OUT_OF_SCOPE": ",".join(scope.get("names", ())),
+        "CORE_PDF_COMPAT_KEEP": ",".join(scope.get("keep", ())),
     }
     if not arguments.reference:
         environment["CORE_PDF_COMPAT_ALIASES"] = suite.aliases
