@@ -75,6 +75,18 @@ class PaintedPath(NamedTuple):
     stroke_color: Any
     fill_color: Any
     dash: Any
+    mcid: int | None
+    tag: str | None
+    sequence: int
+
+
+class TextMark(NamedTuple):
+    glyph_index: int
+    mcid: int | None
+    tag: str | None
+    color_space: str | None
+    stroke_color: Any
+    fill_color: Any
 
 
 class PdfminerTextState(TextState):
@@ -88,6 +100,45 @@ class PdfminerTextState(TextState):
         self.glyph_widths: dict[tuple[Any, ...], float] = {}
         # Flattening loses the operators pdfminer classifies paths by.
         self.painted_paths: list[PaintedPath] = []
+        self.text_marks: list[TextMark] = []
+        self.current_mcid: int | None = None
+        self.current_tag: str | None = None
+
+    def op_BDC(self, operands: ContentOperands, depth: int) -> None:
+        super().op_BDC(operands, depth)
+        self.current_tag = self.resolver.resolve_name(operands[0]) if operands else None
+        self.current_mcid = self.marked_content_stack[-1].mcid
+
+    def op_BMC(self, operands: ContentOperands, depth: int) -> None:
+        super().op_BMC(operands, depth)
+        self.current_tag = self.resolver.resolve_name(operands[0]) if operands else None
+        self.current_mcid = None
+
+    def op_EMC(self, operands: ContentOperands, depth: int) -> None:
+        super().op_EMC(operands, depth)
+        self.current_tag = None
+        self.current_mcid = None
+
+    @staticmethod
+    def raw_color(color: Any, space: Any) -> Any:
+        # The default gray is held as RGB; pdfminer reports it as written.
+        if color is not None and space is not None and space.kind == "DeviceGray":
+            return color[:1]
+        return color
+
+    def show_text(self, *arguments: Any, **options: Any) -> Any:
+        fill_space = self.graphics.fill_space
+        self.text_marks.append(
+            TextMark(
+                len(self.glyphs),
+                self.current_mcid,
+                self.current_tag,
+                None if fill_space is None else fill_space.kind,
+                self.raw_color(self.graphics.stroke_color, self.graphics.stroke_space),
+                self.raw_color(self.graphics.fill_color, fill_space),
+            )
+        )
+        return super().show_text(*arguments, **options)
 
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         if source.ops:
@@ -103,6 +154,9 @@ class PdfminerTextState(TextState):
                     self.capture_color(stroke=True),
                     self.capture_color(stroke=False),
                     self.transformed_dash_pattern(),
+                    self.current_mcid,
+                    self.current_tag,
+                    self.sequence,
                 )
             )
         super().paint_path(state, source, kind, fill_rule)
@@ -205,7 +259,9 @@ class PdfminerTextState(TextState):
         self.text_boundary(self, "shown")
 
 
-def pdfminer_page_capture(page: PdfPage) -> tuple[CapturedProgram, tuple[PaintedPath, ...]]:
+def pdfminer_page_capture(
+    page: PdfPage,
+) -> tuple[CapturedProgram, tuple[PaintedPath, ...], tuple[TextMark, ...]]:
     state = PdfminerTextState(page.document, page_clip=page.effective_page_clip())
     state.lexer_factory = PdfminerContentLexer
     state.content_recovery = PdfminerRecovery()
@@ -220,7 +276,7 @@ def pdfminer_page_capture(page: PdfPage) -> tuple[CapturedProgram, tuple[Painted
         text_boundaries=tuple(state.text_boundaries),
         options=state.options,
     )
-    return program, tuple(state.painted_paths)
+    return program, tuple(state.painted_paths), tuple(state.text_marks)
 
 
 def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
