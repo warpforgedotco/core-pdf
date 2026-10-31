@@ -94,7 +94,6 @@ def pytest_command(suite: Suite, *, reference: bool, junit: Path, extra: list[st
         "-q",
         "--continue-on-collection-errors",
         f"--junitxml={junit}",
-        *(("-p", "compat_alias") if not reference else ()),
         *extra,
     ]
 
