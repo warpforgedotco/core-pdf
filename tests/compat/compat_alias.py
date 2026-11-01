@@ -85,6 +85,7 @@ class StubFinder(MetaPathFinder, Loader):
 
 
 PARTIAL = {name for name in os.environ.get("CORE_PDF_COMPAT_PARTIAL", "").split(",") if name}
+STUBS = [name for name in os.environ.get("CORE_PDF_COMPAT_STUBS", "").split(",") if name]
 
 
 class FacadeAliasFinder(MetaPathFinder, Loader):
@@ -122,8 +123,10 @@ class FacadeAliasFinder(MetaPathFinder, Loader):
             # Names the facade does not have yet become stand-ins, so importing them is fine
             # and a test is skipped only if it reaches one.
             vars(module)["__getattr__"] = StubModule(spec.name).__getattr__
-            if not hasattr(module, "__path__"):
-                module.__path__ = []
+        # A stubbed submodule can only be imported from a package.
+        is_stub_parent = any(stub.startswith(f"{spec.name}.") for stub in STUBS)
+        if (spec.name in PARTIAL or is_stub_parent) and not hasattr(module, "__path__"):
+            module.__path__ = []
         return module
 
     def exec_module(self, module: ModuleType) -> None:
@@ -144,6 +147,5 @@ class FacadeAliasFinder(MetaPathFinder, Loader):
 
 
 sys.meta_path.insert(0, FacadeAliasFinder(parse_aliases(os.environ["CORE_PDF_COMPAT_ALIASES"])))
-_stubs = [name for name in os.environ.get("CORE_PDF_COMPAT_STUBS", "").split(",") if name]
-if _stubs:
-    sys.meta_path.insert(0, StubFinder(_stubs))
+if STUBS:
+    sys.meta_path.insert(0, StubFinder(STUBS))

@@ -941,12 +941,92 @@ class EmbeddedFile:
             yield from cls._load_from_names(container["/Names"])
 
 
+class NamedReferenceLink:
+    """A link to a named destination, kept until its page can be resolved."""
+
+    def __init__(self, reference: TextStringObject, source_pdf: Any) -> None:
+        self._reference = reference
+        self._source_pdf = source_pdf
+
+    def find_referenced_page(self) -> Any:
+        destination = self._source_pdf.named_destinations.get(str(self._reference))
+        return destination.page if destination else None
+
+    def patch_reference(self, target_pdf: Any, new_page: Any) -> None:
+        if str(self._reference) not in target_pdf.named_destinations:
+            target_pdf.add_named_destination(str(self._reference), new_page.page_number)
+
+
+class DirectReferenceLink:
+    """A link to a destination array, kept until its page can be resolved."""
+
+    def __init__(self, reference: ArrayObject) -> None:
+        self._reference = reference
+
+    def find_referenced_page(self) -> Any:
+        return self._reference[0] if self._reference else None
+
+    def patch_reference(self, target_pdf: Any, new_page: Any) -> None:
+        del target_pdf
+        self._reference[0] = new_page
+
+
+ReferenceLink = NamedReferenceLink | DirectReferenceLink
+
+
+def _create_link(reference: Any, source_pdf: Any) -> ReferenceLink | None:
+    if isinstance(reference, TextStringObject):
+        return NamedReferenceLink(reference, source_pdf)
+    return DirectReferenceLink(reference) if isinstance(reference, ArrayObject) else None
+
+
+def _build_link(annotation: Any, page: Any) -> ReferenceLink | None:
+    link = annotation.get_object()
+    if not isinstance(link, DictionaryObject) or link.get("/Subtype") != "/Link":
+        return None
+    if "/A" in link:
+        action = link["/A"]
+        if action.get("/S") != "/GoTo" or "/D" not in action:
+            return None
+        return _create_link(action["/D"], page.pdf)
+    return _create_link(link["/Dest"], page.pdf) if "/Dest" in link else None
+
+
+def _page_links(annotations: ArrayObject, page: Any) -> list[ReferenceLink]:
+    links = (_build_link(annotation, page) for annotation in annotations)
+    return [link for link in links if link is not None]
+
+
+def extract_links(new_page: Any, old_page: Any) -> list[tuple[ReferenceLink, ReferenceLink]]:
+    """Pair the links of two copies of a page. Other annotations are left out of the pairing."""
+    new_annotations = new_page.get("/Annots", ArrayObject()).get_object()
+    old_annotations = old_page.get("/Annots", ArrayObject()).get_object()
+    new_annotations = ArrayObject() if is_null_or_none(new_annotations) else new_annotations
+    old_annotations = ArrayObject() if is_null_or_none(old_annotations) else old_annotations
+    if not isinstance(new_annotations, ArrayObject) or not isinstance(old_annotations, ArrayObject):
+        logger.warning(
+            "Expected annotation arrays: %s %s. Ignoring annotations.",
+            old_annotations,
+            new_annotations,
+        )
+        return []
+    new_links = _page_links(new_annotations, new_page)
+    old_links = _page_links(old_annotations, old_page)
+    if len(new_links) != len(old_links):
+        logger.warning("Annotation sizes differ: %d vs. %d", len(old_links), len(new_links))
+    return list(zip(new_links, old_links, strict=False))
+
+
 __all__ = (
     "PAGE_FIT",
     "Destination",
+    "DirectReferenceLink",
     "EmbeddedFile",
     "Field",
     "Fit",
+    "NamedReferenceLink",
+    "ReferenceLink",
+    "extract_links",
     "OutlineFontFlag",
     "OutlineItem",
     "TreeObject",
