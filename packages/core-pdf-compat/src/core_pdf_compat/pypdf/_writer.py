@@ -52,6 +52,7 @@ from ._text import (
     extract_layout_text,
     extract_legacy_text,
 )
+from ._writer_edit import EditWriter
 from ._writer_merge import MergeWriter
 from ._writer_outline import OutlineWriter
 from .actions import Action
@@ -488,7 +489,7 @@ def _digest(value: Any) -> bytes | None:
     return hashlib.blake2b(serialize_object(to_core(value)), digest_size=16).digest()
 
 
-class PdfWriter(OutlineWriter, MergeWriter, PdfDocCommon):
+class PdfWriter(OutlineWriter, MergeWriter, EditWriter, PdfDocCommon):
     def __init__(
         self,
         fileobj: Any = "",
