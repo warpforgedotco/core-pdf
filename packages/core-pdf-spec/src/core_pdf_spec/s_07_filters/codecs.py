@@ -27,6 +27,12 @@ class IncompleteLzwError(ValueError):
         self.decoded = decoded
 
 
+class LzwOutputLimitError(ValueError):
+    def __init__(self, length: int) -> None:
+        super().__init__(f"LZW output of {length} bytes exceeds the limit")
+        self.length = length
+
+
 def apply_ascii_hex(data: bytes, parms: object) -> bytes:
     terminator = data.find(b">")
     if terminator < 0:
@@ -106,7 +112,9 @@ class BitReader:
         return value
 
 
-def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
+def apply_lzw(
+    data: bytes | memoryview, parms: object, *, max_output_length: int | None = None
+) -> bytes:
     params = parms if isinstance(parms, FilterParams) else FilterParams.from_parms(parms)
     ec = params.early_change
 
@@ -143,6 +151,8 @@ def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
             raise ValueError(f"invalid LZW code: {code}")
 
         out_extend(entry)
+        if max_output_length is not None and len(out) > max_output_length:
+            raise LzwOutputLimitError(len(out))
         if prev is not None and next_code < 4096:
             table[next_code] = prev + entry[:1]
             next_code += 1
@@ -250,6 +260,7 @@ __all__ = (
     "ASCII85_MAX",
     "IncompleteLzwError",
     "IncompleteRunLengthError",
+    "LzwOutputLimitError",
     "apply_ascii_hex",
     "apply_flate",
     "apply_run_length",

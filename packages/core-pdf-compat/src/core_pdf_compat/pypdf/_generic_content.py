@@ -11,7 +11,6 @@ from io import BytesIO
 from typing import Any
 
 from core_pdf.impl.capture_recovery import recover_inline_image_data
-from core_pdf.impl.graphics_stream_decoding import decode_one_filter
 from core_pdf.impl.types import PdfString
 from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
 from core_pdf_compat.pypdf.generic import (
@@ -19,7 +18,6 @@ from core_pdf_compat.pypdf.generic import (
     ByteStringObject,
     DecodedStreamObject,
     DictionaryObject,
-    IndirectObject,
     NullObject,
     StreamObject,
     TextStringObject,
@@ -38,11 +36,8 @@ from core_pdf_spec.s_07_content.inline_images import (
     serialize_inline_image,
 )
 from core_pdf_spec.s_07_content.operations import parse_content_token, serialize_content_operation
-from core_pdf_spec.s_07_filters.decode_spec import normalize_stream_decode_spec
-from core_pdf_spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
-from core_pdf_spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME
+from core_pdf_spec.s_07_filters.errors import FilterParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
-from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 logger = logging.getLogger(__name__)
 
@@ -51,67 +46,13 @@ MAX_ARRAY_BASED_STREAM_OUTPUT_LENGTH = 75_000_000
 INLINE_IMAGE = b"INLINE IMAGE"
 
 
-# pypdf leaves JPEG and JPEG 2000 data encoded, where core-pdf's decoders return samples.
-# Crypt needs no step, because the reader decrypts a stream as it loads it.
-UNDECODED_FILTERS = frozenset({"jpeg", "jpx", "crypt"})
-
-
 def decode_stream(stream: StreamObject) -> bytes:
-    data = stream._data
-    if not data:
-        return data
-    dictionary: dict[str, object] = {"Filter": _filter_value(stream.get("/Filter"))}
-    if "/DecodeParms" in stream:
-        dictionary["DecodeParms"] = _parameters_value(stream["/DecodeParms"])
+    from core_pdf_compat.pypdf.filters import decode_stream_data
+
     try:
-        steps = normalize_stream_decode_spec(dictionary).steps
-        for step in steps:
-            descriptor = FILTER_DESCRIPTOR_BY_NAME.get(step.name)
-            codec = None if descriptor is None else descriptor.decoder
-            if codec == "ccitt":
-                # pypdf returns a TIFF file here, which core-pdf cannot make.
-                raise FilterUnsupportedError(f"stream filter {step.name} is not implemented")
-            if codec not in UNDECODED_FILTERS:
-                data = decode_one_filter(
-                    data,
-                    step.name,
-                    step.params,
-                    dictionary=dictionary,
-                    parent_dictionary=None,
-                    allow_content_stream_passthrough=len(steps) == 1,
-                )
-    except FilterUnsupportedError as error:
-        raise NotImplementedError(str(error)) from error
+        return decode_stream_data(stream)
     except ValueError as error:
         raise PdfReadError(str(error)) from error
-    return data
-
-
-def _resolved(value: Any) -> Any:
-    return value.get_object() if isinstance(value, IndirectObject) else value
-
-
-def _filter_value(value: Any) -> Any:
-    value = _resolved(value)
-    if isinstance(value, list):
-        return [to_core(_resolved(item)) for item in value]
-    return to_core(value)
-
-
-def _parameters_value(value: Any) -> Any:
-    value = _resolved(value)
-    if isinstance(value, list):
-        return [_parameters_value(item) for item in value]
-    if isinstance(value, Mapping):
-        return {key[1:]: _parameter_value(value[key]) for key in value}
-    return to_core(value)
-
-
-def _parameter_value(value: Any) -> Any:
-    # /JBIG2Globals is a stream, and the codec wants its decoded data.
-    if isinstance(value, StreamObject):
-        return PdfStream({}, value.get_data(), None)
-    return to_core(value)
 
 
 class _ContentText(TextStringObject):
