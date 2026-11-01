@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from abc import ABC
+import logging
+import warnings
 from collections.abc import Iterable, Iterator
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from core_pdf.impl.document_editing import BINARY_MARKER, serialize_body
 from core_pdf.impl.types import PdfReference
@@ -14,6 +15,13 @@ from core_pdf_spec.s_07_syntax.serialize import ObjectLayout
 
 from ._doc_common import PdfDocCommon
 from ._generic_trees import EmbeddedFile
+from ._images import (
+    ImageFile,
+    VirtualListImages,
+    content_stream_images,
+    image_ids,
+    page_image,
+)
 from ._page_merge import (
     Transformation,
     add_cm,
@@ -24,6 +32,7 @@ from ._page_merge import (
     transfer_rotation,
     transform_page,
 )
+from ._text import extract_legacy_text
 from .actions import Action
 from .errors import PageSizeNotDefinedError
 from .generic import (
@@ -42,14 +51,47 @@ from .generic import (
     to_core,
 )
 
+logger = logging.getLogger(__name__)
 
-class PageObject(DictionaryObject, ABC):
+
+def _page_box(name: str, *fallbacks: str) -> property:
+    # A box read from the page stays in it, so changing the rectangle changes the page.
+    def getter(page: PageObject) -> RectangleObject:
+        box = page.get_resolved(name)
+        if isinstance(box, RectangleObject):
+            return box
+        for key in (name, *fallbacks):
+            box = page.get_resolved(key)
+            if not is_null_or_none(box):
+                break
+        length = len(box)
+        if length > 4:
+            # pypdf once wrote boxes this way, so files with them exist.
+            logger.warning("Expected four values, got %d: %s", length, box)
+        elif length < 4:
+            raise ValueError(f"Expected four values for {name}, got {length}: {box}")
+        rectangle = RectangleObject(tuple(box[:4]))
+        page[NameObject(name)] = rectangle
+        return rectangle
+
+    def setter(page: PageObject, value: Any) -> None:
+        page[NameObject(name)] = value
+
+    def deleter(page: PageObject) -> None:
+        del page[name]
+
+    return property(getter, setter, deleter)
+
+
+class PageObject(DictionaryObject):
     """A page as a dictionary, like pypdf's. It may be held by a writer or stand alone."""
 
     def __init__(self, pdf: Any = None, indirect_reference: Any = None) -> None:
         super().__init__()
         self._pdf = pdf
         self.indirect_reference = indirect_reference
+        self._source_content: tuple[Any, ...] | None = None
+        self._content_stream_images: dict[str, ImageFile | None] | None = None
 
     @staticmethod
     def create_blank_page(
@@ -82,30 +124,11 @@ class PageObject(DictionaryObject, ABC):
         box = self.mediabox
         self.scale(width / float(box.width), height / float(box.height))
 
-    @property
-    def mediabox(self) -> RectangleObject:
-        return RectangleObject(self.get_resolved("/MediaBox"))
-
-    @property
-    def cropbox(self) -> RectangleObject:
-        box = self.get_resolved("/CropBox")
-        return self.mediabox if box is None else RectangleObject(box)
-
-    def _box_or_cropbox(self, key: str) -> RectangleObject:
-        box = self.get_resolved(key)
-        return self.cropbox if box is None else RectangleObject(box)
-
-    @property
-    def bleedbox(self) -> RectangleObject:
-        return self._box_or_cropbox("/BleedBox")
-
-    @property
-    def trimbox(self) -> RectangleObject:
-        return self._box_or_cropbox("/TrimBox")
-
-    @property
-    def artbox(self) -> RectangleObject:
-        return self._box_or_cropbox("/ArtBox")
+    mediabox = _page_box("/MediaBox")
+    cropbox = _page_box("/CropBox", "/MediaBox")
+    bleedbox = _page_box("/BleedBox", "/CropBox", "/MediaBox")
+    trimbox = _page_box("/TrimBox", "/CropBox", "/MediaBox")
+    artbox = _page_box("/ArtBox", "/CropBox", "/MediaBox")
 
     @property
     def rotation(self) -> int:
@@ -130,22 +153,71 @@ class PageObject(DictionaryObject, ABC):
     def annotations(self) -> Any:
         return self.get_resolved("/Annots")
 
+    @annotations.setter
+    def annotations(self, value: Any) -> None:
+        if value is not None:
+            self[NameObject("/Annots")] = value
+        elif "/Annots" in self:
+            del self["/Annots"]
+
     @property
-    def page_number(self) -> int:
+    def page_number(self) -> int | None:
         pages = self.pdf._page_list()
-        return next(index for index, page in enumerate(pages) if page is self)
+        return next((index for index, page in enumerate(pages) if page is self), None)
+
+    @property
+    def user_unit(self) -> float:
+        return self.get_resolved("/UserUnit", 1)
+
+    def _parse_images_from_content_stream(self) -> dict[str, ImageFile | None]:
+        return content_stream_images(self)
+
+    def _get_ids_image(
+        self, obj: Any = None, ancest: list[str] | None = None, call_stack: list[Any] | None = None
+    ) -> list[Any]:
+        return image_ids(self, obj, ancest, call_stack)
+
+    def _get_image(self, id: Any, obj: Any = None) -> ImageFile:  # noqa: A002
+        return page_image(self, id, obj)
+
+    @property
+    def images(self) -> VirtualListImages:
+        return VirtualListImages(self._get_ids_image, self._get_image)
+
+    @property
+    def inline_images(self) -> dict[str, ImageFile] | None:
+        warnings.warn(
+            "PageObject.inline_images is deprecated and will be removed in pypdf 7.0.0. "
+            "Use PageObject.images instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if self._content_stream_images is None:
+            return None
+        return {
+            name: image
+            for name, image in self._content_stream_images.items()
+            if image is not None and image.is_inline
+        }
+
+    def _content_keys(self) -> tuple[Any, ...]:
+        return tuple(self.get(key) for key in ("/Contents", "/Resources", "/Rotate"))
 
     def extract_text(self, *args: Any, **kwargs: Any) -> str:
-        # Text extraction reads a file, so the page goes through the serialized document.
+        # A changed page has no copy in a file, so it goes through a serialized document.
         from . import PdfReader
 
+        pdf = self.pdf
+        source = pdf._core_page(self) if isinstance(pdf, PdfReader) else None
+        if source is not None:
+            return extract_legacy_text(source, pdf.text_caches)
         writer = self.writer
         if writer is None:
             writer = PdfWriter()
             writer.add_page(self)
             number = 0
         else:
-            number = self.page_number
+            number = cast(int, self.page_number)
         reader = PdfReader(BytesIO(writer._serialized()))
         return reader.pages[number].extract_text(*args, **kwargs)
 
@@ -170,6 +242,15 @@ class PageObject(DictionaryObject, ABC):
         # A stream another page still uses is left alone.
         writer = self.writer
         if writer is None:
+            if self.pdf is not None:
+                warnings.warn(
+                    "Calling `PageObject.replace_contents()` for pages not assigned to a writer "
+                    "is deprecated and will be removed in pypdf 7.0.0. Attach the page to the "
+                    "writer first or use `PdfWriter(clone_from=...)` directly. The existing "
+                    "approach has proved being unreliable.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
             # Nothing to number it with yet. Adding the page to a writer numbers the streams.
             if is_null_or_none(content):
                 self.pop(NameObject("/Contents"), None)
@@ -409,7 +490,7 @@ class PdfWriter(PdfDocCommon):
             self._info[NameObject(key)] = text
 
     @property
-    def pages(self) -> PageObjects:  # ty: ignore[invalid-property-type-override]
+    def pages(self) -> PageObjects:
         return PageObjects(self)
 
     def _page_list(self) -> list[PageObject]:
@@ -463,7 +544,7 @@ class PdfWriter(PdfDocCommon):
         self._pages_object[NameObject("/Count")] = NumberObject(len(kids))
 
     def _import_page(self, page: Any, excluded: set[str]) -> PageObject:
-        source = page if isinstance(page, DictionaryObject) else page._generic_dictionary()
+        source = page
         reference = source.indirect_reference
         owner = getattr(reference, "pdf", None)
         translated = self._translation(owner)

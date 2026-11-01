@@ -143,7 +143,10 @@ class DocumentInformation(DictionaryObject):
 
 class PdfDocCommon:
     strict: bool
-    pages: Any
+
+    @property
+    def pages(self) -> Any:
+        raise NotImplementedError
 
     @property
     def root_object(self) -> Any:

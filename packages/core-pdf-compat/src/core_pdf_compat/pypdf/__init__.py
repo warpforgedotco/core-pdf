@@ -2,518 +2,111 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Iterator, Mapping
-from copy import replace
 from enum import IntEnum, IntFlag, auto
-from functools import cached_property
-from io import BytesIO
-from mmap import mmap
-from typing import Any, cast
+from io import BytesIO, UnsupportedOperation
+from pathlib import Path
+from typing import Any, NoReturn, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.output_model import (
-    Document,
-    Page,
-)
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
-from core_pdf_compat.pypdf._text import LegacyTextCaches, extract_legacy_text
-from core_pdf_compat.pypdf.errors import FileNotDecryptedError, PdfReadError
+from core_pdf_compat.pypdf._reader_scan import XrefScan
+from core_pdf_compat.pypdf._text import LegacyTextCaches
+from core_pdf_compat.pypdf.errors import (
+    DeprecationError,
+    FileNotDecryptedError,
+    LimitReachedError,
+    PdfReadError,
+    WrongPasswordError,
+)
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     Destination,
     DictionaryObject,
     IndirectObject,
     NameObject,
+    NullObject,
     RectangleObject,
     TextStringObject,
     is_null_or_none,
     to_generic,
 )
-from core_pdf_spec.s_07_syntax.types import PdfDict
+from core_pdf_spec.exceptions import PdfParseError, PdfPasswordError
+from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.xref import key_for
 
 logger = logging.getLogger(__name__)
 
-# pypdf Configuration.page_tree_maximum_depth and page_tree_maximum_entries.
-PAGE_TREE_MAXIMUM_DEPTH = 100
-PAGE_TREE_MAXIMUM_ENTRIES = 100_000
-
-
-# pypdf._reader.PdfReader._MAX_STARTXREF_RECOVERY_LINES.
-STARTXREF_RECOVERY_LINES = 1000
-LINE_SEARCH_WINDOW = 4096
-TRUNCATED_EOF_MARKERS = (b"%%EO", b"%%E", b"%%", b"%")
-
-
-def previous_line(data: bytes | mmap, position: int) -> tuple[bytes, int]:
-    """pypdf's read_previous_line: the line ending at ``position``, and the
-    position after skipping the line breaks above it."""
-    if position == 0:
-        raise ValueError("stream has ended unexpectedly")
-    # Search back in windows so each call stops at the nearest line break: a
-    # search to the start of the data for the other break byte would make a file
-    # with no marker quadratic.
-    line_break = -1
-    start = end = position
-    while start > 0:
-        start = max(0, start - LINE_SEARCH_WINDOW)
-        line_break = max(data.rfind(b"\n", start, end), data.rfind(b"\r", start, end))
-        if line_break >= 0:
-            break
-        end = start
-    line = data[line_break + 1 : position]
-    while line_break >= 0 and data[line_break] in b"\r\n":
-        line_break -= 1
-    return line, line_break + 1
-
-
-def is_startxref_value(value: bytes) -> bool:
-    return re.fullmatch(rb"[+-]?[0-9]+(?:_[0-9]+)*", value) is not None
-
-
-def finds_startxref(data: bytes | mmap) -> bool:
-    """Whether pypdf (non-strict) locates %%EOF and the startxref offset above it.
-
-    Mirrors PdfReader._find_eof_marker and _find_startxref_pos: the last line
-    may carry the marker inline (py-pdf/pypdf#4127) or truncated, duplicate
-    markers above it are skipped (#4008), and a corrupt trailing pointer falls
-    back to the previous intact startxref (#3238).
-    """
-    try:
-        position = end_position = len(data)
-        line = b""
-        last = True
-        while True:
-            marker = line.find(b"%%EOF")
-            if marker == 0:
-                break
-            if marker > 0 and last:
-                if line[:marker].lstrip(b" \t\n\r\x00\x0c"):
-                    position = end_position - len(line) + marker
-                break
-            if line and last:
-                if line.strip().endswith(TRUNCATED_EOF_MARKERS):
-                    break
-                last = False
-            end_position = position
-            line, position = previous_line(data, position)
-
-        line, position = previous_line(data, position)
-        for _ in range(STARTXREF_RECOVERY_LINES):
-            if not line.startswith(b"%%EOF") or position == 0:
-                break
-            line, position = previous_line(data, position)
-        try:
-            int(line)
-        except ValueError:
-            return line.startswith(b"startxref") and is_startxref_value(line[9:].strip())
-        line, position = previous_line(data, position)
-        if line.startswith(b"startxref"):
-            return True
-
-        offset_found = False
-        for _ in range(STARTXREF_RECOVERY_LINES):
-            if position <= 0:
-                break
-            line, position = previous_line(data, position)
-            if not line.startswith(b"startxref"):
-                try:
-                    int(line)
-                except ValueError:
-                    offset_found = False
-                else:
-                    offset_found = True
-                continue
-            if len(line) > 9:
-                if is_startxref_value(line[9:].strip()):
-                    return True
-                continue
-            return offset_found
-        return False
-    except ValueError:
-        return False
-
-
-def validate_pypdf_page_tree(pdf: PdfDocument) -> None:
-    literal_trailers = tuple(pdf.iter_literal_trailer_dictionaries())
-    if literal_trailers:
-        latest_root = literal_trailers[-1].get("Root")
-        if isinstance(latest_root, PdfReference):
-            root_key = key_for(latest_root.object_number, latest_root.generation_number)
-            if root_key not in pdf.xref:
-                raise ValueError("catalog root references a missing object generation")
-        elif latest_root is not None and not isinstance(latest_root, dict):
-            raise ValueError("invalid catalog root")
-
-    if "Root" not in pdf.trailer_dict:
-        return  # pypdf reports this when the pages are read.
-    root = pdf.resolver.as_dict(pdf.catalog().get("Pages"))
-    if root is None:
-        raise ValueError("invalid object in /Pages")
-    # pypdf walks the tree iteratively. A cycle is a /Pages node reached again
-    # while it is still an ancestor; a page shared by two parents is valid.
-    # Entries that are not dictionaries, and empty ones, are skipped.
-    entries = 0
-    ancestors: set[int] = set()
-    stack: list[tuple[PdfDict, Iterator[object], int]] = []
-
-    def enter(node: PdfDict, depth: int) -> None:
-        if depth > PAGE_TREE_MAXIMUM_DEPTH:
-            raise ValueError(f"maximum page tree depth reached: {depth}")
-        declared_type = node.get("Type")
-        if declared_type is not None:
-            node_type = str(declared_type)
-        else:
-            node_type = "Page" if "Kids" not in node else "Pages"
-        if node_type != "Pages":
-            return
-        kids = pdf.resolver.resolve(node.get("Kids"))
-        if kids is None:
-            kids = []
-        elif not isinstance(kids, (list, tuple)):
-            raise ValueError("expected /Kids to be an array")
-        ancestors.add(id(node))
-        stack.append((node, iter(kids), depth))
-
-    enter(root, 0)
-    while stack:
-        parent, kids, depth = stack[-1]
-        for kid in kids:
-            child = pdf.resolver.as_dict(kid)
-            if not child:
-                continue
-            if id(child) in ancestors:
-                raise ValueError("detected cyclic page references")
-            entries += 1
-            if entries > PAGE_TREE_MAXIMUM_ENTRIES:
-                raise ValueError(f"maximum page tree entry limit reached: {entries}")
-            enter(child, depth + 1)
-            break
-        else:
-            stack.pop()
-            ancestors.discard(id(parent))
-
-
-class StructuredState(ClosingMixin):
-    def __init__(self, pdf: PdfDocument | None, structured: Document | None = None) -> None:
-        self.pdf = pdf
-        self._structured = structured
-        self.text_caches = LegacyTextCaches()
-
-    @property
-    def structured(self) -> Document:
-        if self._structured is None:
-            self._structured = self.source_pdf.structured_document
-        return self._structured
-
-    @classmethod
-    def open(cls, source: PdfInput, *, password: str = "") -> StructuredState:
-        pdf = PdfDocument.open(source, password=password)
-        try:
-            if not finds_startxref(pdf.raw_data):
-                raise ValueError("startxref not found")
-            validate_pypdf_page_tree(pdf)
-        except Exception:
-            pdf.close()
-            raise
-        return cls(pdf)
-
-    @classmethod
-    def synthetic(cls, structured: Document) -> StructuredState:
-        return cls(None, structured)
-
-    @property
-    def source_pdf(self) -> PdfDocument:
-        if self.pdf is None:
-            raise ValueError("synthetic snapshots do not have a source PDF")
-        return self.pdf
-
-    @property
-    def metadata(self) -> Mapping[str, Any]:
-        return self.structured.metadata
-
-    @property
-    def pages(self) -> tuple[Page, ...]:
-        return self.structured.pages
-
-    def page_count(self) -> int:
-        pdf = self.source_pdf
-        return len(pdf.pages) if pdf.declared_page_count() else 0
-
-    @property
-    def form_fields(self) -> tuple[Any, ...]:
-        return tuple(field for page in self.pages for field in page.form_fields)
-
-    def capability_document(self) -> PdfDocument:
-        if self.pdf is None:
-            raise PdfUnsupportedError("synthetic snapshots do not have PDF capabilities")
-        return self.pdf
-
-    def capability_page(self, page_number: int) -> Any:
-        return self.capability_document().pages[page_number - 1]
-
-    def close(self) -> None:
-        if self.pdf is not None:
-            self.pdf.close()
-
+INHERITED_PAGE_ATTRIBUTES = ("/Resources", "/MediaBox", "/CropBox", "/Rotate")
 
 Rectangle = RectangleObject
 
 
-class PdfPageObject:
-    def __init__(
-        self, document: StructuredState, page: Page | None, page_number: int | None = None
-    ) -> None:
-        self._document = document
-        self._loaded_page = page
-        self._page_number = page.page_number if page is not None else page_number or 0
-        self.text_override: str | None = None
-        self._reader: Any = None
-        if document.pdf is not None and 0 < self._page_number <= len(document.pdf.pages):
-            source_page = document.pdf.pages[self._page_number - 1]
-            media_box = source_page.media_box or (0.0, 0.0, self._page.width, self._page.height)
-            crop_box = source_page.crop_box or media_box
-            self.mediabox = Rectangle(media_box)
-            self.cropbox = Rectangle(crop_box)
-            self.user_unit = source_page.user_unit
-            raw_rotation = source_page.inherited_values.get("Rotate")
-            self.rotation = (
-                int(raw_rotation)
-                if isinstance(raw_rotation, (int, float))
-                else source_page.rotation
-            )
-        else:
-            page = self._page
-            self.mediabox = Rectangle((0, 0, page.width, page.height))
-            self.cropbox = Rectangle(page.cropbox or self.mediabox)
-            self.user_unit = page.user_unit
-            self.rotation = page.rotation
-
-    @property
-    def _page(self) -> Page:
-        if self._loaded_page is None:
-            self._loaded_page = self._document.pages[self._page_number - 1]
-        return self._loaded_page
-
-    @_page.setter
-    def _page(self, page: Page) -> None:
-        self._loaded_page = page
-
-    def _is_source_page(self) -> bool:
-        page = self._loaded_page
-        return page is None or page is self._document.pages[page.page_number - 1]
-
-    def _capability_view(self) -> Any:
-        return self._document.capability_page(self._page.page_number).structured_view
-
-    def extract_text(self, *args: object, **kwargs: object) -> str:  # noqa: C901
-        del args, kwargs
-        if self.text_override is not None:
-            return self.text_override
-        if self._is_source_page() and self._document.pdf is not None:
-            page = self._document.capability_page(self._page_number)
-            return extract_legacy_text(page, self._document.text_caches)
-        return "\n".join(line.text for block in self._page.blocks for line in block.lines)
-
-    @property
-    def indirect_reference(self) -> IndirectObject | None:
-        if self._reader is None:
-            return None
-        page_ids = self._reader.page_object_numbers()
-        if not 0 < self._page_number <= len(page_ids):
-            return None
-        return IndirectObject(page_ids[self._page_number - 1], 0, self._reader)
-
-    def get_contents(self) -> Any:
-        from core_pdf_compat.pypdf.generic import ContentStream
-
-        contents = self._generic_dictionary().get_resolved("/Contents")
-        return None if is_null_or_none(contents) else ContentStream(contents, self._reader)
-
-    def _generic_dictionary(self) -> Any:
-        pdf = self._document.pdf
-        if pdf is None:
-            return to_generic({}, self._reader)
-        if self._reader is not None:
-            page_ids = self._reader.page_object_numbers()
-            if self._page_number <= len(page_ids):
-                return self._reader.get_object(page_ids[self._page_number - 1])
-        return to_generic(pdf.pages[self._page_number - 1].page_dict, self._reader)
-
-    def __getitem__(self, key: str) -> Any:
-        return self._generic_dictionary()[key]
-
-    def __contains__(self, key: str) -> bool:
-        return key in self._generic_dictionary()
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._generic_dictionary().get(key, default)
-
-    def keys(self) -> Any:
-        return self._generic_dictionary().keys()
-
-    @property
-    def page_number(self) -> int:
-        return self._page_number - 1
-
-    def compress_content_streams(self, level: int = -1) -> None:
-        del level
-        raise ValueError("Page must be part of a PdfWriter")
-
-    def rotate(self, angle: int) -> PdfPageObject:
-        self._page = replace(self._page, rotation=(self.rotation + angle) % 360)
-        self.rotation = self._page.rotation
-        return self
-
-    def scale_to(self, width: float, height: float) -> PdfPageObject:
-        self._page = replace(self._page, width=width, height=height)
-        self.mediabox = Rectangle((0, 0, width, height))
-        self.cropbox = self.mediabox
-        return self
-
-    def set_cropbox(self, box: tuple[float, float, float, float]) -> PdfPageObject:
-        rectangle = Rectangle(box)
-        self._page = replace(
-            self._page,
-            cropbox=(rectangle.left, rectangle.bottom, rectangle.right, rectangle.top),
+def _source_bytes(stream: PdfInput) -> tuple[Any, bytes, bool]:
+    """The stream to keep, its bytes, and whether this reader opened it."""
+    if "b" not in getattr(stream, "mode", "b"):
+        logger.warning(
+            "PdfReader stream/file object is not in binary mode. It may not be read correctly."
         )
-        self.cropbox = rectangle
-        return self
-
-    def transfer_rotation_to_content(self) -> None:
-        if self.rotation % 180:
-            self.mediabox = Rectangle((0, 0, self.mediabox.height, self.mediabox.width))
-            self.cropbox = Rectangle((0, 0, self.cropbox.height, self.cropbox.width))
-        self._page = replace(self._page, rotation=0)
-        self.rotation = 0
-
-    def merge_page(self, page: PdfPageObject | Page) -> PdfPageObject:
-        base_text = self.extract_text()
-        overlay_text = page.extract_text() if isinstance(page, PdfPageObject) else page.text
-        overlay = page._page if isinstance(page, PdfPageObject) else page
-        order = max((item.order for item in self._page.elements), default=-1) + 1
-        blocks = tuple(replace(item, order=order + item.order) for item in overlay.blocks)
-        tables = tuple(replace(item, order=order + item.order) for item in overlay.tables)
-        figures = tuple(replace(item, order=order + item.order) for item in overlay.figures)
-        self._page = replace(
-            self._page,
-            blocks=(*self._page.blocks, *blocks),
-            tables=(*self._page.tables, *tables),
-            figures=(*self._page.figures, *figures),
-            links=(*self._page.links, *overlay.links),
-            annotations=(*self._page.annotations, *overlay.annotations),
-            form_fields=(*self._page.form_fields, *overlay.form_fields),
-        )
-        self.text_override = "\n".join(filter(None, (base_text, overlay_text)))
-        return self
-
-    @property
-    def annotations(self) -> tuple[Any, ...]:
-        return self._page.annotations or self._capability_view().annotations
-
-    @property
-    def links(self) -> tuple[Any, ...]:
-        return self._page.links or self._capability_view().links
-
-    @property
-    def form_fields(self) -> tuple[Any, ...]:
-        return self._page.form_fields or self._capability_view().form_fields
-
-    @property
-    def images(self) -> tuple[Any, ...]:
-        return tuple(self._document.capability_page(self._page.page_number).extract_images())
-
-
-class LockedPages:
-    def __iter__(self) -> Any:
-        raise PdfUnsupportedError("file has not been decrypted")
-
-    def __len__(self) -> int:
-        raise PdfUnsupportedError("file has not been decrypted")
-
-    def __getitem__(self, index: object) -> Any:
-        del index
-        raise PdfUnsupportedError("file has not been decrypted")
+    if isinstance(stream, (str, Path)):
+        with open(stream, "rb") as source:
+            data = source.read()
+        return BytesIO(data), data, True
+    if isinstance(stream, (bytes, bytearray, memoryview)):
+        return BytesIO(stream), bytes(stream), False
+    readable: Any = stream
+    readable.seek(0)
+    try:
+        return readable, bytes(readable.read()), False
+    except UnicodeDecodeError as error:
+        raise UnsupportedOperation("cannot read header") from error
 
 
 class PdfReader(PdfDocCommon, ClosingMixin):
-    pages: Any
-
     def __init__(
         self,
         stream: PdfInput,
         strict: bool = False,
-        password: str | None = None,
-        **kwargs: object,
+        password: str | bytes | None = None,
+        *,
+        root_object_recovery_limit: int | None = 10_000,
     ) -> None:
-        del kwargs
         self.strict = strict
+        self.flattened_pages: list[PageObject] | None = None
         self.resolved_objects: dict[tuple[int, int], Any] = {}
+        self.text_caches = LegacyTextCaches()
         self._named_destinations_cache: dict[str, Destination] | None = None
-        self._encrypted_source = stream.getvalue() if isinstance(stream, BytesIO) else stream
+        self._validated_root: Any = None
+        self._root_object_recovery_limit = root_object_recovery_limit
+        self._pdf: PdfDocument | None = None
+        self._decryption_pending = False
+        self.stream, self._data, self._stream_opened = _source_bytes(stream)
+        scan = XrefScan(self._data, strict, self)
+        scan.read()
+        self.xref = scan.xref
+        self.xref_free_entry = scan.xref_free_entry
+        self.xref_objStm = scan.xref_objStm  # noqa: N815
+        self._scan_trailer = scan.trailer
+        self._open(password)
+
+    def _open(self, password: str | bytes | None) -> None:
+        text = password.decode("utf-8", "replace") if isinstance(password, bytes) else password
         try:
-            document = StructuredState.open(self._encrypted_source, password=password or "")
+            self._pdf = PdfDocument.open(self._data, password=text or "")
+        except PdfPasswordError as error:
+            if password is not None:
+                raise WrongPasswordError("Wrong password") from error
+            self._decryption_pending = True
         except PdfUnsupportedError:
             if password:
                 raise
-            self._document = None
-            self.pages = LockedPages()
             self._decryption_pending = True
-            return
-        self._decryption_pending = False
-        self._bind(document)
-
-    def _bind(self, document: StructuredState) -> None:
-        self._document = document  # type: ignore[assignment]
-        self.__dict__.pop("pages", None)
-        self.__dict__.pop("_page_indexes", None)
-        self.__dict__.pop("_generic_trailer", None)
-        self.resolved_objects = {}
-        self._named_destinations_cache = None
-
-    def __getattr__(self, name: str) -> Any:
-        if name == "pages" and self.__dict__.get("_document") is not None:
-            self._materialize()
-            return self.__dict__[name]
-        raise AttributeError(name)
-
-    def _materialize(self) -> None:
-        document = cast(StructuredState, self._document)
-        source = document.source_pdf
-        if source is not None and "Root" not in source.trailer_dict:
-            raise PdfReadError("Cannot find Root object in pdf")
-        self.pages = tuple(
-            PdfPageObject(document, None, page_number)
-            for page_number in range(1, document.page_count() + 1)
-        )
-        for page in self.pages:
-            page._reader = self
-        self._page_indexes = {id(page): index for index, page in enumerate(self.pages)}
-
-    @property
-    def num_pages(self) -> int:
-        return len(self.pages)
-
-    def get_page(self, page_number: int) -> PdfPageObject:
-        return self.pages[page_number]
-
-    def get_page_number(self, page: PdfPageObject | Page) -> int:
-        pages = self.pages
-        page_indexes = self.__dict__.get("_page_indexes")
-        if page_indexes is not None and isinstance(page, PdfPageObject):
-            index = page_indexes.get(id(page))
-            if index is not None and pages[index] is page:
-                return index
-        value = page._page if isinstance(page, PdfPageObject) else page
-        candidate: PdfPageObject
-        for index, candidate in enumerate(pages):
-            if candidate._page is value or candidate._page == value:
-                return index
-        raise ValueError("page is not part of this reader")
+        except PdfParseError, ValueError:
+            # pypdf finds out when something asks for the catalog, not on opening.
+            self._pdf = None
 
     def _get_named_destinations(
         self,
@@ -528,40 +121,145 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             self._named_destinations_cache = super()._get_named_destinations()
         return self._named_destinations_cache
 
+    def _flatten(
+        self,
+        pages: Any = None,
+        inherit: dict[str, Any] | None = None,
+        indirect_reference: IndirectObject | None = None,
+        visited: set[int] | None = None,
+    ) -> None:
+        inherit = {} if inherit is None else inherit
+        visited = set() if visited is None else visited
+        if is_null_or_none(pages):
+            pages = self.root_object.get_resolved("/Pages")
+            if not isinstance(pages, DictionaryObject):
+                raise PdfReadError("Invalid object in /Pages")
+            self.flattened_pages = []
+        if "/Type" in pages:
+            node_type = pages["/Type"]
+        elif "/Kids" in pages:
+            node_type = "/Pages"
+        else:
+            if self.strict and not any(
+                key in pages for key in ("/Contents", "/MediaBox", "/Parent")
+            ):
+                raise PdfReadError(f"Non-page object reached through /Kids: {pages!r}")
+            node_type = "/Page"
+        if node_type == "/Pages":
+            self._flatten_kids(pages, inherit, visited)
+        elif node_type == "/Page":
+            for key, value in inherit.items():
+                if key not in pages:
+                    pages[NameObject(key)] = value
+            page = PageObject(self, indirect_reference)
+            page.update(pages)
+            page._source_content = page._content_keys()
+            cast(list[PageObject], self.flattened_pages).append(page)
+
+    def _flatten_kids(self, node: Any, inherit: dict[str, Any], visited: set[int]) -> None:
+        for key in INHERITED_PAGE_ATTRIBUTES:
+            if key in node:
+                inherit[key] = node[key]
+        node_reference = getattr(node, "indirect_reference", object())
+        kids = node.get_resolved("/Kids", ArrayObject())
+        if isinstance(kids, NullObject):
+            return
+        if not isinstance(kids, ArrayObject):
+            raise PdfReadError(f"Expected /Kids to be an array, got {type(kids).__name__}.")
+        for kid in kids:
+            if getattr(kid, "indirect_reference", object()) == node_reference:
+                raise PdfReadError("Detected cyclic page references.")
+            child = kid.get_object() if isinstance(kid, IndirectObject) else kid
+            if child:
+                if id(child) in visited:
+                    raise PdfReadError("Detected cyclic page references.")
+                visited.add(id(child))
+                reference = kid if isinstance(kid, IndirectObject) else None
+                self._flatten(child, inherit, reference, visited)
+
+    def _page_list(self) -> list[PageObject]:
+        if self.flattened_pages is None:
+            self._flatten()
+        return cast(list[PageObject], self.flattened_pages)
+
+    @property
+    def pages(self) -> Any:
+        return _VirtualList(lambda: len(self._page_list()), lambda index: self._page_list()[index])
+
+    @property
+    def num_pages(self) -> int:
+        return len(self._page_list())
+
+    def get_page(self, page_number: int) -> PageObject:
+        return self._page_list()[page_number]
+
+    def get_page_number(self, page: PageObject) -> int | None:
+        return self._get_page_number_by_indirect(page.indirect_reference)
+
     def _get_page_number_by_indirect(self, indirect_reference: Any) -> int | None:
         if is_null_or_none(indirect_reference):
             return None
         number = getattr(indirect_reference, "idnum", indirect_reference)
-        numbers = self.__dict__.get("_page_numbers")
-        if numbers is None:
-            numbers = {idnum: index for index, idnum in enumerate(self.page_object_numbers())}
-            self.__dict__["_page_numbers"] = numbers
-        return numbers.get(number)
+        return self._page_numbers().get(number)
+
+    def _page_numbers(self) -> dict[int, int]:
+        pages = self._page_list()
+        numbers = self.__dict__.get("_page_number_map")
+        if numbers is None or len(numbers) > len(pages):
+            numbers = {
+                page.indirect_reference.idnum: index
+                for index, page in reversed(list(enumerate(pages)))
+                if page.indirect_reference is not None
+            }
+            self.__dict__["_page_number_map"] = numbers
+        return numbers
+
+    def _core_page(self, page: PageObject) -> Any:
+        """core-pdf's copy of ``page``, if it still shows what the file holds."""
+        if self._pdf is None or page.indirect_reference is None:
+            return None
+        if page._source_content != page._content_keys():
+            return None
+        identifiers = self.__dict__.get("_core_page_ids")
+        if identifiers is None:
+            identifiers = {
+                number: index for index, number in enumerate(DocumentView(self._pdf).page_ids())
+            }
+            self.__dict__["_core_page_ids"] = identifiers
+        index = identifiers.get(page.indirect_reference.idnum)
+        return None if index is None else self._pdf.pages[index]
 
     def get_object(self, indirect_reference: Any) -> Any:
-        source = self._source_document()
-        if source is None:
-            return None
+        if self._decryption_pending:
+            raise FileNotDecryptedError("File has not been decrypted")
         if isinstance(indirect_reference, IndirectObject):
             number, generation = indirect_reference.idnum, indirect_reference.generation
         else:
             number, generation = int(indirect_reference), 0
         key = (generation, number)
         if key not in self.resolved_objects:
-            resolved = source.resolver.resolve(PdfReference(number, generation))
-            item = to_generic(resolved, self)
+            item = self._read_object(number, generation)
+            if item is None:
+                return None
             item.indirect_reference = IndirectObject(number, generation, self)
             self.resolved_objects[key] = item
         return self.resolved_objects[key]
 
-    @cached_property
-    def xref(self) -> dict[int, dict[int, int]]:
-        """Generation, then object number, to file offset. Compressed objects are not here."""
-        table: dict[int, dict[int, int]] = {}
-        for key, entry in self._source_document().xref.items():
-            if entry.in_use and entry.object_stream is None:
-                table.setdefault(entry.generation, {})[key >> 16] = entry.offset
-        return table
+    def _read_object(self, number: int, generation: int) -> Any:
+        source = self._pdf
+        if source is not None and key_for(number, generation) in source.xref:
+            return to_generic(source.resolver.resolve(PdfReference(number, generation)), self)
+        pattern = rf"\s{number}\s+{generation}\s+obj".encode()
+        match = re.search(pattern, self._data)
+        if match is None:
+            logger.warning("Object %d %d not defined.", number, generation)
+            if self.strict:
+                raise PdfReadError("Could not find object.")
+            return None
+        logger.warning("Object %d %d found", number, generation)
+        lexer = PdfLexer(self._data)
+        lexer.rewind(match.start() + 1)
+        return to_generic(lexer.parse_indirect_object(), self)
 
     def _replace_object(self, indirect: IndirectObject, obj: Any) -> Any:
         key = (indirect.generation, indirect.idnum)
@@ -572,7 +270,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return obj
 
     def _next_object_number(self) -> int:
-        file_numbers = (key >> 16 for key in self._source_document().xref)
+        file_numbers = (key >> 16 for key in self._pdf.xref) if self._pdf is not None else ()
         return max((*file_numbers, *(number for _, number in self.resolved_objects))) + 1
 
     def add_form_topname(self, name: str) -> DictionaryObject | None:
@@ -603,20 +301,14 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         group[NameObject("/T")] = TextStringObject(name)
         return group
 
-    def page_object_numbers(self) -> list[int]:
-        numbers = self.__dict__.get("_page_object_numbers")
-        if numbers is None:
-            source = self._source_document()
-            numbers = [] if source is None else DocumentView(source).page_ids()
-            self.__dict__["_page_object_numbers"] = numbers
-        return numbers
-
     @property
     def trailer(self) -> Any:
         cached = self.__dict__.get("_generic_trailer")
         if cached is None:
-            source = self._source_document()
-            cached = to_generic(source.trailer_dict if source is not None else {}, self)
+            source = self._pdf
+            cached = self._scan_trailer
+            if source is not None and "/Root" not in cached:
+                cached = to_generic(source.trailer_dict, self)
             self.__dict__["_generic_trailer"] = cached
         return cached
 
@@ -637,18 +329,42 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def root_object(self) -> Any:
         if self._decryption_pending:
             raise FileNotDecryptedError("File has not been decrypted")
-        return self.trailer["/Root"]
+        if self._validated_root is None:
+            self._validated_root = self._find_root()
+        return self._validated_root
+
+    def _find_root(self) -> Any:
+        root = self.trailer.get("/Root")
+        if is_null_or_none(root):
+            logger.warning('Cannot find "/Root" key in trailer')
+        elif root.get_object().get("/Type") == "/Catalog":
+            return root.get_object()
+        else:
+            logger.warning("Invalid Root object in trailer")
+        logger.warning('Searching object with "/Catalog" key')
+        for number in range(1, self.trailer.get("/Size", 0) + 1):
+            limit = self._root_object_recovery_limit
+            if limit is not None and number > limit:
+                raise LimitReachedError("Maximum Root object recovery limit reached.")
+            try:
+                candidate = self.get_object(number)
+            except PdfReadError, PdfParseError, ValueError:
+                continue
+            if isinstance(candidate, DictionaryObject) and candidate.get("/Type") == "/Catalog":
+                logger.warning("Root found at %r", candidate.indirect_reference)
+                return candidate
+        if not is_null_or_none(root) and "/Pages" in root.get_object():
+            logger.warning(
+                "Possible root found at %r, but missing /Catalog key", root.indirect_reference
+            )
+            return root.get_object()
+        raise PdfReadError("Cannot find Root object in pdf")
 
     def _catalog_name(self, key: str) -> str | None:
-        source = self._source_document()
-        if source is None:
+        if self._pdf is None:
             return None
-        value = source.resolver.resolve(source.catalog().get(key))
+        value = self._pdf.resolver.resolve(self._pdf.catalog().get(key))
         return f"/{value.value}" if isinstance(value, PdfName) else None
-
-    def _source_document(self) -> Any:
-        document = self.__dict__.get("_document")
-        return None if document is None else document.source_pdf
 
     @property
     def page_layout(self) -> str | None:
@@ -660,42 +376,52 @@ class PdfReader(PdfDocCommon, ClosingMixin):
 
     @property
     def page_labels(self) -> list[str]:
-        source = self._source_document()
-        if source is None:
+        if self._pdf is None:
             return []
-        count = len(source.pages)
-        labels = source.build_page_labels(page_count=count) or [None] * count
+        count = len(self._pdf.pages)
+        labels: Any = self._pdf.build_page_labels(page_count=count) or [None] * count
         return [label or str(index) for index, label in enumerate(labels, 1)]
 
     @property
     def pdf_header(self) -> str:
-        source = self.__dict__.get("_encrypted_source")
-        if not isinstance(source, (bytes, bytearray)):
-            source = bytes(self._source_document().raw_data)
-        return bytes(source[:8]).decode("latin-1")
+        return self._data[:8].decode("utf-8", "backslashreplace")
 
     def get_form_xfa(self) -> None:
         return None
 
+    def decode_permissions(self, permissions_code: int) -> NoReturn:
+        del permissions_code
+        raise DeprecationError(
+            "decode_permissions is deprecated and was removed in pypdf 5.0.0. "
+            "Use user_access_permissions instead."
+        )
+
     def close(self) -> None:
-        if self._document is not None:
-            self._document.close()
+        if self._stream_opened:
+            self.stream.close()
+        if self._pdf is not None:
+            self._pdf.close()
+        self.flattened_pages = []
+        self.resolved_objects = {}
+        self.__dict__["_generic_trailer"] = DictionaryObject()
 
     @property
     def is_encrypted(self) -> bool:
-        return self._decryption_pending or bool(
-            getattr(getattr(self._document, "pdf", None), "decipher", None)
-        )
+        return self._decryption_pending or bool(getattr(self._pdf, "decipher", None))
 
-    def decrypt(self, password: str) -> bool:
+    def decrypt(self, password: str | bytes) -> bool:
+        if not self.is_encrypted:
+            raise PdfReadError("Not encrypted file")
         if not self._decryption_pending:
-            return not self.is_encrypted
+            return True
+        text = password.decode("utf-8", "replace") if isinstance(password, bytes) else password
         try:
-            document = StructuredState.open(self._encrypted_source, password=password)
-        except PdfUnsupportedError:
+            pdf = PdfDocument.open(self._data, password=text)
+        except PdfPasswordError, PdfUnsupportedError:
             return False
+        self._pdf = pdf
         self._decryption_pending = False
-        self._bind(document)
+        self.__dict__.pop("_generic_trailer", None)
         return True
 
 
@@ -748,12 +474,10 @@ __all__ = (
     "Transformation",
     "PdfWriter",
     "Destination",
-    "PdfPageObject",
     "PdfReader",
     "Rectangle",
 )
 
+from ._page import _VirtualList  # noqa: E402
 from ._page_merge import Transformation  # noqa: E402
 from ._writer import PageObject, PdfWriter  # noqa: E402
-
-PageObject.register(PdfPageObject)

@@ -96,10 +96,6 @@ def as_matrix(ctm: Transformation | Matrix) -> Matrix:
     return ctm.ctm if isinstance(ctm, Transformation) else ctm
 
 
-def page_dictionary(page: Any) -> DictionaryObject:
-    return page if isinstance(page, DictionaryObject) else page._generic_dictionary()
-
-
 def _box(page: DictionaryObject, *keys: str) -> RectangleObject:
     for key in keys:
         box = page.get_inherited(key)
@@ -351,7 +347,7 @@ def merge_page(
     over: bool = True,
     expand: bool = False,
 ) -> None:
-    source = page_dictionary(other)
+    source = other
     merge = _Merge(page, source)
     rename = merge.resources()
     merge.annotations(ctm)

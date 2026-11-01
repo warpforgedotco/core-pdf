@@ -679,6 +679,13 @@ class StreamObject(DictionaryObject):
         """The bytes a file holds for this stream, still encoded by its /Filter."""
         return self._data
 
+    def decode_as_image(self, pillow_parameters: dict[str, Any] | None = None) -> Any:
+        from core_pdf_compat.pypdf._images import xobject_image
+
+        if self.get("/Subtype", "") != "/Image":
+            logger.warning("%s does not seem to be an Image", self.indirect_reference)
+        return xobject_image(self, pillow_parameters)[2]
+
     @staticmethod
     def initialize_from_dictionary(
         data: dict[str, Any],
