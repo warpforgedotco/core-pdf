@@ -2,19 +2,30 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import secrets
+import sys
+import uuid
 import warnings
-from collections.abc import Iterable, Iterator
-from io import BytesIO
+from collections.abc import Iterable
+from copy import copy
+from io import BytesIO, IOBase
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, NamedTuple, cast
 
-from core_pdf.impl.document_editing import BINARY_MARKER, serialize_body
+from core_pdf.impl.document_editing import (
+    BINARY_MARKER,
+    TRAILER_KEYS,
+    EditableDocument,
+    SavedPdf,
+    references_in,
+    serialize_body,
+)
 from core_pdf.impl.types import PdfReference, PdfString
-from core_pdf_spec.s_07_syntax.serialize import ObjectLayout
+from core_pdf_spec.s_07_syntax.serialize import ObjectLayout, serialize_object
 
-from ._doc_common import PdfDocCommon
+from ._doc_common import DocumentInformation, PdfDocCommon, _VirtualList, highest_header
 from ._encryption import EncryptAlgorithm, Encryption
 from ._generic_trees import EmbeddedFile
 from ._images import (
@@ -41,26 +52,57 @@ from ._text import (
     extract_layout_text,
     extract_legacy_text,
 )
+from ._writer_merge import MergeWriter
+from ._writer_outline import OutlineWriter
 from .actions import Action
 from .constants import UserAccessPermissions
-from .errors import PageSizeNotDefinedError
+from .errors import (
+    DeprecationError,
+    LimitReachedError,
+    PageSizeNotDefinedError,
+    PdfReadError,
+    PyPdfError,
+)
 from .generic import (
+    PAGE_FIT,
     ArrayObject,
+    ByteStringObject,
     ContentStream,
+    Destination,
     DictionaryObject,
-    FloatObject,
     IndirectObject,
     NameObject,
     NullObject,
     NumberObject,
+    PdfObject,
     RectangleObject,
     StreamObject,
     TextStringObject,
+    ViewerPreferences,
+    create_string_object,
     is_null_or_none,
     to_core,
 )
 
 logger = logging.getLogger(__name__)
+
+LAYOUTS = (
+    "/NoLayout",
+    "/SinglePage",
+    "/OneColumn",
+    "/TwoColumnLeft",
+    "/TwoColumnRight",
+    "/TwoPageLeft",
+    "/TwoPageRight",
+)
+MODES = (
+    "/UseNone",
+    "/UseOutlines",
+    "/UseThumbs",
+    "/FullScreen",
+    "/UseOC",
+    "/UseAttachments",
+)
 
 
 ALL_DOCUMENT_PERMISSIONS = UserAccessPermissions.all()
@@ -198,7 +240,10 @@ class PageObject(DictionaryObject):
 
     @property
     def page_number(self) -> int | None:
-        pages = self.pdf._page_list()
+        document = self.pdf
+        if document is None:
+            return None
+        pages = document._page_list()
         return next((index for index, page in enumerate(pages) if page is self), None)
 
     @property
@@ -423,24 +468,27 @@ class PageObject(DictionaryObject):
         return self
 
 
-class PageObjects:
-    def __init__(self, writer: PdfWriter) -> None:
-        self.writer = writer
+class SaveReport(NamedTuple):
+    """How the last save was made. Every write sets ``PdfWriter.last_save``.
 
-    def __len__(self) -> int:
-        return len(self.writer._page_list())
+    A full rewrite holds only what the document reaches. An incremental update keeps the
+    source's bytes, so ``superseded`` objects stay readable in their earlier version, and so
+    do ``removed`` ones, which the document no longer reaches.
+    """
 
-    def __iter__(self) -> Iterator[PageObject]:
-        return iter(self.writer._page_list())
-
-    def __getitem__(self, index: Any) -> Any:
-        return self.writer._page_list()[index]
-
-    def __delitem__(self, index: Any) -> None:
-        self.writer.remove_page(index)
+    kind: Literal["full", "incremental"]
+    objects_written: int
+    superseded: tuple[int, ...]
+    removed: tuple[int, ...]
 
 
-class PdfWriter(PdfDocCommon):
+def _digest(value: Any) -> bytes | None:
+    if value is None:
+        return None
+    return hashlib.blake2b(serialize_object(to_core(value)), digest_size=16).digest()
+
+
+class PdfWriter(OutlineWriter, MergeWriter, PdfDocCommon):
     def __init__(
         self,
         fileobj: Any = "",
@@ -448,50 +496,114 @@ class PdfWriter(PdfDocCommon):
         incremental: bool = False,
         full: bool = False,
         strict: bool = False,
+        *,
+        keep_initial_header: bool = False,
+        incremental_clone_object_count_limit: int | None = 500_000,
+        incremental_clone_object_id_limit: int | None = 1_000_000,
     ) -> None:
-        del full
         self.strict = strict
-        if incremental:
-            raise NotImplementedError("core-pdf has no PDF writer: incremental mode")
-        self.fileobj = fileobj if isinstance(fileobj, (str, Path)) and fileobj else ""
-        source = clone_from
-        if source is None and fileobj != "" and not isinstance(fileobj, (str, Path)):
-            source = fileobj
-        path = Path(fileobj) if isinstance(fileobj, (str, Path)) and fileobj else None
-        if source is None and path is not None and path.exists() and path.stat().st_size:
-            source = fileobj
+        self.incremental = incremental or full
         self._objects: list[Any] = []
         # For each source document, by id, its object numbers' numbers here. The document
         # is kept too, because an id can be reused once its object is freed.
         self._id_translated: dict[int, dict[Any, Any]] = {}
         self._reserved_pages: set[int] = set()
-        self.incremental = False
         self._encryption: Encryption | None = None
         self._encrypt_entry: dict[Any, Any] | None = None
         self._file_id: bytes | None = None
-        self._reader = None
-        # Objects are numbered as in pypdf: the information dictionary, pages, then catalog.
-        self._info = DictionaryObject()
-        self._info[NameObject("/Producer")] = TextStringObject("pypdf")
-        self._add_object(self._info)
-        self._pages_object = self._new_pages_tree()
-        catalog = DictionaryObject()
-        catalog[NameObject("/Type")] = NameObject("/Catalog")
-        catalog[NameObject("/Pages")] = self._pages_object.indirect_reference
-        self._root_object = catalog
-        self._add_object(catalog)
-        if source is not None:
-            self.append(source)
-            self._clone_xmp_metadata(source)
+        self._cloning = False
+        self._idnum_hash: dict[bytes, Any] = {}
+        # For an incremental update: a digest of each object as read, and what the file reached.
+        self._original_hash: list[bytes | None] = []
+        self._original_reachable: set[int] = set()
+        self.last_save: SaveReport | None = None
+        self._objects_written = 0
+        self._info_obj: Any = None
+        self._ID: Any = None
+        self.flattened_pages: list[PageObject] = []
+        self._count_limit = incremental_clone_object_count_limit or sys.maxsize
+        self._id_limit = incremental_clone_object_id_limit or sys.maxsize
+        self._header = b"%PDF-1.3"
+        if self.incremental:
+            fileobj = self._incremental_source(fileobj)
+            self._reader = fileobj
+            self._header = fileobj.pdf_header.encode()
+        else:
+            self._info_obj = self._add_object(
+                DictionaryObject({NameObject("/Producer"): TextStringObject("pypdf")})
+            )
+        source = self._clone_source(fileobj, clone_from)
+        self.temp_fileobj = fileobj
+        self.fileobj: Any = fileobj if isinstance(fileobj, (str, Path)) else ""
+        self._cloned = False
+        if source is None:
+            self._pages = self._add_object(
+                DictionaryObject(
+                    {
+                        NameObject("/Type"): NameObject("/Pages"),
+                        NameObject("/Count"): NumberObject(0),
+                        NameObject("/Kids"): ArrayObject(),
+                    }
+                )
+            )
+            self._root_object = DictionaryObject(
+                {NameObject("/Type"): NameObject("/Catalog"), NameObject("/Pages"): self._pages}
+            )
+            self._add_object(self._root_object)
+        else:
+            reader: Any = source if isinstance(source, PdfDocCommon) else self._reader_for(source)
+            self.clone_document_from_reader(reader)
+            self._cloned = True
+            if keep_initial_header and not self.incremental:
+                self._header = reader.pdf_header.encode()
+        if full and not incremental:
+            self.incremental = False
 
-    def _clone_xmp_metadata(self, source: Any) -> None:
+    @staticmethod
+    def _incremental_source(fileobj: Any) -> Any:
         from . import PdfReader
 
-        reader = source if isinstance(source, PdfReader) else self._reader_for(source)
-        catalog = reader.root_object
-        if "/Metadata" in catalog:
-            metadata = self._import(dict.__getitem__(catalog, "/Metadata"), reader)
-            self._root_object[NameObject("/Metadata")] = metadata
+        if isinstance(fileobj, (str, Path)):
+            fileobj = BytesIO(Path(fileobj).read_bytes())
+        if isinstance(fileobj, BytesIO):
+            fileobj = PdfReader(fileobj)
+        if not isinstance(fileobj, PdfReader):
+            raise PyPdfError("Invalid type for incremental mode")
+        return fileobj
+
+    @staticmethod
+    def _clone_source(fileobj: Any, clone_from: Any) -> Any:
+        """The document to start from: pypdf also takes it in place of the output file."""
+        if isinstance(fileobj, (str, Path, BytesIO)) and (fileobj == "" or clone_from is not None):
+            return clone_from
+        if isinstance(fileobj, (str, Path)):
+            path = Path(fileobj)
+            return fileobj if path.exists() and path.stat().st_size else clone_from
+        if isinstance(fileobj, IOBase):
+            position = fileobj.tell()
+            empty = fileobj.seek(0, 2) == 0
+            fileobj.seek(position)
+            return clone_from if empty else fileobj
+        return fileobj
+
+    @property
+    def _info(self) -> DictionaryObject | None:
+        return None if self._info_obj is None else self._info_obj.get_object()
+
+    @_info.setter
+    def _info(self, value: Any) -> None:
+        if value is None:
+            if self._info_obj is not None:
+                self._objects[self._info_obj.idnum - 1] = None
+            self._info_obj = None
+            return
+        if self._info_obj is None:
+            self._info_obj = self._add_object(DictionaryObject())
+        info = self._info_obj.get_object()
+        items = list(dict.items(value.get_object()))
+        info.clear()
+        for key, item in items:
+            dict.__setitem__(info, key, item)
 
     @property
     def xmp_metadata(self) -> Any:
@@ -513,29 +625,29 @@ class PdfWriter(PdfDocCommon):
             catalog[NameObject("/Metadata")] = self._add_object(stream)
         stream.set_data(value if isinstance(value, bytes) else value.stream.get_data())
 
-    def _new_pages_tree(self) -> DictionaryObject:
-        pages = DictionaryObject()
-        pages[NameObject("/Type")] = NameObject("/Pages")
-        pages[NameObject("/Count")] = NumberObject(0)
-        pages[NameObject("/Kids")] = ArrayObject()
-        self._add_object(pages)
-        return pages
+    @property
+    def with_as_usage(self) -> bool:
+        raise DeprecationError("with_as_usage is deprecated and was removed in pypdf 5.0.")
+
+    @with_as_usage.setter
+    def with_as_usage(self, value: bool) -> None:
+        del value
+        raise DeprecationError("with_as_usage is deprecated and was removed in pypdf 5.0.")
 
     def __enter__(self) -> PdfWriter:
         return self
 
     def __exit__(self, *_: object) -> None:
-        if self.fileobj:
-            self.write(self.fileobj)
+        # An existing file was the source. pypdf leaves it alone, so it is not overwritten.
+        if self.temp_fileobj and not self._cloned:
+            self.write(self.temp_fileobj)
 
     def close(self) -> None:
         return None
 
-    def __getattr__(self, name: str) -> Any:
-        # Tests that reach a method not built yet skip rather than fail.
-        if name.startswith("__"):
-            raise AttributeError(name)
-        raise NotImplementedError(f"core-pdf has no PDF writer: {name}")
+    def __deepcopy__(self, memo: Any) -> PdfWriter:
+        # A deep copy of a page keeps its document, as a copied reference does.
+        return self
 
     def _translation(self, source: Any) -> dict[Any, Any]:
         return self._id_translated.setdefault(id(source), {"PreventGC": source})
@@ -566,13 +678,35 @@ class PdfWriter(PdfDocCommon):
         return numbers
 
     def _replace_object(self, indirect: Any, obj: Any) -> Any:
-        self._objects[indirect.idnum - 1] = obj
-        obj.indirect_reference = indirect
+        if isinstance(indirect, IndirectObject):
+            if indirect.pdf is not self:
+                raise ValueError("PDF must be self")
+            number = indirect.idnum
+        else:
+            number = indirect
+        current = getattr(obj, "indirect_reference", None)
+        if current is not None and current.pdf is not self:
+            imported: Any = self._import(obj, current.pdf)
+            obj = imported.get_object() if isinstance(imported, IndirectObject) else imported
+        generation = getattr(indirect, "generation", 0)
+        self._objects[number - 1] = obj
+        obj.indirect_reference = IndirectObject(number, generation, self)
         return obj
 
     def get_object(self, indirect_reference: Any) -> Any:
+        if isinstance(indirect_reference, IndirectObject) and indirect_reference.pdf is not self:
+            raise ValueError("PDF must be self")
         number = getattr(indirect_reference, "idnum", indirect_reference)
-        return self._objects[number - 1] if 0 < number <= len(self._objects) else None
+        found = self._objects[number - 1] if 0 < number <= len(self._objects) else None
+        if found is None:
+            raise PdfReadError(f"Object {indirect_reference!r} not found!")
+        return found
+
+    def get_reference(self, obj: Any) -> IndirectObject:
+        reference = getattr(obj, "indirect_reference", None)
+        if reference is not None and reference.pdf is self:
+            return reference
+        return IndirectObject(self._objects.index(obj) + 1, 0, self)
 
     @property
     def root_object(self) -> DictionaryObject:
@@ -580,43 +714,136 @@ class PdfWriter(PdfDocCommon):
 
     @property
     def pdf_header(self) -> str:
-        return "%PDF-1.7"
+        return self._header.decode()
+
+    @pdf_header.setter
+    def pdf_header(self, value: str | bytes) -> None:
+        self._header = value.encode() if isinstance(value, str) else value
 
     @property
-    def metadata(self) -> DictionaryObject:
-        return self._info
+    def metadata(self) -> DocumentInformation | None:
+        info = self._info
+        if info is None:
+            return None
+        output = DocumentInformation()
+        for key, value in dict.items(info):
+            dict.__setitem__(output, key, value)
+        output.indirect_reference = self._info_obj
+        return output
 
-    def add_metadata(self, infos: dict[str, Any]) -> None:
-        for key, value in infos.items():
-            text = value if isinstance(value, TextStringObject) else TextStringObject(str(value))
-            self._info[NameObject(key)] = text
+    @metadata.setter
+    def metadata(self, value: Any) -> None:
+        if value is None:
+            self._info = None
+            return
+        if self._info is not None:
+            self._info.clear()
+        self.add_metadata(value)
+
+    def add_metadata(self, infos: Any) -> None:
+        if isinstance(infos, PdfObject):
+            infos = infos.get_object()
+        if self._info is None:
+            self._info = DictionaryObject()
+        info = cast(DictionaryObject, self._info)
+        for key, value in list(infos.items()):
+            value = value.get_object() if isinstance(value, PdfObject) else value
+            info[NameObject(key)] = create_string_object(str(value))
 
     @property
-    def pages(self) -> PageObjects:
-        return PageObjects(self)
+    def pages(self) -> _VirtualList:  # ty: ignore[invalid-property-type-override]
+        return _VirtualList(self.get_num_pages, self.get_page)
+
+    def get_num_pages(self) -> int:
+        return len(self.flattened_pages)
+
+    def get_page(self, page_number: int) -> PageObject:
+        return self.flattened_pages[page_number]
 
     def _page_list(self) -> list[PageObject]:
-        kids = self._pages_object.get_resolved("/Kids")
-        return [kid.get_object() for kid in kids]
+        return self.flattened_pages
 
-    def _insert(self, page: PageObject, index: int) -> PageObject:
-        reference = self._add_object(page)
-        page[NameObject("/Parent")] = self._pages_object.indirect_reference
-        kids = self._pages_object.get_resolved("/Kids")
-        kids.insert(index, reference)
-        self._pages_object[NameObject("/Count")] = NumberObject(len(kids))
-        return page
+    def _get_page_number_by_indirect(self, indirect_reference: Any) -> int | None:
+        if is_null_or_none(indirect_reference):
+            return None
+        if isinstance(indirect_reference, int):
+            indirect_reference = IndirectObject(indirect_reference, 0, self)
+        target = indirect_reference.get_object()
+        return target.page_number if isinstance(target, PageObject) else None
 
-    def add_page(self, page: Any, excluded_keys: Iterable[str] = ()) -> PageObject:
-        return self.insert_page(page, len(self.pages), excluded_keys)
+    def get_page_number(self, page: Any) -> int | None:
+        return page.page_number if isinstance(page, PageObject) else None
+
+    def _get_page_in_node(self, page_number: int) -> tuple[DictionaryObject, int]:
+        """The tree node and /Kids position of a page, or the top node and -1 past the end."""
+        top = self.root_object["/Pages"]
+
+        def search(node: DictionaryObject, low: int) -> tuple[Any, int]:
+            size = node.get_resolved("/Count", 1)
+            if node["/Type"] == "/Page":
+                return (node, -1) if page_number == low else (None, low + 1)
+            if page_number - low >= size:
+                return (top, -1) if node == top else (None, low + size)
+            for index, kid in enumerate(node["/Kids"]):
+                found, position = search(kid.get_object(), low)
+                if found is not None:
+                    return (node, index) if position < 0 else (found, position)
+                low = position
+            raise PyPdfError("Unexpectedly cannot find the node.")
+
+        if page_number < 0:
+            raise PyPdfError("Invalid page number")
+        return search(top, 0)
+
+    def _add_page(self, page: Any, index: int, excluded_keys: Iterable[Any] = ()) -> PageObject:
+        if not isinstance(page, PageObject) or page.get("/Type") != "/Page":
+            raise ValueError("Invalid page object")
+        annotations = page.get_resolved("/Annots")
+        if not (is_null_or_none(annotations) or isinstance(annotations, ArrayObject)):
+            logger.warning(
+                "Expected annotation arrays: %s %s. Ignoring annotations.",
+                annotations,
+                ArrayObject(),
+            )
+        # Numbers in the list mean a limit on the depth in pypdf: only the page's level is cut.
+        excluded = {key for key in excluded_keys if isinstance(key, str)}
+        output = self._import_page(page, excluded | {"/Parent", "/StructParents"})
+        source = page.pdf
+        if source is not None:
+            self._header = highest_header(self.pdf_header, source.pdf_header).encode()
+        node, position = self._get_page_in_node(index)
+        output[NameObject("/Parent")] = node.indirect_reference
+        reference = cast(IndirectObject, output.indirect_reference)
+        if position >= 0:
+            node["/Kids"].insert(position, reference)
+            self.flattened_pages.insert(index, output)
+        else:
+            node["/Kids"].append(reference)
+            self.flattened_pages.append(output)
+        current: Any = node
+        for _ in range(1000):
+            if is_null_or_none(current):
+                return output
+            item = current.get_object()
+            item[NameObject("/Count")] = NumberObject(item["/Count"] + 1)
+            current = item.get("/Parent")
+        raise PyPdfError("Too many recursive calls!")
+
+    def add_page(self, page: Any, excluded_keys: Iterable[Any] = ()) -> PageObject:
+        return self._add_page(page, len(self.flattened_pages), excluded_keys)
 
     def insert_page(
-        self, page: Any, index: int = 0, excluded_keys: Iterable[str] = ()
+        self, page: Any, index: int = 0, excluded_keys: Iterable[Any] = ()
     ) -> PageObject:
-        return self._insert(self._import_page(page, set(excluded_keys)), index)
+        count = len(self.flattened_pages)
+        if index < 0:
+            index += count
+        if index < 0:
+            raise ValueError("Invalid index value")
+        return self._add_page(page, min(index, count), excluded_keys)
 
     def add_blank_page(self, width: float | None = None, height: float | None = None) -> PageObject:
-        return self.insert_blank_page(width, height, len(self.pages))
+        return self.add_page(PageObject.create_blank_page(self, width, height))
 
     def insert_blank_page(
         self, width: float | None = None, height: float | None = None, index: int = 0
@@ -633,46 +860,65 @@ class PdfWriter(PdfDocCommon):
             box = self.pages[min(index, len(self.pages) - 1)].mediabox
             width = box.width if width_unset else width
             height = box.height if height_unset else height
-        page = PageObject()
-        page[NameObject("/Type")] = NameObject("/Page")
-        page[NameObject("/MediaBox")] = RectangleObject((0, 0, width, height))
-        page[NameObject("/Resources")] = DictionaryObject()
-        return self._insert(page, index)
+        return self.insert_page(PageObject.create_blank_page(self, width, height), index)
 
-    def remove_page(self, page: Any) -> None:
-        kids = self._pages_object.get_resolved("/Kids")
-        index = page if isinstance(page, int) else self._page_list().index(page)
-        del kids[index]
-        self._pages_object[NameObject("/Count")] = NumberObject(len(kids))
+    def remove_page(self, page: Any, clean: bool = False) -> None:
+        if isinstance(page, IndirectObject):
+            target = page.get_object()
+            if not isinstance(target, PageObject):
+                logger.warning("IndirectObject is not referencing a page")
+                return
+            page = target
+        if not isinstance(page, int):
+            try:
+                page = self.flattened_pages.index(page)
+            except ValueError:
+                logger.warning("Cannot find page in pages")
+                return
+        if not 0 <= page < len(self.flattened_pages):
+            logger.warning("Page number is out of range")
+            return
+        reference = self.flattened_pages[page].indirect_reference
+        del self.pages[page]
+        if clean and reference is not None:
+            self._replace_object(reference, NullObject())
 
     def _import_page(self, page: Any, excluded: set[str]) -> PageObject:
-        if not isinstance(page, PageObject):
-            raise ValueError("Invalid page object")
-        source = page
-        reference = source.indirect_reference
+        reference = page.indirect_reference
         owner = getattr(reference, "pdf", None)
         translated = self._translation(owner)
-        # A link imported earlier may already have reserved this page's number. Adding a page
-        # again makes a separate copy.
-        reserved = None
-        if reference is not None and reference.idnum in self._reserved_pages:
-            reserved = translated.get(reference.idnum)
-        output = PageObject() if reserved is None else self.get_object(reserved)
+        # A link imported earlier may already have reserved this page's number. Any other
+        # page gets a dictionary of its own, as a file may not list one object twice.
+        known = None if reference is None else translated.get(reference.idnum)
+        output: Any = self.get_object(known) if known in self._reserved_pages else PageObject()
+        number = self._add_object(output).idnum
+        self._reserved_pages.discard(number)
         if reference is not None:
-            translated[reference.idnum] = self._add_object(output).idnum
-            self._reserved_pages.discard(reference.idnum)
-        for key, value in dict.items(source):
-            if key in {"/Parent", *excluded}:
-                continue
-            dict.__setitem__(output, key, self._import(value, owner))
+            translated[reference.idnum] = number
+        for key, value in dict.items(page):
+            if key not in excluded:
+                dict.__setitem__(output, key, self._import(value, owner))
         for key in ("/Resources", "/MediaBox", "/CropBox", "/Rotate"):
-            if key not in output and key not in excluded and hasattr(source, "get_inherited"):
-                inherited = source.get_inherited(key)
+            if key not in output and key not in excluded:
+                inherited = page.get_inherited(key)
                 if inherited is not None:
                     dict.__setitem__(output, NameObject(key), self._import(inherited, owner))
         return output
 
     def _import(self, value: Any, owner: Any) -> Any:
+        """Copy a value from another document, with what it refers to.
+
+        References go on a list rather than through recursion: outline items chain through
+        /Next, and a real outline can be longer than Python's stack.
+        """
+        pending: list[tuple[Any, Any, Any]] = []
+        output = self._bring(value, owner, pending)
+        while pending:
+            duplicate, source, source_owner = pending.pop()
+            self._fill_copy(duplicate, source, source_owner, pending)
+        return output
+
+    def _bring(self, value: Any, owner: Any, pending: list[Any]) -> Any:
         if isinstance(value, IndirectObject):
             if value.pdf is self:
                 return value
@@ -682,85 +928,304 @@ class PdfWriter(PdfDocCommon):
             if value.idnum in translated:
                 return IndirectObject(translated[value.idnum], 0, self)
             target = value.get_object()
-            if isinstance(target, DictionaryObject) and target.get_resolved("/Type") == "/Page":
+            if target is None:
+                target = NullObject()
+            is_page = (
+                isinstance(target, DictionaryObject) and target.get_resolved("/Type") == "/Page"
+            )
+            if is_page and not self._cloning:
                 # Hold the number. If this page is never imported, the link goes to null.
                 reference = self._add_object(PageObject())
                 translated[value.idnum] = reference.idnum
-                self._reserved_pages.add(value.idnum)
+                self._reserved_pages.add(reference.idnum)
                 return reference
-            copy = self._empty_copy(target)
-            reference = self._add_object(copy)
+            duplicate = self._empty_copy(target)
+            if duplicate is target:
+                # A plain value is shared with the source, which must keep its own reference.
+                duplicate = copy(target)
+                duplicate.indirect_reference = None
+            reference = self._add_object(duplicate)
             translated[value.idnum] = reference.idnum
-            self._fill_copy(copy, target, owner)
+            pending.append((duplicate, target, owner))
             return reference
-        copy = self._empty_copy(value)
-        self._fill_copy(copy, value, owner)
+        duplicate = self._empty_copy(value)
+        pending.append((duplicate, value, owner))
         # A page built outside a writer can hold a stream directly, which PDF does not allow.
-        return self._add_object(copy) if isinstance(copy, StreamObject) else copy
+        return self._add_object(duplicate) if isinstance(duplicate, StreamObject) else duplicate
 
     @staticmethod
     def _empty_copy(value: Any) -> Any:
         if isinstance(value, StreamObject):
-            copy = ContentStream(None, None) if isinstance(value, ContentStream) else type(value)()
+            duplicate = (
+                ContentStream(None, None) if isinstance(value, ContentStream) else type(value)()
+            )
             # The stored bytes stay encoded, so they keep matching the copied /Filter.
-            copy._data = value._stored_data()
-            return copy
+            duplicate._data = value._stored_data()
+            return duplicate
         if isinstance(value, DictionaryObject):
             return DictionaryObject()
         if isinstance(value, ArrayObject):
             return ArrayObject()
-        if isinstance(value, (NumberObject, FloatObject, str, bytes)):
-            return value
         return value
 
-    def _fill_copy(self, copy: Any, value: Any, owner: Any) -> None:
+    def _fill_copy(self, duplicate: Any, value: Any, owner: Any, pending: list[Any]) -> None:
         if isinstance(value, DictionaryObject):
             for key, item in dict.items(value):
-                dict.__setitem__(copy, key, self._import(item, owner))
+                dict.__setitem__(duplicate, key, self._bring(item, owner, pending))
         elif isinstance(value, ArrayObject):
-            copy.extend(self._import(item, owner) for item in value)
+            duplicate.extend(self._bring(item, owner, pending) for item in value)
 
-    def append(self, source: Any, outline_item: Any = None, pages: Any = None, **_: Any) -> None:
-        del outline_item
-        from . import PdfReader
+    def clone_reader_document_root(self, reader: Any) -> None:
+        self._info_obj = None
+        if self.incremental:
+            self._clone_in_place(reader)
+        else:
+            self._objects.clear()
+            self._id_translated.clear()
+            self._cloning = True
+            root = self._import(reader.trailer.raw_get("/Root"), reader)
+            self._cloning = False
+            self._root_object = root.get_object()
+            self._add_object(self._root_object)
+            self._pages = self._add_object(self._root_object["/Pages"])
+            self._root_object[NameObject("/Pages")] = self._pages
+        self._check_trailer_size(reader)
+        # Before flattening, which moves inherited entries into the pages as pypdf does.
+        if self.incremental:
+            self._original_hash = [_digest(item) for item in self._objects]
+            self._original_reachable = {ref.object_number for ref in self._reachable()}
+        self._flatten()
+        for page in self.flattened_pages:
+            self._replace_object(page.indirect_reference, page)
+            if not self.incremental:
+                page[NameObject("/Parent")] = self._pages
+        if not self.incremental:
+            pages = self._pages.get_object()
+            references = [page.indirect_reference for page in self.flattened_pages]
+            pages[NameObject("/Kids")] = ArrayObject(references)
+            pages[NameObject("/Count")] = NumberObject(len(references))
 
-        reader = source if isinstance(source, PdfReader) else self._reader_for(source)
-        indexes = range(len(reader.pages)) if pages is None else self._page_indexes(pages, reader)
-        selected = list(indexes)
-        for index in selected:
-            self.add_page(reader.pages[index])
-        # Only a whole document keeps its outline: a partial append must not carry titles
-        # from pages it left out.
-        if len(set(selected)) == len(reader.pages):
-            self._import_outline(reader)
-        self._drop_unimported_pages(reader)
+    def _collect_incremental_clone_object_ids(self, reader: Any) -> list[int]:
+        found = {number for entry in reader.xref.values() for number in entry}
+        numbers = sorted((found | set(reader.xref_objStm)) - {0})
+        if len(numbers) > self._count_limit:
+            raise LimitReachedError(
+                f"Incremental clone object count {len(numbers)} exceeds "
+                f"maximum allowed count {self._count_limit}."
+            )
+        if numbers and numbers[-1] > self._id_limit:
+            raise LimitReachedError(
+                f"Incremental clone object ID {numbers[-1]} exceeds "
+                f"maximum allowed ID {self._id_limit}."
+            )
+        return numbers
 
-    def _import_outline(self, reader: Any) -> None:
-        root = reader.root_object
-        outline = root.raw_get("/Outlines") if "/Outlines" in root else None
-        if outline is None or "/Outlines" in self._root_object:
-            return
-        self._root_object[NameObject("/Outlines")] = self._import(outline, reader)
+    def _clone_in_place(self, reader: Any) -> None:
+        """Copy every object under its own number, as an update has to refer to them."""
+        numbers = self._collect_incremental_clone_object_ids(reader)
+        generations = {
+            number: generation for generation, entry in reader.xref.items() for number in entry
+        }
+        self._objects = [None] * (numbers[-1] if numbers else 0)
+        for number in numbers:
+            generation = generations.get(number, 0)
+            target = reader.get_object(IndirectObject(number, generation, reader))
+            if target is None or isinstance(target, NullObject):
+                continue
+            duplicate = self._same_numbers(target)
+            duplicate.indirect_reference = IndirectObject(number, generation, self)
+            self._objects[number - 1] = duplicate
+        reference = reader.trailer.raw_get("/Root")
+        self._root_object = self._objects[reference.idnum - 1]
+        self._pages = self._same_numbers(self._root_object.raw_get("/Pages"))
 
-    def _drop_unimported_pages(self, reader: Any) -> None:
-        translated = self._translation(reader)
-        for number in self._reserved_pages:
-            if number in translated:
-                self._objects[translated[number] - 1] = NullObject()
-        self._reserved_pages.clear()
+    def _same_numbers(self, value: Any) -> Any:
+        if isinstance(value, IndirectObject):
+            return IndirectObject(value.idnum, value.generation, self)
+        duplicate = self._empty_copy(value)
+        if isinstance(value, DictionaryObject):
+            for key, item in dict.items(value):
+                dict.__setitem__(duplicate, key, self._same_numbers(item))
+        elif isinstance(value, ArrayObject):
+            duplicate.extend(self._same_numbers(item) for item in list.__iter__(value))
+        elif duplicate is value:
+            duplicate = copy(value)
+            duplicate.indirect_reference = None
+        return duplicate
+
+    def _check_trailer_size(self, reader: Any) -> None:
+        size = reader.trailer.get_resolved("/Size")
+        count = len(self._objects)
+        if isinstance(size, int) and count > size:
+            message = f"Object count {count} exceeds defined trailer size {size}"
+            if self.strict:
+                raise PdfReadError(message)
+            logger.warning(message)
+
+    def _flatten(self) -> None:
+        """List the pages, moving what they inherit from the tree into each of them."""
+        self.flattened_pages = []
+        pages = self.root_object["/Pages"]
+        if not isinstance(pages, DictionaryObject):
+            raise PdfReadError("Invalid object in /Pages")
+        # Node, reference, inherited values, in document order.
+        stack: list[tuple[Any, Any, dict[str, Any]]] = [(pages, self._pages, {})]
+        visited: set[int] = set()
+        while stack:
+            node, reference, inherit = stack.pop()
+            kind = node.get_resolved("/Type")
+            if kind is None:
+                kind = "/Page" if "/Kids" not in node else "/Pages"
+            if kind == "/Page":
+                page = PageObject(self, reference)
+                for key, item in dict.items(node):
+                    dict.__setitem__(page, key, item)
+                for key, item in inherit.items():
+                    if key not in page:
+                        dict.__setitem__(page, key, item)
+                self.flattened_pages.append(page)
+                continue
+            if kind != "/Pages":
+                continue
+            inherited = dict(inherit)
+            for key in ("/Resources", "/MediaBox", "/CropBox", "/Rotate"):
+                if key in node:
+                    inherited[NameObject(key)] = node.raw_get(key)
+            kids = node.get_resolved("/Kids", ArrayObject())
+            if isinstance(kids, NullObject):
+                continue
+            if not isinstance(kids, ArrayObject):
+                raise PdfReadError(f"Expected /Kids to be an array, got {type(kids).__name__}.")
+            for index in range(len(kids) - 1, -1, -1):
+                kid = list.__getitem__(kids, index)
+                item = kid.get_object()
+                if not item:
+                    continue
+                if id(item) in visited:
+                    raise PdfReadError("Detected cyclic page references.")
+                visited.add(id(item))
+                stack.append((item, kid if isinstance(kid, IndirectObject) else None, inherited))
+
+    def clone_document_from_reader(self, reader: Any, after_page_append: Any = None) -> None:
+        self.clone_reader_document_root(reader)
+        info = reader.trailer.get("/Info") if not isinstance(reader, PdfWriter) else None
+        if not is_null_or_none(info):
+            target = cast(Any, info).get_object()
+            if isinstance(info, IndirectObject) and self.incremental:
+                self._info_obj = IndirectObject(info.idnum, info.generation, self)
+            else:
+                plain = DictionaryObject()
+                for key, value in dict.items(target):
+                    dict.__setitem__(plain, key, self._import(value, reader))
+                self._info_obj = self._add_object(plain)
+        identifier = reader.trailer.get_resolved("/ID")
+        if isinstance(identifier, ArrayObject):
+            self._ID = ArrayObject(
+                ByteStringObject(item.get_original_bytes())
+                if isinstance(item, TextStringObject)
+                else item
+                for item in identifier
+            )
+        if callable(after_page_append):
+            for page in self.flattened_pages:
+                after_page_append(page)
+
+    def append_pages_from_reader(self, reader: Any, after_page_append: Any = None) -> None:
+        for index in range(len(reader.pages)):
+            page = self.add_page(reader.pages[index])
+            if callable(after_page_append):
+                after_page_append(page)
+
+    def get_threads_root(self) -> ArrayObject:
+        if "/Threads" not in self._root_object:
+            self._root_object[NameObject("/Threads")] = ArrayObject()
+        return self._root_object["/Threads"]
+
+    @property
+    def threads(self) -> ArrayObject:  # ty: ignore[invalid-property-type-override]
+        return self.get_threads_root()
+
+    @property
+    def open_destination(self) -> Any:
+        return self._read_open_destination()
+
+    @open_destination.setter
+    def open_destination(self, dest: Any) -> None:
+        name = NameObject("/OpenAction")
+        if dest is None:
+            self._root_object.pop(name, None)
+        elif isinstance(dest, str):
+            self._root_object[name] = TextStringObject(dest)
+        elif isinstance(dest, Destination):
+            self._root_object[name] = dest.dest_array
+        elif isinstance(dest, PageObject):
+            page = NullObject() if dest.indirect_reference is None else dest.indirect_reference
+            self._root_object[name] = Destination("Opening", page, PAGE_FIT).dest_array
+
+    def _set_page_layout(self, layout: Any) -> None:
+        if not isinstance(layout, NameObject):
+            if layout not in LAYOUTS:
+                logger.warning("Layout should be one of: %s", ", ".join(LAYOUTS))
+            layout = NameObject(layout)
+        self._root_object[NameObject("/PageLayout")] = layout
+
+    def set_page_layout(self, layout: Any) -> None:
+        self._set_page_layout(layout)
+
+    def _get_page_layout(self) -> Any:
+        return self._root_object.get_resolved("/PageLayout")
+
+    @property
+    def page_layout(self) -> Any:
+        return self._get_page_layout()
+
+    @page_layout.setter
+    def page_layout(self, layout: Any) -> None:
+        self._set_page_layout(layout)
+
+    def _get_page_mode(self) -> Any:
+        return self._root_object.get_resolved("/PageMode")
+
+    @property
+    def page_mode(self) -> Any:
+        return self._get_page_mode()
+
+    @page_mode.setter
+    def page_mode(self, mode: Any) -> None:
+        if not isinstance(mode, NameObject):
+            if mode not in MODES:
+                logger.warning("Mode should be one of: %s", ", ".join(MODES))
+            mode = NameObject(mode)
+        self._root_object[NameObject("/PageMode")] = mode
+
+    def create_viewer_preferences(self) -> ViewerPreferences:
+        preferences = ViewerPreferences()
+        self._root_object[NameObject("/ViewerPreferences")] = self._add_object(preferences)
+        return preferences
+
+    def add_js(self, javascript: str) -> None:
+        catalog = self._root_object
+        if "/Names" not in catalog:
+            catalog[NameObject("/Names")] = DictionaryObject()
+        names = catalog["/Names"]
+        if "/JavaScript" not in names:
+            names[NameObject("/JavaScript")] = DictionaryObject(
+                {NameObject("/Names"): ArrayObject()}
+            )
+        scripts = names["/JavaScript"]["/Names"]
+        # A name tree needs a key for each entry, and any unique one will do.
+        scripts.append(create_string_object(str(uuid.uuid4())))
+        action = DictionaryObject(
+            {
+                NameObject("/Type"): NameObject("/Action"),
+                NameObject("/S"): NameObject("/JavaScript"),
+                NameObject("/JS"): TextStringObject(javascript),
+            }
+        )
+        scripts.append(self._add_object(action))
 
     def add_attachment(self, filename: str, data: str | bytes) -> EmbeddedFile:
         return EmbeddedFile._create_new(self, filename, data)
-
-    @staticmethod
-    def _page_indexes(pages: Any, reader: Any) -> Iterable[int]:
-        if isinstance(pages, (list, tuple)) and not isinstance(pages, range):
-            if len(pages) in {2, 3} and all(isinstance(item, int) for item in pages):
-                return range(*pages)
-            return pages
-        if hasattr(pages, "indices"):
-            return range(*pages.indices(len(reader.pages)))
-        return pages
 
     @staticmethod
     def _reader_for(source: Any) -> Any:
@@ -768,11 +1233,22 @@ class PdfWriter(PdfDocCommon):
 
         return PdfReader(source)
 
-    def clone_document_from_reader(self, reader: Any, *_: Any) -> None:
-        self.append(reader)
+    def list_objects_in_increment(self) -> list[IndirectObject]:
+        """The new and changed objects an incremental save writes."""
+        known = len(self._original_hash)
+        return [
+            item.indirect_reference
+            for index, item in enumerate(self._objects)
+            if item is not None and (index >= known or _digest(item) != self._original_hash[index])
+        ]
 
-    def append_pages_from_reader(self, reader: Any, *_: Any) -> None:
-        self.append(reader)
+    def write_stream(self, stream: Any) -> None:
+        if hasattr(stream, "mode") and "b" not in stream.mode:
+            logger.warning(
+                "File <%s> to write to is not in binary mode. It may not be written to correctly.",
+                stream.name,
+            )
+        stream.write(self.write_bytes())
 
     def encrypt(
         self,
@@ -784,6 +1260,10 @@ class PdfWriter(PdfDocCommon):
         algorithm: str | None = None,
     ) -> None:
         """Encrypt the written file, as pypdf does. Only the key is kept, not the passwords."""
+        if self.incremental:
+            raise NotImplementedError(
+                "Encrypting incremental PDF files is currently not supported."
+            )
         if algorithm is None:
             chosen = EncryptAlgorithm.RC4_128 if use_128bit else EncryptAlgorithm.RC4_40
         else:
@@ -792,7 +1272,8 @@ class PdfWriter(PdfDocCommon):
             except KeyError:
                 raise ValueError(f"Algorithm '{algorithm}' NOT supported") from None
         if self._file_id is None:
-            self._file_id = secrets.token_bytes(16)
+            known = None if self._ID is None else self._ID[0]
+            self._file_id = secrets.token_bytes(16) if known is None else bytes(known)
         encryption = Encryption.make(chosen, permissions_flag, self._file_id)
         self._encrypt_entry = encryption.write_entry(
             user_password, owner_password or user_password, strict=self.strict
@@ -804,27 +1285,59 @@ class PdfWriter(PdfDocCommon):
         return self._encryption is not None
 
     def write(self, stream: Any) -> tuple[bool, Any]:
-        data = self._serialized()
+        if stream == "":
+            raise ValueError(f"Output({stream=}) is empty.")
         if isinstance(stream, (str, Path)):
-            Path(stream).write_bytes(data)
-            return True, stream
-        stream.write(data)
+            with Path(stream).open("wb") as handle:
+                self.write_stream(handle)
+            return True, handle
+        self.write_stream(stream)
+        stream.flush()
         return False, stream
 
+    def _reachable(self) -> dict[PdfReference, Any]:
+        """Core forms of the objects the file reaches.
+
+        A full rewrite leaves out anything else, so removed pages and images are gone from
+        the output rather than kept as unused objects.
+        """
+        trailer = self._trailer()
+        output: dict[PdfReference, Any] = {}
+        pending = references_in(trailer)
+        visited: set[int] = set()
+        while pending:
+            reference = pending.pop()
+            number = reference.object_number
+            if number in visited or not 0 < number <= len(self._objects):
+                continue
+            visited.add(number)
+            item = self._objects[number - 1]
+            if item is None:
+                continue
+            core = None if number in self._reserved_pages else to_core(item)
+            output[PdfReference(number, 0)] = core
+            pending.extend(references_in(core))
+        return output
+
+    def _trailer(self) -> dict[str, Any]:
+        trailer = {"Root": to_core(self._root_object.indirect_reference)}
+        if self._info_obj is not None:
+            trailer["Info"] = to_core(self._info_obj)
+        if self._ID is not None:
+            trailer["ID"] = to_core(self._ID)
+        return trailer
+
     def _serialized(self) -> bytes:
-        objects = {
-            PdfReference(index, 0): to_core(item) for index, item in enumerate(self._objects, 1)
-        }
-        trailer = {
-            "Root": to_core(self._root_object.indirect_reference),
-            "Info": to_core(self._info.indirect_reference),
-        }
-        header = b"%PDF-1.7\n" + BINARY_MARKER
+        header = self._header + b"\n" + BINARY_MARKER
+        objects = self._reachable()
+        self._objects_written = len(objects)
+        trailer = self._trailer()
         security = None
         exempt = set[int]()
         if self._encryption is not None:
             security = self._encryption.handler
-            entry = PdfReference(len(objects) + 1, 0)
+            # Past every object in the table, as what is left out keeps its number.
+            entry = PdfReference(len(self._objects) + 1, 0)
             objects[entry] = self._encrypt_entry
             exempt.add(entry.object_number)
             identifier = PdfString(self._file_id or b"", is_literal=False)
@@ -833,8 +1346,65 @@ class PdfWriter(PdfDocCommon):
             len(header), objects, trailer, ObjectLayout.SPACED, security=security, exempt=exempt
         )
 
-    def write_bytes(self) -> bytes:
-        return self._serialized()
+    def _incremental_update(self) -> SavedPdf | bytes:
+        """The source's bytes, unchanged, followed by the objects that changed."""
+        changed = self.list_objects_in_increment()
+        document = self._reader._pdf
+        editable = EditableDocument(document)
+        trailer = self._trailer()
+        same_trailer = all(editable.trailer.get(key) == trailer.get(key) for key in TRAILER_KEYS)
+        if not changed and same_trailer:
+            return bytes(document.raw_data)
+        for reference in changed:
+            core = to_core(reference.get_object())
+            editable.set_object(PdfReference(reference.idnum, reference.generation), core)
+        editable.next_object_number = max(editable.next_object_number, len(self._objects) + 1)
+        for key in TRAILER_KEYS:
+            editable.trailer.pop(key, None)
+        editable.trailer.update(trailer)
+        # An xref stream either way, as in pypdf.
+        return editable.save_incremental(xref_stream=True)
+
+    def _report_save(self) -> None:
+        if not self.incremental:
+            self.last_save = SaveReport("full", self._objects_written, (), ())
+            return
+        changed = {reference.idnum for reference in self.list_objects_in_increment()}
+        present = {
+            reference.object_number
+            for reference, value in self._reachable().items()
+            if value is not None
+        }
+        removed = tuple(sorted(self._original_reachable - present))
+        superseded = tuple(
+            number for number in sorted(changed) if number <= len(self._original_hash)
+        )
+        self.last_save = SaveReport("incremental", len(changed), superseded, removed)
+        if removed:
+            logger.warning(
+                "Saved incrementally, so the %d removed objects stay readable in the earlier "
+                "revision of the file. Write a full rewrite to remove them.",
+                len(removed),
+            )
+
+    def write_bytes(self) -> SavedPdf:
+        data = self._incremental_update() if self.incremental else self._serialized()
+        self._report_save()
+        if isinstance(data, SavedPdf):
+            return data
+        return SavedPdf(data, incremental=self.incremental, encryption=None, xref_stream=False)
+
+    def _repr_mimebundle_(
+        self, include: Iterable[str] | None = None, exclude: Iterable[str] | None = None
+    ) -> dict[str, Any]:
+        output = BytesIO()
+        self.write(output)
+        data = {"application/pdf": output}
+        if include is not None:
+            data = {key: value for key, value in data.items() if key in include}
+        if exclude is not None:
+            data = {key: value for key, value in data.items() if key not in exclude}
+        return data
 
 
-__all__ = ("PdfWriter", "PageObject")
+__all__ = ("PageObject", "PdfWriter", "SaveReport")

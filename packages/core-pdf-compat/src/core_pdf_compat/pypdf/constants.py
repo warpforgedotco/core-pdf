@@ -709,6 +709,19 @@ PDF_KEYS = (
 )
 
 
+class ObjectDeletionFlag(IntFlag):
+    NONE = 0
+    TEXT = auto()
+    LINKS = auto()
+    ATTACHMENTS = auto()
+    OBJECTS_3D = auto()
+    ALL_ANNOTATIONS = auto()
+    XOBJECT_IMAGES = auto()
+    INLINE_IMAGES = auto()
+    DRAWING_IMAGES = auto()
+    IMAGES = XOBJECT_IMAGES | INLINE_IMAGES | DRAWING_IMAGES
+
+
 class ImageType(IntFlag):
     NONE = 0
     XOBJECT_IMAGES = auto()

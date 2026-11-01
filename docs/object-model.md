@@ -50,6 +50,22 @@ classic table too. On a damaged file, whose old sections do not read, the update
 every object and has no /Prev, so the output is readable without recovery. Streams are stored without a filter, and their field widths fit the file.
 Object streams are not written. `SavedPdf.xref_stream` states which kind a save produced.
 
+### PdfWriter
+
+The pypdf facade works over its own table of generic objects. A full rewrite writes what the
+trailer reaches, so a removed page or image leaves the file. `PdfWriter(incremental=True)`
+hands changed objects to `EditableDocument.save_incremental`, so it adds no second way of
+writing bytes.
+
+`write` returns what pypdf returns, so the writer states how a save was made in
+`writer.last_save`, a `SaveReport` with the kind (`"full"` or `"incremental"`), the objects
+written, the earlier versions left readable (`superseded`) and the objects removed but still
+in the file (`removed`). An incremental save with removals also logs a warning.
+
+`scripts/check_writer_lossless.py` compares unchanged objects in writer output with the
+source. A full rewrite keeps values and stream bytes but renumbers objects and normalizes
+syntax, so byte-for-byte output needs an incremental update.
+
 ### Encrypted input
 
 Encrypted files can be edited under this policy. Its rule is that encryption never goes away

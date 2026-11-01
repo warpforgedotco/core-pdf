@@ -449,10 +449,11 @@ class PdfLexer(lexer.PdfLexer):
         if preferred is None:
             return candidate if candidate >= 0 else raw_candidate
 
+        # A /Length that ends inside the keyword still has to find it.
         previous, previous_raw = self.find_keyword_candidate(
             b"endstream",
             data_start,
-            preferred,
+            min(preferred + 8, self.data_len),
             reverse=True,
             require_eol_before=True,
             buffer=search_buffer,
