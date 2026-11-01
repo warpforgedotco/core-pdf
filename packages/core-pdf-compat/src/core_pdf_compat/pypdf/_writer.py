@@ -20,6 +20,7 @@ from ._page_merge import (
     merge_page,
     merge_resources,
     scale_page,
+    transfer_rotation,
     transform_page,
 )
 from .actions import Action
@@ -230,6 +231,9 @@ class PageObject(DictionaryObject, ABC):
 
     def delete_action(self, trigger: Any) -> None:
         Action._delete(self, trigger)
+
+    def transfer_rotation_to_content(self) -> None:
+        transfer_rotation(self)
 
     def rotate(self, angle: int) -> PageObject:
         if angle % 90:
