@@ -19,7 +19,7 @@ from core_pdf.impl.output_model import (
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
-from core_pdf_compat.pypdf._doc_common import PdfDocCommon
+from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._text import LegacyTextCaches, extract_legacy_text
 from core_pdf_compat.pypdf.errors import FileNotDecryptedError, PdfReadError
 from core_pdf_compat.pypdf.generic import (
@@ -442,7 +442,6 @@ class LockedPages:
 
 class PdfReader(PdfDocCommon, ClosingMixin):
     pages: Any
-    metadata: dict[str, Any]
 
     def __init__(
         self,
@@ -463,7 +462,6 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 raise
             self._document = None
             self.pages = LockedPages()
-            self.metadata: dict[str, Any] = {}
             self._decryption_pending = True
             return
         self._decryption_pending = False
@@ -472,14 +470,13 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def _bind(self, document: StructuredState) -> None:
         self._document = document  # type: ignore[assignment]
         self.__dict__.pop("pages", None)
-        self.__dict__.pop("metadata", None)
         self.__dict__.pop("_page_indexes", None)
         self.__dict__.pop("_generic_trailer", None)
         self.resolved_objects = {}
         self._named_destinations_cache = None
 
     def __getattr__(self, name: str) -> Any:
-        if name in {"pages", "metadata"} and self.__dict__.get("_document") is not None:
+        if name == "pages" and self.__dict__.get("_document") is not None:
             self._materialize()
             return self.__dict__[name]
         raise AttributeError(name)
@@ -496,13 +493,6 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         for page in self.pages:
             page._reader = self
         self._page_indexes = {id(page): index for index, page in enumerate(self.pages)}
-        raw_metadata = document.source_pdf.get_metadata()
-        info = raw_metadata.get("info", {}) if isinstance(raw_metadata, dict) else {}
-        self.metadata = (
-            {f"/{str(key).lstrip('/')}": value for key, value in info.items()}
-            if isinstance(info, Mapping)
-            else {}
-        )
 
     @property
     def num_pages(self) -> int:
@@ -631,6 +621,19 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return cached
 
     @property
+    def metadata(self) -> DocumentInformation | None:
+        info = self.trailer.get_resolved("/Info")
+        if is_null_or_none(info):
+            return None
+        if not isinstance(info, DictionaryObject):
+            raise PdfReadError(
+                "Trailer not found or does not point to a document information dictionary"
+            )
+        metadata = DocumentInformation()
+        metadata.update(info)
+        return metadata
+
+    @property
     def root_object(self) -> Any:
         if self._decryption_pending:
             raise FileNotDecryptedError("File has not been decrypted")
@@ -737,6 +740,7 @@ def mult(m: list[float], n: list[float]) -> list[float]:
 
 __all__ = (
     "mult",
+    "DocumentInformation",
     "ObjectDeletionFlag",
     "ImageType",
     "PageObject",
