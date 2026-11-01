@@ -142,6 +142,23 @@ def transform_page(page: Any, ctm: Matrix, expand: bool) -> None:
         page[NameObject("/MediaBox")] = _bounds(_transformed(page.mediabox, ctm))
 
 
+def transfer_rotation(page: Any) -> None:
+    """Move /Rotate into the content and the page boxes, leaving the page at 0."""
+    angle = -page.rotation
+    page.rotation = 0
+    left, bottom, right, top = map(float, page.mediabox)
+    centre = (-(left + right) / 2, -(bottom + top) / 2)
+    turn = Transformation().translate(*centre).rotate(angle)
+    corners = [turn.apply_on((left, bottom)), turn.apply_on((right, top))]
+    turn = turn.translate(-min(x for x, _ in corners), -min(y for _, y in corners))
+    transform_page(page, turn.ctm, False)
+    for key in ("/MediaBox", "/CropBox", "/BleedBox", "/TrimBox", "/ArtBox"):
+        if key in page:
+            low_x, low_y, high_x, high_y = map(float, RectangleObject(page.get_resolved(key)))
+            points = [turn.apply_on((low_x, low_y)), turn.apply_on((high_x, high_y))]
+            page[NameObject(key)] = _bounds(points)
+
+
 def scale_page(page: Any, sx: float, sy: float) -> None:
     transform_page(page, (sx, 0, 0, sy, 0, 0), False)
     # Boxes that were left out default to the crop box, so that one is scaled last of them.
@@ -362,5 +379,6 @@ __all__ = [
     "merge_page",
     "merge_resources",
     "scale_page",
+    "transfer_rotation",
     "transform_page",
 ]
