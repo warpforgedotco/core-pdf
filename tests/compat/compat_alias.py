@@ -27,17 +27,22 @@ COLLECTION = {"active": False}
 
 
 class StubMeta(type):
+    def _stand_in_name(cls) -> str:
+        # A test can subclass a stand-in, and the reason is the stand-in's module.
+        stand_in = cls.__mro__[-2]
+        return f"{stand_in.__module__}.{stand_in.__name__}"
+
     def __call__(cls, *args: object, **kwargs: object) -> object:
         if COLLECTION["active"]:
             return cls
-        raise UnsupportedBySuite(cls.__name__)
+        raise UnsupportedBySuite(cls._stand_in_name())
 
     def __getattr__(cls, name: str) -> object:
         if name.startswith("__"):
             raise AttributeError(name)
         if COLLECTION["active"]:
             return cls
-        raise UnsupportedBySuite(f"{cls.__name__}.{name}")
+        raise UnsupportedBySuite(f"{cls._stand_in_name()}.{name}")
 
     # Upstream test files index and compare these while collecting.
     def __getitem__(cls, key: object) -> object:
@@ -65,7 +70,7 @@ class StubModule(ModuleType):
     def __getattr__(self, name: str) -> object:
         if name.startswith("__"):
             raise AttributeError(name)
-        return StubMeta(name, (), {})
+        return StubMeta(name, (), {"__module__": self.__name__})
 
 
 class StubFinder(MetaPathFinder, Loader):

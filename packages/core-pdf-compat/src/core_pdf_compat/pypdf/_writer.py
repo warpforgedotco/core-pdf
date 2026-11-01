@@ -34,7 +34,13 @@ from ._page_merge import (
     transfer_rotation,
     transform_page,
 )
-from ._text import ALL_ORIENTATIONS, TextOptions, extract_layout_text, extract_legacy_text
+from ._text import (
+    ALL_ORIENTATIONS,
+    TextOptions,
+    extract_form_text,
+    extract_layout_text,
+    extract_legacy_text,
+)
 from .actions import Action
 from .constants import UserAccessPermissions
 from .errors import PageSizeNotDefinedError
@@ -260,22 +266,7 @@ class PageObject(DictionaryObject):
         fonts = None if is_null_or_none(resources) else resources.get_resolved("/Font")
         if is_null_or_none(self.get_resolved("/Contents")) and not fonts:
             return ""  # Without contents, only reading a font can still fail.
-        # A changed page has no copy in a file, so it goes through a serialized document.
-        from . import PdfReader
-
-        pdf = self.pdf
-        source = pdf._core_page(self) if isinstance(pdf, PdfReader) else None
-        if source is None:
-            writer = self.writer
-            if writer is None:
-                writer = PdfWriter()
-                writer.add_page(self)
-                number = 0
-            else:
-                number = cast(int, self.page_number)
-            pdf = PdfReader(BytesIO(writer._serialized()))
-            page = pdf.pages[number]
-            source = pdf._core_page(page)
+        pdf, source = self._text_source()
         if extraction_mode == "layout":
             return extract_layout_text(
                 source,
@@ -293,6 +284,41 @@ class PageObject(DictionaryObject):
             pdf,
         )
         return extract_legacy_text(source, pdf.text_caches, options)
+
+    def _text_source(self) -> tuple[Any, Any]:
+        """The reader and core-pdf page to extract from."""
+        # A changed page has no copy in a file, so it goes through a serialized document.
+        from . import PdfReader
+
+        pdf = self.pdf
+        source = pdf._core_page(self) if isinstance(pdf, PdfReader) else None
+        if source is not None:
+            return pdf, source
+        writer = self.writer
+        if writer is None:
+            writer = PdfWriter()
+            writer.add_page(self)
+            number = 0
+        else:
+            number = cast(int, self.page_number)
+        reader = PdfReader(BytesIO(writer._serialized()))
+        return reader, reader._core_page(reader.pages[number])
+
+    def extract_xform_text(
+        self,
+        xform: Any,
+        orientations: tuple[int, ...] = ALL_ORIENTATIONS,
+        space_width: float = 200.0,
+        visitor_operand_before: Any = None,
+        visitor_operand_after: Any = None,
+        visitor_text: Any = None,
+    ) -> str:
+        del space_width
+        pdf, source = self._text_source()
+        options = TextOptions(
+            orientations, visitor_operand_before, visitor_operand_after, visitor_text, pdf
+        )
+        return extract_form_text(source, to_core(xform), pdf.text_caches, options)
 
     def get_contents(self) -> ContentStream | None:
         contents = self.get_resolved("/Contents")

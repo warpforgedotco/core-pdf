@@ -8,6 +8,8 @@ from typing import Any
 from ._images import ImageFile, VirtualListImages
 from ._page_merge import Transformation
 from ._writer import PageObject
+from .errors import PdfReadError
+from .generic import NameObject, NumberObject
 
 
 class _VirtualList(Sequence[PageObject]):
@@ -31,6 +33,42 @@ class _VirtualList(Sequence[PageObject]):
         if not 0 <= position < length:
             raise IndexError("Sequence index out of range")
         return self.get_function(position)
+
+    def __delitem__(self, index: Any) -> None:
+        if isinstance(index, slice):
+            for position in sorted(range(*index.indices(len(self))), reverse=True):
+                del self[position]
+            return
+        if not isinstance(index, int):
+            raise TypeError("Index must be integers")
+        length = len(self)
+        position = index + length if index < 0 else index
+        if not 0 <= position < length:
+            raise IndexError("Index out of range")
+        self._remove_from_tree(position)
+
+    def _remove_from_tree(self, position: int) -> None:
+        child = self[position].indirect_reference
+        assert child is not None
+        pdf = child.pdf
+        parent = child.get_object().get("/Parent")
+        first = True
+        while parent is not None:
+            node = parent.get_object()
+            try:
+                del node["/Kids"][node["/Kids"].index(child)]
+            except ValueError as error:
+                if first:
+                    raise PdfReadError(f"Page not found in page tree: {child}") from error
+                return
+            if first:
+                del pdf.flattened_pages[position]
+            first = False
+            if "/Count" in node:
+                node[NameObject("/Count")] = NumberObject(node["/Count"] - 1)
+            if not node["/Kids"]:
+                child = node.indirect_reference
+            parent = node.get("/Parent")
 
     def __str__(self) -> str:
         return f"[{', '.join(f'PageObject({index})' for index in range(len(self)))}]"
