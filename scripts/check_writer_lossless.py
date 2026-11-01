@@ -48,7 +48,9 @@ def plain(value: Any, renumber: dict[int, int] | None) -> Any:
     """A comparable form, with source references mapped to output numbers."""
     if isinstance(value, PdfReference):
         number = value.object_number
-        return ("ref", number if renumber is None else renumber.get(number))
+        if renumber is None:
+            return ("ref", number)
+        return ("ref", renumber[number]) if number in renumber else ("unmapped", number)
     if isinstance(value, PdfStream):
         return {
             **plain({k: v for k, v in value.dictionary.items() if str(k) != "Length"}, renumber),
@@ -64,6 +66,35 @@ def plain(value: Any, renumber: dict[int, int] | None) -> Any:
     if hasattr(value, "data"):
         return ("string", bytes(value.data))
     return value
+
+
+def matches(before: Any, after: Any, source: Any, written: Any) -> bool:
+    """Compare two plain values. pypdf copies a stream in an array anew each time, so such a
+    reference has no entry in the translation and is compared by the stream it reaches.
+    """
+    if isinstance(before, tuple) and before[0] == "unmapped":
+        if not (isinstance(after, tuple) and after[0] == "ref"):
+            return False
+        original = source.resolver.resolve(PdfReference(before[1], 0))
+        copy = written.resolver.resolve(PdfReference(after[1], 0))
+        if isinstance(original, PdfStream) and isinstance(copy, PdfStream):
+            return bytes(original.raw_data) == bytes(copy.raw_data)
+        return original is None and copy is None
+    both_references = isinstance(before, tuple) and isinstance(after, tuple)
+    if both_references and before != after and before[0] == after[0] == "ref":
+        first = written.resolver.resolve(PdfReference(before[1], 0))
+        second = written.resolver.resolve(PdfReference(after[1], 0))
+        if isinstance(first, PdfStream) and isinstance(second, PdfStream):
+            return bytes(first.raw_data) == bytes(second.raw_data)
+    if isinstance(before, dict) and isinstance(after, dict):
+        return before.keys() == after.keys() and all(
+            matches(before[key], after[key], source, written) for key in before
+        )
+    if isinstance(before, list) and isinstance(after, list):
+        return len(before) == len(after) and all(
+            matches(*pair, source, written) for pair in zip(before, after, strict=True)
+        )
+    return before == after
 
 
 def object_type(value: Any) -> str | None:
@@ -109,7 +140,7 @@ def check_clone(path: str, counts: collections.Counter[str], problems: list[str]
             before, after = plain(original, renumber), plain(copy, None)
             if kind == "Page":
                 before, after = without_page_keys(before), without_page_keys(after)
-            if before != after:
+            if not matches(before, after, source, written):
                 counts["objects that differ"] += 1
                 if len(problems) < 20:
                     problems.append(f"{path} object {number}: {str(original)[:160]}")
