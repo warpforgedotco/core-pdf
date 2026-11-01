@@ -53,6 +53,7 @@ from ._text import (
     extract_legacy_text,
 )
 from ._writer_edit import EditWriter
+from ._writer_forms import FormWriter
 from ._writer_merge import MergeWriter
 from ._writer_outline import OutlineWriter
 from .actions import Action
@@ -489,7 +490,7 @@ def _digest(value: Any) -> bytes | None:
     return hashlib.blake2b(serialize_object(to_core(value)), digest_size=16).digest()
 
 
-class PdfWriter(OutlineWriter, MergeWriter, EditWriter, PdfDocCommon):
+class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon):
     def __init__(
         self,
         fileobj: Any = "",
@@ -864,6 +865,8 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, PdfDocCommon):
         return self.insert_page(PageObject.create_blank_page(self, width, height), index)
 
     def remove_page(self, page: Any, clean: bool = False) -> None:
+        if cast(Any, self.flattened_pages) is None:
+            self._flatten()
         if isinstance(page, IndirectObject):
             target = page.get_object()
             if not isinstance(target, PageObject):
@@ -1364,7 +1367,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, PdfDocCommon):
             editable.trailer.pop(key, None)
         editable.trailer.update(trailer)
         # An xref stream either way, as in pypdf.
-        return editable.save_incremental(xref_stream=True)
+        return editable.save_incremental(xref_stream=True, layout=ObjectLayout.SPACED)
 
     def _report_save(self) -> None:
         if not self.incremental:
