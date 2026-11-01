@@ -35,6 +35,19 @@ def ends_in_xref_stream(data: Any) -> bool:
     return data.xref_stream and b"/Type /XRef" in data[offset : data.rindex(b"startxref")]
 
 
+def check_verbatim(editor: Any, output: bytes, counts: collections.Counter[str], path: str) -> None:
+    """Every object with bytes of its own in the file must appear in the rewrite unchanged."""
+    reachable = editor.reachable_references()
+    located, _ = editor.existing_entries()
+    kept = editor.verbatim_objects(dict.fromkeys(reachable.values()))
+    counts["objects_with_own_bytes"] += sum(number in located for number in reachable)
+    counts["objects_verbatim"] += sum(number in reachable for number in kept)
+    for number, raw in kept.items():
+        if raw not in output:
+            counts["verbatim_lost"] += 1
+            print(f"object {number} changed: {path}")
+
+
 def check(path: str, counts: collections.Counter[str]) -> None:
     with PdfDocument.open(path) as source:
         expected_pages = len(source.pages)
@@ -46,6 +59,7 @@ def check(path: str, counts: collections.Counter[str]) -> None:
             output = editor.save_incremental(xref_stream=True if XREF_STREAM else None)
         else:
             output = editor.save(xref_stream=XREF_STREAM)
+            check_verbatim(editor, output, counts, path)
         original = bytes(source.raw_data)
     if XREF_STREAM and not ends_in_xref_stream(output):
         counts["not_a_stream"] += 1
@@ -79,7 +93,8 @@ def main() -> int:
                 counts["errors"] += 1
                 print(f"error: {path}: {type(error).__name__}: {str(error)[:70]}")
     print(dict(counts))
-    return 1 if set(counts) - {"identical", "unsupported", "errors"} else 0
+    allowed = {"identical", "unsupported", "errors", "objects_with_own_bytes", "objects_verbatim"}
+    return 1 if set(counts) - allowed else 0
 
 
 if __name__ == "__main__":
