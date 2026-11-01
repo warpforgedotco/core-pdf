@@ -6,50 +6,146 @@ Bytes are always written by core_pdf_spec's serializer, so there is one writer.
 from __future__ import annotations
 
 import codecs
+import hashlib
 import logging
-from collections.abc import Iterable, Mapping
-from io import BytesIO
-from typing import Any, Self
+import re
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import Any, ClassVar, Self, cast
 
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
-from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
+from core_pdf_compat.pypdf.errors import (
+    DeprecationError,
+    LimitReachedError,
+    PdfReadError,
+    PdfStreamError,
+)
 from core_pdf_spec.s_07_filters.codecs import encode_flate
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer
-from core_pdf_spec.s_07_syntax.serialize import serialize_object
+from core_pdf_spec.s_07_syntax.serialize import (
+    ObjectLayout,
+    serialize_name,
+    serialize_object,
+    serialize_real,
+)
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 logger = logging.getLogger(__name__)
 
 
+# clone, replicate and the hash functions follow pypdf, Copyright (c) 2006, Mathieu Fenniak,
+# under its BSD-style license.
 class PdfObject:
+    hash_func: Callable[..., Any] = hashlib.sha1
     indirect_reference: IndirectObject | None = None
+
+    def hash_bin(self) -> int:
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement .hash_bin() so far"
+        )
+
+    def hash_value_data(self) -> bytes:
+        return f"{self}".encode()
+
+    def hash_value(self) -> bytes:
+        digest = self.hash_func(self.hash_value_data()).hexdigest()
+        return f"{self.__class__.__name__}:{digest}".encode()
+
+    def replicate(self, pdf_dest: Any) -> Any:
+        return self.clone(pdf_dest)
+
+    def clone(
+        self,
+        pdf_dest: Any,
+        force_duplicate: bool = False,
+        ignore_fields: Sequence[str | int] | None = (),
+    ) -> Any:
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement .clone so far")
+
+    def _own_reference(self) -> Any:
+        return self.__dict__.get("indirect_reference", _NEVER_NUMBERED)
+
+    def _reference_clone(self, clone: Any, pdf_dest: Any, force_duplicate: bool = False) -> Any:
+        """Number a clone in pdf_dest, if this object has been given a number at all."""
+        target = clone.indirect_reference
+        if not force_duplicate and target is not None and target.pdf == pdf_dest:
+            return clone
+        reference = self._own_reference()
+        if reference is _NEVER_NUMBERED:
+            return clone
+        number = len(pdf_dest._objects) + 1
+        if reference is not None:
+            translated = pdf_dest._translation(reference.pdf)
+            if not force_duplicate and reference.idnum in translated:
+                return pdf_dest.get_object(translated[reference.idnum])
+            translated[reference.idnum] = number
+        pdf_dest._objects.append(clone)
+        clone.indirect_reference = IndirectObject(number, 0, pdf_dest)
+        return clone
 
     def get_object(self) -> PdfObject | None:
         return self
 
-    @classmethod
-    def read_from_stream(cls, stream: Any, pdf: Any = None, *_: object) -> Any:
-        return read_object(stream, pdf)
-
     def write_to_stream(self, stream: Any, encryption_key: object = None) -> None:
-        del encryption_key
-        stream.write(serialize_object(to_core(self)))
+        if encryption_key is not None:
+            raise DeprecationError(
+                "the encryption_key parameter of write_to_stream is deprecated and was "
+                "removed in pypdf 5.0.0."
+            )
+        stream.write(serialize_object(to_core(self), ObjectLayout.SPACED))
 
 
-class NullObject(PdfObject):
+_NEVER_NUMBERED = object()
+
+
+class _CopiedObject(PdfObject):
+    """An object with no children, so a clone is just a copy of its value."""
+
+    def _copy(self) -> Any:
+        raise NotImplementedError
+
+    def clone(
+        self,
+        pdf_dest: Any,
+        force_duplicate: bool = False,
+        ignore_fields: Sequence[str | int] | None = (),
+    ) -> Any:
+        del ignore_fields
+        return self._reference_clone(self._copy(), pdf_dest, force_duplicate)
+
+
+class NullObject(_CopiedObject):
+    def _copy(self) -> Self:
+        return type(self)()
+
+    def hash_bin(self) -> int:
+        return hash((self.__class__,))
+
+    @staticmethod
+    def read_from_stream(stream: Any) -> NullObject:
+        return read_null(stream)
+
     def __eq__(self, other: object) -> bool:
         return isinstance(other, NullObject)
 
     def __hash__(self) -> int:
-        return hash(None)
+        return self.hash_bin()
 
     def __repr__(self) -> str:
         return "NullObject"
 
 
-class BooleanObject(PdfObject):
+class BooleanObject(_CopiedObject):
     def __init__(self, value: Any) -> None:
         self.value = bool(value)
+
+    def _copy(self) -> Self:
+        return type(self)(self.value)
+
+    def hash_bin(self) -> int:
+        return hash((self.__class__, self.value))
+
+    @staticmethod
+    def read_from_stream(stream: Any) -> BooleanObject:
+        return read_boolean(stream)
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, BooleanObject):
@@ -57,7 +153,7 @@ class BooleanObject(PdfObject):
         return self.value == other if isinstance(other, bool) else False
 
     def __hash__(self) -> int:
-        return hash(self.value)
+        return self.hash_bin()
 
     def __bool__(self) -> bool:
         return self.value
@@ -66,12 +162,32 @@ class BooleanObject(PdfObject):
         return "True" if self.value else "False"
 
 
-class NumberObject(int, PdfObject):
+class NumberObject(int, _CopiedObject):
+    NumberPattern = re.compile(b"[^+-.0-9]")
+    _LENGTH_LIMIT = 64
+
+    def __new__(cls, value: Any) -> Self:
+        try:
+            return int.__new__(cls, int(value))
+        except ValueError:
+            logger.warning("NumberObject(%s) invalid; use 0 instead", value)
+            return int.__new__(cls, 0)
+
+    def _copy(self) -> Self:
+        return type(self)(self)
+
+    def hash_bin(self) -> int:
+        return hash((self.__class__, int(self)))
+
     def as_numeric(self) -> int:
         return int(self)
 
+    @staticmethod
+    def read_from_stream(stream: Any) -> NumberObject | FloatObject:
+        return read_number(stream)
 
-class FloatObject(float, PdfObject):
+
+class FloatObject(float, _CopiedObject):
     def __new__(cls, value: Any = "0.0", context: object = None) -> Self:
         del context
         try:
@@ -81,18 +197,86 @@ class FloatObject(float, PdfObject):
             logger.warning("%s : FloatObject (%s) invalid; use 0.0 instead", error, value)
             return super().__new__(cls, 0.0)
 
+    def _copy(self) -> Self:
+        return type(self)(self)
+
+    def hash_bin(self) -> int:
+        return hash((self.__class__, float(self)))
+
+    def myrepr(self) -> str:
+        # pypdf rounds to about nine significant digits here. This keeps the exact value, so
+        # what is shown is what the serializer writes.
+        return "0.0" if self == 0 else serialize_real(float(self)).decode("ascii")
+
+    def __repr__(self) -> str:
+        return self.myrepr()
+
     def as_numeric(self) -> float:
         return float(self)
 
 
-class NameObject(str, PdfObject):
-    __slots__ = ()
+class _NameMeta(type):
+    @property
+    def surfix(cls) -> bytes:
+        raise DeprecationError(
+            "surfix is deprecated and was removed in pypdf 5.0.0. Use prefix instead."
+        )
+
+
+class NameObject(str, _CopiedObject, metaclass=_NameMeta):
+    delimiter_pattern = re.compile(rb"\s+|[\(\)<>\[\]{}/%]")
+    prefix = b"/"
+    renumber_table: ClassVar[dict[str, bytes]] = {
+        **{chr(i): f"#{i:02X}".encode() for i in b"#()<>[]{}/%"},
+        **{chr(i): f"#{i:02X}".encode() for i in range(33)},
+    }
+    CHARSETS = ("utf-8", "gbk", "latin1")
+    _LENGTH_LIMIT = 4096
+    # The bytes a name had in its file. Text decoded by CHARSETS may not encode back to them.
+    _file_bytes: bytes | None = None
 
     def __new__(cls, value: str = "/") -> NameObject:
         return super().__new__(cls, value)
 
+    def _copy(self) -> NameObject:
+        copy = NameObject(self)
+        copy._file_bytes = self._file_bytes
+        return copy
 
-class TextStringObject(str, PdfObject):
+    def hash_bin(self) -> int:
+        return hash((self.__class__, self))
+
+    def renumber(self) -> bytes:
+        return serialize_name(_name_bytes(self))
+
+    def _sanitize(self) -> NameObject:
+        name = str(self).removeprefix("/")
+        return NameObject("/" + re.sub(r"[^a-zA-Z0-9_-]", "_", name))
+
+    @staticmethod
+    def unnumber(sin: bytes) -> bytes:
+        return NUMBERED_BYTE.sub(lambda match: bytes((int(match[1], 16),)), sin)
+
+    @staticmethod
+    def read_from_stream(stream: Any, pdf: Any) -> NameObject:
+        return read_name(stream, pdf)
+
+
+NUMBERED_BYTE = re.compile(rb"#([0-9a-fA-F]{2})")
+
+
+def _name_bytes(name: str) -> bytes:
+    """A name's bytes without its slash. Written names are UTF-8, as in pypdf."""
+    if not name.startswith("/"):
+        raise DeprecationError(
+            f"Incorrect first char in NameObject, should start with '/': ({name}) is "
+            "deprecated and was removed in pypdf 5.0.0."
+        )
+    file_bytes = getattr(name, "_file_bytes", None)
+    return name[1:].encode("utf-8") if file_bytes is None else file_bytes
+
+
+class TextStringObject(str, _CopiedObject):
     autodetect_pdfdocencoding: bool
     autodetect_utf16: bool
     utf16_bom: bytes
@@ -126,6 +310,17 @@ class TextStringObject(str, PdfObject):
             text.autodetect_pdfdocencoding = True
         return text
 
+    def _copy(self) -> TextStringObject:
+        copy = TextStringObject(str(self))
+        copy._original_bytes = self._original_bytes
+        copy.autodetect_pdfdocencoding = self.autodetect_pdfdocencoding
+        copy.autodetect_utf16 = self.autodetect_utf16
+        copy.utf16_bom = self.utf16_bom
+        return copy
+
+    def hash_bin(self) -> int:
+        return hash((self.__class__, self.original_bytes))
+
     @property
     def original_bytes(self) -> bytes:
         return self.get_original_bytes() if self._original_bytes is None else self._original_bytes
@@ -151,28 +346,253 @@ class TextStringObject(str, PdfObject):
             return self._encode_utf16()
 
 
-class ByteStringObject(bytes, PdfObject):
+class ByteStringObject(bytes, _CopiedObject):
+    def _copy(self) -> ByteStringObject:
+        return ByteStringObject(bytes(self))
+
+    def hash_bin(self) -> int:
+        return hash((self.__class__, bytes(self)))
+
     @property
     def original_bytes(self) -> bytes:
         return bytes(self)
 
+    def __str__(self) -> str:
+        for charset in ("utf-16", *NameObject.CHARSETS):
+            try:
+                return self.decode(charset)
+            except UnicodeDecodeError:
+                continue
+        raise PdfReadError("Cannot decode ByteStringObject.")
+
 
 class ArrayObject(list[Any], PdfObject):
-    def __getitem__(self, index: Any) -> Any:
-        value = super().__getitem__(index)
-        return value.get_object() if isinstance(value, IndirectObject) else value
+    def replicate(self, pdf_dest: Any) -> ArrayObject:
+        array = self._reference_clone(ArrayObject(), pdf_dest, False)
+        for item in self:
+            array.append(item.replicate(pdf_dest) if hasattr(item, "replicate") else item)
+        return array
 
-    def raw_get(self, index: int) -> Any:
-        return super().__getitem__(index)
+    def clone(
+        self,
+        pdf_dest: Any,
+        force_duplicate: bool = False,
+        ignore_fields: Sequence[str | int] | None = (),
+    ) -> ArrayObject:
+        if _in_destination(self, pdf_dest, force_duplicate):
+            return self
+        array = self._reference_clone(ArrayObject(), pdf_dest, True)
+        for item in self:
+            array.append(_cloned_item(item, pdf_dest, force_duplicate, ignore_fields))
+        return array
+
+    def hash_bin(self) -> int:
+        return hash((self.__class__, tuple(item.hash_bin() for item in self)))
+
+    def items(self) -> Iterable[Any]:
+        return enumerate(self)
+
+    @staticmethod
+    def _to_lst(items: Any) -> list[Any]:
+        if isinstance(items, (list, tuple, set)):
+            return list(items)
+        if isinstance(items, PdfObject):
+            return [items]
+        if isinstance(items, str):
+            return [NameObject(items) if items[0] == "/" else TextStringObject(items)]
+        if isinstance(items, bytes):
+            return [ByteStringObject(items)]
+        return [items]
+
+    def __add__(self, items: Any) -> ArrayObject:
+        output = ArrayObject(self)
+        output.extend(self._to_lst(items))
+        return output
+
+    def __iadd__(self, items: Any) -> Self:
+        self.extend(self._to_lst(items))
+        return self
+
+    def __isub__(self, items: Any) -> Self:
+        for item in self._to_lst(items):
+            if item in self:
+                del self[self.index(item)]
+        return self
+
+    @staticmethod
+    def read_from_stream(stream: Any, pdf: Any, forced_encoding: Any = None) -> ArrayObject:
+        return read_array(stream, pdf, forced_encoding)
+
+
+def _in_destination(value: Any, pdf_dest: Any, force_duplicate: bool) -> bool:
+    reference = value.indirect_reference
+    return not force_duplicate and reference is not None and reference.pdf == pdf_dest
+
+
+def _cloned_item(item: Any, pdf_dest: Any, force_duplicate: bool, ignore_fields: Any) -> Any:
+    if isinstance(item, StreamObject):
+        copy = item.clone(pdf_dest, force_duplicate, ignore_fields)
+        return item._reference_clone(copy, pdf_dest, force_duplicate).indirect_reference
+    if isinstance(item, IndirectObject) and isinstance(target := item.get_object(), StreamObject):
+        # Each array gets its own copy, so replacing one stream leaves the other arrays alone.
+        copy = target.clone(pdf_dest, True, ignore_fields)
+        return item._reference_clone(copy, pdf_dest, force_duplicate).indirect_reference
+    return item.clone(pdf_dest, force_duplicate, ignore_fields) if hasattr(item, "clone") else item
+
+
+# Keys such as /%is_open% hold pypdf's own state, and are never written.
+def _is_internal_key(key: str) -> bool:
+    return len(key) > 2 and key[1] == "%" and key[-1] == "%"
+
+
+def _trimmed_ignore_fields(ignore_fields: Any) -> list[Any]:
+    """Count down the entries limited to some levels: [1, "/B"] ignores /B one level down."""
+    fields = list(ignore_fields)
+    index = 0
+    while index < len(fields):
+        if isinstance(fields[index], int):
+            if fields[index] <= 0:
+                del fields[index : index + 2]
+                continue
+            fields[index] -= 1
+        index += 1
+    return fields
+
+
+def _same_type(first: DictionaryObject, second: DictionaryObject) -> bool:
+    kinds = first.get("/Type"), second.get("/Type")
+    return None in kinds or kinds[0] == kinds[1]
+
+
+def _is_chain_link(source: DictionaryObject, key: str) -> bool:
+    return (
+        key in source
+        and isinstance(source.raw_get(key), IndirectObject)
+        and isinstance(source[key], DictionaryObject)
+        and _same_type(source, source[key])
+    )
 
 
 class DictionaryObject(dict[Any, Any], PdfObject):
+    def replicate(self, pdf_dest: Any) -> DictionaryObject:
+        copy = self._reference_clone(self.__class__(), pdf_dest, False)
+        for key, value in dict.items(self):
+            copy[key.replicate(pdf_dest)] = (
+                value.replicate(pdf_dest) if hasattr(value, "replicate") else value
+            )
+        return copy
+
+    def clone(
+        self,
+        pdf_dest: Any,
+        force_duplicate: bool = False,
+        ignore_fields: Sequence[str | int] | None = (),
+    ) -> DictionaryObject:
+        if _in_destination(self, pdf_dest, force_duplicate):
+            return self
+        copy = self._reference_clone(self.__class__(), pdf_dest, force_duplicate)
+        if len(copy) == 0:
+            copy._clone(self, pdf_dest, force_duplicate, ignore_fields or [], set())
+        return copy
+
+    def _clone_chain(
+        self,
+        source: DictionaryObject,
+        key: str,
+        pdf_dest: Any,
+        force_duplicate: bool,
+        ignore_fields: Any,
+        visited: set[tuple[int, int]],
+    ) -> None:
+        """Follow a linked list in a loop, which a long outline would overflow by recursion."""
+        pairs: list[tuple[Any, Any]] = []
+        current: Any = source[key]
+        previous: Any = self
+        while current is not None:
+            copy = current._reference_clone(current.__class__(), pdf_dest, force_duplicate)
+            reference = copy.indirect_reference
+            if reference is not None:
+                if (reference.idnum, reference.generation) in visited:
+                    break
+                visited.add((reference.idnum, reference.generation))
+            pairs.append((current, copy))
+            previous[NameObject(key)] = reference
+            previous = copy
+            following = None if current == source else current.get_resolved(key)
+            current = following if isinstance(following, DictionaryObject) else None
+        for original, copy in pairs:
+            copy._clone(original, pdf_dest, force_duplicate, ignore_fields, visited)
+
+    def _clone(
+        self,
+        src: DictionaryObject,
+        pdf_dest: Any,
+        force_duplicate: bool,
+        ignore_fields: Any,
+        visited: set[tuple[int, int]],
+    ) -> None:
+        ignored = _trimmed_ignore_fields(ignore_fields)
+        for key in ("/Next", "/Prev", "/N", "/V"):
+            if key not in ignored and key not in self and _is_chain_link(src, key):
+                self._clone_chain(src, key, pdf_dest, force_duplicate, ignored, visited)
+        for key, value in dict.items(src):
+            if key in ignored:
+                continue
+            if isinstance(value, StreamObject):
+                value.__dict__.setdefault("indirect_reference", None)
+                copy = value.clone(pdf_dest, force_duplicate, ignored)
+                self[key.clone(pdf_dest)] = copy.indirect_reference
+            elif key not in self:
+                self[key._copy() if isinstance(key, NameObject) else NameObject(key)] = (
+                    value.clone(pdf_dest, force_duplicate, ignored)
+                    if hasattr(value, "clone")
+                    else value
+                )
+
+    def hash_bin(self) -> int:
+        entries = tuple((key, value.hash_bin()) for key, value in dict.items(self))
+        return hash((self.__class__, entries))
+
     def __getitem__(self, key: Any) -> Any:
         value = super().__getitem__(key)
         return value.get_object() if isinstance(value, IndirectObject) else value
 
+    def __setitem__(self, key: Any, value: Any) -> None:
+        if not isinstance(key, PdfObject):
+            raise ValueError("Key must be a PdfObject")
+        if not isinstance(value, PdfObject):
+            raise ValueError("Value must be a PdfObject")
+        dict.__setitem__(self, key, value)
+
+    def setdefault(self, key: Any, value: Any = None) -> Any:
+        if not isinstance(key, PdfObject):
+            raise ValueError("Key must be a PdfObject")
+        if not isinstance(value, PdfObject):
+            raise ValueError("Value must be a PdfObject")
+        return dict.setdefault(self, key, value)
+
     def raw_get(self, key: Any) -> Any:
         return super().__getitem__(key)
+
+    @classmethod
+    def _get_next_object_position(
+        cls, position_before: int, position_end: int, generations: list[int], pdf: Any
+    ) -> int:
+        positions = (
+            position
+            for generation in generations
+            for position in pdf.xref[generation].values()
+            if position_before < position <= position_end
+        )
+        return min(positions, default=position_end)
+
+    @classmethod
+    def _read_unsized_from_stream(cls, *, stream: Any, pdf: Any, length: int) -> bytes:
+        return read_unsized(stream, pdf, length)
+
+    @staticmethod
+    def read_from_stream(stream: Any, pdf: Any, forced_encoding: Any = None) -> DictionaryObject:
+        return read_dictionary(stream, pdf, forced_encoding)
 
     @property
     def xmp_metadata(self) -> Any:
@@ -212,6 +632,42 @@ class StreamObject(DictionaryObject):
         super().__init__()
         self._data = b""
         self.decoded_self: DecodedStreamObject | None = None
+
+    def replicate(self, pdf_dest: Any) -> StreamObject:
+        copy = self._reference_clone(self.__class__(), pdf_dest, False)
+        copy._data = self._data
+        self._replicate_decoded(pdf_dest)
+        for key, value in dict.items(self):
+            copy[key.replicate(pdf_dest)] = (
+                value.replicate(pdf_dest) if hasattr(value, "replicate") else value
+            )
+        return copy
+
+    def _replicate_decoded(self, pdf_dest: Any) -> None:
+        decoded = getattr(self, "decoded_self", None)
+        self.decoded_self = None if decoded is None else decoded.replicate(pdf_dest)
+
+    def _clone(
+        self,
+        src: DictionaryObject,
+        pdf_dest: Any,
+        force_duplicate: bool,
+        ignore_fields: Any,
+        visited: set[tuple[int, int]],
+    ) -> None:
+        source = cast("StreamObject", src)
+        self._data = source._data
+        decoded = getattr(source, "decoded_self", None)
+        self.decoded_self = (
+            None if decoded is None else decoded.clone(pdf_dest, force_duplicate, ignore_fields)
+        )
+        super()._clone(src, pdf_dest, force_duplicate, ignore_fields, visited)
+
+    def hash_bin(self) -> int:
+        return hash((super().hash_bin(), self._data))
+
+    def hash_value_data(self) -> bytes:
+        return super().hash_value_data() + self.get_data()
 
     def get_data(self) -> bytes:
         return self._data
@@ -286,8 +742,46 @@ class IndirectObject(PdfObject):
         self.generation = generation
         self.pdf = pdf
 
+    def _own_reference(self) -> IndirectObject:
+        return self
+
+    def hash_bin(self) -> int:
+        return hash((self.__class__, self.idnum, self.generation, id(self.pdf)))
+
+    def replicate(self, pdf_dest: Any) -> IndirectObject:
+        return IndirectObject(self.idnum, self.generation, pdf_dest)
+
+    def clone(
+        self,
+        pdf_dest: Any,
+        force_duplicate: bool = False,
+        ignore_fields: Sequence[str | int] | None = (),
+    ) -> IndirectObject:
+        if self.pdf == pdf_dest and not force_duplicate:
+            return self
+        translated = pdf_dest._translation(self.pdf)
+        if self.idnum in translated:
+            copy = pdf_dest.get_object(translated[self.idnum])
+            reference = copy.indirect_reference
+            if force_duplicate:
+                return IndirectObject(reference.idnum, reference.generation, reference.pdf)
+            return reference
+        target = self.get_object()
+        if target is None:
+            # A reference to a missing object is a reference to null (ISO 32000-2 7.3.10).
+            target = NullObject()
+            target.indirect_reference = self
+        copy = target.clone(pdf_dest, force_duplicate, ignore_fields)
+        return pdf_dest._add_object(copy)
+
     def get_object(self) -> Any:
         return self.pdf.get_object(self)
+
+    def _get_object_with_check(self) -> Any:
+        target = self.get_object()
+        if isinstance(target, IndirectObject):
+            raise PdfStreamError(f"{self!r} references an IndirectObject {target!r}")
+        return target
 
     def __deepcopy__(self, memo: Any) -> IndirectObject:
         # A copied reference points at the same document, which is not copied.
@@ -311,29 +805,37 @@ class IndirectObject(PdfObject):
     def __repr__(self) -> str:
         return f"IndirectObject({self.idnum!r}, {self.generation!r}, {id(self.pdf)})"
 
-    @classmethod
-    def read_from_stream(cls, stream: Any, pdf: Any = None, *_: object) -> Any:
-        start = stream.tell()
-        fields = stream.read().split(None, 3)
-        if len(fields) < 3 or fields[2][:1] != b"R":
-            raise ValueError("invalid indirect reference")
-        number, generation = int(fields[0]), int(fields[1])
-        stream.seek(start)
-        data = stream.read()
-        stream.seek(start + data.index(b"R") + 1)
-        return cls(number, generation, pdf)
+    def __str__(self) -> str:
+        return str(self.get_object())
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__"):
+            raise AttributeError(name)
+        try:
+            return getattr(self._get_object_with_check(), name)
+        except AttributeError:
+            raise AttributeError(
+                f"No attribute {name} found in IndirectObject or pointed object"
+            ) from None
+
+    def __float__(self) -> float:
+        return float(self.get_object())
+
+    def __int__(self) -> int:
+        return int(self.get_object())
+
+    @staticmethod
+    def read_from_stream(stream: Any, pdf: Any) -> IndirectObject:
+        return read_indirect(stream, pdf)
 
     def __getitem__(self, key: Any) -> Any:
-        return self.get_object()[key]
-
-    def get_resolved(self, key: Any, default: Any = None) -> Any:
-        return self.get_object().get_resolved(key, default)
+        return self._get_object_with_check()[key]
 
     def __contains__(self, key: Any) -> bool:
-        return key in self.get_object()
+        return key in self._get_object_with_check()
 
     def __iter__(self) -> Any:
-        return iter(self.get_object())
+        return iter(self._get_object_with_check())
 
 
 def _number(value: Any) -> FloatObject | NumberObject:
@@ -452,10 +954,8 @@ def to_generic(value: Any, pdf: Any = None) -> Any:
         return NumberObject(value)
     if isinstance(value, float):
         return FloatObject(value)
-    if isinstance(value, PdfName):
-        return NameObject(f"/{value.value}")
-    if isinstance(value, str):
-        return NameObject(f"/{value}")
+    if isinstance(value, (PdfName, str)):
+        return _generic_key(value)
     if isinstance(value, PdfString):
         return create_string_object(bytes(value.data))
     if isinstance(value, (bytes, bytearray, memoryview)):
@@ -481,44 +981,55 @@ def to_generic(value: Any, pdf: Any = None) -> Any:
 
 
 def _generic_key(key: Any) -> NameObject:
-    return NameObject(f"/{getattr(key, 'value', key)}")
+    text = getattr(key, "value", key)
+    if text.isascii():
+        return NameObject(f"/{text}")
+    data = key.value_bytes if isinstance(key, PdfName) else text.encode("latin-1")
+    decoded = decode_name(data)
+    name = NameObject(f"/{data.decode('charmap') if decoded is None else decoded}")
+    name._file_bytes = data
+    return name
+
+
+def _core_key(key: str) -> Any:
+    name = _name_bytes(key)
+    return key[1:] if key.isascii() else PdfName(name)
+
+
+def _core_dictionary(items: Iterable[tuple[Any, Any]]) -> dict[Any, Any]:
+    return {_core_key(key): to_core(item) for key, item in items if not _is_internal_key(key)}
 
 
 def to_core(value: Any) -> Any:
     """Convert a pypdf object for core-pdf's serializer."""
+    if isinstance(value, (NullObject, type(None))):
+        return None
+    if isinstance(value, IndirectObject):
+        return PdfReference(value.idnum, value.generation)
     # Destinations and outline items are written in a different form from the one they hold.
     core_form = getattr(value, "core_form", None)
     if core_form is not None:
         return to_core(core_form())
-    if isinstance(value, (NullObject, type(None))):
-        return None
     if isinstance(value, BooleanObject):
         return value.value
-    if isinstance(value, IndirectObject):
-        return PdfReference(value.idnum, value.generation)
     if isinstance(value, NumberObject):
         return int(value)
     if isinstance(value, FloatObject):
         return float(value)
     if isinstance(value, NameObject):
-        if not value.startswith("/"):
-            raise ValueError(f"name must start with /: {value!r}")
-        return PdfName(value[1:].encode("latin-1"))
+        return PdfName(_name_bytes(value))
     if isinstance(value, ByteStringObject):
         return PdfString(bytes(value), is_literal=False)
     if isinstance(value, str):
         return PdfString(_encode_text(value))
     if isinstance(value, StreamObject):
-        items: dict[str, Any] = dict(dict.items(value))
-        dictionary = {key[1:]: to_core(item) for key, item in items.items()}
-        return PdfStream(dictionary, value._stored_data())
+        return PdfStream(_core_dictionary(dict.items(value)), value._stored_data())
+    if isinstance(value, dict):
+        return _core_dictionary(dict.items(value))
     if isinstance(value, Mapping):
-        plain: dict[str, Any] = (
-            dict(value) if not isinstance(value, dict) else dict(dict.items(value))
-        )
-        return {key[1:]: to_core(item) for key, item in plain.items()}
+        return _core_dictionary(value.items())
     if isinstance(value, list):
-        return [to_core(list.__getitem__(value, index)) for index in range(len(value))]
+        return [to_core(item) for item in list.__iter__(value)]
     return value
 
 
@@ -527,20 +1038,19 @@ def _encode_text(value: str) -> bytes:
     return text.get_encoded_bytes()
 
 
-def read_object(stream: Any, pdf: Any = None) -> Any:
-    start = stream.tell()
-    data = stream.read()
-    lexer = PdfLexer(data)
-    value = lexer.parse_object()
-    stream.seek(start + lexer.pos)
-    return to_generic(value, pdf)
-
-
-def read_buffer(data: bytes, pdf: Any = None) -> Any:
-    return read_object(BytesIO(data), pdf)
-
-
 from core_pdf_compat.pypdf._generic_content import ContentStream, decode_stream  # noqa: E402
+from core_pdf_compat.pypdf._generic_read import (  # noqa: E402
+    decode_name,
+    read_array,
+    read_boolean,
+    read_dictionary,
+    read_indirect,
+    read_name,
+    read_null,
+    read_number,
+    read_object,
+    read_unsized,
+)
 
 __all__ = (
     "PAGE_FIT",

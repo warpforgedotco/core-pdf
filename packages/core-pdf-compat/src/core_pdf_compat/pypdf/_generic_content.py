@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 
 from core_pdf.impl.capture_recovery import recover_inline_image_data
 from core_pdf.impl.graphics_stream_decoding import decode_one_filter
@@ -281,6 +281,45 @@ class ContentStream(DecodedStreamObject):
         finally:
             lexer.close()
         return image
+
+    def replicate(self, pdf_dest: Any) -> ContentStream:
+        copy = self._reference_clone(self.__class__(None, None), pdf_dest, False)
+        self._replicate_decoded(pdf_dest)
+        for key, value in dict.items(self):
+            copy[key.replicate(pdf_dest)] = (
+                value.replicate(pdf_dest) if hasattr(value, "replicate") else value
+            )
+        copy._clone(self, pdf_dest, False, (), set())
+        return copy
+
+    def clone(
+        self,
+        pdf_dest: Any,
+        force_duplicate: bool = False,
+        ignore_fields: Sequence[str | int] | None = (),
+    ) -> ContentStream:
+        reference = self.indirect_reference
+        if not force_duplicate and reference is not None and reference.pdf == pdf_dest:
+            return self
+        copy = self._reference_clone(self.__class__(None, None), pdf_dest, force_duplicate)
+        copy._clone(self, pdf_dest, force_duplicate, ignore_fields or [], set())
+        return copy
+
+    def _clone(
+        self,
+        src: DictionaryObject,
+        pdf_dest: Any,
+        force_duplicate: bool,
+        ignore_fields: Any,
+        visited: set[tuple[int, int]],
+    ) -> None:
+        del force_duplicate, ignore_fields, visited
+        # As in pypdf, a content stream's dictionary entries are not cloned.
+        source = cast("ContentStream", src)
+        self._data = source._data
+        self.pdf = pdf_dest
+        self._operations = list(source._operations)
+        self.forced_encoding = source.forced_encoding
 
     def get_data(self) -> bytes:
         if not self._data:

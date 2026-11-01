@@ -10,7 +10,11 @@ from typing import TYPE_CHECKING, Any
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.recovery_xref import XRefScanner
 from core_pdf.impl.types import PdfName, PdfReference
-from core_pdf_spec.s_07_syntax.serialize import serialize_indirect_object, serialize_object
+from core_pdf_spec.s_07_syntax.serialize import (
+    ObjectLayout,
+    serialize_indirect_object,
+    serialize_object,
+)
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 if TYPE_CHECKING:
@@ -135,13 +139,18 @@ class EditableDocument:
         return write_output(bytes(output), target)
 
 
-def serialize_body(start: int, objects: dict[PdfReference, Any], trailer: dict[Any, Any]) -> bytes:
+def serialize_body(
+    start: int,
+    objects: dict[PdfReference, Any],
+    trailer: dict[Any, Any],
+    layout: ObjectLayout = ObjectLayout.COMPACT,
+) -> bytes:
     """Write objects, a classic xref table and a trailer, starting at file offset `start`."""
     output = bytearray()
     offsets: dict[int, tuple[int, int]] = {}
     for reference in sorted(objects, key=lambda item: item.object_number):
         offsets[reference.object_number] = (start + len(output), reference.generation_number)
-        output += serialize_indirect_object(reference, objects[reference])
+        output += serialize_indirect_object(reference, objects[reference], layout)
     size = max(offsets, default=0) + 1
     xref_offset = start + len(output)
     output += b"xref\n0 %d\n0000000000 65535 f \n" % size
@@ -149,7 +158,7 @@ def serialize_body(start: int, objects: dict[PdfReference, Any], trailer: dict[A
         offset, generation = offsets.get(number, (0, 65535))
         marker = b"n" if number in offsets else b"f"
         output += b"%010d %05d %s \n" % (offset, generation, marker)
-    output += b"trailer\n" + serialize_object({"Size": size, **trailer})
+    output += b"trailer\n" + serialize_object({"Size": size, **trailer}, layout)
     output += b"\nstartxref\n%d\n%%%%EOF\n" % xref_offset
     return bytes(output)
 

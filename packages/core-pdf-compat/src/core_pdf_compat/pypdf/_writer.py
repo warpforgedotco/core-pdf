@@ -10,6 +10,7 @@ from typing import Any
 
 from core_pdf.impl.document_editing import BINARY_MARKER, serialize_body
 from core_pdf.impl.types import PdfReference
+from core_pdf_spec.s_07_syntax.serialize import ObjectLayout
 
 from ._doc_common import PdfDocCommon
 from ._generic_trees import EmbeddedFile
@@ -178,7 +179,7 @@ class PageObject(DictionaryObject, ABC):
         current = self.get_resolved("/Contents")
         slot = self.get("/Contents")
         if isinstance(current, ArrayObject):
-            replaced = [list.__getitem__(current, index) for index in range(len(current))]
+            replaced = list(current)
         else:
             replaced = [slot]
         shared = writer._contents_of_other_pages(self)
@@ -280,17 +281,22 @@ class PdfWriter(PdfDocCommon):
         if source is None and path is not None and path.exists() and path.stat().st_size:
             source = fileobj
         self._objects: list[Any] = []
-        self._copies: dict[int, dict[int, Any]] = {}
+        # For each source document, by id, its object numbers' numbers here. The document
+        # is kept too, because an id can be reused once its object is freed.
+        self._id_translated: dict[int, dict[Any, Any]] = {}
         self._reserved_pages: set[int] = set()
+        self.incremental = False
+        self._reader = None
+        # Objects are numbered as in pypdf: the information dictionary, pages, then catalog.
+        self._info = DictionaryObject()
+        self._info[NameObject("/Producer")] = TextStringObject("core-pdf")
+        self._add_object(self._info)
         self._pages_object = self._new_pages_tree()
         catalog = DictionaryObject()
         catalog[NameObject("/Type")] = NameObject("/Catalog")
         catalog[NameObject("/Pages")] = self._pages_object.indirect_reference
         self._root_object = catalog
         self._add_object(catalog)
-        self._info = DictionaryObject()
-        self._info[NameObject("/Producer")] = TextStringObject("core-pdf")
-        self._add_object(self._info)
         if source is not None:
             self.append(source)
             self._clone_xmp_metadata(source)
@@ -301,8 +307,7 @@ class PdfWriter(PdfDocCommon):
         reader = source if isinstance(source, PdfReader) else self._reader_for(source)
         catalog = reader.root_object
         if "/Metadata" in catalog:
-            copies = self._copies.setdefault(id(reader), {})
-            metadata = self._import(dict.__getitem__(catalog, "/Metadata"), reader, copies)
+            metadata = self._import(dict.__getitem__(catalog, "/Metadata"), reader)
             self._root_object[NameObject("/Metadata")] = metadata
 
     @property
@@ -349,6 +354,9 @@ class PdfWriter(PdfDocCommon):
             raise AttributeError(name)
         raise NotImplementedError(f"core-pdf has no PDF writer: {name}")
 
+    def _translation(self, source: Any) -> dict[Any, Any]:
+        return self._id_translated.setdefault(id(source), {"PreventGC": source})
+
     def _add_object(self, value: Any) -> IndirectObject:
         reference = getattr(value, "indirect_reference", None)
         if reference is not None and reference.pdf is self:
@@ -369,8 +377,7 @@ class PdfWriter(PdfDocCommon):
                 numbers.add(contents.idnum)
                 contents = contents.get_object()
             if isinstance(contents, ArrayObject):
-                for index in range(len(contents)):
-                    item = list.__getitem__(contents, index)
+                for item in contents:
                     if isinstance(item, IndirectObject):
                         numbers.add(item.idnum)
         return numbers
@@ -407,7 +414,7 @@ class PdfWriter(PdfDocCommon):
 
     def _page_list(self) -> list[PageObject]:
         kids = self._pages_object.get_resolved("/Kids")
-        return [list.__getitem__(kids, index).get_object() for index in range(len(kids))]
+        return [kid.get_object() for kid in kids]
 
     def _insert(self, page: PageObject, index: int) -> PageObject:
         reference = self._add_object(page)
@@ -459,49 +466,47 @@ class PdfWriter(PdfDocCommon):
         source = page if isinstance(page, DictionaryObject) else page._generic_dictionary()
         reference = source.indirect_reference
         owner = getattr(reference, "pdf", None)
-        copies = self._copies.setdefault(id(owner), {})
+        translated = self._translation(owner)
         # A link imported earlier may already have reserved this page's number.
-        reserved = None if reference is None else copies.get(reference.idnum)
-        output = PageObject() if reserved is None else reserved.get_object()
+        reserved = None if reference is None else translated.get(reference.idnum)
+        output = PageObject() if reserved is None else self.get_object(reserved)
         if reference is not None:
-            copies[reference.idnum] = self._add_object(output)
+            translated[reference.idnum] = self._add_object(output).idnum
             self._reserved_pages.discard(reference.idnum)
         for key, value in dict.items(source):
             if key in {"/Parent", *excluded}:
                 continue
-            dict.__setitem__(output, key, self._import(value, owner, copies))
+            dict.__setitem__(output, key, self._import(value, owner))
         for key in ("/Resources", "/MediaBox", "/CropBox", "/Rotate"):
             if key not in output and key not in excluded and hasattr(source, "get_inherited"):
                 inherited = source.get_inherited(key)
                 if inherited is not None:
-                    imported = self._import(inherited, owner, copies)
-                    dict.__setitem__(output, NameObject(key), imported)
+                    dict.__setitem__(output, NameObject(key), self._import(inherited, owner))
         return output
 
-    def _import(self, value: Any, owner: Any, copies: dict[int, Any]) -> Any:
+    def _import(self, value: Any, owner: Any) -> Any:
         if isinstance(value, IndirectObject):
             if value.pdf is self:
                 return value
-            if value.pdf is not owner:
-                # A page built outside a writer can hold references from several documents.
-                owner = value.pdf
-                copies = self._copies.setdefault(id(owner), {})
-            if value.idnum in copies:
-                return copies[value.idnum]
+            # A page built outside a writer can hold references from several documents.
+            owner = value.pdf
+            translated = self._translation(owner)
+            if value.idnum in translated:
+                return IndirectObject(translated[value.idnum], 0, self)
             target = value.get_object()
             if isinstance(target, DictionaryObject) and target.get_resolved("/Type") == "/Page":
                 # Hold the number. If this page is never imported, the link goes to null.
                 reference = self._add_object(PageObject())
-                copies[value.idnum] = reference
+                translated[value.idnum] = reference.idnum
                 self._reserved_pages.add(value.idnum)
                 return reference
             copy = self._empty_copy(target)
             reference = self._add_object(copy)
-            copies[value.idnum] = reference
-            self._fill_copy(copy, target, owner, copies)
+            translated[value.idnum] = reference.idnum
+            self._fill_copy(copy, target, owner)
             return reference
         copy = self._empty_copy(value)
-        self._fill_copy(copy, value, owner, copies)
+        self._fill_copy(copy, value, owner)
         # A page built outside a writer can hold a stream directly, which PDF does not allow.
         return self._add_object(copy) if isinstance(copy, StreamObject) else copy
 
@@ -520,13 +525,12 @@ class PdfWriter(PdfDocCommon):
             return value
         return value
 
-    def _fill_copy(self, copy: Any, value: Any, owner: Any, copies: dict[int, Any]) -> None:
+    def _fill_copy(self, copy: Any, value: Any, owner: Any) -> None:
         if isinstance(value, DictionaryObject):
             for key, item in dict.items(value):
-                dict.__setitem__(copy, key, self._import(item, owner, copies))
+                dict.__setitem__(copy, key, self._import(item, owner))
         elif isinstance(value, ArrayObject):
-            for index in range(len(value)):
-                copy.append(self._import(list.__getitem__(value, index), owner, copies))
+            copy.extend(self._import(item, owner) for item in value)
 
     def append(self, source: Any, outline_item: Any = None, pages: Any = None, **_: Any) -> None:
         del outline_item
@@ -548,16 +552,13 @@ class PdfWriter(PdfDocCommon):
         outline = root.raw_get("/Outlines") if "/Outlines" in root else None
         if outline is None or "/Outlines" in self._root_object:
             return
-        copies = self._copies.setdefault(id(reader), {})
-        imported = self._import(outline, reader, copies)
-        self._root_object[NameObject("/Outlines")] = imported
+        self._root_object[NameObject("/Outlines")] = self._import(outline, reader)
 
     def _drop_unimported_pages(self, reader: Any) -> None:
-        copies = self._copies.setdefault(id(reader), {})
+        translated = self._translation(reader)
         for number in self._reserved_pages:
-            reference = copies.get(number)
-            if reference is not None:
-                self._objects[reference.idnum - 1] = NullObject()
+            if number in translated:
+                self._objects[translated[number] - 1] = NullObject()
         self._reserved_pages.clear()
 
     def add_attachment(self, filename: str, data: str | bytes) -> EmbeddedFile:
@@ -602,7 +603,7 @@ class PdfWriter(PdfDocCommon):
             "Info": to_core(self._info.indirect_reference),
         }
         header = b"%PDF-1.7\n" + BINARY_MARKER
-        return header + serialize_body(len(header), objects, trailer)
+        return header + serialize_body(len(header), objects, trailer, ObjectLayout.SPACED)
 
     def write_bytes(self) -> bytes:
         return self._serialized()
