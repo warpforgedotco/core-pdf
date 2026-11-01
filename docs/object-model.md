@@ -40,6 +40,16 @@ objects and old revisions are dropped. `save_incremental` appends changed object
 original bytes, so signatures survive, but earlier data stays in the file. Use `save` when
 removing data.
 
+### Cross-reference sections
+
+Writers use a classic xref table unless told otherwise. `save(xref_stream=True)` writes an xref
+stream instead, covering every number from 0. `save_incremental` follows the file: an update to
+a file that ends in an xref stream must use one (ISO 32000-2 7.5.8.4), so it does, and
+`xref_stream=False` is refused there. `xref_stream=True` asks for a stream on a file with a
+classic table too. On a damaged file, whose old sections do not read, the update's stream lists
+every object and has no /Prev, so the output is readable without recovery. Streams are stored without a filter, and their field widths fit the file.
+Object streams are not written. `SavedPdf.xref_stream` states which kind a save produced.
+
 ### Encrypted input
 
 Encrypted files can be edited under this policy. Its rule is that encryption never goes away

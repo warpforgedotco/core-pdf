@@ -1,6 +1,6 @@
 """Check that saving each upstream PDF keeps its pages, text and an edit.
 
-uv run --all-packages python scripts/check_document_rewrite.py
+uv run --all-packages python scripts/check_document_rewrite.py [--incremental] [--xref-stream]
 """
 
 import collections
@@ -20,6 +20,7 @@ PATTERNS = (
 )
 MAX_PAGES = 5
 INCREMENTAL = "--incremental" in sys.argv
+XREF_STREAM = "--xref-stream" in sys.argv
 
 
 def page_texts(document: Any) -> list[str]:
@@ -29,6 +30,11 @@ def page_texts(document: Any) -> list[str]:
     ]
 
 
+def ends_in_xref_stream(data: Any) -> bool:
+    offset = int(data[data.rindex(b"startxref") + 9 :].split()[0])
+    return data.xref_stream and b"/Type /XRef" in data[offset : data.rindex(b"startxref")]
+
+
 def check(path: str, counts: collections.Counter[str]) -> None:
     with PdfDocument.open(path) as source:
         expected_pages = len(source.pages)
@@ -36,8 +42,14 @@ def check(path: str, counts: collections.Counter[str]) -> None:
         editor = EditableDocument(source)
         info = editor.add_object({"Title": PdfString(b"Rewritten")})
         editor.trailer["Info"] = info
-        output = editor.save_incremental() if INCREMENTAL else editor.save()
+        if INCREMENTAL:
+            output = editor.save_incremental(xref_stream=True if XREF_STREAM else None)
+        else:
+            output = editor.save(xref_stream=XREF_STREAM)
         original = bytes(source.raw_data)
+    if XREF_STREAM and not ends_in_xref_stream(output):
+        counts["not_a_stream"] += 1
+        print(f"no xref stream written: {path}")
     if INCREMENTAL and not output.startswith(original):
         counts["prefix_changed"] += 1
         print(f"original bytes changed: {path}")

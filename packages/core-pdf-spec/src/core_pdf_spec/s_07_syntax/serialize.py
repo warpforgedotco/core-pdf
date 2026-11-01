@@ -130,6 +130,55 @@ def _serialize_dictionary(dictionary: Mapping[Any, object], layout: ObjectLayout
     return b"<< " + b" ".join(entries) + b" >>"
 
 
+def byte_width(value: int) -> int:
+    return max((value.bit_length() + 7) // 8, 1)
+
+
+def serialize_xref_stream(
+    number: int,
+    offsets: Mapping[int, tuple[int, int]],
+    trailer: Mapping[object, object],
+    own_offset: int,
+    *,
+    compressed: Mapping[int, tuple[int, int]] | None = None,
+    complete: bool = False,
+) -> bytes:
+    """7.5.8: an xref stream object, numbered `number`, that also carries the trailer entries.
+
+    `offsets` maps object numbers to (file offset, generation). The stream's own entry is added.
+    `compressed` maps objects inside object streams to (stream number, index). A `complete`
+    stream covers every number from 0, with the gaps free, as a file's only section does.
+    Otherwise it lists just these objects, as an incremental update does.
+    """
+    used = {item: (2, stream, index) for item, (stream, index) in (compressed or {}).items()}
+    used |= {item: (1, offset, generation) for item, (offset, generation) in offsets.items()}
+    used[number] = (1, own_offset, 0)
+    total = max(used) + 1
+    index: list[int] = []
+    if complete:
+        rows = [used.get(item, (0, 0, 65535)) for item in range(total)]
+        index = [0, total]
+    else:
+        rows = [used[item] for item in sorted(used)]
+        for item in sorted(used):
+            if index and index[-2] + index[-1] == item:
+                index[-1] += 1
+            else:
+                index += [item, 1]
+    widths = [1, byte_width(max(row[1] for row in rows)), byte_width(max(row[2] for row in rows))]
+    data = b"".join(
+        b"".join(field.to_bytes(width, "big") for field, width in zip(row, widths)) for row in rows
+    )
+    dictionary = {
+        **trailer,
+        "Type": PdfName.of("XRef"),
+        "Size": total,
+        "W": widths,
+        "Index": index,
+    }
+    return serialize_indirect_object(PdfReference(number, 0), PdfStream(dictionary, data))
+
+
 def serialize_stream(stream: PdfStream, layout: ObjectLayout = ObjectLayout.COMPACT) -> bytes:
     # 7.3.8: the length is rewritten, because the data may no longer match the original.
     dictionary = dict(stream.dictionary)
@@ -153,4 +202,5 @@ __all__ = (
     "serialize_real",
     "serialize_stream",
     "serialize_string",
+    "serialize_xref_stream",
 )

@@ -4,13 +4,14 @@
 
 from __future__ import annotations
 
+import re
 import secrets
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Self
 
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.recovery_xref import XRefScanner
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf.impl.types import PdfReference, PdfString
 from core_pdf_spec.s_07_security.output import (
     NewEncryption,
     create_security_handler,
@@ -23,6 +24,7 @@ from core_pdf_spec.s_07_syntax.serialize import (
     ObjectLayout,
     serialize_indirect_object,
     serialize_object,
+    serialize_xref_stream,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
@@ -33,6 +35,10 @@ BINARY_MARKER = b"%\xe2\xe3\xcf\xd3\n"
 TRAILER_KEYS = ("Root", "Info", "ID")
 # 7.6: AES needs PDF 1.6 and AES-256 needs 1.7 with an extension or 2.0.
 ENCRYPTED_HEADER_VERSION = b"1.7"
+# 7.5.8: xref streams arrived in PDF 1.5.
+XREF_STREAM_HEADER_VERSION = b"1.5"
+# A stale startxref points at neither kind of section, and counts as a table.
+XREF_STREAM_START = re.compile(rb"[\x00\t\n\x0c\r ]*\d+[\x00\t\n\x0c\r ]+\d+[\x00\t\n\x0c\r ]+obj")
 
 
 class SavedPdf(bytes):
@@ -40,16 +46,21 @@ class SavedPdf(bytes):
 
     `incremental` is False for a full rewrite, which drops old revisions, and True for an
     append, which keeps them. `encryption` names the output's algorithm, or is None when the
-    output is not encrypted, as in `encrypted`.
+    output is not encrypted, as in `encrypted`. `xref_stream` is True when the section this
+    save wrote is an xref stream rather than a classic table.
     """
 
     incremental: bool
     encryption: str | None
+    xref_stream: bool
 
-    def __new__(cls, data: bytes, *, incremental: bool, encryption: str | None) -> Self:
+    def __new__(
+        cls, data: bytes, *, incremental: bool, encryption: str | None, xref_stream: bool
+    ) -> Self:
         saved = super().__new__(cls, data)
         saved.incremental = incremental
         saved.encryption = encryption
+        saved.xref_stream = xref_stream
         return saved
 
     @property
@@ -141,12 +152,13 @@ class EditableDocument:
         target: str | Path | None = None,
         *,
         encryption: Literal["keep", "decrypt"] | NewEncryption = "keep",
+        xref_stream: bool = False,
     ) -> SavedPdf:
         """Write every reachable object once, dropping old revisions and unused objects.
 
         An encrypted input stays encrypted with the same key and passwords. Pass "decrypt" for
         a plain file, or a NewEncryption for new passwords and a new key. See the policy in
-        docs/object-model.md.
+        docs/object-model.md. `xref_stream` writes an xref stream in place of the classic table.
         """
         reachable = self.reachable_references()
         objects = {reference: self.get_object(reference) for reference in reachable.values()}
@@ -172,50 +184,122 @@ class EditableDocument:
                 exempt.add(self.encrypt_entry.object_number)
         elif encryption not in {"keep", "decrypt"}:
             raise ValueError("encryption must be 'keep', 'decrypt' or a NewEncryption")
-        header = output_header(self.document.raw_data[:8], encrypted=security is not None)
+        minimum = ENCRYPTED_HEADER_VERSION if security is not None else b"1.0"
+        if xref_stream:
+            minimum = max(minimum, XREF_STREAM_HEADER_VERSION)
+        header = output_header(self.document.raw_data[:8], minimum)
         output = bytearray(header + b"\n" + BINARY_MARKER)
-        output += serialize_body(len(output), objects, trailer, security=security, exempt=exempt)
-        return write_output(bytes(output), target, incremental=False, security=security)
+        output += serialize_body(
+            len(output),
+            objects,
+            trailer,
+            xref_stream=xref_stream,
+            security=security,
+            exempt=exempt,
+        )
+        return write_output(
+            bytes(output), target, incremental=False, security=security, xref_stream=xref_stream
+        )
 
-    def save_incremental(self, target: str | Path | None = None) -> SavedPdf:
+    def save_incremental(
+        self, target: str | Path | None = None, *, xref_stream: bool | None = None
+    ) -> SavedPdf:
         """Append changed objects after the original bytes, which stay identical.
 
         Earlier revisions remain readable in the file, so this is not a way to remove data. An
         encrypted input keeps its encryption: new objects use the same key, and this raises if
         that cannot be done.
+
+        By default the update uses the kind of section the file ends with. `xref_stream=True`
+        asks for a stream either way. `xref_stream=False` raises on a file that uses xref
+        streams, because a file indexed by them has to be continued by one (7.5.8.4).
         """
         original = bytes(self.document.raw_data)
         previous = XRefScanner.find_startxref(original)
         if previous is None:
             raise PdfUnsupportedError("an incremental update needs a readable startxref")
+        continues_stream = XREF_STREAM_START.match(original, previous) is not None
+        if xref_stream is False and continues_stream:
+            raise PdfUnsupportedError("a file that uses xref streams must be updated by one")
+        use_stream = continues_stream if xref_stream is None else xref_stream
         security = None if self.security is None else self.sealing_handler()
         output = bytearray(original)
         if not output.endswith(b"\n"):
             output += b"\n"
         offsets: dict[int, tuple[int, int]] = {}
         reachable = self.reachable_references()
-        for number in sorted(self.overlay):
+        # The old sections of a damaged file do not read, so a stream replaces them. Recovery
+        # would otherwise prefer a literal trailer to it, and lose the update.
+        standalone = use_stream and self.document.xref_was_recovered
+        changed = (
+            {**self.mislabelled_streams(reachable), **self.overlay} if standalone else self.overlay
+        )
+        for number in sorted(changed):
             existing = reachable.get(number)
             generation = 0 if existing is None else existing.generation_number
             offsets[number] = (len(output), generation)
             reference = PdfReference(number, generation)
-            value = self.overlay[number]
+            value = changed[number]
             sealed = value if security is None else encrypt_object(security, reference, value)
             output += serialize_indirect_object(reference, sealed)
         trailer: dict[Any, Any] = {
             key: self.trailer[key] for key in TRAILER_KEYS if key in self.trailer
         }
-        trailer["Prev"] = previous
+        if not standalone:
+            trailer["Prev"] = previous
         if security is not None:
             trailer["Encrypt"] = self.encrypt_entry
         section_offset = len(output)
-        if original[previous : previous + 4] == b"xref":
-            trailer["Size"] = max(self.next_object_number, max(offsets, default=0) + 1)
-            output += table_section(offsets) + b"trailer\n" + serialize_object(trailer)
+        size = max(self.next_object_number, max(offsets, default=0) + 1)
+        if standalone:
+            kept, compressed = self.existing_entries()
+            size = max(size, *(number + 1 for number in (*kept, *compressed)))
+            output += serialize_xref_stream(
+                size,
+                {**kept, **offsets},
+                trailer,
+                section_offset,
+                compressed={key: value for key, value in compressed.items() if key not in offsets},
+                complete=True,
+            ).rstrip()
+        elif use_stream:
+            # The stream takes the next free number, past every object in the file.
+            output += serialize_xref_stream(size, offsets, trailer, section_offset).rstrip()
         else:
-            output += xref_stream_section(offsets, trailer, section_offset, self.next_object_number)
+            trailer["Size"] = size
+            output += table_section(offsets) + b"trailer\n" + serialize_object(trailer)
         output += b"\nstartxref\n%d\n%%%%EOF\n" % section_offset
-        return write_output(bytes(output), target, incremental=True, security=security)
+        return write_output(
+            bytes(output), target, incremental=True, security=security, xref_stream=use_stream
+        )
+
+    def mislabelled_streams(self, reachable: dict[int, PdfReference]) -> dict[int, Any]:
+        """Find streams whose /Length is wrong, which only recovery can read as they stand."""
+        found = {}
+        for number, reference in reachable.items():
+            value = self.get_object(reference)
+            if isinstance(value, PdfStream):
+                length = self.document.resolver.resolve(value.dictionary.get("Length"))
+                if length != len(value.raw_data):
+                    found[number] = value
+        return found
+
+    def existing_entries(self) -> tuple[dict[int, tuple[int, int]], dict[int, tuple[int, int]]]:
+        """Split the document's xref into objects by offset and objects in object streams."""
+        offsets: dict[int, tuple[int, int]] = {}
+        compressed: dict[int, tuple[int, int]] = {}
+        # Sorted so that a number's newest generation wins, as one number has one entry here.
+        for key, entry in sorted(self.document.xref.items()):
+            if not entry.in_use:
+                continue
+            number = key >> 16
+            if entry.object_stream is None:
+                offsets[number] = (entry.offset, entry.generation)
+                compressed.pop(number, None)
+            else:
+                compressed[number] = (entry.object_stream, entry.index_in_stream or 0)
+                offsets.pop(number, None)
+        return offsets, compressed
 
     def sealing_handler(self) -> StandardSecurityHandler:
         """Return the input's handler, or raise if its encryption cannot be carried over."""
@@ -237,11 +321,9 @@ def first_identifier(trailer: dict[Any, Any]) -> bytes | None:
     return first.data if isinstance(first, PdfString) and first.data else None
 
 
-def output_header(start: bytes | memoryview, *, encrypted: bool) -> bytes:
+def output_header(start: bytes | memoryview, minimum: bytes) -> bytes:
     header = bytes(start) if bytes(start).startswith(b"%PDF-") else b"%PDF-1.7"
-    if encrypted and header[5:] < ENCRYPTED_HEADER_VERSION:
-        return b"%PDF-" + ENCRYPTED_HEADER_VERSION
-    return header
+    return header if header[5:] >= minimum else b"%PDF-" + minimum
 
 
 def serialize_body(
@@ -250,12 +332,14 @@ def serialize_body(
     trailer: dict[Any, Any],
     layout: ObjectLayout = ObjectLayout.COMPACT,
     *,
+    xref_stream: bool = False,
     security: StandardSecurityHandler | None = None,
     exempt: set[int] | frozenset[int] = frozenset(),
 ) -> bytes:
-    """Write objects, a classic xref table and a trailer, starting at file offset `start`.
+    """Write objects and an xref section with the trailer, starting at file offset `start`.
 
-    With `security`, every object is encrypted except those numbered in `exempt`.
+    The section is a classic table, or an xref stream if `xref_stream` is set. With `security`,
+    every object is encrypted except those numbered in `exempt`.
     """
     output = bytearray()
     offsets: dict[int, tuple[int, int]] = {}
@@ -267,6 +351,10 @@ def serialize_body(
         output += serialize_indirect_object(reference, value, layout)
     size = max(offsets, default=0) + 1
     xref_offset = start + len(output)
+    if xref_stream:
+        output += serialize_xref_stream(size, offsets, trailer, xref_offset, complete=True).rstrip()
+        output += b"\nstartxref\n%d\n%%%%EOF\n" % xref_offset
+        return bytes(output)
     output += b"xref\n0 %d\n0000000000 65535 f \n" % size
     for number in range(1, size):
         offset, generation = offsets.get(number, (0, 65535))
@@ -283,11 +371,12 @@ def write_output(
     *,
     incremental: bool,
     security: StandardSecurityHandler | None,
+    xref_stream: bool,
 ) -> SavedPdf:
     if target is not None:
         Path(target).write_bytes(data)
     encryption = None if security is None else describe_encryption(security.config)
-    return SavedPdf(data, incremental=incremental, encryption=encryption)
+    return SavedPdf(data, incremental=incremental, encryption=encryption, xref_stream=xref_stream)
 
 
 def table_section(offsets: dict[int, tuple[int, int]]) -> bytes:
@@ -304,38 +393,6 @@ def table_section(offsets: dict[int, tuple[int, int]]) -> bytes:
             section += b"%010d %05d n \n" % (offset, generation)
         start = end + 1
     return bytes(section)
-
-
-def xref_stream_section(
-    offsets: dict[int, tuple[int, int]],
-    trailer: dict[Any, Any],
-    own_offset: int,
-    next_number: int,
-) -> bytes:
-    # A file indexed by xref streams has to be continued by one (ISO 32000-2 7.5.8.4).
-    own_number = max(next_number, max(offsets, default=0) + 1)
-    entries = {**offsets, own_number: (own_offset, 0)}
-    numbers = sorted(entries)
-    index: list[int] = []
-    for number in numbers:
-        if index and index[-2] + index[-1] == number:
-            index[-1] += 1
-        else:
-            index += [number, 1]
-    data = b"".join(
-        b"\x01" + entries[number][0].to_bytes(4, "big") + entries[number][1].to_bytes(2, "big")
-        for number in numbers
-    )
-    dictionary = {
-        **trailer,
-        "Type": PdfName(b"XRef"),
-        "Size": own_number + 1,
-        "W": [1, 4, 2],
-        "Index": index,
-    }
-    return serialize_indirect_object(
-        PdfReference(own_number, 0), PdfStream(dictionary, data)
-    ).rstrip()
 
 
 __all__ = ("BINARY_MARKER", "EditableDocument", "NewEncryption", "SavedPdf", "serialize_body")
