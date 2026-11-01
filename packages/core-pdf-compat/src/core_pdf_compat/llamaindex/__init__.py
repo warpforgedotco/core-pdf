@@ -12,8 +12,8 @@ from core_pdf.impl.types import Record, frozen_setattr
 from core_pdf_spec.s_07_content.inline_images import validate_inline_images
 from core_pdf_spec.s_07_filters.errors import FilterParseError
 
-from ..pypdf import finds_startxref, validate_pypdf_page_tree
 from ..pypdf._text import LegacyTextCaches, extract_legacy_text
+from ._structure import finds_startxref, validate_pypdf_page_tree
 
 
 class MetadataMode(StrEnum):
