@@ -709,7 +709,7 @@ def saslprep(data: str) -> str:
     for char in data:
         for in_table, description in SASLPREP_PROHIBITED:
             if in_table(char):
-                raise ValueError(f"SASLprep: {description} U+{ord(char):04X}")
+                raise ValueError(f"SASLprep: {description}")
 
     in_table_d1 = stringprep.in_table_d1
     if any(in_table_d1(char) for char in data):
@@ -774,4 +774,5 @@ __all__ = (
     "StandardSecurityHandler",
     "StandardSecurityConfig",
     "create_standard_security_handler",
+    "saslprep",
 )

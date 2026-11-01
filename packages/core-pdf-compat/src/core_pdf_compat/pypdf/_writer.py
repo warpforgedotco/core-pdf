@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import warnings
 from collections.abc import Iterable, Iterator
 from io import BytesIO
@@ -10,10 +11,11 @@ from pathlib import Path
 from typing import Any, cast
 
 from core_pdf.impl.document_editing import BINARY_MARKER, serialize_body
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.types import PdfReference, PdfString
 from core_pdf_spec.s_07_syntax.serialize import ObjectLayout
 
 from ._doc_common import PdfDocCommon
+from ._encryption import EncryptAlgorithm, Encryption
 from ._generic_trees import EmbeddedFile
 from ._images import (
     ImageFile,
@@ -34,6 +36,7 @@ from ._page_merge import (
 )
 from ._text import ALL_ORIENTATIONS, TextOptions, extract_layout_text, extract_legacy_text
 from .actions import Action
+from .constants import UserAccessPermissions
 from .errors import PageSizeNotDefinedError
 from .generic import (
     ArrayObject,
@@ -52,6 +55,9 @@ from .generic import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+ALL_DOCUMENT_PERMISSIONS = UserAccessPermissions.all()
 
 
 def _positional_text_arguments(
@@ -434,10 +440,13 @@ class PdfWriter(PdfDocCommon):
         self._id_translated: dict[int, dict[Any, Any]] = {}
         self._reserved_pages: set[int] = set()
         self.incremental = False
+        self._encryption: Encryption | None = None
+        self._encrypt_entry: dict[Any, Any] | None = None
+        self._file_id: bytes | None = None
         self._reader = None
         # Objects are numbered as in pypdf: the information dictionary, pages, then catalog.
         self._info = DictionaryObject()
-        self._info[NameObject("/Producer")] = TextStringObject("core-pdf")
+        self._info[NameObject("/Producer")] = TextStringObject("pypdf")
         self._add_object(self._info)
         self._pages_object = self._new_pages_tree()
         catalog = DictionaryObject()
@@ -739,6 +748,35 @@ class PdfWriter(PdfDocCommon):
     def append_pages_from_reader(self, reader: Any, *_: Any) -> None:
         self.append(reader)
 
+    def encrypt(
+        self,
+        user_password: str,
+        owner_password: str | None = None,
+        use_128bit: bool = True,
+        permissions_flag: UserAccessPermissions = ALL_DOCUMENT_PERMISSIONS,
+        *,
+        algorithm: str | None = None,
+    ) -> None:
+        """Encrypt the written file, as pypdf does. Only the key is kept, not the passwords."""
+        if algorithm is None:
+            chosen = EncryptAlgorithm.RC4_128 if use_128bit else EncryptAlgorithm.RC4_40
+        else:
+            try:
+                chosen = EncryptAlgorithm[algorithm.replace("-", "_")]
+            except KeyError:
+                raise ValueError(f"Algorithm '{algorithm}' NOT supported") from None
+        if self._file_id is None:
+            self._file_id = secrets.token_bytes(16)
+        encryption = Encryption.make(chosen, permissions_flag, self._file_id)
+        self._encrypt_entry = encryption.write_entry(
+            user_password, owner_password or user_password, strict=self.strict
+        )
+        self._encryption = encryption
+
+    @property
+    def is_encrypted(self) -> bool:
+        return self._encryption is not None
+
     def write(self, stream: Any) -> tuple[bool, Any]:
         data = self._serialized()
         if isinstance(stream, (str, Path)):
@@ -756,7 +794,18 @@ class PdfWriter(PdfDocCommon):
             "Info": to_core(self._info.indirect_reference),
         }
         header = b"%PDF-1.7\n" + BINARY_MARKER
-        return header + serialize_body(len(header), objects, trailer, ObjectLayout.SPACED)
+        security = None
+        exempt = set[int]()
+        if self._encryption is not None:
+            security = self._encryption.handler
+            entry = PdfReference(len(objects) + 1, 0)
+            objects[entry] = self._encrypt_entry
+            exempt.add(entry.object_number)
+            identifier = PdfString(self._file_id or b"", is_literal=False)
+            trailer |= {"ID": [identifier, identifier], "Encrypt": entry}
+        return header + serialize_body(
+            len(header), objects, trailer, ObjectLayout.SPACED, security=security, exempt=exempt
+        )
 
     def write_bytes(self) -> bytes:
         return self._serialized()

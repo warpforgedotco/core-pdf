@@ -7,6 +7,7 @@ from collections.abc import Callable
 from core_pdf_spec.exceptions import (
     PdfDecryptionError,
     PdfError,
+    PdfInvalidPermissionsError,
     PdfParseError,
     PdfPasswordError,
     PdfUnsupportedError,
@@ -56,6 +57,7 @@ __all__ = (
     "ExtractionScope",
     "PdfContractError",
     "PdfDecryptionError",
+    "PdfInvalidPermissionsError",
     "PdfDocumentClosedError",
     "PdfEmptySourceError",
     "PdfError",

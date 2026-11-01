@@ -50,19 +50,6 @@ names = [
     # skip hook, and extract_inline_default does arithmetic on a stubbed constant.
     "_appearance_stream", "_font", "_utils", "deprecate_with_replacement", "extract_inline_default",
 ]
-# With pypdf._crypt_providers stubbed, HAS_AES is false, so these take a branch that
-# expects DependencyError and compares it to a private constant. The real library never
-# takes it here, and a facade that decrypts AES cannot pass it. The non-AES parameters
-# of this test stay in scope, so `names` cannot express this.
-deselect = [
-    "tests/test_encryption.py::test_encryption[r4-aes-user-password.pdf-True]",
-    "tests/test_encryption.py::test_encryption[r5-empty-password.pdf-True]",
-    "tests/test_encryption.py::test_encryption[r5-user-password.pdf-True]",
-    "tests/test_encryption.py::test_encryption[r5-owner-password.pdf-True]",
-    "tests/test_encryption.py::test_encryption[r6-empty-password.pdf-True]",
-    "tests/test_encryption.py::test_encryption[r6-user-password.pdf-True]",
-    "tests/test_encryption.py::test_encryption[r6-owner-password.pdf-True]",
-]
 stubs = [
     "pypdf.generic._appearance_stream",
     "pypdf.generic._base",
@@ -84,8 +71,6 @@ stubs = [
     "pypdf._protocols",
     "pypdf._reader",
     "pypdf._utils",
-    "pypdf._encryption",
-    "pypdf._crypt_providers",
     "pypdf._text_extraction",
 ]
 files = ["tests/scripts/test_make_release.py"]

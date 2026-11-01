@@ -86,6 +86,11 @@ by accident: nobody loses protection without asking for it, and each save says w
   The file key stays in the handler, as reading needs it, and is left out of `repr`, as are
   the passwords in `NewEncryption`.
 
+The pypdf facade follows pypdf rather than this table, because that is its contract: a
+`PdfWriter` starts empty, so `clone_from` an encrypted reader gives a plain file until
+`encrypt` is called. `encrypt` keeps only the key. A reader stays locked on a file whose /Perms
+is wrong and reports `are_permissions_valid` as False, where pypdf warns and reads on.
+
 Limits worth knowing:
 
 - Permission bits (/P) are carried over, not enforced. Anyone with either password has the

@@ -187,9 +187,9 @@ def check_file(path: str, password: str, counts: collections.Counter[str]) -> No
                 print(f"save misnames {algorithm} as {data.encryption}: {label}")
 
 
-def expect_refused(label: str, opener: Any, counts: collections.Counter[str]) -> None:
+def expect_refused(label: str, data: bytes, counts: collections.Counter[str]) -> None:
     try:
-        opener()
+        PdfDocument.open(data, password="user").close()
     except PdfError:
         counts["tampered_refused"] += 1
     else:
@@ -203,22 +203,15 @@ def check_tampering(counts: collections.Counter[str]) -> None:
         for algorithm in ALGORITHMS:
             editor = EditableDocument(source)
             data = bytearray(editor.save(encryption=NewEncryption("user", "owner", algorithm)))
-            start = data.index(b"/U <") + 4
-            flipped = bytes(data[start:]).translate(bytes.maketrans(b"0123456789", b"1234567890"))
-            bad_user = bytes(data[:start]) + flipped[:8] + bytes(data[start + 8 :])
-            expect_refused(
-                f"{algorithm} /U",
-                lambda password=bad_user: PdfDocument.open(password, password="user").close(),
-                counts,
-            )
+            expect_refused(f"{algorithm} /U", flip_hex_after(data, b"/U <"), counts)
             if b"/Perms <" in data:
-                start = data.index(b"/Perms <") + 8
-                bad_perms = bytes(data[:start]) + b"00" + bytes(data[start + 2 :])
-                expect_refused(
-                    f"{algorithm} /Perms",
-                    lambda password=bad_perms: PdfDocument.open(password, password="user").close(),
-                    counts,
-                )
+                expect_refused(f"{algorithm} /Perms", flip_hex_after(data, b"/Perms <"), counts)
+
+
+def flip_hex_after(data: bytearray, marker: bytes) -> bytes:
+    """Change the hex digit that follows `marker`, which always changes the value."""
+    start = data.index(marker) + len(marker)
+    return bytes(data[:start]) + (b"1" if data[start] == 0x30 else b"0") + bytes(data[start + 1 :])
 
 
 def check_refusals(counts: collections.Counter[str]) -> None:

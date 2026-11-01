@@ -2,20 +2,22 @@ from __future__ import annotations
 
 import logging
 import re
-from enum import IntEnum, IntFlag, auto
+from enum import IntFlag, auto
 from io import BytesIO, UnsupportedOperation
 from pathlib import Path
 from typing import Any, NoReturn, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfInvalidPermissionsError, PdfUnsupportedError
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf import filters
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
+from core_pdf_compat.pypdf._encryption import PasswordType
 from core_pdf_compat.pypdf._reader_scan import XrefScan
 from core_pdf_compat.pypdf._text import LegacyTextCaches
+from core_pdf_compat.pypdf.constants import UserAccessPermissions
 from core_pdf_compat.pypdf.errors import (
     DeprecationError,
     FileNotDecryptedError,
@@ -86,6 +88,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self._pdf: PdfDocument | None = None
         self._decryption_pending = False
         self._checked_object_streams: set[int] = set()
+        self._permissions_tampered = False
         self.stream, self._data, self._stream_opened = _source_bytes(stream)
         scan = XrefScan(self._data, strict, self)
         scan.read()
@@ -96,9 +99,11 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self._open(password)
 
     def _open(self, password: str | bytes | None) -> None:
-        text = password.decode("utf-8", "replace") if isinstance(password, bytes) else password
         try:
-            self._pdf = PdfDocument.open(self._data, password=text or "")
+            self._pdf = PdfDocument.open(self._data, password=password or "")
+        except PdfInvalidPermissionsError:
+            self._decryption_pending = True
+            self._permissions_tampered = True
         except PdfPasswordError as error:
             if password is not None:
                 raise WrongPasswordError("Wrong password") from error
@@ -460,26 +465,48 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def is_encrypted(self) -> bool:
         return self._decryption_pending or bool(getattr(self._pdf, "decipher", None))
 
-    def decrypt(self, password: str | bytes) -> bool:
+    @property
+    def _security_handler(self) -> Any:
+        return None if self._pdf is None else self._pdf.security_handler
+
+    @property
+    def user_access_permissions(self) -> UserAccessPermissions | None:
+        handler = self._security_handler
+        return None if handler is None else UserAccessPermissions(handler.config.permissions)
+
+    @property
+    def are_permissions_valid(self) -> bool | None:
+        """True or False once decrypted, and None for a plain or a still locked file.
+
+        pypdf goes on to decrypt a file whose /Perms is wrong. core-pdf treats that as
+        tampering, so such a reader stays locked, however often the right password is given.
+        """
+        if self._permissions_tampered:
+            return False
+        return None if self._security_handler is None else True
+
+    def decrypt(self, password: str | bytes) -> PasswordType:
         if not self.is_encrypted:
             raise PdfReadError("Not encrypted file")
-        if not self._decryption_pending:
-            return True
-        text = password.decode("utf-8", "replace") if isinstance(password, bytes) else password
         try:
-            pdf = PdfDocument.open(self._data, password=text)
+            pdf = PdfDocument.open(self._data, password=password)
+        except PdfInvalidPermissionsError as error:
+            self._permissions_tampered = True
+            return PASSWORD_TYPES[error.password_kind]
         except PdfPasswordError, PdfUnsupportedError:
-            return False
-        self._pdf = pdf
-        self._decryption_pending = False
-        self.__dict__.pop("_generic_trailer", None)
-        return True
+            return PasswordType.NOT_DECRYPTED
+        handler = pdf.security_handler
+        kind = "user" if handler is None else handler.password_kind
+        if self._decryption_pending:
+            self._pdf = pdf
+            self._decryption_pending = False
+            self.__dict__.pop("_generic_trailer", None)
+        else:
+            pdf.close()
+        return PASSWORD_TYPES[kind]
 
 
-class PasswordType(IntEnum):
-    NOT_DECRYPTED = 0
-    USER_PASSWORD = 1
-    OWNER_PASSWORD = 2
+PASSWORD_TYPES = {"user": PasswordType.USER_PASSWORD, "owner": PasswordType.OWNER_PASSWORD}
 
 
 class ImageType(IntFlag):
