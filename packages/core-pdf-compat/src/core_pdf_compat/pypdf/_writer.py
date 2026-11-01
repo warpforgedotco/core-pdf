@@ -8,7 +8,7 @@ import secrets
 import sys
 import uuid
 import warnings
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from copy import copy
 from io import BytesIO, IOBase
 from pathlib import Path
@@ -912,14 +912,14 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
     def _import(self, value: Any, owner: Any) -> Any:
         """Copy a value from another document, with what it refers to.
 
-        References go on a list rather than through recursion: outline items chain through
-        /Next, and a real outline can be longer than Python's stack.
+        Objects are numbered depth first, as pypdf does. Work goes on a stack of generators
+        rather than through recursion, as a real outline can be longer than Python's stack.
         """
-        pending: list[tuple[Any, Any, Any]] = []
+        pending: list[Iterator[None]] = []
         output = self._bring(value, owner, pending)
         while pending:
-            duplicate, source, source_owner = pending.pop()
-            self._fill_copy(duplicate, source, source_owner, pending)
+            if next(pending[-1], self) is self:
+                pending.pop()
         return output
 
     def _bring(self, value: Any, owner: Any, pending: list[Any]) -> Any:
@@ -950,10 +950,10 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 duplicate.indirect_reference = None
             reference = self._add_object(duplicate)
             translated[value.idnum] = reference.idnum
-            pending.append((duplicate, target, owner))
+            pending.append(self._fill_copy(duplicate, target, owner, pending))
             return reference
         duplicate = self._empty_copy(value)
-        pending.append((duplicate, value, owner))
+        pending.append(self._fill_copy(duplicate, value, owner, pending))
         # A page built outside a writer can hold a stream directly, which PDF does not allow.
         return self._add_object(duplicate) if isinstance(duplicate, StreamObject) else duplicate
 
@@ -972,12 +972,51 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             return ArrayObject()
         return value
 
-    def _fill_copy(self, duplicate: Any, value: Any, owner: Any, pending: list[Any]) -> None:
+    def _bring_array_item(self, item: Any, owner: Any, pending: list[Any]) -> Any:
+        """pypdf gives a stream in an array its own copy each time, so pages stop sharing it."""
+        if isinstance(item, IndirectObject) and item.pdf is not self:
+            target = item.get_object()
+            if isinstance(target, StreamObject):
+                duplicate = self._empty_copy(target)
+                reference = self._add_object(duplicate)
+                pending.append(self._fill_copy(duplicate, target, item.pdf, pending))
+                return reference
+        return self._bring(item, owner, pending)
+
+    def _number_chains(self, value: DictionaryObject, owner: Any, pending: list[Any]) -> None:
+        """Number a linked list in order before its items are filled, as pypdf does."""
+        kind = value.get_resolved("/Type")
+        for key in ("/Next", "/Prev", "/N", "/V"):
+            found: list[Any] = []
+            current: Any = value
+            while key in current:
+                link = dict.__getitem__(current, key)
+                if not isinstance(link, IndirectObject) or link.pdf is self:
+                    break
+                current = link.get_object()
+                if not isinstance(current, DictionaryObject):
+                    break
+                other = current.get_resolved("/Type")
+                if kind is not None and other is not None and kind != other:
+                    break
+                if link.idnum in self._translation(link.pdf):
+                    break
+                self._bring(link, owner, found)
+            pending.extend(reversed(found))
+
+    def _fill_copy(
+        self, duplicate: Any, value: Any, owner: Any, pending: list[Any]
+    ) -> Iterator[None]:
         if isinstance(value, DictionaryObject):
+            self._number_chains(value, owner, pending)
+            yield
             for key, item in dict.items(value):
                 dict.__setitem__(duplicate, key, self._bring(item, owner, pending))
+                yield
         elif isinstance(value, ArrayObject):
-            duplicate.extend(self._bring(item, owner, pending) for item in value)
+            for item in value:
+                duplicate.append(self._bring_array_item(item, owner, pending))
+                yield
 
     def clone_reader_document_root(self, reader: Any) -> None:
         self._info_obj = None

@@ -124,8 +124,7 @@ jobs:
         run: uv cache prune --ci
 
   upstream-suites:
-    # Each facade runs its reference library's own tests. pypdf is left out until its
-    # in-scope tests pass, so that a failure here means a regression.
+    # Each facade runs its reference library's own tests, so a failure here means a regression.
     name: Upstream suite / ${{ matrix.suite }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -138,6 +137,7 @@ jobs:
           - xray
           - llamaindex
           - unstructured
+          - pypdf
 
     steps:
       - name: Check out repository

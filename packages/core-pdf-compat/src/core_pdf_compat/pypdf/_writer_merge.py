@@ -137,7 +137,7 @@ class MergeWriter:
             first = next(iter(source_pages.values())).indirect_reference
             parent = self.add_outline_item(TextStringObject(outline_item), first).get_object()
         else:
-            parent = self.get_outline_root() if import_outline and "/Outlines" in root else None
+            parent = self.get_outline_root()
         if import_outline and "/Outlines" in root:
             filtered = self._get_filtered_outline(
                 node=root.get("/Outlines"), pages=source_pages, reader=reader
