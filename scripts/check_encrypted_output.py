@@ -150,6 +150,24 @@ def check_file(path: str, password: str, counts: collections.Counter[str]) -> No
             second_reader=readable,
         )
         check_output(
+            f"{label} keep xref stream",
+            editor.save(xref_stream=True),
+            password,
+            expected,
+            counts,
+            encrypted=encrypted,
+            second_reader=readable,
+        )
+        check_output(
+            f"{label} incremental xref stream",
+            editor.save_incremental(xref_stream=True),
+            password,
+            expected,
+            counts,
+            encrypted=encrypted,
+            second_reader=readable,
+        )
+        check_output(
             f"{label} decrypt",
             editor.save(encryption="decrypt"),
             "",
@@ -159,7 +177,7 @@ def check_file(path: str, password: str, counts: collections.Counter[str]) -> No
         )
         for algorithm in ALGORITHMS:
             request = NewEncryption(NEW_USER, NEW_OWNER, algorithm)
-            data = editor.save(encryption=request)
+            data = editor.save(encryption=request, xref_stream=algorithm == "AES-128")
             for new_password in (NEW_USER, NEW_OWNER):
                 check_output(
                     f"{label} {algorithm}", data, new_password, expected, counts, encrypted=True
@@ -281,6 +299,25 @@ def check_exemptions(counts: collections.Counter[str]) -> None:
         counts["plain_stays_plain" if not plain.encrypted else "plain_encrypted"] += 1
 
 
+def check_xref_stream_files(counts: collections.Counter[str]) -> None:
+    """An update to a file that uses xref streams has to be one, encrypted or not."""
+    with PdfDocument.open(f"{ENCRYPTION}/r6-both-passwords.pdf", password="foo") as source:
+        saved = EditableDocument(source).save(xref_stream=True)
+    with PdfDocument.open(bytes(saved), password="foo") as source:
+        editor = EditableDocument(source)
+        editor.trailer["Info"] = editor.add_object({"Title": PdfString(b"Edited title")})
+        data = editor.save_incremental()
+        forced = refused(lambda: editor.save_incremental(xref_stream=False))
+        kept = data.xref_stream and data.encrypted and data.startswith(saved) and forced
+        counts["xref_stream_continued" if kept else "xref_stream_broken"] += 1
+    check_output("stream update", data, "foo", page_texts_of(saved), counts, encrypted=True)
+
+
+def page_texts_of(data: bytes) -> list[str]:
+    with PdfDocument.open(bytes(data), password="foo") as document:
+        return page_texts(document)
+
+
 def main() -> int:
     counts: collections.Counter[str] = collections.Counter()
     for pattern, password in SOURCES:
@@ -297,6 +334,7 @@ def main() -> int:
     check_tampering(counts)
     check_refusals(counts)
     check_exemptions(counts)
+    check_xref_stream_files(counts)
     print(dict(counts))
     allowed = {
         "files_with_text",
@@ -312,6 +350,7 @@ def main() -> int:
         "mac_refused",
         "metadata_kept",
         "plain_stays_plain",
+        "xref_stream_continued",
     }
     return 1 if set(counts) - allowed else 0
 
