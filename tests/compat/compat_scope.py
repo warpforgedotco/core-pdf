@@ -6,6 +6,7 @@ see uses_strategy. CORE_PDF_COMPAT_STRATEGY_AGNOSTIC lists the tests exempt from
 """
 
 import ast
+import contextlib
 import importlib
 import inspect
 import os
@@ -15,6 +16,11 @@ import textwrap
 from typing import Any
 
 import pytest
+
+# core-pdf's vendored copy claims the name fontTools when nothing has it, which hides the
+# full package from fpdf, a test dependency of pypdf's suite.
+with contextlib.suppress(ImportError):
+    importlib.import_module("fontTools")
 
 
 def env_list(name: str) -> list[str]:
@@ -82,12 +88,14 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]):
     return report
 
 
-def contains_stub(value: object) -> bool:
-    if isinstance(value, (list, tuple, set)):
-        return any(contains_stub(item) for item in value)
+def stub_in(value: object) -> str | None:
     if isinstance(value, dict):
-        return any(contains_stub(item) for item in value.values())
-    return type(value).__name__ == "StubMeta"
+        value = list(value.values())
+    if isinstance(value, (list, tuple, set)):
+        return next(filter(None, map(stub_in, value)), None)
+    if type(value).__name__ == "StubMeta":
+        return f"{value.__module__}.{value.__qualname__}"  # ty: ignore[unresolved-attribute]
+    return None
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -108,8 +116,9 @@ def set_collecting(*, active: bool) -> None:
 def pytest_runtest_setup(item: pytest.Item) -> None:
     set_collecting(active=False)
     spec = getattr(item, "callspec", None)
-    if spec is not None and contains_stub(spec.params):
-        pytest.skip("out of scope: parametrized with an unimplemented API")
+    stub = None if spec is None else stub_in(spec.params)
+    if stub is not None:
+        pytest.skip(f"out of scope: {stub}")
 
 
 def real_unstructured_elements(elements: list[Any]) -> list[object]:

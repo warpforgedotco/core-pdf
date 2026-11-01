@@ -15,7 +15,7 @@ from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf import filters
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._encryption import PasswordType
-from core_pdf_compat.pypdf._reader_scan import XrefScan
+from core_pdf_compat.pypdf._reader_scan import OBJECT_HEADER, XrefScan
 from core_pdf_compat.pypdf._text import LegacyTextCaches
 from core_pdf_compat.pypdf.constants import UserAccessPermissions
 from core_pdf_compat.pypdf.errors import (
@@ -37,10 +37,14 @@ from core_pdf_compat.pypdf.generic import (
     is_null_or_none,
     to_generic,
 )
+from core_pdf_compat.pypdf.pagerange import PageRange, parse_filename_page_ranges
+from core_pdf_compat.pypdf.papersizes import PaperSize
 from core_pdf_spec.exceptions import PdfParseError, PdfPasswordError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import key_for
+
+__version__ = "6.15.0"
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +93,17 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self._decryption_pending = False
         self._checked_object_streams: set[int] = set()
         self._permissions_tampered = False
+        self.read(stream)
+        self._open(password)
+
+    def read(self, stream: PdfInput) -> None:
         self.stream, self._data, self._stream_opened = _source_bytes(stream)
-        scan = XrefScan(self._data, strict, self)
+        scan = XrefScan(self._data, self.strict, self)
         scan.read()
         self.xref = scan.xref
         self.xref_free_entry = scan.xref_free_entry
         self.xref_objStm = scan.xref_objStm  # noqa: N815
         self._scan_trailer = scan.trailer
-        self._open(password)
 
     def _open(self, password: str | bytes | None) -> None:
         try:
@@ -199,6 +206,28 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     @property
     def num_pages(self) -> int:
         return len(self._page_list())
+
+    def get_num_pages(self) -> int:
+        return self.num_pages
+
+    def remove_page(self, page: int | PageObject | IndirectObject, clean: bool = False) -> None:
+        pages = self._page_list()
+        target = page.get_object() if isinstance(page, IndirectObject) else page
+        if isinstance(page, IndirectObject) and not isinstance(target, PageObject):
+            logger.warning("IndirectObject is not referencing a page")
+            return
+        if not isinstance(target, int):
+            if target not in pages:
+                logger.warning("Cannot find page in pages")
+                return
+            target = pages.index(target)
+        if not 0 <= target < len(pages):
+            logger.warning("Page number is out of range")
+            return
+        reference = pages[target].indirect_reference
+        del self.pages[target]
+        if clean and reference is not None:
+            self._replace_object(reference, NullObject())
 
     def get_page(self, page_number: int) -> PageObject:
         return self._page_list()[page_number]
@@ -317,10 +346,34 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             if not token.isdigit():
                 logger.warning("NumberObject(b'') invalid; use 0 instead")
 
+    def cache_get_indirect_object(self, generation: int, idnum: int) -> Any:
+        return self.resolved_objects.get((generation, idnum))
+
+    def cache_indirect_object(self, generation: int, idnum: int, obj: Any) -> Any:
+        if (generation, idnum) in self.resolved_objects:
+            message = f"Overwriting cache for {generation} {idnum}"
+            if self.strict:
+                raise PdfReadError(message)
+            logger.warning(message)
+        self.resolved_objects[(generation, idnum)] = obj
+        if obj is not None:
+            obj.indirect_reference = IndirectObject(idnum, generation, self)
+        return obj
+
+    def read_object_header(self, stream: Any) -> tuple[int, int]:
+        position = stream.tell()
+        match = OBJECT_HEADER.match(stream.read())
+        if match is None:
+            raise ValueError("no object header")
+        stream.seek(position + match.end())
+        return int(match[1]), int(match[2])
+
     def _replace_object(self, indirect: IndirectObject, obj: Any) -> Any:
+        if indirect.pdf is not self:
+            raise ValueError("Cannot update PdfReader with external object")
         key = (indirect.generation, indirect.idnum)
         if key not in self.resolved_objects:
-            raise ValueError("Cannot replace an object that has not been read")
+            raise ValueError("Cannot find referenced object")
         self.resolved_objects[key] = obj
         obj.indirect_reference = indirect
         return obj
@@ -442,8 +495,13 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def pdf_header(self) -> str:
         return self._data[:8].decode("utf-8", "backslashreplace")
 
-    def get_form_xfa(self) -> None:
-        return None
+    def _repr_mimebundle_(self, include: Any = None, exclude: Any = None) -> dict[str, Any]:
+        data = {"application/pdf": self._data}
+        if include is not None:
+            data = {key: value for key, value in data.items() if key in include}
+        if exclude is not None:
+            data = {key: value for key, value in data.items() if key not in exclude}
+        return data
 
     def decode_permissions(self, permissions_code: int) -> NoReturn:
         del permissions_code
@@ -543,7 +601,11 @@ def mult(m: list[float], n: list[float]) -> list[float]:
 
 
 __all__ = (
+    "PageRange",
+    "PaperSize",
+    "__version__",
     "mult",
+    "parse_filename_page_ranges",
     "DocumentInformation",
     "ObjectDeletionFlag",
     "ImageType",

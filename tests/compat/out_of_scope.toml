@@ -5,7 +5,7 @@
 # keeps its other cases. `strategy_agnostic` exempts tests from `strategies`. Everything
 # else is in scope, so a failure there is a facade gap.
 # run_upstream_suite.py applies this list to the real library too, so both runs count
-# the same tests.
+# the same tests. scripts/audit_upstream_skips.py checks the skips that remain.
 
 [pdfplumber]
 reason = "pdfium's pixel rounding for a rotated MediaBox, and a no-smoothing render mode"

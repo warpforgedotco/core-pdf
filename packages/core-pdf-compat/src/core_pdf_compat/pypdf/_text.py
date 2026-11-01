@@ -920,6 +920,14 @@ def extract_legacy_text(
     return LegacyTextExtractor(page, caches=caches, options=options).extract()
 
 
+def extract_form_text(
+    page: Any, form: PdfStream, caches: LegacyTextCaches, options: TextOptions
+) -> str:
+    resources = form.dictionary.get("Resources")
+    extractor = LegacyTextExtractor(page, resources, caches=caches, options=options)
+    return extractor.extract((page.document.resolver.resolve_stream(form),))
+
+
 def extract_layout_text(page: Any, caches: LegacyTextCaches, **arguments: Any) -> str:
     fonts = LegacyTextExtractor(page, caches=caches).fonts
     data = b"\n".join(stream.data for stream in page.content_streams)
