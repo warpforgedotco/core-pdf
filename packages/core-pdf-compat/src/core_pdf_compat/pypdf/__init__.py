@@ -5,6 +5,7 @@ import re
 from collections.abc import Iterator, Mapping
 from copy import replace
 from enum import IntEnum, IntFlag, auto
+from functools import cached_property
 from io import BytesIO
 from mmap import mmap
 from typing import Any, cast
@@ -20,7 +21,7 @@ from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf._doc_common import PdfDocCommon
 from core_pdf_compat.pypdf._text import LegacyTextCaches, extract_legacy_text
-from core_pdf_compat.pypdf.errors import FileNotDecryptedError
+from core_pdf_compat.pypdf.errors import FileNotDecryptedError, PdfReadError
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     Destination,
@@ -148,6 +149,8 @@ def validate_pypdf_page_tree(pdf: PdfDocument) -> None:
         elif latest_root is not None and not isinstance(latest_root, dict):
             raise ValueError("invalid catalog root")
 
+    if "Root" not in pdf.trailer_dict:
+        return  # pypdf reports this when the pages are read.
     root = pdf.resolver.as_dict(pdf.catalog().get("Pages"))
     if root is None:
         raise ValueError("invalid object in /Pages")
@@ -483,6 +486,9 @@ class PdfReader(PdfDocCommon, ClosingMixin):
 
     def _materialize(self) -> None:
         document = cast(StructuredState, self._document)
+        source = document.source_pdf
+        if source is not None and "Root" not in source.trailer_dict:
+            raise PdfReadError("Cannot find Root object in pdf")
         self.pages = tuple(
             PdfPageObject(document, None, page_number)
             for page_number in range(1, document.page_count() + 1)
@@ -557,6 +563,15 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             item.indirect_reference = IndirectObject(number, generation, self)
             self.resolved_objects[key] = item
         return self.resolved_objects[key]
+
+    @cached_property
+    def xref(self) -> dict[int, dict[int, int]]:
+        """Generation, then object number, to file offset. Compressed objects are not here."""
+        table: dict[int, dict[int, int]] = {}
+        for key, entry in self._source_document().xref.items():
+            if entry.in_use and entry.object_stream is None:
+                table.setdefault(entry.generation, {})[key >> 16] = entry.offset
+        return table
 
     def _replace_object(self, indirect: IndirectObject, obj: Any) -> Any:
         key = (indirect.generation, indirect.idnum)

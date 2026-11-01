@@ -202,13 +202,11 @@ class _Merge:
         self.writer = page.writer
         reference = source.indirect_reference
         self.owner = getattr(reference, "pdf", None)
-        tracked = self.writer is not None and self.owner is not None
-        self.copies = self.writer._copies.setdefault(id(self.owner), {}) if tracked else {}
 
     def bring(self, value: Any) -> Any:
         if self.writer is None:
             return value
-        return self.writer._import(value, self.owner, self.copies)
+        return self.writer._import(value, self.owner)
 
     def own(self, holder: DictionaryObject, key: str, empty: Any) -> Any:
         """The value under key. A page outside a writer may only share it, so it gets a copy."""
