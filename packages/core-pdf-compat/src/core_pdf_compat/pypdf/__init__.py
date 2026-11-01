@@ -12,6 +12,7 @@ from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
+from core_pdf_compat.pypdf import filters
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._reader_scan import XrefScan
 from core_pdf_compat.pypdf._text import LegacyTextCaches
@@ -36,6 +37,7 @@ from core_pdf_compat.pypdf.generic import (
 )
 from core_pdf_spec.exceptions import PdfParseError, PdfPasswordError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
+from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import key_for
 
 logger = logging.getLogger(__name__)
@@ -83,6 +85,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self._root_object_recovery_limit = root_object_recovery_limit
         self._pdf: PdfDocument | None = None
         self._decryption_pending = False
+        self._checked_object_streams: set[int] = set()
         self.stream, self._data, self._stream_opened = _source_bytes(stream)
         scan = XrefScan(self._data, strict, self)
         scan.read()
@@ -107,6 +110,8 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         except PdfParseError, ValueError:
             # pypdf finds out when something asks for the catalog, not on opening.
             self._pdf = None
+        if password is not None and self._pdf is not None and not self.is_encrypted:
+            raise PdfReadError("Not an encrypted file")
 
     def _get_named_destinations(
         self,
@@ -248,7 +253,12 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def _read_object(self, number: int, generation: int) -> Any:
         source = self._pdf
         if source is not None and key_for(number, generation) in source.xref:
-            return to_generic(source.resolver.resolve(PdfReference(number, generation)), self)
+            if number in self.xref_objStm:
+                self._check_object_stream(self.xref_objStm[number][0])
+            resolved = source.resolver.resolve(PdfReference(number, generation))
+            if isinstance(resolved, PdfStream):
+                self._check_stream_length(resolved, source.xref[key_for(number, generation)])
+            return to_generic(resolved, self)
         pattern = rf"\s{number}\s+{generation}\s+obj".encode()
         match = re.search(pattern, self._data)
         if match is None:
@@ -260,6 +270,47 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         lexer = PdfLexer(self._data)
         lexer.rewind(match.start() + 1)
         return to_generic(lexer.parse_indirect_object(), self)
+
+    def _check_stream_length(self, stream: PdfStream, entry: Any) -> None:
+        limit = filters.MAX_DECLARED_STREAM_LENGTH
+        declared = stream.dictionary.get("Length")
+        if isinstance(declared, int):
+            if declared > limit:
+                raise LimitReachedError(
+                    f"Declared stream length of {declared} exceeds maximum allowed length."
+                )
+            return
+        if declared is None and len(stream.raw_data) >= limit:
+            # pypdf reads in chunks up to 8192 bytes, and checks each chunk before searching it.
+            read, chunk = 0, 16
+            while read + chunk < limit:
+                read += chunk
+                chunk = min(chunk * 2, 8192)
+            start = self._data.index(b"stream", entry.offset) + len(b"stream\n")
+            read = min(read + chunk, len(self._data) - start)
+            raise LimitReachedError(
+                f"Read stream length of {read} exceeds maximum allowed length of {limit}."
+            )
+
+    def _check_object_stream(self, number: int) -> None:
+        if number in self._checked_object_streams:
+            return
+        self._checked_object_streams.add(number)
+        stream = self.get_object(number)
+        data = stream.get_data()
+        count = stream["/N"]
+        maximum = len(data) // 3
+        if count <= maximum:
+            return
+        message = f"Value /N {count} for object {number} exceeds maximum allowed value {maximum}."
+        if self.strict:
+            raise LimitReachedError(message)
+        logger.warning("%s Limiting to %d.", message, maximum)
+        # pypdf reads the header pairs as numbers, which warns on anything else.
+        tokens = data[: stream["/First"]].split() + [b""] * (2 * maximum)
+        for token in tokens[: 2 * maximum]:
+            if not token.isdigit():
+                logger.warning("NumberObject(b'') invalid; use 0 instead")
 
     def _replace_object(self, indirect: IndirectObject, obj: Any) -> Any:
         key = (indirect.generation, indirect.idnum)

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from functools import cache
 from importlib.util import find_spec
@@ -25,10 +26,16 @@ from core_pdf_compat._text_state import (
     ensure_line_break,
     legacy_base_table,
     number_operand,
+    orientation,
     predefined_encoding_codec,
     type1_encoding_entries,
 )
+from core_pdf_compat.pypdf._cmap_scan import scan_to_unicode
+from core_pdf_compat.pypdf._layout import layout_text
+from core_pdf_compat.pypdf.generic import to_generic
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_08_graphics.matrix import multiply_affine
+from core_records import GeneratedRecord
 
 
 class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
@@ -37,6 +44,7 @@ class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     widths: Mapping[int, float]
     default_width: float
     space_width: float
+    natural_space_width: float
     synthetic_space_width: float
     space_code_bytes: bytes
     encoding_table: tuple[str, ...] | None
@@ -202,6 +210,11 @@ def reference_cff_encoding(data: bytes) -> dict[int, str]:
     return {code: name for code, name in encoding.items() if name is not None}
 
 
+logger = logging.getLogger(__name__)
+
+ALL_ORIENTATIONS = (0, 90, 180, 270)
+DEFAULT_SPACE_WIDTH = 200.0
+
 # pypdf stops descending into form XObjects after this many per page extraction
 # (pypdf Configuration.xform_maximum_invocations_per_extraction).
 MAX_FORM_INVOCATIONS = 5_000
@@ -222,6 +235,20 @@ class LegacyTextCaches:
         self.forms: dict[int, tuple[PdfStream, str]] = {}
 
 
+class TextOptions(GeneratedRecord):
+    """The extract_text arguments. ``reader`` turns visited objects into pypdf's."""
+
+    orientations: tuple[int, ...] = ALL_ORIENTATIONS
+    visitor_operand_before: Callable[[Any, Any, Any, Any], None] | None = None
+    visitor_operand_after: Callable[[Any, Any, Any, Any], None] | None = None
+    visitor_text: Callable[[Any, Any, Any, Any, Any], None] | None = None
+    reader: Any = None
+
+    @property
+    def is_plain(self) -> bool:
+        return self == TextOptions(reader=self.reader)
+
+
 class LegacyTextExtractor(TextMachine[LegacyFont]):
     def __init__(
         self,
@@ -230,8 +257,13 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         known_forms: set[int] | None = None,
         caches: LegacyTextCaches | None = None,
         invocations: FormInvocations | None = None,
+        options: TextOptions | None = None,
     ) -> None:
         self.page = page
+        self.options = TextOptions() if options is None else options
+        self.memo_cm = list(IDENTITY_MATRIX)
+        self.memo_tm = list(IDENTITY_MATRIX)
+        self.font_name: str | None = None
         self.document = page.document
         self.resources = resources if resources is not None else page.resources
         self.known_forms = known_forms if known_forms is not None else set()
@@ -287,8 +319,10 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         cmap: ToUnicodeCMap | None = None
         to_unicode = self.document.resolver.resolve(font.get("ToUnicode"))
         if isinstance(to_unicode, PdfStream):
+            data = self.document.resolver.resolve_stream(to_unicode).data
+            scan_to_unicode(data)
             try:
-                cmap = ToUnicodeCMap(self.document.resolver.resolve_stream(to_unicode).data)
+                cmap = ToUnicodeCMap(data)
             except ValueError:
                 cmap = None
         encoding_table, encoding_codec, character_map = self.legacy_encoding(font, decoder)
@@ -300,7 +334,13 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
             if decoder.is_cid_font
             else self.resolve_space_code(cmap, character_map, encoding_table, encoding_is_mapping)
         )
-        widths, default_width, space_width = self.font_widths(font, decoder, cmap, space_code)
+        widths, default_width, space_width, fixed_pitch = self.font_widths(
+            font, decoder, cmap, space_code
+        )
+        # pypdf overrides a zero space width for plain extraction only.
+        natural_space_width = space_width
+        if space_width == DEFAULT_SPACE_WIDTH:
+            natural_space_width = default_width if fixed_pitch else float(default_width // 2)
         if decoder.is_cid_font:
             space_code_bytes = next(
                 (
@@ -321,6 +361,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
             widths,
             default_width,
             space_width,
+            natural_space_width,
             synthetic_space_width,
             space_code_bytes,
             encoding_table,
@@ -537,8 +578,9 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         decoder: FontDecoder,
         cmap: ToUnicodeCMap | None,
         space_code: int | None,
-    ) -> tuple[Mapping[int, float], float, float]:
+    ) -> tuple[Mapping[int, float], float, float, bool]:
         widths = decoder.metrics.widths
+        fixed_pitch = False
         if decoder.is_type3:
             char_procs = self.document.resolver.resolve(font.get("CharProcs"))
             if (
@@ -549,7 +591,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
                     for name in char_procs
                 )
             ):
-                return {}, 500.0, 200.0
+                return {}, 500.0, DEFAULT_SPACE_WIDTH, False
             # pypdf uses the raw /Widths of a Type3 font, unscaled by /FontMatrix.
             widths = self.raw_simple_widths(font)
 
@@ -567,13 +609,14 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
                 base_font = recover_pdf_name(font.get("BaseFont") or "")
                 fixed = font.get("Widths") is None and base_font in REFERENCE_FIXED_PITCH_CORE_FONTS
                 flags = 1 if fixed else 0
+            fixed_pitch = bool(int(flags or 0) & 1)
             positive_widths = [int(width) for _, width in widths.items() if int(width) > 0]
             raw_space = widths.get(space_code) if space_code is not None else None
             space = int(raw_space) if raw_space is not None else 0
             if isinstance(missing_width, (int, float)) and missing_width:
                 default_width = float(int(missing_width))
             elif space:
-                default_width = float(space if int(flags or 0) & 1 else 2 * space)
+                default_width = float(space if fixed_pitch else 2 * space)
             elif positive_widths:
                 default_width = float(sum(positive_widths) // len(positive_widths))
             else:
@@ -584,8 +627,8 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         width = widths.get(space_code) if space_code is not None else None
         legacy_width = width if decoder.is_cid_font else int(width or 0)
         if legacy_width:
-            return widths, default_width, float(legacy_width)
-        return widths, default_width, 200.0
+            return widths, default_width, float(legacy_width), fixed_pitch
+        return widths, default_width, DEFAULT_SPACE_WIDTH, fixed_pitch
 
     def raw_simple_widths(self, font: dict[object, object]) -> dict[int, float]:
         resolve = self.document.resolver.resolve
@@ -641,7 +684,59 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
     def add_text_unit(self, value: str) -> None:
         self.add_directional(value)
 
+    def font_resource(self) -> Any:
+        """The current font as pypdf's dictionary, which visitors receive."""
+        if self.font_name is None:
+            return None
+        resolver = self.document.resolver
+        resources = resolver.as_dict(self.resources)
+        fonts = None if resources is None else resolver.dict_at(resources, "Font")
+        font = None if fonts is None else resolver.as_dict(fonts.get(self.font_name))
+        return to_generic(font, self.options.reader) if font is not None else None
+
+    def visit(
+        self, text: str, cm: list[float] | None = None, tm: list[float] | None = None
+    ) -> None:
+        visitor = self.options.visitor_text
+        if visitor is not None:
+            cm, tm = cm or self.memo_cm, tm or self.memo_tm
+            visitor(text, cm, tm, self.font_resource(), self.font_size)
+
+    def remember_position(self) -> None:
+        self.memo_cm = self.cm.copy()
+        self.memo_tm = self.tm.copy()
+
+    def flush(self) -> None:
+        self.visit(self.text)
+        super().flush()
+        self.remember_position()
+
+    def add_directional(self, value: str) -> None:
+        pending = self.text
+        rtl = self.rtl
+        super().add_directional(value)
+        if self.rtl != rtl:
+            self.visit(pending, self.cm, self.tm)
+
+    def visible(self) -> bool:
+        current = multiply_affine(self.tm, self.cm)
+        return orientation(current) in self.options.orientations
+
+    def positioned(self, string_width: float) -> None:
+        if not self.visible():
+            return
+        text, parts = self.text, len(self.output_parts)
+        super().positioned(string_width)
+        if len(self.output_parts) > parts:
+            self.visit(text + "\n")
+        if not self.text:
+            self.remember_position()
+
     def show(self, data: bytes) -> None:
+        if not self.visible():
+            self.actual_height = self.font_size
+            self.positioned(0.0)
+            return
         if self.font is None:
             parts, width = tuple(data.decode("latin-1")), len(data) * 500.0
         else:
@@ -663,9 +758,13 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
             return
         match operator:
             case "Tf":
-                self.flush()
+                if self.text:
+                    self.flush()
+                else:
+                    self.remember_position()
                 if operands:
                     self.font = self.fonts.get(str(operands[0]))
+                    self.font_name = str(operands[0]) if self.font is not None else None
                     self.half_space_width = (
                         self.font.space_width if self.font is not None else 250.0
                     ) / 2.0
@@ -736,15 +835,28 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         ):
             raise ValueError("unexpected end of inline image stream")
         parsed = list(iter_content_operations(PdfLexer(data)))
+        before, after = self.options.visitor_operand_before, self.options.visitor_operand_after
         for operator, operands in parsed:
+            if before is not None or after is not None:
+                visited_operator = operator.encode("latin-1")
+                visited_operands = [to_generic(item, self.options.reader) for item in operands]
+            if before is not None:
+                before(visited_operator, visited_operands, self.cm, self.tm)
             if operator == "Do" and operands:
                 self.flush()
+                previous = self.output_last
                 self.output_last = ensure_line_break(self.output_parts, self.output_last)
+                if self.output_last != previous:
+                    self.visit("\n")
                 self.paint_form_xobject(operands)
                 self.text = ""
+                self.remember_position()
             else:
                 self.process(operator, operands)
-        self.flush()
+            if after is not None:
+                after(visited_operator, visited_operands, self.cm, self.tm)
+        if self.text:
+            self.flush()
         return "".join(self.output_parts)
 
     def paint_form_xobject(self, operands: tuple[object, ...]) -> None:
@@ -763,6 +875,10 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
             return
         form_id = id(xobject)
         if form_id in self.known_forms:
+            logger.warning(
+                "Detected cyclic form XObject reference, skipping /%s.",
+                recover_pdf_name(operands[0]),
+            )
             return
         if self.invocations.count >= MAX_FORM_INVOCATIONS:
             return
@@ -771,6 +887,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         form_resources = xobject.dictionary.get("Resources")
         if form_resources is None:
             return
+        top_level = top_level and self.options.is_plain
         cached = self.caches.forms.get(form_id) if top_level else None
         if cached is not None:
             child_text = cached[1]
@@ -779,7 +896,12 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
             self.known_forms.add(form_id)
             try:
                 child = LegacyTextExtractor(
-                    self.page, form_resources, self.known_forms, self.caches, self.invocations
+                    self.page,
+                    form_resources,
+                    self.known_forms,
+                    self.caches,
+                    self.invocations,
+                    self.options,
                 )
                 child_text = child.extract((stream,))
             finally:
@@ -789,7 +911,16 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         if child_text:
             self.output_parts.append(child_text)
             self.output_last = child_text[-1]
+        self.visit(child_text)
 
 
-def extract_legacy_text(page: Any, caches: LegacyTextCaches | None = None) -> str:
-    return LegacyTextExtractor(page, caches=caches).extract()
+def extract_legacy_text(
+    page: Any, caches: LegacyTextCaches | None = None, options: TextOptions | None = None
+) -> str:
+    return LegacyTextExtractor(page, caches=caches, options=options).extract()
+
+
+def extract_layout_text(page: Any, caches: LegacyTextCaches, **arguments: Any) -> str:
+    fonts = LegacyTextExtractor(page, caches=caches).fonts
+    data = b"\n".join(stream.data for stream in page.content_streams)
+    return layout_text(iter_content_operations(PdfLexer(data)), fonts, **arguments)
