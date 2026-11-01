@@ -8,7 +8,7 @@ from core_pdf.impl import install_lazy_module_exports
 if TYPE_CHECKING:
     from core_pdf.impl.capture_program import CaptureOptions
     from core_pdf.impl.document_document import DocumentAdapter, PdfDocument
-    from core_pdf.impl.document_editing import EditableDocument
+    from core_pdf.impl.document_editing import EditableDocument, NewEncryption, SavedPdf
     from core_pdf.impl.document_page import PdfPage
     from core_pdf.impl.exceptions import (
         PdfContractError,
@@ -48,6 +48,8 @@ EXPORTS = {
     "Document": ("core_pdf.impl.output_model", "Document"),
     "PageSelection": ("core_pdf.impl.page_selection", "PageSelection"),
     "EditableDocument": ("core_pdf.impl.document_editing", "EditableDocument"),
+    "NewEncryption": ("core_pdf.impl.document_editing", "NewEncryption"),
+    "SavedPdf": ("core_pdf.impl.document_editing", "SavedPdf"),
     "PdfDocument": ("core_pdf.impl.document_document", "PdfDocument"),
     "PdfRasterFontFace": (
         "core_pdf.impl.fonts_fallback",
@@ -97,6 +99,8 @@ __all__ = (
     "Document",
     "PageSelection",
     "EditableDocument",
+    "NewEncryption",
+    "SavedPdf",
     "PdfDocument",
     "PdfError",
     "PdfContractError",

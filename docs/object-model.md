@@ -42,8 +42,55 @@ removing data.
 
 ### Encrypted input
 
-`EditableDocument` refuses an encrypted file. Milestone 6 adds a stated policy for
-decrypted and encrypted output.
+Encrypted files can be edited under this policy. Its rule is that encryption never goes away
+by accident: nobody loses protection without asking for it, and each save says what it did.
+
+| Input | Call | Output |
+| ----- | ---- | ------ |
+| Not opened with its password | `EditableDocument(document)` | Refused |
+| Encrypted | `save()` | Encrypted with the same key and passwords |
+| Encrypted | `save(encryption="decrypt")` | Plain |
+| Any | `save(encryption=NewEncryption(...))` | Encrypted with a new key and passwords |
+| Encrypted | `save_incremental()` | Original bytes kept, new objects encrypted with the same key |
+| Plain | `save()` or `save_incremental()` | Plain |
+
+- **Opening needs the right password.** `PdfDocument.open` refuses a wrong one, and
+  `EditableDocument` refuses a document that has no handler. A file whose user password is
+  empty opens without being given one, because the empty password is its correct password.
+- **Saving keeps what it found.** Decrypting a file is a request, spelled out at the call,
+  never a default or a side effect of editing. So is a weaker algorithm:
+  `NewEncryption` does what it is told, and the choice is visible in that call.
+- **New encryption defaults to AES-256.** `NewEncryption` also takes the older `RC4-40`,
+  `RC4-128`, `AES-128` and `AES-256-R5`. RC4 is broken and exists only for old readers. With no
+  owner password, the user password serves as both, so it also grants owner access. An empty
+  user password encrypts nothing in practice, because any reader can open the file.
+- **An incremental save cannot change encryption.** The original bytes stay, so a decrypted
+  or re-keyed update would be a false promise. `save_incremental` takes no such option.
+- **A save states how it was made.** `save` and `save_incremental` return `SavedPdf`, which is
+  `bytes` with `incremental`, `encrypted` and `encryption` (the algorithm's name, or `None`).
+- **Some saves are refused.** A file with a PDF MAC (`/AuthCode`, or /P demanding one) keeps
+  its encryption only if the MAC is rebuilt, and core-pdf does not make MACs, so `save()` and
+  `save_incremental()` raise `PdfUnsupportedError`. `encryption="decrypt"` or `NewEncryption`
+  still work, and the output has no MAC. Editing the encryption dictionary is refused too.
+- **Passwords and keys are not kept in the open.** `PdfDocument` does not hold the password.
+  The file key stays in the handler, as reading needs it, and is left out of `repr`, as are
+  the passwords in `NewEncryption`.
+
+Limits worth knowing:
+
+- Permission bits (/P) are carried over, not enforced. Anyone with either password has the
+  file key, so they are a request to readers, not access control. A user-password holder can
+  therefore save a decrypted copy, which is what every other PDF tool allows too.
+- Keeping encryption keeps the key. Old copies of the file open with the old password, and
+  `NewEncryption` is the way to retire one.
+- Under RC4, an object changed in place is encrypted with the same keystream as its old
+  version, so anyone with both can compare them. PDF defines the key per object number, and an
+  incremental update must reuse it. Use AES, or a `NewEncryption` full rewrite, for such edits.
+- A full rewrite decrypts and re-encrypts. Under AES each string and stream gets a new IV, so
+  ciphertext changes although content does not. `save_incremental` keeps it byte for byte.
+- CBC and RC4 do not detect tampering with content. A wrong /Perms and a damaged AES padding
+  or GCM tag are refused; a flipped RC4 byte is not detectable by anyone.
+- Public-key (`Adobe.PubSec`) encryption is not supported, for reading or writing.
 
 ## Milestones
 

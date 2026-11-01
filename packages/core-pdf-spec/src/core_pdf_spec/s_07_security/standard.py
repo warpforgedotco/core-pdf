@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import stringprep
 import struct
 import unicodedata
@@ -9,11 +10,11 @@ from collections.abc import Callable, Mapping, Sequence
 from hashlib import md5, sha256, sha384, sha512
 from hmac import compare_digest
 from types import MappingProxyType
-from typing import Literal
+from typing import ClassVar, Literal
 
-from core_pdf_crypto.ciphers import aes_cbc_encrypt, rc4_crypt
+from core_pdf_crypto.ciphers import aes_cbc_encrypt, aes_gcm_encrypt, rc4_crypt
 from core_pdf_spec.exceptions import (
-    PdfDecryptionError,
+    PdfInvalidPermissionsError,
     PdfParseError,
     PdfPasswordError,
     PdfUnsupportedError,
@@ -35,22 +36,24 @@ from core_pdf_spec.types import MISSING
 from core_records import GeneratedRecord
 
 CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
+PasswordKind = Literal["user", "owner"]
 
 PASSWORD_PADDING = (
     b"\x28\xbf\x4e\x5e\x4e\x75\x8a\x41\x64\x00\x4e\x56\xff\xfa\x01\x08"
     b"\x2e\x2e\x00\xb6\xd0\x68\x3e\x80\x2f\x0c\xa9\xfe\x64\x53\x69\x7a"
 )
-SASLPREP_PROHIBITED: tuple[Callable[[str], bool], ...] = (
-    stringprep.in_table_c12,
-    stringprep.in_table_c21_c22,
-    stringprep.in_table_c3,
-    stringprep.in_table_c4,
-    stringprep.in_table_c5,
-    stringprep.in_table_c6,
-    stringprep.in_table_c7,
-    stringprep.in_table_c8,
-    stringprep.in_table_c9,
-    stringprep.in_table_a1,
+SASLPREP_PROHIBITED: tuple[tuple[Callable[[str], bool], str], ...] = (
+    (stringprep.in_table_c12, "non-ASCII space character"),
+    (stringprep.in_table_c21, "ASCII control character"),
+    (stringprep.in_table_c22, "non-ASCII control character"),
+    (stringprep.in_table_c3, "private use character"),
+    (stringprep.in_table_c4, "non-character code point"),
+    (stringprep.in_table_c5, "surrogate code point"),
+    (stringprep.in_table_c6, "character inappropriate for plain text"),
+    (stringprep.in_table_c7, "character inappropriate for canonical representation"),
+    (stringprep.in_table_c8, "character that may change display properties"),
+    (stringprep.in_table_c9, "tagging character"),
+    (stringprep.in_table_a1, "unassigned code point"),
 )
 
 SUPPORTED_RC4_KEY_BITS = (40, 56, 64, 80, 128)
@@ -80,26 +83,23 @@ class StandardSecurityConfig(GeneratedRecord):
 
 
 class StandardSecurityHandler(GeneratedRecord):
+    # The file key stays out of any repr, and so out of logs and tracebacks.
+    __repr_fields__: ClassVar[tuple[str, ...] | None] = ("config",)
+
     config: StandardSecurityConfig
     file_key: bytes
+    password_kind: PasswordKind = "user"
 
-    def decrypt(
-        self,
-        object_number: int,
-        generation_number: int,
-        data: bytes,
-        attrs: PdfDict | None = None,
-        name: str | None = None,
-    ) -> bytes:
+    def crypt_method(self, attrs: PdfDict | None, name: str | None) -> CryptMethod | None:
         config = self.config
         if config.version in (1, 2):
-            return rc4_crypt(self.object_key(object_number, generation_number), data)
+            return "V2"
 
         default_stream_filter = config.stream_filter
         if attrs is not None:
             object_type = decoded_name(attrs.get("Type"))
             if not config.encrypt_metadata and object_type == "Metadata":
-                return data
+                return None
             if object_type == "EmbeddedFile":
                 default_stream_filter = config.embedded_file_filter
 
@@ -109,8 +109,39 @@ class StandardSecurityHandler(GeneratedRecord):
                 if attrs is not None
                 else config.string_filter
             )
-        method = resolve_crypt_method(name, config.crypt_filters)
-        match method:
+        return resolve_crypt_method(name, config.crypt_filters)
+
+    def encrypt(
+        self,
+        object_number: int,
+        generation_number: int,
+        data: bytes,
+        attrs: PdfDict | None = None,
+        name: str | None = None,
+    ) -> bytes:
+        """The inverse of decrypt. AES output differs each call, as each has a random IV."""
+        match self.crypt_method(attrs, name):
+            case None:
+                return data
+            case "V2":
+                return rc4_crypt(self.object_key(object_number, generation_number), data)
+            case "AESV2":
+                key = self.object_key(object_number, generation_number, b"sAlT")
+                return encrypt_aes_cbc(key, data)
+            case "AESV3":
+                return encrypt_aes_cbc(self.file_key, data)
+            case "AESV4":
+                return aes_gcm_encrypt(self.file_key, data)
+
+    def decrypt(
+        self,
+        object_number: int,
+        generation_number: int,
+        data: bytes,
+        attrs: PdfDict | None = None,
+        name: str | None = None,
+    ) -> bytes:
+        match self.crypt_method(attrs, name):
             case None:
                 return data
             case "V2":
@@ -148,10 +179,17 @@ class StandardSecurityHandler(GeneratedRecord):
         return md5(seed).digest()[: min(len(seed), 16)]
 
 
+def encrypt_aes_cbc(key: bytes, data: bytes) -> bytes:
+    initialization_vector = secrets.token_bytes(16)
+    return initialization_vector + aes_cbc_encrypt(
+        key, initialization_vector, data, use_padding=True
+    )
+
+
 def create_standard_security_handler(
     document_id: Sequence[object],
     params: PdfDict,
-    password: str = "",
+    password: str | bytes = "",
 ) -> StandardSecurityHandler:
     filter_name = decoded_name(params.get("Filter"))
     if filter_name is None:
@@ -173,12 +211,13 @@ def create_standard_security_handler(
         config = parse_config(document_id, params, version, supported_revisions)
     except (TypeError, ValueError) as exc:
         raise PdfUnsupportedError("Invalid encryption dictionary") from exc
-    file_key = authenticate(config, password)
-    if file_key is None:
+    authenticated = authenticate(config, password)
+    if authenticated is None:
         raise PdfPasswordError("Incorrect password")
+    file_key, password_kind = authenticated
     if config.revision >= 5 and not validate_permissions(config, file_key):
-        raise PdfDecryptionError("Invalid encryption permissions")
-    return StandardSecurityHandler(config, file_key)
+        raise PdfInvalidPermissionsError("Invalid encryption permissions", password_kind)
+    return StandardSecurityHandler(config, file_key, password_kind)
 
 
 def parse_config(
@@ -428,8 +467,8 @@ def resolve_crypt_method(
 
 def authenticate(
     config: StandardSecurityConfig,
-    password: str,
-) -> bytes | None:
+    password: str | bytes,
+) -> tuple[bytes, PasswordKind] | None:
     match config.revision:
         case 2 | 3 | 4:
             return authenticate_legacy(config, password)
@@ -441,19 +480,11 @@ def authenticate(
 
 def authenticate_legacy(
     config: StandardSecurityConfig,
-    password: str,
-) -> bytes | None:
-    password_bytes = password.encode("latin-1")
-    key = authenticate_legacy_user(config, password_bytes)
-    if key is not None:
-        return key
-
-    digest = md5(pad_password(password_bytes)).digest()
-    key_length = 5
-    if config.revision >= 3:
-        digest = md5_50_rounds(digest)
-        key_length = config.length_bits // 8
-    owner_key = digest[:key_length]
+    password: str | bytes,
+) -> tuple[bytes, PasswordKind] | None:
+    password_bytes = legacy_password_bytes(password)
+    # The owner password comes first, because a file may use one password for both.
+    owner_key = legacy_owner_key(password_bytes, config.revision, config.length_bits)
     if config.revision == 2:
         user_password = rc4_crypt(owner_key, config.owner_entry)
     else:
@@ -462,7 +493,29 @@ def authenticate_legacy(
             config.owner_entry,
             range(19, -1, -1),
         )
-    return authenticate_legacy_user(config, user_password)
+    key = authenticate_legacy_user(config, user_password)
+    if key is not None:
+        return key, "owner"
+    key = authenticate_legacy_user(config, password_bytes)
+    return None if key is None else (key, "user")
+
+
+def legacy_password_bytes(password: str | bytes) -> bytes:
+    if isinstance(password, bytes):
+        return password
+    try:
+        return password.encode("latin-1")
+    except UnicodeEncodeError:
+        return password.encode("utf-8")
+
+
+def legacy_owner_key(password: bytes, revision: int, length_bits: int) -> bytes:
+    digest = md5(pad_password(password)).digest()
+    key_length = 5
+    if revision >= 3:
+        digest = md5_50_rounds(digest)
+        key_length = length_bits // 8
+    return digest[:key_length]
 
 
 def authenticate_legacy_user(
@@ -527,8 +580,8 @@ def rc4_cascade(key: bytes, data: bytes, indexes: range) -> bytes:
 
 def authenticate_modern(
     config: StandardSecurityConfig,
-    password: str,
-) -> bytes | None:
+    password: str | bytes,
+) -> tuple[bytes, PasswordKind] | None:
     password_bytes = normalize_password(password, config.revision)
     owner_hash = config.owner_entry[:32]
     owner_validation_salt = config.owner_entry[32:40]
@@ -550,12 +603,13 @@ def authenticate_modern(
             owner_key_salt,
             config.user_entry,
         )
-        return aes_cbc_decrypt(
+        file_key = aes_cbc_decrypt(
             password_hash,
             bytes(16),
             config.owner_encrypted_key,
             use_padding=False,
         )
+        return file_key, "owner"
 
     password_hash = compute_password_hash(
         config.revision,
@@ -568,12 +622,13 @@ def authenticate_modern(
             password_bytes,
             user_key_salt,
         )
-        return aes_cbc_decrypt(
+        file_key = aes_cbc_decrypt(
             password_hash,
             bytes(16),
             config.user_encrypted_key,
             use_padding=False,
         )
+        return file_key, "user"
     return None
 
 
@@ -587,7 +642,9 @@ def validate_permissions(
     return compare_digest(decrypted[:12], expected)
 
 
-def normalize_password(password: str, revision: int) -> bytes:
+def normalize_password(password: str | bytes, revision: int) -> bytes:
+    if isinstance(password, bytes):
+        return password[:127]
     if revision in (6, 7) and password:
         password = saslprep(password)
     return password.encode("utf-8")[:127]
@@ -649,18 +706,22 @@ def saslprep(data: str) -> str:
     if not data:
         return data
 
-    prohibited = SASLPREP_PROHIBITED
-    in_table_d1 = stringprep.in_table_d1
-    if in_table_d1(data[0]):
-        if not in_table_d1(data[-1]):
-            raise ValueError("SASLprep: failed bidirectional check")
-        prohibited = (*prohibited, stringprep.in_table_d2)
-    else:
-        prohibited = (*prohibited, in_table_d1)
-
     for char in data:
-        if any(in_table(char) for in_table in prohibited):
-            raise ValueError("SASLprep: failed prohibited character check")
+        for in_table, description in SASLPREP_PROHIBITED:
+            if in_table(char):
+                raise ValueError(f"SASLprep: {description} U+{ord(char):04X}")
+
+    in_table_d1 = stringprep.in_table_d1
+    if any(in_table_d1(char) for char in data):
+        if any(stringprep.in_table_d2(char) for char in data):
+            raise ValueError(
+                "SASLprep: string with RandALCat characters must not contain LCat characters"
+            )
+        if not in_table_d1(data[0]) or not in_table_d1(data[-1]):
+            raise ValueError(
+                "SASLprep: string with RandALCat characters must start and end with "
+                "RandALCat characters"
+            )
     return data
 
 
@@ -709,6 +770,7 @@ def name(value: object) -> str:
 
 
 __all__ = (
+    "PasswordKind",
     "StandardSecurityHandler",
     "StandardSecurityConfig",
     "create_standard_security_handler",
