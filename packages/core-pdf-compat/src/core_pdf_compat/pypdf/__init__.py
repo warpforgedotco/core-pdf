@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import re
-from enum import IntFlag, auto
 from io import BytesIO, UnsupportedOperation
 from pathlib import Path
 from typing import Any, NoReturn, cast
@@ -17,7 +16,7 @@ from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._encryption import PasswordType
 from core_pdf_compat.pypdf._reader_scan import OBJECT_HEADER, XrefScan
 from core_pdf_compat.pypdf._text import LegacyTextCaches
-from core_pdf_compat.pypdf.constants import UserAccessPermissions
+from core_pdf_compat.pypdf.constants import ImageType, ObjectDeletionFlag, UserAccessPermissions
 from core_pdf_compat.pypdf.errors import (
     DeprecationError,
     FileNotDecryptedError,
@@ -373,10 +372,17 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             raise ValueError("Cannot update PdfReader with external object")
         key = (indirect.generation, indirect.idnum)
         if key not in self.resolved_objects:
-            raise ValueError("Cannot find referenced object")
+            if indirect.idnum not in self.xref.get(indirect.generation, ()):
+                raise ValueError("Cannot find referenced object")
+            self.get_object(indirect)
         self.resolved_objects[key] = obj
         obj.indirect_reference = indirect
         return obj
+
+    @property
+    def _info(self) -> Any:
+        info = self.trailer.get_resolved("/Info")
+        return info if isinstance(info, DictionaryObject) else None
 
     def _next_object_number(self) -> int:
         file_numbers = (key >> 16 for key in self._pdf.xref) if self._pdf is not None else ()
@@ -565,28 +571,6 @@ class PdfReader(PdfDocCommon, ClosingMixin):
 
 
 PASSWORD_TYPES = {"user": PasswordType.USER_PASSWORD, "owner": PasswordType.OWNER_PASSWORD}
-
-
-class ImageType(IntFlag):
-    NONE = 0
-    XOBJECT_IMAGES = auto()
-    INLINE_IMAGES = auto()
-    DRAWING_IMAGES = auto()
-    ALL = XOBJECT_IMAGES | INLINE_IMAGES | DRAWING_IMAGES
-    IMAGES = ALL
-
-
-class ObjectDeletionFlag(IntFlag):
-    NONE = 0
-    TEXT = auto()
-    LINKS = auto()
-    ATTACHMENTS = auto()
-    OBJECTS_3D = auto()
-    ALL_ANNOTATIONS = auto()
-    XOBJECT_IMAGES = auto()
-    INLINE_IMAGES = auto()
-    DRAWING_IMAGES = auto()
-    IMAGES = XOBJECT_IMAGES | INLINE_IMAGES | DRAWING_IMAGES
 
 
 def mult(m: list[float], n: list[float]) -> list[float]:

@@ -36,7 +36,7 @@ inherit it unchanged.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import datetime
 from typing import Any, cast
 
@@ -63,6 +63,7 @@ from core_pdf_compat.pypdf.generic import (
     IndirectObject,
     NameObject,
     NullObject,
+    NumberObject,
     TextStringObject,
     ViewerPreferences,
     create_string_object,
@@ -94,6 +95,15 @@ class LazyDict(Mapping[Any, Any]):
 
     def __str__(self) -> str:
         return f"LazyDict(keys={list(self.keys())})"
+
+
+HEADERS = tuple(f"%PDF-{version}" for version in ("1.3", "1.4", "1.5", "1.6", "1.7", "2.0"))
+
+
+def highest_header(first: str, second: str) -> str:
+    """The later of two PDF headers. A malformed one does not count."""
+    known = [HEADERS.index(header) for header in (first, second) if header in HEADERS]
+    return HEADERS[max(known)] if known else first
 
 
 def _info_text(key: str) -> property:
@@ -141,6 +151,71 @@ class DocumentInformation(DictionaryObject):
         return _parse_pdf_date(self._get_text("/ModDate"))
 
 
+class _VirtualList(Sequence[Any]):
+    """pypdf's list of pages, which looks pages up rather than holding them."""
+
+    def __init__(self, length: Callable[[], int], get: Callable[[int], Any]) -> None:
+        self.length_function = length
+        self.get_function = get
+
+    def __len__(self) -> int:
+        return self.length_function()
+
+    def __getitem__(self, index: Any) -> Any:
+        if isinstance(index, slice):
+            indices = range(*index.indices(len(self)))
+            return type(self)(indices.__len__, lambda position: self[indices[position]])
+        if not isinstance(index, int):
+            raise TypeError("Sequence indices must be integers")
+        count = len(self)
+        position = index + count if index < 0 else index
+        if not 0 <= position < count:
+            raise IndexError("Sequence index out of range")
+        return self.get_function(position)
+
+    def __delitem__(self, index: Any) -> None:
+        if isinstance(index, slice):
+            for position in sorted(range(*index.indices(len(self))), reverse=True):
+                del self[position]
+            return
+        if not isinstance(index, int):
+            raise TypeError("Index must be integers")
+        count = len(self)
+        position = index + count if index < 0 else index
+        if not 0 <= position < count:
+            raise IndexError("Index out of range")
+        child = self[position].indirect_reference
+        document = child.pdf
+        node: Any = child.get_object().get("/Parent")
+        remove = True
+        first = True
+        while node is not None:
+            node = node.get_object()
+            kids = node["/Kids"]
+            if remove and child not in kids:
+                if first:
+                    raise PdfReadError(f"Page not found in page tree: {child}")
+                return
+            if remove:
+                del kids[kids.index(child)]
+            if first and isinstance(getattr(document, "flattened_pages", None), list):
+                del document.flattened_pages[position]
+            first = False
+            if "/Count" in node:
+                node[NameObject("/Count")] = NumberObject(node["/Count"] - 1)
+            # A branch left empty goes too. Above that, only the counts change.
+            remove = len(kids) == 0
+            child = node.indirect_reference
+            node = node.get("/Parent")
+
+    def __iter__(self) -> Iterator[Any]:
+        for index in range(len(self)):
+            yield self[index]
+
+    def __str__(self) -> str:
+        return f"[{', '.join(f'PageObject({i})' for i in range(self.length_function()))}]"
+
+
 class PdfDocCommon:
     strict: bool
 
@@ -151,6 +226,29 @@ class PdfDocCommon:
     @property
     def root_object(self) -> Any:
         raise NotImplementedError
+
+    def get_named_dest_root(self) -> ArrayObject:
+        output = ArrayObject()
+        catalog = self.root_object
+        names = catalog.get_resolved("/Names")
+        add_object = getattr(self, "_add_object", None)
+        if isinstance(names, DictionaryObject):
+            dests = names.get_resolved("/Dests")
+            if isinstance(dests, DictionaryObject):
+                if "/Names" in dests:
+                    return dests["/Names"]
+                dests[NameObject("/Names")] = output
+            elif add_object is not None:
+                dests = DictionaryObject()
+                names[NameObject("/Dests")] = add_object(dests)
+                dests[NameObject("/Names")] = output
+        elif add_object is not None:
+            names = DictionaryObject()
+            catalog[NameObject("/Names")] = add_object(names)
+            dests = DictionaryObject()
+            names[NameObject("/Dests")] = add_object(dests)
+            dests[NameObject("/Names")] = output
+        return output
 
     def _replace_object(self, indirect: IndirectObject, obj: Any) -> Any:
         raise NotImplementedError
@@ -184,6 +282,9 @@ class PdfDocCommon:
 
     @property
     def open_destination(self) -> Any:
+        return self._read_open_destination()
+
+    def _read_open_destination(self) -> Any:
         action = self.root_object.get_resolved("/OpenAction")
         if isinstance(action, (bytes, str)):
             return create_string_object(action)
@@ -590,4 +691,4 @@ def _field_labels() -> dict[str, str]:
     return {**FA.attributes_dict(), **CheckboxRadioButtonAttributes.attributes_dict()}
 
 
-__all__ = ("LazyDict", "PdfDocCommon")
+__all__ = ("DocumentInformation", "LazyDict", "PdfDocCommon", "_VirtualList", "highest_header")
