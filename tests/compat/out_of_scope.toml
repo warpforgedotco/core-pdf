@@ -80,7 +80,6 @@ stubs = [
     "pypdf._font",
     "pypdf._cmap",
     "pypdf._codecs",
-    "pypdf._page",
     "pypdf._page_labels",
     "pypdf._protocols",
     "pypdf._reader",
@@ -90,7 +89,7 @@ stubs = [
     "pypdf._text_extraction",
 ]
 files = ["tests/scripts/test_make_release.py"]
-partial = ["pypdf.generic"]
+partial = ["pypdf.generic", "pypdf._page"]
 markers = "not enable_socket"
 # These also touch a private name, but they are the only tests of public features the
 # facade lacks: viewer_preferences, attachment_list and named_destinations.

@@ -29,7 +29,6 @@ RESOURCE_KINDS = (
     "/Font",
     "/Properties",
 )
-MAX_INHERITANCE_DEPTH = 64
 
 
 def _multiply(m: Matrix, n: Matrix) -> Matrix:
@@ -101,22 +100,10 @@ def page_dictionary(page: Any) -> DictionaryObject:
     return page if isinstance(page, DictionaryObject) else page._generic_dictionary()
 
 
-def inherited(page: DictionaryObject, key: str) -> Any:
-    current: Any = page
-    for _ in range(MAX_INHERITANCE_DEPTH):
-        if not isinstance(current, DictionaryObject):
-            return None
-        value = current.get_resolved(key)
-        if not is_null_or_none(value):
-            return value
-        current = current.get_resolved("/Parent")
-    return None
-
-
 def _box(page: DictionaryObject, *keys: str) -> RectangleObject:
     for key in keys:
-        box = inherited(page, key)
-        if box is not None:
+        box = page.get_inherited(key)
+        if not is_null_or_none(box):
             return RectangleObject(box)
     raise ValueError("The page has no /MediaBox")
 
@@ -155,37 +142,81 @@ def transform_page(page: Any, ctm: Matrix, expand: bool) -> None:
         page[NameObject("/MediaBox")] = _bounds(_transformed(page.mediabox, ctm))
 
 
+def scale_page(page: Any, sx: float, sy: float) -> None:
+    transform_page(page, (sx, 0, 0, sy, 0, 0), False)
+    # Boxes that were left out default to the crop box, so that one is scaled last of them.
+    for key, box in (
+        ("/BleedBox", page.bleedbox),
+        ("/TrimBox", page.trimbox),
+        ("/ArtBox", page.artbox),
+        ("/CropBox", page.cropbox),
+        ("/MediaBox", page.mediabox),
+    ):
+        page[NameObject(key)] = box.scale(sx, sy)
+    annotations = page.get_resolved("/Annots")
+    if isinstance(annotations, ArrayObject):
+        for item in annotations:
+            annotation = item.get_object()
+            rect = (
+                annotation.get_resolved("/Rect")
+                if isinstance(annotation, DictionaryObject)
+                else None
+            )
+            if isinstance(rect, ArrayObject) and len(rect) >= 4:
+                rect[:4] = [
+                    FloatObject(float(rect[index]) * (sx if index % 2 == 0 else sy))
+                    for index in range(4)
+                ]
+    viewports = page.get_resolved("/VP")
+    # pypdf scales the first of several viewports. Each one covers its own part of the page.
+    for viewport in viewports if isinstance(viewports, ArrayObject) else [viewports]:
+        if isinstance(viewport, DictionaryObject) and "/BBox" in viewport:
+            viewport[NameObject("/BBox")] = RectangleObject(viewport.get_resolved("/BBox")).scale(
+                sx, sy
+            )
+
+
 class _Merge:
     """One merge of a source page into a page held by a writer."""
 
     def __init__(self, page: Any, source: DictionaryObject) -> None:
         self.page = page
         self.source = source
-        self.writer = page.pdf
+        self.writer = page.writer
         reference = source.indirect_reference
         self.owner = getattr(reference, "pdf", None)
-        known = self.owner is not None
-        self.copies = self.writer._copies.setdefault(id(self.owner), {}) if known else {}
+        tracked = self.writer is not None and self.owner is not None
+        self.copies = self.writer._copies.setdefault(id(self.owner), {}) if tracked else {}
 
     def bring(self, value: Any) -> Any:
+        if self.writer is None:
+            return value
         return self.writer._import(value, self.owner, self.copies)
+
+    def own(self, holder: DictionaryObject, key: str, empty: Any) -> Any:
+        """The value under key. A page outside a writer may only share it, so it gets a copy."""
+        value = holder.get_resolved(key)
+        if value is None:
+            value = empty
+        elif self.writer is None:
+            value = type(empty)(value)
+        else:
+            return value
+        holder[NameObject(key)] = value
+        return value
 
     def resources(self) -> dict[str, NameObject]:
         """Copy the source's resources in, and return the names that had to change."""
         theirs = self.source.get_resolved("/Resources")
         if not isinstance(theirs, DictionaryObject):
             return {}
-        if "/Resources" not in self.page:
-            self.page[NameObject("/Resources")] = DictionaryObject()
-        ours = self.page.get_resolved("/Resources")
+        ours = self.own(self.page, "/Resources", DictionaryObject())
         rename: dict[str, NameObject] = {}
         for kind in RESOURCE_KINDS:
             incoming = theirs.get_resolved(kind)
             if not isinstance(incoming, DictionaryObject):
                 continue
-            if kind not in ours:
-                ours[NameObject(kind)] = DictionaryObject()
-            rename.update(self._merge_kind(ours.get_resolved(kind), incoming))
+            rename.update(self._merge_kind(self.own(ours, kind, DictionaryObject()), incoming))
         self._merge_proc_set(ours, theirs)
         return rename
 
@@ -209,14 +240,11 @@ class _Merge:
             dict.__setitem__(ours, key, value)
         return rename
 
-    @staticmethod
-    def _merge_proc_set(ours: DictionaryObject, theirs: DictionaryObject) -> None:
+    def _merge_proc_set(self, ours: DictionaryObject, theirs: DictionaryObject) -> None:
         incoming = theirs.get_resolved("/ProcSet")
         if not isinstance(incoming, ArrayObject):
             return
-        if "/ProcSet" not in ours:
-            ours[NameObject("/ProcSet")] = ArrayObject()
-        names = ours.get_resolved("/ProcSet")
+        names = self.own(ours, "/ProcSet", ArrayObject())
         names.extend(item for item in list(incoming) if item not in names)
         names.sort()
 
@@ -227,6 +255,10 @@ class _Merge:
         if is_null_or_none(self.page.get_resolved("/Annots")):
             self.page[NameObject("/Annots")] = ArrayObject()
         annots = self.page.get_resolved("/Annots")
+        if self.writer is None:
+            annots = self.page[NameObject("/Annots")] = ArrayObject(annots)
+            annots.extend(incoming)
+            return
         transformation = Transformation() if ctm is None else Transformation(ctm)
         # A copy, as merging a page into itself would otherwise never finish.
         for item in list(incoming):
@@ -285,6 +317,17 @@ class _Merge:
         return stream
 
 
+def merge_resources(
+    page: Any, res1: DictionaryObject, res2: DictionaryObject, resource: str, new_res1: bool
+) -> tuple[DictionaryObject, dict[str, NameObject]]:
+    ours = res1.get_resolved(resource)
+    if new_res1:
+        ours = DictionaryObject() if ours is None else DictionaryObject(ours)
+    incoming = res2.get_resolved(resource)
+    incoming = DictionaryObject() if incoming is None else incoming
+    return ours, _Merge(page, DictionaryObject())._merge_kind(ours, incoming)
+
+
 def merge_page(
     page: Any,
     other: Any,
@@ -317,5 +360,7 @@ __all__ = [
     "add_cm",
     "as_matrix",
     "merge_page",
+    "merge_resources",
+    "scale_page",
     "transform_page",
 ]
