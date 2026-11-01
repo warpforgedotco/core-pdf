@@ -38,6 +38,7 @@ from __future__ import annotations
 import logging
 import zlib
 from collections.abc import Iterator, Mapping
+from datetime import datetime
 from typing import Any, cast
 
 from core_pdf_compat.pypdf.constants import (
@@ -51,6 +52,7 @@ from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BooleanObject,
+    ByteStringObject,
     Destination,
     DictionaryObject,
     EmbeddedFile,
@@ -61,10 +63,13 @@ from core_pdf_compat.pypdf.generic import (
     IndirectObject,
     NameObject,
     NullObject,
+    TextStringObject,
     ViewerPreferences,
     create_string_object,
     is_null_or_none,
 )
+
+from ._generic_trees import _parse_pdf_date
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +94,51 @@ class LazyDict(Mapping[Any, Any]):
 
     def __str__(self) -> str:
         return f"LazyDict(keys={list(self.keys())})"
+
+
+def _info_text(key: str) -> property:
+    return property(lambda self: self._get_text(key))
+
+
+def _info_raw(key: str) -> property:
+    return property(lambda self: self.get_resolved(key))
+
+
+class DocumentInformation(DictionaryObject):
+    """The document information dictionary, with a text and a ``_raw`` property per key."""
+
+    def _get_text(self, key: str) -> str | None:
+        value = self.get_resolved(key)
+        if isinstance(value, TextStringObject):
+            return value
+        return str(value) if isinstance(value, ByteStringObject) else None
+
+    @property
+    def title(self) -> Any:
+        title = self.get_resolved("/Title")
+        return (self._get_text("/Title") or title) if title else None
+
+    title_raw = _info_raw("/Title")
+    author = _info_text("/Author")
+    author_raw = _info_raw("/Author")
+    subject = _info_text("/Subject")
+    subject_raw = _info_raw("/Subject")
+    creator = _info_text("/Creator")
+    creator_raw = _info_raw("/Creator")
+    producer = _info_text("/Producer")
+    producer_raw = _info_raw("/Producer")
+    keywords = _info_text("/Keywords")
+    keywords_raw = _info_raw("/Keywords")
+    creation_date_raw = _info_raw("/CreationDate")
+    modification_date_raw = _info_raw("/ModDate")
+
+    @property
+    def creation_date(self) -> datetime | None:
+        return _parse_pdf_date(self._get_text("/CreationDate"))
+
+    @property
+    def modification_date(self) -> datetime | None:
+        return _parse_pdf_date(self._get_text("/ModDate"))
 
 
 class PdfDocCommon:
