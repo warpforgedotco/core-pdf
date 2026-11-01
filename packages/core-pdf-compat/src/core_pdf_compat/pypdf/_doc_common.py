@@ -102,6 +102,10 @@ class PdfDocCommon:
     def _replace_object(self, indirect: IndirectObject, obj: Any) -> Any:
         raise NotImplementedError
 
+    @property
+    def xmp_metadata(self) -> Any:
+        return self.root_object.xmp_metadata
+
     def _get_page_number_by_indirect(self, indirect_reference: Any) -> int | None:
         raise NotImplementedError
 

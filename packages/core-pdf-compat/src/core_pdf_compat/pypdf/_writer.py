@@ -293,6 +293,37 @@ class PdfWriter(PdfDocCommon):
         self._add_object(self._info)
         if source is not None:
             self.append(source)
+            self._clone_xmp_metadata(source)
+
+    def _clone_xmp_metadata(self, source: Any) -> None:
+        from . import PdfReader
+
+        reader = source if isinstance(source, PdfReader) else self._reader_for(source)
+        catalog = reader.root_object
+        if "/Metadata" in catalog:
+            copies = self._copies.setdefault(id(reader), {})
+            metadata = self._import(dict.__getitem__(catalog, "/Metadata"), reader, copies)
+            self._root_object[NameObject("/Metadata")] = metadata
+
+    @property
+    def xmp_metadata(self) -> Any:
+        return self.root_object.xmp_metadata
+
+    @xmp_metadata.setter
+    def xmp_metadata(self, value: Any) -> None:
+        catalog = self.root_object
+        if value is None:
+            catalog.pop("/Metadata", None)
+            return
+        current = catalog.get("/Metadata")
+        if isinstance(current, IndirectObject):
+            stream = current.get_object()
+        else:
+            stream = StreamObject()
+            stream[NameObject("/Type")] = NameObject("/Metadata")
+            stream[NameObject("/Subtype")] = NameObject("/XML")
+            catalog[NameObject("/Metadata")] = self._add_object(stream)
+        stream.set_data(value if isinstance(value, bytes) else value.stream.get_data())
 
     def _new_pages_tree(self) -> DictionaryObject:
         pages = DictionaryObject()
