@@ -11,10 +11,14 @@ in CI.
 
 ## Requirements
 
-1. **Lossless:** an incremental save writes an unchanged object back byte for byte, so
-   signatures survive. A full rewrite keeps unchanged objects equal by value, but renumbers
-   them and normalizes their syntax, so unknown keys and producer quirks survive while
-   signatures do not.
+1. **Lossless:** an object nobody changed is written back byte for byte, so unknown keys and
+   producer quirks survive. `EditableDocument.save` copies each object's bytes from the file,
+   and `save_incremental` keeps the whole file, so signatures survive it. Three cases are not
+   byte for byte: an object inside an object stream, which has no bytes of its own; a stream
+   with a wrong `/Length`, which is rewritten so that it reads without recovery; and output
+   with changed encryption. `PdfWriter` rewrites follow pypdf's numbering and layout, so they
+   are equal by value, and `PdfWriter(incremental=True)` is the byte-for-byte route. A full
+   save moves objects, so it invalidates signatures even when their bytes are kept.
 2. **Explicit:** an edit is visible in the object it touches. There is no hidden state
    shared between a reader and a writer.
 3. **Layered:** spec holds the syntax, core holds the document, compat holds the pypdf
@@ -133,7 +137,8 @@ All six are done. Numbers are from main after #238.
 1. **Serializer. Done.** Round-trips every object in the fixture corpus through the lexer.
    `scripts/check_object_roundtrip.py`: 64,649 objects with no mismatches, and 6 unreadable.
 2. **Editable document and full rewrite. Done.** Open, change, save, reopen, and compare.
-   `scripts/check_document_rewrite.py`: 145 identical and no page mismatches.
+   `scripts/check_document_rewrite.py`: 145 identical and no page mismatches. 30,728 of the
+   30,744 objects with bytes of their own came through a rewrite unchanged, and none was lost.
 3. **Incremental update. Done.** Untouched bytes stay identical, checked by prefix
    comparison. The same script with `--incremental`: 142 identical and no page mismatches.
 4. **pypdf `generic` types. Done.** No public `pypdf.generic` name is a stand-in, and it is

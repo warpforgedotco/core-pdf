@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal, Self
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.recovery_xref import XRefScanner
 from core_pdf.impl.types import PdfReference, PdfString
+from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_security.output import (
     NewEncryption,
     create_security_handler,
@@ -20,6 +21,7 @@ from core_pdf_spec.s_07_security.output import (
     encryption_dictionary,
 )
 from core_pdf_spec.s_07_security.standard import StandardSecurityHandler
+from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.serialize import (
     ObjectLayout,
     serialize_indirect_object,
@@ -184,6 +186,8 @@ class EditableDocument:
                 exempt.add(self.encrypt_entry.object_number)
         elif encryption not in {"keep", "decrypt"}:
             raise ValueError("encryption must be 'keep', 'decrypt' or a NewEncryption")
+        keeps_bytes = encryption == "keep" or self.security is None and encryption == "decrypt"
+        verbatim = self.verbatim_objects(objects) if keeps_bytes else {}
         minimum = ENCRYPTED_HEADER_VERSION if security is not None else b"1.0"
         if xref_stream:
             minimum = max(minimum, XREF_STREAM_HEADER_VERSION)
@@ -196,6 +200,7 @@ class EditableDocument:
             xref_stream=xref_stream,
             security=security,
             exempt=exempt,
+            verbatim=verbatim,
         )
         return write_output(
             bytes(output), target, incremental=False, security=security, xref_stream=xref_stream
@@ -277,6 +282,44 @@ class EditableDocument:
             bytes(output), target, incremental=True, security=security, xref_stream=use_stream
         )
 
+    def verbatim_objects(self, objects: dict[PdfReference, Any]) -> dict[int, bytes]:
+        """Find the file's own bytes for each object nobody changed, adding to `objects` what
+        those bytes refer to.
+
+        An object inside an object stream has no bytes of its own in the file, so it isn't
+        included. Nor is a stream with a wrong /Length, which only recovery can read.
+        """
+        offsets, _ = self.existing_entries()
+        resolver = self.document.resolver
+        lexer = PdfLexer(self.document.raw_data, reference_resolver=resolver.resolve)
+        found: dict[int, bytes] = {}
+        pending = list(objects)
+        while pending:
+            reference = pending.pop()
+            number = reference.object_number
+            located = offsets.get(number)
+            if number in self.overlay or located is None:
+                continue
+            if located[1] != reference.generation_number:
+                continue
+            lexer.rewind(located[0])
+            try:
+                parsed = lexer.parse_indirect_object(expected_reference=reference)
+            except PdfParseError:
+                continue
+            if isinstance(parsed, PdfStream):
+                length = resolver.resolve(parsed.dictionary.get("Length"))
+                if length != len(parsed.raw_data):
+                    continue
+            found[number] = bytes(self.document.raw_data[located[0] : lexer.pos])
+            # The resolver inlines some stream entries, so the kept bytes can refer to more
+            # than the walk from the trailer saw.
+            for target in references_in(parsed):
+                if target not in objects:
+                    objects[target] = self.get_object(target)
+                    pending.append(target)
+        return found
+
     def mislabelled_streams(self, reachable: dict[int, PdfReference]) -> dict[int, Any]:
         """Find streams whose /Length is wrong, which only recovery can read as they stand."""
         found = {}
@@ -339,16 +382,22 @@ def serialize_body(
     xref_stream: bool = False,
     security: StandardSecurityHandler | None = None,
     exempt: set[int] | frozenset[int] = frozenset(),
+    verbatim: dict[int, bytes] | None = None,
 ) -> bytes:
     """Write objects and an xref section with the trailer, starting at file offset `start`.
 
     The section is a classic table, or an xref stream if `xref_stream` is set. With `security`,
-    every object is encrypted except those numbered in `exempt`.
+    every object is encrypted except those numbered in `exempt`. An object numbered in
+    `verbatim` is written as those bytes, which are already in their final form.
     """
     output = bytearray()
     offsets: dict[int, tuple[int, int]] = {}
     for reference in sorted(objects, key=lambda item: item.object_number):
         offsets[reference.object_number] = (start + len(output), reference.generation_number)
+        kept = None if verbatim is None else verbatim.get(reference.object_number)
+        if kept is not None:
+            output += kept + b"\n"
+            continue
         value = objects[reference]
         if security is not None and reference.object_number not in exempt:
             value = encrypt_object(security, reference, value)
