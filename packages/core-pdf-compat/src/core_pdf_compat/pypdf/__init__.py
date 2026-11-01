@@ -8,6 +8,7 @@ from typing import Any, NoReturn, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfInvalidPermissionsError, PdfUnsupportedError
+from core_pdf.impl.recovery_lexer import PdfLexer as RecoveryLexer
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
@@ -39,7 +40,6 @@ from core_pdf_compat.pypdf.generic import (
 from core_pdf_compat.pypdf.pagerange import PageRange, parse_filename_page_ranges
 from core_pdf_compat.pypdf.papersizes import PaperSize
 from core_pdf_spec.exceptions import PdfParseError, PdfPasswordError
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import key_for
 
@@ -300,7 +300,13 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 raise PdfReadError("Could not find object.")
             return None
         logger.warning("Object %d %d found", number, generation)
-        lexer = PdfLexer(self._data)
+        # The recovering lexer, as this stream's /Length can be missing or broken too.
+        lexer = RecoveryLexer(
+            self._data,
+            reference_resolver=lambda reference: self.get_object(
+                IndirectObject(reference.object_number, reference.generation_number, self)
+            ),
+        )
         lexer.rewind(match.start() + 1)
         return to_generic(lexer.parse_indirect_object(), self)
 

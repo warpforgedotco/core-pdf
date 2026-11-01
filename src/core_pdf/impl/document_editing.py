@@ -202,7 +202,11 @@ class EditableDocument:
         )
 
     def save_incremental(
-        self, target: str | Path | None = None, *, xref_stream: bool | None = None
+        self,
+        target: str | Path | None = None,
+        *,
+        xref_stream: bool | None = None,
+        layout: ObjectLayout = ObjectLayout.COMPACT,
     ) -> SavedPdf:
         """Append changed objects after the original bytes, which stay identical.
 
@@ -241,7 +245,7 @@ class EditableDocument:
             reference = PdfReference(number, generation)
             value = changed[number]
             sealed = value if security is None else encrypt_object(security, reference, value)
-            output += serialize_indirect_object(reference, sealed)
+            output += serialize_indirect_object(reference, sealed, layout)
         trailer: dict[Any, Any] = {
             key: self.trailer[key] for key in TRAILER_KEYS if key in self.trailer
         }
