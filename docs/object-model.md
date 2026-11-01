@@ -1,19 +1,20 @@
 # Editable object model and writer
 
-Core-pdf reads PDFs but cannot change them. This is the design for lossless editing
-(roadmap item 5). It is also what pypdf's `PdfWriter` and `generic` types, and any future
-pikepdf facade, are built on.
+This is the design for lossless editing of PDFs in core-pdf (roadmap item 5). It is also
+what pypdf's `PdfWriter` and `generic` types, and any future pikepdf facade, are built on.
 
-## Why now
+## Why this was built
 
-`pypdf`'s upstream suite stops here. Of 1,031 tests that pass on the real library, the
-facade can attempt 305, and 726 are skipped because they reach `PdfWriter` or the object
-types. The rest of the facades pass their in-scope suites.
+`pypdf`'s upstream suite stopped here: `PdfWriter` and the object types were missing, so
+most of its tests could not run. The milestones below are finished, and the suite now runs
+in CI.
 
 ## Requirements
 
-1. **Lossless:** an object nobody changed is written back byte for byte, so signatures,
-   unknown keys and producer quirks survive.
+1. **Lossless:** an incremental save writes an unchanged object back byte for byte, so
+   signatures survive. A full rewrite keeps unchanged objects equal by value, but renumbers
+   them and normalizes their syntax, so unknown keys and producer quirks survive while
+   signatures do not.
 2. **Explicit:** an edit is visible in the object it touches. There is no hidden state
    shared between a reader and a writer.
 3. **Layered:** spec holds the syntax, core holds the document, compat holds the pypdf
@@ -127,12 +128,47 @@ Limits worth knowing:
 
 Each milestone is one or more reviewable PRs. Counts come from the upstream harness.
 
-1. **Serializer.** Round-trips every object in the fixture corpus through the lexer.
-2. **Editable document and full rewrite.** Open, change, save, reopen, and compare.
-3. **Incremental update.** Untouched bytes stay identical, checked by prefix comparison.
-4. **pypdf `generic` types.** Removes the largest set of stand-ins.
-5. **`PdfWriter`.** Pages, metadata, then annotations, forms and merging.
-6. **Encrypted output and xref streams.**
+All six are done. Numbers are from main after #238.
+
+1. **Serializer. Done.** Round-trips every object in the fixture corpus through the lexer.
+   `scripts/check_object_roundtrip.py`: 64,649 objects with no mismatches, and 6 unreadable.
+2. **Editable document and full rewrite. Done.** Open, change, save, reopen, and compare.
+   `scripts/check_document_rewrite.py`: 145 identical and no page mismatches.
+3. **Incremental update. Done.** Untouched bytes stay identical, checked by prefix
+   comparison. The same script with `--incremental`: 142 identical and no page mismatches.
+4. **pypdf `generic` types. Done.** No public `pypdf.generic` name is a stand-in, and it is
+   no longer partial in `tests/compat/out_of_scope.toml`. Its private submodules stay stubs.
+5. **`PdfWriter`. Done.** Pages, metadata, annotations, forms and merging. No in-scope test
+   skips for a missing writer feature. Incremental mode is built on `save_incremental`.
+   `scripts/check_writer_lossless.py`: 60,901 objects equal by value through a rewrite, and
+   all 167 incremental updates start with the source's bytes.
+6. **Encrypted output and xref streams. Done.** The policy is under
+   [Encrypted input](#encrypted-input). qpdf, Poppler, Ghostscript and real pypdf opened all
+   15 `PdfWriter.encrypt` outputs. `--xref-stream` gives the same results on both scripts:
+   64,644 objects with no mismatches, 145 identical, and 142 with `--incremental`.
+
+### Upstream suites
+
+| Suite | Passed | Skipped |
+| ----- | ------ | ------- |
+| pypdf | 753 of 961 | 208 |
+| pdfplumber | 169 | 0 |
+| pdfminer | 127 | 0 |
+| unstructured | 50 | 0 |
+| llama_index | 27 | 0 |
+| x-ray | 14 | 1 |
+
+Real pypdf passes 959 of the same 961 and skips 2. None fail on the facade. Of its 208
+skips, 206 reach a private pypdf module and 2 are also skipped on the real library, as
+`scripts/audit_upstream_skips.py pypdf` reports.
+
+### Known gaps
+
+- Tests marked `enable_socket` download their files, so the harness leaves them out.
+- R7 (AES-GCM) keep-encryption has no real fixture, and PDF MAC refusal was tested with an
+  injected `/AuthCode`, not a real MAC file.
+- Ghostscript refused AES-256-R5 with a four-character password, including on real pypdf's
+  own file. qpdf, Poppler and pypdf open those files, and a seven-character password works.
 
 ## Out of scope for now
 

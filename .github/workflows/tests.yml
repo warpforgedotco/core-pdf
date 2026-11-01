@@ -153,12 +153,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install Ghostscript
+      - name: Install Ghostscript, jbig2dec and Poppler
         # The package mirror sometimes hangs, so each try is bounded rather than using up the job.
         run: |
           for attempt in 1 2 3; do
             sudo timeout 120 apt-get update -o Acquire::http::Timeout=20 &&
-              sudo timeout 180 apt-get install --yes ghostscript && exit 0
+              sudo timeout 180 apt-get install --yes ghostscript jbig2dec poppler-utils && exit 0
             echo "Install attempt $attempt failed"
             sleep 5
           done
