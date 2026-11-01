@@ -56,7 +56,8 @@ class Element(Record):
 
     @property
     def category(self) -> str:
-        return type(self).__name__
+        # Unstructured's plain Text keeps the base element's category name.
+        return "UncategorizedText" if type(self) is Text else type(self).__name__
 
     @property
     def element_id(self) -> str:
@@ -90,45 +91,45 @@ class Element(Record):
         }
 
 
-class Title(Element):
+class Text(Element):
     pass
 
 
-class NarrativeText(Element):
+class Title(Text):
     pass
 
 
-class UncategorizedText(Element):
+class NarrativeText(Text):
     pass
 
 
-class Table(Element):
+class Table(Text):
     pass
 
 
-class Image(Element):
+class Image(Text):
     pass
 
 
-class PageBreak(Element):
+class PageBreak(Text):
     pass
 
 
-class Header(Element):
+class Header(Text):
     pass
 
 
-class Footer(Element):
+class Footer(Text):
     pass
 
 
-class ListItem(Element):
+class ListItem(Text):
     pass
 
 
-class EmailAddress(Element):
+class EmailAddress(Text):
     pass
 
 
-class Address(Element):
+class Address(Text):
     pass

@@ -138,7 +138,7 @@ def real_unstructured_elements(elements: list[Any]) -> list[object]:
                 width=coordinates.width, height=coordinates.height
             )
             values["coordinates"] = real.CoordinatesMetadata(coordinates.points, system)
-        cls = getattr(real, type(element).__name__, real.Text)
+        cls = getattr(real, type(element).__name__)
         item = cls(
             text=element.text,
             element_id=element.id or None,

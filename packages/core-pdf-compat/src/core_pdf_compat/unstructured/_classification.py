@@ -27,10 +27,16 @@ NUMBERED = re.compile(r"^\s*\d+(?:\.|\))\s+.+")
 EMAIL = re.compile(r"[a-z0-9.\-+_]+@[a-z0-9.\-+_]+\.[a-z]+")
 
 ADDRESS = re.compile(
-    r"^(?:[A-Z][a-z.\-]{1,15} ?){1,5},\s?"
-    r"(?:AL|AK|AS|AZ|AR|CA|CO|CT|DE|DC|FM|FL|GA|GU|HI|ID|IL|IN|IA|KS|KY|LA|ME|MH|"
+    r"\b(?:[A-Z][a-z.\-]{1,15} ?){1,5},\s?"
+    r"(?:Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida"
+    r"|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland"
+    r"|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada"
+    r"|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota"
+    r"|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota"
+    r"|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming"
+    r"|AL|AK|AS|AZ|AR|CA|CO|CT|DE|DC|FM|FL|GA|GU|HI|ID|IL|IN|IA|KS|KY|LA|ME|MH|"
     r"MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|MP|OH|OK|OR|PW|PA|PR|RI|SC|SD|"
-    r"TN|TX|UT|VT|VI|VA|WA|WV|WI|WY)(?:, |\s)?\d{5}(?:-\d{4})?\b",
+    r"TN|TX|UT|VT|VI|VA|WA|WV|WI|WY)(?:, |\s)?\b\d{5}(?:-\d{4})?\b",
     re.IGNORECASE,
 )
 
@@ -60,8 +66,8 @@ from ._elements import (  # noqa: E402
     Header,
     ListItem,
     NarrativeText,
+    Text,
     Title,
-    UncategorizedText,
 )
 
 
@@ -146,10 +152,10 @@ def simple_element_class(
     # unstructured 0.27 requires the whole text to be one address.
     if EMAIL.fullmatch(text.strip()):
         return EmailAddress
-    if ADDRESS.search(text):
+    if ADDRESS.fullmatch(text.strip()):
         return Address
     if not has_classifiable_text(text):
-        return UncategorizedText
+        return Text
     return None
 
 
@@ -165,7 +171,7 @@ def text_element_class(
     sentences: tuple[str, ...],
 ) -> type[Element]:
     if not has_classifiable_text(text):
-        return UncategorizedText
+        return Text
     long_sentence_count = sentence_count(sentences, 3)
     if long_sentence_count > 1:
         return NarrativeText
@@ -181,4 +187,4 @@ def text_element_class(
         and not (text.isupper() and re.search(r"[^\w\s]$", text))
     ):
         return Title
-    return UncategorizedText
+    return Text
