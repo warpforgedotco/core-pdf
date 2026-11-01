@@ -36,7 +36,6 @@ inherit it unchanged.
 from __future__ import annotations
 
 import logging
-import zlib
 from collections.abc import Iterator, Mapping
 from datetime import datetime
 from typing import Any, cast
@@ -49,6 +48,7 @@ from core_pdf_compat.pypdf.constants import (
     FieldDictionaryAttributes as FA,  # noqa: N814
 )
 from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
+from core_pdf_compat.pypdf.filters import decompress
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BooleanObject,
@@ -537,7 +537,7 @@ class PdfDocCommon:
             if isinstance(value, IndirectObject):
                 stream = cast(EncodedStreamObject | None, value.get_object())
                 if stream:
-                    output[tag] = zlib.decompress(stream._data)
+                    output[tag] = decompress(stream._data)
         return output
 
     # Attachments.

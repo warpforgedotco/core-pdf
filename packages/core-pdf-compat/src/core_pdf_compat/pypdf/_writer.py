@@ -32,7 +32,7 @@ from ._page_merge import (
     transfer_rotation,
     transform_page,
 )
-from ._text import extract_legacy_text
+from ._text import ALL_ORIENTATIONS, TextOptions, extract_layout_text, extract_legacy_text
 from .actions import Action
 from .errors import PageSizeNotDefinedError
 from .generic import (
@@ -52,6 +52,30 @@ from .generic import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _positional_text_arguments(
+    args: tuple[Any, ...], orientations: int | tuple[int, ...], space_width: float
+) -> tuple[tuple[int, ...], float]:
+    # pypdf once took a leading string argument, and still accepts the old order.
+    offset = None
+    if args:
+        if isinstance(args[0], str):
+            offset = 2
+        elif isinstance(args[0], (tuple, int)):
+            offset = 0
+        else:
+            raise TypeError(f"Invalid positional parameter {args[0]}")
+    if offset is not None:
+        if len(args) > offset:
+            if not isinstance(args[offset], (tuple, int)):
+                raise TypeError(f"Invalid positional parameter {args[offset]}")
+            orientations = args[offset]
+        if len(args) > offset + 1:
+            if not isinstance(args[offset + 1], (float, int)):
+                raise TypeError(f"Invalid positional parameter {args[offset + 1]}")
+            space_width = args[offset + 1]
+    return ((orientations,) if isinstance(orientations, int) else orientations), space_width
 
 
 def _page_box(name: str, *fallbacks: str) -> property:
@@ -203,23 +227,66 @@ class PageObject(DictionaryObject):
     def _content_keys(self) -> tuple[Any, ...]:
         return tuple(self.get(key) for key in ("/Contents", "/Resources", "/Rotate"))
 
-    def extract_text(self, *args: Any, **kwargs: Any) -> str:
+    def extract_text(
+        self,
+        *args: Any,
+        orientations: int | tuple[int, ...] = ALL_ORIENTATIONS,
+        space_width: float = 200.0,
+        visitor_operand_before: Any = None,
+        visitor_operand_after: Any = None,
+        visitor_text: Any = None,
+        extraction_mode: str = "plain",
+        **kwargs: Any,
+    ) -> str:
+        if extraction_mode not in {"plain", "layout"}:
+            raise ValueError(f"Invalid text extraction mode '{extraction_mode}'")
+        orientations, _ = _positional_text_arguments(args, orientations, space_width)
+        if extraction_mode == "layout":
+            visitors = {
+                "visitor_operand_before": visitor_operand_before,
+                "visitor_operand_after": visitor_operand_after,
+                "visitor_text": visitor_text,
+            }
+            for name, visitor in visitors.items():
+                if visitor:
+                    logger.warning("Argument %s is ignored in layout mode", name)
+        resources = self.get_resolved("/Resources")
+        fonts = None if is_null_or_none(resources) else resources.get_resolved("/Font")
+        if is_null_or_none(self.get_resolved("/Contents")) and not fonts:
+            return ""  # Without contents, only reading a font can still fail.
         # A changed page has no copy in a file, so it goes through a serialized document.
         from . import PdfReader
 
         pdf = self.pdf
         source = pdf._core_page(self) if isinstance(pdf, PdfReader) else None
-        if source is not None:
-            return extract_legacy_text(source, pdf.text_caches)
-        writer = self.writer
-        if writer is None:
-            writer = PdfWriter()
-            writer.add_page(self)
-            number = 0
-        else:
-            number = cast(int, self.page_number)
-        reader = PdfReader(BytesIO(writer._serialized()))
-        return reader.pages[number].extract_text(*args, **kwargs)
+        if source is None:
+            writer = self.writer
+            if writer is None:
+                writer = PdfWriter()
+                writer.add_page(self)
+                number = 0
+            else:
+                number = cast(int, self.page_number)
+            pdf = PdfReader(BytesIO(writer._serialized()))
+            page = pdf.pages[number]
+            source = pdf._core_page(page)
+        if extraction_mode == "layout":
+            return extract_layout_text(
+                source,
+                pdf.text_caches,
+                space_vertically=kwargs.get("layout_mode_space_vertically", True),
+                scale_weight=kwargs.get("layout_mode_scale_weight", 1.25),
+                strip_rotated=kwargs.get("layout_mode_strip_rotated", True),
+                font_height_weight=kwargs.get("layout_mode_font_height_weight", 1),
+            )
+        options = TextOptions(
+            orientations,
+            visitor_operand_before,
+            visitor_operand_after,
+            visitor_text,
+            pdf,
+        )
+        return extract_legacy_text(source, pdf.text_caches, options)
 
     def get_contents(self) -> ContentStream | None:
         contents = self.get_resolved("/Contents")
@@ -544,12 +611,17 @@ class PdfWriter(PdfDocCommon):
         self._pages_object[NameObject("/Count")] = NumberObject(len(kids))
 
     def _import_page(self, page: Any, excluded: set[str]) -> PageObject:
+        if not isinstance(page, PageObject):
+            raise ValueError("Invalid page object")
         source = page
         reference = source.indirect_reference
         owner = getattr(reference, "pdf", None)
         translated = self._translation(owner)
-        # A link imported earlier may already have reserved this page's number.
-        reserved = None if reference is None else translated.get(reference.idnum)
+        # A link imported earlier may already have reserved this page's number. Adding a page
+        # again makes a separate copy.
+        reserved = None
+        if reference is not None and reference.idnum in self._reserved_pages:
+            reserved = translated.get(reference.idnum)
         output = PageObject() if reserved is None else self.get_object(reserved)
         if reference is not None:
             translated[reference.idnum] = self._add_object(output).idnum
