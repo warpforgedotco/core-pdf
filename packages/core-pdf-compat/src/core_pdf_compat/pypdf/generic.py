@@ -174,6 +174,13 @@ class DictionaryObject(dict[Any, Any], PdfObject):
     def raw_get(self, key: Any) -> Any:
         return super().__getitem__(key)
 
+    @property
+    def xmp_metadata(self) -> Any:
+        from .xmp import XmpInformation
+
+        metadata = self.get_resolved("/Metadata")
+        return None if is_null_or_none(metadata) else XmpInformation(metadata)
+
     def get_resolved(self, key: Any, default: Any = None) -> Any:
         # pypdf's get returns references as stored, which a writer needs. Readers that want
         # the object use this.
