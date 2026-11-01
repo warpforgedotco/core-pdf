@@ -579,7 +579,7 @@ def normalize_values(
 
 
 def create_recovered_security_handler(
-    document_id: Sequence[object], params: PdfDict, password: str = ""
+    document_id: Sequence[object], params: PdfDict, password: str | bytes = ""
 ) -> StandardSecurityHandler:
     normalized = normalize_values(
         params, ("V", "R", "P", "Length"), ("Filter", "StmF", "StrF", "EFF")
@@ -672,7 +672,7 @@ class PdfDocument(Generic[PageT]):
     def __init__(
         self,
         source: PdfSource,
-        password: str = "",
+        password: str | bytes = "",
         *,
         recovery_scan_all_revisions: bool = True,
         raster_font_provider: RasterFontProviderLike | None = None,
@@ -715,7 +715,7 @@ class PdfDocument(Generic[PageT]):
     def open(
         cls,
         source: PdfSource,
-        password: str = "",
+        password: str | bytes = "",
         *,
         recovery_scan_all_revisions: bool = True,
         raster_font_provider: RasterFontProviderLike | None = None,
@@ -2179,7 +2179,7 @@ class PdfDocument(Generic[PageT]):
                 hidden_layers.add(name)
         return frozenset(hidden_layers)
 
-    def negotiate_security(self, password: str) -> None:
+    def negotiate_security(self, password: str | bytes) -> None:
         self._standards = discover_header_standards(self.raw_data)
         header = self._standards
         context = header.context if legacy_name_context(header.context) else None
@@ -2229,11 +2229,17 @@ class PdfDocument(Generic[PageT]):
             self.resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=selected)
             self.rescan_xref()
 
+    @property
+    def security_handler(self) -> StandardSecurityHandler | None:
+        """The handler of a file opened with its password, or None for a plain file."""
+        handler = getattr(self.decipher, "__self__", None)
+        return handler if isinstance(handler, StandardSecurityHandler) else None
+
     def rescan_xref(self) -> None:
         self.scan_xref()
         self.resolver.xref = self.xref
 
-    def init_security(self, password: str) -> None:
+    def init_security(self, password: str | bytes) -> None:
         trailer = self.trailer_dict
         if trailer.get("Encrypt") is not None and trailer.get("ID") is None:
             trailer = dict(trailer)

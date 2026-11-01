@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from os import urandom
+
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.decrepit.ciphers.algorithms import ARC4
 from cryptography.hazmat.primitives import padding
@@ -65,6 +67,21 @@ def aes_ecb_decrypt(key: bytes, ciphertext: bytes) -> bytes:
         raise DecryptionError("Invalid encrypted object ciphertext") from exc
 
 
+def aes_ecb_encrypt(key: bytes, plaintext: bytes) -> bytes:
+    encryptor = Cipher(aes_algorithm(key), modes.ECB()).encryptor()
+    return encryptor.update(plaintext) + encryptor.finalize()
+
+
+def aes_gcm_encrypt(key: bytes, data: bytes) -> bytes:
+    """Return a fresh nonce, the ciphertext and the tag, the layout aes_gcm_decrypt reads."""
+    if len(key) != AES_GCM_KEY_BYTES:
+        raise ValueError(f"AESV4 key must be {AES_GCM_KEY_BYTES} bytes, got {len(key)}")
+    if len(data) > AES_GCM_MAX_PLAINTEXT_BYTES:
+        raise ValueError("AESV4 plaintext is too long")
+    nonce = urandom(AES_GCM_IV_BYTES)
+    return nonce + AESGCM(key).encrypt(nonce, data, None)
+
+
 def aes_gcm_decrypt(key: bytes, data: bytes) -> bytes:
     if len(key) != AES_GCM_KEY_BYTES:
         raise ValueError(f"AESV4 key must be {AES_GCM_KEY_BYTES} bytes, got {len(key)}")
@@ -94,6 +111,8 @@ __all__ = (
     "aes_cbc_encrypt",
     "aes_cbc_decrypt",
     "aes_ecb_decrypt",
+    "aes_ecb_encrypt",
     "aes_gcm_decrypt",
+    "aes_gcm_encrypt",
     "rc4_crypt",
 )

@@ -22,10 +22,10 @@ def initialize_document_security(
     data: PdfByteBuffer,
     trailer: PdfDict,
     resolver: ObjectResolver,
-    password: str,
+    password: str | bytes,
     *,
     handler_factory: Callable[
-        [Sequence[object], PdfDict, str], StandardSecurityHandler
+        [Sequence[object], PdfDict, str | bytes], StandardSecurityHandler
     ] = create_standard_security_handler,
 ) -> Decipher | None:
     encrypt_ref = trailer.get("Encrypt")
