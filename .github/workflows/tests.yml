@@ -178,6 +178,7 @@ jobs:
           $run/check_document_rewrite.py --xref-stream
           $run/check_document_rewrite.py --incremental --xref-stream
           $run/check_writer_lossless.py
+          $run/check_encrypted_output.py
           $run/run_upstream_suite.py pypdf --reference
           $run/audit_upstream_skips.py pypdf
 
