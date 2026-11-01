@@ -42,6 +42,8 @@ names = [
     "_get_named_destinations", "_list_attachments",
     # PageObject internals
     "_content_stream_images", "_get_fonts", "_get_image",
+    # filter internals: the image reconstruction helpers behind pypdf's image extraction
+    "_xobj_to_image", "_handle_flate", "_decode_png_prediction", "_image_from_bytes", "_get_image_mode",
     # generic and font internals
     "_read_unsized_from_stream", "_get_typographic_maps",
     # Private modules. A subprocess script or pytest.warns block hides a stub from the
@@ -75,7 +77,6 @@ stubs = [
     "pypdf.generic._utils",
     "pypdf.generic._viewerpref",
     "pypdf.annotations",
-    "pypdf.filters",
     "pypdf._font",
     "pypdf._cmap",
     "pypdf._codecs",
@@ -88,7 +89,7 @@ stubs = [
     "pypdf._text_extraction",
 ]
 files = ["tests/scripts/test_make_release.py"]
-partial = ["pypdf.generic", "pypdf._page"]
+partial = ["pypdf.generic", "pypdf._page", "pypdf.filters"]
 markers = "not enable_socket"
 # These also touch a private name, but they are the only tests of public features the
 # facade lacks: viewer_preferences, attachment_list and named_destinations.
