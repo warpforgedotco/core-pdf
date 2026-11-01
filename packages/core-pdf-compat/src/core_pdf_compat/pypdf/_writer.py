@@ -987,7 +987,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         """Number a linked list in order before its items are filled, as pypdf does."""
         kind = value.get_resolved("/Type")
         for key in ("/Next", "/Prev", "/N", "/V"):
-            found: list[Any] = []
+            start = len(pending)
             current: Any = value
             while key in current:
                 link = dict.__getitem__(current, key)
@@ -1001,8 +1001,9 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                     break
                 if link.idnum in self._translation(link.pdf):
                     break
-                self._bring(link, owner, found)
-            pending.extend(reversed(found))
+                self._bring(link, owner, pending)
+            # The stack runs from its end, so reverse these for the chain to fill in order.
+            pending[start:] = list(reversed(pending[start:]))
 
     def _fill_copy(
         self, duplicate: Any, value: Any, owner: Any, pending: list[Any]

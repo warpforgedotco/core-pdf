@@ -132,7 +132,7 @@ Limits worth knowing:
 
 Each milestone is one or more reviewable PRs. Counts come from the upstream harness.
 
-All six are done. Numbers are from main after #238.
+All six are done. Numbers are from main, and CI reruns each of these checks on every pull request.
 
 1. **Serializer. Done.** Round-trips every object in the fixture corpus through the lexer.
    `scripts/check_object_roundtrip.py`: 64,649 objects with no mismatches, and 6 unreadable.
@@ -145,7 +145,7 @@ All six are done. Numbers are from main after #238.
    no longer partial in `tests/compat/out_of_scope.toml`. Its private submodules stay stubs.
 5. **`PdfWriter`. Done.** Pages, metadata, annotations, forms and merging. No in-scope test
    skips for a missing writer feature. Incremental mode is built on `save_incremental`.
-   `scripts/check_writer_lossless.py`: 60,901 objects equal by value through a rewrite, and
+   `scripts/check_writer_lossless.py`: 59,980 objects equal by value through a rewrite, and
    all 167 incremental updates start with the source's bytes.
 6. **Encrypted output and xref streams. Done.** The policy is under
    [Encrypted input](#encrypted-input). qpdf, Poppler, Ghostscript and real pypdf opened all
