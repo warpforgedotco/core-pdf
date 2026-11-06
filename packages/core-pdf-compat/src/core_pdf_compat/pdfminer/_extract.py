@@ -9,7 +9,7 @@ from typing import Any, BinaryIO, TextIO
 import numpy
 
 from core_pdf import PdfDocument, PdfPage
-from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
 from core_pdf.impl.types import PdfName
 
 from .._shared import PdfInput
@@ -30,6 +30,8 @@ from ._projection import (
     ProjectionPolicy,
     project_page,
 )
+from .pdfdocument import PDFPasswordIncorrect
+from .pdfparser import PDFSyntaxError
 
 
 def extract_pages(
@@ -43,11 +45,16 @@ def extract_pages(
     del caching
     params = laparams or LAParams()
     selected = set(page_numbers) if page_numbers is not None else None
-    document = PdfDocument.open(
-        pdf_file,
-        password=password,
-        recovery_scan_all_revisions=False,
-    )
+    try:
+        document = PdfDocument.open(
+            pdf_file,
+            password=password,
+            recovery_scan_all_revisions=False,
+        )
+    except PdfPasswordError as error:
+        raise PDFPasswordIncorrect from error
+    except PdfEmptySourceError as error:
+        raise PDFSyntaxError("No /Root object! - Is this really a PDF?") from error
     try:
         yield from extract_document_pages(document, params, selected, maxpages)
     finally:
