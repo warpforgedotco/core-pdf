@@ -446,9 +446,8 @@ class MergeWriter:
             if node is not None and "/A" in node:
                 action = node["/A"]
                 reader = getattr(node.indirect_reference, "pdf", None)
+                # Cloned as it is, as in pypdf: its page is already among the copied pages.
                 item[NameObject("/A")] = self._clone(action, reader)
-                if "/D" in action and isinstance(action["/D"], ArrayObject):
-                    item["/A"][NameObject("/D")] = destination.dest_array
             else:
                 item[NameObject("/Dest")] = destination.dest_array
         if node is not None:
