@@ -262,6 +262,7 @@ jobs:
           $run/check_document_rewrite.py --xref-stream
           $run/check_document_rewrite.py --incremental --xref-stream
           $run/check_encrypted_output.py
+          uv run --locked --all-packages --group test --with "pypdf[full]==7.0.0" python scripts/check_encrypt_readers.py
 
       - name: PdfWriter output, and bytes and reads against the real pypdf
         if: matrix.shard == 'pypdf output'
