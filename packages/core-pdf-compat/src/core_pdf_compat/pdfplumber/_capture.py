@@ -17,8 +17,14 @@ from typing import Any, NamedTuple, cast
 
 from core_pdf import PdfPage
 from core_pdf.impl.capture_program import CapturedProgram
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_metrics import FONT_DATA
-from core_pdf.impl.types import PdfName, PdfString
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf_spec.s_07_content.inline_images import (
+    InlineImage,
+    normalize_inline_image_dictionary,
+    parse_inline_image_dictionary,
+)
 from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_07_content.operations import ContentOperands
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
@@ -29,6 +35,7 @@ from ..pdfminer._capture import (
     PdfminerRecovery,
     PdfminerTextState,
 )
+from ..pdfminer._names import pdfminer_named_object
 
 # pdfminer.six's PREDEFINED_COLORSPACE: name -> number of components.
 PREDEFINED_COLOR_SPACES = {
@@ -42,6 +49,41 @@ PREDEFINED_COLOR_SPACES = {
     "Indexed": 1,
     "Pattern": 1,
 }
+
+
+class PlumberContentLexer(PdfminerContentLexer):
+    """Notes where the last inline image's dictionary starts, just after its BI.
+
+    Core reads the entries after BI and expands their abbreviations at once; pdfminer.six
+    keeps them as written, so the facade reads them again from there.
+    """
+
+    inline_image_start: int | None = None
+
+    def skip_ignored(self) -> None:
+        # Core reads an inline image's dictionary from just after BI, skipping first.
+        position = self.pos
+        if position >= 2 and self.raw_data[position - 2 : position] == b"BI":
+            self.inline_image_start = position
+        super().skip_ignored()
+
+
+def written_inline_dictionary(lexer: object, image: InlineImage) -> dict[Any, Any] | None:
+    """The inline image's dictionary as written, its abbreviations kept, as pdfminer.six
+    reads it; None when it cannot be read again to the dictionary core read."""
+    if not isinstance(lexer, PlumberContentLexer) or lexer.inline_image_start is None:
+        return None
+    reader = PdfminerContentLexer(lexer.raw_data, semantic_context=lexer.semantic_context)
+    try:
+        reader.pos = lexer.inline_image_start
+        written = parse_inline_image_dictionary(reader)
+        if normalize_inline_image_dictionary(written) != image.dictionary:
+            return None
+        return written
+    except PdfParseError:
+        return None
+    finally:
+        reader.close()
 
 
 class MinerGraphics:
@@ -218,6 +260,9 @@ class PlumberTextState(PdfminerTextState):
         self.painted_images: list[PaintedImage] = []
         self.plumber_marks: list[PlumberMark] = []
         self.xobject_name: str | None = None
+        self.xobject_reference: PdfReference | None = None
+        # The lexer of each content stream being read, innermost last.
+        self.stream_lexers: list[object] = []
         self.in_type3_glyph = 0
         # pdfminer.six's F paints nothing and keeps the path, unlike f.
         self.default_handlers["F"] = self.op_F
@@ -511,9 +556,12 @@ class PlumberTextState(PdfminerTextState):
             # pdfminer.six runs a form in a new interpreter, from a fresh state.
             self.miner_frames[id(frame)] = (self.miner, self.miner_stack, self.miner_path)
             self.miner, self.miner_stack, self.miner_path = MinerGraphics(), [], []
+        self.stream_lexers.append(frame.lexer)
         super().enter_stream(state, frame)
 
     def exit_stream(self, state: object, frame: ContentStreamFrame) -> None:
+        if self.stream_lexers:
+            self.stream_lexers.pop()
         saved = self.miner_frames.pop(id(frame), None)
         if saved is not None:
             self.miner, self.miner_stack, self.miner_path = saved
@@ -561,13 +609,26 @@ class PlumberTextState(PdfminerTextState):
 
     def append_xobject(self, name_obj: Any, depth: int) -> ContentStreamFrame | None:
         self.xobject_name = literal_name(name_obj) if isinstance(name_obj, PdfName) else None
+        reference = (
+            self.lookup_page_resource("XObject", name_obj.value)
+            if isinstance(name_obj, PdfName)
+            else None
+        )
+        self.xobject_reference = reference if isinstance(reference, PdfReference) else None
         try:
             return super().append_xobject(name_obj, depth)
         finally:
             self.xobject_name = None
+            self.xobject_reference = None
 
     def paint_image(self, state: object, xobj: Any) -> None:
-        dictionary = xobj.dictionary
+        image = xobj
+        if self.xobject_reference is not None:
+            # The image as pdfminer.six reads it, when one of its names reads otherwise.
+            named = pdfminer_named_object(self.document, self.xobject_reference)
+            if isinstance(named, PdfStream):
+                image = named
+        dictionary = image.dictionary
         if (
             not self.in_type3_glyph
             and self.xobject_name is not None
@@ -578,7 +639,7 @@ class PlumberTextState(PdfminerTextState):
                 PaintedImage(
                     self.xobject_name,
                     dictionary,
-                    xobj,
+                    image,
                     self.graphics.ctm,
                     False,
                     self.current_mcid,
@@ -589,8 +650,13 @@ class PlumberTextState(PdfminerTextState):
         super().paint_image(state, xobj)
 
     def paint_inline_image(self, state: object, image: Any) -> None:
-        dictionary = image.dictionary
-        if not self.in_type3_glyph and "Width" in dictionary and "Height" in dictionary:
+        lexer = self.stream_lexers[-1] if self.stream_lexers else None
+        written = written_inline_dictionary(lexer, image)
+        # pdfminer.six places an inline image whose W and H are written abbreviated.
+        dictionary, sized = (
+            (image.dictionary, ("Width", "Height")) if written is None else (written, ("W", "H"))
+        )
+        if not self.in_type3_glyph and all(key in dictionary for key in sized):
             # pdfminer.six names an inline image by the id() of its stream.
             self.painted_images.append(
                 PaintedImage(
@@ -613,7 +679,7 @@ def plumber_page_capture(
     CapturedProgram, tuple[MinerPath, ...], tuple[PlumberMark, ...], tuple[PaintedImage, ...]
 ]:
     state = PlumberTextState(page.document, page_clip=page.effective_page_clip())
-    state.lexer_factory = PdfminerContentLexer
+    state.lexer_factory = PlumberContentLexer
     state.content_recovery = PdfminerRecovery()
     page.consume_contents(state)
     state.run_accumulator.flush()

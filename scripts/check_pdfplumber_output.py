@@ -75,20 +75,9 @@ PAGE_TREE = (
     "which pages pdfminer.six finds in a damaged page tree comes from the pdfminer "
     "facade's shared page projection"
 )
-INLINE_IMAGES = (
-    "core expands an inline image's abbreviations (/RGB to /DeviceRGB) as it parses the "
-    "content stream; pdfminer.six reports the entries as written"
-)
 # (file name, check) -> why the facade does not follow pdfplumber there; it covers every
 # page of that check.
 DEPARTURES: dict[tuple[str, str], str] = {
-    ("AutoCad_Diagram.pdf", "images"): (
-        "the file writes a NUL byte inside the name /DeviceRGB; pdfminer.six keeps it in "
-        "the name, core's lexer ends the name there as PDF says NUL is white-space"
-    ),
-    ("issue-1008-inline-ascii85.pdf", "images"): INLINE_IMAGES,
-    ("reportlab-inline-image.pdf", "images"): INLINE_IMAGES,
-    ("inline-image.pdf", "images"): INLINE_IMAGES,
     ("issue-1249-evil-xrefs.pdf", "open"): (
         "pdfminer.six 20260107, pdfplumber 0.11.10's pinned version, recurses without end "
         "on this circular xref chain and fails at open; the facade fails, with the same "
