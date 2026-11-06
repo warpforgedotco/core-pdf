@@ -25,12 +25,19 @@ if typing.TYPE_CHECKING:
 
 
 class PdfObjectStream(objects.PdfObjectStream):
-    __slots__ = ("body_lexer",)
+    __slots__ = ("body_lexer", "irregular_dictionaries", "irregular_dictionary")
 
     def __init__(
-        self, stream: PdfStream, *, semantic_context: SemanticContext | None = None
+        self,
+        stream: PdfStream,
+        *,
+        semantic_context: SemanticContext | None = None,
+        irregular_dictionaries: set[tuple[int, int]] | None = None,
     ) -> None:
         self.body_lexer: PdfLexer | None = None
+        # Where to note the objects with an irregular dictionary, as (number, 0).
+        self.irregular_dictionaries = irregular_dictionaries
+        self.irregular_dictionary = False
         super().__init__(stream, semantic_context=semantic_context)
 
     def close(self) -> None:
@@ -56,10 +63,19 @@ class PdfObjectStream(objects.PdfObjectStream):
         dictionary = self.scan_dictionary_at(offset, end)
         if dictionary is not None:
             return dictionary
+        self.irregular_dictionary = False
         try:
             return super().parse_object_at(offset, end)
         except PdfParseError:
             return self.handle_object_error(offset)
+        finally:
+            if self.irregular_dictionary and self.irregular_dictionaries is not None:
+                self.irregular_dictionaries.update(
+                    (number, 0) for number, start in self.index.items() if start == offset
+                )
+
+    def note_irregular_dictionary(self, _lexer: PdfLexer) -> None:
+        self.irregular_dictionary = True
 
     def scan_dictionary_at(self, offset: int, end: int) -> PdfDict | None:
         body = self.raw_body
@@ -104,7 +120,9 @@ class PdfObjectStream(objects.PdfObjectStream):
         return first, pairs
 
     def create_lexer(self, body: bytes | memoryview) -> PdfLexer:
-        return PdfLexer(body, semantic_context=self.semantic_context)
+        lexer = PdfLexer(body, semantic_context=self.semantic_context)
+        lexer.on_irregular_dictionary = self.note_irregular_dictionary
+        return lexer
 
     def lexer_over_body(self) -> PdfLexer:
         lexer = self.body_lexer

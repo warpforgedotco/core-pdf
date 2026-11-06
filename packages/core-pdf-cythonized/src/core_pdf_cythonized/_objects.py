@@ -555,6 +555,9 @@ class ObjectScanner:
             key = self.name(cython.address(cursor))
             if self.name_is_contents and self.decipher is not None and self.hex_follows(cursor):
                 return BAIL
+            if key in values:
+                # A repeated key is left to the lexer, which reports it.
+                return BAIL
             value = self.value(cython.address(cursor), depth + 1, True)
             if value is BAIL:
                 return BAIL
