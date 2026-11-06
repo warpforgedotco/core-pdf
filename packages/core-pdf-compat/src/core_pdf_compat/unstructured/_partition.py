@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import io
 import os
 import re
-from collections.abc import Sequence
 from importlib import import_module
 from os import PathLike
 from pathlib import Path
@@ -14,7 +14,8 @@ from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf_compat.pdfminer._extract import extract_document_pages
 from core_pdf_compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
 from core_pdf_compat.pdfminer._projection import UNSTRUCTURED_POLICY
-from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_compat.pypdf import PdfReader
+from core_pdf_compat.pypdf.generic import ArrayObject, IndirectObject
 
 from ._classification import (
     BULLET,
@@ -29,7 +30,7 @@ from ._elements import (
 )
 from ._languages import LanguageFallback, apply_languages, check_languages_argument
 from ._links import page_links
-from ._metadata import assign_element_ids
+from ._metadata import assign_element_ids, assign_parent_ids
 from ._regions import (
     TextRegion,
     clean_text,
@@ -39,20 +40,18 @@ from ._regions import (
     region_order,
 )
 
+# unstructured 0.25's is_pdf_too_complex constants (Apache-2.0).
 GRAPHICS_OPS = re.compile(
     rb"(?:^|(?<=\s))(?:m|l|c|v|y|h|re|S|s|f|F|f\*|B|B\*|b|b\*|n|W|W\*|cm|q|Q|"
-    rb"Do|g|G|rg|RG|k|K|cs|CS|w|J|j|M|d|i|gs)(?=\s|$)"
+    rb"Do|g|G|rg|RG|k|K|cs|CS|w|J|j|M|d|i|gs)(?=\s|$)",
+    re.MULTILINE,
 )
 
-TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)")
+TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)", re.MULTILINE)
 
-MAX_RAW_STREAM_BYTES = 50 * 1024 * 1024
+MIN_FILE_SIZE_BYTES = 1024 * 1024
 
-MAX_CONTENT_ARRAY_ENTRIES = 10_000
-
-MAX_TOTAL_STREAM_BYTES = 1024 * 1024 * 1024
-
-MAX_TOTAL_ARRAY_ENTRIES = 1_000_000
+MIN_RAW_STREAM_BYTES = 100_000
 
 
 def pdf_too_complex(filename: object, password: str) -> bool:
@@ -76,46 +75,51 @@ def pdf_too_complex(filename: object, password: str) -> bool:
                     and font.get("DescendantFonts") is None
                 ):
                     return True
-        # unstructured 0.27 inspects every file rather than only those over 1 MB, and fails
-        # closed on oversized pages and documents (CVE-2026-33123). It reads only the
-        # streams directly in /Contents, without descending into nested arrays, and
-        # charges every array slot to the document total.
-        resolver = document.resolver
-        total_bytes = 0
-        total_entries = 0
-        for page in document.pages:
-            try:
-                contents = resolver.resolve(page.contents)
-            except PdfError:
+    return graphics_heavy(filename)
+
+
+def graphics_heavy(filename: object) -> bool:
+    # Ported from unstructured 0.25's is_pdf_too_complex (Apache-2.0), on the pypdf facade
+    # as unstructured reads the file with pypdf: a file of 1 MB or more is too complex when
+    # a page's content holds over 10,000 graphics operators, 20 for each text operator. Any
+    # failure passes the file. unstructured 0.27 inspects every file, and fails closed on
+    # oversized pages and documents (CVE-2026-33123).
+    try:
+        if isinstance(filename, (bytes, str)) and (
+            isinstance(filename, bytes) or filename.startswith("%PDF")
+        ):
+            data = filename if isinstance(filename, bytes) else filename.encode("latin-1")
+            if len(data) < MIN_FILE_SIZE_BYTES:
+                return False
+            reader = PdfReader(io.BytesIO(data))
+        else:
+            if os.path.getsize(filename) < MIN_FILE_SIZE_BYTES:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                return False
+            reader = PdfReader(filename)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        if not reader.pages:
+            return False
+        for page in reader.pages:
+            # dict.get leaves /Contents unresolved, so an indirect array has no data.
+            contents = page.get("/Contents")
+            if contents is None:
                 continue
-            if isinstance(contents, (list, tuple)):
-                if len(contents) > MAX_CONTENT_ARRAY_ENTRIES:
-                    return True
-                total_entries += len(contents)
-                if total_entries > MAX_TOTAL_ARRAY_ENTRIES:
-                    return True
-                entries: Sequence[object] = contents
-            else:
-                entries = (contents,)
             chunks: list[bytes] = []
-            size = 0
-            for entry in entries:
-                try:
-                    stream = resolver.resolve(entry)
-                    if not isinstance(stream, PdfStream):
-                        continue
-                    chunk = resolver.resolve_stream(stream).data
-                except PdfError, ValueError:
-                    continue
-                total_bytes += len(chunk)
-                if total_bytes > MAX_TOTAL_STREAM_BYTES:
-                    return True
-                size += len(chunk)
-                if size > MAX_RAW_STREAM_BYTES:
-                    return True
-                chunks.append(chunk)
+            try:
+                if isinstance(contents, ArrayObject):
+                    for item in contents:
+                        obj = item.get_object() if isinstance(item, IndirectObject) else item
+                        if hasattr(obj, "get_data"):
+                            chunks.append(obj.get_data())
+                else:
+                    obj = (
+                        contents.get_object() if isinstance(contents, IndirectObject) else contents
+                    )
+                    if hasattr(obj, "get_data"):
+                        chunks.append(obj.get_data())
+            except Exception:  # noqa: BLE001
+                continue
             raw_data = b"".join(chunks)
-            if len(raw_data) < 100_000:
+            if len(raw_data) < MIN_RAW_STREAM_BYTES:
                 continue
             graphics = len(GRAPHICS_OPS.findall(raw_data))
             if graphics <= 10_000:
@@ -123,6 +127,8 @@ def pdf_too_complex(filename: object, password: str) -> bool:
             text = len(TEXT_OPS.findall(raw_data))
             if graphics / max(text, 1) > 20.0:
                 return True
+    except Exception:  # noqa: BLE001
+        return False
     return False
 
 
@@ -278,4 +284,5 @@ def partition_pdf(
             fallback=language_fallback,
         )
     assign_element_ids(result, unique=unique_element_ids)
+    assign_parent_ids(result)
     return result
