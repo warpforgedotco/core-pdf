@@ -234,6 +234,9 @@ class EditableDocument:
         By default the update uses the kind of section the file ends with. `xref_stream=True`
         asks for a stream either way. `xref_stream=False` raises on a file that uses xref
         streams, because a file indexed by them has to be continued by one (7.5.8.4).
+
+        `layout=ObjectLayout.SPACED` writes the update as pypdf does, from the objects to the
+        xref stream, so the pypdf facade's output matches pypdf's byte for byte.
         """
         original = bytes(self.document.raw_data)
         previous = XRefScanner.find_startxref(original)
@@ -245,13 +248,17 @@ class EditableDocument:
         use_stream = continues_stream if xref_stream is None else xref_stream
         security = None if self.security is None else self.sealing_handler()
         output = bytearray(original)
-        if not output.endswith(b"\n"):
+        # pypdf's layout appends right after the last byte, as pypdf does.
+        if not output.endswith(b"\n") and layout is not ObjectLayout.SPACED:
             output += b"\n"
         offsets: dict[int, tuple[int, int]] = {}
         reachable = self.reachable_references()
         # The old sections of a damaged file do not read, so a stream replaces them. Recovery
         # would otherwise prefer a literal trailer to it, and lose the update.
-        standalone = use_stream and self.document.xref_was_recovered
+        # pypdf's layout continues the old sections as pypdf does, and recovery reads that too.
+        standalone = (
+            use_stream and self.document.xref_was_recovered and layout is not ObjectLayout.SPACED
+        )
         changed = (
             {**self.mislabelled_streams(reachable), **self.overlay} if standalone else self.overlay
         )
@@ -285,7 +292,9 @@ class EditableDocument:
             ).rstrip()
         elif use_stream:
             # The stream takes the next free number, past every object in the file.
-            output += serialize_xref_stream(size, offsets, trailer, section_offset).rstrip()
+            output += serialize_xref_stream(
+                size, offsets, trailer, section_offset, layout=layout
+            ).rstrip()
         else:
             trailer["Size"] = size
             output += table_section(offsets) + b"trailer\n" + serialize_object(trailer)

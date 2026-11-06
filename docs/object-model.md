@@ -76,6 +76,13 @@ incremental and names the three objects in `SavedPdf.removed`; `PdfWriter` also 
 marker and names its algorithm in `SavedPdf.encryption`. The check also fails if a writer
 module holds PDF structure as bytes.
 
+`scripts/check_pypdf_bytes.py` writes each upstream PDF through the real pypdf 6.15.0 and the
+facade the same way and compares the bytes. An incremental update is identical on all 168
+files that pypdf can update and that are not encrypted, and CI fails if one differs. pypdf does
+not encrypt the objects of an update to an encrypted file, so the facade does not follow it on
+those 5. Full rewrites are identical on 123 of 173 files through `clone_from` and 119 of 173
+through `append`, and the rest are being closed.
+
 `scripts/check_writer_lossless.py` compares unchanged objects in writer output with the
 source. A full rewrite keeps values and stream bytes but renumbers objects and normalizes
 syntax, so byte-for-byte output needs an incremental update.
