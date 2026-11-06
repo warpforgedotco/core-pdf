@@ -13,8 +13,10 @@ from .generic import (
     ContentStream,
     DictionaryObject,
     FloatObject,
+    IndirectObject,
     NameObject,
     RectangleObject,
+    StreamObject,
     is_null_or_none,
 )
 
@@ -298,6 +300,7 @@ class _Merge:
             for index in range(0, len(quads) - 1, 2):
                 moved.extend(transformation.apply_on((quads[index], quads[index + 1]), True))
             copy[NameObject("/QuadPoints")] = moved
+        self._transform_appearance(copy, transformation)
         popup = annotation.get_resolved("/Popup")
         if isinstance(popup, DictionaryObject):
             popup_copy = self._detached(popup, "/P", "/Parent")
@@ -306,6 +309,56 @@ class _Merge:
             copy[NameObject("/Popup")] = self.writer._add_object(popup_copy)
         copy[NameObject("/P")] = self.page.indirect_reference
         return reference
+
+    def _transform_appearance(
+        self, annotation: DictionaryObject, transformation: Transformation
+    ) -> None:
+        """Compose the transformation into the /Matrix of each normal appearance stream, as
+        pypdf 6.21 does (pypdf #3968): a viewer fits the /BBox into /Rect without rotating, so
+        moving /Rect alone would stretch the appearance. pypdf works on a fresh copy of the
+        annotation, so the streams changed here are new copies too, and the source's stay.
+        """
+        appearance = annotation.get_resolved("/AP")
+        if not isinstance(appearance, DictionaryObject) or "/N" not in appearance:
+            return
+        raw_normal = appearance.raw_get("/N")
+        normal = raw_normal.get_object()
+        if isinstance(normal, StreamObject):
+            moved: Any = self._moved_appearance(raw_normal, transformation)
+        elif isinstance(normal, DictionaryObject):
+            moved = DictionaryObject(
+                {
+                    key: self._moved_appearance(value, transformation)
+                    for key, value in dict.items(normal)
+                }
+            )
+            if isinstance(raw_normal, IndirectObject):
+                moved = self.writer._add_object(moved)
+        else:
+            return
+        new_appearance = DictionaryObject(dict.items(appearance))
+        new_appearance[NameObject("/N")] = moved
+        raw_appearance = annotation.raw_get("/AP")
+        annotation[NameObject("/AP")] = (
+            self.writer._add_object(new_appearance)
+            if isinstance(raw_appearance, IndirectObject)
+            else new_appearance
+        )
+
+    def _moved_appearance(self, value: Any, transformation: Transformation) -> Any:
+        stream = value.get_object()
+        if not isinstance(stream, StreamObject):
+            return value
+        duplicate = self.writer._empty_copy(stream)
+        for key, item in dict.items(stream):
+            dict.__setitem__(duplicate, key, item)
+        old = tuple(stream.get_resolved("/Matrix", (1, 0, 0, 1, 0, 0)))
+        duplicate[NameObject("/Matrix")] = ArrayObject(
+            FloatObject(x) for x in Transformation(old).transform(transformation).ctm
+        )
+        return (
+            self.writer._add_object(duplicate) if isinstance(value, IndirectObject) else duplicate
+        )
 
     def content(
         self, rename: dict[str, NameObject], transform: Callable[[Any], Any] | None

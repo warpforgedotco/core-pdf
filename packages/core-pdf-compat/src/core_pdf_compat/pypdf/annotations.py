@@ -146,8 +146,8 @@ class FreeText(MarkupAnnotation):
         weight = "bold" if bold else "normal"
         css = f"font: {style} {weight} {font_size} {font};text-align:left;color:#{font_color}"
         appearance = ""
-        if border_color:
-            appearance = "".join(f"{part} " for part in hex_to_rgb(border_color)) + "rg"
+        if font_color:
+            appearance = "".join(f"{part} " for part in hex_to_rgb(font_color)) + "rg"
         _set(
             self,
             {

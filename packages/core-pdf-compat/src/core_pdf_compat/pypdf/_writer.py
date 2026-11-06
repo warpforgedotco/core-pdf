@@ -148,6 +148,8 @@ def _page_box(name: str, *fallbacks: str) -> property:
             box = page.get_resolved(key)
             if not is_null_or_none(box):
                 break
+        if not isinstance(box, ArrayObject):
+            raise ValueError(f"Expected an array of four values for {name}, got {box}")
         length = len(box)
         if length > 4:
             # pypdf once wrote boxes this way, so files with them exist.
@@ -159,6 +161,9 @@ def _page_box(name: str, *fallbacks: str) -> property:
         return rectangle
 
     def setter(page: PageObject, value: Any) -> None:
+        if isinstance(value, (list, tuple)) and len(value) < 4:
+            # The getter cannot read fewer than four values back (pypdf #4009).
+            raise ValueError(f"Expected four values for {name}, got {len(value)}: {value}")
         page[NameObject(name)] = value
 
     def deleter(page: PageObject) -> None:
@@ -235,7 +240,13 @@ class PageObject(DictionaryObject):
 
     @property
     def annotations(self) -> Any:
-        return self.get_resolved("/Annots")
+        if "/Annots" not in self:
+            return None
+        annotations = self["/Annots"].get_object()
+        if not isinstance(annotations, ArrayObject):
+            logger.warning("Annotations are not an array: %s", annotations)
+            return None
+        return annotations
 
     @annotations.setter
     def annotations(self, value: Any) -> None:
