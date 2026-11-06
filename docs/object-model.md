@@ -177,22 +177,22 @@ Each milestone is one or more reviewable PRs. Counts come from the upstream harn
 All six are done. Numbers are from main, and CI reruns each of these checks on every pull request.
 
 1. **Serializer. Done.** Round-trips every object in the fixture corpus through the lexer.
-   `scripts/check_object_roundtrip.py`: 64,649 objects with no mismatches, and 6 unreadable.
+   `scripts/check_object_roundtrip.py`: 64,801 objects with no mismatches, and 6 unreadable.
 2. **Editable document and full rewrite. Done.** Open, change, save, reopen, and compare.
-   `scripts/check_document_rewrite.py`: 145 identical and no page mismatches. 30,728 of the
-   30,744 objects with bytes of their own came through a rewrite unchanged, and none was lost.
+   `scripts/check_document_rewrite.py`: 146 identical and no page mismatches. 30,738 of the
+   30,754 objects with bytes of their own came through a rewrite unchanged, and none was lost.
 3. **Incremental update. Done.** Untouched bytes stay identical, checked by prefix
-   comparison. The same script with `--incremental`: 142 identical and no page mismatches.
+   comparison. The same script with `--incremental`: 143 identical and no page mismatches.
 4. **pypdf `generic` types. Done.** No public `pypdf.generic` name is a stand-in, and it is
    no longer partial in `tests/compat/out_of_scope.toml`. Its private submodules stay stubs.
 5. **`PdfWriter`. Done.** Pages, metadata, annotations, forms and merging. No in-scope test
    skips for a missing writer feature. Incremental mode is built on `save_incremental`.
-   `scripts/check_writer_lossless.py`: 59,971 objects equal by value through a rewrite, and
-   all 168 incremental updates start with the source's bytes.
+   `scripts/check_writer_lossless.py`: 60,278 objects equal by value through a rewrite, and
+   all 174 incremental updates start with the source's bytes.
 6. **Encrypted output and xref streams. Done.** The policy is under
    [Encrypted input](#encrypted-input). qpdf, Poppler, Ghostscript and real pypdf opened all
    15 `PdfWriter.encrypt` outputs. `--xref-stream` gives the same results on both scripts:
-   64,644 objects with no mismatches, 145 identical, and 142 with `--incremental`.
+   64,796 objects with no mismatches, 146 identical, and 143 with `--incremental`.
 
 ### Upstream suites
 
@@ -200,7 +200,7 @@ All six are done. Numbers are from main, and CI reruns each of these checks on e
 | ----- | ------ | ------- |
 | pypdf | 1,829 of 2,294 | 465 |
 | pdfplumber | 169 | 0 |
-| pdfminer | 127 | 0 |
+| pdfminer | 126 | 0 |
 | unstructured | 83 | 0 |
 | llama_index | 27 | 0 |
 | x-ray | 14 | 1 |
@@ -215,24 +215,26 @@ caches them.
 ### Upstream versions
 
 The facades support the latest release of each library they follow. The upstream suites and
-the comparison scripts pin those versions, and a weekly workflow keeps an issue open while
+the comparison scripts pin those versions, CI checks that each checkout under
+`tests/upstream` sits at its pinned release, and a weekly workflow keeps an issue open while
 any pin is behind its latest release on PyPI.
 
 ### Facade output against the real libraries
 
-Beside the upstream suites, CI compares each facade with its real library on the sample
-PDFs, file by file, and fails on any difference a script does not list with its reason:
+Beside the upstream suites, CI compares each facade with its real library on the PDFs
+under `tests/upstream`, file by file, and fails on any difference a script does not list
+with its reason:
 
 | Script | Library | Result |
 | ------ | ------- | ------ |
 | `check_pypdf_bytes.py` | pypdf 7.0.0 | Written bytes identical on every file pypdf writes, in each mode |
 | `check_pypdf_reads.py` | pypdf 7.0.0 | Every object read identical, plain, RC4 and AES |
 | `check_pypdf_text.py` | pypdf 7.0.0 | `extract_text` identical on every page compared (3,868 on CI), plain and layout |
-| `check_pdfminer_output.py` | pdfminer.six 20260107 | Text identical on 178 of 184 files, layout on 179 |
-| `check_pdfplumber_output.py` | pdfplumber 0.11.10 | Identical apart from 6 listed files |
-| `check_unstructured_output.py` | unstructured 0.27.36 | 215 of 216 files identical |
+| `check_pdfminer_output.py` | pdfminer.six 20260107 | All 326 files: text identical on 321, layout on 320; the rest have the same boxes in an order pdfminer leaves to a tie-break |
+| `check_pdfplumber_output.py` | pdfplumber 0.11.10 | All 326 files the same, errors included: 1,105 pages on each check |
+| `check_unstructured_output.py` | unstructured 0.27.36 | 311 files identical; 15 over 30 pages skipped |
 | `check_llamaindex_output.py` | llama-index-readers-file 0.7.0, pypdf 6.21.4 | Identical apart from 11 listed files, where pypdf 7.0.0's text differs |
-| `check_xray_output.py` | x-ray 0.4.0 | 203 of 211 identical, 6 with the same error |
+| `check_xray_output.py` | x-ray 0.4.0 | 210 identical, 5 with the same error; 1 file PyMuPDF crashes on is not compared |
 
 Each script lists its remaining differences with the reason; the upstream suites pin the same
 versions.
