@@ -30,6 +30,7 @@ from ._projection import (
     ProjectionPolicy,
     project_page,
 )
+from ._xref_chain import MESSAGE, pdfminer_xref_chain_loops
 from .pdfdocument import PDFPasswordIncorrect
 from .pdfparser import PDFSyntaxError
 
@@ -56,6 +57,9 @@ def extract_pages(
     except PdfEmptySourceError as error:
         raise PDFSyntaxError("No /Root object! - Is this really a PDF?") from error
     try:
+        if pdfminer_xref_chain_loops(document.raw_data):
+            # pdfminer's PDFDocument follows this xref chain until the stack overflows.
+            raise RecursionError(MESSAGE)
         yield from extract_document_pages(document, params, selected, maxpages)
     finally:
         document.close()

@@ -38,6 +38,7 @@ from core_pdf.impl.types import (
 )
 
 from .._shared import BBox, ClosingMixin, PdfInput
+from ..pdfminer._xref_chain import MESSAGE, pdfminer_xref_chain_loops
 from ..pdfminer.pdftypes import DocumentView
 from ._capture import miner_font_name
 from ._metadata import metadata_retyped_objects
@@ -95,13 +96,18 @@ def cluster_by_preserving_order(
 
 def _source(value: PdfInput, password: str = "") -> PdfDocument:
     try:
-        return PdfDocument.open(
+        document = PdfDocument.open(
             value,
             password=password,
             recovery_scan_all_revisions=False,
         )
+        if pdfminer_xref_chain_loops(document.raw_data):
+            document.close()
+            # pdfminer's PDFDocument follows this xref chain until the stack overflows.
+            raise RecursionError(MESSAGE)
     except Exception as exc:
         raise PdfminerException(exc) from exc
+    return document
 
 
 DRAWINGS_CAPTURE = CaptureOptions(
