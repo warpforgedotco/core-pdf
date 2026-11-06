@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, cast
 from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -209,7 +209,7 @@ def main() -> int:
     summary = summarize(junit)
     (RESULTS / f"{arguments.suite}-{mode}.json").write_text(json.dumps(summary, indent=2))
     print(f"{arguments.suite} {mode}: {summary['counts']}")
-    for name in summary["failing"]:
+    for name in cast("list[str]", summary["failing"]):
         print(f"  failed: {name}")
     return code
 
