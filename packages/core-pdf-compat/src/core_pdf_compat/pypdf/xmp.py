@@ -1,4 +1,4 @@
-# Follows pypdf 6.21.4's XMP handling, Copyright (c) 2006-2008, Mathieu Fenniak,
+# Follows pypdf 7.0.0's XMP handling, Copyright (c) 2006-2008, Mathieu Fenniak,
 # under its BSD-style license.
 """pypdf's XMP metadata: an XML packet read and edited as a DOM."""
 
@@ -7,17 +7,16 @@ from __future__ import annotations
 import datetime
 import decimal
 import re
-import warnings
 from collections.abc import Callable, Iterator
 from string import hexdigits
-from typing import Any
+from typing import Any, NoReturn
 from xml.dom.expatbuilder import ExpatBuilderNS
-from xml.dom.minidom import Document
+from xml.dom.minidom import Document, ProcessingInstruction
 from xml.dom.minidom import Element as XmlElement
 from xml.parsers.expat import ExpatError
 
 from ._configuration import get_configuration
-from .errors import LimitReachedError, PdfReadError, XmpDocumentError
+from .errors import DeprecationError, LimitReachedError, PdfReadError, XmpDocumentError
 from .generic import ContentStream, PdfObject
 
 XMP_MAX_INPUT_LENGTH = 5_000_000  # Deprecated in pypdf: use Configuration.
@@ -187,21 +186,12 @@ class XmpInformation(PdfObject):
         stream.set_data(_MINIMAL_XMP.encode("utf-8"))
         return cls(stream)
 
-    def write_to_stream(self, stream: Any, encryption_key: object = None) -> None:
-        warnings.warn(
-            "XmpInformation.write_to_stream is deprecated and will be removed in pypdf "
-            "6.0.0. Use PdfWriter.xmp_metadata instead.",
-            DeprecationWarning,
-            stacklevel=2,
+    def write_to_stream(self, stream: Any) -> NoReturn:
+        del stream
+        raise DeprecationError(
+            "XmpInformation.write_to_stream is deprecated and was removed in pypdf 6.0.0. "
+            "Use PdfWriter.xmp_metadata instead."
         )
-        if encryption_key is not None:
-            warnings.warn(
-                "the encryption_key parameter of write_to_stream is deprecated and was "
-                "removed in pypdf 5.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        self.stream.write_to_stream(stream)
 
     def _descriptions(self, about_uri: str) -> Iterator[XmlElement]:
         for description in self.rdf_root.getElementsByTagNameNS(RDF_NAMESPACE, "Description"):
@@ -331,7 +321,18 @@ class XmpInformation(PdfObject):
         return _NAMESPACE_PREFIX_MAP.get(namespace, "unknown")
 
     def _update_stream(self) -> None:
-        self.stream.set_data(self._document().toxml(encoding="utf-8"))
+        # pypdf 7.0.0 writes the top-level nodes one by one, without an XML declaration
+        # (PDF 2.0, Annex H.2), and marks an xpacket as read-only as no padding is written.
+        parts = []
+        for node in self._document().childNodes:
+            if (
+                isinstance(node, ProcessingInstruction)
+                and node.target == "xpacket"
+                and re.fullmatch(r"""end\s*=\s*(['"])[rw]\1\s*""", node.data)
+            ):
+                node.data = 'end="r"'
+            parts.append(node.toxml(encoding="utf-8"))
+        self.stream.set_data(b"".join(parts))
 
     def _clear_property(self, namespace: str, name: str) -> XmlElement:
         self._clear_cache_entry(namespace, name)

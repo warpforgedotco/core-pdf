@@ -1,4 +1,4 @@
-# The decoders' error, limit and logging behaviour is ported from pypdf 6.21.4, Copyright (c)
+# The decoders' error, limit and logging behaviour is ported from pypdf 7.0.0, Copyright (c)
 # 2006, Mathieu Fenniak and 2006-2008, Martin Thoma, under its BSD-style license.
 # core_pdf_spec does the LZW and predictor decoding where the two agree.
 """Stream filters with pypdf's signatures and limits."""
@@ -13,14 +13,13 @@ import os
 import shutil
 import struct
 import subprocess
-import warnings
 import zlib
 from base64 import a85decode
 from functools import lru_cache
 from importlib.util import find_spec
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, NoReturn
+from typing import Any
 
 from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf.errors import (
@@ -52,7 +51,7 @@ from core_records import GeneratedRecord
 
 logger = logging.getLogger(__name__)
 
-# Deprecated in pypdf 6.21.4 for Configuration; a changed value still overrides it, with a
+# Deprecated in pypdf 7.0.0 for Configuration; a changed value still overrides it, with a
 # warning, when a reader opens (see _configuration.apply_legacy_configuration).
 MAX_DECLARED_STREAM_LENGTH = 75_000_000
 MAX_ARRAY_BASED_STREAM_OUTPUT_LENGTH = 75_000_000
@@ -149,6 +148,60 @@ def _predictor_parameters(parameters: Any) -> tuple[int, int, int]:
     return columns, colors, bits
 
 
+_CORE_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})
+
+
+def _pypdf_tiff_prediction(data: bytes, row_length: int, bpp: int) -> bytes:
+    """pypdf's TIFF predictor, bytewise over the whole data."""
+    decoded = bytearray(data)
+    for i in range(len(decoded)):
+        if i % row_length >= bpp:
+            decoded[i] = (decoded[i] + decoded[i - bpp]) % 256
+    return bytes(decoded)
+
+
+def _pypdf_png_prediction(data: bytes, row_length: int, bpp: int) -> bytes:
+    """pypdf's FlateDecode._decode_png_prediction, for the bytes per pixel core does not use.
+    The data is already padded to whole rows.
+    """
+    output = bytearray()
+    previous = bytearray(row_length)
+    for start in range(0, len(data), row_length):
+        row = bytearray(data[start : start + row_length])
+        filter_byte = row[0]
+        if filter_byte == 1:
+            for i in range(bpp + 1, row_length):
+                row[i] = (row[i] + row[i - bpp]) % 256
+        elif filter_byte == 2:
+            for i in range(1, row_length):
+                row[i] = (row[i] + previous[i]) % 256
+        elif filter_byte == 3:
+            for i in range(1, bpp + 1):
+                row[i] = (row[i] + previous[i] // 2) % 256
+            for i in range(bpp + 1, row_length):
+                row[i] = (row[i] + (row[i - bpp] + previous[i]) // 2) % 256
+        elif filter_byte == 4:
+            for i in range(1, bpp + 1):
+                row[i] = (row[i] + previous[i]) % 256
+            for i in range(bpp + 1, row_length):
+                left, up, up_left = row[i - bpp], previous[i], previous[i - bpp]
+                distance_left = abs(up - up_left)
+                distance_up = abs(left - up_left)
+                distance_up_left = abs(left + up - 2 * up_left)
+                if distance_left <= distance_up and distance_left <= distance_up_left:
+                    paeth = left
+                elif distance_up <= distance_up_left:
+                    paeth = up
+                else:
+                    paeth = up_left
+                row[i] = (row[i] + paeth) % 256
+        elif filter_byte != 0:
+            raise PdfReadError(f"Unsupported PNG filter {filter_byte!r}")
+        previous = row
+        output += row[1:]
+    return bytes(output)
+
+
 def _undo_predictor(data: bytes, parameters: Any) -> bytes:
     predictor = _resolved(parameters.get("/Predictor", 1))
     if predictor == 1:
@@ -157,14 +210,23 @@ def _undo_predictor(data: bytes, parameters: Any) -> bytes:
     row_length = math.ceil(columns * colors * bits / 8) + 1
     if row_length > (limit := get_configuration().flate_maximum_row_length):
         raise LimitReachedError(f"Row length of {row_length} exceeds defined limit of {limit}.")
+    # pypdf works in whole bytes, with (row_length - 1) // columns bytes per pixel, so below
+    # 8 bits per pixel it adds a byte to itself, and a 16-bit sample bytewise. Core's
+    # predictors decode those cases as the specification does, so pypdf's arithmetic is
+    # ported for them, and core runs where the two give the same bytes.
+    pypdf_bpp = (row_length - 1) // columns
     try:
         if predictor == 2:
-            return tiff_predict(data, columns=columns, colors=colors, bits_per_component=bits)
+            if bits == 8 and len(data) % (row_length - 1) == 0:
+                return tiff_predict(data, columns=columns, colors=colors, bits_per_component=bits)
+            return _pypdf_tiff_prediction(data, row_length - 1, pypdf_bpp)
         if not 10 <= predictor <= 15:
             raise PdfReadError(f"Unsupported flatedecode predictor {predictor!r}")
         if remainder := len(data) % row_length:
             logger.warning("Image data is not rectangular. Adding padding.")
             data += bytes(row_length - remainder)
+        if bits not in _CORE_PREDICTOR_BITS or pypdf_bpp != max(1, (colors * bits + 7) // 8):
+            return _pypdf_png_prediction(data, row_length, pypdf_bpp)
         return png_predict(data, columns=columns, colors=colors, bits_per_component=bits)
     except UnsupportedPngFilterError as error:
         raise PdfReadError(str(error).replace("predictor filter", "filter")) from error
@@ -358,13 +420,6 @@ class CCITTParameters(GeneratedRecord):
         return 4 if self.K < 0 else 3
 
 
-def CCITParameters(*args: Any, **kwargs: Any) -> NoReturn:  # noqa: N802
-    del args, kwargs
-    raise DeprecationError(
-        "CCITParameters is deprecated and was removed in pypdf 6.0.0. Use CCITTParameters instead."
-    )
-
-
 class CCITTFaxDecode:
     # The largest value the TIFF header's unsigned 32-bit fields hold.
     _MAXIMUM_UNSIGNED_LONG = 0xFFFFFFFF
@@ -543,11 +598,9 @@ def decode_stream_data(stream: StreamObject) -> bytes:
             params = DictionaryObject()
         full_name = FULL_FILTER_NAMES.get(name, name)
         if name in FULL_FILTER_NAMES:
-            warnings.warn(
-                f"The filter name {name} is deprecated and will be removed in pypdf 7.0.0. "
-                f"Use {full_name} instead.",
-                DeprecationWarning,
-                stacklevel=2,
+            raise DeprecationError(
+                f"The filter name {name} is deprecated and has been removed in pypdf 7.0.0. "
+                f"Use {full_name} instead."
             )
         if full_name == "/ASCIIHexDecode":
             data = ASCIIHexDecode.decode(data)
@@ -580,7 +633,6 @@ __all__ = (
     "ASCII85Decode",
     "ASCIIHexDecode",
     "BrotliDecode",
-    "CCITParameters",
     "CCITTFaxDecode",
     "CCITTParameters",
     "DCTDecode",

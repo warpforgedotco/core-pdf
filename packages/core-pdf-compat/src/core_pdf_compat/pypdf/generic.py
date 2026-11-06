@@ -6,7 +6,9 @@ Bytes are always written by core_pdf_spec's serializer, so there is one writer.
 from __future__ import annotations
 
 import codecs
+import functools
 import hashlib
+import inspect
 import logging
 import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -15,7 +17,6 @@ from typing import Any, ClassVar, Self, cast
 from core_pdf.impl.recovery_lexer import BareKeyword
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat.pypdf.errors import (
-    DeprecationError,
     LimitReachedError,
     PdfReadError,
     PdfStreamError,
@@ -72,7 +73,7 @@ class PdfObject:
         if not force_duplicate and target is not None and target.pdf == pdf_dest:
             return clone
         # Read directly, without a call per element, for the many direct objects of large
-        # arrays, which pypdf 6.21.4 clones as cheaply (#4152).
+        # arrays, which pypdf 7.0.0 clones as cheaply (#4152).
         if type(self)._own_reference is PdfObject._own_reference:
             reference = self.__dict__.get("indirect_reference", _NEVER_NUMBERED)
         else:
@@ -92,12 +93,7 @@ class PdfObject:
     def get_object(self) -> PdfObject | None:
         return self
 
-    def write_to_stream(self, stream: Any, encryption_key: object = None) -> None:
-        if encryption_key is not None:
-            raise DeprecationError(
-                "the encryption_key parameter of write_to_stream is deprecated and was "
-                "removed in pypdf 5.0.0."
-            )
+    def write_to_stream(self, stream: Any) -> None:
         stream.write(serialize_object(to_core(self), ObjectLayout.SPACED))
 
 
@@ -233,15 +229,7 @@ class FloatObject(float, _CopiedObject):
         return float(self)
 
 
-class _NameMeta(type):
-    @property
-    def surfix(cls) -> bytes:
-        raise DeprecationError(
-            "surfix is deprecated and was removed in pypdf 5.0.0. Use prefix instead."
-        )
-
-
-class NameObject(str, _CopiedObject, metaclass=_NameMeta):
+class NameObject(str, _CopiedObject):
     delimiter_pattern = re.compile(rb"\s+|[\(\)<>\[\]{}/%]")
     prefix = b"/"
     renumber_table: ClassVar[dict[str, bytes]] = {
@@ -284,10 +272,7 @@ def _name_bytes(name: str) -> bytes:
     from GBK or Latin-1 bytes is written in UTF-8, not in its file's bytes.
     """
     if not name.startswith("/"):
-        raise DeprecationError(
-            f"Incorrect first char in NameObject, should start with '/': ({name}) is "
-            "deprecated and was removed in pypdf 5.0.0."
-        )
+        raise PdfStreamError(f"Incorrect first char in NameObject, should start with '/': ({name})")
     return name[1:].encode("utf-8")
 
 
@@ -512,9 +497,33 @@ def _is_chain_link(source: DictionaryObject, key: str) -> bool:
     )
 
 
+@functools.cache
+def _requires_constructor_arguments(cls: type[DictionaryObject]) -> bool:
+    """Whether ``cls`` can only be instantiated with arguments, as pypdf 7.0.0 checks (#4262)."""
+    parameters = inspect.signature(cls.__init__).parameters
+    return any(
+        parameter.default is inspect.Parameter.empty
+        and parameter.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+        for parameter in list(parameters.values())[1:]
+    )
+
+
 class DictionaryObject(dict[Any, Any], PdfObject):
+    def _new_for_clone(self) -> DictionaryObject:
+        """A blank instance to receive cloned entries; a class that needs constructor
+        arguments, such as an annotation, is made without calling ``__init__``.
+        """
+        if _requires_constructor_arguments(self.__class__):
+            return self.__class__.__new__(self.__class__)
+        return self.__class__()
+
     def replicate(self, pdf_dest: Any) -> DictionaryObject:
-        copy = self._reference_clone(self.__class__(), pdf_dest, False)
+        copy = self._reference_clone(self._new_for_clone(), pdf_dest, False)
         for key, value in dict.items(self):
             copy[key.replicate(pdf_dest)] = (
                 value.replicate(pdf_dest) if hasattr(value, "replicate") else value
@@ -529,7 +538,7 @@ class DictionaryObject(dict[Any, Any], PdfObject):
     ) -> DictionaryObject:
         if _in_destination(self, pdf_dest, force_duplicate):
             return self
-        copy = self._reference_clone(self.__class__(), pdf_dest, force_duplicate)
+        copy = self._reference_clone(self._new_for_clone(), pdf_dest, force_duplicate)
         if len(copy) == 0:
             copy._clone(self, pdf_dest, force_duplicate, ignore_fields or [], set())
         return copy
@@ -548,7 +557,7 @@ class DictionaryObject(dict[Any, Any], PdfObject):
         current: Any = source[key]
         previous: Any = self
         while current is not None:
-            copy = current._reference_clone(current.__class__(), pdf_dest, force_duplicate)
+            copy = current._reference_clone(current._new_for_clone(), pdf_dest, force_duplicate)
             reference = copy.indirect_reference
             if reference is not None:
                 if (reference.idnum, reference.generation) in visited:
@@ -800,12 +809,7 @@ class IndirectObject(PdfObject):
     def _own_reference(self) -> IndirectObject:
         return self
 
-    def write_to_stream(self, stream: Any, encryption_key: object = None) -> None:
-        if encryption_key is not None:
-            raise DeprecationError(
-                "the encryption_key parameter of write_to_stream is deprecated and was "
-                "removed in pypdf 5.0.0."
-            )
+    def write_to_stream(self, stream: Any) -> None:
         # Written as read, so a reference core's types reject, like -12 3 R, still writes.
         stream.write(f"{self.idnum} {self.generation} R".encode())
 

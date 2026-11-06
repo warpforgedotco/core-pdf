@@ -20,6 +20,7 @@ from core_pdf_compat.pypdf.generic import (
     DictionaryObject,
     IndirectObject,
     NameObject,
+    NullObject,
     StreamObject,
     is_null_or_none,
 )
@@ -207,8 +208,12 @@ def image_ids(
     holder = page if node is None else node
     ancestors = [] if ancestors is None else ancestors
     inline = [name for name, image in page._content_stream_images.items() if image]
-    resources = holder.get_resolved("/Resources")
-    if is_null_or_none(resources) or "/XObject" not in resources:
+    resources = holder.get("/Resources", NullObject()).get_object()
+    if not isinstance(resources, DictionaryObject):
+        if not is_null_or_none(resources):
+            logger.warning("Resources are not a dictionary: %s", resources)
+        resources = DictionaryObject()
+    if "/XObject" not in resources:
         return [] if ancestors else inline
     ids: list[Any] = []
     x_objects = resources["/XObject"].get_object()
@@ -233,11 +238,11 @@ def page_image(page: Any, key: Any, node: DictionaryObject | None = None) -> Ima
         key = key[0]
     is_inline = isinstance(key, str) and key[0] == "~" and key[-1] == "~"
     x_objects: Any = None
-    try:
-        x_objects = holder["/Resources"]["/XObject"]
-    except KeyError as error:
-        if not is_inline:
-            raise KeyError(f"Cannot access image object {key} without XObject resources") from error
+    resources = holder.get("/Resources", NullObject()).get_object()
+    if isinstance(resources, DictionaryObject) and "/XObject" in resources:
+        x_objects = resources["/XObject"]
+    elif not is_inline:
+        raise KeyError(f"Cannot access image object {key} without XObject resources")
     if not isinstance(key, str):
         return page_image(page, key[1:], x_objects[key[0]])
     if is_inline:

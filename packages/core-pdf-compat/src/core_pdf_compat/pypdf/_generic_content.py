@@ -103,7 +103,7 @@ def _operator_limit_error(available: int, limit: int) -> LimitReachedError:
 
 
 class _ParsingWork:
-    """pypdf 6.21.4's stream parsing budget, charged for each value core-pdf parsed.
+    """pypdf 7.0.0's stream parsing budget, charged for each value core-pdf parsed.
 
     pypdf charges one unit per operator and top-level operand, two per inline image, and
     inside values one per array element and two per dictionary entry, checking the array
@@ -231,6 +231,12 @@ class ContentStream(DecodedStreamObject):
             return
         stream = stream.get_object()
         self._data = self._joined(stream) if isinstance(stream, ArrayObject) else stream.get_data()
+
+    def write_to_stream(self, stream: Any, encryption_key: object = None) -> None:
+        # pypdf 7.0.0 dropped the parameter everywhere else; ContentStream still takes and
+        # ignores it.
+        del encryption_key
+        super().write_to_stream(stream)
 
     @staticmethod
     def _joined(streams: ArrayObject) -> bytes:

@@ -35,7 +35,7 @@ _RC4_STATE = {"supported": True}
 
 
 def _rc4(key: bytes, data: bytes) -> bytes:
-    """RC4 through cryptography, or in Python once OpenSSL has refused it, as pypdf 6.21.4
+    """RC4 through cryptography, or in Python once OpenSSL has refused it, as pypdf 7.0.0
     falls back (#3853), warning the first time.
     """
     if _RC4_STATE["supported"]:

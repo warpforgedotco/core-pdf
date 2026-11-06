@@ -1,4 +1,4 @@
-# Follows pypdf 6.21.4's pypdf._reader.PdfReader.read, Copyright (c) 2006, Mathieu Fenniak,
+# Follows pypdf 7.0.0's pypdf._reader.PdfReader.read, Copyright (c) 2006, Mathieu Fenniak,
 # under its BSD-style license.
 """pypdf's walk over a file's cross-reference data.
 
@@ -74,17 +74,45 @@ def previous_line(data: bytes | mmap, position: int) -> tuple[bytes, int]:
     return line, line_break + 1
 
 
+_SCAN_WHITESPACE = frozenset(b"\x00\t\n\f\r ")
+_SCAN_DIGITS = frozenset(b"0123456789")
+# pypdf 7.0.0 ignores a number of more than IndirectObject._MAXIMUM_PART_LENGTH digits.
+_MAXIMUM_PART_LENGTH = 64
+
+
 def find_objects(data: bytes) -> Iterator[tuple[int, int, int]]:
-    """Each object number, generation and start offset, found by scanning for `` obj``."""
+    """Each object number, generation and start offset, found by scanning for `` obj``
+    and reading back from it, as pypdf's _find_pdf_objects does.
+    """
     index = data.find(b" obj")
     while index != -1:
-        match = OBJECT_PREFIX.search(data, max(0, index - 32), index)
-        if match is not None:
-            yield int(match[1]), int(match[2]), match.start(1)
+        before = index - 1
+        while before >= 0 and data[before] in _SCAN_WHITESPACE:
+            before -= 1
+        generation_end = before + 1
+        while before >= 0 and data[before] in _SCAN_DIGITS:
+            before -= 1
+        generation_start = before + 1
+        while before >= 0 and data[before] in _SCAN_WHITESPACE:
+            before -= 1
+        object_end = before + 1
+        while before >= 0 and data[before] in _SCAN_DIGITS:
+            before -= 1
+        object_start = before + 1
+        if (
+            object_start < object_end
+            and object_end - object_start <= _MAXIMUM_PART_LENGTH
+            and generation_start < generation_end
+            and generation_end - generation_start <= _MAXIMUM_PART_LENGTH
+        ):
+            yield (
+                int(data[object_start:object_end]),
+                int(data[generation_start:generation_end]),
+                object_start,
+            )
         index = data.find(b" obj", index + 4)
 
 
-OBJECT_PREFIX = re.compile(rb"(\d+)[\x00\t\n\f\r ]+(\d+)[\x00\t\n\f\r ]*\Z")
 OBJECT_HEADER = re.compile(rb"(?:%[^\r\n]*[\r\n]+)?[\x00\t\n\f\r ]*(\d+)[\x00\t\n\f\r ]+\d+")
 
 

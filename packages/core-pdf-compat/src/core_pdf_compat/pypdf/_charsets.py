@@ -1,12 +1,14 @@
-# The tables follow pypdf._codecs.symbol and pypdf._codecs.zapfding, Copyright (c) 2006,
-# Mathieu Fenniak, under its BSD-style license; pypdf generated them from Unicode's mappings
-# of the Adobe Symbol and ZapfDingbats encodings (Copyright (c) 1991-2011 Unicode, Inc.).
+# The tables follow pypdf._codecs.symbol and pypdf._codecs.zapfding of pypdf 7.0.0, Copyright
+# (c) 2006, Mathieu Fenniak, under its BSD-style license. pypdf 7.0.0 generates them from the
+# character codes and glyph names of Adobe's core 14 AFM files (Symbol.afm, ZapfDingbats.afm)
+# and the Unicode values of the Adobe Glyph List, Copyright 2002-2019 Adobe, under its
+# BSD-style license (#4333).
 """The Symbol and ZapfDingbats encodings as pypdf's text extraction maps them, code to text."""
 
 SYMBOL_ENCODING = (
     "\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f"
     "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f"
-    "\xa0!\u2200#\u2203%&\u220b()\u2217+,\u2212./"
+    " !\u2200#\u2203%&\u220b()\u2217+,\u2212./"
     "0123456789:;<=>?"
     "\u2245\u0391\u0392\u03a7\u2206\u0395\u03a6\u0393\u0397\u0399\u03d1\u039a\u039b\u039c\u039d\u039f"
     "\u03a0\u0398\u03a1\u03a3\u03a4\u03a5\u03c2\u2126\u039e\u03a8\u0396[\u2234]\u22a5_"
@@ -14,7 +16,7 @@ SYMBOL_ENCODING = (
     "\u03c0\u03b8\u03c1\u03c3\u03c4\u03c5\u03d6\u03c9\u03be\u03c8\u03b6{|}\u223c\x7f"
     "\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e\x8f"
     "\x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f"
-    "\u20ac\u03d2\u2032\u2264\u2215\u221e\u0192\u2663\u2666\u2665\u2660\u2194\u2190\u2191\u2192\u2193"
+    "\u20ac\u03d2\u2032\u2264\u2044\u221e\u0192\u2663\u2666\u2665\u2660\u2194\u2190\u2191\u2192\u2193"
     "\xb0\xb1\u2033\u2265\xd7\u221d\u2202\u2022\xf7\u2260\u2261\u2248\u2026\uf8e6\uf8e7\u21b5"
     "\u2135\u2111\u211c\u2118\u2297\u2295\u2205\u2229\u222a\u2283\u2287\u2284\u2282\u2286\u2208\u2209"
     "\u2220\u2207\uf6da\uf6d9\uf6db\u220f\u221a\u22c5\xac\u2227\u2228\u21d4\u21d0\u21d1\u21d2\u21d3"
@@ -25,13 +27,13 @@ SYMBOL_ENCODING = (
 ZAPF_DINGBATS_ENCODING = (
     "\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f"
     "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f"
-    "\xa0\u2701\u2702\u2703\u2704\u260e\u2706\u2707\u2708\u2709\u261b\u261e\u270c\u270d\u270e\u270f"
+    " \u2701\u2702\u2703\u2704\u260e\u2706\u2707\u2708\u2709\u261b\u261e\u270c\u270d\u270e\u270f"
     "\u2710\u2711\u2712\u2713\u2714\u2715\u2716\u2717\u2718\u2719\u271a\u271b\u271c\u271d\u271e\u271f"
     "\u2720\u2721\u2722\u2723\u2724\u2725\u2726\u2727\u2605\u2729\u272a\u272b\u272c\u272d\u272e\u272f"
     "\u2730\u2731\u2732\u2733\u2734\u2735\u2736\u2737\u2738\u2739\u273a\u273b\u273c\u273d\u273e\u273f"
     "\u2740\u2741\u2742\u2743\u2744\u2745\u2746\u2747\u2748\u2749\u274a\u274b\u25cf\u274d\u25a0\u274f"
     "\u2750\u2751\u2752\u25b2\u25bc\u25c6\u2756\u25d7\u2758\u2759\u275a\u275b\u275c\u275d\u275e\x7f"
-    "\uf8d7\uf8d8\uf8d9\uf8da\uf8db\uf8dc\uf8dd\uf8de\uf8df\uf8e0\uf8e1\uf8e2\uf8e3\uf8e4\x8e\x8f"
+    "\u2768\u2769\u276a\u276b\u276c\u276d\u276e\u276f\u2770\u2771\u2772\u2773\u2774\u2775\x8e\x8f"
     "\x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f"
     "\xa0\u2761\u2762\u2763\u2764\u2765\u2766\u2767\u2663\u2666\u2665\u2660\u2460\u2461\u2462\u2463"
     "\u2464\u2465\u2466\u2467\u2468\u2469\u2776\u2777\u2778\u2779\u277a\u277b\u277c\u277d\u277e\u277f"

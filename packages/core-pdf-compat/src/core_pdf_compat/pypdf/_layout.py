@@ -1,15 +1,18 @@
-# Follows pypdf._text_extraction._layout_mode of pypdf 6.21.4, Copyright (c) 2006, Mathieu
+# Follows pypdf._text_extraction._layout_mode of pypdf 7.0.0, Copyright (c) 2006, Mathieu
 # Fenniak, under its BSD-style license.
 """pypdf's "layout" text extraction: a fixed-width page built from text positions."""
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import logging
 import math
 from collections import Counter
 from collections.abc import Iterator, Mapping
 from copy import replace
 from itertools import groupby
+from pathlib import Path
 from typing import Any
 
 from core_pdf.impl.types import PdfString
@@ -121,13 +124,8 @@ class _TextState:
     def add_cm(self, operands: tuple[float, ...]) -> None:
         self.reset_text()
         self.q_queue.update(self.q_depth[-1:])
-        # pypdf passes the operands to new_transform(a, b, c, d, e, f).
-        if len(operands) > 6:
-            raise TypeError(
-                "TextStateManager.new_transform() takes from 0 to 6 positional arguments but "
-                f"{len(operands)} were given"
-            )
-        self.stack = [_Transform(_padded(operands)), *self.stack]
+        # pypdf 7.0.0 passes the 6 operands nearest to the operator to new_transform.
+        self.stack = [_Transform(_padded(operands[-6:])), *self.stack]
 
     def add_tm(self, operands: list[float]) -> None:
         matrix = _complete(operands)
@@ -168,12 +166,8 @@ def _padded(operands: Any) -> tuple[float, ...]:
 def _complete(operands: list[float]) -> tuple[float, ...]:
     if len(operands) == 2:
         return _padded([1.0, 0.0, 0.0, 1.0, *operands])
-    if len(operands) > 6:
-        raise TypeError(
-            "TextStateManager.new_transform() takes from 0 to 6 positional arguments but "
-            f"{len(operands)} positional arguments (and 1 keyword-only argument) were given"
-        )
-    return _padded(operands)
+    # pypdf 7.0.0 keeps the 6 operands nearest to the operator.
+    return _padded(operands[-6:])
 
 
 class _Run:
@@ -183,6 +177,7 @@ class _Run:
         self, state: _TextState, font: _FontView, value: bytes | None, transform: Matrix
     ) -> None:
         self.font = font
+        self.value = value
         self.font_size = state.font_size
         self.character_spacing = state.character_spacing
         self.word_spacing = state.word_spacing
@@ -229,6 +224,29 @@ class _Run:
     def displacement(self, offset: float = 0.0) -> Matrix:
         tx = self._advance(self.width - offset, self.characters, self.spaces)
         return [1.0, 0.0, 0.0, 1.0, tx, 0.0]
+
+    def to_dict(self) -> dict[str, Any]:
+        """The fields of pypdf's TextStateParams.to_dict, for layout_mode_debug_path."""
+        value = b"" if self.value is None else self.value
+        return {
+            "value": value,
+            "font_size": self.font_size,
+            "Tc": self.character_spacing,
+            "Tw": self.word_spacing,
+            "Tz": self.scaling,
+            "TL": 0.0,
+            "Ts": self.rise,
+            "transform": list(self.transform),
+            "tx": self.tx,
+            "ty": self.ty,
+            "displaced_tx": self.displaced_tx,
+            "space_tx": self.space_tx,
+            "font_height": self.font_height,
+            "flip_vertical": self.flip_vertical,
+            "rotated": self.rotated,
+            "text": self.text,
+            "_raw_chars": "".join(map(chr, value)),
+        }
 
 
 def _bt_group(run: _Run, text: str, displaced_tx: float) -> dict[str, Any]:
@@ -384,12 +402,36 @@ class _Walker:
             runs.append(self.state.run(bytes(value.data)))
 
 
+def _jsonable(value: object, depth: int = 0) -> Any:
+    """A font for fonts.json: its public fields, with text keys, else its text."""
+    if depth > 8:
+        return str(value)
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable(item, depth + 1) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item, depth + 1) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        fields = {field.name: getattr(value, field.name) for field in dataclasses.fields(value)}
+    else:
+        fields = getattr(value, "__dict__", None) or {}
+    if not fields:
+        return str(value)
+    return {
+        key: _jsonable(item, depth + 1) for key, item in fields.items() if not key.startswith("_")
+    }
+
+
 def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def text_show_operations(
-    operations: Iterator[Operation], fonts: Mapping[str, Any], strip_rotated: bool
+    operations: Iterator[Operation],
+    fonts: Mapping[str, Any],
+    strip_rotated: bool,
+    debug_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     walker = _Walker(operations, fonts)
     walker.strip_rotated = strip_rotated
@@ -414,13 +456,24 @@ def text_show_operations(
     ordered = sorted(
         groups, key=lambda group: (group["ty"] * group["flip_sort"], -group["tx"]), reverse=True
     )
-    return [
+    shifted = [
         {**group, "tx": group["tx"] - left, "displaced_tx": group["displaced_tx"] - left}
         for group in ordered
     ]
+    if debug_path:
+        debug_path.joinpath("bts.json").write_text(
+            json.dumps(shifted, indent=2, default=str), "utf-8"
+        )
+        debug_path.joinpath("tjs.json").write_text(
+            json.dumps(runs, indent=2, default=lambda x: getattr(x, "to_dict", lambda: str(x))()),
+            "utf-8",
+        )
+    return shifted
 
 
-def y_coordinate_groups(groups: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
+def y_coordinate_groups(
+    groups: list[dict[str, Any]], debug_path: Path | None = None
+) -> dict[int, list[dict[str, Any]]]:
     by_line = {
         ty: sorted(line, key=lambda group: group["tx"])
         for ty, line in groupby(groups, key=lambda group: int(group["ty"] * group["flip_sort"]))
@@ -438,6 +491,10 @@ def y_coordinate_groups(groups: list[dict[str, Any]]) -> dict[int, list[dict[str
         else:
             last_ty = ty
             last_txs = txs
+    if debug_path:
+        debug_path.joinpath("bt_groups.json").write_text(
+            json.dumps(by_line, indent=2, default=str), "utf-8"
+        )
     return by_line
 
 
@@ -501,10 +558,18 @@ def layout_text(
     scale_weight: float,
     strip_rotated: bool,
     font_height_weight: float,
+    debug_path: Path | None = None,
 ) -> str:
-    groups = text_show_operations(operations, fonts, strip_rotated)
+    """pypdf's _layout_mode_text. With debug_path, it writes pypdf's four debug files there;
+    fonts.json and tjs.json hold the facade's view of the fonts and text runs.
+    """
+    if debug_path:
+        debug_path.joinpath("fonts.json").write_text(
+            json.dumps(_jsonable(dict(fonts)), indent=2, default=str), "utf-8"
+        )
+    groups = text_show_operations(operations, fonts, strip_rotated, debug_path)
     if not groups:
         return ""
-    by_line = y_coordinate_groups(groups)
+    by_line = y_coordinate_groups(groups, debug_path)
     char_width = fixed_char_width(groups, scale_weight)
     return fixed_width_page(by_line, char_width, space_vertically, font_height_weight)

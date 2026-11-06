@@ -1,4 +1,4 @@
-# Ported from pypdf 6.21.4, Copyright (c) 2006, Mathieu Fenniak, under its BSD-style license.
+# Ported from pypdf 7.0.0, Copyright (c) 2006, Mathieu Fenniak, under its BSD-style license.
 """pypdf's object reading: one object at a time from a stream, with pypdf's strictness.
 
 A file goes through core-pdf's parser instead. These back the public read_from_stream

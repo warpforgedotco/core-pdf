@@ -1,4 +1,4 @@
-# Follows pypdf 6.21.4's outline handling, Copyright (c) 2006-2008, Mathieu Fenniak,
+# Follows pypdf 7.0.0's outline handling, Copyright (c) 2006-2008, Mathieu Fenniak,
 # under its BSD-style license.
 """The parts of PdfWriter that build the outline and named destinations."""
 
@@ -26,6 +26,7 @@ from .generic import (
     TreeObject,
     create_string_object,
     hex_to_rgb,
+    is_null_or_none,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,15 +58,24 @@ class OutlineWriter:
     _replace_object: Any
 
     def get_outline_root(self) -> TreeObject:
-        if "/Outlines" not in self._root_object:
+        outline: TreeObject | None = None
+        if "/Outlines" in self._root_object:
+            entry = self._root_object["/Outlines"]
+            if isinstance(entry, TreeObject):
+                outline = entry
+            elif isinstance(entry, DictionaryObject):
+                outline = TreeObject(entry)
+                reference = getattr(entry, "indirect_reference", None)
+                if reference is None:
+                    # A direct dictionary cannot be replaced in place (pypdf 7.0.0).
+                    self._root_object[NameObject("/Outlines")] = self._add_object(outline)
+                else:
+                    self._replace_object(reference.idnum, outline)
+            elif not is_null_or_none(entry):
+                logger.warning("Outlines are not a dictionary: %s", entry)
+        if outline is None:
             outline = TreeObject()
             self._root_object[NameObject("/Outlines")] = self._add_object(outline)
-            return outline
-        outline = self._root_object["/Outlines"]
-        if not isinstance(outline, TreeObject):
-            tree = TreeObject(outline)
-            self._replace_object(outline.indirect_reference.idnum, tree)
-            outline = tree
         return outline
 
     def add_outline_item_destination(

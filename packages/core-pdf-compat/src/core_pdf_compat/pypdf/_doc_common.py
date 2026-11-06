@@ -36,7 +36,6 @@ inherit it unchanged.
 from __future__ import annotations
 
 import logging
-import warnings
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import datetime
 from typing import Any, cast
@@ -49,8 +48,7 @@ from core_pdf_compat.pypdf.constants import (
 from core_pdf_compat.pypdf.constants import (
     FieldDictionaryAttributes as FA,  # noqa: N814
 )
-from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
-from core_pdf_compat.pypdf.filters import _decompress_with_limit
+from core_pdf_compat.pypdf.errors import DeprecationError, LimitReachedError, PdfReadError
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BooleanObject,
@@ -58,7 +56,6 @@ from core_pdf_compat.pypdf.generic import (
     Destination,
     DictionaryObject,
     EmbeddedFile,
-    EncodedStreamObject,
     Field,
     Fit,
     FloatObject,
@@ -324,7 +321,11 @@ class PdfDocCommon:
         tree: Any = None,
         retval: dict[str, Destination] | None = None,
         visited: set[int] | None = None,
+        depth: int = 0,
+        traversal_state: TraversalState | None = None,
     ) -> dict[str, Destination]:
+        if traversal_state is None:
+            traversal_state = TraversalState()
         if retval is None:
             retval = {}
             tree = self._destination_tree()
@@ -333,11 +334,25 @@ class PdfDocCommon:
                 return retval
         if is_null_or_none(tree):
             return retval
+        # pypdf 7.0.0 limits the depth and the node count of the destination name tree.
+        configuration = get_configuration()
+        if depth > configuration.named_destinations_maximum_depth:
+            raise LimitReachedError(
+                f"Maximum named destination depth exceeded: "
+                f"{depth} > {configuration.named_destinations_maximum_depth}."
+            )
         visited = set() if visited is None else visited
         if id(tree) in visited:
             logger.warning("Detected cycle in destination tree.")
             return retval
         visited.add(id(tree))
+        traversal_state.entry_count += 1
+        if traversal_state.entry_count > configuration.named_destinations_maximum_entries:
+            raise LimitReachedError(
+                f"Maximum named destination entry limit exceeded: "
+                f"{traversal_state.entry_count} > "
+                f"{configuration.named_destinations_maximum_entries}."
+            )
 
         if "/Kids" in tree:
             kids = tree["/Kids"].get_object()
@@ -345,7 +360,13 @@ class PdfDocCommon:
                 logger.warning("Destination tree kids are not an array: %s", kids)
                 return retval
             for kid in kids:
-                self._get_named_destinations(tree=kid.get_object(), retval=retval, visited=visited)
+                self._get_named_destinations(
+                    tree=kid.get_object(),
+                    retval=retval,
+                    visited=visited,
+                    depth=depth + 1,
+                    traversal_state=traversal_state,
+                )
         elif "/Names" in tree:
             names = tree["/Names"].get_object()
             if not isinstance(names, ArrayObject):
@@ -559,14 +580,7 @@ class PdfDocCommon:
         _traversal_state: TraversalState | None = None,
     ) -> dict[str, Any] | None:
         if stack is not _UNSET:
-            warnings.warn(
-                "stack is deprecated and will be removed in pypdf 7.0.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            if retval is not None:
-                _visited = set() if _visited is None else _visited
-                _visited.update(map(id, stack or []))
+            raise DeprecationError("stack is deprecated and was removed in pypdf 7.0.0.")
         configuration = get_configuration()
         if _depth >= configuration.form_fields_maximum_depth:
             raise LimitReachedError("Reached maximum allowed form field depth.")
@@ -794,25 +808,37 @@ class PdfDocCommon:
         return self.pages[cast(int, self._get_page_number_by_indirect(item.indirect_reference))]
 
     @property
-    def xfa(self) -> dict[str, Any] | None:
+    def xfa(self) -> dict[str, bytes] | None:
         form = self.root_object.get_resolved("/AcroForm")
         if not form:
             return None
-        output: dict[str, Any] = {}
+        output: dict[str, bytes] = {}
         if "/XFA" not in form:
             return output
         fields = form["/XFA"].get_object()
         if not isinstance(fields, ArrayObject):
             logger.warning("XFA entry is not an array: %s", fields)
             return output
+        # pypdf 7.0.0 decodes each packet through its filters and limits the total (#4363).
+        accumulated_length = 0
+        maximum_length = get_configuration().xfa_decoding_work_maximum_length
         entries = list.__iter__(fields)
         for tag in entries:
             # Tag and value pairs; a trailing tag has no value.
             value = next(entries, None)
-            if isinstance(value, IndirectObject):
-                stream = cast(EncodedStreamObject | None, value.get_object())
-                if stream:
-                    output[tag] = _decompress_with_limit(stream._data)
+            if value is None or is_null_or_none(value):
+                continue
+            stream = value.get_object()
+            if is_null_or_none(stream):
+                continue
+            decoded = stream.get_data()
+            accumulated_length += len(decoded)
+            if accumulated_length > maximum_length:
+                raise LimitReachedError(
+                    "XFA decoding exceeded the maximum accumulated "
+                    f"decoding work of {maximum_length} bytes."
+                )
+            output[tag] = decoded
         return output
 
     # Attachments.

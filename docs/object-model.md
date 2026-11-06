@@ -80,7 +80,7 @@ incremental and names the six objects in `SavedPdf.removed`; `PdfWriter` also na
 marker and names its algorithm in `SavedPdf.encryption`. The check also fails if a writer
 module holds PDF structure as bytes.
 
-`scripts/check_pypdf_bytes.py` writes each upstream PDF through the real pypdf 6.21.4 and the
+`scripts/check_pypdf_bytes.py` writes each upstream PDF through the real pypdf 7.0.0 and the
 facade the same way and compares the bytes: an incremental update with a new title, a
 `clone_from` and an `append`. All three are identical on all 173 files pypdf can write, and CI
 fails on any difference.
@@ -198,16 +198,16 @@ All six are done. Numbers are from main, and CI reruns each of these checks on e
 
 | Suite | Passed | Skipped |
 | ----- | ------ | ------- |
-| pypdf | 1,756 of 2,184 | 428 |
+| pypdf | 1,829 of 2,294 | 465 |
 | pdfplumber | 169 | 0 |
 | pdfminer | 127 | 0 |
 | unstructured | 83 | 0 |
 | llama_index | 27 | 0 |
 | x-ray | 14 | 1 |
 
-Counts are from CI's Linux runners; on macOS two more pypdf tests skip. Real pypdf 6.21.4
-passes 2,197 of 2,200 and skips 3. None fail on the facade. Of its 428 skips, 425 reach a
-private pypdf module and 3 are also skipped on the real library, as
+Counts are from CI's Linux runners; on macOS two more pypdf tests skip. Real pypdf 7.0.0
+passes 2,303 of 2,310 and skips 7. None fail on the facade. Of its 465 skips, 458 reach a
+private pypdf module and 7 are also skipped on the real library, as
 `scripts/audit_upstream_skips.py pypdf` reports. The count includes pypdf's tests that
 download their files (marked `enable_socket`); the harness fetches those files first, and CI
 caches them.
@@ -225,13 +225,13 @@ PDFs, file by file, and fails on any difference a script does not list with its 
 
 | Script | Library | Result |
 | ------ | ------- | ------ |
-| `check_pypdf_bytes.py` | pypdf 6.21.4 | Written bytes identical on every file pypdf writes, in each mode |
-| `check_pypdf_reads.py` | pypdf 6.21.4 | Every object read identical, plain, RC4 and AES |
-| `check_pypdf_text.py` | pypdf 6.21.4 | `extract_text` identical on all 3,881 pages compared, plain and layout |
+| `check_pypdf_bytes.py` | pypdf 7.0.0 | Written bytes identical on every file pypdf writes, in each mode |
+| `check_pypdf_reads.py` | pypdf 7.0.0 | Every object read identical, plain, RC4 and AES |
+| `check_pypdf_text.py` | pypdf 7.0.0 | `extract_text` identical on all 3,890 pages compared, plain and layout |
 | `check_pdfminer_output.py` | pdfminer.six 20260107 | Text identical on 178 of 184 files, layout on 179 |
 | `check_pdfplumber_output.py` | pdfplumber 0.11.10 | Identical apart from 6 listed files |
 | `check_unstructured_output.py` | unstructured 0.27.36 | 215 of 216 files identical |
-| `check_llamaindex_output.py` | llama-index-readers-file 0.7.0 | 169 of 184 identical, 11 with the same error |
+| `check_llamaindex_output.py` | llama-index-readers-file 0.7.0, pypdf 6.21.4 | Identical apart from 11 listed files, where pypdf 7.0.0's text differs |
 | `check_xray_output.py` | x-ray 0.4.0 | 203 of 211 identical, 6 with the same error |
 
 Each script lists its remaining differences with the reason; the upstream suites pin the same

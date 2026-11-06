@@ -334,26 +334,23 @@ class LTImage(LTComponent):
 
 
 class LTFigure(LTComponent):
-    __slots__ = ("name", "_objs", "text_snippets")
+    __slots__ = ("name", "_objs")
 
     name: str
     _objs: list[LTItem]
-    text_snippets: tuple[str, ...]
 
-    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "name", "_objs", "text_snippets")
-    __match_args__ = ("bbox", "name", "_objs", "text_snippets")
+    __fields__: ClassVar[tuple[str, ...]] = ("bbox", "name", "_objs")
+    __match_args__ = ("bbox", "name", "_objs")
 
     def __init__(
         self,
         bbox: tuple[float, float, float, float],
         name: str = "",
         _objs: list[LTItem] | None = None,
-        text_snippets: tuple[str, ...] = (),
     ) -> None:
         self.bbox = bbox
         self.name = name
         self._objs = [] if _objs is None else _objs
-        self.text_snippets = text_snippets
         self._post_init()
 
     def __eq__(self, other: object) -> bool:
@@ -361,12 +358,7 @@ class LTFigure(LTComponent):
             return True
         if other.__class__ is not self.__class__:
             return NotImplemented
-        return (
-            self.bbox == other.bbox
-            and self.name == other.name
-            and self._objs == other._objs
-            and self.text_snippets == other.text_snippets
-        )
+        return self.bbox == other.bbox and self.name == other.name and self._objs == other._objs
 
     def __iter__(self) -> Iterator[LTItem]:
         return iter(self._objs)

@@ -197,9 +197,18 @@ class PolyLine(MarkupAnnotation):
 
 
 class Rectangle(MarkupAnnotation):
-    def __init__(self, rect: Rect, *, interior_color: str | None = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        rect: Rect,
+        *,
+        interior_color: str | None = None,
+        border_color: str | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         _set(self, {"/Subtype": _name("/Square"), "/Rect": RectangleObject(rect)})
+        if border_color is not None:
+            self[NameObject("/C")] = _floats(hex_to_rgb(border_color))
         if interior_color:
             self[NameObject("/IC")] = _floats(hex_to_rgb(interior_color))
 
