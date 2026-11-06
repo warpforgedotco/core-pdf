@@ -664,6 +664,8 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 raise LimitReachedError(
                     f"Declared stream length of {declared} exceeds maximum allowed length."
                 )
+            if declared > len(stream.raw_data) and not isinstance(self._stream, BytesIO):
+                self._read_declared_length(entry, declared)
             return
         if declared is None and len(stream.raw_data) >= limit:
             # pypdf reads in chunks up to 8192 bytes, and checks each chunk before searching it.
@@ -676,6 +678,25 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             raise LimitReachedError(
                 f"Read stream length of {read} exceeds maximum allowed length of {limit}."
             )
+
+    def _read_declared_length(self, entry: Any, declared: int) -> None:
+        """Read a too-long /Length from the file handle, as pypdf does.
+
+        pypdf reads a stream by asking its file for /Length bytes. From an open file that
+        allocates the whole length, so a huge one raises MemoryError where memory is limited.
+        A path or bytes are read through BytesIO, which returns only what is there, so pypdf
+        and this reader skip the allocation then.
+        """
+        offset = getattr(entry, "offset", None)
+        keyword = stream_keyword(self._data, offset) if isinstance(offset, int) else None
+        if keyword is None:
+            return
+        position = self._stream.tell()
+        self._stream.seek(keyword.end())
+        try:
+            self._stream.read(declared)
+        finally:
+            self._stream.seek(position)
 
     def _check_object_stream(self, number: int) -> None:
         if number in self._checked_object_streams:
