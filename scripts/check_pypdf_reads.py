@@ -1,6 +1,6 @@
 """Check that the pypdf facade reads every object as pypdf does, on the upstream PDFs.
 
-uv run --all-packages --with "pypdf[full]==6.15.0" python scripts/check_pypdf_reads.py
+uv run --all-packages --with "pypdf[full]==6.21.4" python scripts/check_pypdf_reads.py
 
 Each file that real pypdf opens unencrypted is read three ways: as it is, and encrypted by real
 pypdf with RC4-128 and with AES-256, then opened with the password. Every object in the xref

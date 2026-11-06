@@ -11,7 +11,7 @@ from typing import Any
 from core_pdf_spec.s_07_syntax.serialize import serialize_object
 
 from .annotations import border_array
-from .constants import ImageType, ObjectDeletionFlag
+from .constants import ImageType, ObjectDeletionFlag, PageLabelStyle
 from .generic import (
     ArrayObject,
     ContentStream,
@@ -107,6 +107,7 @@ class EditWriter:
     _idnum_hash: dict[bytes, Any]
     pages: Any
     _add_object: Any
+    _get_page_reference: Any
 
     def add_annotation(self, page_number: Any, annotation: Any) -> DictionaryObject:
         from ._writer import PageObject
@@ -118,10 +119,21 @@ class EditWriter:
         added[NameObject("/P")] = page.indirect_reference
         if page.annotations is None:
             page[NameObject("/Annots")] = ArrayObject()
-        if added.get_resolved("/Subtype") == "/Link" and "/Dest" in added:
-            deferred = added["/Dest"]
+        deferred = added.get("/Dest")
+        if (
+            added.get("/Subtype") == "/Link"
+            and isinstance(deferred, DictionaryObject)
+            and "target_page_index" in deferred
+        ):
             fit = Fit(fit_type=deferred["fit"], fit_args=dict.__getitem__(deferred, "fit_args"))
-            target = Destination(NameObject("/LinkName"), deferred["target_page_index"], fit)
+            index = deferred["target_page_index"]
+            # A page that exists already is referenced; a later one stays a number (pypdf #4076).
+            target_page: Any = (
+                self.pages[index].indirect_reference
+                if 0 <= index < len(self.pages)
+                else NumberObject(index)
+            )
+            target = Destination(NameObject("/LinkName"), target_page, fit)
             added[NameObject("/Dest")] = target.dest_array
         page.annotations.append(self._add_object(added))
         if added.get_resolved("/Subtype") == "/Popup" and "/Parent" in added:
@@ -129,7 +141,7 @@ class EditWriter:
         return added
 
     def add_uri(self, page_number: int, uri: str, rect: Any, border: Any = None) -> None:
-        page = self.pages[page_number]
+        page = self._get_page_reference(page_number).get_object()
         if isinstance(rect, str):
             rect = RectangleObject(float(item) for item in rect.strip("[] ").split())
         elif not isinstance(rect, RectangleObject):
@@ -166,6 +178,8 @@ class EditWriter:
     ) -> None:
         if style is None and prefix is None:
             raise ValueError("At least one of style and prefix must be given")
+        if style is not None and style not in tuple(PageLabelStyle):
+            raise ValueError(f"style must be one of: {', '.join(PageLabelStyle)}, got {style!r}")
         if page_index_from < 0:
             raise ValueError("page_index_from must be greater or equal than 0")
         if page_index_to < page_index_from:
@@ -425,9 +439,10 @@ class EditWriter:
         if remove_unreferenced:
             roots = [self._root_object, self._info, self._ID]
             referenced.update(
-                item.indirect_reference.idnum
+                reference.idnum
                 for item in roots
-                if item is not None and item.indirect_reference is not None
+                if item is not None
+                and (reference := getattr(item, "indirect_reference", None)) is not None
             )
             for index in range(len(self._objects)):
                 if index + 1 not in referenced:

@@ -9,6 +9,7 @@ import importlib
 import importlib.util
 import os
 import sys
+from collections.abc import Iterator
 from importlib.abc import InspectLoader, Loader, MetaPathFinder
 from importlib.machinery import ModuleSpec
 from types import CodeType, ModuleType
@@ -50,6 +51,19 @@ class StubMeta(type):
 
     def __sub__(cls, other: object) -> object:
         return cls
+
+    __add__ = __radd__ = __mul__ = __rmul__ = __sub__
+
+    # A stand-in parametrizing a test is a one-item collection, so the test is
+    # collected once and skipped in setup.
+    def __iter__(cls) -> Iterator[object]:
+        return iter((cls,))
+
+    def __len__(cls) -> int:
+        return 1
+
+    def __contains__(cls, item: object) -> bool:
+        return item is cls
 
     def __lt__(cls, other: object) -> bool:
         return False

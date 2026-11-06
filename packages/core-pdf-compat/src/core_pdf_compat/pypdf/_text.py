@@ -5,9 +5,12 @@ import re
 import string
 from collections.abc import Callable, Generator, Iterator, Mapping
 from contextlib import contextmanager, suppress
+from functools import cache
+from importlib.util import find_spec
 from typing import Any, Literal, cast
 
 from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
+from core_adobe_fonts.cff.font import CFF_STANDARD_STRINGS, CFFFont
 from core_pdf.impl.capture_recovery import ContentFallback, content_scanner
 from core_pdf.impl.fonts_cmap import ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder
@@ -34,8 +37,14 @@ from core_pdf_compat._text_state import (
 )
 from core_pdf_compat.pypdf._charsets import SYMBOL_ENCODING, ZAPF_DINGBATS_ENCODING
 from core_pdf_compat.pypdf._cmap_scan import scan_to_unicode
+from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf._core_metrics import core_font_widths
-from core_pdf_compat.pypdf._font_scan import scan_cid_widths, scan_encoding
+from core_pdf_compat.pypdf._font_scan import (
+    font_logger,
+    scan_cid_widths,
+    scan_encoding,
+    scan_simple_widths,
+)
 from core_pdf_compat.pypdf._generic_content import inline_image_spans
 from core_pdf_compat.pypdf._glyph_names import extra_glyphs
 from core_pdf_compat.pypdf._layout import layout_text
@@ -256,9 +265,6 @@ class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     width_uses_source_code: bool
     # pypdf's layout mode skips the text of a Type3 font it cannot map to characters.
     interpretable: bool = True
-    # A simple font's /Encoding name pypdf has no table for, which its layout mode fails
-    # to decode with.
-    unknown_encoding: str | None = None
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -290,7 +296,7 @@ class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
                 decoded = data.decode(self.encoding_codec, "surrogatepass")
             except UnicodeDecodeError:
                 # pypdf's fallback for odd byte counts and unmapped codes.
-                decoded = data.decode("latin-1")
+                decoded = data.decode(self.encoding_codec, "replace")
             parts = tuple(decoded)
             # pypdf measures each character it decoded, looked up as a code in /W.
             width = sum(
@@ -309,13 +315,15 @@ class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
         """The characters pypdf's layout mode decodes the bytes to before its character map,
         which it measures and counts, and the one it takes for a space."""
         if not self.decoder.is_cid_font and self.encoding_table is not None:
+            # pypdf measures a simple font's raw character codes.
             space = chr(self.space_code_bytes[0]) if len(self.space_code_bytes) == 1 else ""
-            return "".join(self.encoding_table[code] for code in data), space
+            return data.decode("latin-1"), space
         space = cmap_key_character(self.space_code_bytes) if self.space_code_bytes else " "
+        codec = self.encoding_codec or "utf-16-be"
         try:
-            return data.decode(self.encoding_codec or "utf-16-be", "surrogatepass"), space
+            return data.decode(codec, "surrogatepass"), space
         except UnicodeDecodeError:
-            return data.decode("utf-8", "replace"), space
+            return data.decode(codec, "replace"), space
 
     def simple_glyph_parts(self, glyph: Any) -> tuple[str, ...]:
         if len(glyph.code_bytes) != 1:
@@ -332,16 +340,10 @@ class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
             and self.encoding_table is not None
             and len(glyph.code_bytes) == 1
         ):
-            # pypdf sums the widths of the characters its encoding gives, each looked up
-            # as a code.
-            characters = self.encoding_table[glyph.code_bytes[0]]
-            space = self.space_code_bytes[0] if len(self.space_code_bytes) == 1 else None
-            return sum(
-                self.space_width
-                if ord(character) == space
-                else float(int(self.widths.get(ord(character), self.default_width)))
-                for character in characters
-            )
+            # pypdf measures the raw character code.
+            if glyph.code_bytes == self.space_code_bytes:
+                return self.space_width
+            return float(int(self.widths.get(glyph.code_bytes[0], self.default_width)))
         if glyph.code_bytes == self.space_code_bytes:
             return self.space_width
         width_code = glyph.char_code if self.width_uses_source_code else glyph.width_code
@@ -404,6 +406,68 @@ REFERENCE_FIXED_PITCH_CORE_FONTS = frozenset(
 )
 
 
+@cache
+def reference_reads_cff_encodings() -> bool:
+    """pypdf reads a CFF font program's built-in encoding only with fontTools."""
+    return find_spec("fontTools") is not None
+
+
+def reference_cff_encoding(data: bytes) -> dict[int, str]:
+    """The custom built-in encoding fontTools reads from a CFF font program.
+
+    pypdf maps the encoding fontTools decodes, so this follows fontTools rather
+    than the CFF specification: later codes overwrite earlier ones, a format 0
+    encoding never assigns code 0, and any malformed table yields nothing. A
+    predefined Standard or Expert encoding is not mapped either.
+    """
+    try:
+        cff = CFFFont(data)
+        position = cff.dict_offset(16, default=0)
+    except ValueError:
+        return {}
+    if cff.is_cid_keyed or position in {0, 1}:
+        return {}
+    names = dict(enumerate(CFF_STANDARD_STRINGS)) | {
+        sid: name for name, sid in cff.custom_string_sids.items()
+    }
+    charset = {gid: names.get(sid) for sid, gid in cff.cid_to_gid.items()}
+    program = cff.data
+    encoding: dict[int, str | None] = {}
+    try:
+        raw_format = program[position]
+        count = program[position + 1]
+        position += 2
+        if raw_format & 127 == 0:
+            for gid in range(1, count + 1):
+                code = program[position]
+                position += 1
+                if code != 0:
+                    encoding[code] = charset[gid]
+        elif raw_format & 127 == 1:
+            gid = 1
+            for _ in range(count):
+                first, left = program[position], program[position + 1]
+                position += 2
+                if first + left > 255:
+                    return {}
+                for offset in range(left + 1):
+                    encoding[first + offset] = charset[gid + offset]
+                gid += left + 1
+        else:
+            return {}
+        if raw_format & 128:
+            supplements = program[position]
+            position += 1
+            for _ in range(supplements):
+                code = program[position]
+                sid = int.from_bytes(program[position + 1 : position + 3], "big")
+                position += 3
+                encoding[code] = names[sid]
+    except IndexError, KeyError:
+        return {}
+    return {code: name for code, name in encoding.items() if name is not None}
+
+
 def cmap_key_character(code: bytes) -> str:
     """The character pypdf keys a ToUnicode source code by."""
     return code.decode("charmap" if len(code) == 1 else "utf-16-be", "surrogatepass")
@@ -414,16 +478,19 @@ logger = logging.getLogger(__name__)
 ALL_ORIENTATIONS = (0, 90, 180, 270)
 DEFAULT_SPACE_WIDTH = 200.0
 
-# pypdf stops descending into form XObjects after this many per page extraction
-# (pypdf Configuration.xform_maximum_invocations_per_extraction).
-MAX_FORM_INVOCATIONS = 5_000
-
 
 class FormInvocations:
-    __slots__ = ("count",)
+    """How many form XObjects one page extraction has entered, across nesting levels.
+
+    pypdf stops descending into them past Configuration.xform_maximum_invocations_per_extraction,
+    and says so once.
+    """
+
+    __slots__ = ("count", "has_logged")
 
     def __init__(self) -> None:
         self.count = 0
+        self.has_logged = False
 
 
 FACADE_LOGGER = logging.getLogger("core_pdf_compat.pypdf")
@@ -519,11 +586,10 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         for resource_name, raw_font in raw_fonts.items():
             font = as_dict(raw_font)
             if font is None:
-                if self.options.layout:
-                    # pypdf's layout mode reads every font, failing on what is not one.
-                    value = self.document.resolver.resolve(raw_font)
-                    name = "NoneType" if value is None else type(to_generic(value)).__name__
-                    raise AttributeError(f"'{name}' object has no attribute 'get'")
+                if self.options.layout and self._reads_as_none(raw_font):
+                    # pypdf's layout mode skips what is not a font dictionary, a null among
+                    # them, but fails on a reference its reader reads as Python's None.
+                    raise AttributeError("'NoneType' object has no attribute 'get_object'")
                 continue
             known = font_cache.get(id(font))
             if known is None or known[0] is not font:
@@ -544,13 +610,32 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
                 fonts[str(resource_name)] = known[1]
         return fonts
 
+    def _reads_as_none(self, raw: object) -> bool:
+        """Whether the facade reader, which reads objects as pypdf's does, gives None."""
+        value = to_generic(raw, self.options.reader)
+        if isinstance(value, IndirectObject):
+            return value.get_object() is None
+        return value is None
+
     def legacy_font(self, font: dict[object, object]) -> LegacyFont | None:
         resolve = self.document.resolver.resolve
-        scan_encoding(font, resolve)
+        reader = self.options.reader
+
+        def present(value: object) -> Any:
+            return to_generic(value, reader)
+
+        scan_encoding(font, resolve, present)
         subtype = recover_pdf_name(font.get("Subtype") or "")
         if subtype not in {"Type1", "MMType1", "TrueType", "Type3"}:
             # pypdf ignores a missing or malformed /DescendantFonts array.
             descendants = self.document.resolver.resolve(font.get("DescendantFonts"))
+            if "DescendantFonts" in font and not isinstance(descendants, (list, tuple)):
+                font_logger.warning(
+                    "Expected an array for /DescendantFonts, got %s. Ignoring it.",
+                    present(descendants),
+                )
+        elif self.interpretable(font, subtype):
+            scan_simple_widths(font, resolve, present)
         try:
             self.read_font_programs(font, subtype)
         except (AttributeError, TypeError) as error:
@@ -660,7 +745,6 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
             self.difference_fallbacks(font),
             width_uses_source_code,
             self.interpretable(font, subtype),
-            None if decoder.is_cid_font else self.unknown_encoding_name(font),
         )
 
     def read_font_programs(self, font: dict[object, object], subtype: str | None) -> None:
@@ -753,46 +837,50 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         encoding_table: tuple[str, ...] | None,
         encoding_is_mapping: bool,
     ) -> int | None:
-        # pypdf takes the first code its encoding maps to a space, then the first entry for
-        # a space in its character map: the ToUnicode CMap, or else the map read from a
-        # Type1 font program.
+        # pypdf takes the first entry for a space in its character map (the ToUnicode CMap,
+        # or else the map read from a Type1 font program), then the first code its encoding
+        # maps to a space.
+        key = next((key for key, value in character_map.items() if value == " "), None)
+        if key is not None:
+            # Simple fonts compare the key with single-byte codes.
+            return ord(key) if len(key) == 1 and ord(key) < 256 else None
         if encoding_is_mapping and encoding_table is not None:
             encoded = next(
                 (code for code, value in enumerate(encoding_table) if value == " "), None
             )
             if encoded is not None:
                 return encoded
-        key = next((key for key, value in character_map.items() if value == " "), None)
-        if key is not None:
-            # Simple fonts compare the key with single-byte codes.
-            return ord(key) if len(key) == 1 and ord(key) < 256 else None
         return 32
 
     def encoding_is_mapping(self, font: dict[object, object]) -> bool:
         """Whether pypdf's encoding of the simple font is a table (else a codec name)."""
         encoding = self.document.resolver.resolve(font.get("Encoding"))
-        if encoding is None:
-            # Without /Encoding, pypdf maps codes through a table only for a font named
-            # after one of its encodings (Symbol, ZapfDingbats); others decode as "charmap".
-            return recover_pdf_name(font.get("BaseFont") or "") in PYPDF_CHARSET_NAMES
         if isinstance(encoding, PdfName):
-            return recover_pdf_name(encoding) in PYPDF_CHARSET_NAMES
-        # pypdf takes a string for a name it has no table for; a dictionary has its base
-        # table, and anything else gets StandardEncoding.
-        return not isinstance(encoding, PdfString)
+            # Only a predefined CMap's name is a codec; any other name a table.
+            name = recover_pdf_name(encoding) or ""
+            return name in PYPDF_CHARSET_NAMES or predefined_encoding_codec(name) is None
+        if isinstance(encoding, PdfString):
+            return b"-UCS2-" not in bytes(encoding.data)
+        # Without /Encoding, a dictionary or anything else, it is a table.
+        return True
 
     def legacy_encoding(
         self, font: dict[object, object], decoder: FontDecoder
     ) -> tuple[tuple[str, ...] | None, str | None, dict[str, str]]:
         if decoder.is_cid_font:
-            encoding_name = recover_pdf_name(font.get("Encoding") or "") or ""
-            return None, predefined_encoding_codec(encoding_name), {}
+            encoding = self.document.resolver.resolve(font.get("Encoding"))
+            encoding_name = recover_pdf_name(encoding) if isinstance(encoding, PdfName) else None
+            codec = predefined_encoding_codec(encoding_name or "")
+            if codec is None and encoding_name is not None:
+                # pypdf decodes a composite font with an encoding name it lacks as UTF-16BE.
+                codec = "utf-16-be"
+            return None, codec, {}
         table = self.base_table(font)
         character_map: dict[str, str] = {}
 
         for code, name in decoder.encoding.differences.items():
             if 0 <= code <= 255:
-                table[code] = self.legacy_glyph_name(name)
+                table[code] = self.glyph_name_to_unicode(name) or f"/{name}"
 
         subtype = recover_pdf_name(font.get("Subtype") or "")
         descriptor = self.document.resolver.resolve(font.get("FontDescriptor"))
@@ -802,44 +890,53 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
                 table[ord(character)] = character
         return tuple(table), None, character_map
 
-    def unknown_encoding_name(self, font: dict[object, object]) -> str | None:
-        encoding = self.document.resolver.resolve(font.get("Encoding"))
-        if not isinstance(encoding, PdfName):
-            return None
-        name = recover_pdf_name(encoding) or ""
-        if name in PYPDF_CHARSET_NAMES or predefined_encoding_codec(name) is not None:
-            return None
-        return f"/{name}"
-
     def base_table(self, font: dict[object, object]) -> list[str]:
         """The table pypdf's _parse_encoding starts a simple font from, before /Differences."""
         resolve = self.document.resolver.resolve
         encoding = resolve(font.get("Encoding"))
         if encoding is None:
-            # Without /Encoding, a font named after one of pypdf's encodings uses it, and any
-            # other decodes as "charmap": each code is itself.
+            # Without /Encoding, a font named after one of pypdf's encodings (Symbol,
+            # ZapfDingbats) uses it, and any other StandardEncoding.
             base_font = recover_pdf_name(font.get("BaseFont") or "")
             if base_font in PYPDF_CHARSET_NAMES:
                 return pypdf_charset(str(base_font))
-            return [chr(code) for code in range(256)]
-        if isinstance(encoding, PdfString):
-            return [chr(code) for code in range(256)]  # pypdf reads it as a name it lacks.
+            return pypdf_charset("StandardEncoding")
         if isinstance(encoding, PdfName):
             name = recover_pdf_name(encoding)
             if name in PYPDF_CHARSET_NAMES:
                 return pypdf_charset(str(name))
-            # A name pypdf has no table for decodes as "charmap".
-            return [chr(code) for code in range(256)]
+            # A name pypdf has no table for gets StandardEncoding.
+            return pypdf_charset("StandardEncoding")
         base = resolve(encoding.get("BaseEncoding")) if isinstance(encoding, dict) else None
         name = recover_pdf_name(base) if isinstance(base, PdfName) else None
         return pypdf_charset(str(name) if name in PYPDF_CHARSET_NAMES else "StandardEncoding")
 
     def font_file_character_map(self, descriptor: dict[object, object]) -> dict[str, str]:
-        # pypdf reads the built-in encoding of a /FontFile (Type 1) program only.
-        font_file = self.document.resolver.resolve(descriptor.get("FontFile"))
+        # pypdf reads the built-in encoding of the first of a /FontFile (Type 1) program and
+        # a /FontFile3 of subtype Type1C (CFF, with fontTools) that is a stream.
+        resolve = self.document.resolver.resolve
+        font_file = resolve(descriptor.get("FontFile"))
         if isinstance(font_file, PdfStream):
             return self.type1_character_map(font_file)
+        font_file = resolve(descriptor.get("FontFile3"))
+        if (
+            isinstance(font_file, PdfStream)
+            and recover_pdf_name(font_file.dictionary.get("Subtype") or "") == "Type1C"
+            and reference_reads_cff_encodings()
+        ):
+            return self.cff_character_map(font_file)
         return {}
+
+    def cff_character_map(self, font_file: PdfStream) -> dict[str, str]:
+        encoding = reference_cff_encoding(self.document.resolver.resolve_stream(font_file).data)
+        result: dict[str, str] = {}
+        for code, name in sorted(encoding.items()):
+            if not name or name == ".notdef":
+                continue
+            mapped = self.glyph_name_to_unicode(name)
+            if mapped:
+                result[chr(code)] = mapped
+        return result
 
     def type1_character_map(self, font_file: PdfStream) -> dict[str, str]:
         data = self.document.resolver.resolve_stream(font_file).data
@@ -849,13 +946,28 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
             return {}
         result: dict[str, str] = {}
         for code, name in type1_encoding_entries(encoding_parts[1]):
-            with suppress(ValueError):
-                mapped = self.legacy_glyph_name(name, unknown="")
-                if not mapped and name.startswith("uni"):
-                    mapped = chr(int(name[3:], 16))
-                if mapped:
-                    result[chr(code)] = mapped
+            mapped = self.glyph_name_to_unicode(name)
+            if mapped:
+                result[chr(code)] = mapped
         return result
+
+    @classmethod
+    def glyph_name_to_unicode(cls, name: str) -> str | None:
+        """pypdf's _glyph_name_to_unicode: the glyph list's character, or a uniXXXX or uXXXX
+        name's code point."""
+        mapped = cls.legacy_glyph_name(name, unknown="")
+        if mapped:
+            return mapped
+        if name.startswith("uni"):
+            code_point = name[3:]
+        elif name.startswith("u"):
+            code_point = name[1:]
+        else:
+            return None
+        try:
+            return chr(int(code_point, 16))
+        except ValueError:
+            return None
 
     @staticmethod
     def legacy_glyph_name(name: str, *, unknown: str | None = None) -> str:
@@ -984,6 +1096,8 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
             return {}
         widths: dict[int, float] = {}
         for code, raw_width in enumerate(raw_widths, start=int(first_char)):
+            if code > 255:
+                break  # A simple font's codes are single bytes.
             width = resolve(raw_width)
             if isinstance(width, (int, float)) and not isinstance(width, bool):
                 widths[code] = float(int(width))
@@ -1077,7 +1191,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         super().positioned(string_width)
         if len(self.output_parts) > parts:
             self.visit(text + "\n")
-        if not self.text:
+        if not text or not self.text:
             self.remember_position()
 
     def show(self, data: bytes) -> None:
@@ -1144,11 +1258,10 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
             case "Td":
                 self.move_text(number_operand(operands, 0, 0.0), number_operand(operands, 1, 0.0))
             case "TD" if len(operands) >= 2:
-                # pypdf negates the raw operand, so a non-number fails extraction.
+                # A non-numeric ty leaves the leading as it is.
                 ty = operands[1]
-                if isinstance(ty, bool) or not isinstance(ty, (int, float)):
-                    raise TypeError(f"bad operand type for unary -: {type(ty).__name__!r}")
-                self.process("TL", (-ty,))
+                if isinstance(ty, (int, float)) and not isinstance(ty, bool):
+                    self.process("TL", (-ty,))
                 self.process("Td", operands)
             case "Tm":
                 try:
@@ -1176,9 +1289,6 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
                     match item:
                         case PdfString(data=data):
                             self.show(bytes(data))
-                        case PdfName():
-                            # pypdf's name is a str, which it shows as the text itself.
-                            self.show_name(item)
                         case bool():
                             pass
                         case int() | float() if (
@@ -1255,7 +1365,15 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
                 recover_pdf_name(operands[0]),
             )
             return
-        if self.invocations.count >= MAX_FORM_INVOCATIONS:
+        limit = get_configuration().xform_maximum_invocations_per_extraction
+        if self.invocations.count >= limit:
+            if not self.invocations.has_logged:
+                self.invocations.has_logged = True
+                logger.warning(
+                    "Exceeded %d form XObject invocations while extracting text; "
+                    "further form content is skipped.",
+                    limit,
+                )
             return
         self.invocations.count += 1
         top_level = not self.known_forms
@@ -1286,7 +1404,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         if child_text:
             self.output_parts.append(child_text)
             self.output_last = child_text[-1]
-        self.visit(child_text)
+        # The visitor saw each piece of the form's text while it was extracted.
 
 
 VENDORED_FONTTOOLS_LOGGER = logging.getLogger("core_pdf._vendor.fontTools")

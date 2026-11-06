@@ -1,7 +1,7 @@
 """Check that the llama_index facade returns the same Documents as llama-index-readers-file.
 
 uv run --all-packages --with llama-index-readers-file==0.7.0 \
-    --with llama-index-core==0.14.25 --with "pypdf[full]==6.15.0" \
+    --with llama-index-core==0.14.25 --with "pypdf[full]==6.21.4" \
     python scripts/check_llamaindex_output.py [--limit N]
 
 Each upstream sample PDF goes through llama_index's PDFReader and the facade's PDFReader the
@@ -53,6 +53,7 @@ PATTERNS = (
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
 EXTRA_INFO = {"source": "check", "file_name": "renamed.pdf"}
+# (mode, file name) -> why the facade's Documents differ from llama_index's there.
 DEPARTURES: dict[tuple[str, str], str] = {}
 
 

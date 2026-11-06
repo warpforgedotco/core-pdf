@@ -1,4 +1,4 @@
-# Follows pypdf's form filling and appearance streams, Copyright (c) 2006-2008, Mathieu
+# Follows pypdf 6.21.4's form filling and appearance streams, Copyright (c) 2006-2008, Mathieu
 # Fenniak, under its BSD-style license.
 """The parts of PdfWriter that fill forms, with the appearance streams of text fields.
 
@@ -10,7 +10,6 @@ for a character the font lacks, and its right-to-left shaping, are not here.
 from __future__ import annotations
 
 import logging
-import re
 from collections.abc import Mapping
 from typing import Any, NamedTuple, cast
 
@@ -19,10 +18,11 @@ from core_pdf.impl.fonts_metrics import FONT_DATA, standard_14_widths
 
 from ._page_merge import Transformation
 from .constants import FieldDictionaryAttributes as FA  # noqa: N814
-from .errors import PyPdfError
+from .errors import PdfReadError, PyPdfError
 from .generic import (
     ArrayObject,
     BooleanObject,
+    ContentStream,
     DecodedStreamObject,
     DictionaryObject,
     FloatObject,
@@ -124,6 +124,61 @@ class _Font(NamedTuple):
         )
 
 
+class _Color(NamedTuple):
+    """pypdf.generic._color's DeviceGray, DeviceRGB and DeviceCMYK: normalized values and the
+    non-stroking operator they go with."""
+
+    values: tuple[float, ...]
+    operator: str
+
+    @classmethod
+    def from_normalized_values(cls, color: Any, operator: str | None = None) -> _Color | None:
+        """A color from 1, 3 or 4 values in 0 to 1, if operator (when given) is its operator."""
+        if color is None:
+            return None
+        expected = {1: "g", 3: "rg", 4: "k"}.get(len(color))
+        if expected is None or (operator is not None and operator != expected):
+            return None
+        if not all(isinstance(value, (int, float)) and 0.0 <= value <= 1.0 for value in color):
+            return None
+        return cls(tuple(color), expected)
+
+    def as_operator(self, stroke: bool = False) -> str:
+        values = " ".join(f"{round(value, 3):g}" for value in self.values)
+        return f"{values} {self.operator.upper() if stroke else self.operator}"
+
+
+BLACK = _Color((0.0,), "g")
+
+
+def _parse_default_appearance(default_appearance: Any) -> tuple[str | None, float, _Color | None]:
+    """The font name and size of a /DA's last complete Tf, and its last color, as pypdf 6.21
+    reads them; other operators are ignored (ISO 32000-2 12.7.4.3)."""
+    stream = ContentStream(None, None)
+    data = getattr(default_appearance, "original_bytes", None)
+    stream.set_data(data if data is not None else str(default_appearance).encode("latin-1"))
+    try:
+        operations = stream.operations
+    except PdfReadError:
+        return None, 0.0, None
+    font_name: str | None = None
+    font_size = 0.0
+    font_color: _Color | None = None
+    for operands, operator in operations:
+        if operator == b"Tf":
+            if (
+                len(operands) == 2
+                and isinstance(operands[0], NameObject)
+                and isinstance(operands[1], (int, float))
+            ):
+                font_name, font_size = str(operands[0]), float(operands[1])
+        elif (
+            color := _Color.from_normalized_values(operands, operator.decode("latin-1"))
+        ) is not None:
+            font_color = color
+    return font_name, font_size, font_color
+
+
 class _Line(NamedTuple):
     width: float
     text: str
@@ -219,46 +274,49 @@ def _appearance_data(
     font: _Font,
     font_name: str,
     font_size: float,
-    font_color: str,
+    font_color: _Color,
     layout: _Layout,
 ) -> bytes:
     rectangle = layout.rectangle
     box_width, box_height = float(rectangle.width), float(rectangle.height)
     leading = (font.bbox[3] - font.bbox[1]) / GLYPH_UNITS
-    margin = max(layout.border_width * (2 if layout.border_style in {"/B", "/I"} else 1), 1)
+    # pypdf 6.21 keeps a zero margin for no border, and at least 1 point horizontally.
+    margin = layout.border_width * (2 if layout.border_style in {"/B", "/I"} else 1)
+    side = max(margin, 1)
     height = box_height - 2 * margin
-    width = box_width - 4 * margin
+    width = box_width - 4 * side
     lines, size, multiline = _layout_lines(text, selection, font, font_size, layout, width, height)
     if multiline:
-        y_offset = box_height + margin - font.bbox[3] * size / GLYPH_UNITS
+        y_offset = height + margin - font.bbox[3] * size / GLYPH_UNITS
     else:
         y_offset = margin + (height - font.ascent * size / GLYPH_UNITS) / 2
-    appearance = f"{font_name} {size} Tf {font_color}"
+    appearance = f"{font_name} {size} Tf {font_color.as_operator()}"
     output = bytearray(
-        f"q\n/Tx BMC \nq\n{2 * margin} {margin} {width} {height} re\nW\nBT\n{appearance}\n".encode()
+        f"q\n/Tx BMC \nq\n{2 * side} {margin} {round(width - 2 * side, 3)} "
+        f"{round(height - margin, 3)} re\nW\nBT\n{appearance}\n".encode()
     )
     selected = "".join(selection or ())
     position: float = 0
     for number, (line_width, line) in enumerate(lines):
         if selected and line in selected:
+            bottom = round(y_offset - number * size * leading - 1, 3)
             output += (
-                f"1 {y_offset - number * size * leading - 1} {box_width - 2} {size + 2} re\n"
-                f"0.5 0.5 0.5 rg s\n{appearance}\n"
+                f"1 {bottom} {box_width - 2} {size + 2} re\n0.5 0.5 0.5 rg s\n{appearance}\n"
             ).encode()
         if layout.is_comb and layout.max_length:
             cell = box_width / layout.max_length
             start = number * cell + (cell - line_width) / 2
         elif layout.alignment == RIGHT:
-            start = box_width - margin * 2 - line_width
+            start = box_width - side * 2 - line_width
         elif layout.alignment == CENTER:
             start = (box_width - line_width) / 2
         else:
-            start = margin * 2
+            start = side * 2
         if number == 0:
             down = y_offset
         else:
             down = 0.0 if layout.is_comb else -size * leading
-        output += f"{start - position} {down} Td\n".encode()
+        output += f"{round(start - position, 3)} {round(down, 3)} Td\n".encode()
         position = start
         output += b"(" + _escape(line.encode(font.encoding, "replace")) + b") Tj\n"
     return bytes(output + b"ET\nQ\nEMC\nQ\n")
@@ -335,11 +393,15 @@ def text_appearance(
     else:
         text = field.get_resolved("/V", "")
 
-    # /DA holds at least "font size Tf" (ISO 32000-2 12.7.4.3). The rest is the colour.
-    properties = [item for item in re.split(r"\s", default_appearance) if item]
-    da_font_name = properties.pop(properties.index("Tf") - 2)
-    font_size = float(properties.pop(properties.index("Tf") - 1))
-    properties.remove("Tf")
+    # /DA holds at least "font size Tf" (ISO 32000-2 12.7.4.3), and maybe a color.
+    da_font_name, font_size, font_color = _parse_default_appearance(default_appearance)
+    if da_font_name is None:
+        logger.warning(
+            "Could not read a complete Tf operator from the default appearance %r; "
+            "defaulting to /Helv 0 Tf.",
+            str(default_appearance),
+        )
+        da_font_name, font_size = "/Helv", 0.0
     font_size = user_font_size if user_font_size > 0 else font_size
 
     font_name, font, resource = _find_font(user_font_name or da_font_name, annotation, form, text)
@@ -355,6 +417,30 @@ def text_appearance(
     if border is not None:
         border_width = border.get_resolved("/W", border_width)
         border_style = border.get_resolved("/S", border_style)
+    characteristics = field.get_inherited("/MK")
+    rotation = 0
+    border_color = background_color = None
+    if isinstance(characteristics, DictionaryObject):
+        rotation = int(characteristics.get_resolved("/R", 0)) % 360
+        border_color = _Color.from_normalized_values(characteristics.get_resolved("/BC"))
+        background_color = _Color.from_normalized_values(characteristics.get_resolved("/BG"))
+    # pypdf 6.21 draws the background and border (pypdf #4033); without a border color the
+    # border width is zero, which leaves more room for the text.
+    parts: list[str] = []
+    box_width, box_height = float(rectangle.width), float(rectangle.height)
+    if background_color is not None:
+        parts.append(f"0 0 {box_width} {box_height} re\n{background_color.as_operator()}\nf\n")
+    if border_width > 0:
+        if border_color is not None:
+            stroke_width = f"{border_width} w\n" if border_width != 1 else ""
+            parts.append(
+                f"{border_width} {border_width} {box_width - 2 * border_width} "
+                f"{box_height - 2 * border_width} re\n{stroke_width}"
+                f"{border_color.as_operator(stroke=True)}\ns\n"
+            )
+        else:
+            border_width = 0
+    prefix = "".join(["q\n", *parts, "Q\n"]).encode() if parts else b""
     comb = bool(flags & FA.FfBits.Comb)
     layout = _Layout(
         rectangle,
@@ -369,14 +455,11 @@ def text_appearance(
     stream[NameObject("/Type")] = NameObject("/XObject")
     stream[NameObject("/Subtype")] = NameObject("/Form")
     stream[NameObject("/BBox")] = rectangle
-    characteristics = field.get_inherited("/MK")
-    rotation = 0
-    if isinstance(characteristics, DictionaryObject):
-        rotation = int(characteristics.get_resolved("/R", 0)) % 360
     if rotation:
         _add_rotation(stream, rectangle, rotation)
     stream.set_data(
-        _appearance_data(text, selection, font, font_name, font_size, " ".join(properties), layout)
+        prefix
+        + _appearance_data(text, selection, font, font_name, font_size, font_color or BLACK, layout)
     )
     stream[NameObject("/Resources")] = DictionaryObject(
         {NameObject("/Font"): DictionaryObject({NameObject(font_name): reference})}
@@ -605,7 +688,7 @@ class FormWriter:
             annotation = item.get_object()
             if annotation.get_resolved("/Subtype", "") != "/Widget" or "/FT" not in annotation:
                 continue
-            if annotation.indirect_reference in fields:
+            if getattr(annotation, "indirect_reference", None) in fields:
                 continue
             if not isinstance(item, IndirectObject):
                 annotations[index] = self._add_object(annotation)

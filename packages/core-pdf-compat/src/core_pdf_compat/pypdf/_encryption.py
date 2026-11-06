@@ -16,6 +16,15 @@ from core_pdf_spec.s_07_security.output import (
 from core_pdf_spec.s_07_security.standard import StandardSecurityHandler, saslprep
 
 from ._crypt_providers import CryptAES, CryptBase, CryptIdentity, CryptRC4
+from .errors import PdfReadError
+from .generic import (
+    ArrayObject,
+    BooleanObject,
+    ByteStringObject,
+    DictionaryObject,
+    NullObject,
+    TextStringObject,
+)
 
 logger = logging.getLogger(__name__)
 _saslprep = saslprep
@@ -104,6 +113,116 @@ class Encryption:
         request = NewEncryption(user, owner, name, permissions)
         self.handler = create_security_handler(request, self.id1_entry)
         return encryption_dictionary(self.handler.config)
+
+
+# Ported from pypdf 6.21.4's Encryption.read and its helpers, under pypdf's BSD-style
+# license. core-pdf decrypts; these are the checks pypdf makes of the /Encrypt dictionary
+# when a reader opens, with its errors and warnings.
+def _get_entry(
+    dictionary: Any,
+    key: str,
+    *,
+    expected_types: tuple[type, ...],
+    type_name: str,
+    default: Any = None,
+    required: bool = False,
+) -> Any:
+    """An entry of the encryption dictionary, null being absent."""
+    value = dictionary.get(key, NullObject()).get_object()
+    if isinstance(value, NullObject):
+        if required:
+            raise PdfReadError(f"{key} entry of the encryption dictionary is missing")
+        return default
+    if not isinstance(value, expected_types):
+        raise PdfReadError(f"{key} entry of the encryption dictionary is not a {type_name}")
+    return value
+
+
+def _get_crypt_filter(filters: Any, name: str) -> Any:
+    crypt_filter = filters.get(name, NullObject()).get_object()
+    if not isinstance(crypt_filter, DictionaryObject):
+        raise PdfReadError(f"Crypt filter {name} is missing from /CF or not a dictionary")
+    return crypt_filter
+
+
+def check_encryption_entry(entry: Any) -> None:
+    """Check an /Encrypt dictionary as pypdf reads it."""
+    if entry.get("/Filter") != "/Standard":
+        raise NotImplementedError("only Standard PDF encryption handler is available")
+    if "/SubFilter" in entry:
+        raise NotImplementedError("/SubFilter NOT supported")
+    version = entry.get("/V", 0)
+    if version not in (1, 2, 3, 4, 5):
+        raise NotImplementedError(f"Encryption V={version} NOT supported")
+    name, number, string = (str,), (int, float), (ByteStringObject, TextStringObject)
+    stream_crypt_filter = None
+    stream_method = "/V2"
+    if version >= 4:
+        # /CF is needed only to look up named crypt filters, which default to /Identity.
+        filters = entry.get("/CF", DictionaryObject()).get_object()
+        if not isinstance(filters, DictionaryObject):
+            raise PdfReadError("/CF entry of the encryption dictionary is not a dictionary")
+        stream_filter = _get_entry(
+            entry, "/StmF", expected_types=name, type_name="name", default="/Identity"
+        )
+        string_filter = _get_entry(
+            entry, "/StrF", expected_types=name, type_name="name", default="/Identity"
+        )
+        file_filter = _get_entry(
+            entry, "/EFF", expected_types=name, type_name="name", default=stream_filter
+        )
+        methods = []
+        for index, filter_name in enumerate((stream_filter, string_filter, file_filter)):
+            method = filter_name
+            if filter_name != "/Identity":
+                crypt_filter = _get_crypt_filter(filters, filter_name)
+                if index == 0:
+                    stream_crypt_filter = crypt_filter
+                method = _get_entry(
+                    crypt_filter, "/CFM", expected_types=name, type_name="name", default="/None"
+                )
+            methods.append(method)
+        stream_method = methods[0]
+        allowed = ("/Identity", "/V2", "/AESV2", "/AESV3")
+        for label, method in zip(("StmF", "StrF", "EFF"), methods, strict=True):
+            if method not in allowed:
+                raise NotImplementedError(f"{label} Method {method} NOT supported!")
+    _get_entry(entry, "/R", expected_types=number, type_name="number", required=True)
+    _get_entry(entry, "/P", expected_types=number, type_name="number", required=True)
+    _get_entry(entry, "/Length", expected_types=number, type_name="number", default=40)
+    if version == 4 and stream_method == "/AESV2" and stream_crypt_filter is not None:
+        _get_entry(
+            stream_crypt_filter, "/Length", expected_types=number, type_name="number", default=16
+        )
+    encrypt_metadata = entry.get("/EncryptMetadata", NullObject()).get_object()
+    if not isinstance(encrypt_metadata, (BooleanObject, NullObject)):
+        logger.warning("Ignoring non-boolean /EncryptMetadata entry of the encryption dictionary")
+    for key in ("/O", "/U"):
+        _get_entry(entry, key, expected_types=string, type_name="string", required=True)
+    for key in ("/OE", "/UE", "/Perms"):
+        _get_entry(entry, key, expected_types=string, type_name="string")
+
+
+def encrypts_metadata(entry: Any) -> bool:
+    """/EncryptMetadata as pypdf reads it: anything but a boolean is true."""
+    value = entry.get("/EncryptMetadata", NullObject()).get_object()
+    return value.value if isinstance(value, BooleanObject) else True
+
+
+def check_file_identifier(identifier: Any) -> bool:
+    """Warn, as pypdf does, about a trailer /ID it cannot take its first entry from.
+
+    Whether the /ID is usable; pypdf uses an empty identifier in place of a malformed one.
+    """
+    if isinstance(identifier, ArrayObject) and identifier:
+        if isinstance(identifier[0].get_object(), (ByteStringObject, TextStringObject)):
+            return True
+        logger.warning("Ignoring non-string first /ID entry of the trailer")
+        return False
+    if not isinstance(identifier, NullObject):
+        logger.warning("Ignoring malformed /ID entry of the trailer")
+        return False
+    return True
 
 
 __all__ = (

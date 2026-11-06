@@ -28,6 +28,7 @@ from core_pdf_spec.s_07_syntax.serialize import (
     serialize_spaced_real,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_records import RecordType, ReplaceFields, ReprFields
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,8 @@ logger = logging.getLogger(__name__)
 # under its BSD-style license.
 class PdfObject:
     hash_func: Callable[..., Any] = hashlib.sha1
-    indirect_reference: IndirectObject | None = None
+    # Declared, not defaulted: as in pypdf, a direct object has no indirect_reference.
+    indirect_reference: IndirectObject | None
 
     def hash_bin(self) -> int:
         raise NotImplementedError(
@@ -66,10 +68,15 @@ class PdfObject:
 
     def _reference_clone(self, clone: Any, pdf_dest: Any, force_duplicate: bool = False) -> Any:
         """Number a clone in pdf_dest, if this object has been given a number at all."""
-        target = clone.indirect_reference
+        target = getattr(clone, "indirect_reference", None)
         if not force_duplicate and target is not None and target.pdf == pdf_dest:
             return clone
-        reference = self._own_reference()
+        # Read directly, without a call per element, for the many direct objects of large
+        # arrays, which pypdf 6.21.4 clones as cheaply (#4152).
+        if type(self)._own_reference is PdfObject._own_reference:
+            reference = self.__dict__.get("indirect_reference", _NEVER_NUMBERED)
+        else:
+            reference = self._own_reference()
         if reference is _NEVER_NUMBERED:
             return clone
         number = len(pdf_dest._objects) + 1
@@ -116,6 +123,17 @@ class _CopiedObject(PdfObject):
 class NullObject(_CopiedObject):
     def _copy(self) -> Self:
         return type(self)()
+
+    def clone(
+        self,
+        pdf_dest: Any,
+        force_duplicate: bool = False,
+        ignore_fields: Sequence[str | int] | None = (),
+    ) -> Any:
+        if "indirect_reference" not in self.__dict__:
+            # A direct null: arrays such as a /ParentTree's hold thousands of them.
+            return NullObject()
+        return super().clone(pdf_dest, force_duplicate, ignore_fields)
 
     def hash_bin(self) -> int:
         return hash((self.__class__,))
@@ -237,7 +255,7 @@ class NameObject(str, _CopiedObject, metaclass=_NameMeta):
         return super().__new__(cls, value)
 
     def _copy(self) -> NameObject:
-        return NameObject(self)
+        return str.__new__(NameObject, self)
 
     def hash_bin(self) -> int:
         return hash((self.__class__, self))
@@ -380,7 +398,11 @@ class ArrayObject(list[Any], PdfObject):
             return self
         array = self._reference_clone(ArrayObject(), pdf_dest, True)
         for item in self:
-            array.append(_cloned_item(item, pdf_dest, force_duplicate, ignore_fields))
+            if type(item) in _SCALAR_TYPES:
+                # Neither a stream nor a reference, so cloned without the checks below.
+                array.append(item.clone(pdf_dest, force_duplicate, ignore_fields))
+            else:
+                array.append(_cloned_item(item, pdf_dest, force_duplicate, ignore_fields))
         return array
 
     def hash_bin(self) -> int:
@@ -417,13 +439,33 @@ class ArrayObject(list[Any], PdfObject):
         return self
 
     @staticmethod
-    def read_from_stream(stream: Any, pdf: Any, forced_encoding: Any = None) -> ArrayObject:
-        return read_array(stream, pdf, forced_encoding)
+    def read_from_stream(
+        stream: Any,
+        pdf: Any,
+        forced_encoding: Any = None,
+        *,
+        parsing_budget: StreamParsingBudget | None = None,
+    ) -> ArrayObject:
+        return read_array(stream, pdf, forced_encoding, parsing_budget=parsing_budget)
 
 
 def _in_destination(value: Any, pdf_dest: Any, force_duplicate: bool) -> bool:
-    reference = value.indirect_reference
+    reference = getattr(value, "indirect_reference", None)
     return not force_duplicate and reference is not None and reference.pdf == pdf_dest
+
+
+# Direct objects of these exact types are neither streams nor references.
+_SCALAR_TYPES = frozenset(
+    (
+        BooleanObject,
+        ByteStringObject,
+        FloatObject,
+        NameObject,
+        NullObject,
+        NumberObject,
+        TextStringObject,
+    )
+)
 
 
 def _cloned_item(item: Any, pdf_dest: Any, force_duplicate: bool, ignore_fields: Any) -> Any:
@@ -540,7 +582,7 @@ class DictionaryObject(dict[Any, Any], PdfObject):
                 copy = value.clone(pdf_dest, force_duplicate, ignored)
                 self[key.clone(pdf_dest)] = copy.indirect_reference
             elif key not in self:
-                self[key._copy() if isinstance(key, NameObject) else NameObject(key)] = (
+                self[str.__new__(NameObject, key)] = (
                     value.clone(pdf_dest, force_duplicate, ignored)
                     if hasattr(value, "clone")
                     else value
@@ -588,8 +630,14 @@ class DictionaryObject(dict[Any, Any], PdfObject):
         return read_unsized(stream, pdf, length)
 
     @staticmethod
-    def read_from_stream(stream: Any, pdf: Any, forced_encoding: Any = None) -> DictionaryObject:
-        return read_dictionary(stream, pdf, forced_encoding)
+    def read_from_stream(
+        stream: Any,
+        pdf: Any,
+        forced_encoding: Any = None,
+        *,
+        parsing_budget: StreamParsingBudget | None = None,
+    ) -> DictionaryObject:
+        return read_dictionary(stream, pdf, forced_encoding, parsing_budget=parsing_budget)
 
     @property
     def xmp_metadata(self) -> Any:
@@ -680,7 +728,10 @@ class StreamObject(DictionaryObject):
         from core_pdf_compat.pypdf._images import xobject_image
 
         if self.get("/Subtype", "") != "/Image":
-            logger.warning("%s does not seem to be an Image", self.indirect_reference)
+            if hasattr(self, "indirect_reference"):
+                logger.warning("%s does not seem to be an Image", self.indirect_reference)
+            else:
+                logger.warning("%r object does not seem to be an Image", self)
         return xobject_image(self, pillow_parameters)[2]
 
     @staticmethod
@@ -748,6 +799,15 @@ class IndirectObject(PdfObject):
 
     def _own_reference(self) -> IndirectObject:
         return self
+
+    def write_to_stream(self, stream: Any, encryption_key: object = None) -> None:
+        if encryption_key is not None:
+            raise DeprecationError(
+                "the encryption_key parameter of write_to_stream is deprecated and was "
+                "removed in pypdf 5.0.0."
+            )
+        # Written as read, so a reference core's types reject, like -12 3 R, still writes.
+        stream.write(f"{self.idnum} {self.generation} R".encode())
 
     def hash_bin(self) -> int:
         return hash((self.__class__, self.idnum, self.generation, id(self.pdf)))
@@ -863,8 +923,8 @@ def _corner(horizontal: int, vertical: int) -> property:
 class RectangleObject(ArrayObject):
     def __init__(self, values: Iterable[Any]) -> None:
         items = list(values)
-        if len(items) != 4:
-            raise ValueError("a rectangle needs four values")
+        if (length := len(items)) != 4:
+            raise ValueError(f"Expected four values for a rectangle, got {length}: {values}")
         super().__init__(_number(item) for item in items)
 
     def scale(self, sx: float, sy: float) -> RectangleObject:
@@ -1042,6 +1102,17 @@ def to_core(value: Any) -> Any:
     return value
 
 
+class StreamParsingBudget(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
+    """
+    Shared, mutable budget for limiting parsing work, as pypdf.generic has it.
+
+    Pass the same instance to recursive parsing calls to enforce a
+    cumulative budget across nested arrays and dictionaries.
+    """
+
+    remaining_budget: int
+
+
 def _encode_text(value: str) -> bytes:
     text = value if isinstance(value, TextStringObject) else TextStringObject(value)
     return text.get_encoded_bytes()
@@ -1087,6 +1158,7 @@ __all__ = (
     "RectangleObject",
     "ReferenceLink",
     "StreamObject",
+    "StreamParsingBudget",
     "TextStringObject",
     "TreeObject",
     "ViewerPreferences",

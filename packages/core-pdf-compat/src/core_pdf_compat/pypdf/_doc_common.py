@@ -36,10 +36,12 @@ inherit it unchanged.
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import datetime
 from typing import Any, cast
 
+from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf.constants import (
     CheckboxRadioButtonAttributes,
     Core,
@@ -48,7 +50,7 @@ from core_pdf_compat.pypdf.constants import (
     FieldDictionaryAttributes as FA,  # noqa: N814
 )
 from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
-from core_pdf_compat.pypdf.filters import decompress
+from core_pdf_compat.pypdf.filters import _decompress_with_limit
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BooleanObject,
@@ -69,10 +71,21 @@ from core_pdf_compat.pypdf.generic import (
     create_string_object,
     is_null_or_none,
 )
+from core_records import RecordType, ReplaceFields, ReprFields
 
 from ._generic_trees import _parse_pdf_date
 
 logger = logging.getLogger(__name__)
+
+_UNSET = object()
+
+
+class TraversalState(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
+    """pypdf._utils._TraversalState: counts the entries a traversal has seen."""
+
+    entry_count: int = 0
+    has_logged: bool = False
+
 
 FIELD_TYPE_NAMES = {"/Btn": "Button", "/Tx": "Text", "/Ch": "Choice", "/Sig": "Signature"}
 
@@ -268,10 +281,13 @@ class PdfDocCommon:
         preferences = self.root_object.get_resolved("/ViewerPreferences")
         if preferences is None:
             return None
+        if not isinstance(preferences, DictionaryObject):
+            logger.warning("Viewer preferences are not a dictionary: %s", preferences)
+            return None
         if not isinstance(preferences, ViewerPreferences):
             preferences = ViewerPreferences(preferences)
-            if preferences.indirect_reference is not None:
-                self._replace_object(preferences.indirect_reference, preferences)
+            if (reference := getattr(preferences, "indirect_reference", None)) is not None:
+                self._replace_object(reference, preferences)
             else:
                 self.root_object[NameObject("/ViewerPreferences")] = preferences
         return preferences
@@ -312,6 +328,9 @@ class PdfDocCommon:
         if retval is None:
             retval = {}
             tree = self._destination_tree()
+            if tree is not None and not isinstance(tree, DictionaryObject):
+                logger.warning("Destination tree is not a dictionary: %s", tree)
+                return retval
         if is_null_or_none(tree):
             return retval
         visited = set() if visited is None else visited
@@ -321,10 +340,18 @@ class PdfDocCommon:
         visited.add(id(tree))
 
         if "/Kids" in tree:
-            for kid in tree["/Kids"]:
+            kids = tree["/Kids"].get_object()
+            if not isinstance(kids, ArrayObject):
+                logger.warning("Destination tree kids are not an array: %s", kids)
+                return retval
+            for kid in kids:
                 self._get_named_destinations(tree=kid.get_object(), retval=retval, visited=visited)
         elif "/Names" in tree:
-            self._read_name_tree_leaf(tree["/Names"], retval)
+            names = tree["/Names"].get_object()
+            if not isinstance(names, ArrayObject):
+                logger.warning("Destination tree names are not an array: %s", names)
+                return retval
+            self._read_name_tree_leaf(names, retval)
         else:
             # PDF 1.1: /Dests in the catalog is a plain dictionary.
             for key, value in tree.items():
@@ -336,8 +363,12 @@ class PdfDocCommon:
     def _destination_tree(self) -> Any:
         catalog = self.root_object
         if "/Dests" in catalog:
-            return catalog["/Dests"]
-        return catalog["/Names"].get_resolved("/Dests") if "/Names" in catalog else None
+            return catalog["/Dests"].get_object()
+        if "/Names" in catalog:
+            names = catalog["/Names"].get_object()
+            if isinstance(names, DictionaryObject) and "/Dests" in names:
+                return names["/Dests"].get_object()
+        return None
 
     @staticmethod
     def _destination_array(value: Any) -> Any:
@@ -364,7 +395,8 @@ class PdfDocCommon:
             retval[str(key)] = destination
 
     def _build_destination(self, title: Any, array: Any) -> Destination:
-        if isinstance(array, (NullObject, str)) or array is None or len(array) < 2:
+        # A valid destination is an array of at least a page and a fit type.
+        if not isinstance(array, ArrayObject) or len(array) < 2:
             return Destination(title, NullObject(), Fit.fit())
         page, kind, *arguments = list.__iter__(array)
         try:
@@ -387,30 +419,66 @@ class PdfDocCommon:
         return self.outline
 
     def _get_outline(
-        self, node: Any = None, outline: list[Any] | None = None, visited: set[int] | None = None
+        self,
+        *,
+        node: Any = None,
+        outline: list[Any] | None = None,
+        visited: set[int] | None = None,
+        depth: int = 0,
+        traversal_state: TraversalState | None = None,
     ) -> list[Any]:
+        if traversal_state is None:
+            traversal_state = TraversalState()
         if outline is None:
             outline = []
-            lines = self.root_object.get_resolved(Core.OUTLINES)
-            if isinstance(lines, DictionaryObject) and "/First" in lines:
-                node = lines["/First"]
+            catalog = self.root_object
+            if Core.OUTLINES in catalog:
+                lines = catalog[Core.OUTLINES]
+                # A reference to a missing or free object resolves to None.
+                if is_null_or_none(lines):
+                    return outline
+                if not isinstance(lines, DictionaryObject):
+                    logger.warning("Outlines are not a dictionary: %s", lines)
+                    return outline
+                if "/First" in lines:
+                    node = lines["/First"]
             self._named_destinations = self._get_named_destinations()
         if node is None:
             return outline
 
+        configuration = get_configuration()
+        if depth > configuration.outline_maximum_depth:
+            raise LimitReachedError(
+                f"Maximum outline depth reached: {depth} > {configuration.outline_maximum_depth}."
+            )
         visited = set() if visited is None else visited
         while True:
             if id(node) in visited:
                 logger.warning("Detected cycle in outline structure for %s", node)
                 break
             visited.add(id(node))
+            traversal_state.entry_count += 1
+            if traversal_state.entry_count > configuration.outline_maximum_entries:
+                raise LimitReachedError(
+                    "Maximum outline entry limit reached: "
+                    f"{traversal_state.entry_count} > {configuration.outline_maximum_entries}."
+                )
+            if not isinstance(node, DictionaryObject):
+                logger.warning("Outline node is not a dictionary: %s", node)
+                break
             item = self._build_outline_item(node)
             if item:
                 outline.append(item)
             if "/First" in node:
                 children: list[Any] = []
                 # A copy, so several entries may share the same children.
-                self._get_outline(node["/First"], children, visited.copy())
+                self._get_outline(
+                    node=node["/First"],
+                    outline=children,
+                    visited=visited.copy(),
+                    depth=depth + 1,
+                    traversal_state=traversal_state,
+                )
                 if children:
                     outline.append(children)
             if "/Next" not in node:
@@ -422,6 +490,10 @@ class PdfDocCommon:
         if "/A" in node:
             # Only GoTo actions name a destination (ISO 32000-2 12.6).
             action = node["/A"]
+            if "/S" not in action:
+                if self.strict:
+                    raise PdfReadError(f"Outline Action Missing /S attribute: {node!r}")
+                return None
             if action["/S"] != "/GoTo":
                 return None
             if "/D" in action:
@@ -469,7 +541,8 @@ class PdfDocCommon:
             item[NameObject("/Count")] = node["/Count"]
         item[NameObject("/%is_open%")] = BooleanObject(node.get_resolved("/Count", 0) >= 0)
         item.node = node
-        item.indirect_reference = node.indirect_reference
+        if hasattr(node, "indirect_reference"):
+            item.indirect_reference = node.indirect_reference
         return item
 
     # Form fields.
@@ -479,23 +552,74 @@ class PdfDocCommon:
         tree: Any = None,
         retval: dict[str, Any] | None = None,
         fileobj: Any = None,
-        stack: list[Any] | None = None,
+        stack: Any = _UNSET,
+        *,
+        _visited: set[int] | None = None,
+        _depth: int = 0,
+        _traversal_state: TraversalState | None = None,
     ) -> dict[str, Any] | None:
+        if stack is not _UNSET:
+            warnings.warn(
+                "stack is deprecated and will be removed in pypdf 7.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if retval is not None:
+                _visited = set() if _visited is None else _visited
+                _visited.update(map(id, stack or []))
+        configuration = get_configuration()
+        if _depth >= configuration.form_fields_maximum_depth:
+            raise LimitReachedError("Reached maximum allowed form field depth.")
+        state = TraversalState() if _traversal_state is None else _traversal_state
+
+        def check_field_limit(increment: int) -> None:
+            state.entry_count += increment
+            if state.entry_count > configuration.form_fields_maximum_entries:
+                raise LimitReachedError("Exceeded maximum number of fields allowed.")
+
+        field_attributes = _field_labels()
         if retval is None:
             retval = {}
-            stack = []
+            _visited = set()
             catalog = self.root_object
             if "/AcroForm" not in catalog:
                 return None
-            tree = catalog["/AcroForm"]
+            entry = catalog["/AcroForm"]
+            acro_form = None if entry is None else entry.get_object()
+            if acro_form is not None and not isinstance(acro_form, DictionaryObject):
+                logger.warning("AcroForm is not a dictionary: %s", acro_form)
+                return None
+            tree = acro_form
         if tree is None:
             return retval
-        assert stack is not None
+        assert _visited is not None
         if "/Fields" in tree:
-            for reference in tree["/Fields"]:
-                self._build_field(reference.get_object(), retval, fileobj, stack)
-        elif any(attribute in tree for attribute in _field_labels()):
-            self._build_field(tree, retval, fileobj, stack)
+            fields = tree["/Fields"].get_object()
+            if not isinstance(fields, ArrayObject):
+                logger.warning("AcroForm /Fields is not an array: %s", fields)
+                return retval
+            check_field_limit(len(fields))
+            for reference in fields:
+                self._build_field(
+                    field=reference.get_object(),
+                    retval=retval,
+                    fileobj=fileobj,
+                    field_attributes=field_attributes,
+                    visited=_visited,
+                    depth=_depth,
+                    traversal_state=state,
+                )
+        elif any(attribute in tree for attribute in field_attributes):
+            check_field_limit(1)
+            self._build_field(
+                field=tree,
+                retval=retval,
+                fileobj=fileobj,
+                field_attributes=field_attributes,
+                visited=_visited,
+                depth=_depth,
+                traversal_state=state,
+            )
         return retval
 
     def _get_qualified_field_name(
@@ -547,7 +671,21 @@ class PdfDocCommon:
             states.remove("/Off")
         return states
 
-    def _build_field(self, field: Any, retval: dict[str, Any], fileobj: Any, stack: Any) -> None:
+    def _build_field(
+        self,
+        *,
+        field: Any,
+        retval: dict[str, Any],
+        fileobj: Any,
+        field_attributes: Any,
+        visited: set[int],
+        depth: int,
+        traversal_state: TraversalState,
+    ) -> None:
+        del field_attributes
+        if not isinstance(field, DictionaryObject):
+            logger.warning("Form field is not a dictionary: %s", field)
+            return
         if "/T" not in field and "/TM" not in field:
             return
         key = self._get_qualified_field_name(parent=field)
@@ -561,12 +699,39 @@ class PdfDocCommon:
         if states is not None:
             output[NameObject("/_States_")] = states
         # Last, so that a parent comes before its kids.
-        if field in stack:
-            logger.warning("%s already parsed", key)
+        self._check_kids(
+            tree=field,
+            retval=retval,
+            fileobj=fileobj,
+            visited=visited,
+            depth=depth,
+            traversal_state=traversal_state,
+        )
+
+    def _check_kids(
+        self,
+        *,
+        tree: Any,
+        retval: Any,
+        fileobj: Any,
+        visited: set[int],
+        depth: int,
+        traversal_state: TraversalState,
+    ) -> None:
+        if id(tree) in visited:
+            logger.warning("%s already parsed", self._get_qualified_field_name(parent=tree))
             return
-        stack.append(field)
-        for reference in field.get_resolved("/Kids", ()):
-            self.get_fields(reference.get_object(), retval, fileobj, stack)
+        visited.add(id(tree))
+        if "/Kids" in tree:
+            for reference in tree["/Kids"]:
+                self.get_fields(
+                    tree=reference.get_object(),
+                    retval=retval,
+                    fileobj=fileobj,
+                    _visited=visited,
+                    _depth=depth + 1,
+                    _traversal_state=traversal_state,
+                )
 
     @staticmethod
     def _write_field(fileobj: Any, field: Any) -> None:
@@ -634,20 +799,27 @@ class PdfDocCommon:
         if not form:
             return None
         output: dict[str, Any] = {}
-        entries = list.__iter__(form["/XFA"]) if "/XFA" in form else iter(())
+        if "/XFA" not in form:
+            return output
+        fields = form["/XFA"].get_object()
+        if not isinstance(fields, ArrayObject):
+            logger.warning("XFA entry is not an array: %s", fields)
+            return output
+        entries = list.__iter__(fields)
         for tag in entries:
-            value = next(entries)
+            # Tag and value pairs; a trailing tag has no value.
+            value = next(entries, None)
             if isinstance(value, IndirectObject):
                 stream = cast(EncodedStreamObject | None, value.get_object())
                 if stream:
-                    output[tag] = decompress(stream._data)
+                    output[tag] = _decompress_with_limit(stream._data)
         return output
 
     # Attachments.
 
     @property
     def attachment_list(self) -> Iterator[EmbeddedFile]:
-        yield from EmbeddedFile._load(self.root_object)
+        yield from EmbeddedFile._load(self.root_object, strict=self.strict)
 
     @property
     def attachments(self) -> Mapping[str, list[bytes]]:

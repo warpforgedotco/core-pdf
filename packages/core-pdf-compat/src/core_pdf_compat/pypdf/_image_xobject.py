@@ -1,6 +1,6 @@
 # Messages and signatures stay pypdf's, as tests match them, hence the long lines.
 # ruff: noqa: E501, ARG001
-# The shape and behaviour of this module follow pypdf.generic._image_xobject,
+# The shape and behaviour of this module follow pypdf 6.21.4's generic._image_xobject,
 # Copyright (c) 2006, Mathieu Fenniak, under its BSD-style license. core-pdf decodes the
 # stream filters, through get_data(); the conversion to a Pillow image is pypdf's, so the
 # images match it exactly.
@@ -12,7 +12,7 @@ import logging
 from io import BytesIO
 from typing import Any, Literal, Optional, Union, cast
 
-from core_pdf_compat.pypdf import filters
+from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf.constants import ColorSpaces, ImageAttributes, StreamAttributes
 from core_pdf_compat.pypdf.constants import FilterTypes as FT
 from core_pdf_compat.pypdf.errors import EmptyImageDataError, LimitReachedError, PdfReadError
@@ -144,8 +144,7 @@ def bits2byte(
     # Number of samples per row = pixels per row * components per pixel.
     samples_per_row = size[0] * colors
     buffer_size = samples_per_row * size[1]
-    # Read when called, as pypdf does, so a changed limit applies.
-    limit = filters.FLATE_MAX_BUFFER_SIZE
+    limit = get_configuration().image_maximum_buffer_size
     if buffer_size > limit:
         raise LimitReachedError(f"Requested buffer size {buffer_size} exceeds limit of {limit}.")
 
@@ -208,7 +207,7 @@ def _image_from_bytes(mode: str, size: tuple[int, int], data: bytes) -> Image.Im
     bytes_per_pixel = len(mode)
     required_byte_count = pixel_count * bytes_per_pixel
 
-    limit = filters.FLATE_MAX_BUFFER_SIZE
+    limit = get_configuration().image_maximum_buffer_size
     if required_byte_count > limit:
         raise LimitReachedError(
             f"Requested image buffer size {required_byte_count} exceeds limit {limit}."
@@ -474,14 +473,17 @@ def _apply_decode(
 def _get_mode_and_invert_color(
     x_object: dict[str, Any], colors: int, color_space: Union[str, list[Any], Any]
 ) -> tuple[mode_str_type, bool]:
+    bits = x_object.get("/BitsPerComponent", 8)
     if (
         ImageAttributes.COLOR_SPACE in x_object
         and x_object[ImageAttributes.COLOR_SPACE] == ColorSpaces.DEVICE_RGB
+        and bits >= 8
     ):
-        # https://pillow.readthedocs.io/en/stable/handbook/concepts.html#modes
-        mode: mode_str_type = "RGB"
-    if x_object.get("/BitsPerComponent", 8) < 8:
-        mode, invert_color = _get_image_mode(f"{x_object.get('/BitsPerComponent', 8)}bit", 0, "")
+        # Full-width /DeviceRGB samples are RGB. Narrower samples stay on
+        # the low-bit path so they can be expanded (#3367).
+        return "RGB", False
+    if bits < 8:
+        mode, invert_color = _get_image_mode(f"{bits}bit", 0, "")
     else:
         mode, invert_color = _get_image_mode(
             color_space,
@@ -542,8 +544,10 @@ def _xobj_to_image(
             alpha = _xobj_to_image(s_mask, visited=visited)[2]
             if img.size != alpha.size:
                 _warn(
-                    "image and mask size not matching: %(obj_as_text)s",
+                    "Image and mask size not matching: %(image_size)s vs. %(alpha_size)s %(obj_as_text)s",
                     source=__name__,
+                    image_size=img.size,
+                    alpha_size=alpha.size,
                     obj_as_text=obj_as_text,
                 )
             else:
@@ -588,7 +592,8 @@ def _xobj_to_image(
 
     # Get filters
     filters = x_object.get(StreamAttributes.FILTER, NullObject()).get_object()
-    lfilters = filters[-1] if isinstance(filters, list) else filters
+    # An empty array is a valid way of saying that no filter is applied.
+    lfilters = filters[-1] if filters and isinstance(filters, list) else filters
     decode_parms = x_object.get(StreamAttributes.DECODE_PARMS)
     if decode_parms and isinstance(decode_parms, (tuple, list)):
         decode_parms = decode_parms[0]
@@ -623,7 +628,7 @@ def _xobj_to_image(
             fallback_mode, fallback_data = _expand_low_bit_samples(mode, size, data, color_space)
             img = _image_from_bytes(fallback_mode, size, fallback_data)
     elif lfilters == FT.DCT_DECODE:
-        img, image_format, extension = Image.open(BytesIO(data)), "JPEG", ".jpg"
+        img, image_format, extension = Image.open(BytesIO(data), formats=("JPEG",)), "JPEG", ".jpg"
         # invert_color kept unchanged
     elif lfilters == FT.JPX_DECODE:
         img, image_format, extension, invert_color = _handle_jpx(
@@ -691,6 +696,8 @@ def _xobj_to_image(
 
     try:  # temporary try/except until other fixes of images
         img = Image.open(BytesIO(data))
+    except MemoryError:
+        raise
     except Exception as exception:
         _warn("Failed loading image: %(exception)s", source=__name__, exception=exception)
         img = None  # type: ignore[assignment,unused-ignore]  # TODO: Remove unused-ignore on Python 3.10

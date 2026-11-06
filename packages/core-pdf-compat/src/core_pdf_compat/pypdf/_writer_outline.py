@@ -1,4 +1,4 @@
-# Follows pypdf's outline handling, Copyright (c) 2006-2008, Mathieu Fenniak,
+# Follows pypdf 6.21.4's outline handling, Copyright (c) 2006-2008, Mathieu Fenniak,
 # under its BSD-style license.
 """The parts of PdfWriter that build the outline and named destinations."""
 
@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from .constants import OutlineFontFlag
+from .errors import LimitReachedError
 from .generic import (
     PAGE_FIT,
     ArrayObject,
@@ -20,6 +21,7 @@ from .generic import (
     NameObject,
     NullObject,
     NumberObject,
+    RectangleObject,
     TextStringObject,
     TreeObject,
     create_string_object,
@@ -83,7 +85,8 @@ class OutlineWriter:
             reference,
             None if before is None else before.indirect_reference,
             self,
-            target.inc_parent_counter_outline if is_open else (lambda _node, _count: 0),
+            # Also for is_open=False, so a collapsed item counts negatively (pypdf #3998).
+            target.inc_parent_counter_outline,
         )
         if "/Count" not in target:
             target[NameObject("/Count")] = NumberObject(0)
@@ -110,6 +113,8 @@ class OutlineWriter:
                 reference = self.pages[page_number].indirect_reference
             except IndexError:
                 reference = NumberObject(page_number)
+        else:
+            raise TypeError(f"page_number: invalid type {type(page_number)}")
         if reference is None:
             logger.warning("can not find reference of page %s", page_number)
             return NullObject()
@@ -155,14 +160,22 @@ class OutlineWriter:
             "This method is not yet implemented. Use :meth:`add_outline_item` instead."
         )
 
-    def find_outline_item(self, outline_item: Any, root: Any = None) -> list[int] | None:
+    def find_outline_item(
+        self, outline_item: Any, root: Any = None, *, visited: set[int] | None = None
+    ) -> list[int] | None:
         node: Any = self.get_outline_root() if root is None else root
+        visited = set() if visited is None else visited
         index = 0
         while True:
             if node.indirect_reference == outline_item or node.get("/Title") == outline_item:
                 return [index]
+            if id(node) in visited:
+                raise LimitReachedError("Detected cyclic outline hierarchy.")
+            visited.add(id(node))
             if "/First" in node:
-                found = self.find_outline_item(outline_item, node["/First"])
+                found = self.find_outline_item(
+                    outline_item=outline_item, root=node["/First"], visited=visited
+                )
                 if found:
                     return ([index] if "/Title" in node else []) + found
             if "/Next" not in node:
@@ -184,13 +197,27 @@ class OutlineWriter:
         self.add_named_destination_array(page_destination["/Title"], reference)
         return reference
 
-    def add_named_destination(self, title: str, page_number: int) -> IndirectObject:
-        page = self.pages[page_number].indirect_reference
-        target = ArrayObject([page, NameObject("/FitH"), NumberObject(826)])
+    def _get_page_reference(self, page_number: int) -> Any:
+        """A kid of the root page tree node, reporting a bad index as pypdf does."""
+        kids = self._root_object["/Pages"]["/Kids"]
+        count = len(kids)
+        if not (-count <= page_number < count):
+            raise IndexError(f"Page number {page_number} is out of range")
+        return kids[page_number]
+
+    def add_named_destination(
+        self, title: str, page_number: int, fit: Fit | None = None
+    ) -> IndirectObject:
+        page = self._get_page_reference(page_number)
+        if fit is None:
+            # The page's top edge, rather than pypdf 6.15's fixed 826 (pypdf #4099).
+            box = page.get_object().get("/MediaBox")
+            fit = Fit.fit_horizontally(top=RectangleObject(box).top if box is not None else 0)
+        text = title if isinstance(title, TextStringObject) else TextStringObject(str(title))
+        target = Destination(text, page, fit).dest_array
         reference = self._add_object(
             DictionaryObject({NameObject("/D"): target, NameObject("/S"): NameObject("/GoTo")})
         )
-        text = title if isinstance(title, TextStringObject) else TextStringObject(str(title))
         self.add_named_destination_array(text, reference)
         return reference
 

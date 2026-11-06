@@ -75,7 +75,11 @@ class PageRange:
             stop = start + 1 if start != -1 else None
             self._slice = slice(start, stop)
         else:
-            self._slice = slice(*[int(g) if g else None for g in m.group(4, 6, 8)])
+            bounds = [int(g) if g else None for g in m.group(4, 6, 8)]
+            if bounds[2] == 0:
+                # A zero stride selects nothing; pypdf rejects it here rather than on use.
+                raise ParseError(arg)
+            self._slice = slice(*bounds)
 
     @staticmethod
     def valid(input: Any) -> bool:
@@ -89,9 +93,15 @@ class PageRange:
             True, if the ``input`` is a valid PageRange.
 
         """
-        return isinstance(input, (slice, PageRange)) or (
-            isinstance(input, str) and bool(re.match(PAGE_RANGE_RE, input))
-        )
+        if isinstance(input, (slice, PageRange)):
+            return True
+        if not isinstance(input, str):
+            return False
+        try:
+            PageRange(input)
+        except ParseError:
+            return False
+        return True
 
     def to_slice(self) -> slice:
         """Return the slice equivalent of this page range."""

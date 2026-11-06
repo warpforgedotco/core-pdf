@@ -1,4 +1,4 @@
-# Ported from pypdf, Copyright (c) 2006, Mathieu Fenniak, under its BSD-style license.
+# Ported from pypdf 6.21.4, Copyright (c) 2006, Mathieu Fenniak, under its BSD-style license.
 """pypdf's object reading: one object at a time from a stream, with pypdf's strictness.
 
 A file goes through core-pdf's parser instead. These back the public read_from_stream
@@ -14,6 +14,7 @@ import re
 import sys
 from typing import Any
 
+from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf.errors import (
     STREAM_TRUNCATED_PREMATURELY,
     LimitReachedError,
@@ -36,6 +37,10 @@ logger = logging.getLogger(__name__)
 
 WHITESPACES = (b"\x00", b"\t", b"\n", b"\f", b"\r", b" ")
 MAX_DECLARED_STREAM_LENGTH = 75_000_000
+# Bounds comment scanning in read_object without consuming Python recursion depth.
+_MAX_LEADING_COMMENTS = 1000
+# The longest object or generation number read_indirect reads.
+_MAXIMUM_PART_LENGTH = 64
 INDIRECT_PATTERN = re.compile(rb"[+-]?(\d+)\s+(\d+)\s+R[^a-zA-Z]")
 ENDSTREAM = re.compile(b"endstream")
 
@@ -80,16 +85,33 @@ def skip_over_comment(stream: Any) -> None:
                 raise PdfStreamError("File ended unexpectedly.")
 
 
-def read_until_whitespace(stream: Any, max_bytes: int | None = None) -> bytes:
+def read_until_whitespace(stream: Any, max_bytes: int | None = None, strict: bool = False) -> bytes:
     text = bytearray()
     while True:
         token = stream.read(1)
-        if token.isspace() or not token:
+        if token.isspace() or token in WHITESPACES or not token:
+            break
+        if max_bytes is not None and len(text) >= max_bytes:
+            if strict:
+                raise LimitReachedError(f"Token exceeds maximum length of {max_bytes} bytes.")
+            logger.warning("Token exceeds maximum length of %d bytes.", max_bytes)
             break
         text += token
-        if len(text) == max_bytes:
-            break
     return bytes(text)
+
+
+def skip_over_comments(stream: Any, *, limit: int | None = None) -> None:
+    """Skip consecutive comments and the whitespace after each, at most ``limit`` of them."""
+    token = stream.read(1)
+    stream.seek(-len(token), 1)
+    count = 0
+    while token == b"%":
+        if limit is not None and count >= limit:
+            raise LimitReachedError(f"Maximum number of leading comments reached: {limit}.")
+        skip_over_comment(stream)
+        token = read_non_whitespace(stream)
+        stream.seek(-1, 1)
+        count += 1
 
 
 def skip_over_whitespace(stream: Any) -> bool:
@@ -123,25 +145,32 @@ def read_boolean(stream: Any) -> BooleanObject:
     raise PdfReadError("Could not read Boolean object")
 
 
-def _read_field(stream: Any, *, skip_leading: bool = False) -> bytes:
-    field = b""
+def _read_field(stream: Any, name: str, *, skip_leading: bool = False) -> bytes:
+    field = bytearray()
     while True:
         token = stream.read(1)
         if not token:
             raise PdfStreamError(STREAM_TRUNCATED_PREMATURELY)
-        if token.isspace():
+        if token.isspace() or token in WHITESPACES:
             if field or not skip_leading:
-                return field
+                return bytes(field)
             continue
+        if len(field) >= _MAXIMUM_PART_LENGTH:
+            raise PdfReadError(f"{name} exceeds maximum length limit of {_MAXIMUM_PART_LENGTH}.")
         field += token
 
 
 def read_indirect(stream: Any, pdf: Any) -> IndirectObject:
-    number = _read_field(stream)
-    generation = _read_field(stream, skip_leading=True)
+    number = _read_field(stream, "Object ID")
+    generation = _read_field(stream, "Generation number", skip_leading=True)
     if read_non_whitespace(stream) != b"R":
         raise PdfReadError(f"Error reading indirect object reference at byte {hex(stream.tell())}")
-    return IndirectObject(int(number), int(generation), pdf)
+    try:
+        return IndirectObject(int(number), int(generation), pdf)
+    except (ValueError, OverflowError) as error:
+        raise PdfReadError(
+            f"Invalid indirect object reference ({number!r} {generation!r} R): {error}"
+        ) from error
 
 
 def read_number(stream: Any) -> NumberObject | FloatObject:
@@ -178,31 +207,56 @@ def read_name(stream: Any, pdf: Any) -> NameObject:
     return NameObject(name.decode("latin-1"))
 
 
-def read_array(stream: Any, pdf: Any, forced_encoding: Any = None) -> ArrayObject:
+def _spend(budget: Any, amount: int) -> None:
+    if budget is not None:
+        budget.remaining_budget -= amount
+        if budget.remaining_budget < 0:
+            raise LimitReachedError("Reached maximum number of tokens.")
+
+
+def read_array(
+    stream: Any, pdf: Any, forced_encoding: Any = None, *, parsing_budget: Any = None
+) -> ArrayObject:
     array = ArrayObject()
     if stream.read(1) != b"[":
         raise PdfReadError("Could not read array")
+    remaining = get_configuration().array_maximum_element_count
     while True:
         token = stream.read(1)
-        while token.isspace():
+        while token.isspace() or token in WHITESPACES:
             token = stream.read(1)
         if token in (b"", b"]"):
             return array
-        stream.seek(-1, 1)
         if token == b"%":
+            stream.seek(-1, 1)
             skip_over_comment(stream)
-        else:
-            array.append(read_object(stream, pdf, forced_encoding))
+            continue
+        remaining -= 1
+        if remaining < 0:
+            raise LimitReachedError("Reached maximum array element count.")
+        if parsing_budget is not None:
+            parsing_budget.remaining_budget -= 1
+            if parsing_budget.remaining_budget < 0:
+                raise LimitReachedError("Reached maximum number of tokens.")
+        if token == b"n":
+            # Some arrays are mostly nulls.
+            rest = stream.read(3)
+            if rest == b"ull":
+                array.append(NullObject())
+                continue
+            stream.seek(-len(rest), 1)
+        stream.seek(-1, 1)
+        array.append(read_object(stream, pdf, forced_encoding, parsing_budget=parsing_budget))
 
 
 def _is_strict(pdf: Any) -> bool:
     return pdf is not None and pdf.strict
 
 
-def _read_key(stream: Any, pdf: Any) -> NameObject | NullObject | None:
+def _read_key(stream: Any, pdf: Any, budget: Any) -> NameObject | NullObject | None:
     """The next key, null at the end of a broken dictionary, or None after a skipped token."""
     try:
-        key = read_object(stream, pdf)
+        key = read_object(stream, pdf, parsing_budget=budget)
         if isinstance(key, NullObject):
             return key
         if not isinstance(key, NameObject):
@@ -215,13 +269,12 @@ def _read_key(stream: Any, pdf: Any) -> NameObject | NullObject | None:
     return key
 
 
-def _read_entries(stream: Any, pdf: Any, forced_encoding: Any) -> dict[Any, Any]:
+def _read_entries(stream: Any, pdf: Any, forced_encoding: Any, budget: Any) -> dict[Any, Any]:
     """The entries, or a DictionaryObject of those read before a tolerated error."""
     data: dict[Any, Any] = {}
+    remaining = get_configuration().dictionary_maximum_element_count
     while True:
         token = read_non_whitespace(stream)
-        if token == b"\x00":
-            continue
         if token == b"%":
             stream.seek(-1, 1)
             skip_over_comment(stream)
@@ -232,25 +285,31 @@ def _read_entries(stream: Any, pdf: Any, forced_encoding: Any) -> dict[Any, Any]
             stream.read(1)
             return data
         stream.seek(-1, 1)
+        remaining -= 1
+        if remaining < 0:
+            raise LimitReachedError("Reached maximum number of dictionary entries.")
+        _spend(budget, 2)
         try:
-            key = _read_key(stream, pdf)
+            key = _read_key(stream, pdf, budget)
             if key is None:
                 continue
             if isinstance(key, NullObject):
                 return data
             read_non_whitespace(stream)
             stream.seek(-1, 1)
-            value = read_object(stream, pdf, forced_encoding)
-        except (RecursionError, LimitReachedError) as error:
-            raise PdfReadError(repr(error)) from error
+            value = read_object(stream, pdf, forced_encoding, parsing_budget=budget)
+        except LimitReachedError:
+            raise  # pypdf always lets a limit through.
+        except (MemoryError, RecursionError) as error:
+            raise PdfReadError("Error reading PDF file.") from error
         except Exception as error:
             if _is_strict(pdf):
-                raise PdfReadError(repr(error)) from error
-            logger.warning("%r", error)
+                raise PdfReadError("Error reading PDF file.") from error
+            logger.warning("%s", repr(error)[:500])
             partial = DictionaryObject()
             partial.update(data)
             return partial
-        if not data.get(key):
+        if key not in data:
             data[key] = value
             continue
         message = f"Multiple definitions in dictionary at byte {hex(stream.tell())} for key {key}"
@@ -284,14 +343,15 @@ def _read_stream_data(stream: Any, pdf: Any, data: dict[Any, Any]) -> None:
         stream.seek(-1, 1)
     length = _declared_length(stream, pdf, data)
     start = stream.tell()
-    if length > MAX_DECLARED_STREAM_LENGTH:
+    limit = get_configuration().maximum_declared_stream_length
+    if length > limit:
         raise LimitReachedError(
             f"Declared stream length of {length} exceeds maximum allowed length."
         )
     if length >= 0:
         data["__streamdata__"] = stream.read(length)
     else:
-        data["__streamdata__"] = read_until_regex(stream, ENDSTREAM, MAX_DECLARED_STREAM_LENGTH)
+        data["__streamdata__"] = read_until_regex(stream, ENDSTREAM, limit)
     keyword = read_non_whitespace(stream) + stream.read(8)
     if keyword == b"endstream":
         return
@@ -304,7 +364,7 @@ def _read_stream_data(stream: Any, pdf: Any, data: dict[Any, Any]) -> None:
     elif pdf is not None and not pdf.strict:
         stream.seek(start, 0)
         data["__streamdata__"] = DictionaryObject._read_unsized_from_stream(
-            stream=stream, pdf=pdf, length=MAX_DECLARED_STREAM_LENGTH
+            stream=stream, pdf=pdf, length=limit
         )
     else:
         stream.seek(position, 0)
@@ -314,12 +374,14 @@ def _read_stream_data(stream: Any, pdf: Any, data: dict[Any, Any]) -> None:
         )
 
 
-def read_dictionary(stream: Any, pdf: Any, forced_encoding: Any = None) -> DictionaryObject:
+def read_dictionary(
+    stream: Any, pdf: Any, forced_encoding: Any = None, *, parsing_budget: Any = None
+) -> DictionaryObject:
     if stream.read(2) != b"<<":
         raise PdfReadError(
             f"Dictionary read error at byte {hex(stream.tell())}: stream must begin with '<<'"
         )
-    data = _read_entries(stream, pdf, forced_encoding)
+    data = _read_entries(stream, pdf, forced_encoding, parsing_budget)
     if isinstance(data, DictionaryObject):
         return data
     position = stream.tell()
@@ -350,7 +412,9 @@ def read_unsized(stream: Any, pdf: Any, length: int) -> bytes:
     return data[: marker - 1]
 
 
-def read_object(stream: Any, pdf: Any = None, forced_encoding: Any = None) -> Any:
+def read_object(
+    stream: Any, pdf: Any = None, forced_encoding: Any = None, *, parsing_budget: Any = None
+) -> Any:
     from core_pdf_compat.pypdf._generic_trees import (  # noqa: PLC0415
         read_hex_string_from_stream,
         read_string_from_stream,
@@ -358,16 +422,21 @@ def read_object(stream: Any, pdf: Any = None, forced_encoding: Any = None) -> An
 
     token = stream.read(1)
     stream.seek(-1, 1)
+    if token == b"%":
+        # Consecutive comments are skipped in a loop, not a recursion per comment.
+        skip_over_comments(stream, limit=_MAX_LEADING_COMMENTS)
+        token = stream.read(1)
+        stream.seek(-1, 1)
     if token == b"/":
         return read_name(stream, pdf)
     if token == b"<":
         is_dictionary = stream.read(2) == b"<<"
         stream.seek(-2, 1)
         if is_dictionary:
-            return read_dictionary(stream, pdf, forced_encoding)
+            return read_dictionary(stream, pdf, forced_encoding, parsing_budget=parsing_budget)
         return read_hex_string_from_stream(stream, forced_encoding)
     if token == b"[":
-        return read_array(stream, pdf, forced_encoding)
+        return read_array(stream, pdf, forced_encoding, parsing_budget=parsing_budget)
     if token in (b"t", b"f"):
         return read_boolean(stream)
     if token == b"(":
@@ -376,16 +445,19 @@ def read_object(stream: Any, pdf: Any = None, forced_encoding: Any = None) -> An
         return NullObject()
     if token == b"n":
         return read_null(stream)
-    if token == b"%":
-        skip_over_comment(stream)
-        read_non_whitespace(stream)
-        stream.seek(-1, 1)
-        return read_object(stream, pdf, forced_encoding)
     if token in b"0123456789+-.":
         peek = stream.read(20)
+        match = INDIRECT_PATTERN.match(peek)
+        if match is not None:
+            # Continue after the "R"; the match includes the character after it.
+            stream.seek(match.end() - 1 - len(peek), 1)
+            return IndirectObject(int(peek[: match.end(1)]), int(match[2]), pdf)
+        number_end = NumberObject.NumberPattern.search(peek)
+        if number_end is not None:
+            text = peek[: number_end.start()]
+            stream.seek(len(text) - len(peek), 1)
+            return FloatObject(text) if b"." in text else NumberObject(text)
         stream.seek(-len(peek), 1)
-        if INDIRECT_PATTERN.match(peek) is not None:
-            return read_indirect(stream, pdf)
         return read_number(stream)
     position = stream.tell()
     stream.seek(max(0, position - 20))

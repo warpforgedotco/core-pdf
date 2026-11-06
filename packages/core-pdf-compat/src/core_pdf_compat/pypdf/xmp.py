@@ -1,4 +1,4 @@
-# Follows pypdf's XMP handling, Copyright (c) 2006-2008, Mathieu Fenniak,
+# Follows pypdf 6.21.4's XMP handling, Copyright (c) 2006-2008, Mathieu Fenniak,
 # under its BSD-style license.
 """pypdf's XMP metadata: an XML packet read and edited as a DOM."""
 
@@ -16,11 +16,12 @@ from xml.dom.minidom import Document
 from xml.dom.minidom import Element as XmlElement
 from xml.parsers.expat import ExpatError
 
+from ._configuration import get_configuration
 from .errors import LimitReachedError, PdfReadError, XmpDocumentError
 from .generic import ContentStream, PdfObject
 
-XMP_MAX_INPUT_LENGTH = 5_000_000
-XMP_MAX_ELEMENT_COUNT = 100_000
+XMP_MAX_INPUT_LENGTH = 5_000_000  # Deprecated in pypdf: use Configuration.
+XMP_MAX_ELEMENT_COUNT = 100_000  # Deprecated in pypdf: use Configuration.
 
 RDF_NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 DC_NAMESPACE = "http://purl.org/dc/elements/1.1/"
@@ -85,22 +86,23 @@ def _converter_date(value: str) -> datetime.datetime:
         raise ValueError(f"Invalid date format: {value}")
     second = decimal.Decimal(matches.group("second") or "0")
     whole_seconds = second.to_integral(decimal.ROUND_FLOOR)
-    date = datetime.datetime(  # noqa: DTZ001
-        int(matches.group("year")),
-        int(matches.group("month") or "1"),
-        int(matches.group("day") or "1"),
-        int(matches.group("hour") or "0"),
-        int(matches.group("minute") or "0"),
-        int(whole_seconds),
-        int((second - whole_seconds) * 1_000_000),
-    )
+    try:
+        date = datetime.datetime(  # noqa: DTZ001
+            int(matches.group("year")),
+            int(matches.group("month") or "1"),
+            int(matches.group("day") or "1"),
+            int(matches.group("hour") or "0"),
+            int(matches.group("minute") or "0"),
+            int(whole_seconds),
+            int((second - whole_seconds) * 1_000_000),
+        )
+    except ValueError as error:
+        raise ValueError(f"Invalid date {value!r}: {error}") from error
     offset = matches.group("tzd") or "Z"
     if offset != "Z":
-        hours, minutes = (int(part) for part in offset.split(":"))
-        hours *= -1
-        if hours < 0:
-            minutes *= -1
-        date += datetime.timedelta(hours=hours, minutes=minutes)
+        hours, minutes = (int(part) for part in offset[1:].split(":"))
+        delta = datetime.timedelta(hours=hours, minutes=minutes)
+        date = date - delta if offset.startswith("+") else date + delta
     return date
 
 
@@ -124,16 +126,15 @@ class _XmpBuilder(ExpatBuilderNS):
     def __init__(self, options: Any = None) -> None:
         super().__init__(options=options)
         self._element_count = 0
+        self._configuration = get_configuration()
 
     def _deny_entity(self, entity_name: str, *_: object) -> None:
         raise ExpatError(f"Forbidden entities: {entity_name!r}")
 
     def start_element_handler(self, name: str, attributes: list[str]) -> None:
         self._element_count += 1
-        if self._element_count > XMP_MAX_ELEMENT_COUNT:
-            raise LimitReachedError(
-                f"XMP metadata exceeds limit of {XMP_MAX_ELEMENT_COUNT} elements."
-            )
+        if self._element_count > (limit := self._configuration.xmp_maximum_element_count):
+            raise LimitReachedError(f"XMP metadata exceeds limit of {limit} elements.")
         super().start_element_handler(name=name, attributes=attributes)
 
     def install(self, parser: Any) -> None:
@@ -168,10 +169,9 @@ class XmpInformation(PdfObject):
         self.stream = stream
         try:
             data = self.stream.get_data()
-            if (length := len(data)) > XMP_MAX_INPUT_LENGTH:
-                raise LimitReachedError(
-                    f"XMP stream size {length} exceeds limit of {XMP_MAX_INPUT_LENGTH}."
-                )
+            limit = get_configuration().xmp_maximum_input_length
+            if (length := len(data)) > limit:
+                raise LimitReachedError(f"XMP stream size {length} exceeds limit of {limit}.")
             document: Document = _XmpBuilder().parseString(data)
         except (AttributeError, ExpatError) as error:
             raise PdfReadError(f"XML in XmpInformation was invalid: {error}") from error

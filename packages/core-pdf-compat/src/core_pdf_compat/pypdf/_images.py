@@ -212,6 +212,9 @@ def image_ids(
         return [] if ancestors else inline
     ids: list[Any] = []
     x_objects = resources["/XObject"].get_object()
+    if not isinstance(x_objects, DictionaryObject):
+        logger.warning("XObject resources are not a dictionary: %s", x_objects)
+        return []
     for name in x_objects:
         x_object = x_objects[name]
         if not isinstance(x_object, StreamObject):

@@ -1,5 +1,5 @@
-# Follows pypdf._text_extraction._layout_mode, Copyright (c) 2006, Mathieu Fenniak, under its
-# BSD-style license.
+# Follows pypdf._text_extraction._layout_mode of pypdf 6.21.4, Copyright (c) 2006, Mathieu
+# Fenniak, under its BSD-style license.
 """pypdf's "layout" text extraction: a fixed-width page built from text positions."""
 
 from __future__ import annotations
@@ -55,9 +55,6 @@ class _FontView:
         return len(word), word.count(space) if space else 0
 
     def shown(self, value: bytes) -> tuple[tuple[str, ...], float]:
-        if self.font is not None and self.font.unknown_encoding is not None:
-            # pypdf decodes the bytes with the encoding's name as a codec.
-            raise LookupError(f"unknown encoding: {self.font.unknown_encoding}")
         return (
             (tuple(value.decode("latin-1")), 0.0)
             if self.font is None
@@ -80,22 +77,24 @@ class _TextState:
         self.font_size = 0.0
 
     def set_parameter(self, operator: str, operands: tuple[Any, ...]) -> None:
-        if not operands:
-            if operator in {"Tc", "Tw", "Tz", "TL", "Ts"}:
-                raise IndexError("list index out of range")  # pypdf reads operands[0].
-            return
-        value = operands[0]
+        # A missing or non-numeric operand leaves the parameter as it is.
+        value = operands[0] if operands else None
         match operator:
             case "Tc":
-                self.character_spacing = value
+                self.character_spacing = _as_float(value, self.character_spacing)
             case "Tw":
-                self.word_spacing = value
+                self.word_spacing = _as_float(value, self.word_spacing)
             case "Tz":
-                self.scaling = value
+                self.scaling = _as_float(value, self.scaling)
             case "TL":
-                self.leading = value
+                self.leading = _as_float(value, self.leading)
             case "Ts":
-                self.rise = value
+                self.rise = _as_float(value, self.rise)
+
+    def set_font(self, font: _FontView, operands: tuple[Any, ...]) -> None:
+        """pypdf's set_font_operation: a missing or non-numeric size keeps the current one."""
+        self.font = font
+        self.font_size = _as_float(operands[1] if len(operands) > 1 else None, self.font_size)
 
     def run(self, value: bytes | None = None) -> _Run:
         if self.font is None:
@@ -122,20 +121,23 @@ class _TextState:
     def add_cm(self, operands: tuple[float, ...]) -> None:
         self.reset_text()
         self.q_queue.update(self.q_depth[-1:])
-        # pypdf passes the operands to new_transform(a, b, c, d, e, f, is_text, is_render).
-        if len(operands) > 8:
+        # pypdf passes the operands to new_transform(a, b, c, d, e, f).
+        if len(operands) > 6:
             raise TypeError(
-                "TextStateManager.new_transform() takes from 0 to 8 positional arguments but "
+                "TextStateManager.new_transform() takes from 0 to 6 positional arguments but "
                 f"{len(operands)} were given"
             )
-        flags = [bool(flag) for flag in operands[6:8]] + [False, False]
-        self.stack = [
-            _Transform(_padded(operands[:6]), is_text=flags[0], is_render=flags[1]),
-            *self.stack,
-        ]
+        self.stack = [_Transform(_padded(operands)), *self.stack]
 
     def add_tm(self, operands: list[float]) -> None:
-        self.stack = [_Transform(_complete(operands), is_text=True), *self.stack]
+        matrix = _complete(operands)
+        top = self.stack[0]
+        if top.is_text and not top.is_render:
+            # pypdf folds a text matrix into the one on top when that renders nothing.
+            combined = tuple(_mult(list(matrix), list(top.matrix)))
+            self.stack = [_Transform(combined, is_text=True), *self.stack[1:]]
+        else:
+            self.stack = [_Transform(matrix, is_text=True), *self.stack]
 
     def add_trm(self, operands: list[float]) -> None:
         self.stack = [_Transform(_complete(operands), is_text=True, is_render=True), *self.stack]
@@ -147,17 +149,29 @@ class _TextState:
         return effective
 
 
+def _as_float(value: object, default: float) -> float:
+    """pypdf's TextStateManager._as_float: an operand as a float, else the default."""
+    if isinstance(value, bool):
+        return default  # pypdf's BooleanObject is no number.
+    try:
+        return float(value)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+    except TypeError, ValueError:
+        return default
+
+
 def _padded(operands: Any) -> tuple[float, ...]:
-    """pypdf's raw_transform: the values given, and the identity's for the rest."""
-    return tuple(map(float, (*operands, *IDENTITY_MATRIX[len(operands) :])))
+    """pypdf's raw_transform: the numbers given, and the identity's for the rest."""
+    values = (*operands, *IDENTITY_MATRIX[len(operands) :])
+    return tuple(_as_float(value, default) for value, default in zip(values, IDENTITY_MATRIX))
 
 
 def _complete(operands: list[float]) -> tuple[float, ...]:
     if len(operands) == 2:
-        return (1.0, 0.0, 0.0, 1.0, float(operands[0]), float(operands[1]))
+        return _padded([1.0, 0.0, 0.0, 1.0, *operands])
     if len(operands) > 6:
         raise TypeError(
-            "TextStateManager.new_transform() got multiple values for argument 'is_text'"
+            "TextStateManager.new_transform() takes from 0 to 6 positional arguments but "
+            f"{len(operands)} positional arguments (and 1 keyword-only argument) were given"
         )
     return _padded(operands)
 
@@ -205,8 +219,7 @@ class _Run:
         self.flip_vertical = self.transform[3] < -1e-6
 
     def _advance(self, width: float, characters: int, spaces: int) -> float:
-        # The character spacing applies to each character, as in the pypdf the upstream tests
-        # come from; pypdf 6.15.0 adds it once per string (a departure check_pypdf_text lists).
+        # pypdf applies the character spacing to each character.
         return (
             self.font_size * (width / 1000.0)
             + characters * self.character_spacing
@@ -262,7 +275,10 @@ def _close_text_object(runs: list[_Run], strip_rotated: bool) -> list[dict[str, 
             last_displaced_tx = run.displaced_tx
             text = ""
         excess_tx = round(run.tx - last_displaced_tx, 3) * (index != first)
-        spaces = _spaces(int(excess_tx // run.space_tx) if run.space_tx else 0)
+        # space_tx is in text space and excess_tx in page space: pypdf scales the space width
+        # by the horizontal transform, which is 0 for text with no width.
+        page_space_tx = run.space_tx * abs(run.transform[0])
+        spaces = _spaces(round(excess_tx / page_space_tx) if excess_tx > 0 and page_space_tx else 0)
         last_ty = run.ty
         text = f"{text}{' ' * spaces}{run.text}"
         last_displaced_tx = run.displaced_tx
@@ -298,7 +314,7 @@ class _Walker:
                     groups.extend(_close_text_object(runs, self.strip_rotated))
                     state.reset_text()
                 return groups, runs
-            self._step(operator, operands, groups, runs)
+            self._step(operator, operands, groups, runs, end_target)
         logger.warning("Unbalanced target operations, expected %r.", end_target.encode())
         return groups, runs
 
@@ -308,51 +324,68 @@ class _Walker:
         operands: tuple[Any, ...],
         groups: list[dict[str, Any]],
         runs: list[_Run],
+        end_target: str,
     ) -> None:
         state = self.state
         match operator:
-            case "q" | "BT":
-                inner_groups, inner_runs = self.walk("Q" if operator == "q" else "ET")
+            case "q":
+                inner_groups, inner_runs = self.walk("Q")
                 groups.extend(inner_groups)
                 runs.extend(inner_runs)
+            case "BT" if end_target == "Q":
+                inner_groups, inner_runs = self.walk("ET")
+                groups.extend(inner_groups)
+                runs.extend(inner_runs)
+            case "BT":
+                # Text objects do not nest and end at the first ET: a BT inside one only
+                # resets the text matrix.
+                state.reset_text()
             case "cm":
                 state.add_cm(operands)
-            case "Tj":
-                runs.append(state.run(_string(operands[0])))
-            case "TJ":
+            case "Tj" if operands and isinstance(operands[0], PdfString):
+                runs.append(state.run(bytes(operands[0].data)))
+            case "TJ" if operands and isinstance(operands[0], list):
                 run = state.run()
+                # Only strings and numbers are TJ array items.
                 for item in operands[0]:
                     if isinstance(item, PdfString):
                         run = state.run(bytes(item.data))
                         runs.append(run)
-                    else:
+                    elif _is_number(item):
                         state.add_trm(run.displacement(item))
             case "'":
                 state.reset_render()
                 state.add_tm([0, -state.leading])
-                runs.append(state.run(_string(operands[0])))
-            case '"':
+                self._show_operand(operands, 0, runs)
+            case '"' if len(operands) >= 3:
                 state.reset_render()
-                state.word_spacing, state.character_spacing = operands[0], operands[1]
+                state.set_parameter("Tw", operands[0:1])
+                state.set_parameter("Tc", operands[1:2])
                 state.add_tm([0, -state.leading])
-                runs.append(state.run(_string(operands[2])))
+                self._show_operand(operands, 2, runs)
             case "Td" | "Tm" | "TD" | "T*":
                 state.reset_render()
                 if operator == "Tm":
                     state.reset_text()
-                elif operator == "TD":
+                elif operator == "TD" and len(operands) >= 2 and _is_number(operands[1]):
+                    # A missing or non-numeric ty leaves the leading as it is.
                     state.leading = -operands[1]
                 matrix = [0, -state.leading] if operator == "T*" else list(operands)
                 state.add_tm(matrix)
             case "Tf":
-                state.font = self.resolve_font(operands[0])
-                state.font_size = operands[1]
+                state.set_font(self.resolve_font(operands[0] if operands else ""), operands)
             case _:
                 state.set_parameter(operator, operands)
 
+    def _show_operand(self, operands: tuple[Any, ...], index: int, runs: list[_Run]) -> None:
+        """Show the operand like Tj if it is a string; anything else shows no text."""
+        value = operands[index] if index < len(operands) else None
+        if isinstance(value, PdfString):
+            runs.append(self.state.run(bytes(value.data)))
 
-def _string(value: object) -> bytes:
-    return bytes(value.data) if isinstance(value, PdfString) else b""
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def text_show_operations(
@@ -369,8 +402,7 @@ def text_show_operations(
             groups.extend(inner_groups)
             runs.extend(inner_runs)
         elif operator == "Tf":
-            state.font = walker.resolve_font(operands[0])
-            state.font_size = operands[1]
+            state.set_font(walker.resolve_font(operands[0] if operands else ""), operands)
         else:
             state.set_parameter(operator, operands)
     if any(run.rotated for run in runs):
@@ -444,7 +476,8 @@ def fixed_width_page(
         last_displaced = 0.0
         for group in line:
             tx = group["tx"]
-            needed = int(tx // char_width) - length
+            # Text drawn with no width has no column to align to.
+            needed = (int(tx // char_width) if char_width else length) - length
             if needed > 0 and math.ceil(last_displaced) < int(tx):
                 needed = _spaces(needed)
                 parts.append(" " * needed)

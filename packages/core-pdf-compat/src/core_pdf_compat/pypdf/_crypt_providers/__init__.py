@@ -6,8 +6,10 @@ import logging
 import secrets
 from importlib.metadata import version
 
+from core_pdf_compat.pdfminer.arcfour import Arcfour
 from core_pdf_compat.pypdf.errors import PdfStreamError
-from core_pdf_crypto.ciphers import aes_cbc_decrypt, aes_cbc_encrypt, rc4_crypt
+from core_pdf_crypto import ciphers
+from core_pdf_crypto.ciphers import rc4_crypt
 
 logger = logging.getLogger(__name__)
 crypt_provider = ("cryptography", version("cryptography"))
@@ -29,6 +31,28 @@ class CryptIdentity(CryptBase):
     pass
 
 
+_RC4_STATE = {"supported": True}
+
+
+def _rc4(key: bytes, data: bytes) -> bytes:
+    """RC4 through cryptography, or in Python once OpenSSL has refused it, as pypdf 6.21.4
+    falls back (#3853), warning the first time.
+    """
+    if _RC4_STATE["supported"]:
+        try:
+            return rc4_crypt(key, data)
+        except Exception as error:
+            # cryptography's UnsupportedAlgorithm, without importing it here.
+            if type(error).__name__ != "UnsupportedAlgorithm":
+                raise
+            logger.warning(
+                "RC4 is not supported by the current OpenSSL build; "
+                "falling back to the pure-Python RC4 implementation."
+            )
+            _RC4_STATE["supported"] = False
+    return Arcfour(key).process(data)
+
+
 class CryptRC4(CryptBase):
     def __init__(self, key: bytes) -> None:
         self.key = key
@@ -37,11 +61,11 @@ class CryptRC4(CryptBase):
         return "CryptRC4()"
 
     def encrypt(self, data: bytes) -> bytes:
-        return rc4_crypt(self.key, data)
+        return _rc4(self.key, data)
 
     def decrypt(self, data: bytes, *, strict: bool = True) -> bytes:
         del strict
-        return rc4_crypt(self.key, data)
+        return _rc4(self.key, data)
 
 
 def padding_is_valid(data: bytes) -> bool:
@@ -58,7 +82,7 @@ class CryptAES(CryptBase):
 
     def encrypt(self, data: bytes) -> bytes:
         iv = secrets.token_bytes(BLOCK_BYTES)
-        return iv + aes_cbc_encrypt(self.key, iv, data, use_padding=True)
+        return iv + ciphers.aes_cbc_encrypt(self.key, iv, data, use_padding=True)
 
     def decrypt(self, data: bytes, *, strict: bool = True) -> bytes:
         iv, data = data[:BLOCK_BYTES], data[BLOCK_BYTES:]
@@ -70,7 +94,7 @@ class CryptAES(CryptBase):
             logger.warning("Adding missing padding.")
             missing = BLOCK_BYTES - len(data) % BLOCK_BYTES
             data += bytes((missing,)) * missing
-        padded = aes_cbc_decrypt(self.key, iv, data, use_padding=False)
+        padded = ciphers.aes_cbc_decrypt(self.key, iv, data, use_padding=False)
         if padding_is_valid(padded):
             return padded[: -padded[-1]]
         if strict:
@@ -79,4 +103,41 @@ class CryptAES(CryptBase):
         return padded[: -padded[-1]]
 
 
-__all__ = ("CryptAES", "CryptBase", "CryptIdentity", "CryptRC4", "crypt_provider")
+# The provider's module-level helpers, without padding, as pypdf's are.
+def rc4_encrypt(key: bytes, data: bytes) -> bytes:
+    return _rc4(key, data)
+
+
+def rc4_decrypt(key: bytes, data: bytes) -> bytes:
+    return _rc4(key, data)
+
+
+def aes_ecb_encrypt(key: bytes, data: bytes) -> bytes:
+    return ciphers.aes_ecb_encrypt(key, data)
+
+
+def aes_ecb_decrypt(key: bytes, data: bytes) -> bytes:
+    return ciphers.aes_ecb_decrypt(key, data)
+
+
+def aes_cbc_encrypt(key: bytes, iv: bytes, data: bytes) -> bytes:
+    return ciphers.aes_cbc_encrypt(key, iv, data, use_padding=False)
+
+
+def aes_cbc_decrypt(key: bytes, iv: bytes, data: bytes) -> bytes:
+    return ciphers.aes_cbc_decrypt(key, iv, data, use_padding=False)
+
+
+__all__ = (
+    "CryptAES",
+    "CryptBase",
+    "CryptIdentity",
+    "CryptRC4",
+    "aes_cbc_decrypt",
+    "aes_cbc_encrypt",
+    "aes_ecb_decrypt",
+    "aes_ecb_encrypt",
+    "crypt_provider",
+    "rc4_decrypt",
+    "rc4_encrypt",
+)

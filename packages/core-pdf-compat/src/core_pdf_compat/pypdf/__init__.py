@@ -21,10 +21,21 @@ from core_pdf.impl.recovery_lexer import PdfLexer as RecoveryLexer
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
-from core_pdf_compat.pypdf import filters
+from core_pdf_compat.pypdf._configuration import (
+    Configuration,
+    apply_configuration,
+    apply_legacy_configuration,
+    get_configuration,
+    overwrite_configuration,
+)
 from core_pdf_compat.pypdf._crypt_providers import CryptAES
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
-from core_pdf_compat.pypdf._encryption import PasswordType
+from core_pdf_compat.pypdf._encryption import (
+    PasswordType,
+    check_encryption_entry,
+    check_file_identifier,
+    encrypts_metadata,
+)
 from core_pdf_compat.pypdf._generic_read import (
     read_non_whitespace,
     read_object,
@@ -32,7 +43,8 @@ from core_pdf_compat.pypdf._generic_read import (
     skip_over_comment,
     skip_over_whitespace,
 )
-from core_pdf_compat.pypdf._page_labels import index2label
+from core_pdf_compat.pypdf._page_labels import index2labels
+from core_pdf_compat.pypdf._page_tree import flatten_page_tree
 from core_pdf_compat.pypdf._reader_scan import (
     DECODE_KEY_REFERENCE,
     INDIRECT_HEADER,
@@ -79,7 +91,7 @@ from core_pdf_spec.s_07_security.output import is_signature_contents
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, key_for
 
-__version__ = "6.15.0"
+__version__ = "6.21.4"
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +139,9 @@ def _holds_object(data: bytes, offset: object, number: int, generation: int) -> 
 
 
 class PdfReader(PdfDocCommon, ClosingMixin):
+    # How many lines pypdf reads back from the end for startxref past a run of %%EOF markers.
+    _MAX_STARTXREF_RECOVERY_LINES = 1000
+
     def __init__(
         self,
         stream: PdfInput,
@@ -134,6 +149,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         password: str | bytes | None = None,
         *,
         root_object_recovery_limit: int | None = 10_000,
+        xref_stream_maximum_entries: int = 2_000_000,
     ) -> None:
         self.strict = strict
         self.flattened_pages: list[PageObject] | None = None
@@ -147,9 +163,17 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self._pdf: PdfDocument | None = None
         self._core_xref_differs = False
         self._decryption_pending = False
-        self._checked_object_streams: set[int] = set()
+        # Per object stream, the object numbers pypdf skips in its header, or None when
+        # pypdf ignores the whole stream.
+        self._checked_object_streams: dict[int, set[int] | None] = {}
+        self._object_stream_resolution_stack: list[int] = []
         self._known_objects: set[tuple[int, int]] = set()
         self._permissions_tampered = False
+        self._xref_stream_maximum_entries = xref_stream_maximum_entries
+        self._override_encryption = False
+        self._encrypts_metadata = True
+        self._file_identifier_usable = True
+        apply_legacy_configuration()
         self.read(stream)
         self._open(password)
 
@@ -162,7 +186,28 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self.xref_objStm = scan.xref_objStm  # noqa: N815
         self._scan_trailer = scan.trailer
 
+    def _check_encryption(self) -> None:
+        """pypdf 6.21.4's checks of the trailer's /ID and /Encrypt when opening (#4197).
+
+        The objects are read as pypdf reads them, undecrypted and without caching.
+        """
+        if "/Encrypt" not in self.trailer:
+            return
+        self._override_encryption = True
+        try:
+            self._file_identifier_usable = check_file_identifier(
+                self.trailer.get("/ID", NullObject()).get_object()
+            )
+            entry = self.trailer["/Encrypt"]
+            if not isinstance(entry, DictionaryObject):
+                raise PdfReadError("/Encrypt entry of the trailer is not a dictionary")
+            check_encryption_entry(entry)
+            self._encrypts_metadata = encrypts_metadata(entry)
+        finally:
+            self._override_encryption = False
+
     def _open(self, password: str | bytes | None) -> None:
+        self._check_encryption()
         try:
             self._pdf = PdfDocument.open(self._data, password=password or "")
         except PdfInvalidPermissionsError:
@@ -172,9 +217,12 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             if password is not None:
                 raise WrongPasswordError("Wrong password") from error
             self._decryption_pending = True
-        except PdfUnsupportedError:
-            if password:
+        except PdfUnsupportedError as error:
+            if password and self._file_identifier_usable:
                 raise
+            if password is not None and not self._file_identifier_usable:
+                # pypdf derives the key from an empty identifier, which does not match.
+                raise WrongPasswordError("Wrong password") from error
             self._decryption_pending = True
         except PdfParseError, ValueError:
             # pypdf finds out when something asks for the catalog, not on opening.
@@ -196,61 +244,32 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             self._named_destinations_cache = super()._get_named_destinations()
         return self._named_destinations_cache
 
-    def _flatten(
-        self,
-        pages: Any = None,
-        inherit: dict[str, Any] | None = None,
-        indirect_reference: IndirectObject | None = None,
-        visited: set[int] | None = None,
-    ) -> None:
-        inherit = {} if inherit is None else inherit
-        visited = set() if visited is None else visited
-        if is_null_or_none(pages):
-            pages = self.root_object.get_resolved("/Pages")
-            if not isinstance(pages, DictionaryObject):
-                raise PdfReadError("Invalid object in /Pages")
-            self.flattened_pages = []
-        if "/Type" in pages:
-            node_type = pages["/Type"]
-        elif "/Kids" in pages:
-            node_type = "/Pages"
-        else:
-            if self.strict and not any(
-                key in pages for key in ("/Contents", "/MediaBox", "/Parent")
-            ):
-                raise PdfReadError(f"Non-page object reached through /Kids: {pages!r}")
-            node_type = "/Page"
-        if node_type == "/Pages":
-            self._flatten_kids(pages, inherit, visited)
-        elif node_type == "/Page":
-            for key, value in inherit.items():
-                if key not in pages:
-                    pages[NameObject(key)] = value
-            page = PageObject(self, indirect_reference)
-            page.update(pages)
-            page._source_content = page._content_keys()
-            cast(list[PageObject], self.flattened_pages).append(page)
+    def _flatten(self, list_only: bool = False) -> None:
+        self.flattened_pages = None
 
-    def _flatten_kids(self, node: Any, inherit: dict[str, Any], visited: set[int]) -> None:
-        for key in INHERITED_PAGE_ATTRIBUTES:
-            if key in node:
-                inherit[key] = node[key]
-        node_reference = getattr(node, "indirect_reference", object())
-        kids = node.get_resolved("/Kids", ArrayObject())
-        if isinstance(kids, NullObject):
-            return
-        if not isinstance(kids, ArrayObject):
-            raise PdfReadError(f"Expected /Kids to be an array, got {type(kids).__name__}.")
-        for kid in kids:
-            if getattr(kid, "indirect_reference", object()) == node_reference:
-                raise PdfReadError("Detected cyclic page references.")
-            child = kid.get_object() if isinstance(kid, IndirectObject) else kid
-            if child:
-                if id(child) in visited:
-                    raise PdfReadError("Detected cyclic page references.")
-                visited.add(id(child))
-                reference = kid if isinstance(kid, IndirectObject) else None
-                self._flatten(child, inherit, reference, visited)
+        def make_page(
+            node: DictionaryObject, reference: IndirectObject | None, inherit: dict[str, Any]
+        ) -> PageObject:
+            page = PageObject(self, reference)
+            # pypdf's PageObject fills itself from its reference; an inline node is copied
+            # only when not list_only.
+            if reference is not None or not list_only:
+                page.update(node)
+            for key, value in inherit.items():
+                if key not in page:
+                    page[NameObject(key)] = value
+            page._source_content = page._content_keys()
+            return page
+
+        pages = self.root_object.get("/Pages", NullObject()).get_object()
+        # Assigned only once the walk is done, so a failure leaves no partial list.
+        self.flattened_pages = flatten_page_tree(
+            pages,
+            strict=self.strict,
+            make_page=make_page,
+            inherited_value=lambda node, key: node[key],
+            count_own_entries=lambda reference: reference is not None or not list_only,
+        )
 
     def _page_list(self) -> list[PageObject]:
         if self.flattened_pages is None:
@@ -368,6 +387,18 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return offset if match is None else match.start(0) + 1
 
     def get_object(self, indirect_reference: Any) -> Any:
+        if self._override_encryption:
+            if not isinstance(indirect_reference, IndirectObject):
+                indirect_reference = IndirectObject(int(indirect_reference), 0, self)
+            number, generation = indirect_reference.idnum, indirect_reference.generation
+            cached = self.resolved_objects.get((generation, number))
+            if cached is not None:
+                return cached
+            # As stored in the file: for /Encrypt, and metadata stored in clear.
+            found = self._repaired_object(number, generation, None)
+            if found is not None:
+                found.indirect_reference = IndirectObject(number, generation, self)
+            return found
         if self._decryption_pending:
             raise FileNotDecryptedError("File has not been decrypted")
         if isinstance(indirect_reference, IndirectObject):
@@ -400,6 +431,23 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             self._stream_replaced = True
 
     def _read_object(self, number: int, generation: int) -> Any:
+        if generation != 0 or number not in self.xref_objStm:
+            return self._read_object_unchecked(number, generation)
+        # pypdf 6.21.4 tracks the objects it is reading from object streams, so a stream
+        # stored in another stream that leads back to it is an error, not a recursion.
+        stack = self._object_stream_resolution_stack
+        if number in stack:
+            cycle = [*stack[stack.index(number) :], number]
+            raise PdfReadError(
+                "Circular object-stream reference detected: " + " -> ".join(map(str, cycle))
+            )
+        stack.append(number)
+        try:
+            return self._read_object_unchecked(number, generation)
+        finally:
+            stack.pop()
+
+    def _read_object_unchecked(self, number: int, generation: int) -> Any:
         if (number, generation) in self._known_objects:
             reference = IndirectObject(number, generation, self)
             raise LimitReachedError(f"Detected loop with self reference for {reference!r}.")
@@ -415,7 +463,9 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 # Core recovered the object somewhere else than pypdf's xref walk found it.
                 return self._repaired_object(number, generation, None)
             if number in self.xref_objStm:
-                self._check_object_stream(self.xref_objStm[number][0])
+                skipped = self._check_object_stream(self.xref_objStm[number][0])
+                if skipped is None or number in skipped:
+                    return NullObject()
             try:
                 resolved = source.resolver.resolve(PdfReference(number, generation))
             except PdfParseError as error:
@@ -750,7 +800,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def _check_stream_length(
         self, stream: PdfStream, entry: Any, number: int, generation: int
     ) -> None:
-        limit = filters.MAX_DECLARED_STREAM_LENGTH
+        limit = get_configuration().maximum_declared_stream_length
         declared = stream.dictionary.get("Length")
         if isinstance(declared, PdfReference):
             length = self.get_object(
@@ -802,28 +852,70 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         finally:
             self._stream.seek(position)
 
-    def _check_object_stream(self, number: int) -> None:
+    def _check_object_stream(self, number: int) -> set[int] | None:
+        """Check an object stream's header as pypdf 6.21.4 reads it.
+
+        The object numbers whose entries pypdf skips, or None when it ignores the stream.
+        """
         if number in self._checked_object_streams:
-            return
+            return self._checked_object_streams[number]
         stream = self.get_object(number)
         if stream is None:
             # pypdf checks obj_stm["/Type"] first, each time it reads from the stream.
             raise TypeError("'NoneType' object is not subscriptable")
-        self._checked_object_streams.add(number)
         data = stream.get_data()
-        count = stream["/N"]
-        maximum = len(data) // 3
-        if count <= maximum:
-            return
-        message = f"Value /N {count} for object {number} exceeds maximum allowed value {maximum}."
-        if self.strict:
-            raise LimitReachedError(message)
-        logger.warning("%s Limiting to %d.", message, maximum)
-        # pypdf reads the header pairs as numbers, which warns on anything else.
-        tokens = data[: stream["/First"]].split() + [b""] * (2 * maximum)
-        for token in tokens[: 2 * maximum]:
-            if not token.isdigit():
-                logger.warning("NumberObject(b'') invalid; use 0 instead")
+        count, first = stream.get("/N"), stream.get("/First")
+        if not isinstance(count, NumberObject) or not isinstance(first, NumberObject):
+            raise PdfReadError(
+                f"Invalid /ObjStm header for object {number}: /N or /First missing or not a number"
+            )
+        length = len(data)
+        skipped: set[int] | None = set()
+        if count < 0 or not 0 <= first <= length:
+            message = f"Invalid /N ({count}) or /First ({first}) in object stream {number}"
+            if self.strict:
+                raise PdfReadError(f"{message}.")
+            logger.warning("%s; ignoring the stream.", message)
+            skipped = None
+        else:
+            maximum = length // 3
+            if count > maximum:
+                message = (
+                    f"Value /N {count} for object {number} exceeds maximum allowed value {maximum}."
+                )
+                if self.strict:
+                    raise LimitReachedError(message)
+                logger.warning("%s Limiting to %d.", message, maximum)
+                count = NumberObject(maximum)
+            skipped = self._skipped_object_stream_entries(number, data, count, first)
+        self._checked_object_streams[number] = skipped
+        return skipped
+
+    def _skipped_object_stream_entries(
+        self, number: int, data: bytes, count: int, first: int
+    ) -> set[int]:
+        """Read the header's pairs as pypdf does, and the entries it skips."""
+        header = BytesIO(data)
+        skipped: set[int] = set()
+        for _ in range(count):
+            pair = []
+            for _ in range(2):
+                read_non_whitespace(header)
+                header.seek(-1, 1)
+                pair.append(NumberObject.read_from_stream(header))
+            read_non_whitespace(header)
+            header.seek(-1, 1)
+            object_number, offset = pair
+            if object_number < 0 or offset < 0 or first + offset > len(data):
+                message = (
+                    f"Invalid object number ({object_number}) or offset ({offset}) "
+                    f"in object stream {number}"
+                )
+                if self.strict:
+                    raise PdfReadError(f"{message}.")
+                logger.warning("%s; skipping the entry.", message)
+                skipped.add(int(object_number))
+        return skipped
 
     def cache_get_indirect_object(self, generation: int, idnum: int) -> Any:
         return self.resolved_objects.get((generation, idnum))
@@ -846,7 +938,8 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             return
         stream = BytesIO(self._data)
         stream.seek(offset)
-        with contextlib.suppress(ValueError, PdfStreamError):
+        # pypdf goes on to search for the object after any error reading its header.
+        with contextlib.suppress(ValueError, PdfStreamError, LimitReachedError):
             self.read_object_header(stream)
 
     def read_object_header(self, stream: Any) -> tuple[int, int]:
@@ -854,10 +947,10 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         skip_over_comment(stream)
         extra = skip_over_whitespace(stream)
         stream.seek(-1, 1)
-        number = read_until_whitespace(stream)
+        number = read_until_whitespace(stream, max_bytes=64, strict=self.strict)
         extra |= skip_over_whitespace(stream)
         stream.seek(-1, 1)
-        generation = read_until_whitespace(stream)
+        generation = read_until_whitespace(stream, max_bytes=64, strict=self.strict)
         extra |= skip_over_whitespace(stream)
         stream.seek(-1, 1)
         stream.read(3)
@@ -867,7 +960,13 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             logger.warning(
                 "Superfluous whitespace found in object header %r %r", number, generation
             )
-        return int(number), int(generation)
+        try:
+            return int(number), int(generation)
+        except (ValueError, OverflowError) as error:
+            # A ValueError, as pypdf raises: other types would break later processing.
+            raise ValueError(
+                f"Invalid indirect object reference ({number!r} {generation!r} R): {error}"
+            ) from error
 
     def _replace_object(self, indirect: IndirectObject, obj: Any) -> Any:
         if indirect.pdf is not self:
@@ -887,8 +986,18 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return info if isinstance(info, DictionaryObject) else None
 
     def _next_object_number(self) -> int:
-        file_numbers = (key >> 16 for key in self._pdf.xref) if self._pdf is not None else ()
-        return max((*file_numbers, *(number for _, number in self.resolved_objects))) + 1
+        # pypdf 6.21.4 allocates past the declared /Size, the file's cross-reference
+        # tables and every cached object (#4190).
+        size = self.trailer.get("/Size", 0)
+        return (
+            max(
+                (size if isinstance(size, int) else 0) - 1,
+                max((number for entries in self.xref.values() for number in entries), default=0),
+                max(self.xref_objStm, default=0),
+                max((number for _, number in self.resolved_objects), default=0),
+            )
+            + 1
+        )
 
     def add_form_topname(self, name: str) -> DictionaryObject | None:
         form = self.root_object.get_resolved("/AcroForm")
@@ -938,6 +1047,18 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return metadata
 
     @property
+    def xmp_metadata(self) -> Any:
+        if self._decryption_pending and not self._encrypts_metadata:
+            # Metadata stored in clear is read without the password (#4151).
+            self._override_encryption = True
+            try:
+                root = self.trailer["/Root"]
+                return root.xmp_metadata if isinstance(root, DictionaryObject) else None
+            finally:
+                self._override_encryption = False
+        return super().xmp_metadata
+
+    @property
     def root_object(self) -> Any:
         if self._decryption_pending:
             raise FileNotDecryptedError("File has not been decrypted")
@@ -946,11 +1067,13 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return self._validated_root
 
     def _find_root(self) -> Any:
-        root = self.trailer.get("/Root")
+        root = self.trailer.get("/Root", NullObject()).get_object()
+        # A catalog that is not a dictionary is treated as an empty one, and recovered.
+        root_dictionary = root if isinstance(root, DictionaryObject) else DictionaryObject()
         if is_null_or_none(root):
             logger.warning('Cannot find "/Root" key in trailer')
-        elif root.get_object().get("/Type") == "/Catalog":
-            return root.get_object()
+        elif root_dictionary.get("/Type") == "/Catalog":
+            return root_dictionary
         else:
             logger.warning("Invalid Root object in trailer")
         logger.warning('Searching object with "/Catalog" key')
@@ -964,11 +1087,12 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             if isinstance(candidate, DictionaryObject) and candidate.get("/Type") == "/Catalog":
                 logger.warning("Root found at %r", candidate.indirect_reference)
                 return candidate
-        if not is_null_or_none(root) and "/Pages" in root.get_object():
+        if "/Pages" in root_dictionary:
             logger.warning(
-                "Possible root found at %r, but missing /Catalog key", root.indirect_reference
+                "Possible root found at %r, but missing /Catalog key",
+                root_dictionary.indirect_reference,
             )
-            return root.get_object()
+            return root_dictionary
         raise PdfReadError("Cannot find Root object in pdf")
 
     def _catalog_name(self, key: str) -> str | None:
@@ -989,7 +1113,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def page_labels(self) -> list[str]:
         if self._pdf is None:
             return []
-        return [index2label(self, index) for index in range(len(self.pages))]
+        return index2labels(self, len(self.pages))
 
     @property
     def pdf_header(self) -> str:
@@ -1078,6 +1202,10 @@ def mult(m: list[float], n: list[float]) -> list[float]:
 
 
 __all__ = (
+    "Configuration",
+    "apply_configuration",
+    "get_configuration",
+    "overwrite_configuration",
     "PageRange",
     "PaperSize",
     "__version__",

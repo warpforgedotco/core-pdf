@@ -1,8 +1,10 @@
-# Ported from pypdf, Copyright (c) 2006-2008, Mathieu Fenniak, under its BSD-style license.
+# Ported from pypdf 6.21.4, Copyright (c) 2006-2008, Mathieu Fenniak, under its BSD-style license.
 """Various constants, enums, and flags to aid readability."""
 
 import sys
+import warnings
 from enum import Enum, IntFlag, auto, unique
+from typing import Any
 
 if sys.version_info >= (3, 11):
     from enum import StrEnum
@@ -33,8 +35,40 @@ class TrailerKeys:
 
 
 class CatalogAttributes:
-    NAMES = "/Names"
-    DESTS = "/Dests"
+    """§7.7.2 of the 1.7 and 2.0 references."""
+
+    TYPE = "/Type"  # name, required; must be /Catalog
+    VERSION = "/Version"  # name
+    EXTENSIONS = "/Extensions"  # dictionary, optional; ISO 32000-1
+    PAGES = "/Pages"  # dictionary, required
+    PAGE_LABELS = "/PageLabels"  # number tree, optional
+    NAMES = "/Names"  # dictionary, optional
+    DESTS = "/Dests"  # dictionary, optional
+    VIEWER_PREFERENCES = "/ViewerPreferences"  # dictionary, optional
+    PAGE_LAYOUT = "/PageLayout"  # name, optional
+    PAGE_MODE = "/PageMode"  # name, optional
+    OUTLINES = "/Outlines"  # dictionary, optional
+    THREADS = "/Threads"  # array, optional
+    OPEN_ACTION = "/OpenAction"  # array or dictionary or name, optional
+    AA = "/AA"  # dictionary, optional
+    URI = "/URI"  # dictionary, optional
+    ACRO_FORM = "/AcroForm"  # dictionary, optional
+    METADATA = "/Metadata"  # stream, optional
+    STRUCT_TREE_ROOT = "/StructTreeRoot"  # dictionary, optional
+    MARK_INFO = "/MarkInfo"  # dictionary, optional
+    LANG = "/Lang"  # text string, optional
+    SPIDER_INFO = "/SpiderInfo"  # dictionary, optional
+    OUTPUT_INTENTS = "/OutputIntents"  # array, optional
+    PIECE_INFO = "/PieceInfo"  # dictionary, optional
+    OC_PROPERTIES = "/OCProperties"  # dictionary, optional
+    PERMS = "/Perms"  # dictionary, optional
+    LEGAL = "/Legal"  # dictionary, optional
+    REQUIREMENTS = "/Requirements"  # array, optional
+    COLLECTION = "/Collection"  # dictionary, optional
+    NEEDS_RENDERING = "/NeedsRendering"  # boolean, optional
+    DSS = "/DSS"  # dictionary, optional
+    AF = "/AF"  # array of dictionaries, optional
+    D_PART_ROOT = "/DPartRoot"  # dictionary, optional
 
 
 class EncryptionDictAttributes:
@@ -239,6 +273,7 @@ class FilterTypes(StrEnum):
     CCITT_FAX_DECODE = "/CCITTFaxDecode"  # abbreviation: CCF
     DCT_DECODE = "/DCTDecode"  # abbreviation: DCT
     JPX_DECODE = "/JPXDecode"
+    BROTLI_DECODE = "/BrotliDecode"  # abbreviation: Br, PDF 2.0
     JBIG2_DECODE = "/JBIG2Decode"
 
 
@@ -607,41 +642,26 @@ class GraphicsStateParameters:
     TK = "/TK"
 
 
-class CatalogDictionary:
-    """§7.7.2 of the 1.7 and 2.0 references."""
+class _CatalogDictionaryMeta(type):
+    def __getattribute__(cls, name: str) -> Any:
+        value = super().__getattribute__(name)
+        if not name.startswith("__"):
+            _deprecate_catalog_dictionary()
+        return value
 
-    TYPE = "/Type"  # name, required; must be /Catalog
-    VERSION = "/Version"  # name
-    EXTENSIONS = "/Extensions"  # dictionary, optional; ISO 32000-1
-    PAGES = "/Pages"  # dictionary, required
-    PAGE_LABELS = "/PageLabels"  # number tree, optional
-    NAMES = "/Names"  # dictionary, optional
-    DESTS = "/Dests"  # dictionary, optional
-    VIEWER_PREFERENCES = "/ViewerPreferences"  # dictionary, optional
-    PAGE_LAYOUT = "/PageLayout"  # name, optional
-    PAGE_MODE = "/PageMode"  # name, optional
-    OUTLINES = "/Outlines"  # dictionary, optional
-    THREADS = "/Threads"  # array, optional
-    OPEN_ACTION = "/OpenAction"  # array or dictionary or name, optional
-    AA = "/AA"  # dictionary, optional
-    URI = "/URI"  # dictionary, optional
-    ACRO_FORM = "/AcroForm"  # dictionary, optional
-    METADATA = "/Metadata"  # stream, optional
-    STRUCT_TREE_ROOT = "/StructTreeRoot"  # dictionary, optional
-    MARK_INFO = "/MarkInfo"  # dictionary, optional
-    LANG = "/Lang"  # text string, optional
-    SPIDER_INFO = "/SpiderInfo"  # dictionary, optional
-    OUTPUT_INTENTS = "/OutputIntents"  # array, optional
-    PIECE_INFO = "/PieceInfo"  # dictionary, optional
-    OC_PROPERTIES = "/OCProperties"  # dictionary, optional
-    PERMS = "/Perms"  # dictionary, optional
-    LEGAL = "/Legal"  # dictionary, optional
-    REQUIREMENTS = "/Requirements"  # array, optional
-    COLLECTION = "/Collection"  # dictionary, optional
-    NEEDS_RENDERING = "/NeedsRendering"  # boolean, optional
-    DSS = "/DSS"  # dictionary, optional
-    AF = "/AF"  # array of dictionaries, optional
-    D_PART_ROOT = "/DPartRoot"  # dictionary, optional
+
+def _deprecate_catalog_dictionary() -> None:
+    warnings.warn(
+        "CatalogDictionary is deprecated and will be removed in pypdf 7.0.0. "
+        "Use CatalogAttributes instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
+class CatalogDictionary(CatalogAttributes, metaclass=_CatalogDictionaryMeta):
+    def __init__(self) -> None:
+        _deprecate_catalog_dictionary()
 
 
 class OutlineFontFlag(IntFlag):
@@ -651,7 +671,7 @@ class OutlineFontFlag(IntFlag):
     bold = 2
 
 
-class PageLabelStyle:
+class PageLabelStyle(StrEnum):
     """
     Table 8.10 in the 1.7 reference.
     Table 161 in the 2.0 reference.
