@@ -21,12 +21,17 @@ from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf import filters
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._encryption import PasswordType
-from core_pdf_compat.pypdf._generic_read import read_non_whitespace, read_object
+from core_pdf_compat.pypdf._generic_read import (
+    read_non_whitespace,
+    read_object,
+    read_until_whitespace,
+    skip_over_comment,
+    skip_over_whitespace,
+)
 from core_pdf_compat.pypdf._reader_scan import (
     DECODE_KEY_REFERENCE,
     INDIRECT_HEADER,
     NAME_INTO_NUL,
-    OBJECT_HEADER,
     XrefScan,
     pypdf_stream_data,
     stream_keyword,
@@ -324,8 +329,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             try:
                 resolved = source.resolver.resolve(PdfReference(number, generation))
             except PdfParseError as error:
-                # pypdf's reader raises its own error for an object it cannot parse.
-                raise PdfReadError(str(error)) from error
+                return self._repaired_object(number, generation, error)
             entry = source.xref[key_for(number, generation)]
             if isinstance(resolved, PdfStream):
                 self._check_stream_length(resolved, entry)
@@ -467,6 +471,62 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             is not None
         )
 
+    def _repaired_object(self, number: int, generation: int, error: Exception) -> Any:
+        """The object as pypdf's get_object reads it, when core cannot parse the one at its
+        offset: pypdf's own xref offset, then the first `number generation obj` in the file,
+        then wherever its failed header read left off, with its messages in strict mode.
+        """
+        offset = self.xref.get(generation, {}).get(number)
+        if not isinstance(offset, int):
+            return self._found_object(number, generation)
+        stream = BytesIO(self._data)
+        stream.seek(offset)
+        try:
+            found_number, found_generation = self.read_object_header(stream)
+            if (found_number, found_generation) != (number, generation):
+                raise PdfReadError("Not matching, we parse the file for it")
+        except Exception:  # noqa: BLE001
+            match = re.search(rf"\s{number}\s+{generation}\s+obj".encode(), self._data)
+            if match is not None:
+                logger.warning("Object ID %d,%d ref repaired", number, generation)
+                self.xref[generation][number] = match.start(0) + 1
+                stream.seek(match.start(0) + 1)
+                found_number, found_generation = self.read_object_header(stream)
+            else:
+                found_number = found_generation = -1
+        if found_number != number and getattr(self, "xref_index", False):
+            if self.strict:
+                raise PdfReadError(
+                    f"Expected object ID ({number} {generation}) does not match actual "
+                    f"({found_number} {found_generation}); xref table not zero-indexed."
+                ) from error
+        elif found_number != number and self.strict:
+            raise PdfReadError(
+                f"Expected object ID ({number} {generation}) does not match actual "
+                f"({found_number} {found_generation})."
+            ) from error
+        found = read_object(stream, self)
+        return self._decrypted_as_pypdf(found, number, generation)
+
+    def _found_object(self, number: int, generation: int) -> Any:
+        """pypdf's reading of an object its xref does not list: the first `number generation
+        obj` in the file, or nothing.
+        """
+        match = re.search(rf"\s{number}\s+{generation}\s+obj".encode(), self._data)
+        if match is None:
+            logger.warning("Object %d %d not defined.", number, generation)
+            if self.strict:
+                raise PdfReadError("Could not find object.")
+            return None
+        logger.warning("Object %d %d found", number, generation)
+        self.xref.setdefault(generation, {})[number] = match.start(0) + 1
+        stream = BytesIO(self._data)
+        stream.seek(match.end(0) + 1)
+        skip_over_whitespace(stream)
+        stream.seek(-1, 1)
+        found = read_object(stream, self)
+        return self._decrypted_as_pypdf(found, number, generation)
+
     def _read_with_pypdf_rules(self, entry: Any) -> Any:
         offset = getattr(entry, "offset", None)
         header = INDIRECT_HEADER.match(self._data, offset) if isinstance(offset, int) else None
@@ -569,12 +629,24 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return obj
 
     def read_object_header(self, stream: Any) -> tuple[int, int]:
-        position = stream.tell()
-        match = OBJECT_HEADER.match(stream.read())
-        if match is None:
-            raise ValueError("no object header")
-        stream.seek(position + match.end())
-        return int(match[1]), int(match[2])
+        # pypdf's: white-space before the header is tolerated, and reported when strict.
+        skip_over_comment(stream)
+        extra = skip_over_whitespace(stream)
+        stream.seek(-1, 1)
+        number = read_until_whitespace(stream)
+        extra |= skip_over_whitespace(stream)
+        stream.seek(-1, 1)
+        generation = read_until_whitespace(stream)
+        extra |= skip_over_whitespace(stream)
+        stream.seek(-1, 1)
+        stream.read(3)
+        read_non_whitespace(stream)
+        stream.seek(-1, 1)
+        if extra and self.strict:
+            logger.warning(
+                "Superfluous whitespace found in object header %r %r", number, generation
+            )
+        return int(number), int(generation)
 
     def _replace_object(self, indirect: IndirectObject, obj: Any) -> Any:
         if indirect.pdf is not self:

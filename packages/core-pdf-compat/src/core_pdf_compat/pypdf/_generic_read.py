@@ -80,6 +80,27 @@ def skip_over_comment(stream: Any) -> None:
                 raise PdfStreamError("File ended unexpectedly.")
 
 
+def read_until_whitespace(stream: Any, max_bytes: int | None = None) -> bytes:
+    text = bytearray()
+    while True:
+        token = stream.read(1)
+        if token.isspace() or not token:
+            break
+        text += token
+        if len(text) == max_bytes:
+            break
+    return bytes(text)
+
+
+def skip_over_whitespace(stream: Any) -> bool:
+    token = stream.read(1)
+    count = 0
+    while token in WHITESPACES:
+        count += 1
+        token = stream.read(1)
+    return count > 0
+
+
 def _read_until_whitespace(stream: Any) -> None:
     token = stream.read(1)
     while token and not token.isspace():
