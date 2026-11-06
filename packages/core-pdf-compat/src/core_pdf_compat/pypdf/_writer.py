@@ -984,12 +984,18 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 return reference
         return self._bring(item, owner, pending)
 
-    def _number_chains(self, value: DictionaryObject, owner: Any, pending: list[Any]) -> None:
-        """Number a linked list in order before its items are filled, as pypdf does."""
+    def _number_chains(
+        self, value: DictionaryObject, duplicate: Any, owner: Any, pending: list[Any]
+    ) -> None:
+        """Number a linked list in order before its items are filled, as pypdf does.
+
+        Each copy gets its link first, so the link key comes first in it, as in pypdf.
+        """
         kind = value.get_resolved("/Type")
         for key in ("/Next", "/Prev", "/N", "/V"):
             start = len(pending)
             current: Any = value
+            holder = duplicate
             while key in current:
                 link = dict.__getitem__(current, key)
                 if not isinstance(link, IndirectObject) or link.pdf is self:
@@ -1002,7 +1008,11 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                     break
                 if link.idnum in self._translation(link.pdf):
                     break
-                self._bring(link, owner, pending)
+                reference = self._bring(link, owner, pending)
+                if not isinstance(holder, DictionaryObject) or key in holder:
+                    break
+                dict.__setitem__(holder, NameObject(key), reference)
+                holder = reference.get_object() if isinstance(reference, IndirectObject) else None
             # The stack runs from its end, so reverse these for the chain to fill in order.
             pending[start:] = list(reversed(pending[start:]))
 
@@ -1010,7 +1020,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         self, duplicate: Any, value: Any, owner: Any, pending: list[Any]
     ) -> Iterator[None]:
         if isinstance(value, DictionaryObject):
-            self._number_chains(value, owner, pending)
+            self._number_chains(value, duplicate, owner, pending)
             yield
             for key, item in dict.items(value):
                 dict.__setitem__(duplicate, key, self._bring(item, owner, pending))
