@@ -1,0 +1,29 @@
+name: Package cache
+
+# Caches saved by a pull request are visible to that pull request only, so this fills the
+# package cache from main, where every pull request can restore it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/actions/install-pdf-tools/**"
+      - ".github/workflows/apt-cache.yml"
+  schedule:
+    # Weekly, as runner images change about that often and each image has its own key.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fill:
+    name: Fill the package cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Ghostscript, jbig2dec and Poppler
+        uses: ./.github/actions/install-pdf-tools
