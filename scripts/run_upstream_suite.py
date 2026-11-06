@@ -145,7 +145,8 @@ def summarize(junit: Path) -> dict[str, object]:
             kind = "passed"
         counts[kind] += 1
         if kind in {"failure", "error"} and outcome is not None:
-            failing.append(f"{case.get('classname')}::{case.get('name')}")
+            message = (outcome.get("message") or "").split("\n")[0][:200]
+            failing.append(f"{case.get('classname')}::{case.get('name')}: {message}")
             reasons[(outcome.get("message") or "")[:100]] += 1
     return {"counts": dict(counts), "reasons": reasons.most_common(25), "failing": failing}
 
