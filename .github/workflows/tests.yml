@@ -178,7 +178,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install Ghostscript, jbig2dec and Poppler
+      - name: Install Ghostscript, jbig2dec, Poppler and qpdf
         uses: ./.github/actions/install-pdf-tools
 
       - name: Restore pypdf's downloaded test files
@@ -233,7 +233,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install Ghostscript, jbig2dec and Poppler
+      - name: Install Ghostscript, jbig2dec, Poppler and qpdf
         uses: ./.github/actions/install-pdf-tools
 
       - name: Restore pypdf's downloaded test files

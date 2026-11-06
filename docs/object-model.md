@@ -192,7 +192,7 @@ All six are done. Numbers are from main, and CI reruns each of these checks on e
 6. **Encrypted output and xref streams. Done.** The policy is under
    [Encrypted input](#encrypted-input). `scripts/check_encrypt_readers.py`: real pypdf,
    Poppler, Ghostscript and qpdf open all 15 `PdfWriter.encrypt` outputs and refuse a wrong
-   password; CI runs it with Poppler and Ghostscript. `--xref-stream` gives the same results
+   password; CI runs it with Poppler, Ghostscript and qpdf. `--xref-stream` gives the same results
    on both scripts: 64,796 objects with no mismatches, 146 identical, and 143 with
    `--incremental`.
 
