@@ -547,10 +547,12 @@ def stream_keyword(data: bytes, offset: int) -> re.Match[bytes] | None:
 # pypdf ends a name at white-space or a delimiter, and its white-space leaves out NUL.
 NAME_INTO_NUL = re.compile(rb"/[^\t\n\x0c\r ()<>\[\]{}/%\x00]*\x00")
 INDIRECT_HEADER = re.compile(rb"[\x00\t\n\x0c\r ]*\d+[\x00\t\n\x0c\r ]+\d+[\x00\t\n\x0c\r ]+obj")
-# A stream's decoding entries given as references, which core's resolver replaces.
-DECODE_REFERENCE = re.compile(
-    rb"/(Filter|DecodeParms|DP|FFilter|FDecodeParms)"
-    rb"[\x00\t\n\x0c\r ]*(\d+)[\x00\t\n\x0c\r ]+(\d+)[\x00\t\n\x0c\r ]+R"
+# A stream's decoding entry holding a reference, at its top or nested, which core's resolver
+# replaces. Only a hint: the dictionary is then read to find which.
+DECODE_KEY_REFERENCE = re.compile(
+    rb"/(?:Filter|DecodeParms|DP|FFilter|FDecodeParms)\b[^/]*?"
+    rb"\d+[\x00\t\n\x0c\r ]+\d+[\x00\t\n\x0c\r ]+R"
+    rb"|/(?:DecodeParms|DP|FDecodeParms)[\x00\t\n\x0c\r ]*<<"
 )
 PDF_WHITESPACE = b"\x00\t\n\x0c\r "
 

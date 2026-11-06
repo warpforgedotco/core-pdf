@@ -23,7 +23,7 @@ from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._encryption import PasswordType
 from core_pdf_compat.pypdf._generic_read import read_non_whitespace, read_object
 from core_pdf_compat.pypdf._reader_scan import (
-    DECODE_REFERENCE,
+    DECODE_KEY_REFERENCE,
     INDIRECT_HEADER,
     NAME_INTO_NUL,
     OBJECT_HEADER,
@@ -90,6 +90,19 @@ def _source_bytes(stream: PdfInput) -> tuple[Any, bytes, bool]:
         return readable, bytes(readable.read()), False
     except UnicodeDecodeError as error:
         raise UnsupportedOperation("cannot read header") from error
+
+
+DECODE_KEYS = frozenset({"Filter", "DecodeParms", "DP", "FFilter", "FDecodeParms"})
+
+
+def _holds_reference(value: Any) -> bool:
+    if isinstance(value, PdfReference):
+        return True
+    if isinstance(value, dict):
+        return any(_holds_reference(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_holds_reference(item) for item in value)
+    return False
 
 
 class PdfReader(PdfDocCommon, ClosingMixin):
@@ -308,7 +321,11 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         if source is not None and key_for(number, generation) in source.xref:
             if number in self.xref_objStm:
                 self._check_object_stream(self.xref_objStm[number][0])
-            resolved = source.resolver.resolve(PdfReference(number, generation))
+            try:
+                resolved = source.resolver.resolve(PdfReference(number, generation))
+            except PdfParseError as error:
+                # pypdf's reader raises its own error for an object it cannot parse.
+                raise PdfReadError(str(error)) from error
             entry = source.xref[key_for(number, generation)]
             if isinstance(resolved, PdfStream):
                 self._check_stream_length(resolved, entry)
@@ -347,7 +364,11 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             ),
         )
         lexer.rewind(match.start() + 1)
-        return to_generic(lexer.parse_indirect_object(), self)
+        try:
+            found = lexer.parse_indirect_object()
+        except PdfParseError as error:
+            raise PdfReadError(str(error)) from error
+        return to_generic(found, self)
 
     def _as_pypdf_reads(
         self, stream: PdfStream, entry: Any, number: int, generation: int
@@ -358,6 +379,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         In an encrypted file, /Length counts the encrypted bytes, so the rule applies to those,
         and what it keeps is then decrypted, as in pypdf.
         """
+        resolved_dictionary = stream.dictionary
         stream = self._with_decode_references(stream, entry)
         declared = stream.dictionary.get("Length")
         if isinstance(declared, PdfReference):
@@ -375,7 +397,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         )
         if found is not None and handler is not None and encrypted:
             try:
-                found = handler.decrypt(number, generation, found, stream.dictionary)
+                found = handler.decrypt(number, generation, found, resolved_dictionary)
             except PdfDecryptionError, ValueError:
                 return stream
         if found is None or found == bytes(stream.raw_data):
@@ -457,23 +479,37 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return read_object(stream, self)
 
     def _with_decode_references(self, stream: PdfStream, entry: Any) -> PdfStream:
-        """Put back the references core resolves in /Filter and its siblings while reading."""
+        """Put back the references core resolves in /Filter and its siblings while reading,
+        nested ones too, such as /JBIG2Globals in /DecodeParms.
+        """
         offset = getattr(entry, "offset", None)
         if not isinstance(offset, int) or self._pdf is None:
             return stream
         keyword = stream_keyword(self._data, offset)
-        if keyword is None:
+        if (
+            keyword is None
+            or DECODE_KEY_REFERENCE.search(self._data, offset, keyword.start()) is None
+        ):
+            return stream
+        header = INDIRECT_HEADER.match(self._data, offset)
+        if header is None:
+            return stream
+        lexer = RecoveryLexer(self._data)
+        lexer.rewind(lexer.skip_ignored_at(header.end()))
+        try:
+            # The dictionary alone, with its references as they are in the file.
+            raw = lexer.parse_dictionary()
+        except PdfParseError:
+            return stream
+        if not isinstance(raw, dict):
             return stream
         restored = dict(stream.dictionary)
+        keys = {str(getattr(key, "value", key)): key for key in restored}
         changed = False
-        for match in DECODE_REFERENCE.finditer(self._data, offset, keyword.start()):
-            key = match[1].decode("ascii")
-            reference = PdfReference(int(match[2]), int(match[3]))
-            current = restored.get(key)
-            if current is None or isinstance(current, PdfReference):
-                continue
-            if self._pdf.resolver.resolve(reference) == current:
-                restored[key] = reference
+        for key, value in raw.items():
+            name = str(getattr(key, "value", key))
+            if name in DECODE_KEYS and name in keys and _holds_reference(value):
+                restored[keys[name]] = value
                 changed = True
         return stream.replace(dictionary=restored) if changed else stream
 

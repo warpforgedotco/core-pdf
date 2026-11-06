@@ -32,7 +32,7 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     is_pdf_null,
     require_pdf_integer,
 )
-from core_pdf_spec.types import MISSING
+from core_pdf_spec.types import MISSING, PdfReference
 from core_records import GeneratedRecord
 
 CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
@@ -432,6 +432,13 @@ def parse_crypt_filters(
 
 
 def stream_crypt_filter_name(attrs: PdfDict, default_filter: str) -> str:
+    # The filter list can be a reference, which decryption cannot resolve while it reads. A
+    # stream's own crypt filter is then not looked for, and the default applies.
+    if any(
+        decoded_name(key) in {"Filter", "DecodeParms"} and isinstance(value, PdfReference)
+        for key, value in attrs.items()
+    ):
+        return default_filter
     spec = normalize_stream_decode_spec(attrs)
     crypt_indexes = [index for index, step in enumerate(spec.steps) if step.name == "Crypt"]
     if not crypt_indexes:
