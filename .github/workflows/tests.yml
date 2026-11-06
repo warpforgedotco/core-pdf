@@ -185,7 +185,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: tests/upstream/pypdf/tests/pdf_cache
-          key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml') }}-v1
+          key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml') }}-v2
           restore-keys: pypdf-test-files-
 
       - name: Run the suite against the facade
