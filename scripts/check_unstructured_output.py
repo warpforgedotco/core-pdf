@@ -1,6 +1,7 @@
-"""Check that the unstructured facade partitions PDFs as unstructured does, on the upstream PDFs.
+r"""Check that the unstructured facade partitions PDFs as unstructured does, on the upstream PDFs.
 
-uv run --all-packages --with "unstructured[pdf]==0.25.2" python scripts/check_unstructured_output.py
+uv run --all-packages --with "unstructured[pdf]==0.27.36" \
+    python scripts/check_unstructured_output.py
 
 Each file goes through the real unstructured and the facade with
 partition_pdf(filename, strategy="fast"), and the elements are compared one by one: class
