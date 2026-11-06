@@ -239,6 +239,7 @@ def main() -> int:
             TypeError,
             IndexError,
             AttributeError,
+            OSError,
         ) as error:
             counts["files that could not run"] += 1
             if len(problems) < 40:

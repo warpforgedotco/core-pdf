@@ -958,7 +958,8 @@ def to_generic(value: Any, pdf: Any = None) -> Any:
         return NumberObject(value)
     if isinstance(value, float):
         return FloatObject(value)
-    if isinstance(value, BareKeyword):
+    if isinstance(value, BareKeyword) and getattr(pdf, "_bare_keywords_raise", False):
+        # Only a reader's object read asks for this, to re-read the object as pypdf does.
         raise BareKeywordFound(value)
     if isinstance(value, (PdfName, str)):
         return _generic_key(value)
