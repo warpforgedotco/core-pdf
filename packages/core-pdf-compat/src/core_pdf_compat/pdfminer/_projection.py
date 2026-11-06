@@ -165,6 +165,7 @@ def project_page(
     projected_glyphs: tuple[Any, ...] = products.glyphs
     ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
     chars_by_glyph: dict[int, tuple[LTChar, int]] = {}
+    glyph_matrices: dict[int, Any] = getattr(products, "glyph_matrices", {})
     vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
     provenance_dicts: dict[int, tuple[object, dict[str, Any]]] = {}
     # A page repeats a few hundred distinct glyphs; their pdfminer text, widths and
@@ -209,7 +210,7 @@ def project_page(
             glyph_text = glyph_texts.get(glyph_key)
             if glyph_text is None:
                 glyph_text = glyph_texts[glyph_key] = pdfminer_glyph_text(glyph)
-        text = ligature[0] if ligature is not None else glyph_text
+        text = (ligature[0] if ligature is not None else glyph_text) or ""
         if not text and glyph.text != EMPTY_GLYPH_TEXT:
             continue
         effective_font_size = glyph.effective_font_size or glyph.font_size
@@ -351,6 +352,29 @@ def project_page(
             y0 = min(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
             x1 = max(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
             y1 = max(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
+            exact_matrix = glyph_matrices.get(glyph_index)
+            if exact_matrix is not None:
+                # pdfminer's own arithmetic, from LTChar: its rounding decides which boxes
+                # touch, and so which lines group.
+                char_a, char_b, char_c, char_d, char_e, char_f = exact_matrix
+                rise = float(glyph_provenance.get("text_rise", 0.0) or 0.0)
+                font_size = glyph.font_size
+                exact_advance = normalized_width * font_size * horizontal_scale
+                low = descent + rise
+                high = descent + rise + font_size
+                xs = (
+                    char_a * 0 + char_c * low + char_e,
+                    char_a * exact_advance + char_c * low + char_e,
+                    char_a * exact_advance + char_c * high + char_e,
+                    char_a * 0 + char_c * high + char_e,
+                )
+                ys = (
+                    char_b * 0 + char_d * low + char_f,
+                    char_b * exact_advance + char_d * low + char_f,
+                    char_b * exact_advance + char_d * high + char_f,
+                    char_b * 0 + char_d * high + char_f,
+                )
+                x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
             effective_font_height = x1 - x0 if orientation % 180 else y1 - y0
             coordinates_in_layout_space = True
         elif orientation == 0:
@@ -519,7 +543,10 @@ def analyze_layout(
 
 
 def _line_is_empty(line: LTTextLine) -> bool:
-    return line.width <= 0 or line.height <= 0 or line.get_text().isspace()
+    # pdfminer asks before it appends the line's closing newline, so a line of characters
+    # that map to no text is not empty.
+    text = "".join(item.get_text() for item in line._objs[:-1])
+    return line.width <= 0 or line.height <= 0 or text.isspace()
 
 
 def _figure_text_snippets(
