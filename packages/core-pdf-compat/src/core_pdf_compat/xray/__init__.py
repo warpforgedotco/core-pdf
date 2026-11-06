@@ -16,7 +16,9 @@ from typing import Any
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
+from core_pdf.impl.capture_page import capture_annotation_appearances
 from core_pdf.impl.capture_program import PageProgram
+from core_pdf.impl.capture_recording import TextState
 from core_pdf.impl.exceptions import PdfPasswordError, PdfUnsupportedError
 from core_pdf.impl.fonts_cmap import ToUnicodeCMap
 from core_pdf.impl.geometry import (
@@ -26,7 +28,9 @@ from core_pdf.impl.geometry import (
 from core_pdf.impl.render_page import compose_page
 from core_pdf.impl.text import collapse_ws
 from core_pdf.impl.types import PdfReference, RecordType, ReplaceFields, ReprFields
+from core_pdf_spec.s_07_content.model import PATH_OPERAND_COUNTS, PATH_RECT, PdfPath
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 
 from .._shared import parse_indirect_object_at
 
@@ -50,6 +54,7 @@ class _Rectangle(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     bbox: tuple[float, float, float, float]
     seqno: int
     fill: tuple[float, ...]
+    fitz_box: tuple[float, float, float, float]
     allow_same_fill: bool = False
 
     __hash__ = None  # type: ignore[assignment]
@@ -81,8 +86,75 @@ def _occluded(character: _Character, rectangle: _Rectangle, threshold: float) ->
     return overlap_ratio_of(character.bbox, rectangle.bbox) > threshold
 
 
+class _XrayCapture(TextState):
+    """Core's page capture, keeping the operands of each re operator a drawing paints.
+
+    Flattening adds an re operator's width and height to its corner in float64, where MuPDF
+    adds them in float32 (``fz_rectto(x, y, x + w, y + h)`` in pdf-op-run.c), so the corner
+    MuPDF reports cannot be recovered from the flattened points.
+    """
+
+    def __init__(self, document: Any, *, page_clip: Any) -> None:
+        super().__init__(document, hidden_layers=document.oc_hidden_layers(), page_clip=page_clip)
+        # The (x, y, w, h) operands of each re in a drawing painted with an identity CTM,
+        # by the drawing's sequence number.
+        self.rect_operands: dict[int, tuple[tuple[float, float, float, float], ...]] = {}
+
+    def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
+        drawing_count = len(self.drawings)
+        operands: list[tuple[float, float, float, float]] = []
+        if PATH_RECT in source.ops and self.graphics.ctm == IDENTITY_MATRIX:
+            coords = source.coords
+            position = 0
+            for op in source.ops:
+                if op == PATH_RECT:
+                    x, y, w, h = coords[position : position + 4]
+                    operands.append((x, y, w, h))
+                position += PATH_OPERAND_COUNTS[op]
+        super().paint_path(state, source, kind, fill_rule)
+        if operands and len(self.drawings) > drawing_count:
+            self.rect_operands[self.drawings[-1].seqno] = tuple(operands)
+
+
+def _capture_page(page: Any) -> tuple[Any, dict[int, Any]]:
+    """``page.get_page_program()``, with the re operands ``_XrayCapture`` keeps."""
+    state = _XrayCapture(page.document, page_clip=page.effective_page_clip())
+    try:
+        page.consume_contents(state)
+        state.run_accumulator.flush()
+        body = state.captured_program()
+        program = PageProgram(body=body, appearances=capture_annotation_appearances(page, state))
+        return program, state.rect_operands
+    finally:
+        state.release()
+
+
+def _mupdf_rect_boxes(
+    operands: tuple[tuple[float, float, float, float], ...],
+) -> dict[tuple[float, float, float, float], tuple[float, float, float, float]]:
+    """Each re's box as core flattens it, mapped to the box MuPDF's float32 corners make."""
+    boxes = {}
+    for x, y, w, h in operands:
+        x1 = x + w
+        y1 = y + h
+        mupdf_x = _float32(x)
+        mupdf_y = _float32(y)
+        mupdf_x1 = _float32(mupdf_x + _float32(w))
+        mupdf_y1 = _float32(mupdf_y + _float32(h))
+        boxes[(min(x, x1), min(y, y1), max(x, x1), max(y, y1))] = (
+            min(mupdf_x, mupdf_x1),
+            min(mupdf_y, mupdf_y1),
+            max(mupdf_x, mupdf_x1),
+            max(mupdf_y, mupdf_y1),
+        )
+    return boxes
+
+
 def _path_rectangles(
-    drawing: Any, crop_box: tuple[float, float, float, float], user_unit: float = 1.0
+    drawing: Any,
+    crop_box: tuple[float, float, float, float],
+    user_unit: float = 1.0,
+    rect_operands: dict[int, Any] | None = None,
 ) -> list[_Rectangle]:
     if (
         drawing.kind not in {"fill", "fillstroke"}
@@ -91,6 +163,8 @@ def _path_rectangles(
         or drawing.path is None
     ):
         return []
+    operands = rect_operands.get(drawing.seqno) if rect_operands is not None else None
+    mupdf_boxes = _mupdf_rect_boxes(operands) if operands else {}
     output: list[_Rectangle] = []
     for subpath in drawing.path.subpaths:
         points = subpath.points
@@ -101,11 +175,16 @@ def _path_rectangles(
         if len(xs) != 2 or len(ys) != 2:
             continue
         bbox = (min(xs), min(ys), max(xs), max(ys))
-        top_box = _fitz_box(bbox, crop_box, user_unit)
+        mupdf_box = mupdf_boxes.get(bbox)
+        top_box = (
+            _fitz_box(bbox, crop_box, user_unit)
+            if mupdf_box is None
+            else _fitz_box(mupdf_box, crop_box, user_unit, exact=True)
+        )
         if top_box[3] <= 43 or top_box[2] - top_box[0] <= 4 or top_box[3] - top_box[1] <= 4:
             continue
         # Text the same color as the rectangle is invisible even when drawn on top of it.
-        output.append(_Rectangle(bbox, drawing.seqno, drawing.fill, True))
+        output.append(_Rectangle(bbox, drawing.seqno, drawing.fill, top_box, True))
     return output
 
 
@@ -142,16 +221,20 @@ def _fitz_box(
     box: tuple[float, float, float, float],
     crop_box: tuple[float, float, float, float],
     user_unit: float = 1.0,
+    *,
+    exact: bool = False,
 ) -> tuple[float, float, float, float]:
+    """The box in PyMuPDF's page space; ``exact`` takes the box's corners as MuPDF's own."""
     crop_x0, _crop_y0, _crop_x1, crop_y1 = crop_box
     user_unit = _float32(user_unit)
     crop_x0 = _float32(_fitz_coordinate(crop_x0) * user_unit)
     crop_y1 = _float32(_fitz_coordinate(crop_y1) * user_unit)
+    x0, y0, x1, y1 = box if exact else (_fitz_coordinate(value) for value in box)
     return (
-        _float32(_float32(_fitz_coordinate(box[0]) * user_unit) - crop_x0),
-        _float32(crop_y1 - _float32(_fitz_coordinate(box[3]) * user_unit)),
-        _float32(_float32(_fitz_coordinate(box[2]) * user_unit) - crop_x0),
-        _float32(crop_y1 - _float32(_fitz_coordinate(box[1]) * user_unit)),
+        _float32(_float32(x0 * user_unit) - crop_x0),
+        _float32(crop_y1 - _float32(y1 * user_unit)),
+        _float32(_float32(x1 * user_unit) - crop_x0),
+        _float32(crop_y1 - _float32(y0 * user_unit)),
     )
 
 
@@ -302,12 +385,12 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
     source_crop_box = page.crop_box or page.media_box
     user_unit = page.user_unit
     crop_box = tuple(float(value) for value in source_crop_box)
-    program = page.get_page_program()
+    program, rect_operands = _capture_page(page)
     drawings = page.drawing_records(program.drawings)
     rectangles = [
         rectangle
         for drawing in drawings
-        for rectangle in _path_rectangles(drawing, crop_box, user_unit)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        for rectangle in _path_rectangles(drawing, crop_box, user_unit, rect_operands)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     ]
     if not rectangles:
         return []
@@ -410,7 +493,7 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
             continue
         if not _OK_WORDS.sub("", collapse_ws(text)):
             continue
-        fitz_box = _fitz_box(rectangle.bbox, crop_box, user_unit)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        fitz_box = rectangle.fitz_box
         if rectangle.bbox in annotation_boxes:
             fitz_box = (*fitz_box[:2], _next_float32(fitz_box[2]), fitz_box[3])
         outside_page = (
@@ -445,7 +528,7 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
                 )
             ):
                 continue
-            drawing_rectangles = _path_rectangles(drawing, crop_box, user_unit)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            drawing_rectangles = _path_rectangles(drawing, crop_box, user_unit, rect_operands)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             if not any(
                 candidate.bbox[0] <= center[0] <= candidate.bbox[2]
                 and candidate.bbox[1] <= center[1] <= candidate.bbox[3]
