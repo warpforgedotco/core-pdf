@@ -180,6 +180,7 @@ jobs:
           $run/check_writer_lossless.py
           $run/check_encrypted_output.py
           $run/check_save_statements.py
+          uv run --locked --all-packages --group test --with "pypdf[full]==6.15.0" python scripts/check_pypdf_bytes.py
           $run/run_upstream_suite.py pypdf --reference
           $run/audit_upstream_skips.py pypdf
 

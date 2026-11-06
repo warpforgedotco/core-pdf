@@ -259,6 +259,11 @@ class PdfLexer(lexer.PdfLexer):
             return True
         if keyword is not None and keyword[0] in {b"xref", b"trailer", b"startxref"}:
             return True
+        # `endobj43 0 obj`: the next object starts with no white-space between, as pypdf's own
+        # incremental updates write after %%EOF.
+        if keyword is not None and keyword[0][:6] == b"endobj" and keyword[0][6:].isdigit():
+            self.pos = keyword[1] - len(keyword[0]) + 6
+            return True
         return keyword is not None and looks_like_indirect_object_header(
             self.raw_data,
             keyword[1] - len(keyword[0]),
