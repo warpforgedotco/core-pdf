@@ -89,7 +89,8 @@ from pypdf where that would break the file or keep removed data: a full rewrite 
 out pages the caller removed, which pypdf keeps, and a NUL byte still ends a name, where pypdf
 reads the next number into it.
 
-`scripts/check_writer_lossless.py` compares unchanged objects in writer output with the
+`scripts/check_writer_lossless.py` reads both sides as pypdf does and compares unchanged
+objects in writer output with the
 source. A full rewrite keeps values and stream bytes but renumbers objects and normalizes
 syntax, so byte-for-byte output needs an incremental update.
 
