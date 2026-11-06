@@ -6,9 +6,14 @@ Each sample file is cloned into the facade's PdfWriter, encrypted with each algo
 offers, and written. Every output must be encrypted and must open with the user password in
 the real pypdf, which also has to extract the same text the facade does, and in each of
 Poppler (pdftotext), Ghostscript and qpdf found on the PATH. At least one of those three
-must be present. Poppler and Ghostscript must print words of the text the real pypdf reads
-and no error, as Ghostscript exits 0 even when a password does not work; qpdf's --check
-exit status reflects the password. A wrong password must be refused by every reader.
+must be present, and each output must open in at least one of them. Poppler and
+Ghostscript must print words of the text the real pypdf reads and no "**** Error" line, as
+Ghostscript exits 0 even when a password does not work; qpdf's --check exit status reflects
+the password. A wrong password must be refused by every reader.
+
+A reader that cannot open the real pypdf's own output for the same file and algorithm is not
+held to opening the facade's: Ghostscript 10.02, for one, cannot open AES-256-R5 files.
+Those cases are counted and printed, not failed.
 """
 
 from __future__ import annotations
@@ -74,7 +79,9 @@ def opened(command: list[str], words: list[str], prints_text: bool) -> str | Non
     output = (result.stdout + result.stderr).decode(errors="replace")
     if result.returncode != 0:
         return f"exit {result.returncode}: {output.strip()[:200]}"
-    if "Error" in output:
+    # Ghostscript reports a file it cannot open with "**** Error" and still exits 0. Some
+    # versions also print an unrelated "Error: finalizing subclassing device" at shutdown.
+    if "**** Error" in output:
         return output.strip()[:200]
     if prints_text:
         flat = " ".join(output.split())
@@ -90,8 +97,8 @@ def sample_words(pages: list[str]) -> list[str]:
     return [word for word in text.split() if word.isalpha() and len(word) > 2][:3]
 
 
-def encrypted(source: str, algorithm: str) -> bytes:
-    writer = facade.PdfWriter(clone_from=source)
+def encrypted(source: str, algorithm: str, library: Any = facade) -> bytes:
+    writer = library.PdfWriter(clone_from=source)
     writer.encrypt(user_password=USER, owner_password=OWNER, algorithm=algorithm)
     output = io.BytesIO()
     writer.write(output)
@@ -125,6 +132,9 @@ def main() -> int:
                 data = encrypted(source, algorithm)
                 path = Path(directory) / "out.pdf"
                 path.write_bytes(data)
+                reference = Path(directory) / "pypdf.pdf"
+                reference.write_bytes(encrypted(source, algorithm, real))
+                opened_by = 0
                 expected: list[str] = []
                 try:
                     expected = page_text(facade, data, USER)
@@ -144,6 +154,10 @@ def main() -> int:
                     reason = opened(build(path), words, prints_text)
                     if reason is None:
                         counts[name] += 1
+                        opened_by += 1
+                    elif opened(build(reference), words, prints_text) is not None:
+                        counts[f"{name}, cannot open real pypdf's output either"] += 1
+                        print(f"{label}: {name} cannot open real pypdf's output either: {reason}")
                     else:
                         problems.append(f"{label}: {name}: {reason}")
                     wrong = [part.replace(USER, "wrong-password") for part in build(path)]
@@ -151,6 +165,8 @@ def main() -> int:
                         problems.append(f"{label}: {name} opened it with a wrong password")
                     else:
                         counts[f"{name}, wrong password refused"] += 1
+                if not opened_by:
+                    problems.append(f"{label}: no other reader opened it")
     total = len(FILES) * len(ALGORITHMS)
     print(f"{total} encrypted outputs")
     for name, count in sorted(counts.items()):
