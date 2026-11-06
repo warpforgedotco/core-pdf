@@ -46,6 +46,8 @@ names = [
     "_get_named_destinations", "_list_attachments",
     # PageObject internals
     "_content_stream_images", "_get_fonts", "_get_image",
+    # PageObject's private inline image value lookup, tested directly by pypdf 6.21
+    "_translate_value_inline_image",
     # filter internals: the image reconstruction helpers behind pypdf's image extraction
     "_xobj_to_image", "_handle_flate", "_decode_png_prediction", "_image_from_bytes", "_get_image_mode",
     # A test that patches pypdf.generic._files.EmbeddedFile, a private module path
