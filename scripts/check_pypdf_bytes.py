@@ -38,16 +38,7 @@ PATTERNS = (
     "tests/upstream/pypdf/resources/*.pdf",
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
-NUL_NAME = (
-    "pypdf does not end a name at a NUL byte and reads the next number into it, which breaks "
-    "the colour space"
-)
 DEPARTURES: dict[tuple[str, str], str] = {
-    ("clone", "hello_structure.pdf"): (
-        "pypdf drops /K from the structure tree root and a section element"
-    ),
-    ("clone", "AutoCad_Diagram.pdf"): NUL_NAME,
-    ("append", "AutoCad_Diagram.pdf"): NUL_NAME,
     ("append", "SF424_page2.pdf"): (
         "pypdf copies a page outside the page tree that a field's widget points at; the "
         "facade writes null for a page it was not asked to copy, so append(pages=...) never "

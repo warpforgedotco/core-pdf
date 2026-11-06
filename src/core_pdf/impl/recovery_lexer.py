@@ -112,6 +112,16 @@ def reader_rules_for(context: SemanticContext | None) -> LexicalRules:
     return reader_lexical_rules(rules) if reader_rules is None else reader_rules
 
 
+class BareKeyword(str):
+    """A word in the file that is not a PDF value, such as `OBJR` without its slash.
+
+    Recovery keeps it as text, as readers tolerate. It is marked so that a caller following
+    another reader's rules, which may refuse it, can tell it from a name.
+    """
+
+    __slots__ = ()
+
+
 class PdfLexer(lexer.PdfLexer):
     __slots__ = (
         "mode",
@@ -493,7 +503,7 @@ class PdfLexer(lexer.PdfLexer):
             return None
         if key == b"R":
             raise PdfParseError("unexpected indirect reference marker")
-        return key.decode("latin-1")
+        return BareKeyword(key.decode("latin-1"))
 
     def read_indirect_header(self) -> tuple[int, int]:
         start = self.skip_ignored_at(self.pos)

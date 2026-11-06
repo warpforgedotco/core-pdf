@@ -15,8 +15,11 @@ from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf import filters
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._encryption import PasswordType
+from core_pdf_compat.pypdf._generic_read import read_non_whitespace, read_object
 from core_pdf_compat.pypdf._reader_scan import (
     DECODE_REFERENCE,
+    INDIRECT_HEADER,
+    NAME_INTO_NUL,
     OBJECT_HEADER,
     STREAM_KEYWORD,
     XrefScan,
@@ -33,6 +36,7 @@ from core_pdf_compat.pypdf.errors import (
 )
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
+    BareKeywordFound,
     Destination,
     DictionaryObject,
     IndirectObject,
@@ -295,11 +299,18 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             if number in self.xref_objStm:
                 self._check_object_stream(self.xref_objStm[number][0])
             resolved = source.resolver.resolve(PdfReference(number, generation))
+            entry = source.xref[key_for(number, generation)]
             if isinstance(resolved, PdfStream):
-                entry = source.xref[key_for(number, generation)]
                 self._check_stream_length(resolved, entry)
                 resolved = self._as_pypdf_reads(resolved, entry)
-            return to_generic(resolved, self)
+            try:
+                if self._has_pypdf_only_name(entry):
+                    raise BareKeywordFound
+                return to_generic(resolved, self)
+            except BareKeywordFound:
+                # Core tolerated a word pypdf's parser refuses, and pypdf keeps only what it
+                # read before it, so this object is read with pypdf's rules.
+                return self._read_with_pypdf_rules(entry)
         pattern = rf"\s{number}\s+{generation}\s+obj".encode()
         match = re.search(pattern, self._data)
         if match is None:
@@ -337,6 +348,30 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         if found is None or found == bytes(stream.raw_data):
             return stream
         return stream.replace(raw_data=found)
+
+    def _has_pypdf_only_name(self, entry: Any) -> bool:
+        """Whether a name runs into a NUL byte, which pypdf reads as part of the name."""
+        offset = getattr(entry, "offset", None)
+        if not isinstance(offset, int) or b"\x00" not in self._data:
+            return False
+        end = self._data.find(b"endobj", offset)
+        keyword = self._data.find(b"stream", offset, None if end < 0 else end)
+        stop = keyword if keyword >= 0 else end
+        return (
+            NAME_INTO_NUL.search(self._data, offset, len(self._data) if stop < 0 else stop)
+            is not None
+        )
+
+    def _read_with_pypdf_rules(self, entry: Any) -> Any:
+        offset = getattr(entry, "offset", None)
+        header = INDIRECT_HEADER.match(self._data, offset) if isinstance(offset, int) else None
+        if header is None:
+            return None
+        stream = BytesIO(self._data)
+        stream.seek(header.end())
+        read_non_whitespace(stream)
+        stream.seek(-1, 1)
+        return read_object(stream, self)
 
     def _with_decode_references(self, stream: PdfStream, entry: Any) -> PdfStream:
         """Put back the references core resolves in /Filter and its siblings while reading."""

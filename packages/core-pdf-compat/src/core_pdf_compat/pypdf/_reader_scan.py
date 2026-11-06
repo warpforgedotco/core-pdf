@@ -535,6 +535,9 @@ class XrefScan:
 
 
 STREAM_KEYWORD = re.compile(rb">>[\x00\t\n\x0c\r ]*stream")
+# pypdf ends a name at white-space or a delimiter, and its white-space leaves out NUL.
+NAME_INTO_NUL = re.compile(rb"/[^\t\n\x0c\r ()<>\[\]{}/%\x00]*\x00")
+INDIRECT_HEADER = re.compile(rb"[\x00\t\n\x0c\r ]*\d+[\x00\t\n\x0c\r ]+\d+[\x00\t\n\x0c\r ]+obj")
 # A stream's decoding entries given as references, which core's resolver replaces.
 DECODE_REFERENCE = re.compile(
     rb"/(Filter|DecodeParms|DP|FFilter|FDecodeParms)"
