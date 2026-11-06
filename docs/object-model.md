@@ -198,20 +198,21 @@ All six are done. Numbers are from main, and CI reruns each of these checks on e
 
 | Suite | Passed | Skipped |
 | ----- | ------ | ------- |
-| pypdf | 753 of 961 | 208 |
+| pypdf | 1,133 of 1,350 | 214 |
 | pdfplumber | 169 | 0 |
 | pdfminer | 127 | 0 |
 | unstructured | 50 | 0 |
 | llama_index | 27 | 0 |
 | x-ray | 14 | 1 |
 
-Real pypdf passes 959 of the same 961 and skips 2. None fail on the facade. Of its 208
-skips, 206 reach a private pypdf module and 2 are also skipped on the real library, as
-`scripts/audit_upstream_skips.py pypdf` reports.
+Real pypdf passes 1,345 of the same 1,350 and skips 5. None fail on the facade. Of its 214
+skips, 209 reach a private pypdf module and 5 are also skipped on the real library, as
+`scripts/audit_upstream_skips.py pypdf` reports. The count includes pypdf's tests that
+download their files (marked `enable_socket`); the harness fetches those files first, and CI
+caches them.
 
 ### Known gaps
 
-- Tests marked `enable_socket` download their files, so the harness leaves them out.
 - R7 (AES-GCM) keep-encryption has no real fixture, and PDF MAC refusal was tested with an
   injected `/AuthCode`, not a real MAC file.
 - Ghostscript refused AES-256-R5 with a four-character password, including on real pypdf's
