@@ -24,6 +24,7 @@ not follow unstructured there. A listed file that matches fails it too, so the l
 import collections
 import glob
 import logging
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -36,14 +37,11 @@ from unstructured.partition.pdf import (  # ty: ignore[unresolved-import]
 from core_pdf import PdfDocument
 from core_pdf_compat.unstructured import partition_pdf as facade_partition_pdf
 
-PATTERNS = (
-    "tests/upstream/unstructured/example-docs/**/*.pdf",
-    "tests/upstream/pdfplumber/tests/pdfs/*.pdf",
-    "tests/upstream/pdfminer.six/samples/*.pdf",
-    "tests/upstream/pdfminer.six/samples/contrib/*.pdf",
-    "tests/upstream/pypdf/resources/*.pdf",
-    "tests/upstream/pypdf/sample-files/**/*.pdf",
-)
+# Every PDF in the upstream checkouts but pypdf's downloads, which CI does not fetch for this
+# check. Symbolic links are left out: each points at a file covered under its own name, or at
+# none.
+PATTERN = "tests/upstream/**/*.pdf"
+DOWNLOADS = "tests/upstream/pypdf/tests/pdf_cache/"
 MAX_PAGES = 30
 # Six digits hide float noise such as 271.39500000000004 against 271.395.
 COORDINATE_DIGITS = 6
@@ -97,7 +95,7 @@ def partition(function: Any, path: str) -> list[dict[str, object]] | str:
     try:
         return [describe(element) for element in function(path, strategy="fast")]
     except Exception as error:  # noqa: BLE001
-        return f"raises {type(error).__name__}"
+        return f"raises {type(error).__name__}: {error}"
 
 
 def first_difference(
@@ -121,7 +119,11 @@ def main() -> int:
     warnings.simplefilter("ignore")
     counts: collections.Counter[str] = collections.Counter()
     problems: list[str] = []
-    paths = sorted({path for pattern in PATTERNS for path in glob.glob(pattern, recursive=True)})
+    paths = sorted(
+        path
+        for path in glob.glob(PATTERN, recursive=True)
+        if not path.startswith(DOWNLOADS) and not os.path.islink(path)
+    )
     for path in paths:
         if page_count(path) > MAX_PAGES:
             counts[f"skipped, over {MAX_PAGES} pages"] += 1
