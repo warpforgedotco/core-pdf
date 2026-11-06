@@ -50,7 +50,7 @@ from core_pdf_compat.pypdf.constants import (
     FieldDictionaryAttributes as FA,  # noqa: N814
 )
 from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
-from core_pdf_compat.pypdf.filters import decompress
+from core_pdf_compat.pypdf.filters import _decompress_with_limit
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BooleanObject,
@@ -798,13 +798,20 @@ class PdfDocCommon:
         if not form:
             return None
         output: dict[str, Any] = {}
-        entries = list.__iter__(form["/XFA"]) if "/XFA" in form else iter(())
+        if "/XFA" not in form:
+            return output
+        fields = form["/XFA"].get_object()
+        if not isinstance(fields, ArrayObject):
+            logger.warning("XFA entry is not an array: %s", fields)
+            return output
+        entries = list.__iter__(fields)
         for tag in entries:
-            value = next(entries)
+            # Tag and value pairs; a trailing tag has no value.
+            value = next(entries, None)
             if isinstance(value, IndirectObject):
                 stream = cast(EncodedStreamObject | None, value.get_object())
                 if stream:
-                    output[tag] = decompress(stream._data)
+                    output[tag] = _decompress_with_limit(stream._data)
         return output
 
     # Attachments.

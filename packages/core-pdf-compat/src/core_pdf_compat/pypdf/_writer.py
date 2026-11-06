@@ -46,6 +46,7 @@ from ._page_merge import (
     transfer_rotation,
     transform_page,
 )
+from ._page_tree import flatten_page_tree
 from ._text import (
     ALL_ORIENTATIONS,
     TextOptions,
@@ -882,12 +883,15 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         return _VirtualList(self.get_num_pages, self.get_page)
 
     def get_num_pages(self) -> int:
-        return len(self.flattened_pages)
+        return len(self._page_list())
 
     def get_page(self, page_number: int) -> PageObject:
-        return self.flattened_pages[page_number]
+        return self._page_list()[page_number]
 
     def _page_list(self) -> list[PageObject]:
+        # pypdf flattens again when the list was reset, as after a failed walk.
+        if cast(Any, self.flattened_pages) is None:
+            self._flatten()
         return self.flattened_pages
 
     def _get_page_number_by_indirect(self, indirect_reference: Any) -> int | None:
@@ -904,10 +908,14 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
     def _get_page_in_node(self, page_number: int) -> tuple[DictionaryObject, int]:
         """The tree node and /Kids position of a page, or the top node and -1 past the end."""
         top = self.root_object["/Pages"]
+        visited: set[int] = set()
 
         def search(node: DictionaryObject, low: int) -> tuple[Any, int]:
+            if id(node) in visited:
+                raise LimitReachedError("Detected cycle in /Pages hierarchy when retrieving page.")
+            visited.add(id(node))
             size = node.get_resolved("/Count", 1)
-            if node["/Type"] == "/Page":
+            if node.get("/Type") == "/Page":
                 return (node, -1) if page_number == low else (None, low + 1)
             if page_number - low >= size:
                 return (top, -1) if node == top else (None, low + size)
@@ -1303,49 +1311,30 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 raise PdfReadError(message)
             logger.warning(message)
 
-    def _flatten(self) -> None:
+    def _flatten(self, list_only: bool = False) -> None:
         """List the pages, moving what they inherit from the tree into each of them."""
-        self.flattened_pages = []
-        pages = self.root_object["/Pages"]
-        if not isinstance(pages, DictionaryObject):
-            raise PdfReadError("Invalid object in /Pages")
-        # Node, reference, inherited values, in document order.
-        stack: list[tuple[Any, Any, dict[str, Any]]] = [(pages, self._pages, {})]
-        visited: set[int] = set()
-        while stack:
-            node, reference, inherit = stack.pop()
-            kind = node.get_resolved("/Type")
-            if kind is None:
-                kind = "/Page" if "/Kids" not in node else "/Pages"
-            if kind == "/Page":
-                page = PageObject(self, reference)
+        self.flattened_pages = cast(Any, None)
+
+        def make_page(
+            node: DictionaryObject, reference: IndirectObject | None, inherit: dict[str, Any]
+        ) -> PageObject:
+            page = PageObject(self, reference)
+            if reference is not None or not list_only:
                 for key, item in dict.items(node):
                     dict.__setitem__(page, key, item)
-                for key, item in inherit.items():
-                    if key not in page:
-                        dict.__setitem__(page, key, item)
-                self.flattened_pages.append(page)
-                continue
-            if kind != "/Pages":
-                continue
-            inherited = dict(inherit)
-            for key in ("/Resources", "/MediaBox", "/CropBox", "/Rotate"):
-                if key in node:
-                    inherited[NameObject(key)] = node.raw_get(key)
-            kids = node.get_resolved("/Kids", ArrayObject())
-            if isinstance(kids, NullObject):
-                continue
-            if not isinstance(kids, ArrayObject):
-                raise PdfReadError(f"Expected /Kids to be an array, got {type(kids).__name__}.")
-            for index in range(len(kids) - 1, -1, -1):
-                kid = list.__getitem__(kids, index)
-                item = kid.get_object()
-                if not item:
-                    continue
-                if id(item) in visited:
-                    raise PdfReadError("Detected cyclic page references.")
-                visited.add(id(item))
-                stack.append((item, kid if isinstance(kid, IndirectObject) else None, inherited))
+            for key, item in inherit.items():
+                if key not in page:
+                    dict.__setitem__(page, NameObject(key), item)
+            return page
+
+        pages = self.root_object.get("/Pages", NullObject()).get_object()
+        self.flattened_pages = flatten_page_tree(
+            pages,
+            strict=self.strict,
+            make_page=make_page,
+            inherited_value=lambda node, key: node.raw_get(key),
+            count_own_entries=lambda reference: reference is not None or not list_only,
+        )
 
     def clone_document_from_reader(self, reader: Any, after_page_append: Any = None) -> None:
         self.clone_reader_document_root(reader)
