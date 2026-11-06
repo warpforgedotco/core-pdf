@@ -7,8 +7,9 @@ objects: its content stream, an image it draws, an annotation's text, and a font
 descriptor and its embedded font program. Then that page is
 removed and the file saved. The marker is what a caller believes is gone.
 
-full: PdfWriter and EditableDocument.save. The marker must leave the file, and the save must
-say it was a full rewrite.
+full: EditableDocument.save must drop the marker and say it was a full rewrite. PdfWriter
+writes every object it holds, as pypdf does, so the marker stays, and the save must say so:
+last_save names the objects the document no longer reaches, and a warning is logged.
 
 incremental: PdfWriter(incremental=True) and EditableDocument.save_incremental. The marker must
 stay, because the source's bytes stay, and the save must say so: SavedPdf.incremental and
@@ -64,7 +65,8 @@ class Warnings(logging.Handler):
         self.removed = 0
 
     def emit(self, record: logging.LogRecord) -> None:
-        self.removed += "removed objects stay readable" in record.getMessage()
+        message = record.getMessage()
+        self.removed += "removed objects stay readable" in message or "no longer reaches" in message
 
 
 def name(value: str) -> NameObject:
@@ -140,13 +142,15 @@ def with_marked_page(path: str) -> tuple[bytes, set[int]] | None:
 def check_writer(source: bytes, marked: set[int], seen: Warnings, report: Any) -> None:
     writer = PdfWriter(clone_from=BytesIO(source))
     del writer.pages[-1]
+    before = seen.removed
     full = writer.write_bytes()
-    report("writer full: marker left in the file", MARKER in full)
+    # pypdf writes every object it holds, so the removed page stays, and the save says so.
+    report("writer full: marker gone, unlike pypdf", MARKER not in full)
     report("writer full: claims incremental", full.incremental)
     saved = writer.last_save
-    report(
-        "writer full: last_save is wrong", saved is None or saved.kind != "full" or saved.removed
-    )
+    report("writer full: last_save is not full", saved is None or saved.kind != "full")
+    report("writer full: kept objects not named", saved is None or len(saved.removed) < len(marked))
+    report("writer full: no warning", seen.removed == before)
 
     writer = PdfWriter(BytesIO(source), incremental=True)
     del writer.pages[-1]
@@ -235,6 +239,7 @@ def main() -> int:
             TypeError,
             IndexError,
             AttributeError,
+            OSError,
         ) as error:
             counts["files that could not run"] += 1
             if len(problems) < 40:

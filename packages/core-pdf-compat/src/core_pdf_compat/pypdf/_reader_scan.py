@@ -534,7 +534,19 @@ class XrefScan:
             yield position, to_generic(self.lexer.parse_object(), self.pdf)
 
 
-STREAM_KEYWORD = re.compile(rb">>[\x00\t\n\x0c\r ]*stream")
+# The end of a stream's dictionary and its keyword, with white-space or comments between.
+STREAM_KEYWORD = re.compile(rb">>(?:[\x00\t\n\x0c\r ]|%[^\r\n]*)*stream")
+
+
+def stream_keyword(data: bytes, offset: int) -> re.Match[bytes] | None:
+    """The stream keyword of the object at `offset`, not one of a later object."""
+    end = data.find(b"endobj", offset)
+    return STREAM_KEYWORD.search(data, offset, len(data) if end < 0 else end)
+
+
+# pypdf ends a name at white-space or a delimiter, and its white-space leaves out NUL.
+NAME_INTO_NUL = re.compile(rb"/[^\t\n\x0c\r ()<>\[\]{}/%\x00]*\x00")
+INDIRECT_HEADER = re.compile(rb"[\x00\t\n\x0c\r ]*\d+[\x00\t\n\x0c\r ]+\d+[\x00\t\n\x0c\r ]+obj")
 # A stream's decoding entries given as references, which core's resolver replaces.
 DECODE_REFERENCE = re.compile(
     rb"/(Filter|DecodeParms|DP|FFilter|FDecodeParms)"
@@ -550,7 +562,7 @@ def pypdf_stream_data(data: bytes, offset: int, declared: int | None) -> bytes |
     a recovering parser keeps by the end-of-line before `endstream`. None if the object does
     not look like a stream here.
     """
-    keyword = STREAM_KEYWORD.search(data, offset)
+    keyword = stream_keyword(data, offset)
     if keyword is None:
         return None
     start = keyword.end()

@@ -111,7 +111,10 @@ def _check_color_space(x_object: Any) -> None:
     if isinstance(color_space, IndirectObject):
         color_space = color_space.get_object()
     if isinstance(color_space, list) and color_space[:1] == ["/Indexed"]:
-        if len(color_space) != INDEXED_COLOR_SPACE_LENGTH:
+        # AutoDesk files write `/DeviceRGB\x00255`, which pypdf reads as one name holding the
+        # base and hival, and accepts, as it does here.
+        autodesk = len(color_space) == 3 and "\x00" in str(color_space[1])
+        if len(color_space) != INDEXED_COLOR_SPACE_LENGTH and not autodesk:
             raise PdfReadError(
                 f"Expected color space with {INDEXED_COLOR_SPACE_LENGTH} values, "
                 f"got {len(color_space)}: {color_space}"

@@ -16,15 +16,16 @@ in CI.
    and `save_incremental` keeps the whole file, so signatures survive it. Three cases are not
    byte for byte: an object inside an object stream, which has no bytes of its own; a stream
    with a wrong `/Length`, which is rewritten so that it reads without recovery; and output
-   with changed encryption. `PdfWriter` rewrites follow pypdf's numbering and layout, so they
-   are equal by value, and `PdfWriter(incremental=True)` is the byte-for-byte route. A full
-   save moves objects, so it invalidates signatures even when their bytes are kept.
+   with changed encryption. A full save moves objects, so it invalidates signatures even when
+   their bytes are kept. The pypdf facade's `PdfWriter` is held to a different promise: its
+   output is pypdf's, byte for byte, including where pypdf changes data (see PdfWriter).
 2. **Explicit:** an edit is visible in the object it touches. There is no hidden state
    shared between a reader and a writer.
 3. **Layered:** spec holds the syntax, core holds the document, compat holds the pypdf
    and pikepdf shapes. Compat never writes bytes itself.
-4. **Secure by default:** saving never silently keeps data the caller believes was
-   removed, so a save states whether it was incremental or a full rewrite.
+4. **Secure by default:** in core, saving never silently keeps data the caller believes was
+   removed, so a save states whether it was incremental or a full rewrite. The pypdf facade
+   writes what pypdf writes, which can keep removed objects, and says so in `last_save`.
 
 ## Layers
 
@@ -57,43 +58,44 @@ Object streams are not written. `SavedPdf.xref_stream` states which kind a save 
 
 ### PdfWriter
 
-The pypdf facade works over its own table of generic objects. A full rewrite writes what the
-trailer reaches, so a removed page or image leaves the file. `PdfWriter(incremental=True)`
+The pypdf facade works over its own table of generic objects, and its job is to write exactly
+what pypdf writes, faster. A full rewrite writes every object the writer holds, reached or not,
+as pypdf does, so a page removed through the writer stays in the file. `PdfWriter(incremental=True)`
 hands changed objects to `EditableDocument.save_incremental`, so it adds no second way of
-writing bytes.
+writing bytes. Use `EditableDocument.save` to remove data.
 
 `write` returns what pypdf returns, so the writer states how a save was made in
 `writer.last_save`, a `SaveReport` with the kind (`"full"` or `"incremental"`), the objects
-written, the earlier versions left readable (`superseded`) and the objects removed but still
-in the file (`removed`). An incremental save with removals also logs a warning.
+written, the earlier versions left readable (`superseded`) and the objects the document no
+longer reaches that are still in the file (`removed`). A save with any of those logs a warning.
 
 `scripts/check_save_statements.py` checks these statements on the upstream PDFs. It adds a
 page with a marker in its content, an image, an annotation and an embedded font, removes the
-page and saves. On
-all 168 files that open unencrypted, a full rewrite from either writer drops the marker and
-says it is full. An incremental update keeps the marker and the source's bytes, says it is
+page and saves. On all 168 files that open unencrypted, `EditableDocument.save` drops the
+marker and says it is full. A `PdfWriter` full rewrite keeps it, as pypdf does, names the kept
+objects in `last_save` and logs a warning. An incremental update keeps the marker and the
+source's bytes, says it is
 incremental and names the six objects in `SavedPdf.removed`; `PdfWriter` also names them in
 `last_save` and logs a warning. An encrypted `PdfWriter` save hides the
 marker and names its algorithm in `SavedPdf.encryption`. The check also fails if a writer
 module holds PDF structure as bytes.
 
 `scripts/check_pypdf_bytes.py` writes each upstream PDF through the real pypdf 6.15.0 and the
-facade the same way and compares the bytes. An incremental update is identical on all 168
-files that pypdf can update and that are not encrypted. pypdf does not encrypt the objects of
-an update to an encrypted file, so the facade does not follow it on those 5. Full rewrites are
-identical on 165 of 173 files through `clone_from` and 171 of 173 through `append`. CI fails on
-any other difference. The rest are departures the script lists with their reasons, each where
-pypdf loses data: it leaves `/Info` values pointing at objects it never writes (5 files), drops
-`/K` from a structure tree (1), reads a number into a name after a NUL byte (1 file, both
-modes), and copies a page outside the page tree through a form field (1). One more clone
-differs on an encrypted source.
+facade the same way and compares the bytes: an incremental update with a new title, a
+`clone_from` and an `append`. All three are identical on all 173 files pypdf can write, and CI
+fails on any difference.
 
-Matching pypdf means following it where it changes data: reals are rounded to pypdf's
-precision, and a name read from GBK or Latin-1 bytes is written as UTF-8. The facade departs
-from pypdf where that would break the file or keep removed data: a full rewrite still leaves
-out pages the caller removed, which pypdf keeps, and a NUL byte still ends a name, where pypdf
-reads the next number into it. pypdf writes every object it holds; a full rewrite here writes
-those too, except objects that were part of the document and no longer are.
+That means following pypdf where it changes or loses data, and the facade does:
+
+- Reals are rounded to pypdf's precision, and a name read from GBK or Latin-1 bytes is
+  written as UTF-8.
+- `/Info` is copied shallowly, so an indirect value keeps the source's number and points at
+  nothing in the output.
+- An object pypdf's parser refuses is read with its rules: a bare word such as `OBJR`, or a
+  name running into a NUL byte. pypdf then keeps only the entries read before it.
+- A page a link or field reaches is copied, even if it is not one of the pages added.
+- A signature's `/Contents` is decrypted on reading, though PDF leaves it in the clear.
+- An incremental update to an encrypted file is written in the clear, without /Encrypt.
 
 `scripts/check_writer_lossless.py` reads both sides as pypdf does and compares unchanged
 objects in writer output with the
@@ -112,6 +114,7 @@ by accident: nobody loses protection without asking for it, and each save says w
 | Encrypted | `save(encryption="decrypt")` | Plain |
 | Any | `save(encryption=NewEncryption(...))` | Encrypted with a new key and passwords |
 | Encrypted | `save_incremental()` | Original bytes kept, new objects encrypted with the same key |
+| Encrypted | `save_incremental(keep_encryption=False)` | Update in the clear, no /Encrypt: pypdf's output |
 | Plain | `save()` or `save_incremental()` | Plain |
 
 - **Opening needs the right password.** `PdfDocument.open` refuses a wrong one, and
@@ -124,8 +127,11 @@ by accident: nobody loses protection without asking for it, and each save says w
   `RC4-128`, `AES-128` and `AES-256-R5`. RC4 is broken and exists only for old readers. With no
   owner password, the user password serves as both, so it also grants owner access. An empty
   user password encrypts nothing in practice, because any reader can open the file.
-- **An incremental save cannot change encryption.** The original bytes stay, so a decrypted
-  or re-keyed update would be a false promise. `save_incremental` takes no such option.
+- **An incremental save cannot re-key.** The original bytes stay, so a decrypted or re-keyed
+  update would be a false promise. The one exception is `keep_encryption=False`, which only
+  the pypdf facade passes, to write what pypdf writes: the update in the clear and no
+  /Encrypt in its trailer, so readers treat the file as plain and the earlier objects no
+  longer decrypt.
 - **A save states how it was made.** `save` and `save_incremental` return `SavedPdf`, which is
   `bytes` with `incremental`, `encrypted`, `encryption` (the algorithm's name, or `None`) and
   `removed`, the objects the source reached and the save no longer does. A full rewrite leaves

@@ -12,6 +12,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, ClassVar, Self, cast
 
+from core_pdf.impl.recovery_lexer import BareKeyword
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat.pypdf.errors import (
     DeprecationError,
@@ -957,6 +958,9 @@ def to_generic(value: Any, pdf: Any = None) -> Any:
         return NumberObject(value)
     if isinstance(value, float):
         return FloatObject(value)
+    if isinstance(value, BareKeyword) and getattr(pdf, "_bare_keywords_raise", False):
+        # Only a reader's object read asks for this, to re-read the object as pypdf does.
+        raise BareKeywordFound(value)
     if isinstance(value, (PdfName, str)):
         return _generic_key(value)
     if isinstance(value, PdfString):
@@ -981,6 +985,10 @@ def to_generic(value: Any, pdf: Any = None) -> Any:
         array.extend(to_generic(item, pdf) for item in value)
         return array
     return value
+
+
+class BareKeywordFound(Exception):  # noqa: N818
+    """Core read a word that is no PDF value, where pypdf's parser would fail instead."""
 
 
 def _generic_key(key: Any) -> NameObject:

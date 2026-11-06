@@ -9,10 +9,6 @@ incremental: PdfWriter(incremental=True), a new /Title, write.
 clone: PdfWriter(clone_from=...), write.
 append: PdfWriter(), append(reader), write.
 
-An encrypted source is reported apart. pypdf writes an incremental update to it without
-encrypting the new objects or carrying /Encrypt, which readers cannot decrypt, so the facade
-does not follow it there.
-
 Every difference fails the check unless DEPARTURES lists it, with the reason the facade does
 not follow pypdf there. A listed file that matches fails it too, so the list stays true.
 """
@@ -38,31 +34,7 @@ PATTERNS = (
     "tests/upstream/pypdf/resources/*.pdf",
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
-INFO_REFERENCES = (
-    "pypdf copies /Info shallowly and writes its indirect values with the source's numbers, "
-    "which point at nothing in the output, so the metadata is lost"
-)
-NUL_NAME = (
-    "pypdf does not end a name at a NUL byte and reads the next number into it, which breaks "
-    "the colour space"
-)
-DEPARTURES: dict[tuple[str, str], str] = {
-    ("clone", "font-size-test.pdf"): INFO_REFERENCES,
-    ("clone", "cupertino_usd_4-6-16.pdf"): INFO_REFERENCES,
-    ("clone", "nics-background-checks-2015-11.pdf"): INFO_REFERENCES,
-    ("clone", "nics-background-checks-2015-11-rotated.pdf"): INFO_REFERENCES,
-    ("clone", "issue-316-example.pdf"): INFO_REFERENCES,
-    ("clone", "hello_structure.pdf"): (
-        "pypdf drops /K from the structure tree root and a section element"
-    ),
-    ("clone", "AutoCad_Diagram.pdf"): NUL_NAME,
-    ("append", "AutoCad_Diagram.pdf"): NUL_NAME,
-    ("append", "SF424_page2.pdf"): (
-        "pypdf copies a page outside the page tree that a field's widget points at; the "
-        "facade writes null for a page it was not asked to copy, so append(pages=...) never "
-        "carries pages the caller left out"
-    ),
-}
+DEPARTURES: dict[tuple[str, str], str] = {}
 
 
 def incremental(library: Any, data: bytes) -> bytes:
@@ -111,10 +83,6 @@ def main() -> int:
     paths = sorted({path for pattern in PATTERNS for path in glob.glob(pattern, recursive=True)})
     for path in paths:
         data = open(path, "rb").read()  # noqa: SIM115, PTH123
-        try:
-            encrypted = real.PdfReader(io.BytesIO(data)).is_encrypted
-        except Exception:  # noqa: BLE001
-            encrypted = False
         for name, write in MODES.items():
             try:
                 expected = write(real, data)
@@ -133,8 +101,6 @@ def main() -> int:
                 if listed is not None:
                     counts[f"{name}: LISTED BUT IDENTICAL"] += 1
                     problems.append(f"{name} {path}: listed as a departure but identical")
-            elif encrypted:
-                counts[f"{name}: differ, encrypted source"] += 1
             elif listed is not None:
                 counts[f"{name}: differ, listed departure"] += 1
             else:

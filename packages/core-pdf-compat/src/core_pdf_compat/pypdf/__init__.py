@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import functools
 import logging
 import re
 from io import BytesIO, UnsupportedOperation
@@ -7,20 +9,27 @@ from pathlib import Path
 from typing import Any, NoReturn, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.exceptions import PdfInvalidPermissionsError, PdfUnsupportedError
+from core_pdf.impl.exceptions import (
+    PdfDecryptionError,
+    PdfInvalidPermissionsError,
+    PdfUnsupportedError,
+)
 from core_pdf.impl.recovery_lexer import PdfLexer as RecoveryLexer
-from core_pdf.impl.types import PdfName, PdfReference
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf import filters
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._encryption import PasswordType
+from core_pdf_compat.pypdf._generic_read import read_non_whitespace, read_object
 from core_pdf_compat.pypdf._reader_scan import (
     DECODE_REFERENCE,
+    INDIRECT_HEADER,
+    NAME_INTO_NUL,
     OBJECT_HEADER,
-    STREAM_KEYWORD,
     XrefScan,
     pypdf_stream_data,
+    stream_keyword,
 )
 from core_pdf_compat.pypdf._text import LegacyTextCaches
 from core_pdf_compat.pypdf.constants import ImageType, ObjectDeletionFlag, UserAccessPermissions
@@ -33,19 +42,24 @@ from core_pdf_compat.pypdf.errors import (
 )
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
+    BareKeywordFound,
+    ByteStringObject,
     Destination,
     DictionaryObject,
     IndirectObject,
     NameObject,
     NullObject,
     RectangleObject,
+    StreamObject,
     TextStringObject,
+    create_string_object,
     is_null_or_none,
     to_generic,
 )
 from core_pdf_compat.pypdf.pagerange import PageRange, parse_filename_page_ranges
 from core_pdf_compat.pypdf.papersizes import PaperSize
 from core_pdf_spec.exceptions import PdfParseError, PdfPasswordError
+from core_pdf_spec.s_07_security.output import is_signature_contents
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import key_for
 
@@ -295,11 +309,28 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             if number in self.xref_objStm:
                 self._check_object_stream(self.xref_objStm[number][0])
             resolved = source.resolver.resolve(PdfReference(number, generation))
+            entry = source.xref[key_for(number, generation)]
             if isinstance(resolved, PdfStream):
-                entry = source.xref[key_for(number, generation)]
                 self._check_stream_length(resolved, entry)
-                resolved = self._as_pypdf_reads(resolved, entry)
-            return to_generic(resolved, self)
+                resolved = self._as_pypdf_reads(resolved, entry, number, generation)
+            if source.security_handler is not None:
+                resolved = self._with_signatures_decrypted(resolved, number, generation)
+            if getattr(entry, "object_stream", None) is not None:
+                # In an object stream, read as core reads it: the stream's own bytes are not
+                # at hand here for pypdf's parser.
+                return to_generic(resolved, self)
+            self._bare_keywords_raise = True
+            try:
+                if self._has_pypdf_only_name(entry):
+                    raise BareKeywordFound
+                return to_generic(resolved, self)
+            except BareKeywordFound:
+                # Core tolerated a word pypdf's parser refuses, and pypdf keeps only what it
+                # read before it, so this object is read with pypdf's rules.
+                found = self._read_with_pypdf_rules(entry)
+                return self._decrypted_as_pypdf(found, number, generation)
+            finally:
+                self._bare_keywords_raise = False
         pattern = rf"\s{number}\s+{generation}\s+obj".encode()
         match = re.search(pattern, self._data)
         if match is None:
@@ -318,15 +349,23 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         lexer.rewind(match.start() + 1)
         return to_generic(lexer.parse_indirect_object(), self)
 
-    def _as_pypdf_reads(self, stream: PdfStream, entry: Any) -> PdfStream:
+    def _as_pypdf_reads(
+        self, stream: PdfStream, entry: Any, number: int, generation: int
+    ) -> PdfStream:
         """The stream as pypdf reads it: decoding keys keep their references, and the data is
         what pypdf keeps, which differs only when /Length is wrong.
+
+        In an encrypted file, /Length counts the encrypted bytes, so the rule applies to those,
+        and what it keeps is then decrypted, as in pypdf.
         """
         stream = self._with_decode_references(stream, entry)
         declared = stream.dictionary.get("Length")
         if isinstance(declared, PdfReference):
             declared = self._pdf.resolver.resolve(declared) if self._pdf is not None else None
-        if isinstance(declared, int) and declared == len(stream.raw_data):
+        handler = None if self._pdf is None else self._pdf.security_handler
+        is_xref = str(stream.dictionary.get("Type", "")).endswith("XRef")
+        encrypted = handler is not None and not is_xref
+        if not encrypted and isinstance(declared, int) and declared == len(stream.raw_data):
             return stream
         offset = getattr(entry, "offset", None)
         if not isinstance(offset, int) or getattr(entry, "object_stream", None) is not None:
@@ -334,16 +373,95 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         found = pypdf_stream_data(
             self._data, offset, declared if isinstance(declared, int) else None
         )
+        if found is not None and handler is not None and encrypted:
+            try:
+                found = handler.decrypt(number, generation, found, stream.dictionary)
+            except PdfDecryptionError, ValueError:
+                return stream
         if found is None or found == bytes(stream.raw_data):
             return stream
         return stream.replace(raw_data=found)
+
+    def _decrypted_as_pypdf(self, value: Any, number: int, generation: int) -> Any:
+        """Decrypt what pypdf's parser read, as pypdf's reader does after parsing."""
+        handler = None if self._pdf is None else self._pdf.security_handler
+        if handler is None:
+            return value
+        if isinstance(value, (TextStringObject, ByteStringObject)):
+            try:
+                data = handler.decrypt(number, generation, value.original_bytes)
+            except PdfDecryptionError, ValueError:
+                return value
+            return create_string_object(data)
+        if isinstance(value, StreamObject):
+            if value.get("/Type") != "/XRef":
+                with contextlib.suppress(PdfDecryptionError, ValueError):
+                    value._data = handler.decrypt(number, generation, value._data, None)
+            for key, item in list(dict.items(value)):
+                dict.__setitem__(value, key, self._decrypted_as_pypdf(item, number, generation))
+            return value
+        if isinstance(value, DictionaryObject):
+            for key, item in list(dict.items(value)):
+                dict.__setitem__(value, key, self._decrypted_as_pypdf(item, number, generation))
+        elif isinstance(value, ArrayObject):
+            for index, item in enumerate(value):
+                list.__setitem__(value, index, self._decrypted_as_pypdf(item, number, generation))
+        return value
+
+    def _with_signatures_decrypted(self, value: Any, number: int, generation: int) -> Any:
+        """Decrypt a signature's /Contents too, as pypdf does, though PDF leaves it in the clear."""
+        if isinstance(value, PdfStream) or not isinstance(value, (dict, list)):
+            return value
+        if isinstance(value, list):
+            return [self._with_signatures_decrypted(item, number, generation) for item in value]
+        output = {
+            key: self._with_signatures_decrypted(item, number, generation)
+            for key, item in value.items()
+        }
+        for key, item in value.items():
+            if str(getattr(key, "value", key)) == "Contents" and is_signature_contents(value, item):
+                handler = cast(Any, self._pdf).security_handler
+                try:
+                    data = handler.decrypt(number, generation, bytes(item.data))
+                except PdfDecryptionError, ValueError:
+                    data = bytes(item.data)
+                output[key] = PdfString(data, is_literal=False)
+        return output
+
+    @functools.cached_property
+    def _holds_nul(self) -> bool:
+        return b"\x00" in self._data
+
+    def _has_pypdf_only_name(self, entry: Any) -> bool:
+        """Whether a name runs into a NUL byte, which pypdf reads as part of the name."""
+        offset = getattr(entry, "offset", None)
+        if not isinstance(offset, int) or not self._holds_nul:
+            return False
+        end = self._data.find(b"endobj", offset)
+        keyword = self._data.find(b"stream", offset, None if end < 0 else end)
+        stop = keyword if keyword >= 0 else end
+        return (
+            NAME_INTO_NUL.search(self._data, offset, len(self._data) if stop < 0 else stop)
+            is not None
+        )
+
+    def _read_with_pypdf_rules(self, entry: Any) -> Any:
+        offset = getattr(entry, "offset", None)
+        header = INDIRECT_HEADER.match(self._data, offset) if isinstance(offset, int) else None
+        if header is None:
+            return None
+        stream = BytesIO(self._data)
+        stream.seek(header.end())
+        read_non_whitespace(stream)
+        stream.seek(-1, 1)
+        return read_object(stream, self)
 
     def _with_decode_references(self, stream: PdfStream, entry: Any) -> PdfStream:
         """Put back the references core resolves in /Filter and its siblings while reading."""
         offset = getattr(entry, "offset", None)
         if not isinstance(offset, int) or self._pdf is None:
             return stream
-        keyword = STREAM_KEYWORD.search(self._data, offset)
+        keyword = stream_keyword(self._data, offset)
         if keyword is None:
             return stream
         restored = dict(stream.dictionary)
