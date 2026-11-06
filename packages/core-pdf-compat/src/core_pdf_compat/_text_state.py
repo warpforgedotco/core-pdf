@@ -26,10 +26,10 @@ PREDEFINED_ENCODING_CODECS = {
     "ETenms-B5-V": "cp950",
     "UniCNS-UTF16-H": "utf-16-be",
     "UniCNS-UTF16-V": "utf-16-be",
-    # UniGB covers the GB18030 character set, but its codes are UTF-16BE
+    # pypdf 6.15.0 decodes UniGB-UTF16 as GB18030, though its codes are UTF-16BE
     # (ISO 32000-2:2020, 9.7.5.2).
-    "UniGB-UTF16-H": "utf-16-be",
-    "UniGB-UTF16-V": "utf-16-be",
+    "UniGB-UTF16-H": "gb18030",
+    "UniGB-UTF16-V": "gb18030",
     "90ms-RKSJ-H": "cp932",
     "90ms-RKSJ-V": "cp932",
     "UniJIS-UTF16-H": "utf-16-be",
@@ -182,7 +182,7 @@ class TextMachine[FontT]:
         self.fonts = fonts
         self.font: FontT | None = None
         self.font_size = 12.0
-        self.half_space_width = 125.0
+        self.half_space_width = 500.0  # pypdf starts with 500 before any Tf.
         self.leading = 0.0
         self.cm = list(IDENTITY_MATRIX)
         self.tm = list(IDENTITY_MATRIX)

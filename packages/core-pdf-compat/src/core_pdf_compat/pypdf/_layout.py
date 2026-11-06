@@ -47,7 +47,17 @@ class _FontView:
         self.interpretable = font is not None and font.interpretable
         self.space_width = 250.0 if font is None else font.natural_space_width
 
+    def counted(self, value: bytes) -> tuple[int, int]:
+        """The characters and spaces pypdf's layout mode counts in the bytes, for Tc and Tw."""
+        if self.font is None:
+            return len(value), value.count(b" ")
+        word, space = self.font.layout_word(value)
+        return len(word), word.count(space) if space else 0
+
     def shown(self, value: bytes) -> tuple[tuple[str, ...], float]:
+        if self.font is not None and self.font.unknown_encoding is not None:
+            # pypdf decodes the bytes with the encoding's name as a codec.
+            raise LookupError(f"unknown encoding: {self.font.unknown_encoding}")
         return (
             (tuple(value.decode("latin-1")), 0.0)
             if self.font is None
@@ -71,6 +81,8 @@ class _TextState:
 
     def set_parameter(self, operator: str, operands: tuple[Any, ...]) -> None:
         if not operands:
+            if operator in {"Tc", "Tw", "Tz", "TL", "Ts"}:
+                raise IndexError("list index out of range")  # pypdf reads operands[0].
             return
         value = operands[0]
         match operator:
@@ -110,7 +122,17 @@ class _TextState:
     def add_cm(self, operands: tuple[float, ...]) -> None:
         self.reset_text()
         self.q_queue.update(self.q_depth[-1:])
-        self.stack = [_Transform(tuple(map(float, operands))), *self.stack]
+        # pypdf passes the operands to new_transform(a, b, c, d, e, f, is_text, is_render).
+        if len(operands) > 8:
+            raise TypeError(
+                "TextStateManager.new_transform() takes from 0 to 8 positional arguments but "
+                f"{len(operands)} were given"
+            )
+        flags = [bool(flag) for flag in operands[6:8]] + [False, False]
+        self.stack = [
+            _Transform(_padded(operands[:6]), is_text=flags[0], is_render=flags[1]),
+            *self.stack,
+        ]
 
     def add_tm(self, operands: list[float]) -> None:
         self.stack = [_Transform(_complete(operands), is_text=True), *self.stack]
@@ -125,10 +147,19 @@ class _TextState:
         return effective
 
 
+def _padded(operands: Any) -> tuple[float, ...]:
+    """pypdf's raw_transform: the values given, and the identity's for the rest."""
+    return tuple(map(float, (*operands, *IDENTITY_MATRIX[len(operands) :])))
+
+
 def _complete(operands: list[float]) -> tuple[float, ...]:
     if len(operands) == 2:
         return (1.0, 0.0, 0.0, 1.0, float(operands[0]), float(operands[1]))
-    return tuple(map(float, operands))
+    if len(operands) > 6:
+        raise TypeError(
+            "TextStateManager.new_transform() got multiple values for argument 'is_text'"
+        )
+    return _padded(operands)
 
 
 class _Run:
@@ -144,6 +175,7 @@ class _Run:
         self.scaling = state.scaling
         self.rise = state.rise
         self.parts, self.width = font.shown(value) if value else ((), 0.0)
+        self.characters, self.spaces = font.counted(value) if value else (0, 0)
         self.text = "".join(self.parts)
         self.transform = transform
         self.rotated = False
@@ -173,6 +205,8 @@ class _Run:
         self.flip_vertical = self.transform[3] < -1e-6
 
     def _advance(self, width: float, characters: int, spaces: int) -> float:
+        # The character spacing applies to each character, as in the pypdf the upstream tests
+        # come from; pypdf 6.15.0 adds it once per string (a departure check_pypdf_text lists).
         return (
             self.font_size * (width / 1000.0)
             + characters * self.character_spacing
@@ -180,7 +214,7 @@ class _Run:
         ) * (self.scaling / 100.0)
 
     def displacement(self, offset: float = 0.0) -> Matrix:
-        tx = self._advance(self.width - offset, len(self.parts), self.parts.count(" "))
+        tx = self._advance(self.width - offset, self.characters, self.spaces)
         return [1.0, 0.0, 0.0, 1.0, tx, 0.0]
 
 
