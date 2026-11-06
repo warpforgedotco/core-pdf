@@ -1,0 +1,66 @@
+name: Upstream releases
+
+# The facades track their libraries' latest releases. Each week this compares the versions
+# the upstream suites pin with PyPI, and keeps one open issue listing what is behind.
+on:
+  schedule:
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: Check pinned versions against PyPI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.6"
+          python-version: "3.14"
+
+      - name: Compare the pins with PyPI
+        id: versions
+        run: |
+          set +e
+          uv run --no-project python scripts/check_upstream_versions.py --markdown > versions.md
+          echo "behind=$?" >> "$GITHUB_OUTPUT"
+          cat versions.md
+
+      - name: Open or update the tracking issue
+        if: steps.versions.outputs.behind == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Upstream releases to track"
+          {
+            echo "These reference libraries have a newer release than the version the upstream suites and comparison scripts pin. The facades track the latest release, so each needs its pin, checkout and facade moved to it."
+            echo
+            cat versions.md
+            echo
+            echo "Checked by the \`Upstream releases\` workflow on $(date -u +%Y-%m-%d)."
+          } > body.md
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file body.md
+          else
+            gh issue create --title "$title" --body-file body.md
+          fi
+
+      - name: Close the tracking issue when everything is current
+        if: steps.versions.outputs.behind == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Upstream releases to track"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue close "$number" --comment "Every pinned reference library is at its latest release."
+          fi
