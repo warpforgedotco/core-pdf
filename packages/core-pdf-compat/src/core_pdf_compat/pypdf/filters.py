@@ -259,13 +259,24 @@ class LZWDecode:
         return _undo_predictor(decoded, parameters)
 
 
+def _ascii85_input(data: bytes) -> bytes:
+    """The encoded data as pypdf passes it to ``a85decode``."""
+    encoded = data.strip(ASCII_WHITESPACE)
+    if len(encoded) > 2 and encoded.endswith(b">"):
+        encoded = encoded[:-1].rstrip(ASCII_WHITESPACE) + b">"
+    return encoded
+
+
+def warn_missing_ascii85_end(data: bytes) -> None:
+    """Log pypdf's warning for Ascii85 data without its ``~>`` end marker."""
+    if not _ascii85_input(data).endswith(b"~>"):
+        logger.warning("Ignoring missing Ascii85 end marker.")
+
+
 class ASCII85Decode:
     @staticmethod
     def decode(data: str | bytes, decode_parms: Any = None, **kwargs: Any) -> bytes:  # noqa: ARG004
-        encoded = data.encode() if isinstance(data, str) else data
-        encoded = encoded.strip(ASCII_WHITESPACE)
-        if len(encoded) > 2 and encoded.endswith(b">"):
-            encoded = encoded[:-1].rstrip(ASCII_WHITESPACE) + b">"
+        encoded = _ascii85_input(data.encode() if isinstance(data, str) else data)
         try:
             return a85decode(encoded, adobe=True, ignorechars=ASCII_WHITESPACE)
         except ValueError as error:

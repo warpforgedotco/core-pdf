@@ -57,9 +57,18 @@ class _Scan:
         if tokens[2] == b"[":
             self.open_list = not self.add_listed(tokens[3:])
         else:
-            int(tokens[2], 16)
+            target = int(tokens[2], 16)
             size = max(0, last - first + 1)
             _check_size(self.entries + size)
+            # pypdf formats each destination as hex at least this wide and unhexlifies it,
+            # so the range breaks at the first destination of odd length.
+            width = max(4, len(tokens[2]))
+            done = 0
+            while done < size:
+                digits = max(width, len(f"{target + done:X}"))
+                if digits % 2:
+                    unhexlify(b"%0*X" % (digits, target + done))
+                done = min(size, 16**digits - target)
             self.entries += size
 
     def char_line(self, line: bytes) -> None:

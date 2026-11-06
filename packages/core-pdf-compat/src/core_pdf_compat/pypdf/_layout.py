@@ -44,7 +44,7 @@ class _FontView:
 
     def __init__(self, font: Any) -> None:
         self.font = None if font is None else replace(font, space_width=font.natural_space_width)
-        self.interpretable = font is not None
+        self.interpretable = font is not None and font.interpretable
         self.space_width = 250.0 if font is None else font.natural_space_width
 
     def shown(self, value: bytes) -> tuple[tuple[str, ...], float]:
