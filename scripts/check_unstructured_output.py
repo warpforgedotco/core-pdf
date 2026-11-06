@@ -7,12 +7,13 @@ Each file goes through the real unstructured and the facade with
 partition_pdf(filename, strategy="fast"), and the elements are compared one by one: class
 name, category, text, and the metadata fields page_number, coordinates (points rounded to
 COORDINATE_DIGITS, system, layout size), languages, links, element_id, parent_id, filename,
-file_directory and filetype. A file that raises must raise the same exception type on both.
-The first difference of each file is printed.
+file_directory and filetype. A file that raises must raise the same exception type and
+message on both. The first difference of each file is printed.
 
-Files with more than MAX_PAGES (30) pages are skipped to keep the run to about two minutes;
-the count of skipped files is printed. There are seven, the largest DA-619p.pdf, and each
-matched when last run without the cap.
+The files are every PDF under tests/upstream but pypdf's downloads in pdf_cache, which CI
+does not fetch for this check; symbolic links are left out, as each names a file covered
+under its own name or none. Files with more than MAX_PAGES (30) pages are skipped to keep
+the run short; the count of skipped files is printed.
 
 The element lists are compared, not metadata.to_dict(), whose layout the facade does not
 follow (it keeps bbox, and coordinates as a tuple with width and height).

@@ -17,7 +17,7 @@ from typing import Any, ClassVar, TypeAlias, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
-from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.geometry import (
     bbox_contains,
@@ -38,9 +38,13 @@ from core_pdf.impl.types import (
 )
 
 from .._shared import BBox, ClosingMixin, PdfInput
-from ..pdfminer._xref_chain import MESSAGE, pdfminer_xref_chain_loops
+from ..pdfminer._parsing import pdfminer_open_error
+from ..pdfminer.pdfdocument import PDFPasswordIncorrect
+from ..pdfminer.pdfparser import PDFSyntaxError
 from ..pdfminer.pdftypes import DocumentView
+from ..pdfminer.psexceptions import PSException
 from ._capture import miner_font_name
+from ._geometry import pdfplumber_pages_error
 from ._metadata import metadata_retyped_objects
 from .convert import Container
 from .exceptions import PdfminerException
@@ -94,17 +98,29 @@ def cluster_by_preserving_order(
     return groups
 
 
+# What reading a page raises: core-pdf's errors, and those the facade raises as pdfminer's
+# interpreter does (PSSyntaxError, PDFKeyError, KeyError, AssertionError), all of which
+# pdfplumber's Page.layout wraps in PdfminerException.
+PAGE_ERRORS = (PdfError, PSException, KeyError, AssertionError)
+
+
 def _source(value: PdfInput, password: str = "") -> PdfDocument:
     try:
-        document = PdfDocument.open(
-            value,
-            password=password,
-            recovery_scan_all_revisions=False,
-        )
-        if pdfminer_xref_chain_loops(document.raw_data):
+        try:
+            document = PdfDocument.open(
+                value,
+                password=password,
+                recovery_scan_all_revisions=False,
+            )
+        except PdfPasswordError as error:
+            raise PDFPasswordIncorrect from error
+        except PdfEmptySourceError as error:
+            raise PDFSyntaxError("No /Root object! - Is this really a PDF?") from error
+        opening_error = pdfminer_open_error(document.raw_data)
+        if opening_error is not None:
             document.close()
-            # pdfminer's PDFDocument follows this xref chain until the stack overflows.
-            raise RecursionError(MESSAGE)
+            # What pdfminer's PDFDocument raises opening this file.
+            raise opening_error
     except Exception as exc:
         raise PdfminerException(exc) from exc
     return document
@@ -762,7 +778,7 @@ class Page(Container):
         if self._objects is None:
             try:
                 self._objects = self._parse_objects()
-            except PdfError as error:
+            except PAGE_ERRORS as error:
                 raise PdfminerException(error) from error
         return self._objects
 
@@ -1654,9 +1670,14 @@ class PDF(ClosingMixin, Container):
                     page = Page(self, index, doctop, engine_page)
                     self._pages.append(page)
                     doctop += page.height
-            except IndexError, PdfminerException:
-                raise
             except Exception as exc:
+                # Where core-pdf cannot read the pages, read them as pdfminer and pdfplumber
+                # do, for the exception pdfplumber raises.
+                error = pdfplumber_pages_error(self._document.raw_data, self._page_selection)
+                if error is not None:
+                    raise error from exc
+                if isinstance(exc, (IndexError, PdfminerException)):
+                    raise
                 raise PdfminerException(exc) from exc
         return self._pages
 
@@ -1713,8 +1734,17 @@ class PDF(ClosingMixin, Container):
         }
 
     def close(self) -> None:
+        # pdfplumber's flush_cache drops the pages it has read, so close() reads them again
+        # and raises where reading them raises.
         self.flush_cache()
-        self._document.close()
+        if self._document.closed:
+            return
+        self._pages = None
+        try:
+            for page in self.pages:
+                page.close()
+        finally:
+            self._document.close()
 
     def flush_cache(self, *_: Any) -> None:
         for page in self._pages or ():

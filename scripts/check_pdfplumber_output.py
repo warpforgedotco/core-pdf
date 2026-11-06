@@ -2,6 +2,10 @@
 
 uv run --all-packages --with "pdfplumber==0.11.10" python scripts/check_pdfplumber_output.py
 
+The files are every PDF under tests/upstream but pypdf's downloads in pdf_cache, which CI
+does not fetch for this check; symbolic links are left out, as each names a file covered
+under its own name or none.
+
 Each file is opened by the real pdfplumber and by the facade, and the first MAX_PAGES pages
 of each are compared check by check:
 
@@ -15,7 +19,8 @@ tables: extract_tables().
 
 Floats are equal when they agree to within FLOAT_TOLERANCE (absolute), so the last bits of
 float arithmetic do not count but a misplaced glyph does. A check that raises must raise
-an exception of the same class name in both libraries, and opening the file likewise.
+an exception of the same class name and message in both libraries, and opening the file,
+reading its pages and closing it likewise.
 
 Every difference fails the check unless DEPARTURES lists it, with the reason the facade does
 not follow pdfplumber there. A listed difference that no longer differs fails it too, so the

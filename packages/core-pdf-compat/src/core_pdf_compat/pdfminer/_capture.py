@@ -13,7 +13,7 @@ from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.exceptions import PdfError, PdfParseError
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.types import PdfString, Rectangle
+from core_pdf.impl.types import PdfReference, PdfString, Rectangle
 from core_pdf_spec.s_07_content.inline_images import InlineImage
 from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_07_content.operations import ContentOperands
@@ -27,6 +27,8 @@ from ._fonts import (
     pdfminer_embedded_cmap_is_unusable,
     pdfminer_normalized_width,
 )
+from ._parsing import pdfminer_content_error
+from .pdfexceptions import PDFKeyError
 
 
 class InvalidContentDictionaryError(PdfParseError): ...
@@ -66,6 +68,10 @@ class PdfminerRecovery(CaptureRecovery):
         is_operator: Callable[[bytes], bool] | None = None,
     ) -> int | None:
         if isinstance(error, InvalidContentDictionaryError):
+            # pdfminer's PSStackParser raises PSSyntaxError naming the dictionary's entries.
+            pdfminer_error = pdfminer_content_error(lexer.raw_data)
+            if pdfminer_error is not None:
+                raise pdfminer_error from error
             raise PdfError(str(error)) from error
         return super().resume(lexer, error, kind, start, is_operator)
 
@@ -118,9 +124,17 @@ def mult_matrix(m1: Any, m0: Any) -> PdfminerMatrix:
     )
 
 
+US_LETTER = (0.0, 0.0, 612.0, 792.0)
+
+
+def pdfminer_media_box(page: PdfPage) -> tuple[float, float, float, float]:
+    """The page's MediaBox; pdfminer's PDFPage takes US Letter for a missing or unreadable one."""
+    return page.media_box or US_LETTER
+
+
 def pdfminer_base_ctm(page: PdfPage) -> PdfminerMatrix:
     """The matrix pdfminer's interpreter starts a page with, from its PDFPageInterpreter."""
-    x0, y0, x1, y1 = page.media_box or (0.0, 0.0, abs(page.width), abs(page.height))
+    x0, y0, x1, y1 = pdfminer_media_box(page)
     rotation = int(page.rotation) % 360
     if rotation == 90:
         return (0, -1, 1, 0, -y0, x1)
@@ -509,29 +523,47 @@ def pdfminer_page_program(page: PdfPage) -> PdfminerProgram:
 
 
 def pdfminer_validate_page_resources(page: PdfPage) -> None:
+    """Raise what pdfminer's PDFPageInterpreter.init_resources raises on the page's resources.
+
+    It reads the resources in their order: each font of /Font (a Type0 font takes its
+    /DescendantFonts with spec["DescendantFonts"] and asserts the list is not empty), and
+    each color space of /ColorSpace (an ICCBased one reads /N from its stream).
+    """
     resources = page.resources
     resolver = page.document.resolver
-    fonts = resolver.dict_at(resources, "Font")
-    if fonts is not None:
-        for font_value in fonts.values():
-            font = resolver.as_dict(font_value)
-            if font is None:
-                continue
-            if recover_pdf_name(font.get("Subtype")) == "Type0" and not resolver.array_at(
-                font, "DescendantFonts"
-            ):
-                raise PdfError("Type0 font is missing /DescendantFonts")
+    for key, value in resources.items():
+        name = recover_pdf_name(key)
+        if name == "Font":
+            validate_fonts(resolver.as_dict(value) or {}, resolver)
+        elif name == "ColorSpace":
+            validate_color_spaces(resolver.as_dict(value) or {}, resolver)
 
-    color_spaces = resolver.dict_at(resources, "ColorSpace")
-    if color_spaces is None:
-        return
+
+def validate_fonts(fonts: PdfDict, resolver: Any) -> None:
+    for font_value in fonts.values():
+        font = resolver.as_dict(font_value)
+        if font is None or recover_pdf_name(font.get("Subtype")) != "Type0":
+            continue
+        if font.get("DescendantFonts") is None:
+            raise KeyError("DescendantFonts")
+        if not resolver.array_at(font, "DescendantFonts"):
+            raise AssertionError
+
+
+def validate_color_spaces(color_spaces: PdfDict, resolver: Any) -> None:
     for color_space_value in color_spaces.values():
-        color_space = page.document.resolver.resolve(color_space_value)
+        color_space = resolver.resolve(color_space_value)
         if not isinstance(color_space, list) or len(color_space) < 2:
             continue
         if recover_pdf_name(color_space[0]) != "ICCBased":
             continue
-        profile = page.document.resolver.resolve(color_space[1])
-        dictionary = getattr(profile, "dictionary", profile)
-        if not isinstance(dictionary, dict) or dictionary.get("N") is None:
-            raise PdfError("ICCBased color profile is missing /N")
+        # pdfminer's stream_value(spec[1])["N"]: a missing /N names the stream's object,
+        # and anything but a stream stands in for an empty stream with no object number.
+        profile = resolver.resolve(color_space[1])
+        dictionary = getattr(profile, "dictionary", None)
+        if not isinstance(dictionary, dict):
+            raise PDFKeyError("PDF stream object None does not have attribute 'N'")
+        if dictionary.get("N") is None:
+            reference = color_space[1]
+            objid = reference.object_number if isinstance(reference, PdfReference) else None
+            raise PDFKeyError(f"PDF stream object {objid} does not have attribute 'N'")

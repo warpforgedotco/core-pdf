@@ -2,6 +2,11 @@
 
 uv run --all-packages --with "pdfminer.six==20260107" python scripts/check_pdfminer_output.py
 
+The files are every PDF under tests/upstream but pypdf's downloads in pdf_cache, which CI
+does not fetch for this check; symbolic links are left out, as each names a file covered
+under its own name or none. A file pdfminer takes over SECONDS_PER_FILE to read is not
+compared, and is printed as such; one the facade takes that long over fails the check.
+
 Each file goes through the real pdfminer and the facade the same way, with default LAParams
 and at most MAX_PAGES (5) pages, and two things are compared:
 
@@ -11,8 +16,8 @@ layout: the tree extract_pages yields, one record per object, depth first: the c
     and for every LTChar its text, fontname, size and bbox. LTAnno records carry their text.
     Numbers match when they are within TOLERANCE of each other.
 
-When one side raises, the other must raise an exception of the same class name, at the same
-page. The first difference in a file is printed.
+When one side raises, the other must raise an exception of the same class name and message,
+at the same page. The first difference in a file is printed.
 
 Every difference fails the check unless DEPARTURES lists it, with the reason the facade does
 not follow pdfminer there. A listed file that matches fails it too, so the list stays true.

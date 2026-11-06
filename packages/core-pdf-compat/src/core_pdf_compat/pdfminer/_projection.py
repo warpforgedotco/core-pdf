@@ -10,6 +10,7 @@ from core_pdf.impl.types import GeneratedRecord
 from core_pdf_spec.s_07_content.model import PATH_CLOSE, PATH_CURVE, PATH_OPERAND_COUNTS, PATH_RECT
 
 from ._capture import (
+    pdfminer_media_box,
     pdfminer_page_program,
     pdfminer_validate_page_resources,
 )
@@ -149,14 +150,14 @@ def pdfminer_projected_widths(
 
 def project_page(
     page: PdfPage,
-    params: LAParams,
+    params: LAParams | None,
     *,
     policy: ProjectionPolicy = PDFMINER_POLICY,
     products: CapturedProgram | None = None,
 ) -> LTPage:
-    page_width = abs(page.width)
-    page_height = abs(page.height)
-    page_media_box = page.media_box or (0.0, 0.0, page_width, page_height)
+    page_media_box = pdfminer_media_box(page)
+    page_width = abs(page_media_box[2] - page_media_box[0])
+    page_height = abs(page_media_box[3] - page_media_box[1])
     if policy.strict_resources:
         pdfminer_validate_page_resources(page)
     if products is None:
@@ -487,7 +488,7 @@ def project_page(
         page_box,
         page.page_number,
         page.rotation,
-        analyze_layout(page_items, params, page_box),
+        page_items if params is None else analyze_layout(page_items, params, page_box),
     )
 
 
