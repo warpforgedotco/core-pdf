@@ -47,7 +47,7 @@ SUITES = {
         ("tests",),
         "pypdf=pypdf",
         ("pypdf[full]==6.21.4",),
-        ("pyyaml", "pillow", "cryptography", "fpdf2", "defusedxml", "pytest-socket"),
+        ("pyyaml", "pillow", "cryptography", "fpdf2", "defusedxml", "pytest-socket", "brotli"),
     ),
     # x-ray 0.4.0 pins PyMuPDF 1.24.14; on PyMuPDF 2.1 its own tests fail (see check_xray_output).
     "xray": Suite("x-ray", ("tests",), "xray=xray", ("x-ray==0.4.0",), ("pymupdf==1.24.14",)),
