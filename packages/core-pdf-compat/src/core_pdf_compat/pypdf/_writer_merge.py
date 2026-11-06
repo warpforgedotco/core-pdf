@@ -120,7 +120,8 @@ class MergeWriter:
         for page in self._selected_pages(pages, reader):
             original = page if isinstance(page, PageObject) else reader.pages[page]
             number = cast(IndirectObject, original.indirect_reference).idnum
-            cut = [*excluded, "/B", "/Annots"]
+            # As in pypdf: /B and /Annots are left out of the page itself only, one level.
+            cut = [*excluded, 1, "/B", 1, "/Annots"]
             if position is None:
                 source_pages[number] = self.add_page(original, cut)
             else:

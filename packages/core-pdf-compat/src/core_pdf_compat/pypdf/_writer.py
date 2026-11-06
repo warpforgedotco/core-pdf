@@ -7,7 +7,7 @@ import logging
 import secrets
 import sys
 import warnings
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from copy import copy, replace
 from io import BytesIO, IOBase
 from pathlib import Path
@@ -85,6 +85,7 @@ from .generic import (
     StreamObject,
     TextStringObject,
     ViewerPreferences,
+    _trimmed_ignore_fields,
     create_string_object,
     is_null_or_none,
     to_core,
@@ -627,6 +628,8 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         # is kept too, because an id can be reused once its object is freed.
         self._id_translated: dict[int, dict[Any, Any]] = {}
         self._chain_visited: set[tuple[int, int]] = set()
+        # Copies of a page a link reached before the page itself was added; see _import_page.
+        self._superseded_pages: set[int] = set()
         self._importing = False
         self._encryption: Encryption | None = None
         self._encrypt_entry: dict[Any, Any] | None = None
@@ -923,8 +926,9 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         if not isinstance(page, PageObject) or page.get("/Type") != "/Page":
             raise ValueError("Invalid page object")
         # Numbers in the list mean a limit on the depth in pypdf: only the page's level is cut.
-        excluded = {key for key in excluded_keys if isinstance(key, str)}
-        output = self._import_page(page, excluded | {"/Parent", "/StructParents"})
+        fields = [*excluded_keys, "/Parent", "/StructParents"]
+        excluded = {key for key in fields[:-2] if isinstance(key, str)}
+        output = self._import_page(page, fields)
         source = page.pdf
         if source is not None:
             self._header = highest_header(self.pdf_header, source.pdf_header).encode()
@@ -1011,27 +1015,39 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         if clean and reference is not None:
             self._replace_object(reference, NullObject())
 
-    def _import_page(self, page: Any, excluded: set[str]) -> PageObject:
+    def _import_page(self, page: Any, fields: list[Any]) -> PageObject:
         reference = page.indirect_reference
         owner = getattr(reference, "pdf", None)
         translated = self._translation(owner)
         # A page gets a dictionary of its own each time, as in pypdf, even if a link copied it
         # before: that copy stays, and the link keeps pointing at it.
         output: Any = PageObject()
+        # pypdf's clone passes the excluded keys down to every level below the page, so a
+        # page a link reaches is copied without its /Parent. A key after a number n is left
+        # out only n levels deep: [1, "/B"] drops the page's /B, not a font's.
+        fields = _trimmed_ignore_fields(fields)
+        excluded = {key for key in fields if isinstance(key, str)}
         number = self._add_object(output).idnum
         if reference is not None:
+            # A copy a link made earlier stays in the file unreached once the link is
+            # patched to this one, as in pypdf. It duplicates a page still in the document,
+            # so its being written hides nothing removed, and _report_save does not warn.
+            if (earlier := translated.get(reference.idnum)) is not None:
+                self._superseded_pages.add(earlier)
             translated[reference.idnum] = number
         for key, value in dict.items(page):
             if key not in excluded:
-                dict.__setitem__(output, key, self._import(value, owner))
+                dict.__setitem__(output, key, self._import(value, owner, fields))
         for key in ("/Resources", "/MediaBox", "/CropBox", "/Rotate"):
             if key not in output and key not in excluded:
                 inherited = page.get_inherited(key)
                 if inherited is not None:
-                    dict.__setitem__(output, NameObject(key), self._import(inherited, owner))
+                    dict.__setitem__(
+                        output, NameObject(key), self._import(inherited, owner, fields)
+                    )
         return output
 
-    def _import(self, value: Any, owner: Any) -> Any:
+    def _import(self, value: Any, owner: Any, fields: Sequence[Any] = ()) -> Any:
         """Copy a value from another document, with what it refers to.
 
         Objects are numbered depth first, as pypdf does. Work goes on a stack of generators
@@ -1044,7 +1060,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             self._importing = True
         try:
             pending: list[Iterator[None]] = []
-            output = self._bring(value, owner, pending)
+            output = self._bring(value, owner, pending, fields)
             while pending:
                 if next(pending[-1], self) is self:
                     pending.pop()
@@ -1053,7 +1069,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 self._importing = False
         return output
 
-    def _bring(self, value: Any, owner: Any, pending: list[Any]) -> Any:
+    def _bring(self, value: Any, owner: Any, pending: list[Any], fields: Sequence[Any] = ()) -> Any:
         if isinstance(value, IndirectObject):
             if value.pdf is self:
                 return value
@@ -1072,10 +1088,10 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 duplicate.indirect_reference = None
             reference = self._add_object(duplicate)
             translated[value.idnum] = reference.idnum
-            pending.append(self._fill_copy(duplicate, target, owner, pending))
+            pending.append(self._fill_copy(duplicate, target, owner, pending, fields))
             return reference
         duplicate = self._empty_copy(value)
-        pending.append(self._fill_copy(duplicate, value, owner, pending))
+        pending.append(self._fill_copy(duplicate, value, owner, pending, fields))
         # A page built outside a writer can hold a stream directly, which PDF does not allow.
         return self._add_object(duplicate) if isinstance(duplicate, StreamObject) else duplicate
 
@@ -1094,19 +1110,26 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             return ArrayObject()
         return value
 
-    def _bring_array_item(self, item: Any, owner: Any, pending: list[Any]) -> Any:
+    def _bring_array_item(
+        self, item: Any, owner: Any, pending: list[Any], fields: Sequence[Any]
+    ) -> Any:
         """pypdf gives a stream in an array its own copy each time, so pages stop sharing it."""
         if isinstance(item, IndirectObject) and item.pdf is not self:
             target = item.get_object()
             if isinstance(target, StreamObject):
                 duplicate = self._empty_copy(target)
                 reference = self._add_object(duplicate)
-                pending.append(self._fill_copy(duplicate, target, item.pdf, pending))
+                pending.append(self._fill_copy(duplicate, target, item.pdf, pending, fields))
                 return reference
-        return self._bring(item, owner, pending)
+        return self._bring(item, owner, pending, fields)
 
     def _number_chains(
-        self, value: DictionaryObject, duplicate: Any, owner: Any, pending: list[Any]
+        self,
+        value: DictionaryObject,
+        duplicate: Any,
+        owner: Any,
+        pending: list[Any],
+        fields: Sequence[Any],
     ) -> None:
         """Number a linked list in order before its items are filled, as pypdf does.
 
@@ -1117,6 +1140,8 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         """
         kind = value.get_resolved("/Type")
         for key, back in (("/Next", "/Prev"), ("/Prev", "/Next"), ("/N", "/V"), ("/V", "/N")):
+            if key in fields:
+                continue
             start = len(pending)
             current: Any = value
             holder = duplicate
@@ -1133,7 +1158,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                     break
                 if link.idnum in self._translation(link.pdf):
                     break
-                reference = self._bring(link, owner, pending)
+                reference = self._bring(link, owner, pending, fields)
                 if not isinstance(holder, DictionaryObject) or key in holder:
                     break
                 dict.__setitem__(holder, NameObject(key), reference)
@@ -1170,17 +1195,27 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         return True
 
     def _fill_copy(
-        self, duplicate: Any, value: Any, owner: Any, pending: list[Any]
+        self,
+        duplicate: Any,
+        value: Any,
+        owner: Any,
+        pending: list[Any],
+        fields: Sequence[Any] = (),
     ) -> Iterator[None]:
         if isinstance(value, DictionaryObject):
-            self._number_chains(value, duplicate, owner, pending)
+            # As pypdf's DictionaryObject._clone: each level counts down the limited keys.
+            if fields:
+                fields = _trimmed_ignore_fields(fields)
+            self._number_chains(value, duplicate, owner, pending, fields)
             yield
             for key, item in dict.items(value):
-                dict.__setitem__(duplicate, key, self._bring(item, owner, pending))
+                if key in fields:
+                    continue
+                dict.__setitem__(duplicate, key, self._bring(item, owner, pending, fields))
                 yield
         elif isinstance(value, ArrayObject):
             for item in value:
-                duplicate.append(self._bring_array_item(item, owner, pending))
+                duplicate.append(self._bring_array_item(item, owner, pending, fields))
                 yield
 
     def clone_reader_document_root(self, reader: Any) -> None:
@@ -1615,7 +1650,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 if item is not None and index + 1 not in reached
             )
             self.last_save = SaveReport("full", self._objects_written, (), kept)
-            if kept:
+            if set(kept) - self._superseded_pages:
                 logger.warning(
                     "Saved %d objects the document no longer reaches, as pypdf does. "
                     "EditableDocument.save leaves them out.",
