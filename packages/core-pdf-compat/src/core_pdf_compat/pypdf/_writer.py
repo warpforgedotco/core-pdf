@@ -510,13 +510,11 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         # For each source document, by id, its object numbers' numbers here. The document
         # is kept too, because an id can be reused once its object is freed.
         self._id_translated: dict[int, dict[Any, Any]] = {}
-        self._reserved_pages: set[int] = set()
         self._chain_visited: set[tuple[int, int]] = set()
         self._importing = False
         self._encryption: Encryption | None = None
         self._encrypt_entry: dict[Any, Any] | None = None
         self._file_id: bytes | None = None
-        self._cloning = False
         self._idnum_hash: dict[bytes, Any] = {}
         # For an incremental update: a digest of each object as read, and what the file reached.
         self._original_hash: list[bytes | None] = []
@@ -894,12 +892,10 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         reference = page.indirect_reference
         owner = getattr(reference, "pdf", None)
         translated = self._translation(owner)
-        # A link imported earlier may already have reserved this page's number. Any other
-        # page gets a dictionary of its own, as a file may not list one object twice.
-        known = None if reference is None else translated.get(reference.idnum)
-        output: Any = self.get_object(known) if known in self._reserved_pages else PageObject()
+        # A page gets a dictionary of its own each time, as in pypdf, even if a link copied it
+        # before: that copy stays, and the link keeps pointing at it.
+        output: Any = PageObject()
         number = self._add_object(output).idnum
-        self._reserved_pages.discard(number)
         if reference is not None:
             translated[reference.idnum] = number
         for key, value in dict.items(page):
@@ -946,15 +942,6 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             target = value.get_object()
             if target is None:
                 target = NullObject()
-            is_page = (
-                isinstance(target, DictionaryObject) and target.get_resolved("/Type") == "/Page"
-            )
-            if is_page and not self._cloning:
-                # Hold the number. If this page is never imported, the link goes to null.
-                reference = self._add_object(PageObject())
-                translated[value.idnum] = reference.idnum
-                self._reserved_pages.add(reference.idnum)
-                return reference
             duplicate = self._empty_copy(target)
             if duplicate is target:
                 # A plain value is shared with the source, which must keep its own reference.
@@ -1080,9 +1067,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         else:
             self._objects.clear()
             self._id_translated.clear()
-            self._cloning = True
             root = self._import(reader.trailer.raw_get("/Root"), reader)
-            self._cloning = False
             self._root_object = root.get_object()
             self._add_object(self._root_object)
             self._pages = self._add_object(self._root_object["/Pages"])
@@ -1416,7 +1401,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             item = self._objects[number - 1]
             if item is None:
                 continue
-            core = None if number in self._reserved_pages else to_core(item)
+            core = to_core(item)
             output[PdfReference(number, 0)] = core
             pending.extend(references_in(core))
         return output
@@ -1437,7 +1422,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         for index, item in enumerate(self._objects):
             if item is not None:
                 number = index + 1
-                core = None if number in self._reserved_pages else to_core(item)
+                core = to_core(item)
                 objects[PdfReference(number, 0)] = core
         self._objects_written = len(objects)
         trailer = self._trailer()

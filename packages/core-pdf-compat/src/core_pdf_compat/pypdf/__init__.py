@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 import re
 from io import BytesIO, UnsupportedOperation
@@ -349,10 +350,14 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             return stream
         return stream.replace(raw_data=found)
 
+    @functools.cached_property
+    def _holds_nul(self) -> bool:
+        return b"\x00" in self._data
+
     def _has_pypdf_only_name(self, entry: Any) -> bool:
         """Whether a name runs into a NUL byte, which pypdf reads as part of the name."""
         offset = getattr(entry, "offset", None)
-        if not isinstance(offset, int) or b"\x00" not in self._data:
+        if not isinstance(offset, int) or not self._holds_nul:
             return False
         end = self._data.find(b"endobj", offset)
         keyword = self._data.find(b"stream", offset, None if end < 0 else end)

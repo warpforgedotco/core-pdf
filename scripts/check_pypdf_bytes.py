@@ -38,13 +38,7 @@ PATTERNS = (
     "tests/upstream/pypdf/resources/*.pdf",
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
-DEPARTURES: dict[tuple[str, str], str] = {
-    ("append", "SF424_page2.pdf"): (
-        "pypdf copies a page outside the page tree that a field's widget points at; the "
-        "facade writes null for a page it was not asked to copy, so append(pages=...) never "
-        "carries pages the caller left out"
-    ),
-}
+DEPARTURES: dict[tuple[str, str], str] = {}
 
 
 def incremental(library: Any, data: bytes) -> bytes:
