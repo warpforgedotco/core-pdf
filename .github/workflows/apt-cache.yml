@@ -28,7 +28,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Install Ghostscript, jbig2dec and Poppler
+      - name: Install Ghostscript, jbig2dec, Poppler and qpdf
         uses: ./.github/actions/install-pdf-tools
 
   pypdf-files:
@@ -41,7 +41,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Ghostscript, jbig2dec and Poppler
+      - name: Install Ghostscript, jbig2dec, Poppler and qpdf
         # pypdf skips its JBIG2 and Ghostscript tests without these tools, and a skipped test
         # asks for none of its files, so the recorded list would come up short.
         uses: ./.github/actions/install-pdf-tools
