@@ -34,9 +34,6 @@ jobs:
       - name: Install workspace packages and quality tools
         run: uv sync --locked --all-packages --group lint --group test
 
-      - name: Build standalone distributions
-        run: uv build --all-packages
-
       # setup-uv caches uv's own store, not prek's clones of the remote hook
       # repositories. Their revisions are pinned in prek.toml, so its hash is
       # an exact key.
@@ -48,6 +45,30 @@ jobs:
 
       - name: Run prek
         run: uvx prek run --all-files --stage pre-push
+
+      - name: Prune uv cache
+        if: ${{ always() && !cancelled() }}
+        run: uv cache prune --ci
+
+  build:
+    # Apart from Quality, so the two slow steps run side by side.
+    name: Build distributions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.6"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Build standalone distributions
+        run: uv build --all-packages
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}
@@ -159,8 +180,47 @@ jobs:
       - name: Run the suite against the facade
         run: uv run --locked --all-packages --group test python scripts/run_upstream_suite.py ${{ matrix.suite }}
 
-      - name: Run the object model proofs
+      - name: Compare with the real pypdf
         if: matrix.suite == 'pypdf'
+        run: |
+          uv run --locked --all-packages --group test python scripts/run_upstream_suite.py pypdf --reference
+          uv run --locked --all-packages --group test python scripts/audit_upstream_skips.py pypdf
+
+      - name: Prune uv cache
+        if: ${{ always() && !cancelled() }}
+        run: uv cache prune --ci
+
+  proofs:
+    # The object model proofs, in two shards that run beside the suites.
+    name: Proofs / ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - core
+          - pypdf output
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.6"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Ghostscript, jbig2dec and Poppler
+        uses: ./.github/actions/install-pdf-tools
+
+      - name: Serializer, rewrites and saves
+        if: matrix.shard == 'core'
         run: |
           run="uv run --locked --all-packages --group test python scripts"
           $run/check_object_roundtrip.py
@@ -172,10 +232,12 @@ jobs:
           $run/check_writer_lossless.py
           $run/check_encrypted_output.py
           $run/check_save_statements.py
+
+      - name: Bytes and reads against the real pypdf
+        if: matrix.shard == 'pypdf output'
+        run: |
           uv run --locked --all-packages --group test --with "pypdf[full]==6.15.0" python scripts/check_pypdf_bytes.py
           uv run --locked --all-packages --group test --with "pypdf[full]==6.15.0" python scripts/check_pypdf_reads.py
-          $run/run_upstream_suite.py pypdf --reference
-          $run/audit_upstream_skips.py pypdf
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}
