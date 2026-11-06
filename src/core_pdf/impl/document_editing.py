@@ -34,6 +34,13 @@ if TYPE_CHECKING:
     from core_pdf.impl.document_document import PdfDocument
 
 BINARY_MARKER = b"%\xe2\xe3\xcf\xd3\n"
+
+
+def file_header(version_line: bytes) -> bytes:
+    """The start of a file: its %PDF- version line, then a comment of high bytes (7.5.2)."""
+    return version_line + b"\n" + BINARY_MARKER
+
+
 TRAILER_KEYS = ("Root", "Info", "ID")
 # 7.6: AES needs PDF 1.6 and AES-256 needs 1.7 with an extension or 2.0.
 ENCRYPTED_HEADER_VERSION = b"1.7"
@@ -203,7 +210,7 @@ class EditableDocument:
         if xref_stream:
             minimum = max(minimum, XREF_STREAM_HEADER_VERSION)
         header = output_header(self.document.raw_data[:8], minimum)
-        output = bytearray(header + b"\n" + BINARY_MARKER)
+        output = bytearray(file_header(header))
         output += serialize_body(
             len(output),
             objects,
@@ -492,4 +499,11 @@ def table_section(offsets: dict[int, tuple[int, int]]) -> bytes:
     return bytes(section)
 
 
-__all__ = ("BINARY_MARKER", "EditableDocument", "NewEncryption", "SavedPdf", "serialize_body")
+__all__ = (
+    "BINARY_MARKER",
+    "EditableDocument",
+    "NewEncryption",
+    "SavedPdf",
+    "file_header",
+    "serialize_body",
+)

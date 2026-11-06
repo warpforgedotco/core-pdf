@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Any, Literal, NamedTuple, NoReturn, cast
 
 from core_pdf.impl.document_editing import (
-    BINARY_MARKER,
     TRAILER_KEYS,
     EditableDocument,
     SavedPdf,
+    file_header,
     references_in,
     serialize_body,
 )
@@ -1572,7 +1572,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         return trailer
 
     def _serialized(self) -> bytes:
-        header = self._header + b"\n" + BINARY_MARKER
+        header = file_header(self._header)
         # Every object the writer holds, as pypdf writes them, reached or not. A page removed
         # through the writer stays in the file, as in pypdf; EditableDocument.save drops it.
         objects: dict[PdfReference, Any] = {}
