@@ -3,7 +3,7 @@
 uv run --all-packages --with "pdfminer.six==20260107" python scripts/check_pdfminer_output.py
 
 Each file goes through the real pdfminer and the facade the same way, with default LAParams
-and at most MAX_PAGES pages, and two things are compared:
+and at most MAX_PAGES (5) pages, and two things are compared:
 
 text: pdfminer.high_level.extract_text, page by page (split on the form feed).
 layout: the tree extract_pages yields, one record per object, depth first: the class name
@@ -16,6 +16,11 @@ page. The first difference in a file is printed.
 
 Every difference fails the check unless DEPARTURES lists it, with the reason the facade does
 not follow pdfminer there. A listed file that matches fails it too, so the list stays true.
+
+pdfminer orders text boxes by merging the closest pair first, and breaks ties between equal
+distances by id(), a memory address, so for TIES files its own box order changes from run to
+run. There a file passes when it matches outright, or when the pages hold the same text boxes
+(each compared record by record, as above) in another order, and the same characters of text.
 Pass file names to check only those.
 """
 
@@ -47,7 +52,32 @@ MAX_PAGES = 5
 TOLERANCE = 1e-3
 SECONDS_PER_FILE = 120
 # (check, file name) -> why the facade does not follow pdfminer there.
-DEPARTURES: dict[tuple[str, str], str] = {}
+RECURSION = (
+    "pdfminer follows the xref chain until Python's stack overflows and raises RecursionError; "
+    "core-pdf detects the loop and raises PdfError"
+)
+UNREADABLE_XREF = (
+    "the last xref section has no /Root and its startxref no offset; pdfminer still finds the "
+    "first page's objects through the first section, core-pdf's recovery finds no pages"
+)
+DEPARTURES: dict[tuple[str, str], str] = {
+    ("text", "issue-1249-evil-xrefs.pdf"): RECURSION,
+    ("layout", "issue-1249-evil-xrefs.pdf"): RECURSION,
+    ("text", "unreadablemetadata.pdf"): UNREADABLE_XREF,
+    ("layout", "unreadablemetadata.pdf"): UNREADABLE_XREF,
+}
+# Files with text boxes at equal distances, where pdfminer's order follows memory addresses.
+# Running pdfminer alone a dozen times over each, with other allocations in between, gives
+# more than one order, or its order changed between runs of this check.
+TIES = frozenset(
+    {
+        "GeoBase_NHNC1_Data_Model_UML_EN.pdf",
+        "GeoTopo-komprimiert.pdf",
+        "GeoTopo.pdf",
+        "issue-90-example.pdf",
+        "nics-background-checks-2015-11-rotated.pdf",
+    }
+)
 
 Record = tuple[Any, ...]
 
@@ -74,8 +104,10 @@ def layout_pages(module: Any, layout: Any, path: str) -> list[list[Record] | str
     """Each page's records, and the exception class name last if extraction raised."""
     pages: list[list[Record] | str] = []
     try:
-        for page in module.extract_pages(path, maxpages=MAX_PAGES):
-            pages.append(list(records(page, 0, layout)))
+        pages.extend(
+            list(records(page, 0, layout))
+            for page in module.extract_pages(path, maxpages=MAX_PAGES)
+        )
     except Timeout:
         raise
     except Exception as error:  # noqa: BLE001
@@ -100,7 +132,7 @@ def same_value(expected: Any, actual: Any) -> bool:
 
 
 def same_record(expected: Record, actual: Record) -> bool:
-    return len(expected) == len(actual) and all(map(same_value, expected, actual))
+    return len(expected) == len(actual) and all(map(same_value, expected, actual, strict=True))
 
 
 def first_layout_difference(expected: list[Record] | str, actual: list[Record] | str) -> str | None:
@@ -125,7 +157,44 @@ def first_text_difference(expected: str, actual: str) -> str | None:
         min(len(expected), len(actual)),
     )
     start = max(at - 10, 0)
-    return f"at char {at}: pdfminer {expected[start : at + 30]!r}, facade {actual[start : at + 30]!r}"
+    return (
+        f"at char {at}: pdfminer {expected[start : at + 30]!r}, facade {actual[start : at + 30]!r}"
+    )
+
+
+def top_level_items(page: list[Record]) -> list[list[Record]]:
+    """A page's records, split into the subtrees of its top-level objects."""
+    items: list[list[Record]] = []
+    for record in page[1:]:
+        if record[0] == 1:
+            items.append([])
+        items[-1].append(record)
+    return items
+
+
+def same_boxes_in_any_order(expected: list[Record] | str, actual: list[Record] | str) -> bool:
+    if isinstance(expected, str) or isinstance(actual, str):
+        return expected == actual
+    if not expected or not actual or not same_record(expected[0], actual[0]):
+        return False
+    remaining = top_level_items(actual)
+    for item in top_level_items(expected):
+        match = next(
+            (
+                index
+                for index, other in enumerate(remaining)
+                if len(other) == len(item) and all(map(same_record, item, other, strict=True))
+            ),
+            None,
+        )
+        if match is None:
+            return False
+        remaining.pop(match)
+    return not remaining
+
+
+def same_characters(expected: list[Record] | str, actual: list[Record] | str) -> bool:
+    return collections.Counter(expected) == collections.Counter(actual)
 
 
 def short(value: Any) -> str:
@@ -190,6 +259,14 @@ def main(names: list[str]) -> int:
             same, different, first = compare_pages(expected, actual, differ)
             counts[f"{check} pages: identical"] += same
             listed = DEPARTURES.get((check, Path(path).name))
+            if first is not None and Path(path).name in TIES:
+                reordered = same_boxes_in_any_order if check == "layout" else same_characters
+                if len(expected) == len(actual) and all(
+                    map(reordered, expected, actual, strict=True)
+                ):
+                    counts[f"{check} files: same boxes, tied order differs"] += 1
+                    counts[f"{check} pages: same boxes, tied order differs"] += different
+                    continue
             if first is None:
                 counts[f"{check} files: identical"] += 1
                 if listed is not None:
