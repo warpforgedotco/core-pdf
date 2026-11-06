@@ -1435,8 +1435,15 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
     def write_bytes(self) -> SavedPdf:
         data = self._incremental_update() if self.incremental else self._serialized()
         self._report_save()
-        if isinstance(data, SavedPdf):
-            return data
+        if self.incremental and self.last_save is not None:
+            # The writer's own table knows what it removed; the source's numbers are the same.
+            return SavedPdf(
+                bytes(data),
+                incremental=True,
+                encryption=getattr(data, "encryption", None),
+                xref_stream=getattr(data, "xref_stream", False),
+                removed=self.last_save.removed,
+            )
         handler = None if self._encryption is None else self._encryption.handler
         encryption = None if handler is None else describe_encryption(handler.config)
         return SavedPdf(
