@@ -25,7 +25,7 @@ from core_pdf_compat.pypdf.errors import (
     PdfReadError,
     PdfStreamError,
 )
-from core_pdf_compat.pypdf.generic import DictionaryObject, NameObject, to_generic
+from core_pdf_compat.pypdf.generic import DictionaryObject, NameObject, read_object, to_generic
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.stream import PdfStream
@@ -290,7 +290,7 @@ class XrefScan:
         first_time = True
         recovered: dict[int, tuple[int, int]] | None = None
         while True:
-            number = self._read_object()
+            number = read_object(stream, self.pdf)
             if first_time and number != 0:
                 self.xref_index = number
                 if self.strict:
@@ -299,7 +299,7 @@ class XrefScan:
                     )
             first_time = False
             _skip_whitespace(stream)
-            size = self._read_object()
+            size = read_object(stream, self.pdf)
             if not isinstance(size, int):
                 logger.warning("Invalid/Truncated xref table. Rebuilding it.")
                 self._rebuild()
@@ -530,8 +530,9 @@ class XrefScan:
     def _literal_trailers(self) -> Iterator[tuple[int, DictionaryObject]]:
         for match in re.finditer(rb"trailer[\x00\t\n\f\r ]*<<", self.data):
             position = match.end() - 2
-            self.lexer.rewind(position)
-            yield position, to_generic(self.lexer.parse_object(), self.pdf)
+            # pypdf's own parser, which keeps what it can of a damaged dictionary.
+            self.stream.seek(position)
+            yield position, read_object(self.stream, self.pdf)
 
 
 # The end of a stream's dictionary and its keyword, with white-space or comments between.
@@ -546,6 +547,12 @@ def stream_keyword(data: bytes, offset: int) -> re.Match[bytes] | None:
 
 # pypdf ends a name at white-space or a delimiter, and its white-space leaves out NUL.
 NAME_INTO_NUL = re.compile(rb"/[^\t\n\x0c\r ()<>\[\]{}/%\x00]*\x00")
+# A string escape pypdf keeps its backslash for, where PDF drops it: an unknown escaped
+# character, or an octal code above 255, after any escaped backslashes. Only a hint, as it
+# can match outside a string too.
+PYPDF_ONLY_ESCAPE = re.compile(rb"(?<!\\)(?:\\\\)*\\(?:[^nrtbf()\\0-7\r\n]|[4-7][0-7]{2})")
+# Where an object's own values end: its stream keyword or its endobj.
+OBJECT_VALUES_END = re.compile(rb"stream|endobj")
 INDIRECT_HEADER = re.compile(rb"[\x00\t\n\x0c\r ]*\d+[\x00\t\n\x0c\r ]+\d+[\x00\t\n\x0c\r ]+obj")
 # A stream's decoding entry holding a reference, at its top or nested, which core's resolver
 # replaces. Only a hint: the dictionary is then read to find which.

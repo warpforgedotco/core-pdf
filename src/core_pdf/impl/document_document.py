@@ -578,6 +578,10 @@ def normalize_values(
     return normalized
 
 
+AES256_REVISION = 5
+AES256_ENTRY_LENGTH = 48
+
+
 def create_recovered_security_handler(
     document_id: Sequence[object], params: PdfDict, password: str | bytes = ""
 ) -> StandardSecurityHandler:
@@ -609,6 +613,17 @@ def create_recovered_security_handler(
             if normalized is params:
                 normalized = dict(params)
             normalized["CF"] = normalized_filters
+    revision = parse_int(normalized.get("R"))
+    if revision is not None and revision >= AES256_REVISION:
+        # From revision 5, /O and /U hold a 32-byte hash and two 8-byte salts, and readers
+        # use only those first 48 bytes, so trailing bytes some producers write are ignored.
+        for name in ("O", "U"):
+            value = normalized.get(name)
+            data = value.data if isinstance(value, PdfString) else None
+            if data is not None and len(data) > AES256_ENTRY_LENGTH:
+                if normalized is params:
+                    normalized = dict(params)
+                normalized[name] = PdfString(bytes(data[:AES256_ENTRY_LENGTH]), is_literal=False)
     return create_standard_security_handler(document_id, normalized, password)
 
 
