@@ -1,17 +1,17 @@
-# Ported from pypdf._configuration of pypdf 6.21.4, Copyright (c) 2026, pypdf contributors,
+# Ported from pypdf._configuration of pypdf 7.0.0, Copyright (c) 2026, pypdf contributors,
 # under its BSD-style license. The legacy module constants it reads are the facade's own.
-"""Configuration value handling, as pypdf 6.21.4 has it."""
+"""Configuration value handling, as pypdf 7.0.0 has it."""
 
 from __future__ import annotations
 
 import functools
 import shutil
-import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Literal
 
+from core_pdf_compat.pypdf.errors import DeprecationError
 from core_records import GeneratedRecord
 
 
@@ -132,8 +132,16 @@ class Configuration(GeneratedRecord):
     form_fields_maximum_depth: int = 100
     """The maximum allowed depth for form fields."""
 
+    named_destinations_maximum_entries: int = 100_000
+    """The maximum allowed number of named destination name tree nodes."""
+    named_destinations_maximum_depth: int = 100
+    """The maximum allowed depth for a named destination name tree."""
+
     xform_maximum_invocations_per_extraction: int = 5_000
     """The maximum allowed number of ``/XObject`` forms per page during text extraction."""
+
+    xfa_decoding_work_maximum_length: int = 300_000_000
+    """The maximum allowed accumulated decoding work in bytes for the XFA form."""
 
     jbig2dec_binary: str | None = _determine_jbig2dec_binary()
     """
@@ -273,9 +281,6 @@ LEGACY_NAME_MAPPING = {
     "page_merge_box": "MERGE_CROP_BOX",
 }
 
-# Record which legacy overwrites have already emitted a warning in the current process/session.
-WARNED_LEGACY_OVERWRITES: set[str] = set()
-
 
 def apply_legacy_configuration() -> Configuration:
     """
@@ -320,23 +325,15 @@ def apply_legacy_configuration() -> Configuration:
         "JBIG2DEC_BINARY": JBIG2DEC_BINARY,
         "MERGE_CROP_BOX": MERGE_CROP_BOX,
     }
-    overwrites: dict[str, Any] = {}
 
     for field_name, legacy_name in LEGACY_NAME_MAPPING.items():
         legacy_value = legacy_values[legacy_name]
 
         if legacy_value != getattr(DEFAULT_CONFIGURATION, field_name):
-            if legacy_name not in WARNED_LEGACY_OVERWRITES:
-                warnings.warn(
-                    f"{legacy_name} is deprecated and will be removed in pypdf 7.0.0. "
-                    f"Use Configuration.{field_name} instead.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                WARNED_LEGACY_OVERWRITES.add(legacy_name)
+            # pypdf 7.0.0 removed the legacy constants: a changed value raises.
+            raise DeprecationError(
+                f"{legacy_name} is deprecated and was removed in pypdf 7.0.0. "
+                f"Use Configuration.{field_name} instead."
+            )
 
-            overwrites[field_name] = legacy_value
-
-    if not overwrites:
-        return configuration
-    return overwrite_configuration(**overwrites)
+    return configuration

@@ -265,19 +265,26 @@ class _Merge:
         incoming = self.source.get_resolved("/Annots")
         if not isinstance(incoming, ArrayObject) or not incoming:
             return
-        if is_null_or_none(self.page.get_resolved("/Annots")):
-            self.page[NameObject("/Annots")] = ArrayObject()
-        annots = self.page.get_resolved("/Annots")
         if self.writer is None:
+            if is_null_or_none(self.page.get_resolved("/Annots")):
+                self.page[NameObject("/Annots")] = ArrayObject()
+            annots = self.page.get_resolved("/Annots")
             annots = self.page[NameObject("/Annots")] = ArrayObject(annots)
             annots.extend(incoming)
             return
+        if "/Annots" not in self.page:
+            self.page[NameObject("/Annots")] = ArrayObject()
+        annots = self.page.get_resolved("/Annots")
         transformation = Transformation() if ctm is None else Transformation(ctm)
         # A copy, as merging a page into itself would otherwise never finish.
         for item in list(incoming):
             annotation = item.get_object()
             if isinstance(annotation, DictionaryObject):
-                annots.append(self._annotation(annotation, transformation))
+                reference = self._annotation(annotation, transformation)
+                # pypdf (#4335) copies each annotation but adds it only to an array: with a
+                # null or other /Annots, the copies are left unreached.
+                if isinstance(annots, list):
+                    annots.append(reference)
 
     def _detached(self, value: DictionaryObject, *dropped: str) -> DictionaryObject:
         """A new copy that leaves out the entries tying the object to its old page."""

@@ -1,4 +1,4 @@
-# Ported from pypdf 6.21.4's PdfDocCommon._flatten, Copyright (c) 2006, Mathieu Fenniak,
+# Ported from pypdf 7.0.0's PdfDocCommon._flatten, Copyright (c) 2006, Mathieu Fenniak,
 # under its BSD-style license.
 """pypdf's walk over a page tree, listing its pages with what they inherit.
 

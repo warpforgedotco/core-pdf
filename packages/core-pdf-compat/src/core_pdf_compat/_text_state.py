@@ -158,14 +158,19 @@ def positioned_text(
     else:
         lower, upper = line_span[1], line_span[2]
         distance = 0.0 if lower <= axis <= upper else min(abs(axis - lower), abs(axis - upper))
-    if distance > 0.8 * min(line_height * previous_scale_y, font_size * current_scale_y):
+    threshold = 0.8 * min(line_height * previous_scale_y, font_size * current_scale_y)
+    if distance > threshold:
         if trailing not in ("", "\n"):
             output_parts.append(text + "\n")
             text, output_last = "", "\n"
         return text, output_last, (axis_index, axis, axis)
-    if moved_width >= (
-        font_size * space_width / 1000.0 + string_width
-    ) * previous_scale_x and trailing not in ("", " "):
+    # pypdf 7.0.0: a fragment kept on the line only by the line span moved to another
+    # baseline, so it is a new word whatever its horizontal gap (#4254).
+    moved_to_other_baseline = abs(moved_height) > threshold
+    if (
+        moved_to_other_baseline
+        or moved_width >= (font_size * space_width / 1000.0 + string_width) * previous_scale_x
+    ) and trailing not in ("", " "):
         text += " "
     if trailing in ("", "\n") or line_span is None or line_span[0] != axis_index:
         return text, output_last, (axis_index, axis, axis)

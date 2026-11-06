@@ -115,7 +115,7 @@ class Encryption:
         return encryption_dictionary(self.handler.config)
 
 
-# Ported from pypdf 6.21.4's Encryption.read and its helpers, under pypdf's BSD-style
+# Ported from pypdf 7.0.0's Encryption.read and its helpers, under pypdf's BSD-style
 # license. core-pdf decrypts; these are the checks pypdf makes of the /Encrypt dictionary
 # when a reader opens, with its errors and warnings.
 def _get_entry(

@@ -975,7 +975,7 @@ class EmbeddedFile:
 
     @classmethod
     def _load(cls, catalog: DictionaryObject, strict: bool = False) -> Iterator[EmbeddedFile]:
-        # pypdf 6.21.4 skips (or in strict mode raises on) malformed name tree parts,
+        # pypdf 7.0.0 skips (or in strict mode raises on) malformed name tree parts,
         # and treats a null entry as an omitted one.
         if "/Names" not in catalog:
             return

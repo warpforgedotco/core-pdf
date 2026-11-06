@@ -1,4 +1,4 @@
-# Follows pypdf._cmap and pypdf.generic._font of pypdf 6.21.4, Copyright (c) 2006, Mathieu
+# Follows pypdf._cmap and pypdf.generic._font of pypdf 7.0.0, Copyright (c) 2006, Mathieu
 # Fenniak, under its BSD-style license.
 """pypdf's warnings while it reads a font's encoding and widths. core-pdf reads the font."""
 

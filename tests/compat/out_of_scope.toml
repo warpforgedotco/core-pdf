@@ -67,6 +67,9 @@ names = [
     # pypdf's private encryption module and crypt provider internals: Encryption.read, the
     # cryptography provider's RC4 fallback latch, and the private fallback provider module
     "Encryption.read", "_is_rc4_supported", "_fallback",
+    # PageObject's private resource renaming for merge_page, called directly by pypdf 7.0.0's
+    # tests (merge_page itself, which renames through it, stays in scope)
+    "_content_stream_rename",
 ]
 stubs = [
     "pypdf.generic._appearance_stream",

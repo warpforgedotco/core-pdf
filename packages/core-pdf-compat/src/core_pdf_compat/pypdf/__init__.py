@@ -9,7 +9,7 @@ import re
 import sys
 from io import BytesIO, UnsupportedOperation
 from pathlib import Path
-from typing import Any, NoReturn, cast
+from typing import Any, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import (
@@ -29,7 +29,7 @@ from core_pdf_compat.pypdf._configuration import (
     overwrite_configuration,
 )
 from core_pdf_compat.pypdf._crypt_providers import CryptAES
-from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
+from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon, TraversalState
 from core_pdf_compat.pypdf._encryption import (
     PasswordType,
     check_encryption_entry,
@@ -59,7 +59,6 @@ from core_pdf_compat.pypdf._reader_scan import (
 from core_pdf_compat.pypdf._text import LegacyTextCaches
 from core_pdf_compat.pypdf.constants import ImageType, ObjectDeletionFlag, UserAccessPermissions
 from core_pdf_compat.pypdf.errors import (
-    DeprecationError,
     FileNotDecryptedError,
     LimitReachedError,
     PdfReadError,
@@ -91,7 +90,7 @@ from core_pdf_spec.s_07_security.output import is_signature_contents
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, key_for
 
-__version__ = "6.21.4"
+__version__ = "7.0.0"
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +186,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self._scan_trailer = scan.trailer
 
     def _check_encryption(self) -> None:
-        """pypdf 6.21.4's checks of the trailer's /ID and /Encrypt when opening (#4197).
+        """pypdf 7.0.0's checks of the trailer's /ID and /Encrypt when opening (#4197).
 
         The objects are read as pypdf reads them, undecrypted and without caching.
         """
@@ -237,9 +236,17 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         tree: Any = None,
         retval: dict[str, Destination] | None = None,
         visited: set[int] | None = None,
+        depth: int = 0,
+        traversal_state: TraversalState | None = None,
     ) -> dict[str, Destination]:
         if tree is not None or retval is not None or visited is not None:
-            return super()._get_named_destinations(tree=tree, retval=retval, visited=visited)
+            return super()._get_named_destinations(
+                tree=tree,
+                retval=retval,
+                visited=visited,
+                depth=depth,
+                traversal_state=traversal_state,
+            )
         if self._named_destinations_cache is None:
             self._named_destinations_cache = super()._get_named_destinations()
         return self._named_destinations_cache
@@ -433,7 +440,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def _read_object(self, number: int, generation: int) -> Any:
         if generation != 0 or number not in self.xref_objStm:
             return self._read_object_unchecked(number, generation)
-        # pypdf 6.21.4 tracks the objects it is reading from object streams, so a stream
+        # pypdf 7.0.0 tracks the objects it is reading from object streams, so a stream
         # stored in another stream that leads back to it is an error, not a recursion.
         stack = self._object_stream_resolution_stack
         if number in stack:
@@ -511,7 +518,13 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 return self._decrypted_as_pypdf(found, number, generation)
             finally:
                 self._bare_keywords_raise = False
-        # Core cannot read it: pypdf's get_object, from its own xref, then by searching.
+        # Core cannot read it: pypdf's get_object, from the object stream its xref names,
+        # from its own xref, then by searching.
+        if generation == 0 and number in self.xref_objStm:
+            skipped = self._check_object_stream(self.xref_objStm[number][0])
+            if skipped is None or number in skipped:
+                return NullObject()
+            return self._object_from_stream_as_pypdf(number)
         if number in self.xref.get(generation, {}):
             if self.xref_free_entry.get(generation, {}).get(number, False):
                 return NullObject()
@@ -668,7 +681,9 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         stream_number = self.xref_objStm[number][0]
         object_stream = self.get_object(stream_number)
         data = BytesIO(object_stream.get_data())
-        count = min(int(object_stream["/N"]), data.getbuffer().nbytes // 3)
+        length = data.getbuffer().nbytes
+        first = int(object_stream["/First"])
+        count = min(int(object_stream["/N"]), length // 3)
         index: list[tuple[int, int]] = []
         for _ in range(count):
             read_non_whitespace(data)
@@ -679,6 +694,8 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             position = NumberObject.read_from_stream(data)
             read_non_whitespace(data)
             data.seek(-1, 1)
+            if listed < 0 or position < 0 or first + position > length:
+                continue  # _check_object_stream warned about it.
             index.append((int(listed), int(position)))
         for entry_number, entry_offset in index:
             if entry_number == number:
@@ -691,8 +708,14 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def _repaired_object(self, number: int, generation: int, error: Exception | None) -> Any:
         """The object as pypdf's get_object reads it, when core cannot parse the one at its
         offset: pypdf's own xref offset, then the first `number generation obj` in the file,
-        then wherever its failed header read left off, with its messages in strict mode.
+        then wherever its failed header read left off, with its messages in strict mode. An
+        object its xref puts in an object stream is read from that stream.
         """
+        if generation == 0 and number in self.xref_objStm:
+            skipped = self._check_object_stream(self.xref_objStm[number][0])
+            if skipped is None or number in skipped:
+                return NullObject()
+            return self._object_from_stream_as_pypdf(number)
         offset = self.xref.get(generation, {}).get(number)
         if not isinstance(offset, int):
             return self._found_object(number, generation)
@@ -853,7 +876,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             self._stream.seek(position)
 
     def _check_object_stream(self, number: int) -> set[int] | None:
-        """Check an object stream's header as pypdf 6.21.4 reads it.
+        """Check an object stream's header as pypdf 7.0.0 reads it.
 
         The object numbers whose entries pypdf skips, or None when it ignores the stream.
         """
@@ -897,6 +920,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         """Read the header's pairs as pypdf does, and the entries it skips."""
         header = BytesIO(data)
         skipped: set[int] = set()
+        last_offset = -1
         for _ in range(count):
             pair = []
             for _ in range(2):
@@ -915,6 +939,11 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                     raise PdfReadError(f"{message}.")
                 logger.warning("%s; skipping the entry.", message)
                 skipped.add(int(object_number))
+                continue
+            # pypdf 7.0.0 requires strictly increasing offsets, strict or not (#4364).
+            if int(offset) <= last_offset:
+                raise PdfReadError(f"Invalid offset {offset} in object stream {number}.")
+            last_offset = int(offset)
         return skipped
 
     def cache_get_indirect_object(self, generation: int, idnum: int) -> Any:
@@ -986,7 +1015,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return info if isinstance(info, DictionaryObject) else None
 
     def _next_object_number(self) -> int:
-        # pypdf 6.21.4 allocates past the declared /Size, the file's cross-reference
+        # pypdf 7.0.0 allocates past the declared /Size, the file's cross-reference
         # tables and every cached object (#4190).
         size = self.trailer.get("/Size", 0)
         return (
@@ -1126,13 +1155,6 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         if exclude is not None:
             data = {key: value for key, value in data.items() if key not in exclude}
         return data
-
-    def decode_permissions(self, permissions_code: int) -> NoReturn:
-        del permissions_code
-        raise DeprecationError(
-            "decode_permissions is deprecated and was removed in pypdf 5.0.0. "
-            "Use user_access_permissions instead."
-        )
 
     def close(self) -> None:
         if self._stream_opened:

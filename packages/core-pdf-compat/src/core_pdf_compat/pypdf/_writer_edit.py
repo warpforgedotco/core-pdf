@@ -6,12 +6,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, NoReturn
 
 from core_pdf_spec.s_07_syntax.serialize import serialize_object
 
 from .annotations import border_array
 from .constants import ImageType, ObjectDeletionFlag, PageLabelStyle
+from .errors import DeprecationError
 from .generic import (
     ArrayObject,
     ContentStream,
@@ -204,7 +205,7 @@ class EditWriter:
             label[NameObject("/S")] = NameObject(style)
         if prefix is not None:
             label[NameObject("/P")] = TextStringObject(prefix)
-        if start != 0:
+        if start is not None and start != 0:
             label[NameObject("/St")] = NumberObject(start)
         catalog = self._root_object
         if "/PageLabels" not in catalog:
@@ -325,8 +326,16 @@ class EditWriter:
             for item in stack
         ):
             return [], []
-        resources = element.get_resolved("/Resources")
-        xobjects = {} if resources is None else resources.get_resolved("/XObject", {})
+        resources = element.get("/Resources", NullObject()).get_object()
+        if not isinstance(resources, DictionaryObject):
+            if not is_null_or_none(resources):
+                logger.warning("Resources are not a dictionary: %s", resources)
+            resources = DictionaryObject()
+        xobjects: Any = resources.get("/XObject", DictionaryObject()).get_object()
+        if not isinstance(xobjects, DictionaryObject):
+            if not is_null_or_none(xobjects):
+                logger.warning("XObject resources are not a dictionary: %s", xobjects)
+            xobjects = {}
         images: list[str] = []
         forms: list[str] = []
         for key, value in list(xobjects.items()):
@@ -394,10 +403,8 @@ class EditWriter:
 
         if remove_identicals is not _UNSET:
             _deprecated("remove_identicals", "remove_duplicates")
-            remove_duplicates = remove_identicals
         if remove_orphans is not _UNSET:
             _deprecated("remove_orphans", "remove_unreferenced")
-            remove_unreferenced = remove_orphans
         first_seen: dict[bytes, IndirectObject] = {}
         moved: dict[int, IndirectObject] = {}
         for index, item in enumerate(self._objects):
@@ -449,13 +456,9 @@ class EditWriter:
                     self._objects[index] = None
 
 
-def _deprecated(old: str, new: str) -> None:
-    import warnings
-
-    warnings.warn(
-        f"{old} is deprecated and will be removed in pypdf 7.0.0. Use {new} instead.",
-        DeprecationWarning,
-        stacklevel=3,
+def _deprecated(old: str, new: str) -> NoReturn:
+    raise DeprecationError(
+        f"{old} is deprecated and was removed in pypdf 7.0.0. Use {new} instead."
     )
 
 

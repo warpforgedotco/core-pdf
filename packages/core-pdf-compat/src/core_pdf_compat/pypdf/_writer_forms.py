@@ -1,4 +1,4 @@
-# Follows pypdf 6.21.4's form filling and appearance streams, Copyright (c) 2006-2008, Mathieu
+# Follows pypdf 7.0.0's form filling and appearance streams, Copyright (c) 2006-2008, Mathieu
 # Fenniak, under its BSD-style license.
 """The parts of PdfWriter that fill forms, with the appearance streams of text fields.
 

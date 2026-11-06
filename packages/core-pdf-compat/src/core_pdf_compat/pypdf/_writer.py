@@ -6,12 +6,11 @@ import hashlib
 import logging
 import secrets
 import sys
-import warnings
 from collections.abc import Iterable, Iterator, Sequence
 from copy import copy, replace
 from io import BytesIO, IOBase
 from pathlib import Path
-from typing import Any, Literal, NamedTuple, cast
+from typing import Any, Literal, NamedTuple, NoReturn, cast
 
 from core_pdf.impl.document_editing import (
     BINARY_MARKER,
@@ -21,7 +20,7 @@ from core_pdf.impl.document_editing import (
     references_in,
     serialize_body,
 )
-from core_pdf.impl.types import PdfReference, PdfString
+from core_pdf.impl.types import PdfReference
 from core_pdf_spec.exceptions import PdfParseError as CorePdfParseError
 from core_pdf_spec.s_07_security.output import describe_encryption
 from core_pdf_spec.s_07_syntax.serialize import ObjectLayout, serialize_object
@@ -61,7 +60,7 @@ from ._writer_edit import EditWriter
 from ._writer_forms import FormWriter
 from ._writer_merge import MergeWriter
 from ._writer_outline import OutlineWriter
-from .actions import Action, JavaScript
+from .actions import Action
 from .constants import UserAccessPermissions
 from .errors import (
     DeprecationError,
@@ -308,20 +307,18 @@ class PageObject(DictionaryObject):
         return VirtualListImages(self._get_ids_image, self._get_image)
 
     @property
-    def inline_images(self) -> dict[str, ImageFile] | None:
-        warnings.warn(
-            "PageObject.inline_images is deprecated and will be removed in pypdf 7.0.0. "
-            "Use PageObject.images instead.",
-            DeprecationWarning,
-            stacklevel=2,
+    def inline_images(self) -> NoReturn:
+        raise DeprecationError(
+            "PageObject.inline_images is deprecated and was removed in pypdf 7.0.0. "
+            "Use PageObject.images instead."
         )
-        if self._content_stream_images is None:
-            return None
-        return {
-            name: image
-            for name, image in self._content_stream_images.items()
-            if image is not None and image.is_inline
-        }
+
+    @inline_images.setter
+    def inline_images(self, value: dict[str, ImageFile] | None) -> NoReturn:
+        del value
+        raise DeprecationError(
+            "PageObject.inline_images is deprecated and was removed in pypdf 7.0.0."
+        )
 
     def _content_keys(self) -> tuple[Any, ...]:
         return tuple(self.get(key) for key in ("/Contents", "/Resources", "/Rotate"))
@@ -375,6 +372,7 @@ class PageObject(DictionaryObject):
                 "scale_weight": kwargs.get("layout_mode_scale_weight", 1.25),
                 "strip_rotated": kwargs.get("layout_mode_strip_rotated", True),
                 "font_height_weight": kwargs.get("layout_mode_font_height_weight", 1),
+                "debug_path": kwargs.get("layout_mode_debug_path"),
             }
             if extraction_mode == "layout"
             else None
@@ -507,13 +505,11 @@ class PageObject(DictionaryObject):
         writer = self.writer
         if writer is None:
             if self.pdf is not None:
-                warnings.warn(
+                raise DeprecationError(
                     "Calling `PageObject.replace_contents()` for pages not assigned to a writer "
-                    "is deprecated and will be removed in pypdf 7.0.0. Attach the page to the "
+                    "is deprecated and has been removed in pypdf 7.0.0. Attach the page to the "
                     "writer first or use `PdfWriter(clone_from=...)` directly. The existing "
-                    "approach has proved being unreliable.",
-                    DeprecationWarning,
-                    stacklevel=2,
+                    "approach has proved being unreliable."
                 )
             # Nothing to number it with yet. Adding the page to a writer numbers the streams.
             if is_null_or_none(content):
@@ -752,15 +748,6 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             stream[NameObject("/Subtype")] = NameObject("/XML")
             catalog[NameObject("/Metadata")] = self._add_object(stream)
         stream.set_data(value if isinstance(value, bytes) else value.stream.get_data())
-
-    @property
-    def with_as_usage(self) -> bool:
-        raise DeprecationError("with_as_usage is deprecated and was removed in pypdf 5.0.")
-
-    @with_as_usage.setter
-    def with_as_usage(self, value: bool) -> None:
-        del value
-        raise DeprecationError("with_as_usage is deprecated and was removed in pypdf 5.0.")
 
     def __enter__(self) -> PdfWriter:
         return self
@@ -1343,15 +1330,12 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             target = cast(Any, info).get_object()
             if isinstance(info, IndirectObject) and self.incremental:
                 self._info_obj = IndirectObject(info.idnum, info.generation, self)
+            elif isinstance(info, IndirectObject):
+                # pypdf 7.0.0 clones the information dictionary with what it refers to: it is
+                # numbered first, then its values.
+                self._info_obj = self._import(info, reader)
             else:
-                # A shallow copy, as in pypdf: a value given as a reference keeps the source's
-                # number, whatever this writer holds under it.
-                plain = DictionaryObject()
-                for key, value in dict.items(target):
-                    if isinstance(value, IndirectObject):
-                        value = IndirectObject(value.idnum, value.generation, self)
-                    dict.__setitem__(plain, key, value)
-                self._info_obj = self._add_object(plain)
+                self._info_obj = self._add_object(self._import(target, reader))
         identifier = reader.trailer.get_resolved("/ID")
         if isinstance(identifier, ArrayObject):
             self._ID = ArrayObject(
@@ -1437,13 +1421,11 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         self._root_object[NameObject("/ViewerPreferences")] = self._add_object(preferences)
         return preferences
 
-    def add_js(self, javascript: str) -> None:
-        warnings.warn(
-            "add_js is deprecated and will be removed in pypdf 7.0.0. Use add_open_action instead.",
-            DeprecationWarning,
-            stacklevel=2,
+    def add_js(self, javascript: str) -> NoReturn:
+        del javascript
+        raise DeprecationError(
+            "add_js is deprecated and was removed in pypdf 7.0.0. Use add_open_action instead."
         )
-        self.add_open_action(JavaScript(javascript))
 
     def add_open_action(self, action: Action) -> None:
         """Add an action to the document-level JavaScript name tree, as pypdf 6.21 does."""
@@ -1501,6 +1483,18 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             else:
                 new_link.patch_reference(self, new_page)
 
+    def generate_file_identifiers(self) -> None:
+        """Random file identifiers, as pypdf 7.0.0 makes them (#4366): the first is kept once
+        set, the second changes each time.
+        """
+        if self._ID:
+            first = self._ID[0]
+            second = ByteStringObject(secrets.token_bytes(16))
+        else:
+            first = ByteStringObject(secrets.token_bytes(16))
+            second = first
+        self._ID = ArrayObject((first, second))
+
     def encrypt(
         self,
         user_password: str,
@@ -1522,9 +1516,8 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 chosen = EncryptAlgorithm[algorithm.replace("-", "_")]
             except KeyError:
                 raise ValueError(f"Algorithm '{algorithm}' NOT supported") from None
-        if self._file_id is None:
-            known = None if self._ID is None else self._ID[0]
-            self._file_id = secrets.token_bytes(16) if known is None else bytes(known)
+        self.generate_file_identifiers()
+        self._file_id = bytes(self._ID[0])
         encryption = Encryption.make(chosen, permissions_flag, self._file_id)
         self._encrypt_entry = encryption.write_entry(
             user_password, owner_password or user_password, strict=self.strict
@@ -1598,8 +1591,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             entry = PdfReference(len(self._objects) + 1, 0)
             objects[entry] = self._encrypt_entry
             exempt.add(entry.object_number)
-            identifier = PdfString(self._file_id or b"", is_literal=False)
-            trailer |= {"ID": [identifier, identifier], "Encrypt": entry}
+            trailer["Encrypt"] = entry
         return header + serialize_body(
             len(header), objects, trailer, ObjectLayout.SPACED, security=security, exempt=exempt
         )

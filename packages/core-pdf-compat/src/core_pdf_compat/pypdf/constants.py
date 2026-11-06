@@ -1,10 +1,11 @@
-# Ported from pypdf 6.21.4, Copyright (c) 2006-2008, Mathieu Fenniak, under its BSD-style license.
+# Ported from pypdf 7.0.0, Copyright (c) 2006-2008, Mathieu Fenniak, under its BSD-style license.
 """Various constants, enums, and flags to aid readability."""
 
 import sys
-import warnings
 from enum import Enum, IntFlag, auto, unique
-from typing import Any
+from typing import Any, NoReturn
+
+from core_pdf_compat.pypdf.errors import DeprecationError
 
 if sys.version_info >= (3, 11):
     from enum import StrEnum
@@ -650,12 +651,10 @@ class _CatalogDictionaryMeta(type):
         return value
 
 
-def _deprecate_catalog_dictionary() -> None:
-    warnings.warn(
-        "CatalogDictionary is deprecated and will be removed in pypdf 7.0.0. "
-        "Use CatalogAttributes instead.",
-        DeprecationWarning,
-        stacklevel=3,
+def _deprecate_catalog_dictionary() -> NoReturn:
+    raise DeprecationError(
+        "CatalogDictionary is deprecated and was removed in pypdf 7.0.0. "
+        "Use CatalogAttributes instead."
     )
 
 

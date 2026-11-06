@@ -1,5 +1,5 @@
 # Ported from pypdf.generic._image_inline and ContentStream._read_inline_image of pypdf
-# 6.21.4, Copyright (c) 2024, pypdf contributors, under its BSD-style license. Where an
+# 7.0.0, Copyright (c) 2024, pypdf contributors, under its BSD-style license. Where an
 # inline image's data ends is pypdf's guess, not the specification's, so it is followed
 # step by step: images found with EI inside their data, or without a delimited EI, end
 # where pypdf ends them.

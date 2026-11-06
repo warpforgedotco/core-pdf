@@ -1,4 +1,4 @@
-# Follows pypdf 6.21.4's merging, Copyright (c) 2006-2008, Mathieu Fenniak,
+# Follows pypdf 7.0.0's merging, Copyright (c) 2006-2008, Mathieu Fenniak,
 # under its BSD-style license.
 """The parts of PdfWriter that merge another document: pages, outline, links, forms, articles.
 
@@ -164,13 +164,21 @@ class MergeWriter:
             self.add_filtered_articles("", source_pages, reader)
 
     def _merge_form(self, reader: Any) -> None:
+        # pypdf 7.0.0 skips a form that is not a dictionary and /Fields that are not an
+        # array, with a warning, and keeps only the fields copied through the pages.
         root = reader.root_object
-        if "/AcroForm" not in root or is_null_or_none(root["/AcroForm"]):
+        if "/AcroForm" not in root:
             return
         form = root["/AcroForm"]
+        if is_null_or_none(form):
+            return
+        if not isinstance(form, DictionaryObject):
+            logger.warning("AcroForm is not a dictionary: %s", form)
+            return
         translated = self._translation(reader)
         raw_form = root.raw_get("/AcroForm")
-        if "/AcroForm" not in self._root_object:
+        writer_form = self._root_object.get("/AcroForm")
+        if writer_form is None or not isinstance(writer_form.get_object(), DictionaryObject):
             kept = DictionaryObject()
             if isinstance(raw_form, IndirectObject) and raw_form.idnum in translated:
                 # Already copied, through a field that refers to it: pypdf reuses that copy.
@@ -190,19 +198,20 @@ class MergeWriter:
                 reference = self._add_object(self._import(kept, reader))
             self._root_object[NameObject("/AcroForm")] = reference
             fields: Any = ArrayObject()
-            if "/Fields" not in form:
-                # pypdf gives a form without /Fields an empty array of its own number.
-                fields = self._add_object(fields)
         else:
-            fields = self._root_object["/AcroForm"].get_resolved("/Fields", ArrayObject())
-        source_fields = form.get_resolved("/Fields")
+            fields = writer_form.get_object().get("/Fields", ArrayObject()).get_object()
+            if not isinstance(fields, ArrayObject):
+                fields = ArrayObject()
+        source_fields = form.get("/Fields", ArrayObject()).get_object()
         if not isinstance(source_fields, ArrayObject):
+            logger.warning("AcroForm /Fields is not an array: %s", source_fields)
             source_fields = ArrayObject()
-        listed = fields.get_object()
         for field in source_fields:
-            number = translated.get(getattr(field, "idnum", None))
-            if number is not None and IndirectObject(number, 0, self) not in listed:
-                listed.append(IndirectObject(number, 0, self))
+            # Only the fields copied through the pages are known.
+            if isinstance(field, IndirectObject) and field.idnum in translated:
+                reference = IndirectObject(translated[field.idnum], 0, self)
+                if reference not in fields:
+                    fields.append(reference)
         self._root_object["/AcroForm"][NameObject("/Fields")] = fields
 
     def _merge__process_named_dests(self, dest: Any, reader: Any, pages: dict[int, Any]) -> None:
@@ -446,6 +455,17 @@ class MergeWriter:
         source = getattr(annotation, "indirect_reference", None)
         reference = None
         if source is not None and source.pdf is reader:
+            translated = self._translation(reader)
+            if source.idnum in translated:
+                # pypdf's clone returns the copy made before, through a structure element
+                # for one, and the new destination goes into its action.
+                existing = IndirectObject(translated[source.idnum], 0, self)
+                found = existing.get_object()
+                if isinstance(found, DictionaryObject) and len(found) > 0:
+                    found_action = found.get("/A")
+                    if found_action is not None:
+                        found_action.get_object()[NameObject("/D")] = link
+                    return existing
             reference = self._add_object(copy)
             self._translation(reader)[source.idnum] = reference.idnum
         for key, item in dict.items(annotation):
