@@ -52,6 +52,17 @@ def check(path: str, counts: collections.Counter[str]) -> None:
     with PdfDocument.open(path) as source:
         expected_pages = len(source.pages)
         expected_text = page_texts(source)
+        if INCREMENTAL:
+            # With nothing changed there is nothing to append: the file comes back as it was,
+            # as pypdf writes it, not with an empty xref section other readers reject.
+            unchanged = EditableDocument(source).save_incremental(
+                xref_stream=True if XREF_STREAM else None
+            )
+            if bytes(unchanged) == bytes(source.raw_data):
+                counts["unchanged_kept"] += 1
+            elif not unchanged.startswith(bytes(source.raw_data)):
+                counts["prefix_changed"] += 1
+                print(f"original bytes changed with no edit: {path}")
         editor = EditableDocument(source)
         info = editor.add_object({"Title": PdfString(b"Rewritten")})
         editor.trailer["Info"] = info
@@ -93,7 +104,14 @@ def main() -> int:
                 counts["errors"] += 1
                 print(f"error: {path}: {type(error).__name__}: {str(error)[:70]}")
     print(dict(counts))
-    allowed = {"identical", "unsupported", "errors", "objects_with_own_bytes", "objects_verbatim"}
+    allowed = {
+        "identical",
+        "unsupported",
+        "errors",
+        "objects_with_own_bytes",
+        "objects_verbatim",
+        "unchanged_kept",
+    }
     return 1 if set(counts) - allowed else 0
 
 

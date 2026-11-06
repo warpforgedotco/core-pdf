@@ -126,6 +126,10 @@ class EditableDocument:
         self.encrypt_entry = mutable_copy(encrypt_entry) if self.security is not None else None
         if self.security is not None and isinstance(self.trailer.get("ID"), PdfReference):
             self.trailer["ID"] = mutable_copy(document.resolver.resolve(self.trailer["ID"]))
+        # What an incremental update would repeat; with nothing else changed, it adds nothing.
+        self.source_trailer = {
+            key: mutable_copy(self.trailer[key]) for key in TRAILER_KEYS if key in self.trailer
+        }
         # /Size is often wrong, so a new number must also clear every object in use.
         size = document.resolver.resolve(self.trailer.get("Size"))
         declared = size if isinstance(size, int) and size > 0 else 1
@@ -276,6 +280,20 @@ class EditableDocument:
         changed = (
             {**self.mislabelled_streams(reachable), **self.overlay} if standalone else self.overlay
         )
+        trailer: dict[Any, Any] = {
+            key: self.trailer[key] for key in TRAILER_KEYS if key in self.trailer
+        }
+        if not changed and not standalone and trailer == self.source_trailer:
+            # Nothing to append, so the file stays as it is, encryption included, as in pypdf.
+            # An xref table with no entries would not read in other readers.
+            return write_output(
+                original,
+                target,
+                incremental=True,
+                security=self.security,
+                xref_stream=continues_stream,
+                removed=tuple(sorted(self.source_reachable - reachable.keys())),
+            )
         for number in sorted(changed):
             existing = reachable.get(number)
             generation = 0 if existing is None else existing.generation_number
@@ -288,9 +306,6 @@ class EditableDocument:
                 else encrypt_object(security, reference, value, self.get_object)
             )
             output += serialize_indirect_object(reference, sealed, layout)
-        trailer: dict[Any, Any] = {
-            key: self.trailer[key] for key in TRAILER_KEYS if key in self.trailer
-        }
         if not standalone:
             trailer["Prev"] = previous
         if security is not None:
