@@ -37,6 +37,9 @@ jobs:
       - name: Check lockfile
         run: uv lock --check
 
+      - name: Check the upstream checkouts sit at their pinned releases
+        run: uv run --no-project python scripts/check_upstream_versions.py --checkouts
+
       - name: Install workspace packages and quality tools
         run: uv sync --locked --all-packages --group lint --group test
 
