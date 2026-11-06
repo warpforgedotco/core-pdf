@@ -25,7 +25,7 @@ import warnings
 from collections.abc import Callable
 from typing import Any
 
-import pypdf as real
+import pypdf as real  # ty: ignore[unresolved-import]
 
 from core_pdf_compat import pypdf as facade
 
