@@ -11,7 +11,7 @@ from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
+from core_pdf.impl.types import PdfName, PdfString, RecordType, ReplaceFields, ReprFields
 from core_pdf_spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
@@ -165,7 +165,17 @@ def _pdfminer_to_unicode_text(glyph: Any, to_unicode: Any) -> str | None:
     return None
 
 
+# pdfminer makes a character of every code, even one that maps to no text; the engine records
+# a glyph only for text, so an empty mapping stands in as this until the projection.
+EMPTY_GLYPH_TEXT = "\x00"
+
+
 def pdfminer_glyph_text(glyph: Any) -> str:
+    text = _pdfminer_glyph_text(glyph)
+    return "" if text == EMPTY_GLYPH_TEXT else text
+
+
+def _pdfminer_glyph_text(glyph: Any) -> str:
     if glyph.unicode_source == "actual_text" and glyph.text == "\ufeff":
         return ""
     if glyph.unicode_source == "actual_text" and glyph.alternates:
@@ -179,7 +189,7 @@ def pdfminer_glyph_text(glyph: Any) -> str:
     if to_unicode is not None and glyph.code_bytes:
         mapped = _pdfminer_to_unicode_text(glyph, to_unicode)
         if mapped is not None and len(mapped) <= 1:
-            return mapped or f"(cid:{glyph.cid})"
+            return mapped
         if glyph_name_text and (
             glyph.unicode_source == "encoding" or not getattr(decoder, "is_cid_font", False)
         ):
@@ -484,16 +494,57 @@ def pdfminer_normalized_width(glyph: Any, projected_text: str | None = None) -> 
     return width
 
 
-def pdfminer_font_name(glyph: Any) -> str:
-    base_font = str(_font_value(glyph.font_decoder.font, "BaseFont") or "")
-    builtin_metrics = FONT_DATA.get(base_font)
-    if isinstance(builtin_metrics, dict):
-        props = builtin_metrics.get("props")
-        if isinstance(props, dict):
-            font_name = props.get("FontName")
-            if isinstance(font_name, str):
-                return font_name
-    return str(glyph.font_name)
+def pdfminer_literal_name(value: object) -> Any:
+    """A name as pdfminer's literal_name gives it: UTF-8 text, or the bytes' repr."""
+    if not isinstance(value, PdfName):
+        return value
+    try:
+        return value.value_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return str(value.value_bytes)
+
+
+def pdfminer_font_descriptor(font: object) -> object:
+    """The descriptor pdfminer reads a font's name and metrics from.
+
+    Follows pdfminer.six's PDFResourceManager.get_font and its font classes, Copyright (c)
+    2004-2016 Yusuke Shinyama, under the MIT License.
+    """
+    subtype = _font_value(font, "Subtype")
+    subtype_name = "Type1" if subtype is None else pdfminer_literal_name(subtype)
+    if subtype_name == "Type0":
+        descendants = _font_value(font, "DescendantFonts")
+        if isinstance(descendants, (list, tuple)) and descendants:
+            return _font_value(descendants[0], "FontDescriptor") or {}
+        return {}
+    if subtype_name in {"CIDFontType0", "CIDFontType2", "Type3"}:
+        return _font_value(font, "FontDescriptor") or {}
+    base_font = _font_value(font, "BaseFont")
+    builtin = FONT_DATA.get(pdfminer_literal_name(base_font)) if base_font is not None else None
+    if isinstance(builtin, dict) and isinstance(builtin.get("props"), dict):
+        return builtin["props"]
+    return _font_value(font, "FontDescriptor") or {}
+
+
+def pdfminer_font_name(glyph: Any) -> Any:
+    decoder = glyph.font_decoder
+    known = PDFMINER_FONT_NAMES.get(id(decoder))
+    if known is not None and known[0] is decoder:
+        return known[1]
+    descriptor = pdfminer_font_descriptor(decoder.font)
+    name = _mapping_value(descriptor, "FontName") if isinstance(descriptor, dict) else None
+    if name is None and isinstance(descriptor, dict) and "FontName" in descriptor:
+        name = descriptor["FontName"]
+    name = "unknown" if name is None else pdfminer_literal_name(name)
+    if isinstance(name, PdfString):
+        name = name.data
+    PDFMINER_FONT_NAMES[id(decoder)] = (decoder, name)
+    if len(PDFMINER_FONT_NAMES) > FONT_PROJECTION_CACHE_MAX_ENTRIES:
+        PDFMINER_FONT_NAMES.pop(next(iter(PDFMINER_FONT_NAMES)))
+    return name
+
+
+PDFMINER_FONT_NAMES: dict[int, tuple[Any, Any]] = {}
 
 
 def pdfminer_descent(glyph: Any) -> float:

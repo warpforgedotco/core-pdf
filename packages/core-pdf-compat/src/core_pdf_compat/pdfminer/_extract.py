@@ -16,8 +16,11 @@ from .._shared import PdfInput
 from ._layout import (
     LAParams,
     LTComponent,
+    LTFigure,
     LTPage,
     LTText,
+    LTTextBox,
+    LTTextLine,
 )
 from ._pages import (
     pdfminer_resolvable_pages,
@@ -87,11 +90,26 @@ def extract_text(
     laparams: LAParams | None = None,
 ) -> str:
     del codec
-    pages = [
-        "\n".join(item.get_text() for item in page if isinstance(item, LTText))
-        for page in extract_pages(pdf_file, password, page_numbers, maxpages, caching, laparams)
-    ]
-    return "".join(page_text + ("\n" if page_text else "") + "\f" for page_text in pages)
+    output: list[str] = []
+    for page in extract_pages(pdf_file, password, page_numbers, maxpages, caching, laparams):
+        render_text(page, output)
+        output.append("\f")
+    return "".join(output)
+
+
+def render_text(item: Any, output: list[str]) -> None:
+    """Write an item's text as pdfminer's TextConverter does.
+
+    Ported from pdfminer.six's TextConverter.receive_layout, Copyright (c) 2004-2016
+    Yusuke Shinyama, under the MIT License.
+    """
+    if isinstance(item, (LTPage, LTFigure, LTTextBox, LTTextLine)):
+        for child in item:
+            render_text(child, output)
+    elif isinstance(item, LTText):
+        output.append(item.get_text())
+    if isinstance(item, LTTextBox):
+        output.append("\n")
 
 
 def extract_text_to_fp(

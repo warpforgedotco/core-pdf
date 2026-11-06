@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field  # noqa: TID251
 from typing import Any, NamedTuple
 
 import core_pdf_spec.s_07_syntax.lexer
@@ -13,12 +14,15 @@ from core_pdf.impl.exceptions import PdfError, PdfParseError
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.types import PdfString, Rectangle
+from core_pdf_spec.s_07_content.inline_images import InlineImage
 from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_07_content.operations import ContentOperands
 from core_pdf_spec.s_07_content.streams import ContentStreamFrame
+from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict
 
 from ._fonts import (
+    EMPTY_GLYPH_TEXT,
     pdfminer_embedded_cmap_is_unusable,
     pdfminer_normalized_width,
 )
@@ -80,6 +84,20 @@ class PaintedPath(NamedTuple):
     sequence: int
 
 
+# One step of the walk pdfminer's layout analyzer sees, in content order:
+# ("glyphs", first, end) for the glyphs self.glyphs[first:end],
+# ("path", index) for painted_paths[index],
+# ("begin", name, bbox) and ("end",) around a form XObject's content, and
+# ("image", name, ctm, stream) for an image XObject or inline image.
+LayoutEvent = tuple[Any, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PdfminerProgram(CapturedProgram):
+    layout_events: tuple[LayoutEvent, ...] = field(default=(), kw_only=True)
+    painted_paths: tuple[PaintedPath, ...] = field(default=(), kw_only=True)
+
+
 class TextMark(NamedTuple):
     glyph_index: int
     mcid: int | None
@@ -105,6 +123,9 @@ class PdfminerTextState(TextState):
         self.text_marks: list[TextMark] = []
         self.current_mcid: int | None = None
         self.current_tag: str | None = None
+        self.layout_events: list[LayoutEvent] = []
+        self.pending_xobject: str | None = None
+        self.type3_depth = 0
 
     def op_BDC(self, operands: ContentOperands, depth: int) -> None:
         super().op_BDC(operands, depth)
@@ -140,11 +161,36 @@ class PdfminerTextState(TextState):
                 self.raw_color(self.graphics.fill_color, fill_space),
             )
         )
-        return super().show_text(*arguments, **options)
+        start = len(self.glyphs)
+        result = super().show_text(*arguments, **options)
+        if len(self.glyphs) > start and not self.type3_depth:
+            self.layout_events.append(("glyphs", start, len(self.glyphs)))
+        return result
+
+    def op_Do(self, operands: ContentOperands, depth: int) -> ContentStreamFrame | None:
+        self.pending_xobject = self.resolver.resolve_name(operands[0]) if operands else None
+        return super().op_Do(operands, depth)
+
+    def paint_image(self, state: object, xobj: PdfStream) -> None:
+        # pdfminer places every image XObject that has a size, whether or not it is visible.
+        dictionary = xobj.dictionary
+        if not self.type3_depth and "Width" in dictionary and "Height" in dictionary:
+            self.layout_events.append(
+                ("image", self.pending_xobject or "", self.graphics.ctm, xobj)
+            )
+        super().paint_image(state, xobj)
+
+    def paint_inline_image(self, state: object, image: InlineImage) -> None:
+        dictionary = image.dictionary
+        if not self.type3_depth and "Width" in dictionary and "Height" in dictionary:
+            self.layout_events.append(("image", str(id(image)), self.graphics.ctm, image))
+        super().paint_inline_image(state, image)
 
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         if source.ops:
             graphics = self.graphics
+            if not self.type3_depth:
+                self.layout_events.append(("path", len(self.painted_paths)))
             self.painted_paths.append(
                 PaintedPath(
                     bytes(source.ops),
@@ -167,11 +213,43 @@ class PdfminerTextState(TextState):
         self.frame_cursors[id(frame)] = self.cursor
         if frame.is_form:
             self.cursor = 0.0
+            if not self.type3_depth:
+                self.layout_events.append(
+                    ("begin", self.pending_xobject or "", self.figure_bbox(frame))
+                )
+        self.pending_xobject = None
         super().enter_stream(state, frame)
 
     def exit_stream(self, state: object, frame: ContentStreamFrame) -> None:
         self.cursor = self.frame_cursors.pop(id(frame))
+        if frame.is_form and not self.type3_depth:
+            self.layout_events.append(("end",))
         super().exit_stream(state, frame)
+
+    def figure_bbox(self, frame: ContentStreamFrame) -> tuple[float, float, float, float]:
+        """The form's box as pdfminer's LTFigure reads it: x, y, width and height."""
+        raw = frame.form_bbox_operand
+        values: list[float | None] = []
+        if isinstance(raw, (list, tuple)) and len(raw) >= 4:
+            values = [self.resolver.resolve_float(value, default=None) for value in raw[:4]]
+        if len(values) == 4 and all(value is not None for value in values):
+            x, y, width, height = values  # type: ignore[misc]
+        elif frame.form_bbox is not None:
+            x, y, x1, y1 = frame.form_bbox
+            width, height = x1 - x, y1 - y
+        else:
+            x = y = width = height = 0.0
+        matrix = frame.ctm
+        corners = [
+            (matrix.a * px + matrix.c * py + matrix.e, matrix.b * px + matrix.d * py + matrix.f)
+            for px, py in ((x, y), (x + width, y), (x, y + height), (x + width, y + height))
+        ]
+        return (
+            min(point[0] for point in corners),
+            min(point[1] for point in corners),
+            max(point[0] for point in corners),
+            max(point[1] for point in corners),
+        )
 
     def current_capture_actual_text_span(self) -> None:
         return None
@@ -179,11 +257,22 @@ class PdfminerTextState(TextState):
     def text_boundary(self, state: object, kind: str) -> None:
         if kind in {"begin", "move", "matrix"}:
             self.cursor = 0.0
+        elif kind == "type3-glyph-begin":
+            self.type3_depth += 1
+        elif kind == "type3-glyph-end":
+            self.type3_depth -= 1
         super().text_boundary(state, kind)
 
     def op_Tj(self, operands: ContentOperands, depth: int) -> None:
         if operands:
             self.append_tj_array([operands[-1]])
+
+    def op_double_quote(self, operands: ContentOperands, depth: int) -> None:
+        # pdfminer's " sets the spacing and shows the text, but stays on the same line.
+        if len(operands) < 3 or (values := self.as_floats(operands, 2)) is None:
+            return
+        self.graphics.word_space, self.graphics.char_space = values
+        self.op_Tj((operands[2],), depth)
 
     def append_tj_array(self, array: Any) -> None:
         decoder = self.get_decoder()
@@ -235,7 +324,7 @@ class PdfminerTextState(TextState):
                 # advance only for runs, so it is not computed.
                 self.show_text(
                     self,
-                    decoded.unicode,
+                    decoded.unicode or EMPTY_GLYPH_TEXT,
                     decoded.code_bytes,
                     (decoded,),
                     decoder,
@@ -279,7 +368,7 @@ def pdfminer_page_capture(
     state.content_recovery = PdfminerRecovery()
     page.consume_contents(state)
     state.run_accumulator.flush()
-    program = CapturedProgram(
+    program = PdfminerProgram(
         runs=tuple(state.runs),
         glyphs=tuple(state.glyphs),
         drawings=tuple(state.drawings),
@@ -287,11 +376,13 @@ def pdfminer_page_capture(
         lines=state.lines.since(0),
         text_boundaries=tuple(state.text_boundaries),
         options=state.options,
+        layout_events=tuple(state.layout_events),
+        painted_paths=tuple(state.painted_paths),
     )
-    return program, tuple(state.painted_paths), tuple(state.text_marks)
+    return program, program.painted_paths, tuple(state.text_marks)
 
 
-def pdfminer_page_program(page: PdfPage) -> CapturedProgram:
+def pdfminer_page_program(page: PdfPage) -> PdfminerProgram:
     return pdfminer_page_capture(page)[0]
 
 
