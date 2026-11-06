@@ -209,6 +209,8 @@ def main() -> int:
     summary = summarize(junit)
     (RESULTS / f"{arguments.suite}-{mode}.json").write_text(json.dumps(summary, indent=2))
     print(f"{arguments.suite} {mode}: {summary['counts']}")
+    for name in summary["failing"]:
+        print(f"  failed: {name}")
     return code
 
 

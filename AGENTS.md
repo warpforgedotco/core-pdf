@@ -31,4 +31,3 @@ To validate against the locked dependencies, use `uv run --locked` with the rele
 ## Compiled modules
 
 `core-pdf-cythonized` compiles its Python files with Cython, and a build can leave `.so` files beside them in `packages/core-pdf-cythonized/src/`. Those shadow later edits to the `.py` files. After changing that package, rebuild it with `uv sync --all-packages --reinstall-package core-pdf-cythonized` before testing.
-
