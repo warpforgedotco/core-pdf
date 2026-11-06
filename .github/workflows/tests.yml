@@ -153,16 +153,40 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      - name: Name the runner image
+        id: image
+        run: echo "version=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Ghostscript, jbig2dec and Poppler packages
+        # The package mirror is often slow, so the .deb files are kept between runs. The key
+        # follows the runner image, whose own packages they must fit.
+        id: apt-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/apt-debs
+          key: apt-${{ steps.image.outputs.version }}-ghostscript-jbig2dec-poppler-v1
+
       - name: Install Ghostscript, jbig2dec and Poppler
-        # The package mirror sometimes hangs, so each try is bounded rather than using up the job.
         run: |
-          for attempt in 1 2 3; do
-            sudo timeout 120 apt-get update -o Acquire::http::Timeout=20 &&
-              sudo timeout 180 apt-get install --yes ghostscript jbig2dec poppler-utils && exit 0
-            echo "Install attempt $attempt failed"
-            sleep 5
-          done
-          exit 1
+          if [ "${{ steps.apt-cache.outputs.cache-hit }}" != "true" ]; then
+            mkdir -p ~/apt-debs
+            # Each try is bounded rather than using up the job, with room for a slow mirror.
+            for attempt in 1 2 3; do
+              sudo timeout 180 apt-get update -o Acquire::http::Timeout=30 &&
+                sudo timeout 600 apt-get install --yes --download-only \
+                  -o Dir::Cache::Archives="$HOME/apt-debs" \
+                  ghostscript jbig2dec poppler-utils && break
+              echo "Download attempt $attempt failed"
+              [ "$attempt" = 3 ] && exit 1
+              sleep 5
+            done
+            sudo chown -R "$USER" ~/apt-debs
+            rm -rf ~/apt-debs/partial ~/apt-debs/lock
+          fi
+          if compgen -G "$HOME/apt-debs/*.deb" > /dev/null; then
+            sudo dpkg -i ~/apt-debs/*.deb
+          fi
+          gs --version && jbig2dec --version && pdftoppm -v
 
       - name: Run the suite against the facade
         run: uv run --locked --all-packages --group test python scripts/run_upstream_suite.py ${{ matrix.suite }}
