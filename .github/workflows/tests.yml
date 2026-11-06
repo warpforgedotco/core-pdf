@@ -185,7 +185,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: tests/upstream/pypdf/tests/pdf_cache
-          key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml') }}-v2
+          key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml', 'tests/compat/pypdf_test_files.tsv') }}-v3
           restore-keys: pypdf-test-files-
 
       - name: Run the suite against the facade
@@ -239,8 +239,14 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: tests/upstream/pypdf/tests/pdf_cache
-          key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml') }}-v2
+          key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml', 'tests/compat/pypdf_test_files.tsv') }}-v3
           restore-keys: pypdf-test-files-
+
+      - name: Download the pypdf test files the cache lacks
+        # A restore can fail ("The server is busy") or come from an older key; without this,
+        # the checks would quietly compare fewer pages than a local run.
+        if: startsWith(matrix.shard, 'pypdf')
+        run: uv run --locked --all-packages --group test python scripts/fetch_pypdf_test_files.py
 
       - name: Serializer, rewrites and saves
         if: matrix.shard == 'core'

@@ -9,6 +9,8 @@ on:
       - ".github/actions/install-pdf-tools/**"
       - ".github/workflows/apt-cache.yml"
       - "tests/upstream/pypdf"
+      - "tests/compat/pypdf_test_files.tsv"
+      - "scripts/fetch_pypdf_test_files.py"
   schedule:
     # Weekly, as runner images change about that often and each image has its own key.
     - cron: "17 3 * * 1"
@@ -51,9 +53,12 @@ jobs:
         uses: actions/cache@v6
         with:
           path: tests/upstream/pypdf/tests/pdf_cache
-          key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml') }}-v2
+          key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml', 'tests/compat/pypdf_test_files.tsv') }}-v3
           restore-keys: pypdf-test-files-
 
-      - name: Download them through pypdf's own tests
-        # Running the tests on the real pypdf fetches every file they read.
-        run: uv run --locked --all-packages --group test python scripts/run_upstream_suite.py pypdf --reference
+      - name: Download every file pypdf's tests read
+        # Runs pypdf's whole suite on the real pypdf, out-of-scope tests included, checks that
+        # the files it asks for are the ones tests/compat/pypdf_test_files.tsv lists, and
+        # fetches any the cache lacks. A file it cannot get fails the job, so the cache is
+        # saved only when it is complete.
+        run: uv run --locked --all-packages --group test python scripts/fetch_pypdf_test_files.py --record

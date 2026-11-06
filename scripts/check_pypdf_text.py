@@ -7,7 +7,8 @@ through both libraries, and the first MAX_PAGES pages of it are compared in both
 extraction modes: page.extract_text() and page.extract_text(extraction_mode="layout"). The
 text must be equal, and a page that raises must raise the same exception class in both. The
 files are the upstream test PDFs, plus pypdf's downloaded test files under pdf_cache when
-they are present (pypdf's own suite downloads them).
+they are present (scripts/fetch_pypdf_test_files.py downloads them). The count of the listed
+downloads not found is printed, so a run that compares fewer pages than it should says so.
 
 Every difference fails the check unless DEPARTURES lists its (mode, file name) pair, with the
 reason the facade does not follow pypdf 6.21.4 there. A listed file that matches fails the check
@@ -42,6 +43,9 @@ PATTERNS = (
 # Pages compared per file: enough to cover every page of almost every test file while the
 # few long documents (hundreds of pages) keep the run to a few minutes.
 MAX_PAGES = 30
+# The files pypdf's tests download, by name and URL; see scripts/fetch_pypdf_test_files.py.
+DOWNLOADS = Path("tests/compat/pypdf_test_files.tsv")
+DOWNLOAD_CACHE = Path("tests/upstream/pypdf/tests/pdf_cache")
 MODES: dict[str, dict[str, Any]] = {"plain": {}, "layout": {"extraction_mode": "layout"}}
 # (mode, file name) -> why the facade's text differs from pypdf's there.
 DEPARTURES: dict[tuple[str, str], str] = {}
@@ -129,6 +133,11 @@ def main(argv: list[str]) -> int:
     paths = argv or sorted(
         {path for pattern in PATTERNS for path in glob.glob(pattern, recursive=True)}
     )
+    if not argv:
+        names = [line.split("\t")[0] for line in DOWNLOADS.read_text().splitlines() if line]
+        counts["pdf_cache: listed downloads not found"] = sum(
+            not (DOWNLOAD_CACHE / name).exists() for name in names
+        )
     for path in paths:
         started = time.perf_counter()
         compare(path, counts, problems, every=bool(argv))
