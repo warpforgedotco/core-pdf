@@ -133,9 +133,37 @@ def download_network_files(suite: Suite, *, reference: bool, environment: dict[s
         *environment_command(suite, reference=reference),
         "python",
         "-c",
-        "from tests import download_test_pdfs; download_test_pdfs()",
+        "from tests import download_test_pdfs; download_test_pdfs()\n" + FETCH_MISSING,
     ]
     subprocess.run(command, cwd=UPSTREAM / suite.checkout, env=environment, check=True)
+
+
+# pypdf's helper retries without pausing and its thread pool drops the error, so a file that
+# a rate-limited server refuses goes missing silently. This fetches what is missing, with
+# pauses, and fails naming any file it still cannot get.
+FETCH_MISSING = """
+import sys, time, urllib.request
+from pathlib import Path
+import yaml
+cache = Path("tests/pdf_cache")
+missing = []
+for entry in yaml.safe_load(Path("tests/example_files.yaml").read_text()):
+    path = cache / entry["local_filename"]
+    for pause in (5, 15, 30, 60):
+        if path.exists():
+            break
+        request = urllib.request.Request(entry["url"], headers={"User-Agent": "core-pdf-tests"})
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                path.write_bytes(response.read())
+        except Exception as error:
+            print(f"download of {entry['url']} failed: {error!r}; retrying in {pause} s")
+            time.sleep(pause)
+    if not path.exists():
+        missing.append(entry["local_filename"])
+if missing:
+    sys.exit("could not download: " + ", ".join(missing))
+"""
 
 
 def summarize(junit: Path) -> dict[str, object]:
