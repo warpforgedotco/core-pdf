@@ -7,7 +7,7 @@ import numpy
 
 from core_pdf.impl.geometry import flip_rect_vertical
 from core_pdf.impl.types import GeneratedRecord
-from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTTextBox
+from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTText, LTTextBox
 
 from ._classification import (
     BULLET,
@@ -66,15 +66,25 @@ def deduplicated_box_text(box: LTTextBox) -> str:
 
 
 def figure_text_snippets(figure: LTFigure) -> list[str]:
-    snippets = list(figure.text_snippets)
+    """A figure's text split into paragraphs, as unstructured splits it with PARAGRAPH_PATTERN."""
+    return re.split(r"\s*\n\s*", figure_text(figure))
+
+
+def figure_text(figure: LTFigure) -> str:
+    """A figure's text in the order of its children, as unstructured's _extract_text reads it.
+
+    Text comes from children with text and from nested figures in place, and every other
+    child (a curve, line, rect or image) stands for a line break.
+    """
+    parts: list[str] = []
     for child in figure:
-        if not isinstance(child, LTFigure):
-            continue
-        child_snippets = figure_text_snippets(child)
-        if snippets and child_snippets:
-            snippets[-1] += child_snippets.pop(0)
-        snippets.extend(child_snippets)
-    return snippets
+        if isinstance(child, LTFigure):
+            parts.append(figure_text(child))
+        elif isinstance(child, LTText):
+            parts.append(child.get_text())
+        else:
+            parts.append("\n")
+    return "".join(parts)
 
 
 def projection_segments(boxes: numpy.ndarray[Any, Any], axis: int) -> list[tuple[int, int]]:

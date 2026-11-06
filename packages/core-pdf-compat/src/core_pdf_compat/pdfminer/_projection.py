@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from bisect import bisect_left, bisect_right
 from collections.abc import Callable
 from typing import Any
 
@@ -164,7 +163,7 @@ def project_page(
         products = pdfminer_page_program(page)
     projected_glyphs: tuple[Any, ...] = products.glyphs
     ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
-    chars_by_glyph: dict[int, tuple[LTChar, int]] = {}
+    chars_by_glyph: dict[int, LTChar] = {}
     glyph_matrices: dict[int, Any] = getattr(products, "glyph_matrices", {})
     vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
     provenance_dicts: dict[int, tuple[object, dict[str, Any]]] = {}
@@ -409,7 +408,7 @@ def project_page(
             # pdfminer's size is the box's height, or its width for vertical writing.
             x1 - x0 if getattr(glyph.font_decoder, "is_vertical", False) else y1 - y0,
         )
-        chars_by_glyph[glyph_index] = (character, glyph.seqno)
+        chars_by_glyph[glyph_index] = character
     events = getattr(products, "layout_events", ())
     painted_paths = getattr(products, "painted_paths", ())
     rotation = int(page.rotation) % 360
@@ -440,38 +439,20 @@ def project_page(
             max(point[1] for point in placed),
         )
 
-    drawing_sequences = sorted(
-        drawing.seqno
-        for drawing in products.drawings
-        if drawing.kind
-        not in {
-            "clip",
-            "group-begin",
-            "group-end",
-            "scope-begin",
-            "scope-end",
-            "state-push",
-            "state-pop",
-        }
-    )
     page_items: list[Any] = []
     current = page_items
-    stack: list[tuple[list[Any], LTFigure, list[tuple[LTChar, int]]]] = []
-    figure_entries: list[tuple[LTChar, int]] = []
+    stack: list[tuple[list[Any], LTFigure]] = []
     figure_count = 0
     if not events:
         # Without the layout walk, glyphs are all the page has.
-        for character, _sequence in chars_by_glyph.values():
-            page_items.append(character)
+        page_items.extend(chars_by_glyph.values())
     for event in events:
         kind = event[0]
         if kind == "glyphs":
             for glyph_index in range(event[1], event[2]):
-                entry = chars_by_glyph.get(glyph_index)
-                if entry is not None:
-                    current.append(entry[0])
-                    if stack:
-                        figure_entries.append(entry)
+                placed_char = chars_by_glyph.get(glyph_index)
+                if placed_char is not None:
+                    current.append(placed_char)
         elif kind == "path":
             current.extend(pdfminer_path_items(painted_paths[event[1]], layout_point))
         elif kind == "begin":
@@ -481,15 +462,12 @@ def project_page(
                 event[1] or f"Form{figure_count}",
             )
             figure_count += 1
-            stack.append((current, figure, figure_entries))
+            stack.append((current, figure))
             current = figure._objs
-            figure_entries = []
         elif kind == "end" and stack:
-            parent, figure, parent_entries = stack.pop()
-            figure.text_snippets = _figure_text_snippets(figure_entries, drawing_sequences)
+            parent, figure = stack.pop()
             parent.append(figure)
             current = parent
-            figure_entries = parent_entries
         elif kind == "image":
             matrix = event[2]
             box = layout_box(
@@ -502,10 +480,8 @@ def project_page(
             )
             current.append(LTFigure(box, event[1], [LTImage(box, event[1], event[3])]))
     while stack:
-        parent, figure, parent_entries = stack.pop()
-        figure.text_snippets = _figure_text_snippets(figure_entries, drawing_sequences)
+        parent, figure = stack.pop()
         parent.append(figure)
-        figure_entries = parent_entries
     page_box = (0.0, 0.0, layout_width, layout_height)
     return LTPage(
         page_box,
@@ -548,38 +524,6 @@ def _line_is_empty(line: LTTextLine) -> bool:
     # that map to no text is not empty.
     text = "".join(item.get_text() for item in line._objs[:-1])
     return line.width <= 0 or line.height <= 0 or text.isspace()
-
-
-def _figure_text_snippets(
-    entries: list[tuple[LTChar, int]], drawing_sequences: list[int]
-) -> tuple[str, ...]:
-    """A figure's text, split where drawing happens between its characters."""
-    snippets: list[str] = []
-    current: list[str] = []
-    previous_sequence: int | None = None
-    for character, sequence in entries:
-        if previous_sequence is not None and bisect_left(
-            drawing_sequences, sequence
-        ) > bisect_right(drawing_sequences, previous_sequence):
-            snippets.append("".join(current))
-            current = []
-        current.append(character.get_text())
-        previous_sequence = sequence
-    if current:
-        snippets.append("".join(current))
-    merged: list[str] = []
-    for snippet in snippets:
-        if (
-            merged
-            and snippet
-            and not any(map(str.isalnum, snippet))
-            and not any(character.isalnum() for character in merged[-1])
-            and merged[-1][-1] == snippet[0]
-        ):
-            merged[-1] += snippet
-        else:
-            merged.append(snippet)
-    return tuple(merged)
 
 
 def pdfminer_path_items(
