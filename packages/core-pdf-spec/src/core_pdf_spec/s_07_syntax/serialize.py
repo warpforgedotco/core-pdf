@@ -205,7 +205,9 @@ def _spaced_xref_stream(
         b"\x01" + offset.to_bytes(4, "big") + generation.to_bytes(1, "big")
         for _, (offset, generation) in items
     )
-    entries = {str(getattr(key, "value", key)): value for key, value in trailer.items()}
+    entries: dict[object, object] = {
+        str(getattr(key, "value", key)): value for key, value in trailer.items()
+    }
     dictionary: dict[object, object] = {
         "Type": PdfName.of("XRef"),
         "Size": number + 1,
