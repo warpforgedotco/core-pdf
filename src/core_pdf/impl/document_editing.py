@@ -49,20 +49,30 @@ class SavedPdf(bytes):
     `incremental` is False for a full rewrite, which drops old revisions, and True for an
     append, which keeps them. `encryption` names the output's algorithm, or is None when the
     output is not encrypted, as in `encrypted`. `xref_stream` is True when the section this
-    save wrote is an xref stream rather than a classic table.
+    save wrote is an xref stream rather than a classic table. `removed` lists the objects the
+    source reached and the saved document no longer does, which an incremental update leaves
+    readable in the earlier revision. A full rewrite leaves them out, so it lists none.
     """
 
     incremental: bool
     encryption: str | None
     xref_stream: bool
+    removed: tuple[int, ...]
 
     def __new__(
-        cls, data: bytes, *, incremental: bool, encryption: str | None, xref_stream: bool
+        cls,
+        data: bytes,
+        *,
+        incremental: bool,
+        encryption: str | None,
+        xref_stream: bool,
+        removed: tuple[int, ...] = (),
     ) -> Self:
         saved = super().__new__(cls, data)
         saved.incremental = incremental
         saved.encryption = encryption
         saved.xref_stream = xref_stream
+        saved.removed = removed
         return saved
 
     @property
@@ -113,6 +123,7 @@ class EditableDocument:
         size = document.resolver.resolve(self.trailer.get("Size"))
         declared = size if isinstance(size, int) and size > 0 else 1
         numbers = set(self.reachable_references())
+        self.source_reachable = frozenset(numbers)
         if isinstance(self.encrypt_entry, PdfReference):
             numbers.add(self.encrypt_entry.object_number)
         self.next_object_number = max(declared, max(numbers, default=0) + 1)
@@ -215,7 +226,8 @@ class EditableDocument:
     ) -> SavedPdf:
         """Append changed objects after the original bytes, which stay identical.
 
-        Earlier revisions remain readable in the file, so this is not a way to remove data. An
+        Earlier revisions remain readable in the file, so this is not a way to remove data:
+        objects the document no longer reaches are listed in `SavedPdf.removed`. An
         encrypted input keeps its encryption: new objects use the same key, and this raises if
         that cannot be done.
 
@@ -279,7 +291,12 @@ class EditableDocument:
             output += table_section(offsets) + b"trailer\n" + serialize_object(trailer)
         output += b"\nstartxref\n%d\n%%%%EOF\n" % section_offset
         return write_output(
-            bytes(output), target, incremental=True, security=security, xref_stream=use_stream
+            bytes(output),
+            target,
+            incremental=True,
+            security=security,
+            xref_stream=use_stream,
+            removed=tuple(sorted(self.source_reachable - reachable.keys())),
         )
 
     def verbatim_objects(self, objects: dict[PdfReference, Any]) -> dict[int, bytes]:
@@ -425,11 +442,18 @@ def write_output(
     incremental: bool,
     security: StandardSecurityHandler | None,
     xref_stream: bool,
+    removed: tuple[int, ...] = (),
 ) -> SavedPdf:
     if target is not None:
         Path(target).write_bytes(data)
     encryption = None if security is None else describe_encryption(security.config)
-    return SavedPdf(data, incremental=incremental, encryption=encryption, xref_stream=xref_stream)
+    return SavedPdf(
+        data,
+        incremental=incremental,
+        encryption=encryption,
+        xref_stream=xref_stream,
+        removed=removed,
+    )
 
 
 def table_section(offsets: dict[int, tuple[int, int]]) -> bytes:

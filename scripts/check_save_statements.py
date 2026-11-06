@@ -2,15 +2,17 @@
 
 uv run --all-packages python scripts/check_save_statements.py
 
-Each file that opens and is not encrypted gets a last page whose content holds a plain marker,
-then that page is removed and the file saved. The marker is what a caller believes is gone.
+Each file that opens and is not encrypted gets a last page that holds a plain marker in three
+objects: its content stream, an image it draws and an annotation's text. Then that page is
+removed and the file saved. The marker is what a caller believes is gone.
 
 full: PdfWriter and EditableDocument.save. The marker must leave the file, and the save must
 say it was a full rewrite.
 
 incremental: PdfWriter(incremental=True) and EditableDocument.save_incremental. The marker must
-stay, because the source's bytes stay, and the save must say so: SavedPdf.incremental, and for
-the writer a last_save that names the removed objects and a logged warning.
+stay, because the source's bytes stay, and the save must say so: SavedPdf.incremental and
+SavedPdf.removed naming all three objects, and for the writer a last_save that names them and a
+logged warning.
 
 encrypted: PdfWriter.encrypt, with the page kept. The marker must not appear, and SavedPdf must
 name the algorithm.
@@ -32,7 +34,14 @@ from core_pdf import EditableDocument, PdfDocument
 from core_pdf.impl.exceptions import PdfError
 from core_pdf_compat.pypdf import PdfReader, PdfWriter
 from core_pdf_compat.pypdf.errors import PyPdfError
-from core_pdf_compat.pypdf.generic import DecodedStreamObject, NameObject
+from core_pdf_compat.pypdf.generic import (
+    ArrayObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    NameObject,
+    NumberObject,
+    TextStringObject,
+)
 from core_pdf_spec.exceptions import PdfParseError
 
 PATTERNS = (
@@ -42,7 +51,7 @@ PATTERNS = (
     "tests/upstream/pypdf/resources/*.pdf",
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
-MARKER = b"core-pdf-removed-marker-7f3a91"
+MARKER = b"corepdfremovedmarker7f3a91"
 ALGORITHMS = ("RC4-40", "RC4-128", "AES-128", "AES-256-R5", "AES-256")
 WRITER_MODULES = "packages/core-pdf-compat/src/core_pdf_compat/pypdf/_writer*.py"
 PDF_STRUCTURE = re.compile(rb"endobj|endstream|trailer|%%EOF|startxref|\bxref\b|\bobj\b")
@@ -57,22 +66,54 @@ class Warnings(logging.Handler):
         self.removed += "removed objects stay readable" in record.getMessage()
 
 
-def with_marked_page(path: str) -> tuple[bytes, int] | None:
-    """The file with a marked last page, and the number of that page's content."""
+def name(value: str) -> NameObject:
+    return NameObject(value)
+
+
+def with_marked_page(path: str) -> tuple[bytes, set[int]] | None:
+    """The file with a marked last page, and the numbers of the three marked objects."""
     if PdfReader(path).is_encrypted:
         return None
     writer = PdfWriter(clone_from=path)
     page = writer.add_blank_page(200, 200)
-    stream = DecodedStreamObject()
-    stream.set_data(b"BT /F1 12 Tf (" + MARKER + b") Tj ET")
-    reference = writer._add_object(stream)
-    page[NameObject("/Contents")] = reference
+    image = DecodedStreamObject()
+    image.set_data(MARKER)
+    image.update(
+        {
+            name("/Type"): name("/XObject"),
+            name("/Subtype"): name("/Image"),
+            name("/Width"): NumberObject(len(MARKER)),
+            name("/Height"): NumberObject(1),
+            name("/ColorSpace"): name("/DeviceGray"),
+            name("/BitsPerComponent"): NumberObject(8),
+        }
+    )
+    xobjects = DictionaryObject({name("/Marked"): writer._add_object(image)})
+    page[name("/Resources")] = DictionaryObject({name("/XObject"): xobjects})
+    content = DecodedStreamObject()
+    content.set_data(b"q 100 0 0 10 0 0 cm /Marked Do Q BT (" + MARKER + b") Tj ET")
+    page[name("/Contents")] = writer._add_object(content)
+    annotation = DictionaryObject(
+        {
+            name("/Type"): name("/Annot"),
+            name("/Subtype"): name("/Text"),
+            name("/Rect"): ArrayObject([NumberObject(n) for n in (0, 0, 20, 20)]),
+            name("/Contents"): TextStringObject(MARKER.decode()),
+        }
+    )
+    page[name("/Annots")] = ArrayObject([writer._add_object(annotation)])
     output = BytesIO()
     writer.write(output)
-    return output.getvalue(), PdfReader(output).pages[-1].raw_get("/Contents").idnum
+    last = PdfReader(output).pages[-1]
+    marked = {
+        last.raw_get("/Contents").idnum,
+        last["/Resources"]["/XObject"].raw_get("/Marked").idnum,
+        last["/Annots"][0].idnum,
+    }
+    return output.getvalue(), marked
 
 
-def check_writer(source: bytes, content: int, seen: Warnings, report: Any) -> None:
+def check_writer(source: bytes, marked: set[int], seen: Warnings, report: Any) -> None:
     writer = PdfWriter(clone_from=BytesIO(source))
     del writer.pages[-1]
     full = writer.write_bytes()
@@ -91,7 +132,10 @@ def check_writer(source: bytes, content: int, seen: Warnings, report: Any) -> No
     report("writer incremental: claims a full rewrite", not update.incremental)
     saved = writer.last_save
     report("writer incremental: last_save is wrong", saved is None or saved.kind != "incremental")
-    report("writer incremental: content not named", saved is None or content not in saved.removed)
+    report(
+        "writer incremental: removed not in last_save", saved is None or marked - set(saved.removed)
+    )
+    report("writer incremental: removed not in SavedPdf", marked - set(update.removed))
     report("writer incremental: no warning", seen.removed == before)
 
 
@@ -103,7 +147,7 @@ def without_last_page(editor: EditableDocument) -> None:
     node["Count"] = node["Count"] - 1
 
 
-def check_core(source: bytes, report: Any) -> None:
+def check_core(source: bytes, marked: set[int], report: Any) -> None:
     with PdfDocument.open(source) as document:
         editor = EditableDocument(document)
         without_last_page(editor)
@@ -111,8 +155,10 @@ def check_core(source: bytes, report: Any) -> None:
         update = editor.save_incremental()
     report("core full: marker left in the file", MARKER in full)
     report("core full: claims incremental", full.incremental)
+    report("core full: lists removed objects", full.removed)
     report("core incremental: source bytes changed", not update.startswith(source))
     report("core incremental: claims a full rewrite", not update.incremental)
+    report("core incremental: removed not in SavedPdf", marked - set(update.removed))
 
 
 def check_encrypted(source: bytes, algorithm: str, report: Any) -> None:
@@ -151,9 +197,9 @@ def main() -> int:
             if marked is None:
                 counts["encrypted, skipped"] += 1
                 continue
-            source, content = marked
-            check_writer(source, content, seen, report)
-            check_core(source, report)
+            source, numbers = marked
+            check_writer(source, numbers, seen, report)
+            check_core(source, numbers, report)
             check_encrypted(source, ALGORITHMS[index % len(ALGORITHMS)], report)
             counts["files checked"] += 1
         except (

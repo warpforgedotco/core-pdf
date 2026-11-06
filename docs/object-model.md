@@ -68,10 +68,11 @@ written, the earlier versions left readable (`superseded`) and the objects remov
 in the file (`removed`). An incremental save with removals also logs a warning.
 
 `scripts/check_save_statements.py` checks these statements on the upstream PDFs. It adds a
-page with a marker, removes it and saves. On all 168 files that open unencrypted, a full
-rewrite from either writer drops the marker and says it is full. An incremental update keeps
-the marker and the source's bytes, says it is incremental, and from `PdfWriter` names the
-removed content in `last_save` and logs a warning. An encrypted `PdfWriter` save hides the
+page with a marker in its content, an image and an annotation, removes the page and saves. On
+all 168 files that open unencrypted, a full rewrite from either writer drops the marker and
+says it is full. An incremental update keeps the marker and the source's bytes, says it is
+incremental and names the three objects in `SavedPdf.removed`; `PdfWriter` also names them in
+`last_save` and logs a warning. An encrypted `PdfWriter` save hides the
 marker and names its algorithm in `SavedPdf.encryption`. The check also fails if a writer
 module holds PDF structure as bytes.
 
@@ -106,7 +107,9 @@ by accident: nobody loses protection without asking for it, and each save says w
 - **An incremental save cannot change encryption.** The original bytes stay, so a decrypted
   or re-keyed update would be a false promise. `save_incremental` takes no such option.
 - **A save states how it was made.** `save` and `save_incremental` return `SavedPdf`, which is
-  `bytes` with `incremental`, `encrypted` and `encryption` (the algorithm's name, or `None`).
+  `bytes` with `incremental`, `encrypted`, `encryption` (the algorithm's name, or `None`) and
+  `removed`, the objects the source reached and the save no longer does. A full rewrite leaves
+  them out, so it lists none; an incremental update leaves them readable, so it names them.
 - **Some saves are refused.** A file with a PDF MAC (`/AuthCode`, or /P demanding one) keeps
   its encryption only if the MAC is rebuilt, and core-pdf does not make MACs, so `save()` and
   `save_incremental()` raise `PdfUnsupportedError`. `encryption="decrypt"` or `NewEncryption`
