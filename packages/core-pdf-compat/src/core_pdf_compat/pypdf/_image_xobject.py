@@ -12,10 +12,10 @@ import logging
 from io import BytesIO
 from typing import Any, Literal, Optional, Union, cast
 
+from core_pdf_compat.pypdf import filters
 from core_pdf_compat.pypdf.constants import ColorSpaces, ImageAttributes, StreamAttributes
 from core_pdf_compat.pypdf.constants import FilterTypes as FT
 from core_pdf_compat.pypdf.errors import EmptyImageDataError, LimitReachedError, PdfReadError
-from core_pdf_compat.pypdf.filters import FLATE_MAX_BUFFER_SIZE
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     DecodedStreamObject,
@@ -144,10 +144,10 @@ def bits2byte(
     # Number of samples per row = pixels per row * components per pixel.
     samples_per_row = size[0] * colors
     buffer_size = samples_per_row * size[1]
-    if buffer_size > FLATE_MAX_BUFFER_SIZE:
-        raise LimitReachedError(
-            f"Requested buffer size {buffer_size} exceeds limit of {FLATE_MAX_BUFFER_SIZE}."
-        )
+    # Read when called, as pypdf does, so a changed limit applies.
+    limit = filters.FLATE_MAX_BUFFER_SIZE
+    if buffer_size > limit:
+        raise LimitReachedError(f"Requested buffer size {buffer_size} exceeds limit of {limit}.")
 
     byte_buffer = bytearray(buffer_size)
     mask = (1 << bits) - 1
@@ -208,9 +208,10 @@ def _image_from_bytes(mode: str, size: tuple[int, int], data: bytes) -> Image.Im
     bytes_per_pixel = len(mode)
     required_byte_count = pixel_count * bytes_per_pixel
 
-    if required_byte_count > FLATE_MAX_BUFFER_SIZE:
+    limit = filters.FLATE_MAX_BUFFER_SIZE
+    if required_byte_count > limit:
         raise LimitReachedError(
-            f"Requested image buffer size {required_byte_count} exceeds limit {FLATE_MAX_BUFFER_SIZE}."
+            f"Requested image buffer size {required_byte_count} exceeds limit {limit}."
         )
 
     try:
