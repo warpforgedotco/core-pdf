@@ -37,3 +37,8 @@ To validate against the locked dependencies, use `uv run --locked` with the rele
 The facades support the latest release of each library they follow (pypdf, pdfminer.six, pdfplumber, unstructured, llama-index-readers-file, x-ray). The upstream suites in `scripts/run_upstream_suite.py` pin those latest versions, and the comparison scripts (`scripts/check_*_output.py`, `check_pypdf_bytes.py`, `check_pypdf_reads.py`) compare against the same pins. The `Upstream releases` workflow checks the pins against PyPI each week and keeps one open issue while any is behind; `uv run --no-project python scripts/check_upstream_versions.py` does the same check locally.
 
 To move to a new release: move the library's submodule under `tests/upstream` to that release's tag, change its pins in `run_upstream_suite.py`, the comparison scripts and `.github/workflows/tests.yml`, run the suite with `--reference` first, then the facade and the comparison scripts, and fix the facade until both match. Read the library's diff for the code the facade mirrors; a test run alone can miss behaviour changes.
+
+## Submodules
+
+The upstream checkouts under `tests/upstream` are submodules, and `git pull` does not move them. After pulling, run `git submodule update --init --recursive --depth 1`, or test against stale tests. Don't commit with `git commit -a` while a submodule is out of date: it records the stale commit and moves the checkout back for everyone. Stage files by name, and stage a submodule only when moving it on purpose.
+
