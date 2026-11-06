@@ -9,28 +9,41 @@ from typing import Any
 
 BULLET_CHARS = "\x95•‣⁃ㅤ⁌⁍∙○●◘◦☙❥❧⦾⦿-–\uf0b7*·"
 
-# The patterns below are unstructured 0.25's, from unstructured.nlp.patterns (Apache-2.0).
-# unstructured 0.27 takes "-" and "–" as bullets only before whitespace, and wants an email
-# address to be the whole text; 0.25 does neither.
-BULLET = re.compile(rf"^\s*[{re.escape(BULLET_CHARS)}](?![{re.escape(BULLET_CHARS)}])")
+# The patterns below are unstructured 0.27.36's, from unstructured.nlp.patterns (Apache-2.0).
+# Since 0.27, "-" and "–" are bullets only when whitespace or the end of the text follows
+# them, so a leading minus sign or a hyphenated value is not a list item. Upstream anchors
+# that branch with "(?<=\n)|\A"; the facade only matches at the start of a text, where the
+# two agree.
+AMBIGUOUS_BULLET_CHARS = "-–"
+
+UNAMBIGUOUS_BULLET_CHARS = "".join(
+    char for char in BULLET_CHARS if char not in AMBIGUOUS_BULLET_CHARS
+)
+
+BULLET = re.compile(
+    rf"^\s*(?:[{re.escape(UNAMBIGUOUS_BULLET_CHARS)}]|[{AMBIGUOUS_BULLET_CHARS}](?=\s|$))"
+    rf"(?![{re.escape(BULLET_CHARS)}])"
+)
 
 NUMBERED = re.compile(r"^\s*\d+(?:\.|\))\s+.+")
 
+# Since 0.27, is_email_address and is_us_city_state_zip use fullmatch on the stripped text,
+# so an email address or an address must be the whole text.
 EMAIL = re.compile(r"[a-z0-9.\-+_]+@[a-z0-9.\-+_]+\.[a-z]+")
 
-# Kept verbatim, braces and all: they make "{Alabama", "Wyoming}", "{AL" and "WY}" the
-# alternatives, so those four match only with a brace.
+# 0.27 dropped the stray braces 0.25 had around the state alternatives, so full state names
+# and every abbreviation now match without one.
 ADDRESS = re.compile(
     r"(?i)\b(?:[A-Z][a-z.-]{1,15}[ ]?){1,5},\s?"
-    r"(?:{Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida"
+    r"(?:Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida"
     r"|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland"
     r"|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|"
     r"New[ ]Hampshire|New[ ]Jersey|New[ ]Mexico|New[ ]York|North[ ]Carolina|North[ ]Dakota"
     r"|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode[ ]Island|South[ ]Carolina|South[ ]Dakota"
-    r"|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West[ ]Virginia|Wisconsin|Wyoming}"
-    r"|{AL|AK|AS|AZ|AR|CA|CO|CT|DE|DC|FM|FL|GA|GU|HI|ID|IL|IN|IA|KS|KY|LA|ME|MH|MD|MA|MI|MN"
+    r"|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West[ ]Virginia|Wisconsin|Wyoming"
+    r"|AL|AK|AS|AZ|AR|CA|CO|CT|DE|DC|FM|FL|GA|GU|HI|ID|IL|IN|IA|KS|KY|LA|ME|MH|MD|MA|MI|MN"
     r"|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|MP|OH|OK|OR|PW|PA|PR|RI|SC|SD|TN|TX|UT|VT|VI|VA|"
-    r"WA|WV|WI|WY})(, |\s)?(?:\b\d{5}(?:-\d{4})?\b)"
+    r"WA|WV|WI|WY)(, |\s)?(?:\b\d{5}(?:-\d{4})?\b)"
 )
 
 POS_VERB_TAGS = frozenset({"VB", "VBG", "VBD", "VBN", "VBP", "VBZ"})
@@ -144,9 +157,9 @@ def simple_element_class(
     if BULLET.match(text):
         return ListItem
     stripped = text.strip()
-    if EMAIL.match(stripped):
+    if EMAIL.fullmatch(stripped):
         return EmailAddress
-    if ADDRESS.match(stripped):
+    if ADDRESS.fullmatch(stripped):
         return Address
     if NUMBERED.match(text):
         return ListItem

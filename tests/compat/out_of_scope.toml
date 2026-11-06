@@ -108,6 +108,15 @@ names = [
     "get_uris_from_annots",
     # extract_image_block_types makes auto resolve to hi_res on the real library.
     "test_partition_pdf_element_extraction",
+    # unstructured 0.27: the text-layer presence check that partition_pdf_or_image runs only
+    # when the strategy cannot resolve to fast (hi_res, ocr_only), a sibling of
+    # extractable_elements; _text_extractable_by_full_pass wraps extractable_elements.
+    "pdf_has_extractable_text", "_text_extractable_by_full_pass",
+    # unstructured 0.27: the ocr_only strategy's page loop, patched and called directly.
+    "_partition_pdf_or_image_with_ocr",
+    # unstructured 0.27: needs hi_res, ocr_only and image partitioning to load onnxruntime;
+    # the strategy sits in a dict parameter, which the strategies list cannot see.
+    "test_inference_strategies_still_raise_the_raw_load_error",
 ]
 files = [
     "test_unstructured/partition/pdf_image/test_analysis.py",
