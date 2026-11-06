@@ -52,14 +52,7 @@ MAX_PAGES = 5
 TOLERANCE = 1e-3
 SECONDS_PER_FILE = 120
 # (check, file name) -> why the facade does not follow pdfminer there.
-RECURSION = (
-    "pdfminer follows the xref chain until Python's stack overflows and raises RecursionError; "
-    "core-pdf detects the loop and raises PdfError"
-)
-DEPARTURES: dict[tuple[str, str], str] = {
-    ("text", "issue-1249-evil-xrefs.pdf"): RECURSION,
-    ("layout", "issue-1249-evil-xrefs.pdf"): RECURSION,
-}
+DEPARTURES: dict[tuple[str, str], str] = {}
 # Files with text boxes at equal distances, where pdfminer's order follows memory addresses.
 # Running pdfminer alone a dozen times over each, with other allocations in between, gives
 # more than one order, or its order changed between runs of this check.

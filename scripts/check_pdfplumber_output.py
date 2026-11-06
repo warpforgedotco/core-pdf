@@ -72,14 +72,7 @@ IMAGE_KEYS = (
 )
 # (file name, check) -> why the facade does not follow pdfplumber there; it covers every
 # page of that check.
-DEPARTURES: dict[tuple[str, str], str] = {
-    ("issue-1249-evil-xrefs.pdf", "open"): (
-        "pdfminer.six 20260107, pdfplumber 0.11.10's pinned version, recurses without end "
-        "on this circular xref chain and fails at open; the facade fails, with the same "
-        "PdfminerException, when the pages are read"
-    ),
-    ("issue-1249-evil-xrefs.pdf", "pages"): "see open",
-}
+DEPARTURES: dict[tuple[str, str], str] = {}
 
 
 def plain(value: Any) -> Any:
