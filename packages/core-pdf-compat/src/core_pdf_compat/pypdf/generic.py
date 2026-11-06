@@ -24,7 +24,7 @@ from core_pdf_spec.s_07_syntax.serialize import (
     ObjectLayout,
     serialize_name,
     serialize_object,
-    serialize_real,
+    serialize_spaced_real,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
@@ -204,9 +204,8 @@ class FloatObject(float, _CopiedObject):
         return hash((self.__class__, float(self)))
 
     def myrepr(self) -> str:
-        # pypdf rounds to about nine significant digits here. This keeps the exact value, so
-        # what is shown is what the serializer writes.
-        return "0.0" if self == 0 else serialize_real(float(self)).decode("ascii")
+        # Rounded as pypdf writes it, which is also what the serializer writes.
+        return serialize_spaced_real(float(self)).decode("ascii")
 
     def __repr__(self) -> str:
         return self.myrepr()

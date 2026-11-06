@@ -90,6 +90,20 @@ def serialize_real(value: float) -> bytes:
     return (text if text not in {"", "-", "-0"} else "0").encode("ascii")
 
 
+# pypdf's FLOAT_WRITE_PRECISION: the digits kept after the point, less the integer digits.
+SPACED_REAL_PRECISION = 8
+
+
+def serialize_spaced_real(value: float) -> bytes:
+    """A real as pypdf writes it, rounded, so a SPACED layout matches pypdf byte for byte."""
+    if not math.isfinite(value):
+        raise ValueError("PDF real numbers must be finite")
+    if value == 0:
+        return b"0.0"
+    places = max(1, SPACED_REAL_PRECISION - int(math.log10(abs(value))))
+    return f"{value:.{places}f}".rstrip("0").rstrip(".").encode("ascii")
+
+
 def serialize_object(value: object, layout: ObjectLayout = ObjectLayout.COMPACT) -> bytes:
     if value is None:
         return b"null"
@@ -100,7 +114,9 @@ def serialize_object(value: object, layout: ObjectLayout = ObjectLayout.COMPACT)
     if isinstance(value, int):
         return b"%d" % value
     if isinstance(value, float):
-        return b"0.0" if value == 0 and layout is ObjectLayout.SPACED else serialize_real(value)
+        return (
+            serialize_spaced_real(value) if layout is ObjectLayout.SPACED else serialize_real(value)
+        )
     # The lexer returns some well-known names, such as /Type values, as plain strings.
     if isinstance(value, (PdfName, str)):
         return serialize_name(value)
@@ -245,6 +261,7 @@ __all__ = (
     "serialize_name",
     "serialize_object",
     "serialize_real",
+    "serialize_spaced_real",
     "serialize_stream",
     "serialize_string",
     "serialize_xref_stream",
