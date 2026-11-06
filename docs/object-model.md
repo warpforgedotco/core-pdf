@@ -67,6 +67,14 @@ writing bytes.
 written, the earlier versions left readable (`superseded`) and the objects removed but still
 in the file (`removed`). An incremental save with removals also logs a warning.
 
+`scripts/check_save_statements.py` checks these statements on the upstream PDFs. It adds a
+page with a marker, removes it and saves. On all 168 files that open unencrypted, a full
+rewrite from either writer drops the marker and says it is full. An incremental update keeps
+the marker and the source's bytes, says it is incremental, and from `PdfWriter` names the
+removed content in `last_save` and logs a warning. An encrypted `PdfWriter` save hides the
+marker and names its algorithm in `SavedPdf.encryption`. The check also fails if a writer
+module holds PDF structure as bytes.
+
 `scripts/check_writer_lossless.py` compares unchanged objects in writer output with the
 source. A full rewrite keeps values and stream bytes but renumbers objects and normalizes
 syntax, so byte-for-byte output needs an incremental update.
