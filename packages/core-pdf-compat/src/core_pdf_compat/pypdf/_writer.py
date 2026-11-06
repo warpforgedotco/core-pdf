@@ -511,8 +511,12 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         # is kept too, because an id can be reused once its object is freed.
         self._id_translated: dict[int, dict[Any, Any]] = {}
         self._reserved_pages: set[int] = set()
-        # Page tree nodes a clone leaves unreached, which pypdf still writes.
-        self._orphaned_nodes: set[int] = set()
+        # Objects that have been part of the document. pypdf writes every object it holds,
+        # and so does a full rewrite here, except these once they are no longer reached: the
+        # caller removed them, and secure by default means they leave the file.
+        self._part_of_document: set[int] = set()
+        self._chain_visited: set[tuple[int, int]] = set()
+        self._importing = False
         self._encryption: Encryption | None = None
         self._encrypt_entry: dict[Any, Any] | None = None
         self._file_id: bytes | None = None
@@ -832,6 +836,8 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             item = current.get_object()
             item[NameObject("/Count")] = NumberObject(item["/Count"] + 1)
             current = item.get("/Parent")
+            if is_null_or_none(current):
+                self._mark_part_of_document(reference)
         raise PyPdfError("Too many recursive calls!")
 
     def add_page(self, page: Any, excluded_keys: Iterable[Any] = ()) -> PageObject:
@@ -918,11 +924,20 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         Objects are numbered depth first, as pypdf does. Work goes on a stack of generators
         rather than through recursion, as a real outline can be longer than Python's stack.
         """
-        pending: list[Iterator[None]] = []
-        output = self._bring(value, owner, pending)
-        while pending:
-            if next(pending[-1], self) is self:
-                pending.pop()
+        outermost = not self._importing
+        if outermost:
+            # pypdf's clone keeps one set of the items it reached along linked lists.
+            self._chain_visited = set()
+            self._importing = True
+        try:
+            pending: list[Iterator[None]] = []
+            output = self._bring(value, owner, pending)
+            while pending:
+                if next(pending[-1], self) is self:
+                    pending.pop()
+        finally:
+            if outermost:
+                self._importing = False
         return output
 
     def _bring(self, value: Any, owner: Any, pending: list[Any]) -> Any:
@@ -991,13 +1006,17 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
     ) -> None:
         """Number a linked list in order before its items are filled, as pypdf does.
 
-        Each copy gets its link first, so the link key comes first in it, as in pypdf.
+        Each copy gets its link first, so the link key comes first in it. Filling the first
+        item then follows its back link to `value`, so `value` finishes before the items, and
+        that item holds the back link second. pypdf does this unless `value` was itself reached
+        along a list, which its clone tracks in `visited`.
         """
         kind = value.get_resolved("/Type")
-        for key in ("/Next", "/Prev", "/N", "/V"):
+        for key, back in (("/Next", "/Prev"), ("/Prev", "/Next"), ("/N", "/V"), ("/V", "/N")):
             start = len(pending)
             current: Any = value
             holder = duplicate
+            members: list[tuple[Any, Any]] = []
             while key in current:
                 link = dict.__getitem__(current, key)
                 if not isinstance(link, IndirectObject) or link.pdf is self:
@@ -1014,9 +1033,37 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 if not isinstance(holder, DictionaryObject) or key in holder:
                     break
                 dict.__setitem__(holder, NameObject(key), reference)
+                self._chain_visited.add((id(link.pdf), link.idnum))
                 holder = reference.get_object() if isinstance(reference, IndirectObject) else None
-            # The stack runs from its end, so reverse these for the chain to fill in order.
-            pending[start:] = list(reversed(pending[start:]))
+                members.append((current, holder))
+            chain = list(reversed(pending[start:]))
+            del pending[start:]
+            if members and self._fills_head_first(value, duplicate, members[0], back):
+                # Below the generator filling `value`, so these run once it is done.
+                pending[start - 1 : start - 1] = chain
+            else:
+                pending.extend(chain)
+
+    def _fills_head_first(
+        self, value: DictionaryObject, duplicate: Any, first: tuple[Any, Any], back: str
+    ) -> bool:
+        source, copy = first
+        link = dict.get(source, back)
+        head = getattr(value, "indirect_reference", None)
+        if not isinstance(link, IndirectObject) or head is None or not isinstance(copy, dict):
+            return False
+        if (link.idnum, link.generation) != (head.idnum, head.generation) or back in copy:
+            return False
+        if (id(head.pdf), head.idnum) in self._chain_visited:
+            return False
+        kinds = {source.get_resolved("/Type"), value.get_resolved("/Type")} - {None}
+        if len(kinds) > 1:
+            return False
+        reference = getattr(duplicate, "indirect_reference", None)
+        if reference is None:
+            return False
+        dict.__setitem__(copy, NameObject(back), reference)
+        return True
 
     def _fill_copy(
         self, duplicate: Any, value: Any, owner: Any, pending: list[Any]
@@ -1058,13 +1105,10 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 page[NameObject("/Parent")] = self._pages
         if not self.incremental:
             # pypdf lists every page under the root and leaves /Count alone. The nodes this
-            # leaves unreached are still in its table, so it writes them, and so does a full
-            # rewrite here, until something else refers to them.
-            reached_before = {reference.object_number for reference in self._reachable()}
+            # leaves unreached were never removed by the caller, so they are still written.
             references = [page.indirect_reference for page in self.flattened_pages]
             self._pages.get_object()[NameObject("/Kids")] = ArrayObject(references)
-            reached = {reference.object_number for reference in self._reachable()}
-            self._orphaned_nodes = reached_before - reached
+            self._mark_part_of_document(self._root_object.indirect_reference)
 
     def _collect_incremental_clone_object_ids(self, reader: Any) -> list[int]:
         found = {number for entry in reader.xref.values() for number in entry}
@@ -1356,6 +1400,30 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         stream.flush()
         return False, stream
 
+    def _trailer_references(self) -> list[Any]:
+        found = [self._root_object.indirect_reference]
+        if isinstance(self._info_obj, IndirectObject):
+            found.append(self._info_obj)
+        return found
+
+    def _mark_part_of_document(self, *roots: Any) -> None:
+        """Record what `roots` reach, stopping at objects already recorded."""
+        pending: list[Any] = list(roots)
+        while pending:
+            item = pending.pop()
+            if isinstance(item, IndirectObject):
+                number = item.idnum
+                if item.pdf is not self or number in self._part_of_document:
+                    continue
+                if not 0 < number <= len(self._objects):
+                    continue
+                self._part_of_document.add(number)
+                item = self._objects[number - 1]
+            if isinstance(item, dict):
+                pending.extend(dict.values(item))
+            elif isinstance(item, list):
+                pending.extend(item)
+
     def _reachable(self) -> dict[PdfReference, Any]:
         """Core forms of the objects the file reaches.
 
@@ -1391,11 +1459,15 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
     def _serialized(self) -> bytes:
         header = self._header + b"\n" + BINARY_MARKER
         objects = self._reachable()
-        # Without what they refer to: a page removed since stays out of the file.
-        for number in sorted(self._orphaned_nodes):
+        self._mark_part_of_document(*(self._trailer_references()))
+        # What pypdf also writes: objects never part of the document, such as the copy of an
+        # outline action it makes and leaves unused.
+        for index, item in enumerate(self._objects):
+            number = index + 1
             reference = PdfReference(number, 0)
-            item = self._objects[number - 1] if number <= len(self._objects) else None
-            if reference not in objects and item is not None:
+            if item is None or reference in objects or number in self._part_of_document:
+                continue
+            if number not in self._reserved_pages:
                 objects[reference] = to_core(item)
         self._objects_written = len(objects)
         trailer = self._trailer()

@@ -15,7 +15,13 @@ from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf import filters
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._encryption import PasswordType
-from core_pdf_compat.pypdf._reader_scan import OBJECT_HEADER, XrefScan, pypdf_stream_data
+from core_pdf_compat.pypdf._reader_scan import (
+    DECODE_REFERENCE,
+    OBJECT_HEADER,
+    STREAM_KEYWORD,
+    XrefScan,
+    pypdf_stream_data,
+)
 from core_pdf_compat.pypdf._text import LegacyTextCaches
 from core_pdf_compat.pypdf.constants import ImageType, ObjectDeletionFlag, UserAccessPermissions
 from core_pdf_compat.pypdf.errors import (
@@ -313,7 +319,10 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return to_generic(lexer.parse_indirect_object(), self)
 
     def _as_pypdf_reads(self, stream: PdfStream, entry: Any) -> PdfStream:
-        """The stream with the data pypdf keeps, which differs only when /Length is wrong."""
+        """The stream as pypdf reads it: decoding keys keep their references, and the data is
+        what pypdf keeps, which differs only when /Length is wrong.
+        """
+        stream = self._with_decode_references(stream, entry)
         declared = stream.dictionary.get("Length")
         if isinstance(declared, PdfReference):
             declared = self._pdf.resolver.resolve(declared) if self._pdf is not None else None
@@ -328,6 +337,27 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         if found is None or found == bytes(stream.raw_data):
             return stream
         return stream.replace(raw_data=found)
+
+    def _with_decode_references(self, stream: PdfStream, entry: Any) -> PdfStream:
+        """Put back the references core resolves in /Filter and its siblings while reading."""
+        offset = getattr(entry, "offset", None)
+        if not isinstance(offset, int) or self._pdf is None:
+            return stream
+        keyword = STREAM_KEYWORD.search(self._data, offset)
+        if keyword is None:
+            return stream
+        restored = dict(stream.dictionary)
+        changed = False
+        for match in DECODE_REFERENCE.finditer(self._data, offset, keyword.start()):
+            key = match[1].decode("ascii")
+            reference = PdfReference(int(match[2]), int(match[3]))
+            current = restored.get(key)
+            if current is None or isinstance(current, PdfReference):
+                continue
+            if self._pdf.resolver.resolve(reference) == current:
+                restored[key] = reference
+                changed = True
+        return stream.replace(dictionary=restored) if changed else stream
 
     def _check_stream_length(self, stream: PdfStream, entry: Any) -> None:
         limit = filters.MAX_DECLARED_STREAM_LENGTH

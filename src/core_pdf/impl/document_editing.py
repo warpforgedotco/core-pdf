@@ -268,7 +268,11 @@ class EditableDocument:
             offsets[number] = (len(output), generation)
             reference = PdfReference(number, generation)
             value = changed[number]
-            sealed = value if security is None else encrypt_object(security, reference, value)
+            sealed = (
+                value
+                if security is None
+                else encrypt_object(security, reference, value, self.get_object)
+            )
             output += serialize_indirect_object(reference, sealed, layout)
         trailer: dict[Any, Any] = {
             key: self.trailer[key] for key in TRAILER_KEYS if key in self.trailer
@@ -426,7 +430,7 @@ def serialize_body(
             continue
         value = objects[reference]
         if security is not None and reference.object_number not in exempt:
-            value = encrypt_object(security, reference, value)
+            value = encrypt_object(security, reference, value, objects.get)
         output += serialize_indirect_object(reference, value, layout)
     size = max(offsets, default=0) + 1
     xref_offset = start + len(output)

@@ -535,6 +535,11 @@ class XrefScan:
 
 
 STREAM_KEYWORD = re.compile(rb">>[\x00\t\n\x0c\r ]*stream")
+# A stream's decoding entries given as references, which core's resolver replaces.
+DECODE_REFERENCE = re.compile(
+    rb"/(Filter|DecodeParms|DP|FFilter|FDecodeParms)"
+    rb"[\x00\t\n\x0c\r ]*(\d+)[\x00\t\n\x0c\r ]+(\d+)[\x00\t\n\x0c\r ]+R"
+)
 PDF_WHITESPACE = b"\x00\t\n\x0c\r "
 
 

@@ -46,6 +46,7 @@ class MergeWriter:
     add_outline_item: Any
     add_named_destination_array: Any
     _add_object: Any
+    _mark_part_of_document: Any
     _translation: Any
     _import: Any
     add_page: Any
@@ -155,6 +156,7 @@ class MergeWriter:
         self._merge_form(reader)
         if "/B" not in excluded:
             self.add_filtered_articles("", source_pages, reader)
+        self._mark_part_of_document(self._root_object.indirect_reference)
 
     def _merge_form(self, reader: Any) -> None:
         root = reader.root_object
@@ -162,23 +164,37 @@ class MergeWriter:
             return
         form = root["/AcroForm"]
         translated = self._translation(reader)
+        raw_form = root.raw_get("/AcroForm")
         if "/AcroForm" not in self._root_object:
             kept = DictionaryObject()
-            for key, value in dict.items(form):
-                if key != "/Fields":
-                    dict.__setitem__(kept, key, value)
-            imported = self._import(kept, reader)
-            self._root_object[NameObject("/AcroForm")] = self._add_object(imported)
+            if isinstance(raw_form, IndirectObject):
+                # pypdf clones the form through its reference: the dictionary is numbered
+                # first, then what it holds, in order.
+                reference = self._add_object(kept)
+                translated[raw_form.idnum] = reference.idnum
+                for key, value in dict.items(form):
+                    if key != "/Fields":
+                        dict.__setitem__(kept, key, self._import(value, reader))
+            else:
+                for key, value in dict.items(form):
+                    if key != "/Fields":
+                        dict.__setitem__(kept, key, value)
+                reference = self._add_object(self._import(kept, reader))
+            self._root_object[NameObject("/AcroForm")] = reference
             fields: Any = ArrayObject()
+            if "/Fields" not in form:
+                # pypdf gives a form without /Fields an empty array of its own number.
+                fields = self._add_object(fields)
         else:
             fields = self._root_object["/AcroForm"].get_resolved("/Fields", ArrayObject())
         source_fields = form.get_resolved("/Fields")
         if not isinstance(source_fields, ArrayObject):
             source_fields = ArrayObject()
+        listed = fields.get_object()
         for field in source_fields:
             number = translated.get(getattr(field, "idnum", None))
-            if number is not None and IndirectObject(number, 0, self) not in fields:
-                fields.append(IndirectObject(number, 0, self))
+            if number is not None and IndirectObject(number, 0, self) not in listed:
+                listed.append(IndirectObject(number, 0, self))
         self._root_object["/AcroForm"][NameObject("/Fields")] = fields
 
     def _merge__process_named_dests(self, dest: Any, reader: Any, pages: dict[int, Any]) -> None:
@@ -430,9 +446,8 @@ class MergeWriter:
             if node is not None and "/A" in node:
                 action = node["/A"]
                 reader = getattr(node.indirect_reference, "pdf", None)
+                # Cloned as it is, as in pypdf: its page is already among the copied pages.
                 item[NameObject("/A")] = self._clone(action, reader)
-                if "/D" in action and isinstance(action["/D"], ArrayObject):
-                    item["/A"][NameObject("/D")] = destination.dest_array
             else:
                 item[NameObject("/Dest")] = destination.dest_array
         if node is not None:

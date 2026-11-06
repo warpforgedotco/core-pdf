@@ -358,15 +358,17 @@ class TreeObject(DictionaryObject):
         increment = inc_parent_counter or self.inc_parent_counter_default
         child_obj = child.get_object()
         reference = child.indirect_reference
-        child_obj[NameObject("/Parent")] = self.indirect_reference
         if "/First" not in self:
             self[NameObject("/First")] = reference
             self[NameObject("/Count")] = NumberObject(0)
             self[NameObject("/Last")] = reference
+            child_obj[NameObject("/Parent")] = self.indirect_reference
             child_obj.pop("/Next", None)
             child_obj.pop("/Prev", None)
         else:
             self._link_child(child_obj, reference, before)
+            # After the links, as in pypdf, so a new child's keys come in pypdf's order.
+            child_obj[NameObject("/Parent")] = self.indirect_reference
         increment(self, child_obj.get_resolved("/Count", 1))
         return reference
 

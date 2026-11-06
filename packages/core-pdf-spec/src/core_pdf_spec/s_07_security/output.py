@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import secrets
 import struct
+from collections.abc import Callable
 from copy import replace
 from typing import Any, ClassVar
 
@@ -224,11 +225,18 @@ def describe_encryption(config: StandardSecurityConfig) -> str:
     return f"RC4-{config.length_bits}"
 
 
-def encrypt_object(handler: StandardSecurityHandler, reference: PdfReference, value: Any) -> Any:
+def encrypt_object(
+    handler: StandardSecurityHandler,
+    reference: PdfReference,
+    value: Any,
+    resolve: Callable[[PdfReference], Any] | None = None,
+) -> Any:
     """Return `value` with its strings and stream data encrypted for `reference`.
 
     This mirrors what the lexer decrypts. An xref stream and the hex /Contents of a signature
     dictionary stay in the clear, and references, numbers and names are never encrypted.
+    `resolve` looks up a stream's /Filter or /DecodeParms given as a reference, which decides
+    whether the stream names its own crypt filter.
     """
     number, generation = reference.object_number, reference.generation_number
 
@@ -255,7 +263,11 @@ def encrypt_object(handler: StandardSecurityHandler, reference: PdfReference, va
     if isinstance(value, PdfStream):
         if decoded_name(value.dictionary.get("Type")) == "XRef":
             return value
-        data = handler.encrypt(number, generation, bytes(value.raw_data), value.dictionary)
+        attributes = dict(value.dictionary)
+        for key, entry in value.dictionary.items():
+            if decoded_name(key) in {"Filter", "DecodeParms"} and isinstance(entry, PdfReference):
+                attributes[key] = None if resolve is None else resolve(entry)
+        data = handler.encrypt(number, generation, bytes(value.raw_data), attributes)
         return value.replace(dictionary=sealed_dictionary(value.dictionary), raw_data=data)
     return sealed(value)
 
