@@ -211,6 +211,12 @@ skips, 209 reach a private pypdf module and 5 are also skipped on the real libra
 download their files (marked `enable_socket`); the harness fetches those files first, and CI
 caches them.
 
+### Upstream versions
+
+The facades support the latest release of each library they follow. The upstream suites and
+the comparison scripts pin those versions, and a weekly workflow keeps an issue open while
+any pin is behind its latest release on PyPI.
+
 ### Facade output against the real libraries
 
 Beside the upstream suites, CI compares each facade with its real library on the sample
