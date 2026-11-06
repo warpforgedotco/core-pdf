@@ -80,14 +80,15 @@ module holds PDF structure as bytes.
 facade the same way and compares the bytes. An incremental update is identical on all 168
 files that pypdf can update and that are not encrypted, and CI fails if one differs. pypdf does
 not encrypt the objects of an update to an encrypted file, so the facade does not follow it on
-those 5. Full rewrites are identical on 148 of 173 files through `clone_from` and 137 of 173
+those 5. Full rewrites are identical on 165 of 173 files through `clone_from` and 167 of 173
 through `append`, and the rest are being closed.
 
 Matching pypdf means following it where it changes data: reals are rounded to pypdf's
 precision, and a name read from GBK or Latin-1 bytes is written as UTF-8. The facade departs
 from pypdf where that would break the file or keep removed data: a full rewrite still leaves
 out pages the caller removed, which pypdf keeps, and a NUL byte still ends a name, where pypdf
-reads the next number into it.
+reads the next number into it. pypdf writes every object it holds; a full rewrite here writes
+those too, except objects that were part of the document and no longer are.
 
 `scripts/check_writer_lossless.py` reads both sides as pypdf does and compares unchanged
 objects in writer output with the
