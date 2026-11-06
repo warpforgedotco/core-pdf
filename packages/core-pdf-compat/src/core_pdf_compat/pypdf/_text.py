@@ -33,9 +33,24 @@ from core_pdf_compat._text_state import (
 from core_pdf_compat.pypdf._cmap_scan import scan_to_unicode
 from core_pdf_compat.pypdf._layout import layout_text
 from core_pdf_compat.pypdf.generic import to_generic
+from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 from core_records import GeneratedRecord
+
+
+def pypdf_data(stream: PdfStream) -> bytes:
+    """A stream's decoded data, tolerant where pypdf is.
+
+    core-pdf decodes strictly. A filter error falls back to the facade's filters, which follow
+    pypdf: a broken Flate stream, for one, gives what decompresses, with pypdf's warning.
+    """
+    try:
+        return stream.data
+    except FilterError:
+        from core_pdf_compat.pypdf.filters import decode_stream_data  # noqa: PLC0415
+
+        return decode_stream_data(to_generic(stream))
 
 
 class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
@@ -319,7 +334,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
         cmap: ToUnicodeCMap | None = None
         to_unicode = self.document.resolver.resolve(font.get("ToUnicode"))
         if isinstance(to_unicode, PdfStream):
-            data = self.document.resolver.resolve_stream(to_unicode).data
+            data = pypdf_data(self.document.resolver.resolve_stream(to_unicode))
             scan_to_unicode(data)
             try:
                 cmap = ToUnicodeCMap(data)
@@ -827,7 +842,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
 
     def extract(self, streams: tuple[PdfStream, ...] | None = None) -> str:
         content_streams = streams if streams is not None else self.page.content_streams
-        data = b"\n".join(stream.data for stream in content_streams)
+        data = b"\n".join(pypdf_data(stream) for stream in content_streams)
         inline_image = re.search(rb"(?<!\S)BI(?=\s)", data)
         if (
             inline_image is not None
@@ -930,5 +945,5 @@ def extract_form_text(
 
 def extract_layout_text(page: Any, caches: LegacyTextCaches, **arguments: Any) -> str:
     fonts = LegacyTextExtractor(page, caches=caches).fonts
-    data = b"\n".join(stream.data for stream in page.content_streams)
+    data = b"\n".join(pypdf_data(stream) for stream in page.content_streams)
     return layout_text(iter_content_operations(PdfLexer(data)), fonts, **arguments)
