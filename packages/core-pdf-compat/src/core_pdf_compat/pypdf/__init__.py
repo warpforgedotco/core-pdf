@@ -28,6 +28,7 @@ from core_pdf_compat.pypdf._generic_read import (
     skip_over_comment,
     skip_over_whitespace,
 )
+from core_pdf_compat.pypdf._page_labels import index2label
 from core_pdf_compat.pypdf._reader_scan import (
     DECODE_KEY_REFERENCE,
     INDIRECT_HEADER,
@@ -774,9 +775,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def page_labels(self) -> list[str]:
         if self._pdf is None:
             return []
-        count = len(self._pdf.pages)
-        labels: Any = self._pdf.build_page_labels(page_count=count) or [None] * count
-        return [label or str(index) for index, label in enumerate(labels, 1)]
+        return [index2label(self, index) for index in range(len(self.pages))]
 
     @property
     def pdf_header(self) -> str:
