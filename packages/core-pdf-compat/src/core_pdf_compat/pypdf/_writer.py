@@ -9,7 +9,7 @@ import sys
 import uuid
 import warnings
 from collections.abc import Iterable, Iterator
-from copy import copy
+from copy import copy, replace
 from io import BytesIO, IOBase
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, cast
@@ -23,6 +23,7 @@ from core_pdf.impl.document_editing import (
     serialize_body,
 )
 from core_pdf.impl.types import PdfReference, PdfString
+from core_pdf_spec.exceptions import PdfParseError as CorePdfParseError
 from core_pdf_spec.s_07_security.output import describe_encryption
 from core_pdf_spec.s_07_syntax.serialize import ObjectLayout, serialize_object
 
@@ -313,45 +314,109 @@ class PageObject(DictionaryObject):
             for name, visitor in visitors.items():
                 if visitor:
                     logger.warning("Argument %s is ignored in layout mode", name)
+        if extraction_mode == "layout":
+            self._check_layout_resources()
+            if "/Contents" not in self:
+                raise KeyError("/Contents")  # pypdf's layout mode reads self["/Contents"].
         resources = self.get_resolved("/Resources")
+        if extraction_mode == "plain" and (is_null_or_none(resources) or not resources):
+            # pypdf reads no text, and no damage, from a page without resources.
+            inherited = self.get_inherited("/Resources", None)
+            if is_null_or_none(inherited) or not inherited:
+                return ""
         fonts = None if is_null_or_none(resources) else resources.get_resolved("/Font")
         if is_null_or_none(self.get_resolved("/Contents")) and not fonts:
             return ""  # Without contents, only reading a font can still fail.
-        pdf, source = self._text_source()
+        options = TextOptions(
+            orientations, visitor_operand_before, visitor_operand_after, visitor_text
+        )
+        layout = (
+            {
+                "space_vertically": kwargs.get("layout_mode_space_vertically", True),
+                "scale_weight": kwargs.get("layout_mode_scale_weight", 1.25),
+                "strip_rotated": kwargs.get("layout_mode_strip_rotated", True),
+                "font_height_weight": kwargs.get("layout_mode_font_height_weight", 1),
+            }
+            if extraction_mode == "layout"
+            else None
+        )
+        damaged = self._damaged_source()
+        try:
+            pdf, source = self._text_source()
+        except CorePdfParseError, AttributeError, TypeError, ValueError:
+            pdf, source = None, None  # Core cannot walk the page tree pypdf's reader walks.
+        if source is not None:
+            try:
+                return self._extract_text_from(pdf, source, options, layout, damaged)
+            except CorePdfParseError:
+                pass
+        # Core cannot parse an object pypdf's reader reads: the text comes from the objects
+        # as the facade reads them.
+        return self._extract_text_from(*self._text_source(True), options, layout, True)
+
+    def _extract_text_from(
+        self,
+        pdf: Any,
+        source: Any,
+        options: TextOptions,
+        layout: dict[str, Any] | None,
+        damaged: bool,
+    ) -> str:
         with irregular_dictionaries_reported(pdf), font_programs_quiet():
-            data = self._get_contents_as_bytes() if irregular_contents(self, pdf, source) else None
-            if extraction_mode == "layout":
-                return extract_layout_text(
-                    source,
-                    pdf.text_caches,
-                    data,
-                    space_vertically=kwargs.get("layout_mode_space_vertically", True),
-                    scale_weight=kwargs.get("layout_mode_scale_weight", 1.25),
-                    strip_rotated=kwargs.get("layout_mode_strip_rotated", True),
-                    font_height_weight=kwargs.get("layout_mode_font_height_weight", 1),
-                )
-            options = TextOptions(
-                orientations,
-                visitor_operand_before,
-                visitor_operand_after,
-                visitor_text,
-                pdf,
+            data = (
+                self._get_contents_as_bytes()
+                if damaged or irregular_contents(self, pdf, source)
+                else None
             )
+            if layout is not None:
+                return extract_layout_text(source, pdf.text_caches, data, pdf, **layout)
+            options = replace(options, reader=pdf)
             return extract_legacy_text(source, pdf.text_caches, options, data)
 
-    def _text_source(self) -> tuple[Any, Any]:
+    def _check_layout_resources(self) -> None:
+        """Fail where pypdf's layout mode fails looking for /Font in /Resources up the tree."""
+        node: Any = self
+        visited: set[int] = set()
+        while isinstance(node, dict) and id(node) not in visited:
+            visited.add(id(node))
+            if "/Resources" in node:
+                resources = node["/Resources"]
+                if isinstance(resources, IndirectObject):
+                    resources = resources.get_object()
+                if resources is None or isinstance(resources, NullObject):
+                    name = "NoneType" if resources is None else type(resources).__name__
+                    raise TypeError(f"argument of type '{name}' is not a container or iterable")
+            parent = node.get("/Parent")
+            node = parent.get_object() if parent is not None else None
+
+    def _damaged_source(self) -> bool:
+        """Whether the page comes from a file core recovered differently from pypdf's reader.
+
+        Its content streams are then read as pypdf's reader reads them.
+        """
+        from . import PdfReader
+
+        return isinstance(self.pdf, PdfReader) and self.pdf._core_xref_differs
+
+    def _text_source(self, serialized: bool = False) -> tuple[Any, Any]:
         """The reader and core-pdf page to extract from."""
-        # A changed page has no copy in a file, so it goes through a serialized document.
+        # A changed page has no copy in a file, so it goes through a serialized document, as
+        # does one whose objects core reads otherwise than pypdf's reader.
         from . import PdfReader
 
         pdf = self.pdf
-        source = pdf._core_page(self) if isinstance(pdf, PdfReader) else None
+        source = pdf._core_page(self) if isinstance(pdf, PdfReader) and not serialized else None
         if source is not None:
             return pdf, source
         writer = self.writer
         if writer is None:
             writer = PdfWriter()
-            writer.add_page(self)
+            page = self
+            if page.get("/Type") != "/Page":
+                # pypdf extracts from a page dictionary without /Type; the copy needs one.
+                page = copy(self)
+                page[NameObject("/Type")] = NameObject("/Page")
+            writer.add_page(page)
             number = 0
         else:
             number = cast(int, self.page_number)

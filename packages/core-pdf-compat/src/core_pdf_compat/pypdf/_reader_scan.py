@@ -554,6 +554,7 @@ PYPDF_ONLY_ESCAPE = re.compile(rb"(?<!\\)(?:\\\\)*\\(?:[^nrtbf()\\0-7\r\n]|[4-7]
 # Where an object's own values end: its stream keyword or its endobj.
 OBJECT_VALUES_END = re.compile(rb"stream|endobj")
 INDIRECT_HEADER = re.compile(rb"[\x00\t\n\x0c\r ]*\d+[\x00\t\n\x0c\r ]+\d+[\x00\t\n\x0c\r ]+obj")
+OBJECT_HEADER = re.compile(rb"[\x00\t\n\x0c\r ]*(\d+)[\x00\t\n\x0c\r ]+(\d+)[\x00\t\n\x0c\r ]+obj")
 # A stream's decoding entry holding a reference, at its top or nested, which core's resolver
 # replaces. Only a hint: the dictionary is then read to find which.
 DECODE_KEY_REFERENCE = re.compile(
