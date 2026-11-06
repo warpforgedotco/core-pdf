@@ -54,9 +54,9 @@ class Element(Record):
         if not isinstance(self.metadata, ElementMetadata):
             object.__setattr__(self, "metadata", ElementMetadata(self.metadata))
 
-    @property
-    def category(self) -> str:
-        return type(self).__name__
+    # As in unstructured, an element's category is a class attribute, and the plain Text
+    # class is the uncategorized one.
+    category: ClassVar[str] = "UncategorizedText"
 
     @property
     def element_id(self) -> str:
@@ -90,45 +90,49 @@ class Element(Record):
         }
 
 
-class Title(Element):
+class Text(Element):
     pass
 
 
-class NarrativeText(Element):
-    pass
+# unstructured 0.25 has no UncategorizedText class: Text stands for it.
+UncategorizedText = Text
 
 
-class UncategorizedText(Element):
-    pass
+class Title(Text):
+    category = "Title"
 
 
-class Table(Element):
-    pass
+class NarrativeText(Text):
+    category = "NarrativeText"
 
 
-class Image(Element):
-    pass
+class Table(Text):
+    category = "Table"
 
 
-class PageBreak(Element):
-    pass
+class Image(Text):
+    category = "Image"
 
 
-class Header(Element):
-    pass
+class PageBreak(Text):
+    category = "PageBreak"
 
 
-class Footer(Element):
-    pass
+class Header(Text):
+    category = "Header"
 
 
-class ListItem(Element):
-    pass
+class Footer(Text):
+    category = "Footer"
 
 
-class EmailAddress(Element):
-    pass
+class ListItem(Text):
+    category = "ListItem"
 
 
-class Address(Element):
-    pass
+class EmailAddress(Text):
+    category = "EmailAddress"
+
+
+class Address(Text):
+    category = "Address"

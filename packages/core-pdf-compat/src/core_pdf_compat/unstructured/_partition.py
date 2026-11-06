@@ -29,7 +29,7 @@ from ._elements import (
 )
 from ._languages import LanguageFallback, apply_languages, check_languages_argument
 from ._links import page_links
-from ._metadata import assign_element_ids
+from ._metadata import assign_element_ids, assign_parent_ids
 from ._regions import (
     TextRegion,
     clean_text,
@@ -278,4 +278,5 @@ def partition_pdf(
             fallback=language_fallback,
         )
     assign_element_ids(result, unique=unique_element_ids)
+    assign_parent_ids(result)
     return result
