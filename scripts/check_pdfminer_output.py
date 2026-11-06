@@ -59,14 +59,20 @@ SECONDS_PER_FILE = 120
 DEPARTURES: dict[tuple[str, str], str] = {}
 # Files with text boxes at equal distances, where pdfminer's order follows memory addresses.
 # Running pdfminer alone a dozen times over each, with other allocations in between, gives
-# more than one order, or its order changed between runs of this check.
+# more than one order, or its order changed between runs of this check, or replacing id()
+# in pdfminer.layout with -id() changes its order.
 TIES = frozenset(
     {
+        "DA-619p.pdf",
         "GeoBase_NHNC1_Data_Model_UML_EN.pdf",
         "GeoTopo-komprimiert.pdf",
         "GeoTopo.pdf",
+        "billionaires_page.pdf",
         "issue-90-example.pdf",
+        "kampo.pdf",
+        "mathpaper.pdf",
         "nics-background-checks-2015-11-rotated.pdf",
+        "partial_intersections_ok.pdf",
     }
 )
 

@@ -328,17 +328,23 @@ def embedded_cmap_is_unusable(decoder: Any) -> bool:
     descendants = _font_value(decoder.font, "DescendantFonts")
     if not isinstance(descendants, list) or not descendants:
         raise PdfError("Type0 font is missing /DescendantFonts")
+    # pdfminer's PDFCIDFont._get_cmap_name never reads an embedded CMap's data: it takes
+    # the /CMapName entry of the stream's dictionary, or "unknown" without one, and looks
+    # that name up among the predefined CMaps. A name it does not find gives an empty CMap,
+    # which decodes no character.
     encoding = _font_value(decoder.font, "Encoding")
-    try:
-        data = bytes(getattr(encoding, "decoded_data"))
-    except AttributeError, TypeError, ValueError:
+    dictionary = getattr(encoding, "dictionary", None)
+    if not isinstance(dictionary, dict):
         return False
-    cmap_name_match = re.search(rb"/CMapName\s*/([^\s<>\[\]()/%]+)", data)
-    if cmap_name_match is not None and predefined_cmap_resolves(
-        cmap_name_match.group(1).decode("latin-1")
-    ):
-        return False
-    return re.search(rb"/[!-~]+\s+usecmap\b", data) is None
+    cmap_name = dictionary.get("CMapName")
+    if cmap_name is None:
+        name = "unknown"
+    elif isinstance(cmap_name, PdfName):
+        name = recover_pdf_name(cmap_name) or ""
+    else:
+        return True
+    name = {"DLIdent-H": "Identity-H", "DLIdent-V": "Identity-V"}.get(name, name)
+    return not predefined_cmap_resolves(name)
 
 
 def pdfminer_ligature_overrides(
