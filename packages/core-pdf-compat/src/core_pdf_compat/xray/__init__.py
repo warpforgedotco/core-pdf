@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import re
 import struct
+import sys
+import urllib.error
+import urllib.request
 from collections import defaultdict
+from http import HTTPStatus
 from math import floor, isfinite
 from os import PathLike
 from pathlib import Path
@@ -576,7 +582,7 @@ def _raw_highlight_redactions(page: Any, recovery: _DocumentRecovery) -> list[di
 def _source_bytes(source: object) -> bytes | None:
     if isinstance(source, bytes):
         return source
-    if isinstance(source, (str, PathLike)) and not str(source).startswith("https://"):
+    if isinstance(source, (str, PathLike)):
         try:
             return Path(source).read_bytes()
         except OSError:
@@ -604,7 +610,7 @@ def _check_source(source: object) -> None:
         if not source:
             raise EmptyFileError("Cannot open empty stream.")
         return
-    if not isinstance(source, (str, PathLike)) or str(source).startswith("https://"):
+    if not isinstance(source, (str, PathLike)):
         return
     filename = str(source)
     path = Path(filename)
@@ -653,7 +659,100 @@ def _open(source: Any) -> XrayDocument | None:
     return document
 
 
-def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
+# x-ray 0.4.0 downloads an https URL with httpx2, whose errors are classes of its own. These
+# stand in for the ones a download raises, under the same names, bases and messages.
+class HTTPError(Exception):
+    """httpx2's: the base of its request and response errors."""
+
+
+class HTTPStatusError(HTTPError):
+    """httpx2's: the server answered with a status that is not a success."""
+
+
+class RequestError(HTTPError):
+    """httpx2's: the request could not be sent or answered."""
+
+
+class TransportError(RequestError):
+    """httpx2's: the connection failed."""
+
+
+class TimeoutException(TransportError):
+    """httpx2's: the request took longer than its timeout."""
+
+
+class NetworkError(TransportError):
+    """httpx2's: the network failed while connecting or reading."""
+
+
+class ConnectError(NetworkError):
+    """httpx2's: the connection could not be made."""
+
+
+_STATUS_ERROR_TYPES = {
+    1: "Informational response",
+    3: "Redirect response",
+    4: "Client error",
+    5: "Server error",
+}
+
+
+def _status_message(status: int, reason: str, url: str) -> str:
+    """The message httpx2's raise_for_status gives an unsuccessful response."""
+    error_type = _STATUS_ERROR_TYPES.get(status // 100, "Invalid status code")
+    return (
+        f"{error_type} '{status} {reason}' for url '{url}'\n"
+        f"For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{status}"
+    )
+
+
+def _download(url: str) -> bytes:
+    """GET the URL as x-ray 0.4.0 does: following redirects, a 10-second timeout, success only."""
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310
+            return response.read()
+    except urllib.error.HTTPError as error:
+        try:
+            reason = HTTPStatus(error.code).phrase
+        except ValueError:
+            reason = str(error.reason)
+        raise HTTPStatusError(_status_message(error.code, reason, error.url)) from None
+    except urllib.error.URLError as error:
+        if isinstance(error.reason, TimeoutError):
+            raise TimeoutException(str(error.reason)) from None
+        raise ConnectError(str(error.reason)) from None
+    except TimeoutError as error:
+        raise TimeoutException(str(error)) from None
+
+
+# Ported from x-ray 0.4.0's inspect and cli, Copyright (c) Free Law Project, under the BSD
+# 2-Clause License. The PDF is read with core-pdf rather than PyMuPDF.
+async def inspect(file: str | bytes | Path) -> dict[int, list[dict[str, object]]]:
+    """
+    Inspect a file for bad redactions and return a Dict with their info
+
+    URL downloads are asynchronous; PDF analysis runs synchronously.
+
+    :file: The PDF to process, as bytes if you have the file in memory (useful
+    if it's coming from the network), as a unicode string if you know the
+    path to the file on your local disk, or as a pathlib.Path object.
+    :return: A dict with the bad redaction information. If no bad redactions
+    are found, returns an empty dict.
+    """
+    if isinstance(file, str) and file.startswith("https://"):
+        file = await asyncio.to_thread(_download, file)
+    return _inspect(file)
+
+
+async def cli(args: list[str] | None = None) -> None:
+    """Process command line arguments."""
+    if not args:
+        args = sys.argv[1:]
+    file = args[0]
+    print(json.dumps(await inspect(file), indent=2))  # noqa: T201
+
+
+def _inspect(source: Any) -> dict[int, list[dict[str, object]]]:
     output: dict[int, list[dict[str, object]]] = {}
     document = _open(source)
     if document is None:
@@ -679,4 +778,4 @@ def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
     return output
 
 
-__all__ = ("inspect",)
+__all__ = ("cli", "inspect")

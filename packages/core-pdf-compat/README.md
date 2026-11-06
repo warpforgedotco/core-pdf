@@ -11,6 +11,8 @@ uv add core-pdf-compat
 ```
 
 ```python
+import asyncio
+
 from core_pdf_compat import inspect_xray
 from core_pdf_compat.pdfminer import extract_text
 from core_pdf_compat.pdfplumber import open as open_pdf
@@ -18,7 +20,7 @@ from core_pdf_compat.pdfplumber import open as open_pdf
 print(extract_text("document.pdf"))
 with open_pdf("document.pdf") as pdf:
     print(pdf.pages[0].extract_words())
-findings = inspect_xray("document.pdf")  # redaction inspection from engine evidence
+findings = asyncio.run(inspect_xray("document.pdf"))  # async, as x-ray 0.4.0 is
 ```
 
 Each facade imports independently; the package root resolves its convenience exports

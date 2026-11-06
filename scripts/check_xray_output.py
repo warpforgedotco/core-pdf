@@ -1,12 +1,16 @@
 """Check that the x-ray facade finds the same bad redactions as x-ray, on the upstream PDFs.
 
-uv run --all-packages --with x-ray==0.3.6 --with pymupdf==1.24.14 \
+uv run --all-packages --group test --with x-ray==0.4.0 --with pymupdf==1.24.14 \
     python scripts/check_xray_output.py [--limit N]
 
-x-ray is pinned to the version checked out under tests/upstream/x-ray, whose inspect() is
-synchronous as the facade's is (0.4.0 made it a coroutine), and PyMuPDF to the version it pins.
+x-ray is pinned to the version checked out under tests/upstream/x-ray, and PyMuPDF to the
+version that x-ray pins (PyMuPDF==1.24.14), since x-ray cannot be installed with any other.
+On PyMuPDF 2.1, x-ray 0.4.0 finds none of the bad redactions its own tests expect: MuPDF 1.28
+rounds a clipped pixmap outward, so the clip under a redaction takes in a white edge and
+filter_redactions_by_pixmap drops it. The facade follows x-ray as released, on its PyMuPDF.
 
-Each file goes through xray.inspect and the facade's inspect, given a path and given the bytes,
+inspect() is a coroutine in both, run to completion with asyncio.run. Each file goes through
+xray.inspect and the facade's inspect, given a path and given the bytes,
 and the results are compared exactly: the pages with bad redactions, and on each page every
 redaction's bbox and text, in order. A file x-ray cannot read must fail in the facade too.
 PyMuPDF raises its own classes (fitz.FileDataError and the like), which the facade cannot
@@ -26,6 +30,7 @@ true.
 """
 
 import argparse
+import asyncio
 import collections
 import contextlib
 import glob
@@ -76,11 +81,15 @@ TIMEOUT = 300
 
 
 def by_path(library: Any, path: Path) -> object:
-    return library.inspect(str(path))
+    return asyncio.run(library.inspect(str(path)))
 
 
 def by_bytes(library: Any, path: Path) -> object:
-    return library.inspect(path.read_bytes())
+    return asyncio.run(library.inspect(path.read_bytes()))
+
+
+def by_source(library: Any, source: object) -> object:
+    return asyncio.run(library.inspect(source))
 
 
 MODES: dict[str, Callable[[Any, Path], object]] = {"path": by_path, "bytes": by_bytes}
@@ -242,8 +251,8 @@ def main() -> int:
         problems += [f"helpers {path} {problem}"[:400] for problem in helpers[:1]]
     for source in ODD_SOURCES:
         same, _, difference = compare(
-            outcome(lambda library, given: library.inspect(given), real, source),
-            outcome(lambda library, given: library.inspect(given), facade, source),
+            outcome(by_source, real, source),
+            outcome(by_source, facade, source),
         )
         counts["odd sources: same error" if same else "odd sources: DIFFER"] += 1
         if not same:
