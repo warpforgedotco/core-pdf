@@ -867,10 +867,10 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         skip_over_comment(stream)
         extra = skip_over_whitespace(stream)
         stream.seek(-1, 1)
-        number = read_until_whitespace(stream)
+        number = read_until_whitespace(stream, max_bytes=64, strict=self.strict)
         extra |= skip_over_whitespace(stream)
         stream.seek(-1, 1)
-        generation = read_until_whitespace(stream)
+        generation = read_until_whitespace(stream, max_bytes=64, strict=self.strict)
         extra |= skip_over_whitespace(stream)
         stream.seek(-1, 1)
         stream.read(3)
@@ -880,7 +880,13 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             logger.warning(
                 "Superfluous whitespace found in object header %r %r", number, generation
             )
-        return int(number), int(generation)
+        try:
+            return int(number), int(generation)
+        except (ValueError, OverflowError) as error:
+            # A ValueError, as pypdf raises: other types would break later processing.
+            raise ValueError(
+                f"Invalid indirect object reference ({number!r} {generation!r} R): {error}"
+            ) from error
 
     def _replace_object(self, indirect: IndirectObject, obj: Any) -> Any:
         if indirect.pdf is not self:

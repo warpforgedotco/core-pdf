@@ -418,8 +418,14 @@ class ArrayObject(list[Any], PdfObject):
         return self
 
     @staticmethod
-    def read_from_stream(stream: Any, pdf: Any, forced_encoding: Any = None) -> ArrayObject:
-        return read_array(stream, pdf, forced_encoding)
+    def read_from_stream(
+        stream: Any,
+        pdf: Any,
+        forced_encoding: Any = None,
+        *,
+        parsing_budget: StreamParsingBudget | None = None,
+    ) -> ArrayObject:
+        return read_array(stream, pdf, forced_encoding, parsing_budget=parsing_budget)
 
 
 def _in_destination(value: Any, pdf_dest: Any, force_duplicate: bool) -> bool:
@@ -589,8 +595,14 @@ class DictionaryObject(dict[Any, Any], PdfObject):
         return read_unsized(stream, pdf, length)
 
     @staticmethod
-    def read_from_stream(stream: Any, pdf: Any, forced_encoding: Any = None) -> DictionaryObject:
-        return read_dictionary(stream, pdf, forced_encoding)
+    def read_from_stream(
+        stream: Any,
+        pdf: Any,
+        forced_encoding: Any = None,
+        *,
+        parsing_budget: StreamParsingBudget | None = None,
+    ) -> DictionaryObject:
+        return read_dictionary(stream, pdf, forced_encoding, parsing_budget=parsing_budget)
 
     @property
     def xmp_metadata(self) -> Any:
@@ -750,6 +762,15 @@ class IndirectObject(PdfObject):
     def _own_reference(self) -> IndirectObject:
         return self
 
+    def write_to_stream(self, stream: Any, encryption_key: object = None) -> None:
+        if encryption_key is not None:
+            raise DeprecationError(
+                "the encryption_key parameter of write_to_stream is deprecated and was "
+                "removed in pypdf 5.0.0."
+            )
+        # Written as read, so a reference core's types reject, like -12 3 R, still writes.
+        stream.write(f"{self.idnum} {self.generation} R".encode())
+
     def hash_bin(self) -> int:
         return hash((self.__class__, self.idnum, self.generation, id(self.pdf)))
 
@@ -864,8 +885,8 @@ def _corner(horizontal: int, vertical: int) -> property:
 class RectangleObject(ArrayObject):
     def __init__(self, values: Iterable[Any]) -> None:
         items = list(values)
-        if len(items) != 4:
-            raise ValueError("a rectangle needs four values")
+        if (length := len(items)) != 4:
+            raise ValueError(f"Expected four values for a rectangle, got {length}: {values}")
         super().__init__(_number(item) for item in items)
 
     def scale(self, sx: float, sy: float) -> RectangleObject:

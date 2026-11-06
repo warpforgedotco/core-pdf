@@ -12,6 +12,7 @@ from io import BytesIO
 from typing import IO, Any, cast
 
 from core_pdf.impl.types import PdfString
+from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf._image_inline import read_inline_image_data
 from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
 from core_pdf_compat.pypdf.generic import (
@@ -101,6 +102,53 @@ def _operator_limit_error(available: int, limit: int) -> LimitReachedError:
     )
 
 
+class _ParsingWork:
+    """pypdf 6.21.4's stream parsing budget, charged for each value core-pdf parsed.
+
+    pypdf charges one unit per operator and top-level operand, two per inline image, and
+    inside values one per array element and two per dictionary entry, checking the array
+    and dictionary element limits as it goes. The values are walked in reading order, so
+    the first limit reached is the one pypdf reports.
+    """
+
+    def __init__(self) -> None:
+        configuration = get_configuration()
+        self.remaining = configuration.stream_parsing_work_maximum_count
+        self.array_limit = configuration.array_maximum_element_count
+        self.dictionary_limit = configuration.dictionary_maximum_element_count
+
+    def top_level(self, amount: int) -> None:
+        self.remaining -= amount
+        if self.remaining < 0:
+            raise LimitReachedError("Reached maximum number of tokens per stream.")
+
+    def _nested(self, amount: int) -> None:
+        self.remaining -= amount
+        if self.remaining < 0:
+            raise LimitReachedError("Reached maximum number of tokens.")
+
+    def value(self, value: Any) -> None:
+        if isinstance(value, list):
+            for index, item in enumerate(value):
+                if index >= self.array_limit:
+                    raise LimitReachedError("Reached maximum array element count.")
+                self._nested(1)
+                self.value(item)
+        elif isinstance(value, Mapping):
+            for index, item in enumerate(value.values()):
+                if index >= self.dictionary_limit:
+                    raise LimitReachedError("Reached maximum number of dictionary entries.")
+                self._nested(2)
+                self.value(item)
+
+    def inline_image_settings(self, settings: Mapping[Any, Any]) -> None:
+        for index, item in enumerate(settings.values()):
+            if index >= self.dictionary_limit:
+                raise LimitReachedError("Reached maximum number of tokens.")
+            self.top_level(2)
+            self.value(item)
+
+
 def _at_inline_image(lexer: PdfLexer) -> bool:
     data, position = lexer.raw_data, lexer.pos
     if bytes(data[position : position + 2]) != b"BI":
@@ -110,12 +158,14 @@ def _at_inline_image(lexer: PdfLexer) -> bool:
 
 
 def _inline_image_parts(
-    lexer: PdfLexer, stream: IO[bytes], offset: int
+    lexer: PdfLexer, stream: IO[bytes], offset: int, work: _ParsingWork | None = None
 ) -> tuple[Any, DictionaryObject, bytes]:
     try:
         settings = parse_inline_image_dictionary(lexer)
     except PdfParseError as error:
         raise PdfReadError("Unexpected end of stream.") from error
+    if work is not None:
+        work.inline_image_settings(settings)
     generic = _generic_operand(settings)
     # pypdf reads ID and the byte after it.
     stream.seek(offset + lexer.pos + 1)
@@ -124,12 +174,14 @@ def _inline_image_parts(
     return settings, generic, data
 
 
-def _inline_image(lexer: PdfLexer, stream: IO[bytes], offset: int = 0) -> dict[str, Any]:
+def _inline_image(
+    lexer: PdfLexer, stream: IO[bytes], offset: int = 0, work: _ParsingWork | None = None
+) -> dict[str, Any]:
     """Read an image from just after its BI. ``stream`` holds the lexer's data from ``offset``.
 
     core-pdf reads the dictionary; the data ends where pypdf's search ends it.
     """
-    _, settings, data = _inline_image_parts(lexer, stream, offset)
+    _, settings, data = _inline_image_parts(lexer, stream, offset, work)
     return {"settings": settings, "data": data}
 
 
@@ -193,10 +245,10 @@ class ContentStream(DecodedStreamObject):
                 continue
             if isinstance(resolved, StreamObject):
                 data += resolved.get_data()
-                if len(data) > MAX_ARRAY_BASED_STREAM_OUTPUT_LENGTH:
+                limit = get_configuration().array_based_stream_maximum_output_length
+                if len(data) > limit:
                     raise LimitReachedError(
-                        f"Array-based stream has at least {len(data)} > "
-                        f"{MAX_ARRAY_BASED_STREAM_OUTPUT_LENGTH} output bytes."
+                        f"Array-based stream has at least {len(data)} > {limit} output bytes."
                     )
             else:
                 logger.warning(
@@ -211,17 +263,21 @@ class ContentStream(DecodedStreamObject):
         stream.seek(0, 0)
         lexer = PdfLexer(stream.read())
         operands: list[Any] = []
+        work = _ParsingWork()
         try:
             while True:
                 lexer.skip_ignored()
                 if _at_inline_image(lexer):
                     lexer.advance(2)
-                    self._operations.append((_inline_image(lexer, stream), INLINE_IMAGE))
+                    work.top_level(2)
+                    self._operations.append((_inline_image(lexer, stream, 0, work), INLINE_IMAGE))
                     continue
                 token = parse_content_token(lexer)
                 if token is None:
                     return
+                work.top_level(1)
                 if not token.is_operator:
+                    work.value(token.value)
                     operands.append(_generic_operand(token.value))
                     continue
                 operator = str(token.value).encode("latin-1")

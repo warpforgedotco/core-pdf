@@ -1,5 +1,5 @@
 # Ported from pypdf.generic._image_inline and ContentStream._read_inline_image of pypdf
-# 6.15.0, Copyright (c) 2024, pypdf contributors, under its BSD-style license. Where an
+# 6.21.4, Copyright (c) 2024, pypdf contributors, under its BSD-style license. Where an
 # inline image's data ends is pypdf's guess, not the specification's, so it is followed
 # step by step: images found with EI inside their data, or without a delimited EI, end
 # where pypdf ends them.
@@ -27,7 +27,7 @@ BUFFER_SIZE = 8192
 def _check_end_image_marker(stream: IO[bytes]) -> bool:
     ei_tok = read_non_whitespace(stream)
     ei_tok += stream.read(2)
-    stream.seek(-3, 1)
+    stream.seek(-len(ei_tok), 1)
     return ei_tok[:2] == b"EI" and (ei_tok[2:3] == b"" or ei_tok[2:3] in WHITESPACES)
 
 

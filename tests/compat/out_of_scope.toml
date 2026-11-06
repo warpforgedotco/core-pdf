@@ -58,6 +58,10 @@ names = [
     # Private modules. A subprocess script or pytest.warns block hides a stub from the
     # skip hook, and extract_inline_default does arithmetic on a stubbed constant.
     "_appearance_stream", "_font", "_utils", "deprecate_with_replacement", "extract_inline_default",
+    # pypdf 6.21.4 reader and parsing internals: the leading-comment bound of the private
+    # pypdf.generic._data_structures module, and ContentStream's private inline image
+    # reader and limit helper (the public parse, ContentStream.operations, stays in scope)
+    "_MAX_LEADING_COMMENTS", "_read_inline_image", "ContentStream._check_limits",
 ]
 stubs = [
     "pypdf.generic._appearance_stream",
