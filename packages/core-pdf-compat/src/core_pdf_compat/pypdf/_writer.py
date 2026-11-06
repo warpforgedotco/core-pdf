@@ -515,6 +515,8 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         # and so does a full rewrite here, except these once they are no longer reached: the
         # caller removed them, and secure by default means they leave the file.
         self._part_of_document: set[int] = set()
+        self._chain_visited: set[tuple[int, int]] = set()
+        self._importing = False
         self._encryption: Encryption | None = None
         self._encrypt_entry: dict[Any, Any] | None = None
         self._file_id: bytes | None = None
@@ -922,11 +924,20 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         Objects are numbered depth first, as pypdf does. Work goes on a stack of generators
         rather than through recursion, as a real outline can be longer than Python's stack.
         """
-        pending: list[Iterator[None]] = []
-        output = self._bring(value, owner, pending)
-        while pending:
-            if next(pending[-1], self) is self:
-                pending.pop()
+        outermost = not self._importing
+        if outermost:
+            # pypdf's clone keeps one set of the items it reached along linked lists.
+            self._chain_visited = set()
+            self._importing = True
+        try:
+            pending: list[Iterator[None]] = []
+            output = self._bring(value, owner, pending)
+            while pending:
+                if next(pending[-1], self) is self:
+                    pending.pop()
+        finally:
+            if outermost:
+                self._importing = False
         return output
 
     def _bring(self, value: Any, owner: Any, pending: list[Any]) -> Any:
@@ -995,13 +1006,17 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
     ) -> None:
         """Number a linked list in order before its items are filled, as pypdf does.
 
-        Each copy gets its link first, so the link key comes first in it, as in pypdf.
+        Each copy gets its link first, so the link key comes first in it. Filling the first
+        item then follows its back link to `value`, so `value` finishes before the items, and
+        that item holds the back link second. pypdf does this unless `value` was itself reached
+        along a list, which its clone tracks in `visited`.
         """
         kind = value.get_resolved("/Type")
-        for key in ("/Next", "/Prev", "/N", "/V"):
+        for key, back in (("/Next", "/Prev"), ("/Prev", "/Next"), ("/N", "/V"), ("/V", "/N")):
             start = len(pending)
             current: Any = value
             holder = duplicate
+            members: list[tuple[Any, Any]] = []
             while key in current:
                 link = dict.__getitem__(current, key)
                 if not isinstance(link, IndirectObject) or link.pdf is self:
@@ -1018,9 +1033,37 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 if not isinstance(holder, DictionaryObject) or key in holder:
                     break
                 dict.__setitem__(holder, NameObject(key), reference)
+                self._chain_visited.add((id(link.pdf), link.idnum))
                 holder = reference.get_object() if isinstance(reference, IndirectObject) else None
-            # The stack runs from its end, so reverse these for the chain to fill in order.
-            pending[start:] = list(reversed(pending[start:]))
+                members.append((current, holder))
+            chain = list(reversed(pending[start:]))
+            del pending[start:]
+            if members and self._fills_head_first(value, duplicate, members[0], back):
+                # Below the generator filling `value`, so these run once it is done.
+                pending[start - 1 : start - 1] = chain
+            else:
+                pending.extend(chain)
+
+    def _fills_head_first(
+        self, value: DictionaryObject, duplicate: Any, first: tuple[Any, Any], back: str
+    ) -> bool:
+        source, copy = first
+        link = dict.get(source, back)
+        head = getattr(value, "indirect_reference", None)
+        if not isinstance(link, IndirectObject) or head is None or not isinstance(copy, dict):
+            return False
+        if (link.idnum, link.generation) != (head.idnum, head.generation) or back in copy:
+            return False
+        if (id(head.pdf), head.idnum) in self._chain_visited:
+            return False
+        kinds = {source.get_resolved("/Type"), value.get_resolved("/Type")} - {None}
+        if len(kinds) > 1:
+            return False
+        reference = getattr(duplicate, "indirect_reference", None)
+        if reference is None:
+            return False
+        dict.__setitem__(copy, NameObject(back), reference)
+        return True
 
     def _fill_copy(
         self, duplicate: Any, value: Any, owner: Any, pending: list[Any]
