@@ -15,9 +15,9 @@ import sys
 import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from run_upstream_suite import SUITES  # noqa: E402
+from scripts.run_upstream_suite import SUITES  # noqa: E402
 
 PIN = re.compile(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?==([^\s;]+)$")
 PYPI = "https://pypi.org/pypi/{}/json"
