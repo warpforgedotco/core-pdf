@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import suppress
 from functools import cache
 from importlib.util import find_spec
@@ -31,8 +31,10 @@ from core_pdf_compat._text_state import (
     type1_encoding_entries,
 )
 from core_pdf_compat.pypdf._cmap_scan import scan_to_unicode
+from core_pdf_compat.pypdf._generic_content import inline_image_spans
 from core_pdf_compat.pypdf._layout import layout_text
 from core_pdf_compat.pypdf.generic import to_generic
+from core_pdf_spec.s_07_content.operations import ContentOperation
 from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_08_graphics.matrix import multiply_affine
@@ -51,6 +53,25 @@ def pypdf_data(stream: PdfStream) -> bytes:
         from core_pdf_compat.pypdf.filters import decode_stream_data  # noqa: PLC0415
 
         return decode_stream_data(to_generic(stream))
+
+
+INLINE_IMAGE_START = re.compile(rb"(?<!\S)BI(?=\s)")
+
+
+def content_operations(data: bytes) -> Iterator[ContentOperation]:
+    """core-pdf's operations, with each inline image ending where pypdf's parser ends it.
+
+    Only a stream with a BI is searched, and an image pypdf cannot read raises its error.
+    """
+    if INLINE_IMAGE_START.search(data) is None:
+        yield from iter_content_operations(PdfLexer(data))
+        return
+    position = 0
+    for start, end, image in inline_image_spans(data):
+        yield from iter_content_operations(PdfLexer(data[position:start]))
+        yield "BI", (image,)
+        position = end
+    yield from iter_content_operations(PdfLexer(data[position:]))
 
 
 class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
@@ -843,13 +864,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont]):
     def extract(self, streams: tuple[PdfStream, ...] | None = None) -> str:
         content_streams = streams if streams is not None else self.page.content_streams
         data = b"\n".join(pypdf_data(stream) for stream in content_streams)
-        inline_image = re.search(rb"(?<!\S)BI(?=\s)", data)
-        if (
-            inline_image is not None
-            and re.search(rb"(?<!\S)EI(?:\s|$)", data[inline_image.end() :]) is None
-        ):
-            raise ValueError("unexpected end of inline image stream")
-        parsed = list(iter_content_operations(PdfLexer(data)))
+        parsed = list(content_operations(data))
         before, after = self.options.visitor_operand_before, self.options.visitor_operand_after
         for operator, operands in parsed:
             if before is not None or after is not None:
@@ -946,4 +961,4 @@ def extract_form_text(
 def extract_layout_text(page: Any, caches: LegacyTextCaches, **arguments: Any) -> str:
     fonts = LegacyTextExtractor(page, caches=caches).fonts
     data = b"\n".join(pypdf_data(stream) for stream in page.content_streams)
-    return layout_text(iter_content_operations(PdfLexer(data)), fonts, **arguments)
+    return layout_text(content_operations(data), fonts, **arguments)
