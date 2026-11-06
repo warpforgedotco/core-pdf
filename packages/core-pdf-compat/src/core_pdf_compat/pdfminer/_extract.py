@@ -25,12 +25,12 @@ from ._layout import (
 from ._pages import (
     pdfminer_resolvable_pages,
 )
+from ._parsing import pdfminer_open_error
 from ._projection import (
     PDFMINER_POLICY,
     ProjectionPolicy,
     project_page,
 )
-from ._xref_chain import MESSAGE, pdfminer_xref_chain_loops
 from .pdfdocument import PDFPasswordIncorrect
 from .pdfparser import PDFSyntaxError
 
@@ -44,7 +44,17 @@ def extract_pages(
     laparams: LAParams | None = None,
 ) -> Iterator[LTPage]:
     del caching
-    params = laparams or LAParams()
+    return analyzed_pages(pdf_file, password, page_numbers, maxpages, laparams or LAParams())
+
+
+def analyzed_pages(
+    pdf_file: PdfInput,
+    password: str,
+    page_numbers: Iterable[int] | None,
+    maxpages: int,
+    params: LAParams | None,
+) -> Iterator[LTPage]:
+    """The pages, laid out with params; with None, pdfminer runs no layout analysis."""
     selected = set(page_numbers) if page_numbers is not None else None
     try:
         document = PdfDocument.open(
@@ -57,9 +67,10 @@ def extract_pages(
     except PdfEmptySourceError as error:
         raise PDFSyntaxError("No /Root object! - Is this really a PDF?") from error
     try:
-        if pdfminer_xref_chain_loops(document.raw_data):
-            # pdfminer's PDFDocument follows this xref chain until the stack overflows.
-            raise RecursionError(MESSAGE)
+        opening_error = pdfminer_open_error(document.raw_data)
+        if opening_error is not None:
+            # What pdfminer's PDFDocument raises opening this file.
+            raise opening_error
         yield from extract_document_pages(document, params, selected, maxpages)
     finally:
         document.close()
@@ -67,7 +78,7 @@ def extract_pages(
 
 def extract_document_pages(
     document: PdfDocument,
-    params: LAParams,
+    params: LAParams | None,
     selected: set[int] | None = None,
     maxpages: int = 0,
     *,
@@ -136,13 +147,12 @@ def extract_text_to_fp(
 ) -> None:
     output_dir = kwargs.get("output_dir")
     if output_type == "text":
-        try:
-            output = extract_text(inf, password, page_numbers, maxpages, True, codec, laparams)
-        except PdfError as error:
-            # pdfminer yields no pages for a file whose xref chain never reaches a catalog.
-            if "No /Root object" not in str(error):
-                raise
-            output = ""
+        # Unlike extract_text, pdfminer keeps laparams None here: no layout analysis.
+        parts: list[str] = []
+        for page in analyzed_pages(inf, password, page_numbers, maxpages, laparams):
+            render_text(page, parts)
+            parts.append("\f")
+        output = "".join(parts)
     elif output_type in {"xml", "html", "hocr"}:
         output = _structured_output(inf, output_type, password, page_numbers, maxpages, laparams)
     else:

@@ -65,7 +65,11 @@ MAX_TOTAL_ARRAY_ENTRIES = 1_000_000
 
 def pdf_too_complex(filename: object, password: str) -> bool:
     with PdfDocument.open(filename, password=password) as document:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        strict_xref_error = document.strict_xref_validation_error()
+        try:
+            strict_xref_error = document.strict_xref_validation_error()
+        except PdfError as error:
+            # An unrecognized header version stops the strict reading at startxref.
+            strict_xref_error = str(error)
         if strict_xref_error == "invalid hex string" or (
             strict_xref_error is not None and document.raw_data.find(b"%%EOF") < 0
         ):

@@ -2,6 +2,10 @@
 
 uv run --all-packages --with "pdfplumber==0.11.10" python scripts/check_pdfplumber_output.py
 
+The files are every PDF under tests/upstream but pypdf's downloads in pdf_cache, which CI
+does not fetch for this check; symbolic links are left out, as each names a file covered
+under its own name or none.
+
 Each file is opened by the real pdfplumber and by the facade, and the first MAX_PAGES pages
 of each are compared check by check:
 
@@ -15,7 +19,8 @@ tables: extract_tables().
 
 Floats are equal when they agree to within FLOAT_TOLERANCE (absolute), so the last bits of
 float arithmetic do not count but a misplaced glyph does. A check that raises must raise
-an exception of the same class name in both libraries, and opening the file likewise.
+an exception of the same class name and message in both libraries, and opening the file,
+reading its pages and closing it likewise.
 
 Every difference fails the check unless DEPARTURES lists it, with the reason the facade does
 not follow pdfplumber there. A listed difference that no longer differs fails it too, so the
@@ -29,6 +34,7 @@ import collections
 import glob
 import logging
 import math
+import os
 import sys
 import warnings
 from collections.abc import Callable
@@ -36,13 +42,11 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
-PATTERNS = (
-    "tests/upstream/pdfplumber/tests/pdfs/*.pdf",
-    "tests/upstream/pdfminer.six/samples/*.pdf",
-    "tests/upstream/pdfminer.six/samples/contrib/*.pdf",
-    "tests/upstream/pypdf/resources/*.pdf",
-    "tests/upstream/pypdf/sample-files/**/*.pdf",
-)
+# Every PDF in the upstream checkouts but pypdf's downloads, which CI does not fetch for this
+# check. Symbolic links are left out: each points at a file covered under its own name, or at
+# none.
+PATTERN = "tests/upstream/**/*.pdf"
+DOWNLOADS = "tests/upstream/pypdf/tests/pdf_cache/"
 MAX_PAGES = 30
 FLOAT_TOLERANCE = 1e-3
 CHAR_KEYS = (
@@ -158,7 +162,7 @@ def outcome(function: Callable[[], Any]) -> Any:
     try:
         return ("ok", function())
     except Exception as error:  # noqa: BLE001
-        return ("error", type(error).__name__)
+        return ("error", f"{type(error).__name__}: {error}")
 
 
 def read(library: Any, path: str) -> dict[str, Any]:
@@ -169,15 +173,15 @@ def read(library: Any, path: str) -> dict[str, Any]:
         found["open"] = opened
         return found
     pdf = opened[1]
-    with pdf:
-        pages = outcome(lambda: pdf.pages)
-        found["pages"] = ("ok", len(pages[1])) if pages[0] == "ok" else pages
-        if pages[0] == "error":
-            return found
+    pages = outcome(lambda: pdf.pages)
+    found["pages"] = ("ok", len(pages[1])) if pages[0] == "ok" else pages
+    if pages[0] == "ok":
         for number, page in enumerate(pages[1][:MAX_PAGES], 1):
             for name, check in CHECKS.items():
                 found[f"page {number} {name}"] = outcome(lambda c=check, p=page: c(p))
             page.close()
+    # close() reads the pages too, so it raises again where reading them raised.
+    found["close"] = outcome(pdf.close)
     return found
 
 
@@ -220,7 +224,9 @@ def main() -> int:
     every = "--all" in sys.argv
     arguments = [argument for argument in sys.argv[1:] if argument != "--all"]
     paths = arguments or sorted(
-        {path for pattern in PATTERNS for path in glob.glob(pattern, recursive=True)}
+        path
+        for path in glob.glob(PATTERN, recursive=True)
+        if not path.startswith(DOWNLOADS) and not os.path.islink(path)
     )
     counts: collections.Counter[str] = collections.Counter()
     problems: list[str] = []

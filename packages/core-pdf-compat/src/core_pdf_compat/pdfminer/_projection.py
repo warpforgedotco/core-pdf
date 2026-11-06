@@ -10,6 +10,7 @@ from core_pdf.impl.types import GeneratedRecord
 from core_pdf_spec.s_07_content.model import PATH_CLOSE, PATH_CURVE, PATH_OPERAND_COUNTS, PATH_RECT
 
 from ._capture import (
+    pdfminer_media_box,
     pdfminer_page_program,
     pdfminer_validate_page_resources,
 )
@@ -23,6 +24,7 @@ from ._fonts import (
     pdfminer_font_name,
     pdfminer_glyph_text,
     pdfminer_ligature_overrides,
+    pdfminer_normalized_width,
 )
 from ._layout import (
     LAParams,
@@ -131,7 +133,10 @@ def pdfminer_projected_widths(
         else None
     )
     normalized_width = 0.0
-    if font_width is not None:
+    if font_width is not None and getattr(glyph.font_decoder, "is_type3", False):
+        # pdfminer scales a Type3 font's /Widths by its /FontMatrix, not by 0.001.
+        normalized_width = pdfminer_normalized_width(glyph, glyph_text)
+    elif font_width is not None:
         normalized_width = font_width
         builtin_width = _pdfminer_builtin_width(glyph, glyph_text)
         if builtin_width is not None:
@@ -149,18 +154,18 @@ def pdfminer_projected_widths(
 
 def project_page(
     page: PdfPage,
-    params: LAParams,
+    params: LAParams | None,
     *,
     policy: ProjectionPolicy = PDFMINER_POLICY,
     products: CapturedProgram | None = None,
 ) -> LTPage:
-    page_width = abs(page.width)
-    page_height = abs(page.height)
-    page_media_box = page.media_box or (0.0, 0.0, page_width, page_height)
+    page_media_box = pdfminer_media_box(page)
+    page_width = abs(page_media_box[2] - page_media_box[0])
+    page_height = abs(page_media_box[3] - page_media_box[1])
     if policy.strict_resources:
         pdfminer_validate_page_resources(page)
     if products is None:
-        products = pdfminer_page_program(page)
+        products = pdfminer_page_program(page, strict_cmaps=policy.strict_resources)
     projected_glyphs: tuple[Any, ...] = products.glyphs
     ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
     chars_by_glyph: dict[int, LTChar] = {}
@@ -293,12 +298,46 @@ def project_page(
                 for local_horizontal in (local_left, local_left + local_font_size)
                 for local_vertical in (local_top + local_advance, local_top)
             )
-            # Rounded so that glyphs one half-size apart do not count as overlapping by a
-            # fraction of the last float bit, which merges them into a line.
-            x0 = round(min(point[0] for point in corners), 9)
-            y0 = round(min(point[1] for point in corners), 9)
-            x1 = round(max(point[0] for point in corners), 9)
-            y1 = round(max(point[1] for point in corners), 9)
+            exact_matrix = glyph_matrices.get(glyph_index)
+            if exact_matrix is not None:
+                # pdfminer's own arithmetic, from LTChar: its rounding decides which boxes
+                # touch, and so which lines group.
+                char_a, char_b, char_c, char_d, char_e, char_f = exact_matrix
+                rise = float(glyph_provenance.get("text_rise", 0.0) or 0.0)
+                font_size = glyph.font_size
+                vertical_metrics = getattr(glyph.font_decoder, "vertical_metrics", {})
+                # pdfminer centres a glyph W2 gives no displacement for at half the size.
+                vx = (
+                    float(metric[1]) * font_size * 0.001
+                    if width_code in vertical_metrics
+                    else font_size * 0.5
+                )
+                vy = (1000 - float(metric[2])) * font_size * 0.001
+                advance = float(metric[0]) * 0.001 * font_size * horizontal_scale
+                corners = tuple(
+                    (
+                        char_a * local_x + char_c * local_y + char_e,
+                        char_b * local_x + char_d * local_y + char_f,
+                    )
+                    for local_x, local_y in (
+                        (-vx, vy + rise + advance),
+                        (-vx + font_size, vy + rise + advance),
+                        (-vx + font_size, vy + rise),
+                        (-vx, vy + rise),
+                    )
+                )
+                x0 = min(point[0] for point in corners)
+                y0 = min(point[1] for point in corners)
+                x1 = max(point[0] for point in corners)
+                y1 = max(point[1] for point in corners)
+                coordinates_in_layout_space = True
+            else:
+                # Rounded so that glyphs one half-size apart do not count as overlapping by
+                # a fraction of the last float bit, which merges them into a line.
+                x0 = round(min(point[0] for point in corners), 9)
+                y0 = round(min(point[1] for point in corners), 9)
+                x1 = round(max(point[0] for point in corners), 9)
+                y1 = round(max(point[1] for point in corners), 9)
             effective_font_height = x1 - x0
         elif (
             baseline is not None
@@ -487,7 +526,7 @@ def project_page(
         page_box,
         page.page_number,
         page.rotation,
-        analyze_layout(page_items, params, page_box),
+        page_items if params is None else analyze_layout(page_items, params, page_box),
     )
 
 

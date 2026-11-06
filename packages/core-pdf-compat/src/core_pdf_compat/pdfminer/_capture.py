@@ -13,7 +13,7 @@ from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.exceptions import PdfError, PdfParseError
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.types import PdfString, Rectangle
+from core_pdf.impl.types import PdfReference, PdfString, Rectangle
 from core_pdf_spec.s_07_content.inline_images import InlineImage
 from core_pdf_spec.s_07_content.model import PdfPath
 from core_pdf_spec.s_07_content.operations import ContentOperands
@@ -27,6 +27,8 @@ from ._fonts import (
     pdfminer_embedded_cmap_is_unusable,
     pdfminer_normalized_width,
 )
+from ._parsing import pdfminer_content_error
+from .pdfexceptions import PDFKeyError
 
 
 class InvalidContentDictionaryError(PdfParseError): ...
@@ -66,6 +68,10 @@ class PdfminerRecovery(CaptureRecovery):
         is_operator: Callable[[bytes], bool] | None = None,
     ) -> int | None:
         if isinstance(error, InvalidContentDictionaryError):
+            # pdfminer's PSStackParser raises PSSyntaxError naming the dictionary's entries.
+            pdfminer_error = pdfminer_content_error(lexer.raw_data)
+            if pdfminer_error is not None:
+                raise pdfminer_error from error
             raise PdfError(str(error)) from error
         return super().resume(lexer, error, kind, start, is_operator)
 
@@ -118,9 +124,17 @@ def mult_matrix(m1: Any, m0: Any) -> PdfminerMatrix:
     )
 
 
+US_LETTER = (0.0, 0.0, 612.0, 792.0)
+
+
+def pdfminer_media_box(page: PdfPage) -> tuple[float, float, float, float]:
+    """The page's MediaBox; pdfminer's PDFPage takes US Letter for a missing or unreadable one."""
+    return page.media_box or US_LETTER
+
+
 def pdfminer_base_ctm(page: PdfPage) -> PdfminerMatrix:
     """The matrix pdfminer's interpreter starts a page with, from its PDFPageInterpreter."""
-    x0, y0, x1, y1 = page.media_box or (0.0, 0.0, abs(page.width), abs(page.height))
+    x0, y0, x1, y1 = pdfminer_media_box(page)
     rotation = int(page.rotation) % 360
     if rotation == 90:
         return (0, -1, 1, 0, -y0, x1)
@@ -146,7 +160,11 @@ class PdfminerTextState(TextState):
             document, page_clip=page_clip, options=CaptureOptions(ink_bounds=False, text_runs=False)
         )
         self.cursor = 0.0
-        self.frame_cursors: dict[int, float] = {}
+        # pdfminer's text line matrix holds a vertical cursor beside the horizontal one:
+        # vertical writing moves it, and horizontal writing leaves it.
+        self.vertical_cursor = 0.0
+        self.strict_cmaps = True
+        self.frame_cursors: dict[int, tuple[float, float]] = {}
         # A glyph's pdfminer advance depends only on its decoder and these fields.
         self.glyph_widths: dict[tuple[Any, ...], float] = {}
         # Flattening loses the operators pdfminer classifies paths by.
@@ -283,7 +301,7 @@ class PdfminerTextState(TextState):
             self.pdfminer_ctms[id(after)] = (after, mult_matrix(values, self.pdfminer_ctm(before)))
 
     def enter_stream(self, state: object, frame: ContentStreamFrame) -> None:
-        self.frame_cursors[id(frame)] = self.cursor
+        self.frame_cursors[id(frame)] = (self.cursor, self.vertical_cursor)
         if not self.hidden_depth:
             if frame.is_form:
                 raw_matrix = self.resolver.deep_resolve(frame.stream.dictionary.get("Matrix"))
@@ -320,7 +338,7 @@ class PdfminerTextState(TextState):
         super().enter_stream(state, frame)
 
     def exit_stream(self, state: object, frame: ContentStreamFrame) -> None:
-        self.cursor = self.frame_cursors.pop(id(frame))
+        self.cursor, self.vertical_cursor = self.frame_cursors.pop(id(frame))
         if id(frame) in self.hidden_frames:
             self.hidden_frames.discard(id(frame))
             self.hidden_depth -= 1
@@ -360,6 +378,7 @@ class PdfminerTextState(TextState):
     def text_boundary(self, state: object, kind: str) -> None:
         if kind in {"begin", "move", "matrix"}:
             self.cursor = 0.0
+            self.vertical_cursor = 0.0
         elif kind == "type3-glyph-begin":
             self.hidden_depth += 1
         elif kind == "type3-glyph-end":
@@ -377,6 +396,45 @@ class PdfminerTextState(TextState):
         self.graphics.word_space, self.graphics.char_space = values
         self.op_Tj((operands[2],), depth)
 
+    def record_vertical_matrices(self, array: Any, decoder: Any, start: int) -> None:
+        """Each vertical glyph's matrix as pdfminer's render_string_vertical computes it.
+
+        pdfminer translates the line matrix times the ctm by its line position (x, y), and
+        moves y by each glyph's vertical advance; its rounding decides which boxes touch,
+        and so which lines group.
+        """
+        if self.hidden_depth or not isinstance(array, (list, tuple)):
+            return
+        scale = self.graphics.horizontal_scale * 0.01
+        font_size = self.graphics.font_size
+        char_space = self.graphics.char_space * scale
+        adjustment_scale = 0.001 * font_size * scale
+        a, b, c, d, e, f = mult_matrix(self.line_matrix, self.pdfminer_ctm(self.graphics.ctm))
+        x = self.cursor
+        y = self.vertical_cursor
+        matrices: list[PdfminerMatrix] = []
+        needs_spacing = False
+        for value in array:
+            if isinstance(value, (int, float)):
+                y -= value * adjustment_scale
+                needs_spacing = True
+                continue
+            if not isinstance(value, PdfString):
+                continue
+            for decoded in decoder.decode_glyphs(value.data):
+                if needs_spacing:
+                    y += char_space
+                matrices.append((a, b, c, d, x * a + y * c + e, x * b + y * d + f))
+                if decoded.cid is None:
+                    return
+                width = decoder.vertical_glyph_metric(decoded.cid)[0] * 0.001
+                y += width * font_size * scale
+                needs_spacing = True
+        self.vertical_cursor = y
+        if len(self.glyphs) - start == len(matrices):
+            for index, matrix in enumerate(matrices, start):
+                self.glyph_matrices[index] = matrix
+
     def append_tj_array(self, array: Any) -> None:
         decoder = self.get_decoder()
         if self.vertical_line is not self.line_matrix:
@@ -384,7 +442,9 @@ class PdfminerTextState(TextState):
             self.vertical_offset = (0.0, 0.0)
         if decoder.is_vertical:
             before = self.text_matrix
+            start = len(self.glyphs)
             super().append_tj_array(array)
+            self.record_vertical_matrices(array, decoder, start)
             after = self.text_matrix
             # Later horizontal text continues from where this vertical run ended.
             self.vertical_offset = (
@@ -466,7 +526,7 @@ class PdfminerTextState(TextState):
                     width = self.glyph_widths.get(key)
                     if width is None:
                         width = pdfminer_normalized_width(glyph)
-                        if pdfminer_embedded_cmap_is_unusable(glyph):
+                        if self.strict_cmaps and pdfminer_embedded_cmap_is_unusable(glyph):
                             width = 0.0
                         self.glyph_widths[key] = width
                     self.cursor += width * self.graphics.font_size * scale
@@ -482,8 +542,13 @@ class PdfminerTextState(TextState):
 
 def pdfminer_page_capture(
     page: PdfPage,
+    *,
+    strict_cmaps: bool = True,
 ) -> tuple[PdfminerProgram, tuple[PaintedPath, ...], tuple[TextMark, ...]]:
+    """strict_cmaps: whether glyphs of a font whose embedded CMap pdfminer cannot find
+    advance nothing, as in pdfminer; unstructured parses those CMaps itself."""
     state = PdfminerTextState(page.document, page_clip=page.effective_page_clip())
+    state.strict_cmaps = strict_cmaps
     state.lexer_factory = PdfminerContentLexer
     state.content_recovery = PdfminerRecovery()
     state.base_ctm = pdfminer_base_ctm(page)
@@ -504,34 +569,52 @@ def pdfminer_page_capture(
     return program, program.painted_paths, tuple(state.text_marks)
 
 
-def pdfminer_page_program(page: PdfPage) -> PdfminerProgram:
-    return pdfminer_page_capture(page)[0]
+def pdfminer_page_program(page: PdfPage, *, strict_cmaps: bool = True) -> PdfminerProgram:
+    return pdfminer_page_capture(page, strict_cmaps=strict_cmaps)[0]
 
 
 def pdfminer_validate_page_resources(page: PdfPage) -> None:
+    """Raise what pdfminer's PDFPageInterpreter.init_resources raises on the page's resources.
+
+    It reads the resources in their order: each font of /Font (a Type0 font takes its
+    /DescendantFonts with spec["DescendantFonts"] and asserts the list is not empty), and
+    each color space of /ColorSpace (an ICCBased one reads /N from its stream).
+    """
     resources = page.resources
     resolver = page.document.resolver
-    fonts = resolver.dict_at(resources, "Font")
-    if fonts is not None:
-        for font_value in fonts.values():
-            font = resolver.as_dict(font_value)
-            if font is None:
-                continue
-            if recover_pdf_name(font.get("Subtype")) == "Type0" and not resolver.array_at(
-                font, "DescendantFonts"
-            ):
-                raise PdfError("Type0 font is missing /DescendantFonts")
+    for key, value in resources.items():
+        name = recover_pdf_name(key)
+        if name == "Font":
+            validate_fonts(resolver.as_dict(value) or {}, resolver)
+        elif name == "ColorSpace":
+            validate_color_spaces(resolver.as_dict(value) or {}, resolver)
 
-    color_spaces = resolver.dict_at(resources, "ColorSpace")
-    if color_spaces is None:
-        return
+
+def validate_fonts(fonts: PdfDict, resolver: Any) -> None:
+    for font_value in fonts.values():
+        font = resolver.as_dict(font_value)
+        if font is None or recover_pdf_name(font.get("Subtype")) != "Type0":
+            continue
+        if font.get("DescendantFonts") is None:
+            raise KeyError("DescendantFonts")
+        if not resolver.array_at(font, "DescendantFonts"):
+            raise AssertionError
+
+
+def validate_color_spaces(color_spaces: PdfDict, resolver: Any) -> None:
     for color_space_value in color_spaces.values():
-        color_space = page.document.resolver.resolve(color_space_value)
+        color_space = resolver.resolve(color_space_value)
         if not isinstance(color_space, list) or len(color_space) < 2:
             continue
         if recover_pdf_name(color_space[0]) != "ICCBased":
             continue
-        profile = page.document.resolver.resolve(color_space[1])
-        dictionary = getattr(profile, "dictionary", profile)
-        if not isinstance(dictionary, dict) or dictionary.get("N") is None:
-            raise PdfError("ICCBased color profile is missing /N")
+        # pdfminer's stream_value(spec[1])["N"]: a missing /N names the stream's object,
+        # and anything but a stream stands in for an empty stream with no object number.
+        profile = resolver.resolve(color_space[1])
+        dictionary = getattr(profile, "dictionary", None)
+        if not isinstance(dictionary, dict):
+            raise PDFKeyError("PDF stream object None does not have attribute 'N'")
+        if dictionary.get("N") is None:
+            reference = color_space[1]
+            objid = reference.object_number if isinstance(reference, PdfReference) else None
+            raise PDFKeyError(f"PDF stream object {objid} does not have attribute 'N'")

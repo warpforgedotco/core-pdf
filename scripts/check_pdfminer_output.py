@@ -2,6 +2,11 @@
 
 uv run --all-packages --with "pdfminer.six==20260107" python scripts/check_pdfminer_output.py
 
+The files are every PDF under tests/upstream but pypdf's downloads in pdf_cache, which CI
+does not fetch for this check; symbolic links are left out, as each names a file covered
+under its own name or none. A file pdfminer takes over SECONDS_PER_FILE to read is not
+compared, and is printed as such; one the facade takes that long over fails the check.
+
 Each file goes through the real pdfminer and the facade the same way, with default LAParams
 and at most MAX_PAGES (5) pages, and two things are compared:
 
@@ -11,8 +16,8 @@ layout: the tree extract_pages yields, one record per object, depth first: the c
     and for every LTChar its text, fontname, size and bbox. LTAnno records carry their text.
     Numbers match when they are within TOLERANCE of each other.
 
-When one side raises, the other must raise an exception of the same class name, at the same
-page. The first difference in a file is printed.
+When one side raises, the other must raise an exception of the same class name and message,
+at the same page. The first difference in a file is printed.
 
 Every difference fails the check unless DEPARTURES lists it, with the reason the facade does
 not follow pdfminer there. A listed file that matches fails it too, so the list stays true.
@@ -28,6 +33,7 @@ import collections
 import glob
 import logging
 import math
+import os
 import signal
 import sys
 import warnings
@@ -41,13 +47,11 @@ import pdfminer.layout as real_layout  # ty: ignore[unresolved-import]
 import core_pdf_compat.pdfminer as facade_high_level
 from core_pdf_compat.pdfminer import layout as facade_layout
 
-PATTERNS = (
-    "tests/upstream/pdfplumber/tests/pdfs/*.pdf",
-    "tests/upstream/pdfminer.six/samples/*.pdf",
-    "tests/upstream/pdfminer.six/samples/contrib/*.pdf",
-    "tests/upstream/pypdf/resources/*.pdf",
-    "tests/upstream/pypdf/sample-files/**/*.pdf",
-)
+# Every PDF in the upstream checkouts but pypdf's downloads, which CI does not fetch for this
+# check. Symbolic links are left out: each points at a file covered under its own name, or at
+# none.
+PATTERN = "tests/upstream/**/*.pdf"
+DOWNLOADS = "tests/upstream/pypdf/tests/pdf_cache/"
 MAX_PAGES = 5
 TOLERANCE = 1e-3
 SECONDS_PER_FILE = 120
@@ -55,14 +59,22 @@ SECONDS_PER_FILE = 120
 DEPARTURES: dict[tuple[str, str], str] = {}
 # Files with text boxes at equal distances, where pdfminer's order follows memory addresses.
 # Running pdfminer alone a dozen times over each, with other allocations in between, gives
-# more than one order, or its order changed between runs of this check.
+# more than one order, or its order changed between runs of this check, or replacing id()
+# in pdfminer.layout with -id() changes its order.
 TIES = frozenset(
     {
+        "DA-619p.pdf",
         "GeoBase_NHNC1_Data_Model_UML_EN.pdf",
         "GeoTopo-komprimiert.pdf",
         "GeoTopo.pdf",
+        "billionaires_page.pdf",
+        # Page 5: Linux CI and macOS order two one-letter boxes at x 530.942 differently.
+        "issue-848.pdf",
         "issue-90-example.pdf",
+        "kampo.pdf",
+        "mathpaper.pdf",
         "nics-background-checks-2015-11-rotated.pdf",
+        "partial_intersections_ok.pdf",
     }
 )
 
@@ -98,7 +110,7 @@ def layout_pages(module: Any, layout: Any, path: str) -> list[list[Record] | str
     except Timeout:
         raise
     except Exception as error:  # noqa: BLE001
-        pages.append(type(error).__name__)
+        pages.append(raised(error))
     return pages
 
 
@@ -108,8 +120,20 @@ def text_pages(module: Any, path: str) -> list[str]:
     except Timeout:
         raise
     except Exception as error:  # noqa: BLE001
-        return [f"<raised {type(error).__name__}>"]
+        return [f"<raised {raised(error)}>"]
     return text.split("\f")
+
+
+def raised(error: Exception) -> str:
+    return f"{type(error).__name__}: {error}"
+
+
+def upstream_pdfs() -> list[str]:
+    return sorted(
+        path
+        for path in glob.glob(PATTERN, recursive=True)
+        if not path.startswith(DOWNLOADS) and not os.path.islink(path)
+    )
 
 
 def same_value(expected: Any, actual: Any) -> bool:
@@ -212,36 +236,51 @@ def on_alarm(signum: int, frame: Any) -> None:
     raise Timeout
 
 
+def timed[T](function: Callable[[], T]) -> T:
+    """function(), or Timeout when it runs over SECONDS_PER_FILE."""
+    signal.alarm(SECONDS_PER_FILE)
+    try:
+        return function()
+    finally:
+        signal.alarm(0)
+
+
 def main(names: list[str]) -> int:
     logging.disable(logging.CRITICAL)
     warnings.simplefilter("ignore")
     signal.signal(signal.SIGALRM, on_alarm)
     counts: collections.Counter[str] = collections.Counter()
     problems: list[str] = []
-    paths = sorted({path for pattern in PATTERNS for path in glob.glob(pattern, recursive=True)})
+    paths = upstream_pdfs()
     if names:
         paths = [path for path in paths if Path(path).name in names]
     for path in paths:
-        signal.alarm(SECONDS_PER_FILE)
         try:
-            results = {
-                "text": (
+            expected_text, expected_layout = timed(
+                lambda path=path: (
                     text_pages(real_high_level, path),
-                    text_pages(facade_high_level, path),
-                    first_text_difference,
-                ),
-                "layout": (
                     layout_pages(real_high_level, real_layout, path),
+                )
+            )
+        except Timeout:
+            counts["files: pdfminer hangs, not compared"] += 1
+            problems.append(f"not compared {path}: pdfminer takes over {SECONDS_PER_FILE}s")
+            continue
+        try:
+            actual_text, actual_layout = timed(
+                lambda path=path: (
+                    text_pages(facade_high_level, path),
                     layout_pages(facade_high_level, facade_layout, path),
-                    first_layout_difference,
-                ),
-            }
+                )
+            )
         except Timeout:
             counts["files: TIMED OUT"] += 1
-            problems.append(f"{path}: took over {SECONDS_PER_FILE}s")
+            problems.append(f"{path}: the facade takes over {SECONDS_PER_FILE}s")
             continue
-        finally:
-            signal.alarm(0)
+        results = {
+            "text": (expected_text, actual_text, first_text_difference),
+            "layout": (expected_layout, actual_layout, first_layout_difference),
+        }
         for check, (expected, actual, differ) in results.items():
             same, different, first = compare_pages(expected, actual, differ)
             counts[f"{check} pages: identical"] += same
