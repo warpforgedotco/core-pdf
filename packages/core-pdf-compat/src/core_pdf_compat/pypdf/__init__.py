@@ -15,7 +15,7 @@ from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf import filters
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._encryption import PasswordType
-from core_pdf_compat.pypdf._reader_scan import OBJECT_HEADER, XrefScan
+from core_pdf_compat.pypdf._reader_scan import OBJECT_HEADER, XrefScan, pypdf_stream_data
 from core_pdf_compat.pypdf._text import LegacyTextCaches
 from core_pdf_compat.pypdf.constants import ImageType, ObjectDeletionFlag, UserAccessPermissions
 from core_pdf_compat.pypdf.errors import (
@@ -290,7 +290,9 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 self._check_object_stream(self.xref_objStm[number][0])
             resolved = source.resolver.resolve(PdfReference(number, generation))
             if isinstance(resolved, PdfStream):
-                self._check_stream_length(resolved, source.xref[key_for(number, generation)])
+                entry = source.xref[key_for(number, generation)]
+                self._check_stream_length(resolved, entry)
+                resolved = self._as_pypdf_reads(resolved, entry)
             return to_generic(resolved, self)
         pattern = rf"\s{number}\s+{generation}\s+obj".encode()
         match = re.search(pattern, self._data)
@@ -309,6 +311,23 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         )
         lexer.rewind(match.start() + 1)
         return to_generic(lexer.parse_indirect_object(), self)
+
+    def _as_pypdf_reads(self, stream: PdfStream, entry: Any) -> PdfStream:
+        """The stream with the data pypdf keeps, which differs only when /Length is wrong."""
+        declared = stream.dictionary.get("Length")
+        if isinstance(declared, PdfReference):
+            declared = self._pdf.resolver.resolve(declared) if self._pdf is not None else None
+        if isinstance(declared, int) and declared == len(stream.raw_data):
+            return stream
+        offset = getattr(entry, "offset", None)
+        if not isinstance(offset, int) or getattr(entry, "object_stream", None) is not None:
+            return stream
+        found = pypdf_stream_data(
+            self._data, offset, declared if isinstance(declared, int) else None
+        )
+        if found is None or found == bytes(stream.raw_data):
+            return stream
+        return stream.replace(raw_data=found)
 
     def _check_stream_length(self, stream: PdfStream, entry: Any) -> None:
         limit = filters.MAX_DECLARED_STREAM_LENGTH

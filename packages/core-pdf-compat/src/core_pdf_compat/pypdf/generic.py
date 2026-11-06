@@ -24,7 +24,7 @@ from core_pdf_spec.s_07_syntax.serialize import (
     ObjectLayout,
     serialize_name,
     serialize_object,
-    serialize_real,
+    serialize_spaced_real,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
@@ -204,9 +204,8 @@ class FloatObject(float, _CopiedObject):
         return hash((self.__class__, float(self)))
 
     def myrepr(self) -> str:
-        # pypdf rounds to about nine significant digits here. This keeps the exact value, so
-        # what is shown is what the serializer writes.
-        return "0.0" if self == 0 else serialize_real(float(self)).decode("ascii")
+        # Rounded as pypdf writes it, which is also what the serializer writes.
+        return serialize_spaced_real(float(self)).decode("ascii")
 
     def __repr__(self) -> str:
         return self.myrepr()
@@ -232,16 +231,12 @@ class NameObject(str, _CopiedObject, metaclass=_NameMeta):
     }
     CHARSETS = ("utf-8", "gbk", "latin1")
     _LENGTH_LIMIT = 4096
-    # The bytes a name had in its file. Text decoded by CHARSETS may not encode back to them.
-    _file_bytes: bytes | None = None
 
     def __new__(cls, value: str = "/") -> NameObject:
         return super().__new__(cls, value)
 
     def _copy(self) -> NameObject:
-        copy = NameObject(self)
-        copy._file_bytes = self._file_bytes
-        return copy
+        return NameObject(self)
 
     def hash_bin(self) -> int:
         return hash((self.__class__, self))
@@ -266,14 +261,15 @@ NUMBERED_BYTE = re.compile(rb"#([0-9a-fA-F]{2})")
 
 
 def _name_bytes(name: str) -> bytes:
-    """A name's bytes without its slash. Written names are UTF-8, as in pypdf."""
+    """A name's bytes without its slash. Written names are UTF-8, as in pypdf, so a name read
+    from GBK or Latin-1 bytes is written in UTF-8, not in its file's bytes.
+    """
     if not name.startswith("/"):
         raise DeprecationError(
             f"Incorrect first char in NameObject, should start with '/': ({name}) is "
             "deprecated and was removed in pypdf 5.0.0."
         )
-    file_bytes = getattr(name, "_file_bytes", None)
-    return name[1:].encode("utf-8") if file_bytes is None else file_bytes
+    return name[1:].encode("utf-8")
 
 
 class TextStringObject(str, _CopiedObject):
@@ -993,9 +989,7 @@ def _generic_key(key: Any) -> NameObject:
         return NameObject(f"/{text}")
     data = key.value_bytes if isinstance(key, PdfName) else text.encode("latin-1")
     decoded = decode_name(data)
-    name = NameObject(f"/{data.decode('charmap') if decoded is None else decoded}")
-    name._file_bytes = data
-    return name
+    return NameObject(f"/{data.decode('charmap') if decoded is None else decoded}")
 
 
 def _core_key(key: str) -> Any:

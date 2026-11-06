@@ -15,6 +15,10 @@ bytes, and every other object must read the same through the new xref.
 
 The rewrite renumbers objects and normalizes syntax, so only values are promised there. An
 incremental update is the way to keep bytes.
+
+The facade writes what pypdf writes, so values are compared as pypdf reads and writes them:
+both sides are read through the facade, which decodes names and takes a stream's data as pypdf
+does, and reals are compared after pypdf's rounding.
 """
 
 import collections
@@ -29,7 +33,9 @@ from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat.pypdf import PdfReader, PdfWriter
 from core_pdf_compat.pypdf.errors import PyPdfError
+from core_pdf_compat.pypdf.generic import IndirectObject, to_core
 from core_pdf_spec.exceptions import PdfParseError
+from core_pdf_spec.s_07_syntax.serialize import serialize_spaced_real
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 PATTERNS = (
@@ -65,6 +71,8 @@ def plain(value: Any, renumber: dict[int, int] | None) -> Any:
         return ("name", str(getattr(value, "value", value)))
     if hasattr(value, "data"):
         return ("string", bytes(value.data))
+    if isinstance(value, float):
+        return float(serialize_spaced_real(value))
     return value
 
 
@@ -117,6 +125,12 @@ def raw_body(document: Any, number: int) -> bytes | None:
     return None
 
 
+def as_pypdf_reads(reader: Any, number: int) -> Any:
+    """An object as the facade reads it, in core's types."""
+    value = reader.get_object(IndirectObject(number, 0, reader))
+    return None if value is None else to_core(value)
+
+
 def check_clone(path: str, counts: collections.Counter[str], problems: list[str]) -> None:
     reader = PdfReader(path)
     if reader.is_encrypted:
@@ -128,14 +142,15 @@ def check_clone(path: str, counts: collections.Counter[str], problems: list[str]
     output = BytesIO()
     writer.write(output)
     renumber = {k: v for k, v in writer._translation(reader).items() if isinstance(k, int)}
+    rereader = PdfReader(BytesIO(output.getvalue()))
     with PdfDocument.open(output.getvalue()) as written:
         for number, new_number in sorted(renumber.items()):
-            original = source.resolver.resolve(PdfReference(number, 0))
+            original = as_pypdf_reads(reader, number)
             kind = object_type(original)
             if original is None or kind == "Pages":
                 counts["left out (page tree nodes and nulls)"] += 1
                 continue
-            copy = written.resolver.resolve(PdfReference(new_number, 0))
+            copy = as_pypdf_reads(rereader, new_number)
             counts["objects compared by value"] += 1
             before, after = plain(original, renumber), plain(copy, None)
             if kind == "Page":

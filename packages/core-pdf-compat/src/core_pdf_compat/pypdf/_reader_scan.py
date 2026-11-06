@@ -532,3 +532,41 @@ class XrefScan:
             position = match.end() - 2
             self.lexer.rewind(position)
             yield position, to_generic(self.lexer.parse_object(), self.pdf)
+
+
+STREAM_KEYWORD = re.compile(rb">>[\x00\t\n\x0c\r ]*stream")
+PDF_WHITESPACE = b"\x00\t\n\x0c\r "
+
+
+def pypdf_stream_data(data: bytes, offset: int, declared: int | None) -> bytes | None:
+    """The data pypdf reads for the stream object at `offset`, whose /Length is `declared`.
+
+    A wrong /Length makes pypdf fall back in its own ways, and what it keeps differs from what
+    a recovering parser keeps by the end-of-line before `endstream`. None if the object does
+    not look like a stream here.
+    """
+    keyword = STREAM_KEYWORD.search(data, offset)
+    if keyword is None:
+        return None
+    start = keyword.end()
+    while data[start : start + 1] == b" ":
+        start += 1
+    if data[start : start + 1] == b"\r":
+        start += 1
+    if data[start : start + 1] != b"\n" and data[start - 1 : start] != b"\r":
+        return None
+    if data[start : start + 1] == b"\n":
+        start += 1
+    if declared is None or declared < 0:
+        end = data.find(b"endstream", start)
+        return None if end < 0 else data[start:end]
+    content = data[start : start + declared]
+    after = start + declared
+    while after < len(data) and data[after] in PDF_WHITESPACE:
+        after += 1
+    if data[after : after + 9] == b"endstream":
+        return content
+    if data[after - 1 : after + 8] == b"endstream":
+        return content[:-1]
+    end = data.find(b"endstream", start)
+    return None if end < 0 else data[start : end - 1]
