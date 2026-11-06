@@ -1,4 +1,4 @@
-# The decoders' error, limit and logging behaviour is ported from pypdf, Copyright (c)
+# The decoders' error, limit and logging behaviour is ported from pypdf 6.21.4, Copyright (c)
 # 2006, Mathieu Fenniak and 2006-2008, Martin Thoma, under its BSD-style license.
 # core_pdf_spec does the LZW and predictor decoding where the two agree.
 """Stream filters with pypdf's signatures and limits."""
@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import binascii
+import importlib
 import logging
 import math
 import os
@@ -15,10 +16,13 @@ import subprocess
 import warnings
 import zlib
 from base64 import a85decode
+from functools import lru_cache
+from importlib.util import find_spec
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, NoReturn
 
+from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf.errors import (
     DependencyError,
     DeprecationError,
@@ -27,8 +31,10 @@ from core_pdf_compat.pypdf.errors import (
     PdfStreamError,
 )
 from core_pdf_compat.pypdf.generic import (
+    BooleanObject,
+    DictionaryObject,
     IndirectObject,
-    NullObject,
+    PdfObject,
     StreamObject,
     is_null_or_none,
 )
@@ -46,6 +52,8 @@ from core_records import GeneratedRecord
 
 logger = logging.getLogger(__name__)
 
+# Deprecated in pypdf 6.21.4 for Configuration; a changed value still overrides it, with a
+# warning, when a reader opens (see _configuration.apply_legacy_configuration).
 MAX_DECLARED_STREAM_LENGTH = 75_000_000
 MAX_ARRAY_BASED_STREAM_OUTPUT_LENGTH = 75_000_000
 JBIG2_MAX_OUTPUT_LENGTH = 75_000_000
@@ -66,7 +74,9 @@ def _resolved(value: Any) -> Any:
 
 def _decompress_with_limit(data: bytes) -> bytes:
     decompressor = zlib.decompressobj()
-    result = decompressor.decompress(data, max_length=ZLIB_MAX_OUTPUT_LENGTH)
+    result = decompressor.decompress(
+        data, max_length=get_configuration().zlib_maximum_output_length
+    )
     if decompressor.unconsumed_tail:
         raise LimitReachedError(
             f"Limit reached while decompressing. "
@@ -75,21 +85,21 @@ def _decompress_with_limit(data: bytes) -> bytes:
     return result
 
 
-def _decompress_bytewise(data: bytes) -> bytes:
+def _decompress_bytewise(data: bytes, cause: zlib.error) -> bytes:
     # Keeps whatever a damaged stream yields, in a larger window.
     decompressor = zlib.decompressobj(zlib.MAX_WBITS | 32)
     output = bytearray()
-    remaining = ZLIB_MAX_OUTPUT_LENGTH
+    configuration = get_configuration()
+    remaining = configuration.zlib_maximum_output_length
     known_errors: set[str] = set()
     for index in range(len(data)):
+        if index >= configuration.zlib_maximum_recovery_input_length:
+            raise LimitReachedError(
+                f"Recovery limit reached while decompressing. {len(data) - index} bytes remaining."
+            ) from cause
         try:
             decompressed = decompressor.decompress(data[index : index + 1], max_length=remaining)
         except zlib.error as error:
-            if index > ZLIB_MAX_RECOVERY_INPUT_LENGTH:
-                raise LimitReachedError(
-                    f"Recovery limit reached while decompressing. "
-                    f"{len(data) - index} bytes remaining."
-                ) from error
             if str(error) not in known_errors:
                 logger.warning(str(error))
                 known_errors.add(str(error))
@@ -107,14 +117,14 @@ def decompress(data: bytes) -> bytes:
     """Inflate ``data``, trying a cut tail and then a byte-wise pass on a damaged stream."""
     try:
         return _decompress_with_limit(data)
-    except zlib.error:
+    except zlib.error as cause:
         # Early Distiller and Pitstop versions add a few bad bytes after the stream.
         for cut in range(1, min(MAX_TAIL_CUT_OFF_BYTES + 1, len(data))):
             try:
                 return _decompress_with_limit(data[:-cut])
             except zlib.error:
                 pass
-        return _decompress_bytewise(data)
+        return _decompress_bytewise(data, cause)
 
 
 def _predictor_parameters(parameters: Any) -> tuple[int, int, int]:
@@ -125,10 +135,8 @@ def _predictor_parameters(parameters: Any) -> tuple[int, int, int]:
         return value
 
     columns = get("/Columns", 1)
-    if columns > FLATE_MAX_COLUMNS:
-        raise LimitReachedError(
-            f"Number of columns {columns} exceeds defined limit of {FLATE_MAX_COLUMNS}."
-        )
+    if columns > (limit := get_configuration().flate_maximum_columns):
+        raise LimitReachedError(f"Number of columns {columns} exceeds defined limit of {limit}.")
     colors = get("/Colors", 1)
     if colors > 16:
         raise LimitReachedError(
@@ -147,10 +155,8 @@ def _undo_predictor(data: bytes, parameters: Any) -> bytes:
         return data
     columns, colors, bits = _predictor_parameters(parameters)
     row_length = math.ceil(columns * colors * bits / 8) + 1
-    if row_length > FLATE_MAX_ROW_LENGTH:
-        raise LimitReachedError(
-            f"Row length of {row_length} exceeds defined limit of {FLATE_MAX_ROW_LENGTH}."
-        )
+    if row_length > (limit := get_configuration().flate_maximum_row_length):
+        raise LimitReachedError(f"Row length of {row_length} exceeds defined limit of {limit}.")
     try:
         if predictor == 2:
             return tiff_predict(data, columns=columns, colors=colors, bits_per_component=bits)
@@ -206,6 +212,7 @@ class RunLengthDecode:
     def decode(data: bytes, decode_parms: Any = None, **kwargs: Any) -> bytes:  # noqa: ARG004
         output = bytearray()
         index = 0
+        limit = get_configuration().run_length_maximum_output_length
         while True:
             if index >= len(data):
                 logger.warning("missing EOD in RunLengthDecode, check if output is OK")
@@ -228,7 +235,7 @@ class RunLengthDecode:
             else:
                 output += data[index : index + 1] * (257 - length)
                 index += 1
-            if len(output) > RUN_LENGTH_MAX_OUTPUT_LENGTH:
+            if len(output) > limit:
                 raise LimitReachedError("Limit reached while decompressing.")
         return bytes(output)
 
@@ -239,17 +246,18 @@ class LZWDecode:
         parameters = _resolved(decode_parms)
         parameters = parameters if isinstance(parameters, dict) else {}
         early_change = _resolved(parameters.get("/EarlyChange", 1))
+        limit = get_configuration().lzw_maximum_output_length
         try:
             decoded = apply_lzw(
                 data,
                 FilterParams(early_change=early_change),
-                max_output_length=LZW_MAX_OUTPUT_LENGTH,
+                max_output_length=limit,
             )
         except IncompleteLzwError as error:
             decoded = error.decoded  # pypdf treats running out of data as the end marker.
         except LzwOutputLimitError as error:
             raise LimitReachedError(
-                f"Limit reached while decompressing: {error.length} > {LZW_MAX_OUTPUT_LENGTH}"
+                f"Limit reached while decompressing: {error.length} > {limit}"
             ) from error
         except ValueError as error:
             code = str(error).rpartition(" ")[2]
@@ -298,6 +306,43 @@ class JPXDecode:
         return data
 
 
+class BrotliDecode:
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _check_brotli_available() -> None:
+        if find_spec("brotli") is not None:
+            return
+        raise DependencyError(
+            "brotli is required for BrotliDecode. Install it with: pip install pypdf[brotli]"
+        )
+
+    @staticmethod
+    def decode(data: bytes, decode_parms: Any = None, **kwargs: Any) -> bytes:  # noqa: ARG004
+        BrotliDecode._check_brotli_available()
+        brotli: Any = importlib.import_module("brotli")
+        decompressor = brotli.Decompressor()
+        output = bytearray()
+        remaining = get_configuration().brotli_maximum_output_length
+        chunk_size = 65_535
+        for offset in range(0, len(data), chunk_size):
+            chunk = data[offset : offset + chunk_size]
+            try:
+                part = decompressor.process(chunk, output_buffer_limit=remaining)
+            except brotli.error as error:
+                raise LimitReachedError("Limit reached while decompressing.") from error
+            output.extend(part)
+            remaining -= len(part)
+            if remaining < 0:
+                raise LimitReachedError("Limit reached while decompressing.")
+        return bytes(output)
+
+    @staticmethod
+    def encode(data: bytes, **kwargs: Any) -> bytes:  # noqa: ARG004
+        BrotliDecode._check_brotli_available()
+        brotli: Any = importlib.import_module("brotli")
+        return bytes(brotli.compress(data))
+
+
 class CCITTParameters(GeneratedRecord):
     K: int = 0
     columns: int = 1728
@@ -326,19 +371,43 @@ class CCITTFaxDecode:
 
     @staticmethod
     def _get_parameters(parameters: Any, rows: Any) -> CCITTParameters:
-        found: dict[str, Any] = {}
-        resolved = _resolved(parameters)
-        for item in (resolved if isinstance(resolved, list) else [resolved]) if resolved else ():
-            entry = _resolved(item)
-            if is_null_or_none(entry):
-                continue
-            if "/K" in entry:
-                found["K"] = _resolved(entry["/K"])
-            if "/Columns" in entry:
-                found["columns"] = _resolved(entry["/Columns"])
-            if "/BlackIs1" in entry:
-                found["BlackIs1"] = _resolved(entry["/BlackIs1"]).value
-        return CCITTParameters(rows=int(_resolved(rows)), **found)
+        def get_integer(value: Any, key: str) -> int:
+            if isinstance(value, PdfObject):
+                value = value.get_object()
+            if not isinstance(value, int):
+                raise PdfReadError(
+                    f"Expected integer for {key}, got {type(value).__name__}: {value!r}!"
+                )
+            return value
+
+        def get_boolean(value: Any, key: str) -> bool:
+            if not isinstance(value, BooleanObject):
+                raise PdfReadError(
+                    f"Expected boolean for {key}, got {type(value).__name__}: {value!r}!"
+                )
+            return value.value
+
+        found: dict[str, Any] = {"rows": 0 if is_null_or_none(rows) else get_integer(rows, "/Rows")}
+        if parameters:
+            resolved = parameters.get_object()
+            for item in resolved if isinstance(resolved, list) else [resolved]:
+                entry = item.get_object() if isinstance(item, PdfObject) else item
+                if is_null_or_none(entry):
+                    continue
+                if not isinstance(entry, dict):
+                    logger.warning("Ignoring invalid DecodeParms entry: %s", entry)
+                    continue
+                if "/K" in entry:
+                    found["K"] = get_integer(entry["/K"], "/K")
+                if "/Columns" in entry:
+                    found["columns"] = get_integer(entry["/Columns"], "/Columns")
+                if "/BlackIs1" in entry:
+                    found["BlackIs1"] = get_boolean(entry["/BlackIs1"], "/BlackIs1")
+        result = CCITTParameters(**found)
+        for key, value in (("/Columns", result.columns), ("/Rows", result.rows)):
+            if value < 0 or value > CCITTFaxDecode._MAXIMUM_UNSIGNED_LONG:
+                raise PdfReadError(f"Expected valid 32 bit unsigned value for {key}, got {value}!")
+        return result
 
     @staticmethod
     def decode(data: bytes, decode_parms: Any = None, height: int = 0, **kwargs: Any) -> bytes:  # noqa: ARG004
@@ -363,7 +432,7 @@ class CCITTFaxDecode:
         return header + data
 
 
-JBIG2DEC_BINARY = shutil.which("jbig2dec")
+JBIG2DEC_BINARY = shutil.which("jbig2dec")  # Deprecated in pypdf: use Configuration.
 
 
 class JBIG2Decode:
@@ -371,7 +440,8 @@ class JBIG2Decode:
 
     @staticmethod
     def decode(data: bytes, decode_parms: Any = None, **kwargs: Any) -> bytes:  # noqa: ARG004
-        if JBIG2DEC_BINARY is None:
+        configuration = get_configuration()
+        if configuration.jbig2dec_binary is None:
             raise DependencyError("jbig2dec binary is not available.")
         with TemporaryDirectory() as directory:
             paths: list[Path] = []
@@ -383,14 +453,14 @@ class JBIG2Decode:
             paths[-1].write_bytes(data)
             result = subprocess.run(  # noqa: S603
                 [
-                    JBIG2DEC_BINARY,
+                    configuration.jbig2dec_binary,
                     "--embedded",
                     "--format",
                     "png",
                     "--output",
                     "-",
                     "-M",
-                    str(JBIG2_MAX_OUTPUT_LENGTH),
+                    str(configuration.jbig2_maximum_output_length),
                     *paths,
                 ],
                 capture_output=True,
@@ -411,10 +481,11 @@ class JBIG2Decode:
 
     @staticmethod
     def _is_binary_compatible() -> bool:
-        if not JBIG2DEC_BINARY:
+        binary = get_configuration().jbig2dec_binary
+        if not binary:
             return False
         version = subprocess.run(  # noqa: S603
-            [JBIG2DEC_BINARY, "--version"], capture_output=True, text=True, check=False
+            [binary, "--version"], capture_output=True, text=True, check=False
         ).stdout.split(" ", maxsplit=1)[1]
         return tuple(int(part) for part in version.split(".")[:2]) >= (0, 19)
 
@@ -432,19 +503,44 @@ FULL_FILTER_NAMES = {
 
 def decode_stream_data(stream: StreamObject) -> bytes:
     """Decode ``stream`` through its /Filter chain."""
+    configuration = get_configuration()
     filters = _resolved(stream.get("/Filter", ()))
     if not isinstance(filters, (list, tuple)):
         filters = (filters,)
-    parameters = _resolved(stream.get("/DecodeParms", ({},) * len(filters)))
+    if (filter_count := len(filters)) > configuration.stream_filters_maximum_length:
+        raise LimitReachedError(
+            f"Maximum filter count {configuration.stream_filters_maximum_length} exceeded: "
+            f"{filter_count}"
+        )
+    parameters = stream.get("/DecodeParms", (DictionaryObject(),) * len(filters))
     if not isinstance(parameters, (list, tuple)):
         parameters = (parameters,)
     data: bytes = stream._data
     if not data:
         return data
+    work = 0
+    work_limit = configuration.stream_decoding_work_maximum_length
+
+    def check_work(amount: int) -> None:
+        nonlocal work
+        work += amount
+        if work > work_limit:
+            raise LimitReachedError(
+                "Stream decoding exceeded the maximum accumulated "
+                f"decoding work of {work_limit} bytes."
+            )
+
     for filter_item, parameter_item in zip(filters, parameters, strict=False):
-        name, params = _resolved(filter_item), _resolved(parameter_item)
-        if isinstance(params, NullObject):
-            params = {}
+        check_work(len(data))
+        name = _resolved(filter_item)
+        params = (
+            parameter_item.get_object() if isinstance(parameter_item, PdfObject) else parameter_item
+        )
+        if is_null_or_none(params):
+            params = DictionaryObject()
+        elif not isinstance(params, (dict, list)):
+            logger.warning("Ignoring invalid DecodeParms: %s", params)
+            params = DictionaryObject()
         full_name = FULL_FILTER_NAMES.get(name, name)
         if name in FULL_FILTER_NAMES:
             warnings.warn(
@@ -467,6 +563,8 @@ def decode_stream_data(stream: StreamObject) -> bytes:
             data = CCITTFaxDecode.decode(data, params, stream.get("/Height", 0))
         elif full_name in {"/DCTDecode", "/JPXDecode"}:
             pass  # pypdf leaves these encoded.
+        elif full_name == "/BrotliDecode":
+            data = BrotliDecode.decode(data)
         elif full_name == "/JBIG2Decode":
             data = JBIG2Decode.decode(data, params)
         elif full_name == "/Crypt":
@@ -474,12 +572,14 @@ def decode_stream_data(stream: StreamObject) -> bytes:
                 raise NotImplementedError("/Crypt filter with /Name or /Type not supported yet")
         else:
             raise NotImplementedError(f"Unsupported filter {name}")
+        check_work(len(data))
     return data
 
 
 __all__ = (
     "ASCII85Decode",
     "ASCIIHexDecode",
+    "BrotliDecode",
     "CCITParameters",
     "CCITTFaxDecode",
     "CCITTParameters",
