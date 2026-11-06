@@ -107,6 +107,7 @@ class EditWriter:
     _idnum_hash: dict[bytes, Any]
     pages: Any
     _add_object: Any
+    _get_page_reference: Any
 
     def add_annotation(self, page_number: Any, annotation: Any) -> DictionaryObject:
         from ._writer import PageObject
