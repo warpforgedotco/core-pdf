@@ -233,6 +233,15 @@ jobs:
       - name: Install Ghostscript, jbig2dec and Poppler
         uses: ./.github/actions/install-pdf-tools
 
+      - name: Restore pypdf's downloaded test files
+        # The pypdf checks also read these files, so they compare the same pages as locally.
+        if: startsWith(matrix.shard, 'pypdf')
+        uses: actions/cache/restore@v6
+        with:
+          path: tests/upstream/pypdf/tests/pdf_cache
+          key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml') }}-v2
+          restore-keys: pypdf-test-files-
+
       - name: Serializer, rewrites and saves
         if: matrix.shard == 'core'
         run: |
