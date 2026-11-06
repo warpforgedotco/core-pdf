@@ -122,47 +122,16 @@ def environment_command(suite: Suite, *, reference: bool) -> list[str]:
     return base
 
 
-def download_network_files(suite: Suite, *, reference: bool, environment: dict[str, str]) -> None:
-    """Fetch the files pypdf's tests download, with pypdf's own helper, as its CI does first.
+def download_network_files() -> None:
+    """Fetch every file pypdf's tests download, into the checkout's tests/pdf_cache.
 
     The tests read some of them by name only, expecting an earlier test to have fetched them,
-    which parallel runs do not guarantee. They land in the checkout's tests/pdf_cache.
+    which parallel runs do not guarantee. pypdf's own helper retries without pausing and drops
+    the error, so a file a rate-limited server refuses would go missing silently; this fails
+    naming any file it cannot get.
     """
-    command = [
-        *environment_command(suite, reference=reference),
-        "python",
-        "-c",
-        "from tests import download_test_pdfs; download_test_pdfs()\n" + FETCH_MISSING,
-    ]
-    subprocess.run(command, cwd=UPSTREAM / suite.checkout, env=environment, check=True)
-
-
-# pypdf's helper retries without pausing and its thread pool drops the error, so a file that
-# a rate-limited server refuses goes missing silently. This fetches what is missing, with
-# pauses, and fails naming any file it still cannot get.
-FETCH_MISSING = """
-import sys, time, urllib.request
-from pathlib import Path
-import yaml
-cache = Path("tests/pdf_cache")
-missing = []
-for entry in yaml.safe_load(Path("tests/example_files.yaml").read_text()):
-    path = cache / entry["local_filename"]
-    for pause in (5, 15, 30, 60):
-        if path.exists():
-            break
-        request = urllib.request.Request(entry["url"], headers={"User-Agent": "core-pdf-tests"})
-        try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                path.write_bytes(response.read())
-        except Exception as error:
-            print(f"download of {entry['url']} failed: {error!r}; retrying in {pause} s")
-            time.sleep(pause)
-    if not path.exists():
-        missing.append(entry["local_filename"])
-if missing:
-    sys.exit("could not download: " + ", ".join(missing))
-"""
+    script = Path(__file__).with_name("fetch_pypdf_test_files.py")
+    subprocess.run([sys.executable, str(script)], check=True)
 
 
 def summarize(junit: Path) -> dict[str, object]:
@@ -224,7 +193,7 @@ def main() -> int:
     # pypdf's tests that fetch files are in scope unless a marker deselects them.
     network = arguments.network or (arguments.suite == "pypdf" and "markers" not in scope)
     if network:
-        download_network_files(suite, reference=arguments.reference, environment=environment)
+        download_network_files()
     log = RESULTS / f"{arguments.suite}-{mode}.log"
     with log.open("w") as handle:
         code = subprocess.run(

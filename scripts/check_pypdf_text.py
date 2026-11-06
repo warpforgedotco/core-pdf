@@ -6,8 +6,11 @@ Each file that real pypdf opens (an encrypted one is opened with the empty passw
 through both libraries, and the first MAX_PAGES pages of it are compared in both of pypdf's
 extraction modes: page.extract_text() and page.extract_text(extraction_mode="layout"). The
 text must be equal, and a page that raises must raise the same exception class in both. The
-files are the upstream test PDFs, plus pypdf's downloaded test files under pdf_cache when
-they are present (pypdf's own suite downloads them).
+files are the upstream test PDFs, plus the PDFs among pypdf's downloaded test files that
+tests/compat/pypdf_test_files.tsv lists, from pdf_cache (scripts/fetch_pypdf_test_files.py
+downloads them). Files left in pdf_cache by older pypdf tests are not read, and the count of
+listed downloads not found is printed, so a run that compares fewer pages than it should
+says so.
 
 Every difference fails the check unless DEPARTURES lists its (mode, file name) pair, with the
 reason the facade does not follow pypdf 6.21.4 there. A listed file that matches fails the check
@@ -37,11 +40,13 @@ PATTERNS = (
     "tests/upstream/pdfminer.six/samples/contrib/*.pdf",
     "tests/upstream/pypdf/resources/*.pdf",
     "tests/upstream/pypdf/sample-files/**/*.pdf",
-    "tests/upstream/pypdf/tests/pdf_cache/*.pdf",
 )
 # Pages compared per file: enough to cover every page of almost every test file while the
 # few long documents (hundreds of pages) keep the run to a few minutes.
 MAX_PAGES = 30
+# The files pypdf's tests download, by name and URL; see scripts/fetch_pypdf_test_files.py.
+DOWNLOADS = Path("tests/compat/pypdf_test_files.tsv")
+DOWNLOAD_CACHE = Path("tests/upstream/pypdf/tests/pdf_cache")
 MODES: dict[str, dict[str, Any]] = {"plain": {}, "layout": {"extraction_mode": "layout"}}
 # (mode, file name) -> why the facade's text differs from pypdf's there.
 DEPARTURES: dict[tuple[str, str], str] = {}
@@ -126,9 +131,16 @@ def main(argv: list[str]) -> int:
     warnings.simplefilter("ignore")
     counts: collections.Counter[str] = collections.Counter()
     problems: list[str] = []
-    paths = argv or sorted(
-        {path for pattern in PATTERNS for path in glob.glob(pattern, recursive=True)}
-    )
+    paths = argv
+    if not argv:
+        names = [line.split("\t")[0] for line in DOWNLOADS.read_text().splitlines() if line]
+        downloads = [DOWNLOAD_CACHE / name for name in names]
+        counts["pdf_cache: listed downloads not found"] = sum(
+            not path.exists() for path in downloads
+        )
+        found = [str(path) for path in downloads if path.suffix == ".pdf" and path.exists()]
+        upstream = {path for pattern in PATTERNS for path in glob.glob(pattern, recursive=True)}
+        paths = sorted(upstream.union(found))
     for path in paths:
         started = time.perf_counter()
         compare(path, counts, problems, every=bool(argv))

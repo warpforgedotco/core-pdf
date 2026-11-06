@@ -22,7 +22,7 @@ Use short Conventional Commit-style subjects such as `feat(ocr): ...`, `fix: ...
 
 ## Local and CI Validation
 
-To run a reference library's own test suite against its `core_pdf_compat` facade, initialize the submodules under `tests/upstream` with `git submodule update --init --recursive --depth 1`, then run `uv run --group test python scripts/run_upstream_suite.py <suite>`. Add `--reference` to run the same tests on the real library, which separates environment failures from facade gaps. Reports go to `.upstream-results/`. For pypdf, `--network` first downloads the files its tests fetch, with pypdf's own helper, and also runs the tests marked `enable_socket`; add `-m enable_socket` to run only those.
+To run a reference library's own test suite against its `core_pdf_compat` facade, initialize the submodules under `tests/upstream` with `git submodule update --init --recursive --depth 1`, then run `uv run --group test python scripts/run_upstream_suite.py <suite>`. Add `--reference` to run the same tests on the real library, which separates environment failures from facade gaps. Reports go to `.upstream-results/`. For pypdf, `--network` first downloads the files its tests fetch, listed in `tests/compat/pypdf_test_files.tsv`, and also runs the tests marked `enable_socket`; add `-m enable_socket` to run only those.
 
 To prove a floor package or spec works alone, install it on its own (`uv sync --locked --package <member>`) and run `scripts/check_package_isolation.py <member>`, which checks that the tiers above it are absent. This replaces `.venv`, so run a full `uv sync --all-packages` afterwards.
 
@@ -36,7 +36,7 @@ To validate against the locked dependencies, use `uv run --locked` with the rele
 
 The facades support the latest release of each library they follow (pypdf, pdfminer.six, pdfplumber, unstructured, llama-index-readers-file, x-ray). The upstream suites in `scripts/run_upstream_suite.py` pin those latest versions, and the comparison scripts (`scripts/check_*_output.py`, `check_pypdf_bytes.py`, `check_pypdf_reads.py`) compare against the same pins. The `Upstream releases` workflow checks the pins against PyPI each week and keeps one open issue while any is behind; `uv run --no-project python scripts/check_upstream_versions.py` does the same check locally.
 
-To move to a new release: move the library's submodule under `tests/upstream` to that release's tag, change its pins in `run_upstream_suite.py`, the comparison scripts and `.github/workflows/tests.yml`, run the suite with `--reference` first, then the facade and the comparison scripts, and fix the facade until both match. Read the library's diff for the code the facade mirrors; a test run alone can miss behaviour changes.
+To move to a new release: move the library's submodule under `tests/upstream` to that release's tag, change its pins in `run_upstream_suite.py`, the comparison scripts and `.github/workflows/tests.yml`, run the suite with `--reference` first, then the facade and the comparison scripts, and fix the facade until both match. For pypdf, also run `uv run --group test python scripts/fetch_pypdf_test_files.py --record --write`, which reruns pypdf's suite to list the files its tests download in `tests/compat/pypdf_test_files.tsv`; CI fetches that list and fails on any file it cannot get. Read the library's diff for the code the facade mirrors; a test run alone can miss behaviour changes.
 
 ## Submodules
 
