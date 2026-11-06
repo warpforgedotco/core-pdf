@@ -114,6 +114,29 @@ MODES = (
 ALL_DOCUMENT_PERMISSIONS = UserAccessPermissions.all()
 
 
+def _page_resources(page: Any) -> Any:
+    """pypdf's _get_page_resources: the inherited /Resources, empty if missing or malformed."""
+    resources = page.get_inherited("/Resources", DictionaryObject())
+    if is_null_or_none(resources):
+        return DictionaryObject()
+    if not isinstance(resources, DictionaryObject):
+        logger.warning("Page resources are not a dictionary: %s", resources)
+        return DictionaryObject()
+    return resources
+
+
+def _font_resources(resources: Any) -> Any:
+    """pypdf's _get_font_resources: /Font, empty if missing or malformed."""
+    fonts = resources.get("/Font")
+    if is_null_or_none(fonts):
+        return DictionaryObject()
+    fonts = fonts.get_object()
+    if not isinstance(fonts, DictionaryObject):
+        logger.warning("Font resources are not a dictionary: %s", fonts)
+        return DictionaryObject()
+    return fonts
+
+
 def _positional_text_arguments(
     args: tuple[Any, ...], orientations: int | tuple[int, ...], space_width: float
 ) -> tuple[tuple[int, ...], float]:
@@ -326,15 +349,19 @@ class PageObject(DictionaryObject):
                     logger.warning("Argument %s is ignored in layout mode", name)
         if extraction_mode == "layout":
             self._check_layout_resources()
-            if "/Contents" not in self:
-                raise KeyError("/Contents")  # pypdf's layout mode reads self["/Contents"].
-        resources = self.get_resolved("/Resources")
-        if extraction_mode == "plain" and (is_null_or_none(resources) or not resources):
-            # pypdf reads no text, and no damage, from a page without resources.
-            inherited = self.get_inherited("/Resources", None)
-            if is_null_or_none(inherited) or not inherited:
+            contents = self.get_resolved("/Contents")
+            if not isinstance(contents, (ArrayObject, StreamObject)):
+                return ""  # No content can be extracted (certainly an empty page).
+            resources = self.get_resolved("/Resources")
+            if not isinstance(resources, DictionaryObject):
+                resources = DictionaryObject()
+        else:
+            resources = _page_resources(self)
+            if not resources:
+                # pypdf reads no text, and no damage, from a page without resources.
                 return ""
-        fonts = None if is_null_or_none(resources) else resources.get_resolved("/Font")
+            _font_resources(resources)
+        fonts = resources.get_resolved("/Font")
         if is_null_or_none(self.get_resolved("/Contents")) and not fonts:
             return ""  # Without contents, only reading a font can still fail.
         options = TextOptions(
@@ -384,20 +411,27 @@ class PageObject(DictionaryObject):
             return extract_legacy_text(source, pdf.text_caches, options, data)
 
     def _check_layout_resources(self) -> None:
-        """Fail where pypdf's layout mode fails looking for /Font in /Resources up the tree."""
+        """Warn where pypdf's layout mode does, looking for /Font in /Resources up the tree."""
         node: Any = self
         visited: set[int] = set()
-        while isinstance(node, dict) and id(node) not in visited:
+        while True:
+            if id(node) in visited:
+                logger.warning("Detected cycle in /Parent hierarchy when retrieving fonts.")
+                break
             visited.add(id(node))
-            if "/Resources" in node:
-                resources = node["/Resources"]
-                if isinstance(resources, IndirectObject):
-                    resources = resources.get_object()
-                if resources is None or isinstance(resources, NullObject):
-                    name = "NoneType" if resources is None else type(resources).__name__
-                    raise TypeError(f"argument of type '{name}' is not a container or iterable")
-            parent = node.get("/Parent")
-            node = parent.get_object() if parent is not None else None
+            resources = node.get("/Resources", DictionaryObject())
+            if isinstance(resources, IndirectObject):
+                resources = resources.get_object()
+            if not isinstance(resources, DictionaryObject):
+                logger.warning("Page resources are not a dictionary: %s", resources)
+            elif self.pdf is not None:
+                _font_resources(resources)
+            parent = node.get("/Parent", NullObject())
+            if isinstance(parent, IndirectObject):
+                parent = parent.get_object()
+            if not isinstance(parent, DictionaryObject):
+                break
+            node = parent
 
     def _damaged_source(self) -> bool:
         """Whether the page comes from a file core recovered differently from pypdf's reader.

@@ -34,6 +34,7 @@ from core_pdf_compat._text_state import (
 )
 from core_pdf_compat.pypdf._charsets import SYMBOL_ENCODING, ZAPF_DINGBATS_ENCODING
 from core_pdf_compat.pypdf._cmap_scan import scan_to_unicode
+from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf._core_metrics import core_font_widths
 from core_pdf_compat.pypdf._font_scan import scan_cid_widths, scan_encoding
 from core_pdf_compat.pypdf._generic_content import inline_image_spans
@@ -414,16 +415,19 @@ logger = logging.getLogger(__name__)
 ALL_ORIENTATIONS = (0, 90, 180, 270)
 DEFAULT_SPACE_WIDTH = 200.0
 
-# pypdf stops descending into form XObjects after this many per page extraction
-# (pypdf Configuration.xform_maximum_invocations_per_extraction).
-MAX_FORM_INVOCATIONS = 5_000
-
 
 class FormInvocations:
-    __slots__ = ("count",)
+    """How many form XObjects one page extraction has entered, across nesting levels.
+
+    pypdf stops descending into them past Configuration.xform_maximum_invocations_per_extraction,
+    and says so once.
+    """
+
+    __slots__ = ("count", "has_logged")
 
     def __init__(self) -> None:
         self.count = 0
+        self.has_logged = False
 
 
 FACADE_LOGGER = logging.getLogger("core_pdf_compat.pypdf")
@@ -1077,7 +1081,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         super().positioned(string_width)
         if len(self.output_parts) > parts:
             self.visit(text + "\n")
-        if not self.text:
+        if not text or not self.text:
             self.remember_position()
 
     def show(self, data: bytes) -> None:
@@ -1144,11 +1148,10 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
             case "Td":
                 self.move_text(number_operand(operands, 0, 0.0), number_operand(operands, 1, 0.0))
             case "TD" if len(operands) >= 2:
-                # pypdf negates the raw operand, so a non-number fails extraction.
+                # A non-numeric ty leaves the leading as it is.
                 ty = operands[1]
-                if isinstance(ty, bool) or not isinstance(ty, (int, float)):
-                    raise TypeError(f"bad operand type for unary -: {type(ty).__name__!r}")
-                self.process("TL", (-ty,))
+                if isinstance(ty, (int, float)) and not isinstance(ty, bool):
+                    self.process("TL", (-ty,))
                 self.process("Td", operands)
             case "Tm":
                 try:
@@ -1176,9 +1179,6 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
                     match item:
                         case PdfString(data=data):
                             self.show(bytes(data))
-                        case PdfName():
-                            # pypdf's name is a str, which it shows as the text itself.
-                            self.show_name(item)
                         case bool():
                             pass
                         case int() | float() if (
@@ -1255,7 +1255,15 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
                 recover_pdf_name(operands[0]),
             )
             return
-        if self.invocations.count >= MAX_FORM_INVOCATIONS:
+        limit = get_configuration().xform_maximum_invocations_per_extraction
+        if self.invocations.count >= limit:
+            if not self.invocations.has_logged:
+                self.invocations.has_logged = True
+                logger.warning(
+                    "Exceeded %d form XObject invocations while extracting text; "
+                    "further form content is skipped.",
+                    limit,
+                )
             return
         self.invocations.count += 1
         top_level = not self.known_forms
@@ -1286,7 +1294,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         if child_text:
             self.output_parts.append(child_text)
             self.output_last = child_text[-1]
-        self.visit(child_text)
+        # The visitor saw each piece of the form's text while it was extracted.
 
 
 VENDORED_FONTTOOLS_LOGGER = logging.getLogger("core_pdf._vendor.fontTools")

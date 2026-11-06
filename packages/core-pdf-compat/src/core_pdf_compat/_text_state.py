@@ -26,10 +26,10 @@ PREDEFINED_ENCODING_CODECS = {
     "ETenms-B5-V": "cp950",
     "UniCNS-UTF16-H": "utf-16-be",
     "UniCNS-UTF16-V": "utf-16-be",
-    # pypdf 6.15.0 decodes UniGB-UTF16 as GB18030, though its codes are UTF-16BE
+    # UniGB covers the GB18030 character set, but its codes are UTF-16BE
     # (ISO 32000-2:2020, 9.7.5.2).
-    "UniGB-UTF16-H": "gb18030",
-    "UniGB-UTF16-V": "gb18030",
+    "UniGB-UTF16-H": "utf-16-be",
+    "UniGB-UTF16-V": "utf-16-be",
     "90ms-RKSJ-H": "cp932",
     "90ms-RKSJ-V": "cp932",
     "UniJIS-UTF16-H": "utf-16-be",
@@ -92,6 +92,8 @@ def flush_text(output_parts: list[str], text: str, output_last: str) -> tuple[st
 NEUTRAL_CHARACTER_RANGES = (
     ("\x00", "\x2f"),
     ("\x3a", "\x40"),
+    ("\u0660", "\u066d"),  # Arabic-Indic digits and Arabic numeric separators
+    ("\u06f0", "\u06f9"),  # Extended Arabic-Indic (Persian) digits
     ("\u2000", "\u206f"),
     ("\u20a0", "\u21ff"),
 )
@@ -114,6 +116,9 @@ def append_directional_text(text: str, rtl: bool, value: str) -> tuple[str, bool
     return (value, False, text) if rtl else (text + value, False, "")
 
 
+type LineSpan = tuple[int, float, float] | None
+
+
 def positioned_text(
     output_parts: list[str],
     text: str,
@@ -127,28 +132,44 @@ def positioned_text(
     font_size: float,
     space_width: float,
     string_width: float,
-) -> tuple[str, str]:
-    """pypdf's crlf_space_check: a newline for a move across lines, a space for a gap."""
+    line_span: LineSpan = None,
+) -> tuple[str, str, LineSpan]:
+    """pypdf's crlf_space_check: a newline for a move across lines, a space for a gap.
+
+    ``line_span`` is (axis index, lowest, highest) of the baselines kept on the current line,
+    which a move is measured against: a centred label between the two baselines of a wrapped
+    cell stays on its line.
+    """
     trailing = text[-1:] or output_last[-1:]
     previous = multiply_affine(previous_text_matrix, previous_current_matrix)
     current = multiply_affine(text_matrix, current_matrix)
     delta_x = current[4] - previous[4]
     delta_y = current[5] - previous[5]
-    # pypdf compares the deltas with scales of the text matrices alone.
-    previous_scale_x = math.hypot(previous_text_matrix[0], previous_text_matrix[1])
-    previous_scale_y = math.hypot(previous_text_matrix[2], previous_text_matrix[3])
-    current_scale_y = math.hypot(text_matrix[2], text_matrix[3])
+    # The deltas are in the space of the text matrix times the CTM, so are the scales.
+    previous_scale_x = math.hypot(previous[0], previous[1])
+    previous_scale_y = math.hypot(previous[2], previous[3])
+    current_scale_y = math.hypot(current[2], current[3])
     horizontal = orientation(current) in (0, 180)
     moved_height, moved_width = (delta_y, delta_x) if horizontal else (delta_x, delta_y)
-    if abs(moved_height) > 0.8 * min(line_height * previous_scale_y, font_size * current_scale_y):
+    axis_index = 5 if horizontal else 4
+    axis = current[axis_index]
+    if line_span is None or line_span[0] != axis_index:
+        distance = abs(moved_height)
+    else:
+        lower, upper = line_span[1], line_span[2]
+        distance = 0.0 if lower <= axis <= upper else min(abs(axis - lower), abs(axis - upper))
+    if distance > 0.8 * min(line_height * previous_scale_y, font_size * current_scale_y):
         if trailing not in ("", "\n"):
             output_parts.append(text + "\n")
             text, output_last = "", "\n"
-    elif moved_width >= (
+        return text, output_last, (axis_index, axis, axis)
+    if moved_width >= (
         font_size * space_width / 1000.0 + string_width
     ) * previous_scale_x and trailing not in ("", " "):
         text += " "
-    return text, output_last
+    if trailing in ("", "\n") or line_span is None or line_span[0] != axis_index:
+        return text, output_last, (axis_index, axis, axis)
+    return text, output_last, (axis_index, min(line_span[1], axis), max(line_span[2], axis))
 
 
 def ensure_line_break(output_parts: list[str], output_last: str) -> str:
@@ -195,16 +216,20 @@ class TextMachine[FontT]:
         self.rtl = False
         self.accumulated_width = 0.0
         self.actual_height = 0.0
+        self.line_span: LineSpan = None
 
     def flush(self) -> None:
         self.text, self.output_last = flush_text(self.output_parts, self.text, self.output_last)
 
     def add_directional(self, value: str) -> None:
-        # pypdf drops the run a direction change completes; only a visitor sees it.
-        self.text, self.rtl, _ = append_directional_text(self.text, self.rtl, value)
+        # The run a direction change completes goes to the output, before the new run.
+        self.text, self.rtl, completed = append_directional_text(self.text, self.rtl, value)
+        if completed:
+            self.output_parts.append(completed)
+            self.output_last = completed[-1]
 
     def positioned(self, string_width: float) -> None:
-        self.text, self.output_last = positioned_text(
+        self.text, self.output_last, self.line_span = positioned_text(
             self.output_parts,
             self.text,
             self.output_last,
@@ -216,6 +241,7 @@ class TextMachine[FontT]:
             font_size=self.font_size,
             space_width=self.half_space_width,
             string_width=string_width,
+            line_span=self.line_span,
         )
         self.previous_tm = self.tm.copy()
         self.previous_cm = self.cm.copy()
@@ -246,10 +272,8 @@ class TextMachine[FontT]:
                     else list(IDENTITY_MATRIX)
                 )
             case "TL":
-                # pypdf scales the leading by the font size and the text matrix when it is
-                # set, and T* applies the text matrix to it again.
-                scale_x = math.hypot(self.tm[0], self.tm[2])
-                self.leading = number_operand(operands, 0, 0.0) * self.font_size * scale_x
+                # The leading is in unscaled text space units; T* applies the text matrix.
+                self.leading = number_operand(operands, 0, 0.0)
             case _:
                 return False
         return True

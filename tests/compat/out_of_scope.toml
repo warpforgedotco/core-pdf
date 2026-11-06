@@ -40,8 +40,9 @@ names = [
     "_get_page_number_by_indirect", "resolved_objects", "xref_objStm", "_encryption", "_startxref",
     # A test patching NumberObject._LENGTH_LIMIT through the private pypdf.generic._base path
     "_LENGTH_LIMIT",
-    # PageObject's private debug hook for text extraction
-    "_debug_for_extract",
+    # PageObject's private debug hook for text extraction, and the private font collection
+    # of its layout mode, which the facade reads from core-pdf instead
+    "_debug_for_extract", "_layout_mode_fonts",
     # PdfDocCommon internals
     "_get_named_destinations", "_list_attachments",
     # PageObject internals
