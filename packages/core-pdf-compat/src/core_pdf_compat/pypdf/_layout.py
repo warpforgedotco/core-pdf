@@ -55,9 +55,6 @@ class _FontView:
         return len(word), word.count(space) if space else 0
 
     def shown(self, value: bytes) -> tuple[tuple[str, ...], float]:
-        if self.font is not None and self.font.unknown_encoding is not None:
-            # pypdf decodes the bytes with the encoding's name as a codec.
-            raise LookupError(f"unknown encoding: {self.font.unknown_encoding}")
         return (
             (tuple(value.decode("latin-1")), 0.0)
             if self.font is None

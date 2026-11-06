@@ -1,5 +1,5 @@
-# Follows pypdf._cmap and pypdf._font, Copyright (c) 2006, Mathieu Fenniak, under its
-# BSD-style license.
+# Follows pypdf._cmap and pypdf.generic._font of pypdf 6.21.4, Copyright (c) 2006, Mathieu
+# Fenniak, under its BSD-style license.
 """pypdf's warnings while it reads a font's encoding and widths. core-pdf reads the font."""
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from typing import Any
 
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfString
-from core_pdf_compat._text_state import predefined_encoding_codec
+from core_pdf_compat._text_state import legacy_base_table, predefined_encoding_codec
 from core_pdf_compat.pypdf.errors import LimitReachedError
 
 cmap_logger = logging.getLogger("core_pdf_compat.pypdf._cmap")
@@ -34,20 +34,41 @@ MAX_WIDTH_ENTRY_COUNT = 100_000
 Resolve = Callable[[object], object]
 
 
-def scan_encoding(font: dict[object, object], resolve: Resolve) -> None:
-    """Log the error pypdf's _parse_encoding logs for an encoding it does not know."""
+def scan_encoding(
+    font: dict[object, object], resolve: Resolve, present: Callable[[object], Any] = str
+) -> None:
+    """Log what pypdf's _parse_encoding logs for an encoding it does not know, or malformed
+    /Differences. ``present`` turns a core value into pypdf's object, which a warning formats."""
     if "Encoding" not in font:
         return
     encoding = resolve(font["Encoding"])
+    unknown: str | None = None
     if isinstance(encoding, PdfName):
         name = recover_pdf_name(encoding) or ""
         if name not in CHARSET_ENCODINGS and predefined_encoding_codec(name) is None:
-            cmap_logger.error("Advanced encoding %s not implemented yet", f"/{name}")
+            unknown = f"/{name}"
+    elif isinstance(encoding, PdfString):
+        text = str(present(encoding))
+        if "-UCS2-" not in text:
+            unknown = text  # pypdf looks the string up as a name it lacks.
     elif isinstance(encoding, dict) and "BaseEncoding" in encoding:
         base = resolve(encoding["BaseEncoding"])
         if not isinstance(base, PdfName) or recover_pdf_name(base) not in CHARSET_ENCODINGS:
             # pypdf formats the encoding it has built so far, still an empty list.
             cmap_logger.error("Advanced encoding %s not implemented yet", [])
+    if unknown is not None:
+        subtype = resolve(font.get("Subtype"))
+        composite = isinstance(subtype, PdfName) and recover_pdf_name(subtype) == "Type0"
+        replacement: object = "utf-16-be" if composite else legacy_base_table("StandardEncoding")
+        cmap_logger.error(
+            "Advanced encoding %s not implemented yet, using %s instead.", unknown, replacement
+        )
+    if isinstance(encoding, dict) and "Differences" in encoding:
+        differences = resolve(encoding["Differences"])
+        if not isinstance(differences, (list, tuple)):
+            cmap_logger.warning(
+                "Font encoding differences are not an array: %s", present(differences)
+            )
 
 
 def _numeric(value: object) -> bool:
@@ -135,3 +156,36 @@ def scan_cid_widths(
                 if _numeric(value):
                     widths[code] = _number(value)
     return irregular
+
+
+# A simple font's character codes are single bytes, so /Widths has at most 256 entries.
+MAX_SIMPLE_FONT_CHARACTER_CODE = 255
+
+
+def scan_simple_widths(
+    font: dict[object, object], resolve: Resolve, present: Callable[[object], Any]
+) -> None:
+    """Log what pypdf's _parse_widths logs for a simple font's /Widths, and raise its limit."""
+    if "Widths" not in font:
+        return
+    widths = resolve(font["Widths"])
+    if not isinstance(widths, (list, tuple)):
+        font_logger.warning("Expected an array for /Widths, got %s. Ignoring it.", present(widths))
+        return
+    limit = MAX_SIMPLE_FONT_CHARACTER_CODE + 1
+    if len(widths) > limit:
+        raise LimitReachedError(f"Too many character widths: {len(widths)} > {limit}.")
+    first_char = resolve(font.get("FirstChar", 0))
+    if not _numeric(first_char):
+        font_logger.warning("Ignoring invalid /FirstChar %s.", present(first_char))
+        return
+    first = int(_number(first_char))
+    if first < 0:
+        font_logger.warning("Ignoring invalid /FirstChar %d < 0.", first)
+        return
+    if first + len(widths) - 1 > MAX_SIMPLE_FONT_CHARACTER_CODE:
+        font_logger.warning(
+            "Ignoring invalid character codes > %d (starting at %d).",
+            MAX_SIMPLE_FONT_CHARACTER_CODE,
+            max(first, MAX_SIMPLE_FONT_CHARACTER_CODE + 1),
+        )
