@@ -77,18 +77,9 @@ jobs:
   standalone:
     # Each floor package and the specification library must install with only
     # their own declared dependencies.
-    name: Standalone / ${{ matrix.package }}
+    # One job for all six: each check takes seconds, and a job per package held a runner each.
+    name: Standalone packages
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package:
-          - core-records
-          - core-postscript
-          - core-jbig2
-          - core-pdf-crypto
-          - core-adobe-fonts
-          - core-pdf-spec
 
     steps:
       - name: Check out repository
@@ -102,11 +93,15 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install only the package
-        run: uv sync --locked --package ${{ matrix.package }}
-
-      - name: Prove higher tiers are absent
-        run: uv run --locked --no-sync python scripts/check_package_isolation.py ${{ matrix.package }}
+      - name: Install each package alone and prove higher tiers are absent
+        run: |
+          for package in core-records core-postscript core-jbig2 core-pdf-crypto core-adobe-fonts core-pdf-spec; do
+            echo "::group::$package"
+            # Each sync replaces the environment with only this package and its dependencies.
+            uv sync --locked --package "$package"
+            uv run --locked --no-sync python scripts/check_package_isolation.py "$package"
+            echo "::endgroup::"
+          done
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}
@@ -229,13 +224,13 @@ jobs:
           $run/check_document_rewrite.py --incremental
           $run/check_document_rewrite.py --xref-stream
           $run/check_document_rewrite.py --incremental --xref-stream
-          $run/check_writer_lossless.py
           $run/check_encrypted_output.py
-          $run/check_save_statements.py
 
-      - name: Bytes and reads against the real pypdf
+      - name: PdfWriter output, and bytes and reads against the real pypdf
         if: matrix.shard == 'pypdf output'
         run: |
+          uv run --locked --all-packages --group test python scripts/check_writer_lossless.py
+          uv run --locked --all-packages --group test python scripts/check_save_statements.py
           uv run --locked --all-packages --group test --with "pypdf[full]==6.15.0" python scripts/check_pypdf_bytes.py
           uv run --locked --all-packages --group test --with "pypdf[full]==6.15.0" python scripts/check_pypdf_reads.py
 
