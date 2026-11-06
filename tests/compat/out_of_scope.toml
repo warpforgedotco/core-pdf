@@ -76,6 +76,10 @@ stubs = [
 ]
 files = ["tests/scripts/test_make_release.py"]
 partial = ["pypdf._page", "pypdf.filters"]
+# Tests marked enable_socket download their PDFs from the internet at run time, so they need
+# network access and depend on outside servers. A local run with network on 2026-11-05 ran
+# 392 of them: real pypdf failed 59, all but one on a downloaded file that wasn't there, and
+# the facade failed 49 more that pass on real pypdf.
 markers = "not enable_socket"
 # These also touch a private name, but they are the only tests of public features the
 # facade lacks: viewer_preferences, attachment_list and named_destinations.
