@@ -81,17 +81,8 @@ def pytest_command(
     extra: list[str],
     excluded_files: tuple[str, ...],
 ) -> list[str]:
-    base = ["uv", "run", "--python", "3.14"]
-    if reference:
-        base += ["--no-project", "--isolated"]
-        packages = suite.reference
-    else:
-        base += ["--project", str(ROOT), "--all-packages", "--group", "test"]
-        packages = ()
-    for package in (*packages, *suite.requires, "pytest", "pytest-timeout", "pytest-xdist"):
-        base += ["--with", package]
     return [
-        *base,
+        *environment_command(suite, reference=reference),
         "python",
         "-m",
         "pytest",
@@ -114,6 +105,35 @@ def pytest_command(
     ]
 
 
+def environment_command(suite: Suite, *, reference: bool) -> list[str]:
+    """The `uv run` prefix that gives a suite's tests their environment."""
+    base = ["uv", "run", "--python", "3.14"]
+    if reference:
+        base += ["--no-project", "--isolated"]
+        packages = suite.reference
+    else:
+        base += ["--project", str(ROOT), "--all-packages", "--group", "test"]
+        packages = ()
+    for package in (*packages, *suite.requires, "pytest", "pytest-timeout", "pytest-xdist"):
+        base += ["--with", package]
+    return base
+
+
+def download_network_files(suite: Suite, *, reference: bool, environment: dict[str, str]) -> None:
+    """Fetch the files pypdf's tests download, with pypdf's own helper, as its CI does first.
+
+    The tests read some of them by name only, expecting an earlier test to have fetched them,
+    which parallel runs do not guarantee. They land in the checkout's tests/pdf_cache.
+    """
+    command = [
+        *environment_command(suite, reference=reference),
+        "python",
+        "-c",
+        "from tests import download_test_pdfs; download_test_pdfs()",
+    ]
+    subprocess.run(command, cwd=UPSTREAM / suite.checkout, env=environment, check=True)
+
+
 def summarize(junit: Path) -> dict[str, object]:
     counts: collections.Counter[str] = collections.Counter()
     reasons: collections.Counter[str] = collections.Counter()
@@ -134,6 +154,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("suite", choices=SUITES)
     parser.add_argument("--reference", action="store_true")
+    parser.add_argument(
+        "--network",
+        action="store_true",
+        help="pypdf only: download the test files and run the tests that need the network too",
+    )
     arguments, extra = parser.parse_known_args()
     suite = SUITES[arguments.suite]
     mode = "reference" if arguments.reference else "facade"
@@ -159,11 +184,13 @@ def main() -> int:
         junit=junit,
         extra=[
             *extra,
-            *(("-m", scope["markers"]) if "markers" in scope else ()),
+            *(("-m", scope["markers"]) if "markers" in scope and not arguments.network else ()),
             *(f"--deselect={node}" for node in scope.get("deselect", ())),
         ],
         excluded_files=tuple(scope.get("files", ())),
     )
+    if arguments.network:
+        download_network_files(suite, reference=arguments.reference, environment=environment)
     log = RESULTS / f"{arguments.suite}-{mode}.log"
     with log.open("w") as handle:
         code = subprocess.run(
