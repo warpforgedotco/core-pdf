@@ -2,8 +2,10 @@
 
     uv run python scripts/check_upstream_versions.py [--markdown]
 
-The pins come from the suites in scripts/run_upstream_suite.py, which the upstream suites and
-the facade comparison scripts test against. Each pinned package is looked up on PyPI. The
+The pins come from the reference packages of the suites in scripts/run_upstream_suite.py,
+which the upstream suites and the facade comparison scripts test against, and each is looked
+up on PyPI. Their own dependencies, such as x-ray's PyMuPDF, follow whatever that release
+requires, so they are not checked here. The
 script prints one row per package and exits 1 if any pin is behind, so a weekly workflow can
 open an issue. --markdown prints the table as Markdown, for that issue.
 """
@@ -27,7 +29,7 @@ def pins() -> dict[str, tuple[str, set[str]]]:
     """Each pinned package: its version and the suites that pin it."""
     found: dict[str, tuple[str, set[str]]] = {}
     for name, suite in SUITES.items():
-        for requirement in (*suite.reference, *suite.requires):
+        for requirement in suite.reference:
             match = PIN.match(requirement)
             if match is None:
                 continue
