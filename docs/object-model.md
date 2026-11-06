@@ -68,10 +68,11 @@ written, the earlier versions left readable (`superseded`) and the objects remov
 in the file (`removed`). An incremental save with removals also logs a warning.
 
 `scripts/check_save_statements.py` checks these statements on the upstream PDFs. It adds a
-page with a marker in its content, an image and an annotation, removes the page and saves. On
+page with a marker in its content, an image, an annotation and an embedded font, removes the
+page and saves. On
 all 168 files that open unencrypted, a full rewrite from either writer drops the marker and
 says it is full. An incremental update keeps the marker and the source's bytes, says it is
-incremental and names the three objects in `SavedPdf.removed`; `PdfWriter` also names them in
+incremental and names the six objects in `SavedPdf.removed`; `PdfWriter` also names them in
 `last_save` and logs a warning. An encrypted `PdfWriter` save hides the
 marker and names its algorithm in `SavedPdf.encryption`. The check also fails if a writer
 module holds PDF structure as bytes.

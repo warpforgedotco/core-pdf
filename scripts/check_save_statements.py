@@ -2,8 +2,9 @@
 
 uv run --all-packages python scripts/check_save_statements.py
 
-Each file that opens and is not encrypted gets a last page that holds a plain marker in three
-objects: its content stream, an image it draws and an annotation's text. Then that page is
+Each file that opens and is not encrypted gets a last page that holds a plain marker in six
+objects: its content stream, an image it draws, an annotation's text, and a font, its
+descriptor and its embedded font program. Then that page is
 removed and the file saved. The marker is what a caller believes is gone.
 
 full: PdfWriter and EditableDocument.save. The marker must leave the file, and the save must
@@ -11,7 +12,7 @@ say it was a full rewrite.
 
 incremental: PdfWriter(incremental=True) and EditableDocument.save_incremental. The marker must
 stay, because the source's bytes stay, and the save must say so: SavedPdf.incremental and
-SavedPdf.removed naming all three objects, and for the writer a last_save that names them and a
+SavedPdf.removed naming all six objects, and for the writer a last_save that names them and a
 logged warning.
 
 encrypted: PdfWriter.encrypt, with the page kept. The marker must not appear, and SavedPdf must
@@ -71,7 +72,7 @@ def name(value: str) -> NameObject:
 
 
 def with_marked_page(path: str) -> tuple[bytes, set[int]] | None:
-    """The file with a marked last page, and the numbers of the three marked objects."""
+    """The file with a marked last page, and the numbers of the six marked objects."""
     if PdfReader(path).is_encrypted:
         return None
     writer = PdfWriter(clone_from=path)
@@ -89,9 +90,28 @@ def with_marked_page(path: str) -> tuple[bytes, set[int]] | None:
         }
     )
     xobjects = DictionaryObject({name("/Marked"): writer._add_object(image)})
-    page[name("/Resources")] = DictionaryObject({name("/XObject"): xobjects})
+    program = DecodedStreamObject()
+    program.set_data(b"%!PS-AdobeFont-1.0: " + MARKER)
+    descriptor = DictionaryObject(
+        {
+            name("/Type"): name("/FontDescriptor"),
+            # Names are never encrypted, so the marker goes in the font program only.
+            name("/FontName"): name("/MarkedFont"),
+            name("/FontFile"): writer._add_object(program),
+        }
+    )
+    font = DictionaryObject(
+        {
+            name("/Type"): name("/Font"),
+            name("/Subtype"): name("/Type1"),
+            name("/BaseFont"): name("/MarkedFont"),
+            name("/FontDescriptor"): writer._add_object(descriptor),
+        }
+    )
+    fonts = DictionaryObject({name("/FM"): writer._add_object(font)})
+    page[name("/Resources")] = DictionaryObject({name("/XObject"): xobjects, name("/Font"): fonts})
     content = DecodedStreamObject()
-    content.set_data(b"q 100 0 0 10 0 0 cm /Marked Do Q BT (" + MARKER + b") Tj ET")
+    content.set_data(b"q 100 0 0 10 0 0 cm /Marked Do Q BT /FM 12 Tf (" + MARKER + b") Tj ET")
     page[name("/Contents")] = writer._add_object(content)
     annotation = DictionaryObject(
         {
@@ -105,10 +125,14 @@ def with_marked_page(path: str) -> tuple[bytes, set[int]] | None:
     output = BytesIO()
     writer.write(output)
     last = PdfReader(output).pages[-1]
+    font = last["/Resources"]["/Font"]["/FM"]
     marked = {
         last.raw_get("/Contents").idnum,
         last["/Resources"]["/XObject"].raw_get("/Marked").idnum,
         last["/Annots"][0].idnum,
+        last["/Resources"]["/Font"].raw_get("/FM").idnum,
+        font.raw_get("/FontDescriptor").idnum,
+        font["/FontDescriptor"].raw_get("/FontFile").idnum,
     }
     return output.getvalue(), marked
 
