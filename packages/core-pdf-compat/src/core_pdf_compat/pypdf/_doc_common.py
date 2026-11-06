@@ -571,9 +571,11 @@ class PdfDocCommon:
     @staticmethod
     def _write_field(fileobj: Any, field: Any) -> None:
         labels = _field_labels()
-        for attribute, label in labels.items():
+        # In pypdf's order of the attributes, which is not that of their labels.
+        for attribute in FA.attributes() + CheckboxRadioButtonAttributes.attributes():
             if attribute in {FA.Kids, FA.AA} or attribute not in field:
                 continue
+            label = labels[attribute]
             value = field[attribute]
             if attribute == FA.FT:
                 if value in FIELD_TYPE_NAMES:
