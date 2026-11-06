@@ -1,5 +1,5 @@
-# Follows pypdf._reader.PdfReader.read, Copyright (c) 2006, Mathieu Fenniak, under its
-# BSD-style license.
+# Follows pypdf 6.21.4's pypdf._reader.PdfReader.read, Copyright (c) 2006, Mathieu Fenniak,
+# under its BSD-style license.
 """pypdf's walk over a file's cross-reference data.
 
 core-pdf resolves the objects. This walk gives a caller what pypdf's reader promises while
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from bisect import bisect_right
 from collections.abc import Iterator
 from io import BytesIO
@@ -40,6 +41,18 @@ WHITESPACE = b"\x00\t\n\f\r "
 XREF_STREAM_TRAILER_KEYS = ("/Root", "/Encrypt", "/Info", "/ID", "/Size")
 XREF_ENTRY_TYPE_COMPRESSED = 2
 FREE_GENERATION = 65535
+XREF_ENTRY_SIZE = 20
+VALID_STARTXREF = re.compile(rb"[+-]?[0-9]+(?:_[0-9]+)*")
+
+
+def is_valid_startxref_value(value: bytes) -> bool:
+    """Whether ``int(value)`` reads an offset, as pypdf checks before converting."""
+    if VALID_STARTXREF.fullmatch(value) is None:
+        return False
+    # Python's limit on digits converted to an int, checked without converting.
+    max_digits = sys.get_int_max_str_digits()
+    digits = value.lstrip(b"+-").replace(b"_", b"")
+    return not max_digits or len(digits) <= max_digits
 
 
 def previous_line(data: bytes | mmap, position: int) -> tuple[bytes, int]:
@@ -94,11 +107,19 @@ class XrefScan:
         self.xref_objStm: dict[int, tuple[int, int]] = {}  # noqa: N815
         self.xref_index = 0
         self.trailer = DictionaryObject()
+        self.xref_stream_entries = 0
+        self.xref_stream_maximum_entries: int = getattr(
+            pdf, "_xref_stream_maximum_entries", 2_000_000
+        )
 
     def read(self) -> None:
         self._check_header()
         position = self._find_eof_marker()
         startxref = self._find_startxref(position)
+        if startxref < 0:
+            # Repaired like a zero pointer, rather than seeking before the file.
+            logger.warning("Negative startxref pointer (%d), treating it as zero.", startxref)
+            startxref = 0
         issue = self._xref_issue(startxref)
         if issue:
             if self.strict:
@@ -160,7 +181,19 @@ class XrefScan:
         position = len(self.data)
         line = b""
         first = True
-        while not line.startswith(b"%%EOF"):
+        # The bytes of `line` end here, so an inline %%EOF starts at end - len(line) + index.
+        end = position
+        while True:
+            marker = line.find(b"%%EOF")
+            if marker == 0:
+                break
+            if marker > 0 and first:
+                # Only the last line may carry the marker after other text, so a %%EOF
+                # inside stream data is not taken for the trailer (pypdf #4127).
+                if line[:marker].lstrip(WHITESPACE):
+                    logger.warning("EOF marker not at start of line")
+                    return end - len(line) + marker
+                break
             if line and first:
                 if line.strip().endswith(TRUNCATED_EOF_MARKERS):
                     logger.warning("EOF marker seems truncated")
@@ -175,18 +208,31 @@ class XrefScan:
                 if self.strict:
                     raise PdfReadError("EOF marker not found")
                 logger.warning("EOF marker not found")
+            end = position
             line, position = previous_line(self.data, position)
         return position
 
     def _find_startxref(self, position: int) -> int:
         line, position = previous_line(self.data, position)
+        # Further %%EOF markers below the last revision's are skipped (pypdf #4008).
+        duplicates = 0
+        while line.startswith(b"%%EOF") and position > 0:
+            if duplicates == STARTXREF_RECOVERY_LINES:
+                break
+            line, position = previous_line(self.data, position)
+            duplicates += 1
+        if duplicates:
+            logger.warning("Duplicate %%EOF marker(s) found, skipping them")
         try:
             return self._integer_then_keyword(int(line), position)
         except ValueError:
             pass
         if not line.startswith(b"startxref"):
             raise PdfReadError("startxref not found")
-        startxref = int(line[9:].strip())
+        value = line[9:].strip()
+        if not is_valid_startxref_value(value):
+            raise PdfReadError("startxref not found")
+        startxref = int(value)
         logger.warning("startxref on same line as offset")
         return startxref
 
@@ -210,7 +256,10 @@ class XrefScan:
                     offset = None
                 continue
             if len(line) > 9:
-                return int(line[9:].strip())
+                value = line[9:].strip()
+                if not is_valid_startxref_value(value):
+                    continue
+                return int(value)
             if offset is not None:
                 logger.warning(
                     "found startxref pointing to a previous revision after a corrupt one"
@@ -289,6 +338,7 @@ class XrefScan:
         _skip_whitespace(stream)
         first_time = True
         recovered: dict[int, tuple[int, int]] | None = None
+        previous_position: int | None = None
         while True:
             number = read_object(stream, self.pdf)
             if first_time and number != 0:
@@ -305,6 +355,10 @@ class XrefScan:
                 self._rebuild()
                 stream.read()
                 return
+            if size > (size_limit := len(self.data) // XREF_ENTRY_SIZE):
+                raise LimitReachedError(
+                    f"Declared size {size} exceeds allowed limit of {size_limit}!"
+                )
             _skip_whitespace(stream)
             for _ in range(size):
                 recovered = self._read_entry(number, recovered)
@@ -315,9 +369,14 @@ class XrefScan:
                 stream.readline()
                 _skip_whitespace(stream)
             stream.seek(-1, 1)
-            if stream.read(7) == b"trailer":
+            tag = stream.read(7)
+            if tag == b"trailer":
                 return
             stream.seek(-7, 1)
+            position = stream.tell()
+            if position == previous_position:
+                raise PdfReadError(f"Xref parsing stuck at position {position}: {tag!r}")
+            previous_position = position
 
     def _read_entry(
         self, number: int, recovered: dict[int, tuple[int, int]] | None
@@ -330,6 +389,8 @@ class XrefScan:
         while line[0] in b"\r\n":
             stream.seek(-19, 1)
             line = stream.read(20)
+            if len(line) != XREF_ENTRY_SIZE:
+                raise PdfReadError("Unexpected EOF in Xref table.")
         # A single line end with no space before it bleeds into the next entry.
         if line[-1] in b"0123456789t":
             stream.seek(-1, 1)
@@ -427,6 +488,12 @@ class XrefScan:
         pairs = self._sanitized_pairs(
             dictionary.get("/Index", [0, dictionary["/Size"]]), widths, len(data)
         )
+        self.xref_stream_entries += sum(pairs[1::2])
+        if self.xref_stream_entries > self.xref_stream_maximum_entries:
+            raise LimitReachedError(
+                f"Maximum XRef stream entry limit reached: "
+                f"{self.xref_stream_entries} > {self.xref_stream_maximum_entries}."
+            )
         self._read_subsections(pairs, widths, data)
         return dictionary
 
@@ -444,6 +511,11 @@ class XrefScan:
         for index, value in enumerate(pairs):
             count = int(value)
             if index % 2:
+                if count < 0:
+                    if self.strict:
+                        raise PdfStreamError(f"Negative XRef count {count}.")
+                    logger.warning("Negative XRef count %d, using 0.", count)
+                    count = 0
                 if total + count > maximum:
                     if self.strict:
                         raise LimitReachedError(
