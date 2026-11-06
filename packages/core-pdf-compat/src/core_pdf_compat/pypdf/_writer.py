@@ -52,6 +52,9 @@ from ._text import (
     extract_form_text,
     extract_layout_text,
     extract_legacy_text,
+    font_programs_quiet,
+    irregular_contents,
+    irregular_dictionaries_reported,
 )
 from ._writer_edit import EditWriter
 from ._writer_forms import FormWriter
@@ -315,23 +318,26 @@ class PageObject(DictionaryObject):
         if is_null_or_none(self.get_resolved("/Contents")) and not fonts:
             return ""  # Without contents, only reading a font can still fail.
         pdf, source = self._text_source()
-        if extraction_mode == "layout":
-            return extract_layout_text(
-                source,
-                pdf.text_caches,
-                space_vertically=kwargs.get("layout_mode_space_vertically", True),
-                scale_weight=kwargs.get("layout_mode_scale_weight", 1.25),
-                strip_rotated=kwargs.get("layout_mode_strip_rotated", True),
-                font_height_weight=kwargs.get("layout_mode_font_height_weight", 1),
+        with irregular_dictionaries_reported(pdf), font_programs_quiet():
+            data = self._get_contents_as_bytes() if irregular_contents(self, pdf, source) else None
+            if extraction_mode == "layout":
+                return extract_layout_text(
+                    source,
+                    pdf.text_caches,
+                    data,
+                    space_vertically=kwargs.get("layout_mode_space_vertically", True),
+                    scale_weight=kwargs.get("layout_mode_scale_weight", 1.25),
+                    strip_rotated=kwargs.get("layout_mode_strip_rotated", True),
+                    font_height_weight=kwargs.get("layout_mode_font_height_weight", 1),
+                )
+            options = TextOptions(
+                orientations,
+                visitor_operand_before,
+                visitor_operand_after,
+                visitor_text,
+                pdf,
             )
-        options = TextOptions(
-            orientations,
-            visitor_operand_before,
-            visitor_operand_after,
-            visitor_text,
-            pdf,
-        )
-        return extract_legacy_text(source, pdf.text_caches, options)
+            return extract_legacy_text(source, pdf.text_caches, options, data)
 
     def _text_source(self) -> tuple[Any, Any]:
         """The reader and core-pdf page to extract from."""

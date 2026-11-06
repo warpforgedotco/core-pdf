@@ -128,6 +128,7 @@ class PdfLexer(lexer.PdfLexer):
         "scanner",
         "scanner_rules",
         "copied_data",
+        "on_irregular_dictionary",
     )
 
     def __init__(
@@ -143,6 +144,9 @@ class PdfLexer(lexer.PdfLexer):
         self.scanner: ObjectScanner | None = None
         self.scanner_rules: LexicalRules | None = None
         self.copied_data: bytes | None = None
+        # Told when a dictionary repeats a key or needs recovery: what a reader with other
+        # rules may read differently, or warn about.
+        self.on_irregular_dictionary: Callable[[PdfLexer], None] | None = None
         super().__init__(
             data,
             reference_resolver=reference_resolver,
@@ -296,7 +300,11 @@ class PdfLexer(lexer.PdfLexer):
         return index + 3
 
     def handle_duplicate_dictionary_key(self, key: PdfName) -> None:
-        pass
+        self.note_irregular_dictionary()
+
+    def note_irregular_dictionary(self) -> None:
+        if self.on_irregular_dictionary is not None:
+            self.on_irregular_dictionary(self)
 
     def dictionary_end_length(self, pos: int) -> int:
         length = super().dictionary_end_length(pos)
@@ -309,6 +317,7 @@ class PdfLexer(lexer.PdfLexer):
     def handle_dictionary_key_error(self) -> bool:
         if not self.mode.dictionaries:
             return False
+        self.note_irregular_dictionary()
         data = self.raw_data
         pos = self.pos
         end = min(self.data_len, pos + 256)
@@ -329,6 +338,7 @@ class PdfLexer(lexer.PdfLexer):
         self.pos = value_start
         if not self.mode.dictionaries:
             return False
+        self.note_irregular_dictionary()
         data = self.raw_data
         pos = value_start
         end = min(self.data_len, pos + 512)

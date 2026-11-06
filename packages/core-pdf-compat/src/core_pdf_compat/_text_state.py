@@ -44,9 +44,6 @@ def predefined_encoding_codec(name: str) -> str | None:
     return codec
 
 
-type LineSpan = tuple[int, float, float]
-
-
 def number_operand(operands: Sequence[object], index: int, default: float) -> float:
     if index < len(operands):
         value = operands[index]
@@ -91,14 +88,10 @@ def flush_text(output_parts: list[str], text: str, output_last: str) -> tuple[st
     return text, output_last
 
 
-# pypdf's neutral characters keep the current insertion order. Unlike core's,
-# they include the Arabic-Indic and Extended Arabic-Indic digits, which pypdf
-# no longer reverses (py-pdf/pypdf#4077).
+# pypdf's neutral characters, which keep the current insertion order.
 NEUTRAL_CHARACTER_RANGES = (
     ("\x00", "\x2f"),
     ("\x3a", "\x40"),
-    ("\u0660", "\u066d"),
-    ("\u06f0", "\u06f9"),
     ("\u2000", "\u206f"),
     ("\u20a0", "\u21ff"),
 )
@@ -125,7 +118,6 @@ def positioned_text(
     output_parts: list[str],
     text: str,
     output_last: str,
-    line_span: LineSpan | None,
     *,
     previous_text_matrix: Sequence[float],
     previous_current_matrix: Sequence[float],
@@ -135,41 +127,28 @@ def positioned_text(
     font_size: float,
     space_width: float,
     string_width: float,
-) -> tuple[str, str, LineSpan]:
+) -> tuple[str, str]:
+    """pypdf's crlf_space_check: a newline for a move across lines, a space for a gap."""
     trailing = text[-1:] or output_last[-1:]
     previous = multiply_affine(previous_text_matrix, previous_current_matrix)
     current = multiply_affine(text_matrix, current_matrix)
     delta_x = current[4] - previous[4]
     delta_y = current[5] - previous[5]
-    # The deltas are in the space of text matrix x CTM, so the scales they are
-    # compared against come from the same combined matrices.
-    previous_scale_x = math.hypot(previous[0], previous[1])
-    previous_scale_y = math.hypot(previous[2], previous[3])
-    current_scale_y = math.hypot(current[2], current[3])
+    # pypdf compares the deltas with scales of the text matrices alone.
+    previous_scale_x = math.hypot(previous_text_matrix[0], previous_text_matrix[1])
+    previous_scale_y = math.hypot(previous_text_matrix[2], previous_text_matrix[3])
+    current_scale_y = math.hypot(text_matrix[2], text_matrix[3])
     horizontal = orientation(current) in (0, 180)
     moved_height, moved_width = (delta_y, delta_x) if horizontal else (delta_x, delta_y)
-    # The baselines already on the current line form a span; a fragment whose
-    # baseline falls inside it (a row label centered between the two lines of
-    # a wrapped cell) continues the line instead of breaking it.
-    axis_index = 5 if horizontal else 4
-    axis = current[axis_index]
-    if line_span is None or line_span[0] != axis_index:
-        distance = abs(moved_height)
-    else:
-        lower, upper = line_span[1], line_span[2]
-        distance = 0.0 if lower <= axis <= upper else min(abs(axis - lower), abs(axis - upper))
-    if distance > 0.8 * min(line_height * previous_scale_y, font_size * current_scale_y):
+    if abs(moved_height) > 0.8 * min(line_height * previous_scale_y, font_size * current_scale_y):
         if trailing not in ("", "\n"):
             output_parts.append(text + "\n")
             text, output_last = "", "\n"
-        return text, output_last, (axis_index, axis, axis)
-    if moved_width >= (
+    elif moved_width >= (
         font_size * space_width / 1000.0 + string_width
     ) * previous_scale_x and trailing not in ("", " "):
         text += " "
-    if trailing in ("", "\n") or line_span is None or line_span[0] != axis_index:
-        return text, output_last, (axis_index, axis, axis)
-    return text, output_last, (axis_index, min(line_span[1], axis), max(line_span[2], axis))
+    return text, output_last
 
 
 def ensure_line_break(output_parts: list[str], output_last: str) -> str:
@@ -209,7 +188,6 @@ class TextMachine[FontT]:
         self.tm = list(IDENTITY_MATRIX)
         self.previous_cm = self.cm.copy()
         self.previous_tm = self.tm.copy()
-        self.line_span: LineSpan | None = None
         self.stack: list[tuple[list[float], FontT | None, float, float]] = []
         self.text = ""
         self.output_parts: list[str] = []
@@ -222,18 +200,14 @@ class TextMachine[FontT]:
         self.text, self.output_last = flush_text(self.output_parts, self.text, self.output_last)
 
     def add_directional(self, value: str) -> None:
-        self.text, self.rtl, completed = append_directional_text(self.text, self.rtl, value)
-        # pypdf moves the run a direction change completed straight to the output.
-        if completed:
-            self.output_parts.append(completed)
-            self.output_last = completed[-1]
+        # pypdf drops the run a direction change completes; only a visitor sees it.
+        self.text, self.rtl, _ = append_directional_text(self.text, self.rtl, value)
 
     def positioned(self, string_width: float) -> None:
-        self.text, self.output_last, self.line_span = positioned_text(
+        self.text, self.output_last = positioned_text(
             self.output_parts,
             self.text,
             self.output_last,
-            self.line_span,
             previous_text_matrix=self.previous_tm,
             previous_current_matrix=self.previous_cm,
             text_matrix=self.tm,
@@ -272,9 +246,10 @@ class TextMachine[FontT]:
                     else list(IDENTITY_MATRIX)
                 )
             case "TL":
-                # The leading is in unscaled text space units; T* applies the
-                # text matrix to it (PDF 32000-1:2008, 9.3.5).
-                self.leading = number_operand(operands, 0, 0.0)
+                # pypdf scales the leading by the font size and the text matrix when it is
+                # set, and T* applies the text matrix to it again.
+                scale_x = math.hypot(self.tm[0], self.tm[2])
+                self.leading = number_operand(operands, 0, 0.0) * self.font_size * scale_x
             case _:
                 return False
         return True

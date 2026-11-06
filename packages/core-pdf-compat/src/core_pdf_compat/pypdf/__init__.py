@@ -349,14 +349,22 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 self._check_stream_length(resolved, entry)
                 resolved = self._as_pypdf_reads(resolved, entry, number, generation)
             in_object_stream = getattr(entry, "object_stream", None) is not None
-            if not in_object_stream and self._has_pypdf_only_value(entry):
+            if not in_object_stream and (
+                self._has_pypdf_only_value(entry)
+                or self._has_irregular_dictionary(number, generation)
+            ):
                 found = self._read_with_pypdf_rules(entry)
                 return self._decrypted_as_pypdf(found, number, generation)
             if source.security_handler is not None:
                 resolved = self._with_signatures_decrypted(resolved, number, generation)
             if in_object_stream:
-                # In an object stream, read as core reads it: the stream's own bytes are not
-                # at hand here for pypdf's parser.
+                if self._has_irregular_dictionary(number, generation):
+                    found = self._read_compressed_with_pypdf_rules(
+                        cast(int, entry.object_stream), number
+                    )
+                    if found is not None:
+                        return found
+                # Otherwise read as core reads it.
                 return to_generic(resolved, self)
             self._bare_keywords_raise = True
             try:
@@ -492,6 +500,31 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return data.find(b"\\", offset, stop) >= 0 and (
             PYPDF_ONLY_ESCAPE.search(data, offset, stop) is not None
         )
+
+    def _has_irregular_dictionary(self, number: int, generation: int) -> bool:
+        """Whether core noted a repeated key in the object's dictionaries, or recovered a
+        broken entry. pypdf's parser warns there and may read other values (the first of a
+        repeated key, for one), so such an object is read as pypdf reads it.
+        """
+        duplicates: set[tuple[int, int]] = getattr(
+            cast(Any, self._pdf).resolver, "irregular_dictionaries", set()
+        )
+        return bool(duplicates) and (number, generation) in duplicates
+
+    def _read_compressed_with_pypdf_rules(self, stream_number: int, number: int) -> Any:
+        """An object of an object stream read by pypdf's parser, from the stream's data as
+        pypdf decodes it, so its messages give the positions pypdf gives.
+        """
+        container = cast(Any, self._pdf).resolver.get_object_stream(stream_number)
+        offset = None if container is None else container.index.get(number)
+        object_stream = self.get_object(stream_number)
+        if offset is None or not isinstance(object_stream, StreamObject):
+            return None
+        stream = BytesIO(object_stream.get_data())
+        stream.seek(int(object_stream["/First"]) + offset)
+        read_non_whitespace(stream)
+        stream.seek(-1, 1)
+        return read_object(stream, self)
 
     def _repaired_object(self, number: int, generation: int, error: Exception | None) -> Any:
         """The object as pypdf's get_object reads it, when core cannot parse the one at its

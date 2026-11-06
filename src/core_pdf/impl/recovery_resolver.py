@@ -35,10 +35,13 @@ LEXER_POOL_LIMIT = 8
 
 
 class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
-    __slots__ = ("lexer_pool", "parsed_objects", "parsed_rules")
+    __slots__ = ("irregular_dictionaries", "lexer_pool", "parsed_objects", "parsed_rules")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.lexer_pool: list[PdfLexer] = []
+        # The indirect objects whose dictionaries repeat a key or needed recovery, as their
+        # lexers note them.
+        self.irregular_dictionaries: set[tuple[int, int]] = set()
         self.parsed_objects: dict[int, object] = {}
         self.parsed_rules: LexicalRules | None = None
         super().__init__(*args, **kwargs)
@@ -60,7 +63,15 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
         return entry
 
     def create_object_stream(self, stream: PdfStream) -> PdfObjectStream:
-        return PdfObjectStream(stream, semantic_context=self.semantic_context)
+        return PdfObjectStream(
+            stream,
+            semantic_context=self.semantic_context,
+            irregular_dictionaries=self.irregular_dictionaries,
+        )
+
+    def note_irregular_dictionary(self, lexer: PdfLexer) -> None:
+        if lexer.current_obj_num is not None:
+            self.irregular_dictionaries.add((lexer.current_obj_num, lexer.current_gen_num or 0))
 
     def load_indirect_object(
         self,
@@ -107,12 +118,14 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
         with self.lock:
             lexer = pool.pop() if pool else None
         if lexer is None:
-            return PdfLexer(
+            lexer = PdfLexer(
                 self.data,
                 reference_resolver=self.resolve,
                 decipher=self.decipher,
                 semantic_context=self.semantic_context,
             )
+            lexer.on_irregular_dictionary = self.note_irregular_dictionary
+            return lexer
         lexer.reference_resolver = self.resolve
         lexer.decipher = self.decipher
         if lexer.semantic_context is not self.semantic_context:
