@@ -23,6 +23,7 @@ from core_pdf.impl.document_editing import (
     serialize_body,
 )
 from core_pdf.impl.types import PdfReference, PdfString
+from core_pdf_spec.s_07_security.output import describe_encryption
 from core_pdf_spec.s_07_syntax.serialize import ObjectLayout, serialize_object
 
 from ._doc_common import DocumentInformation, PdfDocCommon, _VirtualList, highest_header
@@ -1436,7 +1437,11 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         self._report_save()
         if isinstance(data, SavedPdf):
             return data
-        return SavedPdf(data, incremental=self.incremental, encryption=None, xref_stream=False)
+        handler = None if self._encryption is None else self._encryption.handler
+        encryption = None if handler is None else describe_encryption(handler.config)
+        return SavedPdf(
+            data, incremental=self.incremental, encryption=encryption, xref_stream=False
+        )
 
     def _repr_mimebundle_(
         self, include: Iterable[str] | None = None, exclude: Iterable[str] | None = None
