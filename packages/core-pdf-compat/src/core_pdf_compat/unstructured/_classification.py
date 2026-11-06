@@ -9,29 +9,28 @@ from typing import Any
 
 BULLET_CHARS = "\x95•‣⁃ㅤ⁌⁍∙○●◘◦☙❥❧⦾⦿-–\uf0b7*·"
 
-# Since unstructured 0.27, "-" and "–" are bullets only when whitespace or the end of the
-# text follows them, so a leading minus sign or hyphenated value is not a list item.
-AMBIGUOUS_BULLET_CHARS = "-–"
-
-UNAMBIGUOUS_BULLET_CHARS = "".join(
-    char for char in BULLET_CHARS if char not in AMBIGUOUS_BULLET_CHARS
-)
-
-BULLET = re.compile(
-    rf"^\s*(?:[{re.escape(UNAMBIGUOUS_BULLET_CHARS)}]|[{AMBIGUOUS_BULLET_CHARS}](?=\s|$))"
-    rf"(?![{re.escape(BULLET_CHARS)}])"
-)
+# The patterns below are unstructured 0.25's, from unstructured.nlp.patterns (Apache-2.0).
+# unstructured 0.27 takes "-" and "–" as bullets only before whitespace, and wants an email
+# address to be the whole text; 0.25 does neither.
+BULLET = re.compile(rf"^\s*[{re.escape(BULLET_CHARS)}](?![{re.escape(BULLET_CHARS)}])")
 
 NUMBERED = re.compile(r"^\s*\d+(?:\.|\))\s+.+")
 
 EMAIL = re.compile(r"[a-z0-9.\-+_]+@[a-z0-9.\-+_]+\.[a-z]+")
 
+# Kept verbatim, braces and all: they make "{Alabama", "Wyoming}", "{AL" and "WY}" the
+# alternatives, so those four match only with a brace.
 ADDRESS = re.compile(
-    r"^(?:[A-Z][a-z.\-]{1,15} ?){1,5},\s?"
-    r"(?:AL|AK|AS|AZ|AR|CA|CO|CT|DE|DC|FM|FL|GA|GU|HI|ID|IL|IN|IA|KS|KY|LA|ME|MH|"
-    r"MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|MP|OH|OK|OR|PW|PA|PR|RI|SC|SD|"
-    r"TN|TX|UT|VT|VI|VA|WA|WV|WI|WY)(?:, |\s)?\d{5}(?:-\d{4})?\b",
-    re.IGNORECASE,
+    r"(?i)\b(?:[A-Z][a-z.-]{1,15}[ ]?){1,5},\s?"
+    r"(?:{Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida"
+    r"|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland"
+    r"|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|"
+    r"New[ ]Hampshire|New[ ]Jersey|New[ ]Mexico|New[ ]York|North[ ]Carolina|North[ ]Dakota"
+    r"|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode[ ]Island|South[ ]Carolina|South[ ]Dakota"
+    r"|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West[ ]Virginia|Wisconsin|Wyoming}"
+    r"|{AL|AK|AS|AZ|AR|CA|CO|CT|DE|DC|FM|FL|GA|GU|HI|ID|IL|IN|IA|KS|KY|LA|ME|MH|MD|MA|MI|MN"
+    r"|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|MP|OH|OK|OR|PW|PA|PR|RI|SC|SD|TN|TX|UT|VT|VI|VA|"
+    r"WA|WV|WI|WY})(, |\s)?(?:\b\d{5}(?:-\d{4})?\b)"
 )
 
 POS_VERB_TAGS = frozenset({"VB", "VBG", "VBD", "VBN", "VBP", "VBZ"})
@@ -60,8 +59,8 @@ from ._elements import (  # noqa: E402
     Header,
     ListItem,
     NarrativeText,
+    Text,
     Title,
-    UncategorizedText,
 )
 
 
@@ -141,15 +140,18 @@ def simple_element_class(
         return Header
     if height_percentage > 0.93:
         return Footer
-    if BULLET.match(text) or NUMBERED.match(text):
+    # In unstructured's order: bullet, email address, address, then numbered list.
+    if BULLET.match(text):
         return ListItem
-    # unstructured 0.27 requires the whole text to be one address.
-    if EMAIL.fullmatch(text.strip()):
+    stripped = text.strip()
+    if EMAIL.match(stripped):
         return EmailAddress
-    if ADDRESS.search(text):
+    if ADDRESS.match(stripped):
         return Address
+    if NUMBERED.match(text):
+        return ListItem
     if not has_classifiable_text(text):
-        return UncategorizedText
+        return Text
     return None
 
 
@@ -165,7 +167,7 @@ def text_element_class(
     sentences: tuple[str, ...],
 ) -> type[Element]:
     if not has_classifiable_text(text):
-        return UncategorizedText
+        return Text
     long_sentence_count = sentence_count(sentences, 3)
     if long_sentence_count > 1:
         return NarrativeText
@@ -181,4 +183,4 @@ def text_element_class(
         and not (text.isupper() and re.search(r"[^\w\s]$", text))
     ):
         return Title
-    return UncategorizedText
+    return Text
