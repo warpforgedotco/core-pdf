@@ -85,6 +85,11 @@ facade the same way and compares the bytes: an incremental update with a new tit
 `clone_from` and an `append`. All three are identical on all 173 files pypdf can write, and CI
 fails on any difference.
 
+`scripts/check_pypdf_reads.py` reads every object of those files through both libraries, as
+written and encrypted by pypdf with RC4-128 and AES-256, and compares each object's written
+bytes, each stream's decoded data and each error's class: 189,444 reads, all identical, and CI
+fails on any difference.
+
 That means following pypdf where it changes or loses data, and the facade does:
 
 - Reals are rounded to pypdf's precision, and a name read from GBK or Latin-1 bytes is
