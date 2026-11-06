@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Collection, Iterable, Iterator
 from functools import partial
 from typing import Any, cast
 
@@ -11,7 +11,14 @@ from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner
 from core_pdf.impl.types import PdfByteBuffer, PdfReference
-from core_pdf_spec.s_07_syntax.xref import iter_xref_revisions, key_for, merge_xref_sections
+from core_pdf_spec.s_07_syntax.xref import (
+    PdfXRefEntry,
+    XRefRevision,
+    XRefTable,
+    iter_xref_revisions,
+    key_for,
+    merge_xref_sections,
+)
 
 from .._shared import parse_indirect_object_at
 
@@ -46,9 +53,31 @@ def last_startxref_offset(data: PdfByteBuffer) -> int | None:
     return None
 
 
+def fallback_xref_entries(data: PdfByteBuffer) -> XRefTable:
+    """Return the objects pdfminer's fallback xref finds: those before the first trailer."""
+    trailer = re.search(rb"(?m)^trailer\b", data)
+    end = trailer.start() if trailer is not None else len(data)
+    entries: XRefTable = {}
+    for match in LINE_START_OBJECT_HEADER.finditer(data, 0, end):
+        object_number = int(match.group(1))
+        generation_number = int(match.group(2))
+        if generation_number <= 65535:
+            entries[key_for(object_number, generation_number)] = PdfXRefEntry(
+                match.start(), generation_number
+            )
+    return entries
+
+
 def pdfminer_resolvable_pages(  # noqa: C901
     document: PdfDocument,
+    retyped: Collection[int] = frozenset(),
 ) -> Iterator[tuple[int, PdfPage]]:
+    """Yield the index and page of each page pdfminer's PDFPage.create_pages finds.
+
+    retyped holds the objects whose /Type the caller has turned into something other than
+    a name, as pdfplumber's metadata decoding does; pdfminer finds no page or page tree
+    node there, and the indexes of the pages it does find stay those of the native list.
+    """
     data = document.raw_data
 
     def fallback_pages(object_keys: Iterable[tuple[int, int]]) -> Iterator[tuple[int, PdfPage]]:
@@ -84,7 +113,8 @@ def pdfminer_resolvable_pages(  # noqa: C901
                 page = document.pages[found]
             except IndexError as exc:
                 raise PdfError("fallback page is not resolvable") from exc
-            yield found, page
+            if object_number not in retyped:
+                yield found, page
             found += 1
 
     def fallback_projection() -> Iterator[tuple[int, PdfPage]]:
@@ -235,17 +265,28 @@ def pdfminer_resolvable_pages(  # noqa: C901
         else:
             yield from fallback_projection()
             return
+    read_section = partial(
+        StrictXRefScanner.recover_section_at,
+        document.raw_data,
+    )
+    revisions: list[XRefRevision] = []
     try:
-        read_section = partial(
-            StrictXRefScanner.recover_section_at,
-            document.raw_data,
-        )
-        revisions = list(iter_xref_revisions(section_start, read_section))
-        strict_xref = merge_xref_sections(revision.entries for revision in revisions)
+        # extend keeps the revisions read before one that fails.
+        revisions.extend(iter_xref_revisions(section_start, read_section))
         strict_trailer = revisions[0].trailer
     except Exception:
-        yield from fallback_projection()
-        return
+        root_trailer = next(
+            (revision.trailer for revision in revisions if "Root" in revision.trailer), None
+        )
+        if root_trailer is None:
+            yield from fallback_projection()
+            return
+        # pdfminer keeps the sections it read before the broken one, takes the catalog
+        # from the first of their trailers with a /Root, and looks objects up in those
+        # sections first, then in its fallback scan of the objects before the first trailer.
+        strict_trailer = root_trailer
+        revisions.append(XRefRevision(0, fallback_xref_entries(data), {}))
+    strict_xref = merge_xref_sections(revision.entries for revision in revisions)
 
     xref_sections: list[dict[int, Any]] = []
     section_seen: set[int] = set()
@@ -359,7 +400,9 @@ def pdfminer_resolvable_pages(  # noqa: C901
     page_index = 0
     visited: set[tuple[str, int, int] | tuple[str, int]] = set()
 
-    def traverse(value: object, depth: int = 0) -> Iterator[tuple[int, PdfPage]]:
+    def traverse(
+        value: object, depth: int = 0, hidden: bool = False
+    ) -> Iterator[tuple[int, PdfPage]]:
         nonlocal page_index
         if depth > 100:
             return
@@ -377,6 +420,9 @@ def pdfminer_resolvable_pages(  # noqa: C901
         )
         duplicate = marker in visited
         visited.add(marker)
+        # A retyped node is no page tree node to pdfminer, but the native list still
+        # counts the pages under it.
+        hidden = hidden or (isinstance(value, PdfReference) and value.object_number in retyped)
         node_type = recover_pdf_name(node.get("Type"))
         if node_type == "Pages":
             if not valid_reference or duplicate:
@@ -385,13 +431,13 @@ def pdfminer_resolvable_pages(  # noqa: C901
             if kids is None:
                 return
             for kid in kids:
-                yield from traverse(kid, depth + 1)
+                yield from traverse(kid, depth + 1, hidden)
             return
         if node_type != "Page":
             return
         current_index = page_index
         page_index += 1
-        if valid_reference and not duplicate and current_index < len(document.pages):
+        if valid_reference and not duplicate and not hidden and current_index < len(document.pages):
             yield current_index, document.pages[current_index]
 
     declared_pages = tuple(traverse(pages_reference))

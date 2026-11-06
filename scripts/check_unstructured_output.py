@@ -47,13 +47,9 @@ PATTERNS = (
 MAX_PAGES = 30
 # Six digits hide float noise such as 271.39500000000004 against 271.395.
 COORDINATE_DIGITS = 6
-# Each of these comes from the pdfminer facade's layout, which hands the unstructured facade
-# different text boxes or pages than pdfminer.six 20260107 hands unstructured; the
-# unstructured facade turns the boxes it gets into the same elements.
-DEPARTURES: dict[str, str] = {
-    "unreadablemetadata.pdf": "the pdfminer facade finds no page in the broken page tree, "
-    "where pdfminer finds one",
-}
+# Each of these would come from the pdfminer facade's layout, handing the unstructured facade
+# different text boxes or pages than pdfminer.six 20260107 hands unstructured; none does now.
+DEPARTURES: dict[str, str] = {}
 
 
 def page_count(path: str) -> int:

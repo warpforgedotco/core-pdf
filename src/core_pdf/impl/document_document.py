@@ -97,6 +97,8 @@ from core_pdf_spec.s_07_syntax.types import (
 )
 from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
+    XRefRevision,
+    XRefSectionReader,
     iter_xref_revisions,
     key_for,
     merge_xref_sections,
@@ -1462,7 +1464,7 @@ class PdfDocument(Generic[PageT]):
                     data,
                     semantic_context=self.xref_context,
                 )
-                revisions = list(iter_xref_revisions(start, read_section))
+                revisions = self.read_xref_revisions(start, read_section, brute_force)
                 self.xref = merge_xref_sections(revision.entries for revision in revisions)
                 self.trailer_dict = revisions[0].trailer
                 self.repair_stale_xref_offsets(brute_force)
@@ -1491,6 +1493,28 @@ class PdfDocument(Generic[PageT]):
         catalog_ref = self.infer_catalog_root()
         self.trailer_dict = {"Root": catalog_ref} if catalog_ref is not None else {}
         self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
+
+    def read_xref_revisions(
+        self,
+        start: int,
+        read_section: XRefSectionReader,
+        brute_force: Callable[[], dict[int, PdfXRefEntry]],
+    ) -> list[XRefRevision]:
+        revisions: list[XRefRevision] = []
+        try:
+            # extend keeps the revisions read before one that fails.
+            revisions.extend(iter_xref_revisions(start, read_section))
+        except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
+            # Recovery that stops at the first trailer keeps the sections read before a
+            # broken /Prev, which name the catalog, and finds the other objects by scanning.
+            if self.recovery_scan_all_revisions or not any(
+                "Root" in revision.trailer for revision in revisions
+            ):
+                raise
+            self.xref_was_recovered = True
+            self.xref_recovery_reason = str(error)
+            revisions.append(XRefRevision(0, brute_force(), {}))
+        return revisions
 
     def repair_stale_xref_offsets(
         self, brute_force: Callable[[], dict[int, PdfXRefEntry]] | None = None
