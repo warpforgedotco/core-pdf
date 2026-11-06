@@ -53,19 +53,7 @@ PATTERNS = (
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
 EXTRA_INFO = {"source": "check", "file_name": "renamed.pdf"}
-# The facade's PDFReader calls the pypdf facade's page.extract_text() as llama_index calls
-# pypdf's, so these differ exactly where that text does; the fix belongs to the pypdf facade.
-PYPDF_TEXT = {
-    "issue-1059-cmap-decode.pdf": "pypdf keeps a /BOGUS CMap operand as text; the facade drops it",
-    "hello_structure.pdf": "pypdf maps quoteright to an ASCII apostrophe; the facade to U+2019",
-    "senate-expenditures.pdf": "pypdf decodes this font's codes differently from the facade",
-    "GeoTopo-komprimiert.pdf": "pypdf decodes the math fonts' codes as ASCII; the facade by glyph",
-}
-DEPARTURES: dict[tuple[str, str], str] = {
-    (mode, name): f"pypdf facade text: {reason}"
-    for name, reason in PYPDF_TEXT.items()
-    for mode in ("pages", "full", "extra")
-}
+DEPARTURES: dict[tuple[str, str], str] = {}
 
 
 def pages(reader: Any, path: Path) -> list[Any]:
