@@ -13,7 +13,8 @@ An encrypted source is reported apart. pypdf writes an incremental update to it 
 encrypting the new objects or carrying /Encrypt, which readers cannot decrypt, so the facade
 does not follow it there.
 
-Only the modes in ENFORCED fail the check. The others are reported until they match.
+Every difference fails the check unless DEPARTURES lists it, with the reason the facade does
+not follow pypdf there. A listed file that matches fails it too, so the list stays true.
 """
 
 import collections
@@ -23,6 +24,7 @@ import logging
 import sys
 import warnings
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pypdf as real  # ty: ignore[unresolved-import]
@@ -36,7 +38,31 @@ PATTERNS = (
     "tests/upstream/pypdf/resources/*.pdf",
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
-ENFORCED = {"incremental"}
+INFO_REFERENCES = (
+    "pypdf copies /Info shallowly and writes its indirect values with the source's numbers, "
+    "which point at nothing in the output, so the metadata is lost"
+)
+NUL_NAME = (
+    "pypdf does not end a name at a NUL byte and reads the next number into it, which breaks "
+    "the colour space"
+)
+DEPARTURES: dict[tuple[str, str], str] = {
+    ("clone", "font-size-test.pdf"): INFO_REFERENCES,
+    ("clone", "cupertino_usd_4-6-16.pdf"): INFO_REFERENCES,
+    ("clone", "nics-background-checks-2015-11.pdf"): INFO_REFERENCES,
+    ("clone", "nics-background-checks-2015-11-rotated.pdf"): INFO_REFERENCES,
+    ("clone", "issue-316-example.pdf"): INFO_REFERENCES,
+    ("clone", "hello_structure.pdf"): (
+        "pypdf drops /K from the structure tree root and a section element"
+    ),
+    ("clone", "AutoCad_Diagram.pdf"): NUL_NAME,
+    ("append", "AutoCad_Diagram.pdf"): NUL_NAME,
+    ("append", "SF424_page2.pdf"): (
+        "pypdf copies a page outside the page tree that a field's widget points at; the "
+        "facade writes null for a page it was not asked to copy, so append(pages=...) never "
+        "carries pages the caller left out"
+    ),
+}
 
 
 def incremental(library: Any, data: bytes) -> bytes:
@@ -101,19 +127,24 @@ def main() -> int:
                 counts[f"{name}: FACADE FAILS"] += 1
                 problems.append(f"{name} {path}: {error!r}"[:200])
                 continue
+            listed = DEPARTURES.get((name, Path(path).name))
             if expected == actual:
                 counts[f"{name}: identical"] += 1
+                if listed is not None:
+                    counts[f"{name}: LISTED BUT IDENTICAL"] += 1
+                    problems.append(f"{name} {path}: listed as a departure but identical")
             elif encrypted:
                 counts[f"{name}: differ, encrypted source"] += 1
+            elif listed is not None:
+                counts[f"{name}: differ, listed departure"] += 1
             else:
-                counts[f"{name}: differ"] += 1
-                if name in ENFORCED or len(problems) < 40:
-                    problems.append(f"{name} {path} {first_difference(expected, actual)}"[:300])
+                counts[f"{name}: DIFFER"] += 1
+                problems.append(f"{name} {path} {first_difference(expected, actual)}"[:300])
     for key, count in sorted(counts.items()):
         print(f"{count:>6}  {key}")
     for problem in problems:
         print(problem)
-    failed = any(counts[f"{name}: differ"] or counts[f"{name}: FACADE FAILS"] for name in ENFORCED)
+    failed = any(key.split(": ", 1)[1].isupper() for key in counts)
     return 1 if failed else 0
 
 

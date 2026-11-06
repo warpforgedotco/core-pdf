@@ -366,23 +366,33 @@ class MergeWriter:
             page = self._get_cloned_page(target[0], pages, reader)
             if page is not None:
                 link = self._link_with_page(page, reader, target)
-                if isinstance(annotation.raw_get("/A"), IndirectObject):
-                    copy = self._clone(annotation, reader, ("/A",))
-                    new_action = self._clone(action, reader, ("/D",))
-                    new_action[NameObject("/D")] = link
-                    copy[NameObject("/A")] = new_action
-                else:
-                    # pypdf leaves /D out at every level, so /A keeps its place in the copy.
-                    kept = DictionaryObject()
-                    for key, item in dict.items(annotation):
-                        if key == "/A":
-                            item = DictionaryObject(
-                                {k: v for k, v in dict.items(action) if k != "/D"}
-                            )
-                        dict.__setitem__(kept, key, item)
-                    copy = self._import(kept, reader)
-                    copy["/A"][NameObject("/D")] = link
-                output.append(self._add_object(copy))
+                output.append(self._copy_go_to(annotation, action, link, reader))
+
+    def _copy_go_to(self, annotation: Any, action: Any, link: Any, reader: Any) -> Any:
+        """A link with a new destination, numbered and ordered as pypdf's clone that leaves
+        out /D at every level: the link first, then its entries in order, its action among
+        them, which gets the new /D last.
+        """
+        copy = DictionaryObject()
+        source = annotation.indirect_reference
+        reference = None
+        if source is not None and source.pdf is reader:
+            reference = self._add_object(copy)
+            self._translation(reader)[source.idnum] = reference.idnum
+        for key, item in dict.items(annotation):
+            if key == "/A":
+                new_action = DictionaryObject()
+                value: Any = new_action
+                if isinstance(item, IndirectObject):
+                    value = self._add_object(new_action)
+                for name, entry in dict.items(action):
+                    if name != "/D":
+                        dict.__setitem__(new_action, name, self._import(entry, reader))
+                new_action[NameObject("/D")] = link
+            else:
+                value = self._import(item, reader)
+            dict.__setitem__(copy, key, value)
+        return reference if reference is not None else self._add_object(copy)
 
     def clean_page(self, page: Any) -> Any:
         """Turn destinations given as names into strings, which name trees require."""
