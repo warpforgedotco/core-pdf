@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, cast
 from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -145,7 +145,8 @@ def summarize(junit: Path) -> dict[str, object]:
             kind = "passed"
         counts[kind] += 1
         if kind in {"failure", "error"} and outcome is not None:
-            failing.append(f"{case.get('classname')}::{case.get('name')}")
+            message = (outcome.get("message") or "").split("\n")[0][:200]
+            failing.append(f"{case.get('classname')}::{case.get('name')}: {message}")
             reasons[(outcome.get("message") or "")[:100]] += 1
     return {"counts": dict(counts), "reasons": reasons.most_common(25), "failing": failing}
 
@@ -189,7 +190,9 @@ def main() -> int:
         ],
         excluded_files=tuple(scope.get("files", ())),
     )
-    if arguments.network:
+    # pypdf's tests that fetch files are in scope unless a marker deselects them.
+    network = arguments.network or (arguments.suite == "pypdf" and "markers" not in scope)
+    if network:
         download_network_files(suite, reference=arguments.reference, environment=environment)
     log = RESULTS / f"{arguments.suite}-{mode}.log"
     with log.open("w") as handle:
@@ -207,6 +210,8 @@ def main() -> int:
     summary = summarize(junit)
     (RESULTS / f"{arguments.suite}-{mode}.json").write_text(json.dumps(summary, indent=2))
     print(f"{arguments.suite} {mode}: {summary['counts']}")
+    for name in cast("list[str]", summary["failing"]):
+        print(f"  failed: {name}")
     return code
 
 

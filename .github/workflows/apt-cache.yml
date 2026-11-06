@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/actions/install-pdf-tools/**"
       - ".github/workflows/apt-cache.yml"
+      - "tests/upstream/pypdf"
   schedule:
     # Weekly, as runner images change about that often and each image has its own key.
     - cron: "17 3 * * 1"
@@ -27,3 +28,32 @@ jobs:
 
       - name: Install Ghostscript, jbig2dec and Poppler
         uses: ./.github/actions/install-pdf-tools
+
+  pypdf-files:
+    name: Fill the pypdf test file cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.6"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Restore pypdf's downloaded test files
+        uses: actions/cache@v6
+        with:
+          path: tests/upstream/pypdf/tests/pdf_cache
+          key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml') }}-v1
+          restore-keys: pypdf-test-files-
+
+      - name: Download them through pypdf's own tests
+        # Running the tests on the real pypdf fetches every file they read.
+        run: uv run --locked --all-packages --group test python scripts/run_upstream_suite.py pypdf --reference

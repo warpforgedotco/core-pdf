@@ -27,3 +27,7 @@ To run a reference library's own test suite against its `core_pdf_compat` facade
 To prove a floor package or spec works alone, install it on its own (`uv sync --locked --package <member>`) and run `scripts/check_package_isolation.py <member>`, which checks that the tiers above it are absent. This replaces `.venv`, so run a full `uv sync --all-packages` afterwards.
 
 To validate against the locked dependencies, use `uv run --locked` with the relevant group, such as `uv run --locked --group lint mypy`. Do not use `--locked` while intentionally changing dependencies; update them with `uv add` or `uv remove` first.
+
+## Compiled modules
+
+`core-pdf-cythonized` compiles its Python files with Cython, and a build can leave `.so` files beside them in `packages/core-pdf-cythonized/src/`. Those shadow later edits to the `.py` files. After changing that package, rebuild it with `uv sync --all-packages --reinstall-package core-pdf-cythonized` before testing.

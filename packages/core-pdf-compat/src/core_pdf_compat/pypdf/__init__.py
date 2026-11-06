@@ -50,6 +50,7 @@ from core_pdf_compat.pypdf.errors import (
     FileNotDecryptedError,
     LimitReachedError,
     PdfReadError,
+    PdfStreamError,
     WrongPasswordError,
 )
 from core_pdf_compat.pypdf.generic import (
@@ -331,9 +332,29 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             self.resolved_objects[key] = item
         return self.resolved_objects[key]
 
+    @property
+    def stream(self) -> Any:
+        return self._stream
+
+    @stream.setter
+    def stream(self, value: Any) -> None:
+        # pypdf reads objects from `stream` as they are needed, so a stream set after opening
+        # is what later reads see. Those then follow pypdf's reading over its bytes.
+        self._stream = value
+        if getattr(self, "_data", None) is not None:
+            position = value.tell()
+            value.seek(0)
+            self._data = value.read()
+            value.seek(position)
+            self._stream_replaced = True
+
     def _read_object(self, number: int, generation: int) -> Any:
         source = self._pdf
+        if getattr(self, "_stream_replaced", False):
+            return self._repaired_object(number, generation, PdfReadError("stream replaced"))
         if source is not None and key_for(number, generation) in source.xref:
+            if self.strict:
+                self._check_header_as_pypdf(source.xref[key_for(number, generation)])
             if number in self.xref_objStm:
                 self._check_object_stream(self.xref_objStm[number][0])
             try:
@@ -643,6 +664,8 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 raise LimitReachedError(
                     f"Declared stream length of {declared} exceeds maximum allowed length."
                 )
+            if declared > len(stream.raw_data) and not isinstance(self._stream, BytesIO):
+                self._read_declared_length(entry, declared)
             return
         if declared is None and len(stream.raw_data) >= limit:
             # pypdf reads in chunks up to 8192 bytes, and checks each chunk before searching it.
@@ -655,6 +678,25 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             raise LimitReachedError(
                 f"Read stream length of {read} exceeds maximum allowed length of {limit}."
             )
+
+    def _read_declared_length(self, entry: Any, declared: int) -> None:
+        """Read a too-long /Length from the file handle, as pypdf does.
+
+        pypdf reads a stream by asking its file for /Length bytes. From an open file that
+        allocates the whole length, so a huge one raises MemoryError where memory is limited.
+        A path or bytes are read through BytesIO, which returns only what is there, so pypdf
+        and this reader skip the allocation then.
+        """
+        offset = getattr(entry, "offset", None)
+        keyword = stream_keyword(self._data, offset) if isinstance(offset, int) else None
+        if keyword is None:
+            return
+        position = self._stream.tell()
+        self._stream.seek(keyword.end())
+        try:
+            self._stream.read(declared)
+        finally:
+            self._stream.seek(position)
 
     def _check_object_stream(self, number: int) -> None:
         if number in self._checked_object_streams:
@@ -689,6 +731,16 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         if obj is not None:
             obj.indirect_reference = IndirectObject(idnum, generation, self)
         return obj
+
+    def _check_header_as_pypdf(self, entry: Any) -> None:
+        """In strict mode, read the object header as pypdf does, for its warnings."""
+        offset = getattr(entry, "offset", None)
+        if not isinstance(offset, int) or getattr(entry, "object_stream", None) is not None:
+            return
+        stream = BytesIO(self._data)
+        stream.seek(offset)
+        with contextlib.suppress(ValueError, PdfStreamError):
+            self.read_object_header(stream)
 
     def read_object_header(self, stream: Any) -> tuple[int, int]:
         # pypdf's: white-space before the header is tolerated, and reported when strict.
