@@ -10,7 +10,7 @@ from typing import Any, NoReturn, cast
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfInvalidPermissionsError, PdfUnsupportedError
 from core_pdf.impl.recovery_lexer import PdfLexer as RecoveryLexer
-from core_pdf.impl.types import PdfName, PdfReference
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf import filters
@@ -51,6 +51,7 @@ from core_pdf_compat.pypdf.generic import (
 from core_pdf_compat.pypdf.pagerange import PageRange, parse_filename_page_ranges
 from core_pdf_compat.pypdf.papersizes import PaperSize
 from core_pdf_spec.exceptions import PdfParseError, PdfPasswordError
+from core_pdf_spec.s_07_security.output import is_signature_contents
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import key_for
 
@@ -304,6 +305,8 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             if isinstance(resolved, PdfStream):
                 self._check_stream_length(resolved, entry)
                 resolved = self._as_pypdf_reads(resolved, entry)
+            if source.security_handler is not None:
+                resolved = self._with_signatures_decrypted(resolved, number, generation)
             try:
                 if self._has_pypdf_only_name(entry):
                     raise BareKeywordFound
@@ -349,6 +352,26 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         if found is None or found == bytes(stream.raw_data):
             return stream
         return stream.replace(raw_data=found)
+
+    def _with_signatures_decrypted(self, value: Any, number: int, generation: int) -> Any:
+        """Decrypt a signature's /Contents too, as pypdf does, though PDF leaves it in the clear."""
+        if isinstance(value, PdfStream) or not isinstance(value, (dict, list)):
+            return value
+        if isinstance(value, list):
+            return [self._with_signatures_decrypted(item, number, generation) for item in value]
+        output = {
+            key: self._with_signatures_decrypted(item, number, generation)
+            for key, item in value.items()
+        }
+        for key, item in value.items():
+            if str(getattr(key, "value", key)) == "Contents" and is_signature_contents(value, item):
+                handler = cast(Any, self._pdf).security_handler
+                try:
+                    data = handler.decrypt(number, generation, bytes(item.data))
+                except ValueError:
+                    data = bytes(item.data)
+                output[key] = PdfString(data, is_literal=False)
+        return output
 
     @functools.cached_property
     def _holds_nul(self) -> bool:
