@@ -41,6 +41,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install Ghostscript, jbig2dec and Poppler
+        # pypdf skips its JBIG2 and Ghostscript tests without these tools, and a skipped test
+        # asks for none of its files, so the recorded list would come up short.
+        uses: ./.github/actions/install-pdf-tools
+
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
