@@ -29,7 +29,9 @@ def pins() -> dict[str, tuple[str, set[str]]]:
     """Each pinned package: its version and the suites that pin it."""
     found: dict[str, tuple[str, set[str]]] = {}
     for name, suite in SUITES.items():
-        for requirement in suite.reference:
+        # A suite's first reference package is the library its facade follows; the others,
+        # such as llama_index's pypdf, are whatever that library's latest release accepts.
+        for requirement in suite.reference[:1]:
             match = PIN.match(requirement)
             if match is None:
                 continue
