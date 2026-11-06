@@ -198,7 +198,7 @@ class _Merge:
         self.page = page
         self.source = source
         self.writer = page.writer
-        reference = source.indirect_reference
+        reference = getattr(source, "indirect_reference", None)
         self.owner = getattr(reference, "pdf", None)
 
     def bring(self, value: Any) -> Any:

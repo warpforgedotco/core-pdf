@@ -227,7 +227,7 @@ class MergeWriter:
 
     def _clone(self, value: Any, reader: Any, ignored: tuple[str, ...] = ()) -> Any:
         """A copy of a source dictionary without some keys, with what it refers to."""
-        reference = value.indirect_reference
+        reference = getattr(value, "indirect_reference", None)
         if not ignored and reference is not None and reference.pdf is reader:
             # Recorded as a copy, so that /Fields can find a field that came with a page.
             return self._import(reference, reader).get_object()
@@ -443,7 +443,7 @@ class MergeWriter:
         them, which gets the new /D last.
         """
         copy = DictionaryObject()
-        source = annotation.indirect_reference
+        source = getattr(annotation, "indirect_reference", None)
         reference = None
         if source is not None and source.pdf is reader:
             reference = self._add_object(copy)

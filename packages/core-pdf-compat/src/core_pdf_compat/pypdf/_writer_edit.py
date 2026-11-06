@@ -439,9 +439,10 @@ class EditWriter:
         if remove_unreferenced:
             roots = [self._root_object, self._info, self._ID]
             referenced.update(
-                item.indirect_reference.idnum
+                reference.idnum
                 for item in roots
-                if item is not None and item.indirect_reference is not None
+                if item is not None
+                and (reference := getattr(item, "indirect_reference", None)) is not None
             )
             for index in range(len(self._objects)):
                 if index + 1 not in referenced:

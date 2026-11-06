@@ -286,8 +286,8 @@ class PdfDocCommon:
             return None
         if not isinstance(preferences, ViewerPreferences):
             preferences = ViewerPreferences(preferences)
-            if preferences.indirect_reference is not None:
-                self._replace_object(preferences.indirect_reference, preferences)
+            if (reference := getattr(preferences, "indirect_reference", None)) is not None:
+                self._replace_object(reference, preferences)
             else:
                 self.root_object[NameObject("/ViewerPreferences")] = preferences
         return preferences
@@ -541,7 +541,8 @@ class PdfDocCommon:
             item[NameObject("/Count")] = node["/Count"]
         item[NameObject("/%is_open%")] = BooleanObject(node.get_resolved("/Count", 0) >= 0)
         item.node = node
-        item.indirect_reference = node.indirect_reference
+        if hasattr(node, "indirect_reference"):
+            item.indirect_reference = node.indirect_reference
         return item
 
     # Form fields.

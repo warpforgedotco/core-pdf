@@ -317,7 +317,7 @@ class ContentStream(DecodedStreamObject):
         force_duplicate: bool = False,
         ignore_fields: Sequence[str | int] | None = (),
     ) -> ContentStream:
-        reference = self.indirect_reference
+        reference = getattr(self, "indirect_reference", None)
         if not force_duplicate and reference is not None and reference.pdf == pdf_dest:
             return self
         copy = self._reference_clone(self.__class__(None, None), pdf_dest, force_duplicate)

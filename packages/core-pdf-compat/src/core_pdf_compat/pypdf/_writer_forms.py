@@ -688,7 +688,7 @@ class FormWriter:
             annotation = item.get_object()
             if annotation.get_resolved("/Subtype", "") != "/Widget" or "/FT" not in annotation:
                 continue
-            if annotation.indirect_reference in fields:
+            if getattr(annotation, "indirect_reference", None) in fields:
                 continue
             if not isinstance(item, IndirectObject):
                 annotations[index] = self._add_object(annotation)

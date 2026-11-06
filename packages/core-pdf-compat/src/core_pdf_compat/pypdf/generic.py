@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 # under its BSD-style license.
 class PdfObject:
     hash_func: Callable[..., Any] = hashlib.sha1
-    indirect_reference: IndirectObject | None = None
+    # Declared, not defaulted: as in pypdf, a direct object has no indirect_reference.
+    indirect_reference: IndirectObject | None
 
     def hash_bin(self) -> int:
         raise NotImplementedError(
@@ -67,7 +68,7 @@ class PdfObject:
 
     def _reference_clone(self, clone: Any, pdf_dest: Any, force_duplicate: bool = False) -> Any:
         """Number a clone in pdf_dest, if this object has been given a number at all."""
-        target = clone.indirect_reference
+        target = getattr(clone, "indirect_reference", None)
         if not force_duplicate and target is not None and target.pdf == pdf_dest:
             return clone
         # Read directly, without a call per element, for the many direct objects of large
@@ -449,7 +450,7 @@ class ArrayObject(list[Any], PdfObject):
 
 
 def _in_destination(value: Any, pdf_dest: Any, force_duplicate: bool) -> bool:
-    reference = value.indirect_reference
+    reference = getattr(value, "indirect_reference", None)
     return not force_duplicate and reference is not None and reference.pdf == pdf_dest
 
 
@@ -727,7 +728,10 @@ class StreamObject(DictionaryObject):
         from core_pdf_compat.pypdf._images import xobject_image
 
         if self.get("/Subtype", "") != "/Image":
-            logger.warning("%s does not seem to be an Image", self.indirect_reference)
+            if hasattr(self, "indirect_reference"):
+                logger.warning("%s does not seem to be an Image", self.indirect_reference)
+            else:
+                logger.warning("%r object does not seem to be an Image", self)
         return xobject_image(self, pillow_parameters)[2]
 
     @staticmethod

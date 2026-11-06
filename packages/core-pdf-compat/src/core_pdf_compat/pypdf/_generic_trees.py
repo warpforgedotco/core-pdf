@@ -688,7 +688,9 @@ class ViewerPreferences(DictionaryObject):
         if not is_null_or_none(obj):
             source = cast(DictionaryObject, obj)
             self.update(source.items())
-            self.indirect_reference = source.indirect_reference
+            # As in pypdf: a direct dictionary gives no indirect_reference to copy.
+            if hasattr(source, "indirect_reference"):
+                self.indirect_reference = source.indirect_reference
 
     @property
     def PRINT_SCALING(self) -> NameObject:  # noqa: N802
