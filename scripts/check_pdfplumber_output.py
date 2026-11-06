@@ -7,7 +7,7 @@ of each are compared check by check:
 
 chars: text, fontname, size, x0, x1, top, bottom, matrix, stroking and non-stroking colors.
 rects, lines, curves: every key pdfplumber gives the object.
-images: bbox, srcsize, name, bits, colorspace, imagemask.
+images: bbox, srcsize, name, bits, colorspace, imagemask, mcid, tag.
 words: extract_words().
 text: extract_text().
 layout: extract_text(layout=True).
@@ -43,7 +43,7 @@ PATTERNS = (
     "tests/upstream/pypdf/resources/*.pdf",
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
-MAX_PAGES = 5
+MAX_PAGES = 30
 FLOAT_TOLERANCE = 1e-3
 CHAR_KEYS = (
     "text",
@@ -57,9 +57,64 @@ CHAR_KEYS = (
     "stroking_color",
     "non_stroking_color",
 )
-IMAGE_KEYS = ("x0", "top", "x1", "bottom", "srcsize", "name", "bits", "colorspace", "imagemask")
-# (file name, check) -> why the facade does not follow pdfplumber there.
-DEPARTURES: dict[tuple[str, str], str] = {}
+IMAGE_KEYS = (
+    "x0",
+    "top",
+    "x1",
+    "bottom",
+    "srcsize",
+    "name",
+    "bits",
+    "colorspace",
+    "imagemask",
+    "mcid",
+    "tag",
+)
+PAGE_CHECKS = ("chars", "rects", "lines", "curves", "images", "words", "text", "layout", "tables")
+TEXT_CHECKS = ("chars", "words", "text", "layout")
+EMPTY_CODES = (
+    "pdfminer.six makes a char, with empty text, of each code a ToUnicode CMap maps to "
+    "nothing; core's font decoder folds those codes into the next glyph, so the chars "
+    "after them shift"
+)
+CFF_ENCODING = (
+    "a Type1 font embedded as FontFile3 (CFF): pdfminer.six reads no built-in encoding "
+    "from it and falls back to StandardEncoding, where core reads the CFF's own encoding; "
+    "glyph text comes from the pdfminer facade's shared font helpers"
+)
+PAGE_TREE = (
+    "which pages pdfminer.six finds in a damaged page tree comes from the pdfminer "
+    "facade's shared page projection"
+)
+INLINE_IMAGES = (
+    "core expands an inline image's abbreviations (/RGB to /DeviceRGB) as it parses the "
+    "content stream; pdfminer.six reports the entries as written"
+)
+# (file name, check) -> why the facade does not follow pdfplumber there; it covers every
+# page of that check.
+DEPARTURES: dict[tuple[str, str], str] = {
+    **{("habibi.pdf", check): EMPTY_CODES for check in TEXT_CHECKS},
+    **{("habibi-oneline-cmap.pdf", check): EMPTY_CODES for check in TEXT_CHECKS},
+    **{("habibi-rotated.pdf", check): EMPTY_CODES for check in TEXT_CHECKS},
+    **{("GeoTopo-komprimiert.pdf", check): CFF_ENCODING for check in (*TEXT_CHECKS, "tables")},
+    ("AutoCad_Diagram.pdf", "images"): (
+        "the file writes a NUL byte inside the name /DeviceRGB; pdfminer.six keeps it in "
+        "the name, core's lexer ends the name there as PDF says NUL is white-space"
+    ),
+    ("issue-1008-inline-ascii85.pdf", "images"): INLINE_IMAGES,
+    ("reportlab-inline-image.pdf", "images"): INLINE_IMAGES,
+    ("inline-image.pdf", "images"): INLINE_IMAGES,
+    ("issue-1249-evil-xrefs.pdf", "open"): (
+        "pdfminer.six 20260107, pdfplumber 0.11.10's pinned version, recurses without end "
+        "on this circular xref chain and fails at open; the facade fails, with the same "
+        "PdfminerException, when the pages are read"
+    ),
+    ("issue-1249-evil-xrefs.pdf", "pages"): "see open",
+    ("unreadablemetadata.pdf", "pages"): PAGE_TREE,
+    **{("unreadablemetadata.pdf", check): PAGE_TREE for check in PAGE_CHECKS},
+    ("cmyk-image.pdf", "pages"): PAGE_TREE,
+    **{("cmyk-image.pdf", check): PAGE_TREE for check in PAGE_CHECKS},
+}
 
 
 def plain(value: Any) -> Any:
@@ -118,12 +173,22 @@ def pick(objects: list[dict[str, Any]], keys: tuple[str, ...] | None) -> list[An
     return [{key: plain(obj.get(key)) for key in keys} for obj in objects]
 
 
+def images(page: Any) -> list[Any]:
+    # pdfminer.six names an inline image by the id() of its stream object, which no other
+    # process can reproduce, so a name of digits on both sides counts as the same.
+    found = pick(page.images, IMAGE_KEYS)
+    for image in found:
+        if isinstance(image["name"], str) and image["name"].isdigit():
+            image["name"] = "<inline image>"
+    return found
+
+
 CHECKS: dict[str, Callable[[Any], Any]] = {
     "chars": lambda page: pick(page.chars, CHAR_KEYS),
     "rects": lambda page: pick(page.rects, None),
     "lines": lambda page: pick(page.lines, None),
     "curves": lambda page: pick(page.curves, None),
-    "images": lambda page: pick(page.images, IMAGE_KEYS),
+    "images": images,
     "words": lambda page: plain(page.extract_words()),
     "text": lambda page: page.extract_text(),
     "layout": lambda page: page.extract_text(layout=True),
@@ -168,21 +233,28 @@ def compare(path: str) -> list[tuple[str, str, str]]:
 
     expected = read(real, path)
     actual = read(facade, path)
+    differences: dict[str, list[str]] = collections.defaultdict(list)
     results = []
     for key in sorted(expected.keys() | actual.keys()):
         check = key.rsplit(" ", 1)[-1]
         left, right = expected.get(key), actual.get(key)
-        listed = DEPARTURES.get((Path(path).name, check))
         if left is None or right is None:
             library = "pdfplumber" if right is None else "the facade"
-            results.append((check, "DIFFER", f"{key}: only {library} reaches it"))
+            differences[check].append(f"{key}: only {library} reaches it")
         elif same(plain(left), plain(right)):
-            results.append((check, "LISTED BUT SAME" if listed else "same", key))
-        elif listed is not None:
-            results.append((check, "differ, listed departure", key))
+            results.append((check, "same", key))
         else:
-            detail = difference(plain(left), plain(right))
-            results.append((check, "DIFFER", f"{key}{detail}"[:400]))
+            differences[check].append(f"{key}{difference(plain(left), plain(right))}"[:400])
+    # A departure covers every page of its check, and must still differ on one of them.
+    name = Path(path).name
+    results += [
+        (check, "LISTED BUT SAME", f"{check}: listed as a departure")
+        for listed_name, check in DEPARTURES
+        if listed_name == name and check not in differences
+    ]
+    for check, found in differences.items():
+        status = "differ, listed departure" if (name, check) in DEPARTURES else "DIFFER"
+        results += [(check, status, detail) for detail in found]
     return results
 
 

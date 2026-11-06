@@ -288,8 +288,6 @@ class EnginePageAdapter:
                 text = glyph_texts.get(key)  # type: ignore[assignment]
                 if text is None:
                     text = glyph_texts[key] = pdfminer_glyph_text(glyph)
-            if not text:
-                continue
             source_provenance = glyph.provenance
             known = provenances.get(id(source_provenance))
             if known is None or known[0] is not source_provenance:

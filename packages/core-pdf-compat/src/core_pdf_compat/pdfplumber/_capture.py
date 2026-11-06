@@ -216,6 +216,7 @@ class PlumberTextState(PdfminerTextState):
         ] = {}
         self.color_space_maps: dict[int, tuple[object, dict[str, tuple[str, int]]]] = {}
         self.painted_images: list[PaintedImage] = []
+        self.plumber_marks: list[PlumberMark] = []
         self.xobject_name: str | None = None
         self.in_type3_glyph = 0
         # pdfminer.six's F paints nothing and keeps the path, unlike f.
@@ -248,11 +249,13 @@ class PlumberTextState(PdfminerTextState):
             return known[1]
         spaces = {name: (name, count) for name, count in PREDEFINED_COLOR_SPACES.items()}
         resolver = self.resolver
-        entries = resolver.dict_at(resources, "ColorSpace") if isinstance(resources, dict) else None
-        for key, raw in (entries or {}).items():
+        entries = (
+            resolver.resolve(resources.get("ColorSpace")) if isinstance(resources, dict) else None
+        )
+        for key, raw in (entries if isinstance(entries, dict) else {}).items():
             space = self.miner_color_space(resolver.resolve(raw))
             if space is not None:
-                spaces[str(key)] = space
+                spaces[literal_name(key) if isinstance(key, PdfName) else str(key)] = space
         self.color_space_maps[id(resources)] = (resources, spaces)
         return spaces
 
@@ -500,6 +503,10 @@ class PlumberTextState(PdfminerTextState):
         super().op_paint_clear(operands, depth)
 
     def enter_stream(self, state: object, frame: ContentStreamFrame) -> None:
+        # Core saves the graphics state with op_q as a stream starts and restores it
+        # directly as the stream ends; pdfminer.six's stack never holds that save.
+        if self.miner_stack:
+            self.miner_stack.pop()
         if frame.is_form:
             # pdfminer.six runs a form in a new interpreter, from a fresh state.
             self.miner_frames[id(frame)] = (self.miner, self.miner_stack, self.miner_path)
@@ -528,20 +535,23 @@ class PlumberTextState(PdfminerTextState):
     def show_text(self, *arguments: Any, **options: Any) -> Any:
         start = len(self.glyphs)
         # pdfminer.six's char matrix: the text matrix at the glyph times the CTM, no rise.
-        matrix = tuple(self.text_matrix.multiply(self.graphics.ctm))
+        placed = self.text_matrix.multiply(self.graphics.ctm)
+        matrix = (placed.a, placed.b, placed.c, placed.d, placed.e, placed.f)
         result = super().show_text(*arguments, **options)
         miner = self.miner
-        self.text_marks[-1] = PlumberMark(
-            start,
-            self.current_mcid,
-            self.current_tag,
-            miner.ncs[0],
-            miner.scolor if isinstance(miner.scolor, tuple) else (miner.scolor,),
-            miner.ncolor if isinstance(miner.ncolor, tuple) else (miner.ncolor,),
-            matrix,
-            self.graphics.rise,
-            self.graphics.horizontal_scale * 0.01,
-            self.graphics.char_space * self.graphics.horizontal_scale * 0.01,
+        self.plumber_marks.append(
+            PlumberMark(
+                start,
+                self.current_mcid,
+                self.current_tag,
+                miner.ncs[0],
+                miner.scolor if isinstance(miner.scolor, tuple) else (miner.scolor,),
+                miner.ncolor if isinstance(miner.ncolor, tuple) else (miner.ncolor,),
+                matrix,
+                self.graphics.rise,
+                self.graphics.horizontal_scale * 0.01,
+                self.graphics.char_space * self.graphics.horizontal_scale * 0.01,
+            )
         )
         return result
 
@@ -619,7 +629,7 @@ def plumber_page_capture(
     return (
         program,
         tuple(state.miner_paths),
-        tuple(state.text_marks),
+        tuple(state.plumber_marks),
         tuple(state.painted_images),
     )
 
