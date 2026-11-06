@@ -59,15 +59,7 @@ PATTERNS = (
     "tests/upstream/pypdf/resources/*.pdf",
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
-FLOAT32_RE = (
-    "MuPDF adds an re operator's height to its y in float32 (311.39001 + -13.78999 rounds to "
-    "297.60004); core-pdf keeps the path's corners in float64 and loses the operands, so the "
-    "facade rounds the corner 297.60002 to 297.6 and the bbox's y1 is one float32 step higher"
-)
-DEPARTURES: dict[tuple[str, str], str] = {
-    ("path", "rectangles_yes.pdf"): FLOAT32_RE,
-    ("bytes", "rectangles_yes.pdf"): FLOAT32_RE,
-}
+DEPARTURES: dict[tuple[str, str], str] = {}
 # Sources that are not sample files, for the errors PyMuPDF raises before reading a PDF.
 ODD_SOURCES: tuple[object, ...] = (
     b"",
