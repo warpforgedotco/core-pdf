@@ -1,6 +1,7 @@
 # ContentStream's attributes, messages and limits are ported from pypdf,
 # Copyright (c) 2006-2008, Mathieu Fenniak, under its BSD-style license. Its parsing
-# and writing are core_pdf_spec's.
+# and writing are core_pdf_spec's, except inline images: where their data ends, and how
+# they are written, follow pypdf.
 """pypdf's content stream object, and stream decoding through core-pdf's filters."""
 
 from __future__ import annotations
@@ -8,10 +9,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from io import BytesIO
-from typing import Any, cast
+from typing import IO, Any, cast
 
-from core_pdf.impl.capture_recovery import recover_inline_image_data
 from core_pdf.impl.types import PdfString
+from core_pdf_compat.pypdf._image_inline import read_inline_image_data
 from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
@@ -27,16 +28,8 @@ from core_pdf_compat.pypdf.generic import (
     to_generic,
 )
 from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_content.inline_images import (
-    InlineImage,
-    InlineImageDataLengthError,
-    parse_inline_image_data,
-    parse_inline_image_dictionary,
-    scan_inline_image_data,
-    serialize_inline_image,
-)
+from core_pdf_spec.s_07_content.inline_images import InlineImage, parse_inline_image_dictionary
 from core_pdf_spec.s_07_content.operations import parse_content_token, serialize_content_operation
-from core_pdf_spec.s_07_filters.errors import FilterParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 
 logger = logging.getLogger(__name__)
@@ -116,26 +109,56 @@ def _at_inline_image(lexer: PdfLexer) -> bool:
     return after == lexer.data_len or bool(lexer.lexical_rules.separator_table[data[after]])
 
 
-def _inline_image_body(lexer: PdfLexer, settings: Any) -> InlineImage:
-    try:
-        return parse_inline_image_data(lexer, settings)
-    except InlineImageDataLengthError as error:
-        return recover_inline_image_data(lexer, error)
-    except FilterParseError:
-        # A malformed /Filter gives no hint where the data ends, so look for EI alone.
-        return scan_inline_image_data(lexer, {}, lexer.pos)
-
-
-def _inline_image(lexer: PdfLexer) -> dict[str, Any]:
+def _inline_image_parts(
+    lexer: PdfLexer, stream: IO[bytes], offset: int
+) -> tuple[Any, DictionaryObject, bytes]:
     try:
         settings = parse_inline_image_dictionary(lexer)
     except PdfParseError as error:
         raise PdfReadError("Unexpected end of stream.") from error
+    generic = _generic_operand(settings)
+    # pypdf reads ID and the byte after it.
+    stream.seek(offset + lexer.pos + 1)
+    data = read_inline_image_data(stream, generic)
+    lexer.pos = stream.tell() - offset
+    return settings, generic, data
+
+
+def _inline_image(lexer: PdfLexer, stream: IO[bytes], offset: int = 0) -> dict[str, Any]:
+    """Read an image from just after its BI. ``stream`` holds the lexer's data from ``offset``.
+
+    core-pdf reads the dictionary; the data ends where pypdf's search ends it.
+    """
+    _, settings, data = _inline_image_parts(lexer, stream, offset)
+    return {"settings": settings, "data": data}
+
+
+def inline_image_spans(data: bytes) -> list[tuple[int, int, InlineImage]]:
+    """Each inline image's start at its BI and end after its EI, with its dictionary as
+    written and its data, found as ContentStream.operations finds them.
+
+    An image pypdf cannot read raises its error. A malformed token before the next image
+    ends the search, leaving the rest to core-pdf's tolerant parser.
+    """
+    stream = BytesIO(data)
+    lexer = PdfLexer(data)
+    spans: list[tuple[int, int, InlineImage]] = []
     try:
-        image = _inline_image_body(lexer, settings)
-    except PdfParseError as error:
-        raise PdfReadError(str(error)) from error
-    return {"settings": _generic_operand(settings), "data": image.data}
+        while True:
+            lexer.skip_ignored()
+            if _at_inline_image(lexer):
+                start = lexer.pos
+                lexer.advance(2)
+                settings, _, image_data = _inline_image_parts(lexer, stream, 0)
+                spans.append((start, lexer.pos, InlineImage(settings, image_data)))
+                continue
+            try:
+                if parse_content_token(lexer) is None:
+                    return spans
+            except PdfParseError:
+                return spans
+    finally:
+        lexer.close()
 
 
 class ContentStream(DecodedStreamObject):
@@ -193,7 +216,7 @@ class ContentStream(DecodedStreamObject):
                 lexer.skip_ignored()
                 if _at_inline_image(lexer):
                     lexer.advance(2)
-                    self._operations.append((_inline_image(lexer), INLINE_IMAGE))
+                    self._operations.append((_inline_image(lexer, stream), INLINE_IMAGE))
                     continue
                 token = parse_content_token(lexer)
                 if token is None:
@@ -217,8 +240,7 @@ class ContentStream(DecodedStreamObject):
         start = stream.tell()
         lexer = PdfLexer(stream.read())
         try:
-            image = _inline_image(lexer)
-            stream.seek(start + lexer.pos)
+            image = _inline_image(lexer, stream, start)
         finally:
             lexer.close()
         return image
@@ -297,5 +319,8 @@ class ContentStream(DecodedStreamObject):
 def _serialize_operation(operation: tuple[Any, bytes]) -> bytes:
     operands, operator = operation
     if operator == INLINE_IMAGE:
-        return serialize_inline_image(_core_operand(operands["settings"]), operands["data"])
+        # Written as pypdf writes it, so the data is read back as it was.
+        settings = BytesIO()
+        operands["settings"].write_to_stream(settings)
+        return b"BI" + settings.getvalue()[2:-2] + b"ID " + operands["data"] + b"EI\n"
     return serialize_content_operation(operator, [_core_operand(item) for item in operands])
