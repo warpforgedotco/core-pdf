@@ -211,6 +211,24 @@ skips, 209 reach a private pypdf module and 5 are also skipped on the real libra
 download their files (marked `enable_socket`); the harness fetches those files first, and CI
 caches them.
 
+### Facade output against the real libraries
+
+Beside the upstream suites, CI compares each facade with its real library on the sample
+PDFs, file by file, and fails on any difference a script does not list with its reason:
+
+| Script | Library | Result |
+| ------ | ------- | ------ |
+| `check_pypdf_bytes.py` | pypdf 6.15.0 | Written bytes identical on all 173 files, in each mode |
+| `check_pypdf_reads.py` | pypdf 6.15.0 | 189,444 object reads identical, plain, RC4 and AES |
+| `check_pdfminer_output.py` | pdfminer.six 20260107 | Text identical on 178 of 184 files, layout on 179 |
+| `check_pdfplumber_output.py` | pdfplumber 0.11.10 | Identical apart from 6 listed files |
+| `check_unstructured_output.py` | unstructured 0.25.2 | 215 of 216 files identical |
+| `check_llamaindex_output.py` | llama-index-readers-file 0.7.0 | 169 of 184 identical, 11 with the same error |
+| `check_xray_output.py` | x-ray 0.3.6 | 203 of 211 identical, 6 with the same error |
+
+Each script lists its remaining differences with the reason; the upstream suites pin the same
+versions.
+
 ### Known gaps
 
 - R7 (AES-GCM) keep-encryption has no real fixture, and PDF MAC refusal was tested with an

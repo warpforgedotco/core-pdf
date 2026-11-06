@@ -206,6 +206,8 @@ jobs:
         shard:
           - core
           - pypdf output
+          - pdfminer and pdfplumber
+          - unstructured, llama_index and x-ray
 
     steps:
       - name: Check out repository
@@ -243,6 +245,19 @@ jobs:
           uv run --locked --all-packages --group test python scripts/check_save_statements.py
           uv run --locked --all-packages --group test --with "pypdf[full]==6.15.0" python scripts/check_pypdf_bytes.py
           uv run --locked --all-packages --group test --with "pypdf[full]==6.15.0" python scripts/check_pypdf_reads.py
+
+      - name: pdfminer and pdfplumber against the real libraries
+        if: matrix.shard == 'pdfminer and pdfplumber'
+        run: |
+          uv run --locked --all-packages --group test --with "pdfminer.six==20260107" python scripts/check_pdfminer_output.py
+          uv run --locked --all-packages --group test --with "pdfplumber==0.11.10" python scripts/check_pdfplumber_output.py
+
+      - name: unstructured, llama_index and x-ray against the real libraries
+        if: matrix.shard == 'unstructured, llama_index and x-ray'
+        run: |
+          uv run --locked --all-packages --group test --with "unstructured[pdf]==0.25.2" python scripts/check_unstructured_output.py
+          uv run --locked --all-packages --group test --with "llama-index-readers-file==0.7.0" --with "llama-index-core==0.14.25" --with "pypdf[full]==6.15.0" python scripts/check_llamaindex_output.py
+          uv run --locked --all-packages --group test --with "x-ray==0.3.6" --with "pymupdf==1.24.14" python scripts/check_xray_output.py
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}
