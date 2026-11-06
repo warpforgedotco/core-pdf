@@ -647,7 +647,7 @@ class PdfDocCommon:
 
     @property
     def attachment_list(self) -> Iterator[EmbeddedFile]:
-        yield from EmbeddedFile._load(self.root_object)
+        yield from EmbeddedFile._load(self.root_object, strict=self.strict)
 
     @property
     def attachments(self) -> Mapping[str, list[bytes]]:

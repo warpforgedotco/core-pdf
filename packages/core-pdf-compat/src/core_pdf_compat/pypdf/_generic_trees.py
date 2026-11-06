@@ -620,11 +620,10 @@ def _flag(key: str, default: BooleanObject | None) -> property:
 
 def _name(key: str, allowed: tuple[str, ...] = (), default: NameObject | None = None) -> property:
     def setter(self: DictionaryObject, value: str) -> None:
-        if value[0] != "/":
-            raise ValueError(f"{value} does not start with '/'")
-        if allowed and value not in allowed:
-            raise ValueError(f"{value} is an unacceptable value")
-        self[NameObject(key)] = NameObject(value)
+        name = NameObject(value)
+        if allowed and name not in allowed:
+            raise ValueError(f"{name} is an unacceptable value")
+        self[NameObject(key)] = NameObject(name)
 
     return property(lambda self: self.get_resolved(key, default), setter)
 
@@ -638,6 +637,10 @@ def _array(key: str, *, empty_default: bool = False) -> property:
             self.pop(key, None)
         elif not isinstance(value, ArrayObject):
             raise ValueError("ArrayObject is expected")
+        elif key == "/PrintPageRange" and len(value) % 2:
+            # The array holds first/last page pairs, so an odd length leaves a
+            # range without its end.
+            raise ValueError(f"/PrintPageRange holds page pairs, got {len(value)} entries: {value}")
         else:
             self[NameObject(key)] = value
 
@@ -646,12 +649,17 @@ def _array(key: str, *, empty_default: bool = False) -> property:
 
 def _number(key: str) -> property:
     def setter(self: DictionaryObject, value: int) -> None:
+        if value < 0:
+            raise ValueError(f"{value} is an unacceptable value for {key}")
         self[NameObject(key)] = NumberObject(value)
 
     return property(lambda self: self.get_resolved(key), setter)
 
 
 NOT_SET = BooleanObject(False)
+
+# The page boundaries a viewer preference may name, per Table 147 in the 2.0 reference.
+BOX_NAMES = ("/MediaBox", "/CropBox", "/BleedBox", "/TrimBox", "/ArtBox")
 
 
 class ViewerPreferences(DictionaryObject):
@@ -680,11 +688,11 @@ class ViewerPreferences(DictionaryObject):
         NameObject("/UseNone"),
     )
     direction = _name("/Direction", ("/L2R", "/R2L"), NameObject("/L2R"))
-    view_area = _name("/ViewArea")
-    view_clip = _name("/ViewClip")
-    print_area = _name("/PrintArea")
-    print_clip = _name("/PrintClip")
-    print_scaling = _name("/PrintScaling")
+    view_area = _name("/ViewArea", BOX_NAMES)
+    view_clip = _name("/ViewClip", BOX_NAMES)
+    print_area = _name("/PrintArea", BOX_NAMES)
+    print_clip = _name("/PrintClip", BOX_NAMES)
+    print_scaling = _name("/PrintScaling", ("/None", "/AppDefault"))
     duplex = _name("/Duplex", ("/Simplex", "/DuplexFlipShortEdge", "/DuplexFlipLongEdge"))
     pick_tray_by_pdfsize = _flag("/PickTrayByPDFSize", None)
     print_pagerange = _array("/PrintPageRange")
@@ -920,27 +928,90 @@ class EmbeddedFile:
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} name={self.name!r}>"
 
+    @staticmethod
+    def _report_malformed(message: str, strict: bool) -> None:
+        """Raise an exception in strict mode, warn otherwise."""
+        if strict:
+            raise PdfReadError(message)
+        logger.warning(message)
+
     @classmethod
-    def _load_from_names(cls, names: ArrayObject) -> Iterator[EmbeddedFile]:
+    def _load_from_names(cls, names: ArrayObject, strict: bool = False) -> Iterator[EmbeddedFile]:
         # A name tree leaf is [name_1, reference_1, name_2, reference_2, ...].
         for index, entry in enumerate(names):
             if not isinstance(entry, str):
+                file_dictionary = entry.get_object()
+                if isinstance(file_dictionary, NullObject):
+                    # A null value is equivalent to an omitted entry.
+                    continue
+                if not isinstance(file_dictionary, DictionaryObject):
+                    cls._report_malformed(
+                        f"Embedded file specification is not a dictionary: {file_dictionary}",
+                        strict=strict,
+                    )
+                    continue
                 name = names[index - 1].get_object()
-                yield cls(name=name, pdf_object=entry.get_object(), parent=names)
+                yield cls(name=name, pdf_object=file_dictionary, parent=names)
 
     @classmethod
-    def _load(cls, catalog: DictionaryObject) -> Iterator[EmbeddedFile]:
-        try:
-            container = catalog["/Names"]["/EmbeddedFiles"]
-        except KeyError:
+    def _load(cls, catalog: DictionaryObject, strict: bool = False) -> Iterator[EmbeddedFile]:
+        # pypdf 6.21.4 skips (or in strict mode raises on) malformed name tree parts,
+        # and treats a null entry as an omitted one.
+        if "/Names" not in catalog:
+            return
+        names = catalog["/Names"]
+        if isinstance(names, NullObject):
+            return
+        if not isinstance(names, DictionaryObject):
+            cls._report_malformed(f"Names tree is not a dictionary: {names}", strict=strict)
+            return
+        if "/EmbeddedFiles" not in names:
+            return
+        container = names["/EmbeddedFiles"]
+        if isinstance(container, NullObject):
+            return
+        if not isinstance(container, DictionaryObject):
+            cls._report_malformed(
+                f"Embedded files entry is not a dictionary: {container}", strict=strict
+            )
             return
         if "/Kids" in container:
-            for reference in container["/Kids"].get_object():
+            kids = container["/Kids"].get_object()
+            if isinstance(kids, NullObject):
+                kids = ArrayObject()
+            elif not isinstance(kids, ArrayObject):
+                cls._report_malformed(
+                    f"Embedded files /Kids is not an array: {kids}", strict=strict
+                )
+                return
+            for reference in kids:
                 kid = reference.get_object()
-                if "/Names" in kid:
-                    yield from cls._load_from_names(kid["/Names"])
+                if not isinstance(kid, DictionaryObject):
+                    cls._report_malformed(
+                        f"Embedded files kid is not a dictionary: {kid}", strict=strict
+                    )
+                    continue
+                if "/Names" not in kid:
+                    continue
+                kid_names = kid["/Names"].get_object()
+                if isinstance(kid_names, NullObject):
+                    continue
+                if not isinstance(kid_names, ArrayObject):
+                    cls._report_malformed(
+                        f"Embedded files name list is not an array: {kid_names}", strict=strict
+                    )
+                    continue
+                yield from cls._load_from_names(kid_names, strict=strict)
         if "/Names" in container:
-            yield from cls._load_from_names(container["/Names"])
+            container_names = container["/Names"].get_object()
+            if isinstance(container_names, NullObject):
+                return
+            if not isinstance(container_names, ArrayObject):
+                cls._report_malformed(
+                    f"Embedded files name list is not an array: {container_names}", strict=strict
+                )
+                return
+            yield from cls._load_from_names(container_names, strict=strict)
 
 
 class NamedReferenceLink:
@@ -954,9 +1025,16 @@ class NamedReferenceLink:
         destination = self._source_pdf.named_destinations.get(str(self._reference))
         return destination.page if destination else None
 
-    def patch_reference(self, target_pdf: Any, new_page: Any) -> None:
-        if str(self._reference) not in target_pdf.named_destinations:
-            target_pdf.add_named_destination(str(self._reference), new_page.page_number)
+    def patch_reference(
+        self, target_pdf: Any, new_page: Any, *, known_names: set[str] | None = None
+    ) -> None:
+        # Callers patching many links pass the target's names, kept up to date here.
+        name = str(self._reference)
+        if known_names is None:
+            known_names = set(target_pdf.named_destinations)
+        if name not in known_names:
+            target_pdf.add_named_destination(name, new_page.page_number)
+            known_names.add(name)
 
 
 class DirectReferenceLink:

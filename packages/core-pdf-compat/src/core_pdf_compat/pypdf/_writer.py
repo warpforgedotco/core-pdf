@@ -29,7 +29,7 @@ from core_pdf_spec.s_07_syntax.serialize import ObjectLayout, serialize_object
 
 from ._doc_common import DocumentInformation, PdfDocCommon, _VirtualList, highest_header
 from ._encryption import EncryptAlgorithm, Encryption
-from ._generic_trees import EmbeddedFile, ReferenceLink, extract_links
+from ._generic_trees import EmbeddedFile, NamedReferenceLink, ReferenceLink, extract_links
 from ._images import (
     ImageFile,
     VirtualListImages,
@@ -1415,6 +1415,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
 
     def _resolve_links(self) -> None:
         """Aim the links of added pages at the copies of their target pages, as pypdf does."""
+        known_names: set[str] | None = None
         for new_link, old_link in self._unresolved_links:
             old_page = old_link.find_referenced_page()
             if not old_page:
@@ -1422,7 +1423,12 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             new_page = self._merged_in_pages.get(old_page)
             if new_page is None:
                 continue
-            new_link.patch_reference(self, new_page)
+            if isinstance(new_link, NamedReferenceLink):
+                if known_names is None:
+                    known_names = set(self.named_destinations)
+                new_link.patch_reference(self, new_page, known_names=known_names)
+            else:
+                new_link.patch_reference(self, new_page)
 
     def encrypt(
         self,
