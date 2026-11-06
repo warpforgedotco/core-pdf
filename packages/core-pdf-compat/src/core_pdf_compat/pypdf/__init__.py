@@ -31,7 +31,12 @@ from core_pdf_compat.pypdf._configuration import (
 )
 from core_pdf_compat.pypdf._crypt_providers import CryptAES
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
-from core_pdf_compat.pypdf._encryption import PasswordType
+from core_pdf_compat.pypdf._encryption import (
+    PasswordType,
+    check_encryption_entry,
+    check_file_identifier,
+    encrypts_metadata,
+)
 from core_pdf_compat.pypdf._generic_read import (
     read_non_whitespace,
     read_object,
@@ -166,6 +171,9 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self._known_objects: set[tuple[int, int]] = set()
         self._permissions_tampered = False
         self._xref_stream_maximum_entries = xref_stream_maximum_entries
+        self._override_encryption = False
+        self._encrypts_metadata = True
+        self._file_identifier_usable = True
         apply_legacy_configuration()
         self.read(stream)
         self._open(password)
@@ -179,7 +187,28 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self.xref_objStm = scan.xref_objStm  # noqa: N815
         self._scan_trailer = scan.trailer
 
+    def _check_encryption(self) -> None:
+        """pypdf 6.21.4's checks of the trailer's /ID and /Encrypt when opening (#4197).
+
+        The objects are read as pypdf reads them, undecrypted and without caching.
+        """
+        if "/Encrypt" not in self.trailer:
+            return
+        self._override_encryption = True
+        try:
+            self._file_identifier_usable = check_file_identifier(
+                self.trailer.get("/ID", NullObject()).get_object()
+            )
+            entry = self.trailer["/Encrypt"]
+            if not isinstance(entry, DictionaryObject):
+                raise PdfReadError("/Encrypt entry of the trailer is not a dictionary")
+            check_encryption_entry(entry)
+            self._encrypts_metadata = encrypts_metadata(entry)
+        finally:
+            self._override_encryption = False
+
     def _open(self, password: str | bytes | None) -> None:
+        self._check_encryption()
         try:
             self._pdf = PdfDocument.open(self._data, password=password or "")
         except PdfInvalidPermissionsError:
@@ -189,9 +218,12 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             if password is not None:
                 raise WrongPasswordError("Wrong password") from error
             self._decryption_pending = True
-        except PdfUnsupportedError:
-            if password:
+        except PdfUnsupportedError as error:
+            if password and self._file_identifier_usable:
                 raise
+            if password is not None and not self._file_identifier_usable:
+                # pypdf derives the key from an empty identifier, which does not match.
+                raise WrongPasswordError("Wrong password") from error
             self._decryption_pending = True
         except PdfParseError, ValueError:
             # pypdf finds out when something asks for the catalog, not on opening.
@@ -356,6 +388,18 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         return offset if match is None else match.start(0) + 1
 
     def get_object(self, indirect_reference: Any) -> Any:
+        if self._override_encryption:
+            if not isinstance(indirect_reference, IndirectObject):
+                indirect_reference = IndirectObject(int(indirect_reference), 0, self)
+            number, generation = indirect_reference.idnum, indirect_reference.generation
+            cached = self.resolved_objects.get((generation, number))
+            if cached is not None:
+                return cached
+            # As stored in the file: for /Encrypt, and metadata stored in clear.
+            found = self._repaired_object(number, generation, None)
+            if found is not None:
+                found.indirect_reference = IndirectObject(number, generation, self)
+            return found
         if self._decryption_pending:
             raise FileNotDecryptedError("File has not been decrypted")
         if isinstance(indirect_reference, IndirectObject):
@@ -1002,6 +1046,18 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         metadata = DocumentInformation()
         metadata.update(info)
         return metadata
+
+    @property
+    def xmp_metadata(self) -> Any:
+        if self._decryption_pending and not self._encrypts_metadata:
+            # Metadata stored in clear is read without the password (#4151).
+            self._override_encryption = True
+            try:
+                root = self.trailer["/Root"]
+                return root.xmp_metadata if isinstance(root, DictionaryObject) else None
+            finally:
+                self._override_encryption = False
+        return super().xmp_metadata
 
     @property
     def root_object(self) -> Any:

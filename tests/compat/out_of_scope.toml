@@ -64,6 +64,9 @@ names = [
     "_MAX_LEADING_COMMENTS", "_read_inline_image", "ContentStream._check_limits",
     # PdfReader's private standard cross-reference table reader, called directly
     "_read_standard_xref_table",
+    # pypdf's private encryption module and crypt provider internals: Encryption.read, the
+    # cryptography provider's RC4 fallback latch, and the private fallback provider module
+    "Encryption.read", "_is_rc4_supported", "_fallback",
 ]
 stubs = [
     "pypdf.generic._appearance_stream",
