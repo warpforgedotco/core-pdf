@@ -6,7 +6,6 @@ import hashlib
 import logging
 import secrets
 import sys
-import uuid
 import warnings
 from collections.abc import Iterable, Iterator
 from copy import copy, replace
@@ -61,7 +60,7 @@ from ._writer_edit import EditWriter
 from ._writer_forms import FormWriter
 from ._writer_merge import MergeWriter
 from ._writer_outline import OutlineWriter
-from .actions import Action
+from .actions import Action, JavaScript
 from .constants import UserAccessPermissions
 from .errors import (
     DeprecationError,
@@ -1366,25 +1365,16 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         return preferences
 
     def add_js(self, javascript: str) -> None:
-        catalog = self._root_object
-        if "/Names" not in catalog:
-            catalog[NameObject("/Names")] = DictionaryObject()
-        names = catalog["/Names"]
-        if "/JavaScript" not in names:
-            names[NameObject("/JavaScript")] = DictionaryObject(
-                {NameObject("/Names"): ArrayObject()}
-            )
-        scripts = names["/JavaScript"]["/Names"]
-        # A name tree needs a key for each entry, and any unique one will do.
-        scripts.append(create_string_object(str(uuid.uuid4())))
-        action = DictionaryObject(
-            {
-                NameObject("/Type"): NameObject("/Action"),
-                NameObject("/S"): NameObject("/JavaScript"),
-                NameObject("/JS"): TextStringObject(javascript),
-            }
+        warnings.warn(
+            "add_js is deprecated and will be removed in pypdf 7.0.0. Use add_open_action instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
-        scripts.append(self._add_object(action))
+        self.add_open_action(JavaScript(javascript))
+
+    def add_open_action(self, action: Action) -> None:
+        """Add an action to the document-level JavaScript name tree, as pypdf 6.21 does."""
+        return Action._create_open_action(self, action)
 
     def add_attachment(self, filename: str, data: str | bytes) -> EmbeddedFile:
         return EmbeddedFile._create_new(self, filename, data)

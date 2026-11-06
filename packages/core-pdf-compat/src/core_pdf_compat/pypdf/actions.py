@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from abc import ABC
 from enum import StrEnum, unique
 from typing import Any
@@ -16,6 +17,7 @@ from .generic import (
     NameObject,
     NullObject,
     TextStringObject,
+    create_string_object,
     is_null_or_none,
 )
 
@@ -59,6 +61,22 @@ class Action(DictionaryObject, ABC):
         super().__init__()
         self[NameObject("/Type")] = NameObject("/Action")
         self[NameObject("/Next")] = NullObject()
+
+    @classmethod
+    def _create_open_action(cls, writer: Any, action: Action) -> None:
+        """Add an action to the document-level JavaScript name tree (pypdf 6.21)."""
+        catalog = writer.root_object
+        if "/Names" not in catalog:
+            catalog[NameObject("/Names")] = DictionaryObject()
+        names = catalog["/Names"]
+        if "/JavaScript" not in names:
+            names[NameObject("/JavaScript")] = DictionaryObject(
+                {NameObject("/Names"): ArrayObject()}
+            )
+        scripts = names["/JavaScript"]["/Names"]
+        # A name tree needs a key for each entry, and any unique one will do.
+        scripts.append(create_string_object(str(uuid.uuid4())))
+        scripts.append(writer._add_object(action))
 
     @classmethod
     def _create_new(cls, page: Any, trigger: PageTrigger, action: Action) -> None:

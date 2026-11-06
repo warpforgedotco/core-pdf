@@ -11,7 +11,7 @@ from typing import Any
 from core_pdf_spec.s_07_syntax.serialize import serialize_object
 
 from .annotations import border_array
-from .constants import ImageType, ObjectDeletionFlag
+from .constants import ImageType, ObjectDeletionFlag, PageLabelStyle
 from .generic import (
     ArrayObject,
     ContentStream,
@@ -166,6 +166,8 @@ class EditWriter:
     ) -> None:
         if style is None and prefix is None:
             raise ValueError("At least one of style and prefix must be given")
+        if style is not None and style not in tuple(PageLabelStyle):
+            raise ValueError(f"style must be one of: {', '.join(PageLabelStyle)}, got {style!r}")
         if page_index_from < 0:
             raise ValueError("page_index_from must be greater or equal than 0")
         if page_index_to < page_index_from:
