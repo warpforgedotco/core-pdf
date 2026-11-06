@@ -7,7 +7,7 @@ from __future__ import annotations
 import functools
 import shutil
 import warnings
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Literal
@@ -236,7 +236,7 @@ def overwrite_configuration(
 def apply_configuration(
     configuration: Configuration | None = None,
     **overwrites: Any,
-) -> Iterator[Configuration]:
+) -> Generator[Configuration]:
     """
     Temporarily overwrite the configuration.
 
@@ -320,7 +320,7 @@ def apply_legacy_configuration() -> Configuration:
         "JBIG2DEC_BINARY": JBIG2DEC_BINARY,
         "MERGE_CROP_BOX": MERGE_CROP_BOX,
     }
-    overwrites: dict[str, int | str | None] = {}
+    overwrites: dict[str, Any] = {}
 
     for field_name, legacy_name in LEGACY_NAME_MAPPING.items():
         legacy_value = legacy_values[legacy_name]
@@ -339,4 +339,4 @@ def apply_legacy_configuration() -> Configuration:
 
     if not overwrites:
         return configuration
-    return overwrite_configuration(**overwrites)  # type: ignore[arg-type]
+    return overwrite_configuration(**overwrites)
