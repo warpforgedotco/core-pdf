@@ -59,9 +59,11 @@ names = [
 stubs = [
     "pypdf.generic._appearance_stream",
     "pypdf.generic._base",
+    "pypdf.generic._color",
     "pypdf.generic._data_structures",
     "pypdf.generic._files",
     "pypdf.generic._fit",
+    "pypdf.generic._font",
     "pypdf.generic._image_inline",
     "pypdf.generic._image_xobject",
     "pypdf.generic._link",

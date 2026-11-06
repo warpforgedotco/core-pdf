@@ -46,7 +46,7 @@ SUITES = {
         "pypdf",
         ("tests",),
         "pypdf=pypdf",
-        ("pypdf[full]==6.15.0",),
+        ("pypdf[full]==6.21.4",),
         ("pyyaml", "pillow", "cryptography", "fpdf2", "defusedxml", "pytest-socket"),
     ),
     # x-ray 0.4.0 pins PyMuPDF 1.24.14; on PyMuPDF 2.1 its own tests fail (see check_xray_output).
@@ -69,7 +69,7 @@ SUITES = {
         (f"{LLAMA_READERS}/tests",),
         "llama_index.readers.file=llamaindex",
         # pypdf as the pypdf suite pins it, so its text changes don't show up here.
-        ("llama-index-readers-file==0.7.0", "pypdf[full]==6.15.0"),
+        ("llama-index-readers-file==0.7.0", "pypdf[full]==6.21.4"),
         ("llama-index-core==0.14.25", "pytest-mock"),
     ),
 }

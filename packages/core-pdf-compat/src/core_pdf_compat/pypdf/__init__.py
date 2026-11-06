@@ -22,6 +22,13 @@ from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf import filters
+from core_pdf_compat.pypdf._configuration import (
+    Configuration,
+    apply_configuration,
+    apply_legacy_configuration,
+    get_configuration,
+    overwrite_configuration,
+)
 from core_pdf_compat.pypdf._crypt_providers import CryptAES
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._encryption import PasswordType
@@ -79,7 +86,7 @@ from core_pdf_spec.s_07_security.output import is_signature_contents
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, key_for
 
-__version__ = "6.15.0"
+__version__ = "6.21.4"
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +134,9 @@ def _holds_object(data: bytes, offset: object, number: int, generation: int) -> 
 
 
 class PdfReader(PdfDocCommon, ClosingMixin):
+    # How many lines pypdf reads back from the end for startxref past a run of %%EOF markers.
+    _MAX_STARTXREF_RECOVERY_LINES = 1000
+
     def __init__(
         self,
         stream: PdfInput,
@@ -134,6 +144,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         password: str | bytes | None = None,
         *,
         root_object_recovery_limit: int | None = 10_000,
+        xref_stream_maximum_entries: int = 2_000_000,
     ) -> None:
         self.strict = strict
         self.flattened_pages: list[PageObject] | None = None
@@ -150,6 +161,8 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self._checked_object_streams: set[int] = set()
         self._known_objects: set[tuple[int, int]] = set()
         self._permissions_tampered = False
+        self._xref_stream_maximum_entries = xref_stream_maximum_entries
+        apply_legacy_configuration()
         self.read(stream)
         self._open(password)
 
@@ -1078,6 +1091,10 @@ def mult(m: list[float], n: list[float]) -> list[float]:
 
 
 __all__ = (
+    "Configuration",
+    "apply_configuration",
+    "get_configuration",
+    "overwrite_configuration",
     "PageRange",
     "PaperSize",
     "__version__",

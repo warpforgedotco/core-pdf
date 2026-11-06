@@ -1,6 +1,6 @@
 """Check that the pypdf facade writes the same bytes as pypdf, on the upstream PDFs.
 
-uv run --all-packages --with "pypdf[full]==6.15.0" python scripts/check_pypdf_bytes.py
+uv run --all-packages --with "pypdf[full]==6.21.4" python scripts/check_pypdf_bytes.py
 
 Each file goes through the real pypdf and the facade the same way, and the outputs are
 compared byte for byte:

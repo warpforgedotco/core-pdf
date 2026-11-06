@@ -28,6 +28,7 @@ from core_pdf_spec.s_07_syntax.serialize import (
     serialize_spaced_real,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_records import RecordType, ReplaceFields, ReprFields
 
 logger = logging.getLogger(__name__)
 
@@ -1042,6 +1043,17 @@ def to_core(value: Any) -> Any:
     return value
 
 
+class StreamParsingBudget(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
+    """
+    Shared, mutable budget for limiting parsing work, as pypdf.generic has it.
+
+    Pass the same instance to recursive parsing calls to enforce a
+    cumulative budget across nested arrays and dictionaries.
+    """
+
+    remaining_budget: int
+
+
 def _encode_text(value: str) -> bytes:
     text = value if isinstance(value, TextStringObject) else TextStringObject(value)
     return text.get_encoded_bytes()
@@ -1087,6 +1099,7 @@ __all__ = (
     "RectangleObject",
     "ReferenceLink",
     "StreamObject",
+    "StreamParsingBudget",
     "TextStringObject",
     "TreeObject",
     "ViewerPreferences",

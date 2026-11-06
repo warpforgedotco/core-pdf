@@ -1,6 +1,6 @@
 """Check that the pypdf facade extracts the same text as pypdf, page by page, on the upstream PDFs.
 
-uv run --all-packages --with "pypdf[full]==6.15.0" python scripts/check_pypdf_text.py
+uv run --all-packages --with "pypdf[full]==6.21.4" python scripts/check_pypdf_text.py
 
 Each file that real pypdf opens (an encrypted one is opened with the empty password) is read
 through both libraries, and the first MAX_PAGES pages of it are compared in both of pypdf's

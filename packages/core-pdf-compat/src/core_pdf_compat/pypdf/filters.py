@@ -321,6 +321,9 @@ def CCITParameters(*args: Any, **kwargs: Any) -> NoReturn:  # noqa: N802
 
 
 class CCITTFaxDecode:
+    # The largest value the TIFF header's unsigned 32-bit fields hold.
+    _MAXIMUM_UNSIGNED_LONG = 0xFFFFFFFF
+
     @staticmethod
     def _get_parameters(parameters: Any, rows: Any) -> CCITTParameters:
         found: dict[str, Any] = {}
