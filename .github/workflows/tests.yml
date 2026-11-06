@@ -255,7 +255,7 @@ jobs:
       - name: unstructured, llama_index and x-ray against the real libraries
         if: matrix.shard == 'unstructured, llama_index and x-ray'
         run: |
-          uv run --locked --all-packages --group test --with "unstructured[pdf]==0.25.2" python scripts/check_unstructured_output.py
+          uv run --locked --all-packages --group test --extra unstructured --with "unstructured[pdf]==0.25.2" python scripts/check_unstructured_output.py
           uv run --locked --all-packages --group test --with "llama-index-readers-file==0.7.0" --with "llama-index-core==0.14.25" --with "pypdf[full]==6.15.0" python scripts/check_llamaindex_output.py
           uv run --locked --all-packages --group test --with "x-ray==0.3.6" --with "pymupdf==1.24.14" python scripts/check_xray_output.py
 
