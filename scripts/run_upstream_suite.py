@@ -49,10 +49,8 @@ SUITES = {
         ("pypdf[full]==6.15.0",),
         ("pyyaml", "pillow", "cryptography", "fpdf2", "defusedxml", "pytest-socket"),
     ),
-    # The x-ray checkout is 0.3.6; 0.4.0 on PyPI made inspect() async.
-    "xray": Suite(
-        "x-ray", ("tests",), "xray=xray", ("x-ray==0.3.6",), ("pymupdf==1.24.14", "requests")
-    ),
+    # x-ray 0.4.0 pins PyMuPDF 1.24.14; on PyMuPDF 2.1 its own tests fail (see check_xray_output).
+    "xray": Suite("x-ray", ("tests",), "xray=xray", ("x-ray==0.4.0",), ("pymupdf==1.24.14",)),
     "unstructured": Suite(
         "unstructured",
         ("test_unstructured/partition/pdf_image",),
