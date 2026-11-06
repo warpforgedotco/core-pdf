@@ -198,7 +198,7 @@ All six are done. Numbers are from main, and CI reruns each of these checks on e
 
 | Suite | Passed | Skipped |
 | ----- | ------ | ------- |
-| pypdf | 1,133 of 1,350 | 214 |
+| pypdf | 1,136 of 1,350 | 214 |
 | pdfplumber | 169 | 0 |
 | pdfminer | 127 | 0 |
 | unstructured | 50 | 0 |
