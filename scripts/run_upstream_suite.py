@@ -189,7 +189,9 @@ def main() -> int:
         ],
         excluded_files=tuple(scope.get("files", ())),
     )
-    if arguments.network:
+    # pypdf's tests that fetch files are in scope unless a marker deselects them.
+    network = arguments.network or (arguments.suite == "pypdf" and "markers" not in scope)
+    if network:
         download_network_files(suite, reference=arguments.reference, environment=environment)
     log = RESULTS / f"{arguments.suite}-{mode}.log"
     with log.open("w") as handle:

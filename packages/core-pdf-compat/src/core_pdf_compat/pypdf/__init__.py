@@ -50,6 +50,7 @@ from core_pdf_compat.pypdf.errors import (
     FileNotDecryptedError,
     LimitReachedError,
     PdfReadError,
+    PdfStreamError,
     WrongPasswordError,
 )
 from core_pdf_compat.pypdf.generic import (
@@ -331,9 +332,29 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             self.resolved_objects[key] = item
         return self.resolved_objects[key]
 
+    @property
+    def stream(self) -> Any:
+        return self._stream
+
+    @stream.setter
+    def stream(self, value: Any) -> None:
+        # pypdf reads objects from `stream` as they are needed, so a stream set after opening
+        # is what later reads see. Those then follow pypdf's reading over its bytes.
+        self._stream = value
+        if getattr(self, "_data", None) is not None:
+            position = value.tell()
+            value.seek(0)
+            self._data = value.read()
+            value.seek(position)
+            self._stream_replaced = True
+
     def _read_object(self, number: int, generation: int) -> Any:
         source = self._pdf
+        if getattr(self, "_stream_replaced", False):
+            return self._repaired_object(number, generation, PdfReadError("stream replaced"))
         if source is not None and key_for(number, generation) in source.xref:
+            if self.strict:
+                self._check_header_as_pypdf(source.xref[key_for(number, generation)])
             if number in self.xref_objStm:
                 self._check_object_stream(self.xref_objStm[number][0])
             try:
@@ -689,6 +710,16 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         if obj is not None:
             obj.indirect_reference = IndirectObject(idnum, generation, self)
         return obj
+
+    def _check_header_as_pypdf(self, entry: Any) -> None:
+        """In strict mode, read the object header as pypdf does, for its warnings."""
+        offset = getattr(entry, "offset", None)
+        if not isinstance(offset, int) or getattr(entry, "object_stream", None) is not None:
+            return
+        stream = BytesIO(self._data)
+        stream.seek(offset)
+        with contextlib.suppress(ValueError, PdfStreamError):
+            self.read_object_header(stream)
 
     def read_object_header(self, stream: Any) -> tuple[int, int]:
         # pypdf's: white-space before the header is tolerated, and reported when strict.

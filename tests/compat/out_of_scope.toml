@@ -37,7 +37,11 @@ reason = "imports these unimplemented modules; a test is skipped only if it reac
 names = [
     # PdfReader internals
     "_find_pdf_objects", "_find_pdf_trailers", "_find_previous_startxref_pos", "_get_indirect_object",
-    "_get_page_number_by_indirect", "resolved_objects", "xref_objStm", "_encryption",
+    "_get_page_number_by_indirect", "resolved_objects", "xref_objStm", "_encryption", "_startxref",
+    # A test patching NumberObject._LENGTH_LIMIT through the private pypdf.generic._base path
+    "_LENGTH_LIMIT",
+    # PageObject's private debug hook for text extraction
+    "_debug_for_extract",
     # PdfDocCommon internals
     "_get_named_destinations", "_list_attachments",
     # PageObject internals
@@ -76,11 +80,6 @@ stubs = [
 ]
 files = ["tests/scripts/test_make_release.py"]
 partial = ["pypdf._page", "pypdf.filters"]
-# Tests marked enable_socket download their PDFs from the internet at run time, so they need
-# network access and depend on outside servers. A local run with network on 2026-11-05 ran
-# 392 of them: real pypdf failed 59, all but one on a downloaded file that wasn't there, and
-# the facade failed 49 more that pass on real pypdf.
-markers = "not enable_socket"
 # These also touch a private name, but they are the only tests of public features the
 # facade lacks: viewer_preferences, attachment_list and named_destinations.
 keep = [
