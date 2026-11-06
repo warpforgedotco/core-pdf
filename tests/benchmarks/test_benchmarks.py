@@ -10,7 +10,6 @@ Reading a file's bytes happens outside the timed call.
 """
 
 import asyncio
-import contextlib
 import io
 from collections.abc import Callable
 from pathlib import Path
@@ -230,8 +229,4 @@ def test_xray_inspect(benchmark: Any, name: str) -> None:
 
     source = data(name)
 
-    def run() -> None:
-        with contextlib.suppress(Exception):
-            asyncio.run(xray.inspect(source))
-
-    benchmark(run)
+    benchmark(lambda: asyncio.run(xray.inspect(source)))
