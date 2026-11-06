@@ -41,4 +41,3 @@ To move to a new release: move the library's submodule under `tests/upstream` to
 ## Submodules
 
 The upstream checkouts under `tests/upstream` are submodules, and `git pull` does not move them. After pulling, run `git submodule update --init --recursive --depth 1`, or test against stale tests. Don't commit with `git commit -a` while a submodule is out of date: it records the stale commit and moves the checkout back for everyone. Stage files by name, and stage a submodule only when moving it on purpose.
-
