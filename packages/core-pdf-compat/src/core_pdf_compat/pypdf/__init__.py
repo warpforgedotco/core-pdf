@@ -1,9 +1,12 @@
+# The reader's fallbacks for objects core cannot read, and its catalog search, follow
+# pypdf._reader.PdfReader, Copyright (c) 2006, Mathieu Fenniak, under its BSD-style license.
 from __future__ import annotations
 
 import contextlib
 import functools
 import logging
 import re
+import sys
 from io import BytesIO, UnsupportedOperation
 from pathlib import Path
 from typing import Any, NoReturn, cast
@@ -19,6 +22,7 @@ from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf import filters
+from core_pdf_compat.pypdf._crypt_providers import CryptAES
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon
 from core_pdf_compat.pypdf._encryption import PasswordType
 from core_pdf_compat.pypdf._generic_read import (
@@ -33,6 +37,8 @@ from core_pdf_compat.pypdf._reader_scan import (
     DECODE_KEY_REFERENCE,
     INDIRECT_HEADER,
     NAME_INTO_NUL,
+    OBJECT_VALUES_END,
+    PYPDF_ONLY_ESCAPE,
     XrefScan,
     pypdf_stream_data,
     stream_keyword,
@@ -126,10 +132,13 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         self.text_caches = LegacyTextCaches()
         self._named_destinations_cache: dict[str, Destination] | None = None
         self._validated_root: Any = None
-        self._root_object_recovery_limit = root_object_recovery_limit
+        self._root_object_recovery_limit = (
+            sys.maxsize if root_object_recovery_limit is None else root_object_recovery_limit
+        )
         self._pdf: PdfDocument | None = None
         self._decryption_pending = False
         self._checked_object_streams: set[int] = set()
+        self._known_objects: set[tuple[int, int]] = set()
         self._permissions_tampered = False
         self.read(stream)
         self._open(password)
@@ -333,18 +342,24 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 return self._repaired_object(number, generation, error)
             entry = source.xref[key_for(number, generation)]
             if isinstance(resolved, PdfStream):
+                if resolved.dictionary.get("Length") == PdfReference(number, generation):
+                    # pypdf reads /Length while reading the object, so it meets it again.
+                    reference = IndirectObject(number, generation, self)
+                    raise LimitReachedError(f"Detected loop with self reference for {reference!r}.")
                 self._check_stream_length(resolved, entry)
                 resolved = self._as_pypdf_reads(resolved, entry, number, generation)
+            in_object_stream = getattr(entry, "object_stream", None) is not None
+            if not in_object_stream and self._has_pypdf_only_value(entry):
+                found = self._read_with_pypdf_rules(entry)
+                return self._decrypted_as_pypdf(found, number, generation)
             if source.security_handler is not None:
                 resolved = self._with_signatures_decrypted(resolved, number, generation)
-            if getattr(entry, "object_stream", None) is not None:
+            if in_object_stream:
                 # In an object stream, read as core reads it: the stream's own bytes are not
                 # at hand here for pypdf's parser.
                 return to_generic(resolved, self)
             self._bare_keywords_raise = True
             try:
-                if self._has_pypdf_only_name(entry):
-                    raise BareKeywordFound
                 return to_generic(resolved, self)
             except BareKeywordFound:
                 # Core tolerated a word pypdf's parser refuses, and pypdf keeps only what it
@@ -353,27 +368,12 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 return self._decrypted_as_pypdf(found, number, generation)
             finally:
                 self._bare_keywords_raise = False
-        pattern = rf"\s{number}\s+{generation}\s+obj".encode()
-        match = re.search(pattern, self._data)
-        if match is None:
-            logger.warning("Object %d %d not defined.", number, generation)
-            if self.strict:
-                raise PdfReadError("Could not find object.")
-            return None
-        logger.warning("Object %d %d found", number, generation)
-        # The recovering lexer, as this stream's /Length can be missing or broken too.
-        lexer = RecoveryLexer(
-            self._data,
-            reference_resolver=lambda reference: self.get_object(
-                IndirectObject(reference.object_number, reference.generation_number, self)
-            ),
-        )
-        lexer.rewind(match.start() + 1)
-        try:
-            found = lexer.parse_indirect_object()
-        except PdfParseError as error:
-            raise PdfReadError(str(error)) from error
-        return to_generic(found, self)
+        # Core cannot read it: pypdf's get_object, from its own xref, then by searching.
+        if number in self.xref.get(generation, {}):
+            if self.xref_free_entry.get(generation, {}).get(number, False):
+                return NullObject()
+            return self._repaired_object(number, generation, None)
+        return self._found_object(number, generation)
 
     def _as_pypdf_reads(
         self, stream: PdfStream, entry: Any, number: int, generation: int
@@ -418,7 +418,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             try:
                 data = handler.decrypt(number, generation, value.original_bytes)
             except PdfDecryptionError, ValueError:
-                return value
+                data = self._decrypted_despite_padding(number, generation, value.original_bytes)
             return create_string_object(data)
         if isinstance(value, StreamObject):
             if value.get("/Type") != "/XRef":
@@ -451,28 +451,49 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 try:
                     data = handler.decrypt(number, generation, bytes(item.data))
                 except PdfDecryptionError, ValueError:
-                    data = bytes(item.data)
+                    data = self._decrypted_despite_padding(number, generation, bytes(item.data))
                 output[key] = PdfString(data, is_literal=False)
         return output
+
+    def _decrypted_despite_padding(self, number: int, generation: int, data: bytes) -> bytes:
+        """A string core cannot decrypt, as pypdf decrypts it: AES data whose padding is wrong
+        is kept, cut by its last byte, with a warning, and raises in strict mode.
+        """
+        handler = cast(Any, self._pdf).security_handler
+        match handler.crypt_method(None, None):
+            case "AESV2":
+                key = handler.object_key(number, generation, b"sAlT")
+            case "AESV3":
+                key = handler.file_key
+            case _:
+                return data
+        try:
+            return CryptAES(key).decrypt(data, strict=self.strict)
+        except PdfDecryptionError, ValueError:
+            return data
 
     @functools.cached_property
     def _holds_nul(self) -> bool:
         return b"\x00" in self._data
 
-    def _has_pypdf_only_name(self, entry: Any) -> bool:
-        """Whether a name runs into a NUL byte, which pypdf reads as part of the name."""
+    def _has_pypdf_only_value(self, entry: Any) -> bool:
+        """Whether the object holds a value pypdf's parser reads differently from core's: a
+        name running into a NUL byte, which pypdf reads as part of the name, or a string
+        escape whose backslash pypdf keeps.
+        """
         offset = getattr(entry, "offset", None)
-        if not isinstance(offset, int) or not self._holds_nul:
+        if not isinstance(offset, int):
             return False
-        end = self._data.find(b"endobj", offset)
-        keyword = self._data.find(b"stream", offset, None if end < 0 else end)
-        stop = keyword if keyword >= 0 else end
-        return (
-            NAME_INTO_NUL.search(self._data, offset, len(self._data) if stop < 0 else stop)
-            is not None
+        data = self._data
+        end = OBJECT_VALUES_END.search(data, offset)
+        stop = len(data) if end is None else end.start()
+        if self._holds_nul and NAME_INTO_NUL.search(data, offset, stop) is not None:
+            return True
+        return data.find(b"\\", offset, stop) >= 0 and (
+            PYPDF_ONLY_ESCAPE.search(data, offset, stop) is not None
         )
 
-    def _repaired_object(self, number: int, generation: int, error: Exception) -> Any:
+    def _repaired_object(self, number: int, generation: int, error: Exception | None) -> Any:
         """The object as pypdf's get_object reads it, when core cannot parse the one at its
         offset: pypdf's own xref offset, then the first `number generation obj` in the file,
         then wherever its failed header read left off, with its messages in strict mode.
@@ -506,7 +527,14 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 f"Expected object ID ({number} {generation}) does not match actual "
                 f"({found_number} {found_generation})."
             ) from error
+        current = (number, generation)
+        if current in self._known_objects:
+            # As in pypdf, an object stays known once its read fails.
+            reference = IndirectObject(number, generation, self)
+            raise LimitReachedError(f"Detected loop with self reference for {reference!r}.")
+        self._known_objects.add(current)
         found = read_object(stream, self)
+        self._known_objects.remove(current)
         return self._decrypted_as_pypdf(found, number, generation)
 
     def _found_object(self, number: int, generation: int) -> Any:
@@ -700,14 +728,9 @@ class PdfReader(PdfDocCommon, ClosingMixin):
 
     @property
     def trailer(self) -> Any:
-        cached = self.__dict__.get("_generic_trailer")
-        if cached is None:
-            source = self._pdf
-            cached = self._scan_trailer
-            if source is not None and "/Root" not in cached:
-                cached = to_generic(source.trailer_dict, self)
-            self.__dict__["_generic_trailer"] = cached
-        return cached
+        # pypdf's trailer is what its walk over the cross-reference data found, even where
+        # core recovered more.
+        return self.__dict__.get("_generic_trailer", self._scan_trailer)
 
     @property
     def metadata(self) -> DocumentInformation | None:
@@ -740,12 +763,11 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             logger.warning("Invalid Root object in trailer")
         logger.warning('Searching object with "/Catalog" key')
         for number in range(1, self.trailer.get("/Size", 0) + 1):
-            limit = self._root_object_recovery_limit
-            if limit is not None and number > limit:
+            if number > self._root_object_recovery_limit:
                 raise LimitReachedError("Maximum Root object recovery limit reached.")
             try:
                 candidate = self.get_object(number)
-            except PdfReadError, PdfParseError, ValueError:
+            except Exception:  # noqa: BLE001 - pypdf skips whatever fails here
                 continue
             if isinstance(candidate, DictionaryObject) and candidate.get("/Type") == "/Catalog":
                 logger.warning("Root found at %r", candidate.indirect_reference)
@@ -844,7 +866,6 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         if self._decryption_pending:
             self._pdf = pdf
             self._decryption_pending = False
-            self.__dict__.pop("_generic_trailer", None)
         else:
             pdf.close()
         return PASSWORD_TYPES[kind]
