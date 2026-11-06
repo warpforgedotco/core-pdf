@@ -36,10 +36,10 @@ from core_pdf.impl.types import (
     ReprFields,
     frozen_setattr,
 )
-from core_pdf_spec.s_07_content.model import PATH_CLOSE, PATH_CURVE, PATH_OPERAND_COUNTS, PATH_RECT
 
 from .._shared import BBox, ClosingMixin, PdfInput
 from ..pdfminer.pdftypes import DocumentView
+from ._capture import miner_font_name
 from .convert import Container
 from .exceptions import PdfminerException
 from .repair import RepairSetting, repair, repair_stream
@@ -136,6 +136,7 @@ class EnginePageAdapter:
         self._pdfminer_program: CapturedProgram | None = None
         self._painted_paths: tuple[Any, ...] = ()
         self._text_marks: tuple[Any, ...] = ()
+        self._painted_images: tuple[Any, ...] = ()
         width: int | float = page.width
         height: int | float = page.height
         media_left: int | float = 0
@@ -164,6 +165,7 @@ class EnginePageAdapter:
                 }
             return value
 
+        raw_box: Any = None
         try:
             raw_box = page.page_dict.get("MediaBox")
             if raw_box is None:
@@ -197,7 +199,25 @@ class EnginePageAdapter:
             raise
         except Exception:
             pass
+        # pdfminer.six's PDFPageInterpreter.process_page: the CTM a page starts from.
+        x0, y0, x1, y1 = (
+            (float(value) for value in raw_box)
+            if isinstance(raw_box, (tuple, list)) and len(raw_box) == 4
+            else (0.0, 0.0, 612.0, 792.0)
+        )
+        turn = (int(page.rotation) + 360) % 360
+        pdfminer_ctm = (
+            (0, -1, 1, 0, -y0, x1)
+            if turn == 90
+            else (-1, 0, 0, -1, x1, y1)
+            if turn == 180
+            else (0, 1, -1, 0, y1, -x0)
+            if turn == 270
+            else (1, 0, 0, 1, -x0, -y0)
+        )
         self.info = SimpleNamespace(
+            pdfminer_ctm=pdfminer_ctm,
+            page_height=width if int(page.rotation) % 180 else height,
             index=page.page_number - 1,
             number=page.page_number,
             width=width,
@@ -214,7 +234,6 @@ class EnginePageAdapter:
         from ..pdfminer._fonts import (
             pdfminer_descent,
             pdfminer_embedded_cmap_is_unusable,
-            pdfminer_font_name,
             pdfminer_glyph_text,
             pdfminer_ligature_overrides,
             pdfminer_normalized_width,
@@ -241,8 +260,21 @@ class EnginePageAdapter:
                 glyph.alternates,
             )
 
+        resolver = self.page.document.resolver
+        font_names: dict[int, tuple[object, Any]] = {}
+
+        def font_name(decoder: Any) -> Any:
+            known = font_names.get(id(decoder))
+            if known is None or known[0] is not decoder:
+                known = font_names[id(decoder)] = (
+                    decoder,
+                    miner_font_name(resolver, decoder.font),
+                )
+            return known[1]
+
         marks = self._text_marks
         mark_starts = [mark.glyph_index for mark in marks]
+        vertical_run = 0.0
         for glyph_index, glyph in enumerate(projected_glyphs):
             if pdfminer_embedded_cmap_is_unusable(glyph):
                 continue
@@ -268,90 +300,82 @@ class EnginePageAdapter:
                 )
             if known[1]:
                 continue
-            x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
-            font_height = glyph.effective_font_height or glyph.font_size
-            provenance = known[2]
-            matrix = provenance.get("text_matrix")
-            text_matrix: tuple[float, ...] | None = None
-            upright = glyph.rotation_angle % 180 == 0
-            advance = x1 - x0
-            if isinstance(matrix, (tuple, list)) and len(matrix) == 4:
-                a, b, c, d = (float(value) for value in matrix)
-                scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
-                baseline = ligature[2] if ligature is not None else glyph.baseline
-                if baseline is not None:
-                    if glyph.font_decoder.is_vertical:
-                        metric = glyph.font_decoder.vertical_glyph_metric(glyph.cid)
-                        left = -float(metric[1]) * glyph.font_size * 0.001
-                        advance = float(metric[0]) * glyph.font_size * 0.001 * scaling
-                        horizontal = (left, left + glyph.font_size)
-                        vertical = (glyph.font_size + advance, glyph.font_size)
-                    else:
-                        decoder = glyph.font_decoder
-                        known_descent = descents.get(id(decoder))
-                        if known_descent is None or known_descent[0] is not decoder:
-                            known_descent = descents[id(decoder)] = (
-                                decoder,
-                                pdfminer_descent(glyph),
-                            )
-                        descent = known_descent[1] * glyph.font_size
-                        projected = None if ligature else text
-                        width_key = (*key, projected)
-                        width = widths.get(width_key)
-                        if width is None:
-                            width = widths[width_key] = pdfminer_normalized_width(glyph, projected)
-                        advance = width * glyph.font_size * scaling
-                        horizontal = (0.0, advance)
-                        vertical = (descent, descent + glyph.font_size)
-                    near, far = horizontal
-                    low, high = vertical
-                    origin_x, origin_y = baseline[0], baseline[1]
-                    text_matrix = (a, b, c, d, origin_x, origin_y)
-                    # The corners in the order (near, low), (near, high), (far, low), (far, high).
-                    ax = near * a + low * c + origin_x
-                    ay = near * b + low * d + origin_y
-                    bx = near * a + high * c + origin_x
-                    by = near * b + high * d + origin_y
-                    cx = far * a + low * c + origin_x
-                    cy = far * b + low * d + origin_y
-                    dx = far * a + high * c + origin_x
-                    dy = far * b + high * d + origin_y
-                    x0 = min(ax, bx, cx, dx)
-                    y0 = min(ay, by, cy, dy)
-                    x1 = max(ax, bx, cx, dx)
-                    y1 = max(ay, by, cy, dy)
-                    font_height = (
-                        x1 - x0
-                        if glyph.font_decoder.is_vertical or glyph.rotation_angle % 180
-                        else y1 - y0
-                    )
-                if self.info.rotation % 360 == 90:
-                    a, b, c, d = b, -a, d, -c
-                elif self.info.rotation % 360 == 180:
-                    a, b, c, d = -a, -b, -c, -d
-                elif self.info.rotation % 360 == 270:
-                    a, b, c, d = -b, a, -d, c
-                upright = a * d * scaling > 0.0 and b * c <= 0.0
-            if glyph.rotation_angle % 360 == 90:
-                x0 = x1 - font_height
-            elif glyph.rotation_angle % 360 == 270:
-                x1 = x0 + font_height
-            x0 -= self.info.media_left
-            x1 -= self.info.media_left
-            y0 -= self.info.media_bottom
-            y1 -= self.info.media_bottom
+            mark = marks[bisect_right(mark_starts, glyph_index) - 1] if marks else None
+            if mark is None:
+                continue
+            # pdfminer.six's LTChar (pdfminer/layout.py): a box from two corners of the glyph
+            # placed by the char matrix, which is the text matrix times the CTM, without rise.
+            a, b, c, d, e, f = mark.matrix
+            font_size = glyph.font_size
+            rise = mark.rise
+            scaling = mark.scaling
+            decoder = glyph.font_decoder
+            baseline = ligature[2] if ligature is not None else glyph.baseline
+            if decoder.is_vertical:
+                w1y, vx, vy = decoder.vertical_glyph_metric(glyph.cid)
+                explicit = glyph.cid in getattr(decoder.metrics, "vertical_metrics", {})
+                scale = font_size * 0.001
+                advance = w1y * scale * scaling
+                # pdfminer.six's render_string_vertical moves down the run by each advance.
+                if glyph_index == mark.glyph_index:
+                    vertical_run = 0.0
+                else:
+                    vertical_run += mark.char_space
+                e += vertical_run * c
+                f += vertical_run * d
+                vertical_run += advance
+                disp_x = vx * scale if explicit else font_size * 0.5
+                disp_y = (1000 - vy) * scale
+                lower_left = (-disp_x, disp_y + rise + advance)
+                upper_right = (-disp_x + font_size, disp_y + rise)
+            else:
+                if glyph_index != mark.glyph_index and baseline is not None:
+                    e = baseline[0] - rise * c
+                    f = baseline[1] - rise * d
+                known_descent = descents.get(id(decoder))
+                if known_descent is None or known_descent[0] is not decoder:
+                    known_descent = descents[id(decoder)] = (decoder, pdfminer_descent(glyph))
+                descent = known_descent[1] * font_size
+                projected = None if ligature else text
+                width_key = (*key, projected)
+                width = widths.get(width_key)
+                if width is None:
+                    width = widths[width_key] = pdfminer_normalized_width(glyph, projected)
+                advance = width * font_size * scaling
+                lower_left = (0.0, descent + rise)
+                upper_right = (advance, descent + rise + font_size)
+            pa, pb, pc, pd, pe, pf = self.info.pdfminer_ctm
+            matrix = (
+                a * pa + b * pc,
+                a * pb + b * pd,
+                c * pa + d * pc,
+                c * pb + d * pd,
+                e * pa + f * pc + pe,
+                e * pb + f * pd + pf,
+            )
+            # pdfminer.six's apply_matrix_rect: the box around all four placed corners.
+            ma, mb, mc, md, me, mf = matrix
+            xs = [
+                ma * x + mc * y + me
+                for x in (lower_left[0], upper_right[0])
+                for y in (lower_left[1], upper_right[1])
+            ]
+            ys = [
+                mb * x + md * y + mf
+                for x in (lower_left[0], upper_right[0])
+                for y in (lower_left[1], upper_right[1])
+            ]
+            x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
             yield SimpleNamespace(
                 text=text,
                 bbox=SimpleNamespace(x0=x0, y0=y0, x1=x1, y1=y1),
-                font_name=pdfminer_font_name(glyph),
-                font_size=font_height,
-                color=glyph.fill,
-                rotation_angle=glyph.rotation_angle,
-                upright=upright,
+                font_name=font_name(decoder),
+                font_size=x1 - x0 if decoder.is_vertical else y1 - y0,
+                upright=ma * md * scaling > 0 and mb * mc <= 0,
                 advance=advance,
                 sequence=glyph.seqno,
-                matrix=text_matrix,
-                mark=marks[bisect_right(mark_starts, glyph_index) - 1] if marks else None,
+                matrix=matrix,
+                mark=mark,
             )
 
     def page_program(self) -> Any:
@@ -365,9 +389,11 @@ class EnginePageAdapter:
         # Characters and the pdfminer layout both read pdfminer's own text walk of the page.
         program = self._pdfminer_program
         if program is None:
-            from ..pdfminer._capture import pdfminer_page_capture
+            from ._capture import plumber_page_capture
 
-            program, self._painted_paths, self._text_marks = pdfminer_page_capture(self.page)
+            program, self._painted_paths, self._text_marks, self._painted_images = (
+                plumber_page_capture(self.page)
+            )
             self._pdfminer_program = program
             if self.latest_capture is not None:
                 self.latest_capture.hold(self)
@@ -376,6 +402,10 @@ class EnginePageAdapter:
     def painted_paths(self) -> tuple[Any, ...]:
         self.pdfminer_program()
         return self._painted_paths
+
+    def painted_images(self) -> tuple[Any, ...]:
+        self.pdfminer_program()
+        return self._painted_images
 
     def flush_program(self) -> None:
         self._program = None
@@ -454,108 +484,74 @@ def _annotation_text(value: Any, name: str, raise_errors: bool) -> Any:
             return value
 
 
-def _raw_color(color: tuple[float, ...] | None) -> tuple[float, ...] | None:
-    # pdfminer keeps operands as written, and a bare gray operand is an integer.
-    if color is not None and len(color) == 1 and color[0] == int(color[0]):
-        return (int(color[0]),)
-    return color
-
-
 def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
-    x0, top, x1, bottom = flip_box(
-        (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1), page.info.height
-    )
-    if page.info.rotation % 360 == 90:
-        rotated_width = page.info.height
-        x0, x1, top, bottom = (
-            rotated_width - bottom,
-            rotated_width - top,
-            x0,
-            x1,
-        )
-    elif page.info.rotation % 360 == 180:
-        x0, x1, top, bottom = (
-            page.info.width - x1,
-            page.info.width - x0,
-            page.info.height - bottom,
-            page.info.height - top,
-        )
-    elif page.info.rotation % 360 == 270:
-        rotated_height = page.info.width
-        x0, x1, top, bottom = top, bottom, rotated_height - x1, rotated_height - x0
-    x0 += page.info.media_x0
-    x1 += page.info.media_x0
-    top += page.info.media_top
-    bottom += page.info.media_top
+    # pdfplumber's process_object: pdfminer.six's box measured from the top of the page.
+    box = item.bbox
+    info = page.info
     text = item.text
     if page.unicode_norm == "NFC" and text == "\u037e":
         text = ";"
+    mark = item.mark
     return _envelope(
         "char",
-        page.info.number,
-        (x0, top, x1, bottom),
+        info.number,
+        (
+            box.x0 + info.media_x0,
+            info.page_height - box.y1 + info.media_top,
+            box.x1 + info.media_x0,
+            info.page_height - box.y0 + info.media_top,
+        ),
         doctop,
         text=text,
-        y0=item.bbox.y0,
-        y1=item.bbox.y1,
+        y0=box.y0,
+        y1=box.y1,
         fontname=item.font_name,
-        size=item.font_size or 0.0,
-        stroking_color=item.color if item.mark is None else _raw_color(item.mark.stroke_color),
-        non_stroking_color=item.color if item.mark is None else _raw_color(item.mark.fill_color),
+        size=item.font_size,
+        stroking_color=mark.stroke_color,
+        non_stroking_color=mark.fill_color,
         upright=item.upright,
         adv=item.advance,
         seqno=item.sequence,
         matrix=item.matrix,
-        ncs=None if item.mark is None else item.mark.color_space,
-        mcid=None if item.mark is None else item.mark.mcid,
-        tag=None if item.mark is None else item.mark.tag,
+        ncs=mark.color_space,
+        mcid=mark.mcid,
+        tag=mark.tag,
     )
 
 
 def _page_point(page: EnginePageAdapter, point: tuple[float, float]) -> tuple[float, float]:
+    # pdfplumber's Page.point2coord, from pdfminer.six's device space.
     info = page.info
-    x, top = point[0], info.height - point[1]
-    rotation = info.rotation % 360
-    if rotation == 90:
-        x, top = info.height - top, x
-    elif rotation == 180:
-        x, top = info.width - x, info.height - top
-    elif rotation == 270:
-        x, top = top, info.width - x
-    return x + info.media_x0, top + info.media_top
+    return point[0] + info.media_x0, info.page_height - point[1] + info.media_top
 
 
-def _path_segments(path: Any, media_left: float, media_bottom: float) -> list[tuple[Any, ...]]:
-    matrix = path.ctm
+def _device_matrix(page: EnginePageAdapter, ctm: Any) -> tuple[float, ...]:
+    # The CTM pdfminer.six holds: core's CTM after the page's starting CTM.
+    a, b, c, d, e, f = ctm
+    pa, pb, pc, pd, pe, pf = page.info.pdfminer_ctm
+    return (
+        a * pa + b * pc,
+        a * pb + b * pd,
+        c * pa + d * pc,
+        c * pb + d * pd,
+        e * pa + f * pc + pe,
+        e * pb + f * pd + pf,
+    )
 
-    def device(x: float, y: float) -> tuple[float, float]:
-        return (
-            matrix.a * x + matrix.c * y + matrix.e - media_left,
-            matrix.b * x + matrix.d * y + matrix.f - media_bottom,
+
+def _path_segments(page: EnginePageAdapter, path: Any) -> list[tuple[Any, ...]]:
+    # pdfminer.six's paint_path places each operand pair by the CTM; operators stay as written.
+    a, b, c, d, e, f = _device_matrix(page, path.ctm)
+    return [
+        (
+            segment[0],
+            *(
+                (a * x + c * y + e, b * x + d * y + f)
+                for x, y in zip(segment[1::2], segment[2::2], strict=False)
+            ),
         )
-
-    coords = path.coords
-    position = 0
-    segments: list[tuple[Any, ...]] = []
-    for op in path.ops:
-        if op == PATH_CLOSE:
-            segments.append(("h",))
-        elif op == PATH_RECT:
-            x, y, width, height = coords[position : position + 4]
-            segments += [
-                ("m", device(x, y)),
-                ("l", device(x + width, y)),
-                ("l", device(x + width, y + height)),
-                ("l", device(x, y + height)),
-                ("h",),
-            ]
-        elif op == PATH_CURVE:
-            _, _, x1, y1, x2, y2, x3, y3 = coords[position : position + 8]
-            segments.append(("c", device(x1, y1), device(x2, y2), device(x3, y3)))
-        else:
-            segments.append((chr(op), device(coords[position], coords[position + 1])))
-        position += PATH_OPERAND_COUNTS[op]
-    return segments
+        for segment in path.segments
+    ]
 
 
 def _split_subpaths(segments: list[tuple[Any, ...]]) -> list[list[tuple[Any, ...]]]:
@@ -590,9 +586,7 @@ def _classify_subpath(segments: list[tuple[Any, ...]]) -> tuple[str, list[tuple[
 def _path_objects(page: EnginePageAdapter, doctop: float) -> list[ObjectDict]:
     objects: list[ObjectDict] = []
     for path in page.painted_paths():
-        segments_by_subpath = _split_subpaths(
-            _path_segments(path, page.info.media_left, page.info.media_bottom)
-        )
+        segments_by_subpath = _split_subpaths(_path_segments(page, path))
         for segments in segments_by_subpath:
             object_type, points = _classify_subpath(segments)
             ys = [point[1] for point in points]
@@ -615,12 +609,12 @@ def _path_objects(page: EnginePageAdapter, doctop: float) -> list[ObjectDict]:
                         (segment[0], *(_page_point(page, point) for point in segment[1:]))
                         for segment in segments
                     ],
-                    fill=path.kind != "stroke",
-                    stroke=path.kind != "fill",
-                    evenodd=path.fill_rule == "evenodd",
-                    linewidth=path.line_width,
-                    stroking_color=path.stroke_color,
-                    non_stroking_color=path.fill_color,
+                    fill=path.fill,
+                    stroke=path.stroke,
+                    evenodd=path.evenodd,
+                    linewidth=path.linewidth,
+                    stroking_color=path.stroking_color,
+                    non_stroking_color=path.non_stroking_color,
                     dash=path.dash,
                     mcid=path.mcid,
                     tag=path.tag,
@@ -630,31 +624,47 @@ def _path_objects(page: EnginePageAdapter, doctop: float) -> list[ObjectDict]:
     return objects
 
 
-def _image(page: EnginePageAdapter, image: ImageRecord, doctop: float) -> ObjectDict | None:
-    metadata = image.image_metadata
-    box = image.rect or image.image_clip
-    if metadata is None or box is None:
-        return None
-    data = image.data
-    payload = bytes(data) if isinstance(data, (bytes, bytearray, memoryview)) else None
-    x0, top, x1, bottom = flip_box(box, page.info.height)
-    dictionary = image.dictionary or {}
+def _image(page: EnginePageAdapter, image: Any, doctop: float, bridge: Any) -> ObjectDict:
+    # pdfminer.six's LTImage in the LTFigure of a unit square placed by the CTM.
+    a, b, c, d, e, f = _device_matrix(page, image.ctm)
+    corners = [(a * x + c * y + e, b * x + d * y + f) for x, y in ((0, 0), (1, 0), (0, 1), (1, 1))]
+    placed = [_page_point(page, point) for point in corners]
+    dictionary = image.dictionary
+    resolver = page.page.document.resolver
+
+    def get_any(names: tuple[str, ...], default: Any = None) -> Any:
+        for name in names:
+            if name in dictionary:
+                return dictionary[name]
+        return default
+
+    def resolved(value: Any) -> Any:
+        return bridge(resolver.deep_resolve(value))
+
+    # pdfminer.six wraps a color space that is not written as an array, a reference too.
+    colorspace = get_any(("CS", "ColorSpace"))
+    colorspace = resolved(colorspace if isinstance(colorspace, list) else [colorspace])
     return _envelope(
         "image",
         page.info.number,
-        (x0, top, x1, bottom),
+        (
+            min(point[0] for point in placed),
+            min(point[1] for point in placed),
+            max(point[0] for point in placed),
+            max(point[1] for point in placed),
+        ),
         doctop,
-        y0=box[1],
-        y1=box[3],
-        seqno=image.seqno or 0,
-        name=None,
-        srcsize=(metadata.width, metadata.height),
-        stream=payload,
-        imagemask=dictionary.get(PdfName(b"ImageMask")),
-        colorspace=metadata.color_model,
-        bits=dictionary.get(PdfName(b"BitsPerComponent")),
-        mcid=None,
-        tag=None,
+        y0=min(point[1] for point in corners),
+        y1=max(point[1] for point in corners),
+        seqno=image.sequence,
+        name=image.name,
+        srcsize=(resolved(get_any(("W", "Width"))), resolved(get_any(("H", "Height")))),
+        stream=bridge(image.stream),
+        imagemask=resolved(get_any(("IM", "ImageMask"))),
+        colorspace=colorspace,
+        bits=resolved(get_any(("BPC", "BitsPerComponent"), 1)),
+        mcid=image.mcid,
+        tag=image.tag,
     )
 
 
@@ -758,13 +768,13 @@ class Page(Container):
                 for c in self._adapter.text_characters()
             ]
         }
-        program = self._adapter.page_program()
         for path_object in _path_objects(self._adapter, self.initial_doctop):
             objects.setdefault(path_object["object_type"], []).append(path_object)
-        for image in self._adapter.images(program):
-            image_record = _image(self._adapter, image, self.initial_doctop)
-            if image_record is not None:
-                objects.setdefault("image", []).append(image_record)
+        bridge = self.pdf.doc.bridge
+        for image in self._adapter.painted_images():
+            objects.setdefault("image", []).append(
+                _image(self._adapter, image, self.initial_doctop, bridge)
+            )
         if self.pdf.laparams is not None and objects.get("char"):
             objects["char"] = self._chars_in_layout_order(objects["char"])
         # pdfplumber keeps each type where it first appears in the content stream.
