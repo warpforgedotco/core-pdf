@@ -73,6 +73,10 @@ test = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
 ]
+benchmark = [
+    "pytest>=9.2.0",
+    "pytest-codspeed>=5.0.3,<6",
+]
 
 [tool.ruff]
 src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src", "packages/core-pdf-cythonized/src", "."]

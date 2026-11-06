@@ -28,6 +28,10 @@ To prove a floor package or spec works alone, install it on its own (`uv sync --
 
 To validate against the locked dependencies, use `uv run --locked` with the relevant group, such as `uv run --locked --group lint mypy`. Do not use `--locked` while intentionally changing dependencies; update them with `uv add` or `uv remove` first.
 
+## Benchmarks
+
+`tests/benchmarks` holds CodSpeed benchmarks of core's saves and each facade's main calls, on upstream test PDFs (it needs the pdfplumber, pypdf and x-ray submodules). Run them locally with `uv run --all-packages --group benchmark --extra unstructured pytest tests/benchmarks --codspeed`. The `CodSpeed` workflow runs them under CPU simulation on every pull request and on main, and reports each change against main. To compare a facade's speed with the real library's, use `scripts/benchmark_facades.py`.
+
 ## Compiled modules
 
 `core-pdf-cythonized` compiles its Python files with Cython, and a build can leave `.so` files beside them in `packages/core-pdf-cythonized/src/`. Those shadow later edits to the `.py` files. After changing that package, rebuild it with `uv sync --all-packages --reinstall-package core-pdf-cythonized` before testing.
