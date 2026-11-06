@@ -70,11 +70,6 @@ IMAGE_KEYS = (
     "mcid",
     "tag",
 )
-PAGE_CHECKS = ("chars", "rects", "lines", "curves", "images", "words", "text", "layout", "tables")
-PAGE_TREE = (
-    "which pages pdfminer.six finds in a damaged page tree comes from the pdfminer "
-    "facade's shared page projection"
-)
 # (file name, check) -> why the facade does not follow pdfplumber there; it covers every
 # page of that check.
 DEPARTURES: dict[tuple[str, str], str] = {
@@ -84,10 +79,6 @@ DEPARTURES: dict[tuple[str, str], str] = {
         "PdfminerException, when the pages are read"
     ),
     ("issue-1249-evil-xrefs.pdf", "pages"): "see open",
-    ("unreadablemetadata.pdf", "pages"): PAGE_TREE,
-    **{("unreadablemetadata.pdf", check): PAGE_TREE for check in PAGE_CHECKS},
-    ("cmyk-image.pdf", "pages"): PAGE_TREE,
-    **{("cmyk-image.pdf", check): PAGE_TREE for check in PAGE_CHECKS},
 }
 
 

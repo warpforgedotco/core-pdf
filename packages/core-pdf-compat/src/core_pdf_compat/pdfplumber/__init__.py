@@ -40,6 +40,7 @@ from core_pdf.impl.types import (
 from .._shared import BBox, ClosingMixin, PdfInput
 from ..pdfminer.pdftypes import DocumentView
 from ._capture import miner_font_name
+from ._metadata import metadata_retyped_objects
 from .convert import Container
 from .exceptions import PdfminerException
 from .repair import RepairSetting, repair, repair_stream
@@ -1594,6 +1595,7 @@ class PDF(ClosingMixin, Container):
         raw_metadata = self._document.get_metadata()
         info = raw_metadata.get("info") if isinstance(raw_metadata, dict) else None
         self.metadata = dict(info) if isinstance(info, dict) else {}
+        self._retyped = metadata_retyped_objects(self._document)
         self.laparams = laparams
         self._page_selection = tuple(pages) if pages is not None else None
         self._pages: list[Page] | None = None
@@ -1638,7 +1640,7 @@ class PDF(ClosingMixin, Container):
 
                 doctop = 0.0
                 self._pages = []
-                resolvable = tuple(pdfminer_resolvable_pages(self._document))
+                resolvable = tuple(pdfminer_resolvable_pages(self._document, self._retyped))
                 selected = set(self._page_selection) if self._page_selection is not None else None
                 for page_number, (index, engine_page) in enumerate(resolvable, 1):
                     if selected is not None and page_number not in selected:

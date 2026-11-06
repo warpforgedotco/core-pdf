@@ -56,15 +56,9 @@ RECURSION = (
     "pdfminer follows the xref chain until Python's stack overflows and raises RecursionError; "
     "core-pdf detects the loop and raises PdfError"
 )
-UNREADABLE_XREF = (
-    "the last xref section has no /Root and its startxref no offset; pdfminer still finds the "
-    "first page's objects through the first section, core-pdf's recovery finds no pages"
-)
 DEPARTURES: dict[tuple[str, str], str] = {
     ("text", "issue-1249-evil-xrefs.pdf"): RECURSION,
     ("layout", "issue-1249-evil-xrefs.pdf"): RECURSION,
-    ("text", "unreadablemetadata.pdf"): UNREADABLE_XREF,
-    ("layout", "unreadablemetadata.pdf"): UNREADABLE_XREF,
 }
 # Files with text boxes at equal distances, where pdfminer's order follows memory addresses.
 # Running pdfminer alone a dozen times over each, with other allocations in between, gives
