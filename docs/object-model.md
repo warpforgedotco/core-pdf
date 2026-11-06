@@ -187,8 +187,8 @@ All six are done. Numbers are from main, and CI reruns each of these checks on e
    no longer partial in `tests/compat/out_of_scope.toml`. Its private submodules stay stubs.
 5. **`PdfWriter`. Done.** Pages, metadata, annotations, forms and merging. No in-scope test
    skips for a missing writer feature. Incremental mode is built on `save_incremental`.
-   `scripts/check_writer_lossless.py`: 59,980 objects equal by value through a rewrite, and
-   all 167 incremental updates start with the source's bytes.
+   `scripts/check_writer_lossless.py`: 59,971 objects equal by value through a rewrite, and
+   all 168 incremental updates start with the source's bytes.
 6. **Encrypted output and xref streams. Done.** The policy is under
    [Encrypted input](#encrypted-input). qpdf, Poppler, Ghostscript and real pypdf opened all
    15 `PdfWriter.encrypt` outputs. `--xref-stream` gives the same results on both scripts:
@@ -198,15 +198,16 @@ All six are done. Numbers are from main, and CI reruns each of these checks on e
 
 | Suite | Passed | Skipped |
 | ----- | ------ | ------- |
-| pypdf | 1,754 of 2,184 | 430 |
+| pypdf | 1,756 of 2,184 | 428 |
 | pdfplumber | 169 | 0 |
 | pdfminer | 127 | 0 |
-| unstructured | 50 | 0 |
+| unstructured | 83 | 0 |
 | llama_index | 27 | 0 |
 | x-ray | 14 | 1 |
 
-Real pypdf 6.21.4 passes 2,195 of 2,200 and skips 5. None fail on the facade. Of its 430
-skips, 425 reach a private pypdf module and 5 are also skipped on the real library, as
+Counts are from CI's Linux runners; on macOS two more pypdf tests skip. Real pypdf 6.21.4
+passes 2,197 of 2,200 and skips 3. None fail on the facade. Of its 428 skips, 425 reach a
+private pypdf module and 3 are also skipped on the real library, as
 `scripts/audit_upstream_skips.py pypdf` reports. The count includes pypdf's tests that
 download their files (marked `enable_socket`); the harness fetches those files first, and CI
 caches them.
@@ -229,9 +230,9 @@ PDFs, file by file, and fails on any difference a script does not list with its 
 | `check_pypdf_text.py` | pypdf 6.21.4 | `extract_text` identical on all 3,881 pages compared, plain and layout |
 | `check_pdfminer_output.py` | pdfminer.six 20260107 | Text identical on 178 of 184 files, layout on 179 |
 | `check_pdfplumber_output.py` | pdfplumber 0.11.10 | Identical apart from 6 listed files |
-| `check_unstructured_output.py` | unstructured 0.25.2 | 215 of 216 files identical |
+| `check_unstructured_output.py` | unstructured 0.27.36 | 215 of 216 files identical |
 | `check_llamaindex_output.py` | llama-index-readers-file 0.7.0 | 169 of 184 identical, 11 with the same error |
-| `check_xray_output.py` | x-ray 0.3.6 | 203 of 211 identical, 6 with the same error |
+| `check_xray_output.py` | x-ray 0.4.0 | 203 of 211 identical, 6 with the same error |
 
 Each script lists its remaining differences with the reason; the upstream suites pin the same
 versions.
