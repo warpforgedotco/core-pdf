@@ -14,9 +14,10 @@ pages: PDFReader().load_data(path), one Document per page.
 full: PDFReader(return_full_document=True).load_data(path), one Document for the file.
 extra: PDFReader().load_data(path, extra_info), with extra_info overriding file_name.
 
-pypdf is pinned to the version the pypdf facade follows, since llama_index's text is pypdf's
-extract_text(). The suite runner leaves it unpinned; a newer pypdf changes text extraction,
-which is the pypdf facade's concern rather than this one's.
+pypdf is pinned, since llama_index's text is pypdf's extract_text(). The pypdf facade follows
+pypdf 7.0.0, but llama-index-readers-file 0.7.0 requires pypdf<7, so the real reader runs on
+pypdf 6.21.4, the newest it accepts. The facade's PDFReader calls the pypdf facade, so its text
+is pypdf 7.0.0's, and the files where 7.0.0's text differs from 6.21.4's are DEPARTURES.
 
 llama_index wraps load_data in tenacity's @retry, so a file it cannot read raises
 tenacity.RetryError after three attempts. The facade cannot raise tenacity's class without
@@ -54,7 +55,27 @@ PATTERNS = (
 )
 EXTRA_INFO = {"source": "check", "file_name": "renamed.pdf"}
 # (mode, file name) -> why the facade's Documents differ from llama_index's there.
-DEPARTURES: dict[tuple[str, str], str] = {}
+# pypdf 7.0.0 separates a text fragment that the line span keeps on the current line but that
+# moved to another baseline with a space (#4254); 6.21.4 does not. Only this differs: with that
+# change left out, the facade matches llama_index on pypdf 6.21.4 on every file.
+PYPDF_7_SPACE = (
+    "issue-1061-colour-space-stack.pdf",
+    "issue_495_pdfobjref.pdf",
+    "issue-1279-example.pdf",
+    "issue-192-example.pdf",
+    "issue-336-example.pdf",
+    "issue-71-duplicate-chars-2.pdf",
+    "issue-982-example.pdf",
+    "GeoBase_NHNC1_Data_Model_UML_EN.pdf",
+    "issue-604.pdf",
+    "GeoTopo-komprimiert.pdf",
+    "GeoTopo.pdf",
+)
+DEPARTURES: dict[tuple[str, str], str] = {
+    (mode, name): "pypdf 7.0.0 text: a space before a fragment on another baseline (#4254)"
+    for name in PYPDF_7_SPACE
+    for mode in ("pages", "full", "extra")
+}
 
 
 def pages(reader: Any, path: Path) -> list[Any]:
