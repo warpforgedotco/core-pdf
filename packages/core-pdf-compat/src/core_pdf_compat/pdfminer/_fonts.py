@@ -18,12 +18,18 @@ from core_pdf_spec.s_09_fonts.data.base_encodings import (
     WIN_ANSI_ENCODING,
 )
 
+from ._zapf_dingbats import ZAPF_DINGBATS_WIDTHS
+
 
 def decoder_base_encoding(decoder: object) -> str | None:
     return decoder.encoding.base_encoding if isinstance(decoder, FontDecoder) else None
 
 
 def decoder_encoding_differences(decoder: object) -> dict[int, str]:
+    return decoder.encoding.encoding_differences if isinstance(decoder, FontDecoder) else {}
+
+
+def pdfminer_encoding_differences(decoder: object) -> dict[int, str]:
     """The glyph names pdfminer's encoding gives codes, over its base encoding.
 
     pdfminer reads the /Differences of an /Encoding dictionary, and only without /Encoding
@@ -220,7 +226,7 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
         return glyph.alternates[0]
     to_unicode = decoder_to_unicode(glyph.font_decoder)
     decoder = glyph.font_decoder
-    glyph_name = decoder_encoding_differences(decoder).get(glyph.char_code)
+    glyph_name = pdfminer_encoding_differences(decoder).get(glyph.char_code)
     if glyph_name and glyph_name.isdecimal():
         glyph_name = None
     glyph_name_text = legacy_glyph_name_text(glyph_name) if glyph_name else ""
@@ -476,7 +482,13 @@ def _pdfminer_builtin_width(glyph: Any, projected_text: str | None = None) -> fl
         widths = entry.get("widths")
         if not isinstance(widths, dict):
             return None
-        width = widths.get(projected_text)
+        if base_font == "ZapfDingbats":
+            # pdfminer's table keys these glyphs apart from their text; see _zapf_dingbats.
+            width = (
+                ZAPF_DINGBATS_WIDTHS.get(ord(projected_text)) if len(projected_text) == 1 else None
+            )
+        else:
+            width = widths.get(projected_text)
         return 0.0 if width is None else float(width)
     if legacy_widths is not None:
         if 0 <= width_index < len(legacy_widths):

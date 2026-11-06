@@ -321,37 +321,6 @@ def project_page(
             descent = known_descent[1] * glyph.font_size
             top = descent + glyph.font_size
             advance = normalized_width * horizontal_scale * glyph.font_size
-            media_left, media_bottom, _media_right, _media_top = page_media_box
-            page_rotation = int(page.rotation) % 360
-            layout_origin_x = origin_x - media_left
-            layout_origin_y = origin_y - media_bottom
-            (
-                layout_origin_x,
-                layout_origin_y,
-                matrix_a,
-                matrix_b,
-                matrix_c,
-                matrix_d,
-            ) = _pdfminer_rotated_text_matrix(
-                layout_origin_x,
-                layout_origin_y,
-                (matrix_a, matrix_b, matrix_c, matrix_d),
-                page_rotation,
-                page_width,
-                page_height,
-            )
-            bottom_left_x = 0.0 * matrix_a + descent * matrix_c + layout_origin_x
-            bottom_left_y = 0.0 * matrix_b + descent * matrix_d + layout_origin_y
-            top_left_x = 0.0 * matrix_a + top * matrix_c + layout_origin_x
-            top_left_y = 0.0 * matrix_b + top * matrix_d + layout_origin_y
-            bottom_right_x = advance * matrix_a + descent * matrix_c + layout_origin_x
-            bottom_right_y = advance * matrix_b + descent * matrix_d + layout_origin_y
-            top_right_x = advance * matrix_a + top * matrix_c + layout_origin_x
-            top_right_y = advance * matrix_b + top * matrix_d + layout_origin_y
-            x0 = min(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
-            y0 = min(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
-            x1 = max(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
-            y1 = max(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
             exact_matrix = glyph_matrices.get(glyph_index)
             if exact_matrix is not None:
                 # pdfminer's own arithmetic, from LTChar: its rounding decides which boxes
@@ -375,6 +344,38 @@ def project_page(
                     char_b * 0 + char_d * high + char_f,
                 )
                 x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+            else:
+                media_left, media_bottom, _media_right, _media_top = page_media_box
+                page_rotation = int(page.rotation) % 360
+                layout_origin_x = origin_x - media_left
+                layout_origin_y = origin_y - media_bottom
+                (
+                    layout_origin_x,
+                    layout_origin_y,
+                    matrix_a,
+                    matrix_b,
+                    matrix_c,
+                    matrix_d,
+                ) = _pdfminer_rotated_text_matrix(
+                    layout_origin_x,
+                    layout_origin_y,
+                    (matrix_a, matrix_b, matrix_c, matrix_d),
+                    page_rotation,
+                    page_width,
+                    page_height,
+                )
+                bottom_left_x = 0.0 * matrix_a + descent * matrix_c + layout_origin_x
+                bottom_left_y = 0.0 * matrix_b + descent * matrix_d + layout_origin_y
+                top_left_x = 0.0 * matrix_a + top * matrix_c + layout_origin_x
+                top_left_y = 0.0 * matrix_b + top * matrix_d + layout_origin_y
+                bottom_right_x = advance * matrix_a + descent * matrix_c + layout_origin_x
+                bottom_right_y = advance * matrix_b + descent * matrix_d + layout_origin_y
+                top_right_x = advance * matrix_a + top * matrix_c + layout_origin_x
+                top_right_y = advance * matrix_b + top * matrix_d + layout_origin_y
+                x0 = min(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
+                y0 = min(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
+                x1 = max(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
+                y1 = max(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
             effective_font_height = x1 - x0 if orientation % 180 else y1 - y0
             coordinates_in_layout_space = True
         elif orientation == 0:
