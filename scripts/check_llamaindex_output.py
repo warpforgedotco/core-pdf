@@ -53,6 +53,7 @@ PATTERNS = (
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
 EXTRA_INFO = {"source": "check", "file_name": "renamed.pdf"}
+# (mode, file name) -> why the facade's Documents differ from llama_index's there.
 DEPARTURES: dict[tuple[str, str], str] = {}
 
 
