@@ -1403,7 +1403,10 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         for reference in changed:
             core = to_core(reference.get_object())
             editable.set_object(PdfReference(reference.idnum, reference.generation), core)
-        editable.next_object_number = max(editable.next_object_number, len(self._objects) + 1)
+        # pypdf numbers the xref stream after its own table, not after a declared /Size, which
+        # can be too large. Every number in the file's sections stays clear of it.
+        kept, compressed = editable.existing_entries()
+        editable.next_object_number = max(len(self._objects), *kept, *compressed, 0) + 1
         for key in TRAILER_KEYS:
             editable.trailer.pop(key, None)
         editable.trailer.update(trailer)

@@ -10,6 +10,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
+from core_pdf_spec.s_07_filters.codecs import encode_flate
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
@@ -34,7 +35,8 @@ class ObjectLayout(Enum):
     COMPACT is what core-pdf writes to files. SPACED is the layout pypdf gives an object's
     write_to_stream: one dictionary entry per line, spaces inside array brackets, lowercase
     hex, an octal escape for every byte of a literal string that is not a letter, digit or
-    space, and 0.0 for zero.
+    space, and 0.0 for zero. An xref stream in the SPACED layout is the one pypdf appends in
+    an incremental update; see serialize_xref_stream.
     """
 
     COMPACT = "compact"
@@ -142,6 +144,7 @@ def serialize_xref_stream(
     *,
     compressed: Mapping[int, tuple[int, int]] | None = None,
     complete: bool = False,
+    layout: ObjectLayout = ObjectLayout.COMPACT,
 ) -> bytes:
     """7.5.8: an xref stream object, numbered `number`, that also carries the trailer entries.
 
@@ -149,7 +152,12 @@ def serialize_xref_stream(
     `compressed` maps objects inside object streams to (stream number, index). A `complete`
     stream covers every number from 0, with the gaps free, as a file's only section does.
     Otherwise it lists just these objects, as an incremental update does.
+
+    The SPACED layout of a partial stream is pypdf's: Flate-encoded rows of widths [1 4 1]
+    that leave out the stream's own entry, pypdf's key order, and no line break after `obj`.
     """
+    if layout is ObjectLayout.SPACED and not complete and not compressed:
+        return _spaced_xref_stream(number, offsets, trailer)
     used = {item: (2, stream, index) for item, (stream, index) in (compressed or {}).items()}
     used |= {item: (1, offset, generation) for item, (offset, generation) in offsets.items()}
     used[number] = (1, own_offset, 0)
@@ -177,6 +185,41 @@ def serialize_xref_stream(
         "Index": index,
     }
     return serialize_indirect_object(PdfReference(number, 0), PdfStream(dictionary, data))
+
+
+# The entries pypdf writes after its own, in its order. Anything else follows them.
+SPACED_XREF_TRAILER_ORDER = ("Info", "Prev", "ID")
+
+
+def _spaced_xref_stream(
+    number: int, offsets: Mapping[int, tuple[int, int]], trailer: Mapping[object, object]
+) -> bytes:
+    items = sorted(offsets.items())
+    index: list[int] = []
+    for item, _ in items:
+        if index and index[-2] + index[-1] == item:
+            index[-1] += 1
+        else:
+            index += [item, 1]
+    rows = b"".join(
+        b"\x01" + offset.to_bytes(4, "big") + generation.to_bytes(1, "big")
+        for _, (offset, generation) in items
+    )
+    entries = {str(getattr(key, "value", key)): value for key, value in trailer.items()}
+    dictionary: dict[object, object] = {
+        "Type": PdfName.of("XRef"),
+        "Size": number + 1,
+        "Root": entries.pop("Root"),
+        "Filter": PdfName.of("FlateDecode"),
+        "Index": index,
+        "W": [1, 4, 1],
+    }
+    for key in SPACED_XREF_TRAILER_ORDER:
+        if key in entries:
+            dictionary[key] = entries.pop(key)
+    dictionary |= entries
+    stream = PdfStream(dictionary, encode_flate(rows))
+    return b"%d 0 obj" % number + serialize_stream(stream, ObjectLayout.SPACED) + b"\nendobj\n"
 
 
 def serialize_stream(stream: PdfStream, layout: ObjectLayout = ObjectLayout.COMPACT) -> bytes:
