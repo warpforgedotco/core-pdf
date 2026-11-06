@@ -71,17 +71,6 @@ IMAGE_KEYS = (
     "tag",
 )
 PAGE_CHECKS = ("chars", "rects", "lines", "curves", "images", "words", "text", "layout", "tables")
-TEXT_CHECKS = ("chars", "words", "text", "layout")
-EMPTY_CODES = (
-    "pdfminer.six makes a char, with empty text, of each code a ToUnicode CMap maps to "
-    "nothing; core's font decoder folds those codes into the next glyph, so the chars "
-    "after them shift"
-)
-CFF_ENCODING = (
-    "a Type1 font embedded as FontFile3 (CFF): pdfminer.six reads no built-in encoding "
-    "from it and falls back to StandardEncoding, where core reads the CFF's own encoding; "
-    "glyph text comes from the pdfminer facade's shared font helpers"
-)
 PAGE_TREE = (
     "which pages pdfminer.six finds in a damaged page tree comes from the pdfminer "
     "facade's shared page projection"
@@ -93,10 +82,6 @@ INLINE_IMAGES = (
 # (file name, check) -> why the facade does not follow pdfplumber there; it covers every
 # page of that check.
 DEPARTURES: dict[tuple[str, str], str] = {
-    **{("habibi.pdf", check): EMPTY_CODES for check in TEXT_CHECKS},
-    **{("habibi-oneline-cmap.pdf", check): EMPTY_CODES for check in TEXT_CHECKS},
-    **{("habibi-rotated.pdf", check): EMPTY_CODES for check in TEXT_CHECKS},
-    **{("GeoTopo-komprimiert.pdf", check): CFF_ENCODING for check in (*TEXT_CHECKS, "tables")},
     ("AutoCad_Diagram.pdf", "images"): (
         "the file writes a NUL byte inside the name /DeviceRGB; pdfminer.six keeps it in "
         "the name, core's lexer ends the name there as PDF says NUL is white-space"

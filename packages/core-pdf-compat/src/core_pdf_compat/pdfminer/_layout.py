@@ -651,7 +651,7 @@ def _group_lines(
         box = bbox_union(item.bbox for item in members) or members[0].bbox
         box_type = LTTextBoxVertical if vertical else LTTextBoxHorizontal
         text_box = box_type(box, members)
-        if not text_box.get_text().isspace():
+        if text_box.width > 0 and text_box.height > 0:
             boxes.append(text_box)
     return boxes
 
@@ -679,7 +679,11 @@ def _reading_order(
     if len(boxes) < 2:
         return boxes
 
-    active: dict[int, LTTextBox | _TextGroup] = {id(box): box for box in boxes}
+    # pdfminer breaks ties between equal distances by id(), a memory address; fresh objects
+    # mostly take increasing addresses, so creation order stands in for it, and keeps the
+    # result the same from run to run.
+    active: dict[int, LTTextBox | _TextGroup] = dict(enumerate(boxes))
+    next_id = len(boxes)
     plane_bbox = page_bbox or bbox_union(box.bbox for box in boxes) or boxes[0].bbox
     gridsize = max(50, ceil(max(plane_bbox[2] - plane_bbox[0], plane_bbox[3] - plane_bbox[1]) / 64))
     plane = _LayoutPlane(plane_bbox, gridsize=gridsize)
@@ -697,9 +701,9 @@ def _reading_order(
         return (x1 - x0) * (y1 - y0) - first_area - second_area
 
     queue: list[tuple[bool, float, int, int]] = [
-        (False, area_gap(first, second), id(first), id(second))
+        (False, area_gap(first, second), first_index, second_index)
         for first_index, first in enumerate(boxes)
-        for second in boxes[first_index + 1 :]
+        for second_index, second in enumerate(boxes[first_index + 1 :], first_index + 1)
     ]
     heapq.heapify(queue)
     compact_at = len(active) // 2
@@ -737,7 +741,8 @@ def _reading_order(
         group = _TextGroup([active_first, active_second], union, vertical)
         retained_groups.append(group)
         del active[first_id], active[second_id]
-        group_id = id(group)
+        group_id = next_id
+        next_id += 1
         if not active:
             active[group_id] = group
             break

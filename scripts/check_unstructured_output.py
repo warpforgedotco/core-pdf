@@ -49,14 +49,7 @@ COORDINATE_DIGITS = 6
 # Each of these comes from the pdfminer facade's layout, which hands the unstructured facade
 # different text boxes or pages than pdfminer.six 20260107 hands unstructured; the
 # unstructured facade turns the boxes it gets into the same elements.
-PDFMINER_LAYOUT = "the pdfminer facade groups this page's characters into different text boxes"
 DEPARTURES: dict[str, str] = {
-    "cropped-rotated-scaled.pdf": PDFMINER_LAYOUT,
-    "habibi-oneline-cmap.pdf": "the pdfminer facade's box for the Arabic line is narrower",
-    "habibi-rotated.pdf": PDFMINER_LAYOUT,
-    "habibi.pdf": "the pdfminer facade's box for the Arabic line is narrower",
-    "nics-background-checks-2015-11-rotated.pdf": PDFMINER_LAYOUT,
-    "toy.pdf": 'the pdfminer facade places the text of the " operator elsewhere',
     "unreadablemetadata.pdf": "the pdfminer facade finds no page in the broken page tree, "
     "where pdfminer finds one",
 }

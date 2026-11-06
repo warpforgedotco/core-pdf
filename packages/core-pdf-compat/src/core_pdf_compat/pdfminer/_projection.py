@@ -1,19 +1,21 @@
 from __future__ import annotations
 
+import re
 from bisect import bisect_left, bisect_right
+from collections.abc import Callable
 from typing import Any
 
 from core_pdf import PdfPage
 from core_pdf.impl.capture_program import CapturedProgram
-from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.geometry import bbox_union, overlap_ratio_of
 from core_pdf.impl.types import GeneratedRecord
+from core_pdf_spec.s_07_content.model import PATH_CLOSE, PATH_CURVE, PATH_OPERAND_COUNTS, PATH_RECT
 
 from ._capture import (
     pdfminer_page_program,
     pdfminer_validate_page_resources,
 )
 from ._fonts import (
+    EMPTY_GLYPH_TEXT,
     _font_value,
     _pdfminer_builtin_width,
     decoder_encoding_differences,
@@ -27,12 +29,14 @@ from ._layout import (
     LAParams,
     LTChar,
     LTFigure,
-    LTItem,
+    LTImage,
     LTPage,
+    LTTextLine,
     _group_lines,
     _group_objects,
     _reading_order,
 )
+from .layout import LTCurve, LTLine, LTRect
 
 
 class ProjectionPolicy(GeneratedRecord):
@@ -154,27 +158,14 @@ def project_page(
     page_width = abs(page.width)
     page_height = abs(page.height)
     page_media_box = page.media_box or (0.0, 0.0, page_width, page_height)
-    chars: list[LTChar] = []
     if policy.strict_resources:
         pdfminer_validate_page_resources(page)
     if products is None:
         products = pdfminer_page_program(page)
     projected_glyphs: tuple[Any, ...] = products.glyphs
     ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
-    runs = sorted(products.runs, key=lambda run: run.seqno)
-    run_sequences = [run.seqno for run in runs]
-    figure_chars: dict[tuple[object, ...], list[tuple[LTChar, int]]] = {}
-    figure_boxes: dict[tuple[object, ...], tuple[float, float, float, float]] = {}
-    figure_depths: dict[tuple[object, ...], int] = {}
-    figure_identifiers: dict[tuple[object, ...], object] = {}
-    form_ancestor_boxes: dict[tuple[object, ...], tuple[float, float, float, float]] = {}
-    try:
-        page_annotations = page.get_annotations()
-    except PdfError, ValueError:
-        page_annotations = []
-    annotation_boxes = tuple(
-        tuple(annotation.rect) for annotation in page_annotations if annotation.rect is not None
-    )
+    chars_by_glyph: dict[int, tuple[LTChar, int]] = {}
+    glyph_matrices: dict[int, Any] = getattr(products, "glyph_matrices", {})
     vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
     provenance_dicts: dict[int, tuple[object, dict[str, Any]]] = {}
     # A page repeats a few hundred distinct glyphs; their pdfminer text, widths and
@@ -198,7 +189,6 @@ def project_page(
             glyph_provenance = {}
         if _pdfminer_form_glyph_is_clipped(glyph_provenance):
             continue
-        run_index = bisect_right(run_sequences, glyph.seqno) - 1
         if id(glyph) in skipped_ligature_parts:
             continue
         if not glyph.text:
@@ -220,8 +210,8 @@ def project_page(
             glyph_text = glyph_texts.get(glyph_key)
             if glyph_text is None:
                 glyph_text = glyph_texts[glyph_key] = pdfminer_glyph_text(glyph)
-        text = ligature[0] if ligature is not None else glyph_text
-        if not text:
+        text = (ligature[0] if ligature is not None else glyph_text) or ""
+        if not text and glyph.text != EMPTY_GLYPH_TEXT:
             continue
         effective_font_size = glyph.effective_font_size or glyph.font_size
         effective_font_height = glyph.effective_font_height or effective_font_size
@@ -331,37 +321,61 @@ def project_page(
             descent = known_descent[1] * glyph.font_size
             top = descent + glyph.font_size
             advance = normalized_width * horizontal_scale * glyph.font_size
-            media_left, media_bottom, _media_right, _media_top = page_media_box
-            page_rotation = int(page.rotation) % 360
-            layout_origin_x = origin_x - media_left
-            layout_origin_y = origin_y - media_bottom
-            (
-                layout_origin_x,
-                layout_origin_y,
-                matrix_a,
-                matrix_b,
-                matrix_c,
-                matrix_d,
-            ) = _pdfminer_rotated_text_matrix(
-                layout_origin_x,
-                layout_origin_y,
-                (matrix_a, matrix_b, matrix_c, matrix_d),
-                page_rotation,
-                page_width,
-                page_height,
-            )
-            bottom_left_x = 0.0 * matrix_a + descent * matrix_c + layout_origin_x
-            bottom_left_y = 0.0 * matrix_b + descent * matrix_d + layout_origin_y
-            top_left_x = 0.0 * matrix_a + top * matrix_c + layout_origin_x
-            top_left_y = 0.0 * matrix_b + top * matrix_d + layout_origin_y
-            bottom_right_x = advance * matrix_a + descent * matrix_c + layout_origin_x
-            bottom_right_y = advance * matrix_b + descent * matrix_d + layout_origin_y
-            top_right_x = advance * matrix_a + top * matrix_c + layout_origin_x
-            top_right_y = advance * matrix_b + top * matrix_d + layout_origin_y
-            x0 = min(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
-            y0 = min(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
-            x1 = max(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
-            y1 = max(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
+            exact_matrix = glyph_matrices.get(glyph_index)
+            if exact_matrix is not None:
+                # pdfminer's own arithmetic, from LTChar: its rounding decides which boxes
+                # touch, and so which lines group.
+                char_a, char_b, char_c, char_d, char_e, char_f = exact_matrix
+                rise = float(glyph_provenance.get("text_rise", 0.0) or 0.0)
+                font_size = glyph.font_size
+                exact_advance = normalized_width * font_size * horizontal_scale
+                low = descent + rise
+                high = descent + rise + font_size
+                xs = (
+                    char_a * 0 + char_c * low + char_e,
+                    char_a * exact_advance + char_c * low + char_e,
+                    char_a * exact_advance + char_c * high + char_e,
+                    char_a * 0 + char_c * high + char_e,
+                )
+                ys = (
+                    char_b * 0 + char_d * low + char_f,
+                    char_b * exact_advance + char_d * low + char_f,
+                    char_b * exact_advance + char_d * high + char_f,
+                    char_b * 0 + char_d * high + char_f,
+                )
+                x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+            else:
+                media_left, media_bottom, _media_right, _media_top = page_media_box
+                page_rotation = int(page.rotation) % 360
+                layout_origin_x = origin_x - media_left
+                layout_origin_y = origin_y - media_bottom
+                (
+                    layout_origin_x,
+                    layout_origin_y,
+                    matrix_a,
+                    matrix_b,
+                    matrix_c,
+                    matrix_d,
+                ) = _pdfminer_rotated_text_matrix(
+                    layout_origin_x,
+                    layout_origin_y,
+                    (matrix_a, matrix_b, matrix_c, matrix_d),
+                    page_rotation,
+                    page_width,
+                    page_height,
+                )
+                bottom_left_x = 0.0 * matrix_a + descent * matrix_c + layout_origin_x
+                bottom_left_y = 0.0 * matrix_b + descent * matrix_d + layout_origin_y
+                top_left_x = 0.0 * matrix_a + top * matrix_c + layout_origin_x
+                top_left_y = 0.0 * matrix_b + top * matrix_d + layout_origin_y
+                bottom_right_x = advance * matrix_a + descent * matrix_c + layout_origin_x
+                bottom_right_y = advance * matrix_b + descent * matrix_d + layout_origin_y
+                top_right_x = advance * matrix_a + top * matrix_c + layout_origin_x
+                top_right_y = advance * matrix_b + top * matrix_d + layout_origin_y
+                x0 = min(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
+                y0 = min(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
+                x1 = max(bottom_left_x, top_left_x, bottom_right_x, top_right_x)
+                y1 = max(bottom_left_y, top_left_y, bottom_right_y, top_right_y)
             effective_font_height = x1 - x0 if orientation % 180 else y1 - y0
             coordinates_in_layout_space = True
         elif orientation == 0:
@@ -392,74 +406,45 @@ def project_page(
             (x0, y0, x1, y1),
             text,
             pdfminer_font_name(glyph),
-            effective_font_height,
+            # pdfminer's size is the box's height, or its width for vertical writing.
+            x1 - x0 if getattr(glyph.font_decoder, "is_vertical", False) else y1 - y0,
         )
-        provenance = (
-            glyph_provenance
-            if glyph.provenance
-            else (dict(runs[run_index].provenance) if run_index >= 0 else {})
-        )
-        raw_xobject_depth = provenance.get("xobject_depth")
-        xobject_depth = raw_xobject_depth if type(raw_xobject_depth) is int else 0
-        if xobject_depth <= 0:
-            chars.append(character)
-            continue
-        clip_bbox = provenance.get("clip_bbox")
-        if isinstance(clip_bbox, (tuple, list)) and len(clip_bbox) == 4:
-            clip = tuple(float(value) for value in clip_bbox)
-            if any(overlap_ratio_of(clip, annotation) > 0.5 for annotation in annotation_boxes):
-                continue
-        raw_stream_order = provenance.get("stream_order")
-        stream_order = raw_stream_order if type(raw_stream_order) is int else 0
-        layout_form_id = provenance.get("layout_form_id")
-        layout_bbox = provenance.get("layout_form_bbox")
-        if isinstance(layout_form_id, tuple):
-            for ancestor_index, ancestor_entry in enumerate(layout_form_id, start=1):
-                if (
-                    isinstance(ancestor_entry, tuple)
-                    and len(ancestor_entry) == 2
-                    and isinstance(ancestor_entry[1], (tuple, list))
-                    and len(ancestor_entry[1]) == 4
-                ):
-                    form_ancestor_boxes[layout_form_id[:ancestor_index]] = tuple(  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-                        float(value) for value in ancestor_entry[1]
-                    )
-        if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
-            resolved_layout_bbox = tuple(float(value) for value in layout_bbox)
-            figure_key: tuple[object, ...] = (
-                "form",
-                layout_form_id if layout_form_id is not None else stream_order,
-                *resolved_layout_bbox,
-            )
-            figure_identifiers[figure_key] = layout_form_id
-            figure_boxes[figure_key] = resolved_layout_bbox  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-        else:
-            figure_key = ("stream", stream_order)
-            layout_bbox = provenance.get("clip_bbox")
-        figure_chars.setdefault(figure_key, []).append((character, glyph.seqno))
-        figure_depths[figure_key] = xobject_depth
-        if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
-            figure_boxes[figure_key] = tuple(float(value) for value in layout_bbox)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-    lines = _group_objects(chars, params)
-    empty_lines = [line for line in lines if line.get_text().isspace()]
+        chars_by_glyph[glyph_index] = (character, glyph.seqno)
+    events = getattr(products, "layout_events", ())
+    painted_paths = getattr(products, "painted_paths", ())
+    rotation = int(page.rotation) % 360
     layout_width, layout_height = (
-        (page_height, page_width) if int(page.rotation) % 180 else (page_width, page_height)
+        (page_height, page_width) if rotation % 180 else (page_width, page_height)
     )
-    boxes: list[LTItem] = list(
-        _reading_order(
-            _group_lines(
-                [line for line in lines if not line.get_text().isspace()],
-                params.line_margin,
-                (0.0, 0.0, layout_width, layout_height),
-            ),
-            params.boxes_flow,
-            (0.0, 0.0, layout_width, layout_height),
+    media_left, media_bottom = page_media_box[0], page_media_box[1]
+
+    def layout_point(x: float, y: float) -> tuple[float, float]:
+        x -= media_left
+        y -= media_bottom
+        if rotation == 90:
+            return y, page_width - x
+        if rotation == 180:
+            return page_width - x, page_height - y
+        if rotation == 270:
+            return page_height - y, x
+        return x, y
+
+    def layout_box(
+        points: list[tuple[float, float]],
+    ) -> tuple[float, float, float, float]:
+        placed = [layout_point(x, y) for x, y in points]
+        return (
+            min(point[0] for point in placed),
+            min(point[1] for point in placed),
+            max(point[0] for point in placed),
+            max(point[1] for point in placed),
         )
-    )
-    boxes.extend(empty_lines)
-    drawing_sequences_by_depth: dict[int, list[int]] = {}
-    for drawing in products.drawings:
-        if drawing.kind in {
+
+    drawing_sequences = sorted(
+        drawing.seqno
+        for drawing in products.drawings
+        if drawing.kind
+        not in {
             "clip",
             "group-begin",
             "group-end",
@@ -467,116 +452,203 @@ def project_page(
             "scope-end",
             "state-push",
             "state-pop",
-        }:
-            continue
-        drawing_sequences_by_depth.setdefault(drawing.xobject_depth, []).append(drawing.seqno)
-    for sequences in drawing_sequences_by_depth.values():
-        sequences.sort()
-    figures: list[tuple[LTFigure, int, object]] = []
-
-    for figure_index, (figure_key, entries) in enumerate(figure_chars.items()):
-        drawing_sequences = drawing_sequences_by_depth.get(figure_depths[figure_key], [])
-        snippets: list[str] = []
-        current: list[str] = []
-        previous_sequence: int | None = None
-        for character, sequence in entries:
-            if previous_sequence is not None and bisect_left(
-                drawing_sequences, sequence
-            ) > bisect_right(drawing_sequences, previous_sequence):
-                snippets.append("".join(current))
-                current = []
-            current.append(character.get_text())
-            previous_sequence = sequence
-        if current:
-            snippets.append("".join(current))
-        merged_snippets: list[str] = []
-        for snippet in snippets:
-            if (
-                merged_snippets
-                and snippet
-                and not any(map(str.isalnum, snippet))
-                and not any(character.isalnum() for character in merged_snippets[-1])
-                and merged_snippets[-1][-1] == snippet[0]
-            ):
-                merged_snippets[-1] += snippet
-            else:
-                merged_snippets.append(snippet)
-        snippets = merged_snippets
-        figure_box = figure_boxes.get(figure_key) or bbox_union(
-            character.bbox for character, _ in entries
-        )
-        if figure_box is not None:
-            x0, y0, x1, y1 = _pdfminer_layout_figure_box(
-                figure_box,
-                page_media_box,
-                int(page.rotation) % 360,
-                page_width,
-                page_height,
+        }
+    )
+    page_items: list[Any] = []
+    current = page_items
+    stack: list[tuple[list[Any], LTFigure, list[tuple[LTChar, int]]]] = []
+    figure_entries: list[tuple[LTChar, int]] = []
+    figure_count = 0
+    if not events:
+        # Without the layout walk, glyphs are all the page has.
+        for character, _sequence in chars_by_glyph.values():
+            page_items.append(character)
+    for event in events:
+        kind = event[0]
+        if kind == "glyphs":
+            for glyph_index in range(event[1], event[2]):
+                entry = chars_by_glyph.get(glyph_index)
+                if entry is not None:
+                    current.append(entry[0])
+                    if stack:
+                        figure_entries.append(entry)
+        elif kind == "path":
+            current.extend(pdfminer_path_items(painted_paths[event[1]], layout_point))
+        elif kind == "begin":
+            x0, y0, x1, y1 = event[2]
+            figure = LTFigure(
+                layout_box([(x0, y0), (x1, y0), (x0, y1), (x1, y1)]),
+                event[1] or f"Form{figure_count}",
             )
-            figures.append(
-                (
-                    LTFigure(
-                        (x0, y0, x1, y1),
-                        f"Form{figure_index}",
-                        [character for character, _ in entries],
-                        tuple(snippets),
-                    ),
-                    figure_depths[figure_key],
-                    figure_identifiers.get(figure_key),
-                )
+            figure_count += 1
+            stack.append((current, figure, figure_entries))
+            current = figure._objs
+            figure_entries = []
+        elif kind == "end" and stack:
+            parent, figure, parent_entries = stack.pop()
+            figure.text_snippets = _figure_text_snippets(figure_entries, drawing_sequences)
+            parent.append(figure)
+            current = parent
+            figure_entries = parent_entries
+        elif kind == "image":
+            matrix = event[2]
+            box = layout_box(
+                [
+                    (matrix.e, matrix.f),
+                    (matrix.a + matrix.e, matrix.b + matrix.f),
+                    (matrix.c + matrix.e, matrix.d + matrix.f),
+                    (matrix.a + matrix.c + matrix.e, matrix.b + matrix.d + matrix.f),
+                ]
             )
-    represented_identifiers = {identifier for _figure, _depth, identifier in figures}
-    for identifier, ancestor_box in form_ancestor_boxes.items():
-        if identifier in represented_identifiers:
-            continue
-        figures.append(
-            (
-                LTFigure(
-                    _pdfminer_layout_figure_box(
-                        ancestor_box,
-                        page_media_box,
-                        int(page.rotation) % 360,
-                        page_width,
-                        page_height,
-                    ),
-                    f"Form{len(figures)}",
-                    [],
-                    (),
-                ),
-                len(identifier),
-                identifier,
-            )
-        )
-    for figure, depth, figure_identifier in figures:
-        parent_identifier = (
-            figure_identifier[:-1]
-            if isinstance(figure_identifier, tuple) and len(figure_identifier) > 1
-            else None
-        )
-        parent = min(
-            (
-                candidate
-                for candidate, candidate_depth, candidate_identifier in figures
-                if candidate_depth == depth - 1
-                and (
-                    candidate_identifier == parent_identifier
-                    if parent_identifier is not None
-                    else candidate.x0 <= figure.x0
-                    and candidate.y0 <= figure.y0
-                    and candidate.x1 >= figure.x1
-                    and candidate.y1 >= figure.y1
-                )
-            ),
-            key=lambda candidate: candidate.width * candidate.height,
-            default=None,
-        )
-        if parent is None:
-            boxes.append(figure)
-        else:
-            parent._objs.append(figure)
+            current.append(LTFigure(box, event[1], [LTImage(box, event[1], event[3])]))
+    while stack:
+        parent, figure, parent_entries = stack.pop()
+        figure.text_snippets = _figure_text_snippets(figure_entries, drawing_sequences)
+        parent.append(figure)
+        figure_entries = parent_entries
+    page_box = (0.0, 0.0, layout_width, layout_height)
     return LTPage(
-        (0.0, 0.0, layout_width, layout_height),
+        page_box,
         page.page_number,
         page.rotation,
-        boxes,
+        analyze_layout(page_items, params, page_box),
     )
+
+
+def analyze_layout(
+    items: list[Any], params: LAParams, bbox: tuple[float, float, float, float]
+) -> list[Any]:
+    """A container's children after pdfminer's layout analysis.
+
+    Follows pdfminer.six's LTLayoutContainer.analyze, Copyright (c) 2004-2016 Yusuke
+    Shinyama, under the MIT License.
+    """
+    chars = [item for item in items if isinstance(item, LTChar)]
+    others = [item for item in items if not isinstance(item, LTChar)]
+    if params.all_texts:
+        for item in others:
+            if isinstance(item, LTFigure):
+                item._objs = analyze_layout(item._objs, params, item.bbox)
+    if not chars:
+        return items
+    lines = _group_objects(chars, params)
+    empties = [line for line in lines if _line_is_empty(line)]
+    boxes = _reading_order(
+        _group_lines(
+            [line for line in lines if not _line_is_empty(line)], params.line_margin, bbox
+        ),
+        params.boxes_flow,
+        bbox,
+    )
+    return [*boxes, *others, *empties]
+
+
+def _line_is_empty(line: LTTextLine) -> bool:
+    # pdfminer asks before it appends the line's closing newline, so a line of characters
+    # that map to no text is not empty.
+    text = "".join(item.get_text() for item in line._objs[:-1])
+    return line.width <= 0 or line.height <= 0 or text.isspace()
+
+
+def _figure_text_snippets(
+    entries: list[tuple[LTChar, int]], drawing_sequences: list[int]
+) -> tuple[str, ...]:
+    """A figure's text, split where drawing happens between its characters."""
+    snippets: list[str] = []
+    current: list[str] = []
+    previous_sequence: int | None = None
+    for character, sequence in entries:
+        if previous_sequence is not None and bisect_left(
+            drawing_sequences, sequence
+        ) > bisect_right(drawing_sequences, previous_sequence):
+            snippets.append("".join(current))
+            current = []
+        current.append(character.get_text())
+        previous_sequence = sequence
+    if current:
+        snippets.append("".join(current))
+    merged: list[str] = []
+    for snippet in snippets:
+        if (
+            merged
+            and snippet
+            and not any(map(str.isalnum, snippet))
+            and not any(character.isalnum() for character in merged[-1])
+            and merged[-1][-1] == snippet[0]
+        ):
+            merged[-1] += snippet
+        else:
+            merged.append(snippet)
+    return tuple(merged)
+
+
+def pdfminer_path_items(
+    path: Any, layout_point: Callable[[float, float], tuple[float, float]]
+) -> list[Any]:
+    """The LTLine, LTRect and LTCurve objects pdfminer makes of one painted path.
+
+    Ported from pdfminer.six's PDFLayoutAnalyzer.paint_path, Copyright (c) 2004-2016
+    Yusuke Shinyama, under the MIT License.
+    """
+    matrix = path.ctm
+    coords = path.coords
+
+    def point(x: float, y: float) -> tuple[float, float]:
+        return layout_point(
+            matrix.a * x + matrix.c * y + matrix.e, matrix.b * x + matrix.d * y + matrix.f
+        )
+
+    segments: list[tuple[Any, ...]] = []
+    position = 0
+    for op in path.ops:
+        if op == PATH_CLOSE:
+            segments.append(("h",))
+        elif op == PATH_RECT:
+            x, y, width, height = coords[position : position + 4]
+            segments += [
+                ("m", point(x, y)),
+                ("l", point(x + width, y)),
+                ("l", point(x + width, y + height)),
+                ("l", point(x, y + height)),
+                ("h",),
+            ]
+        elif op == PATH_CURVE:
+            _, _, x1, y1, x2, y2, x3, y3 = coords[position : position + 8]
+            segments.append(("c", point(x1, y1), point(x2, y2), point(x3, y3)))
+        else:
+            segments.append((chr(op), point(coords[position], coords[position + 1])))
+        position += PATH_OPERAND_COUNTS[op]
+    shape = "".join(segment[0] for segment in segments)
+    if not shape.startswith("m"):
+        return []
+    if shape.count("m") > 1:
+        subpaths = [
+            segments[match.start() : match.end()] for match in re.finditer(r"m[^m]+", shape)
+        ]
+    else:
+        subpaths = [segments]
+    stroke = path.kind != "fill"
+    fill = path.kind != "stroke"
+    evenodd = path.fill_rule == "evenodd"
+    style = (stroke, fill, evenodd, path.stroke_color, path.fill_color)
+    items: list[Any] = []
+    for subpath in subpaths:
+        sub_shape = "".join(segment[0] for segment in subpath)
+        points = [subpath[0][-1] if segment[0] == "h" else segment[-1] for segment in subpath]
+        original = [(segment[0], *segment[1:]) for segment in subpath]
+        if len(sub_shape) > 3 and sub_shape.endswith("lh") and points[-2] == points[0]:
+            sub_shape = f"{sub_shape[:-2]}h"
+            points.pop()
+        if sub_shape in {"mlh", "ml"}:
+            items.append(LTLine(path.line_width, points[0], points[1], *style, original, path.dash))
+            continue
+        if sub_shape in {"mlllh", "mllll"}:
+            (x0, y0), (x1, y1), (x2, y2), (x3, y3), _last = points
+            if points[0] == points[4] and (
+                (x0 == x1 and y1 == y2 and x2 == x3 and y3 == y0)
+                or (y0 == y1 and x1 == x2 and y2 == y3 and x3 == x0)
+            ):
+                items.append(LTRect(path.line_width, (x0, y0, x2, y2), *style, original, path.dash))
+                continue
+        items.append(LTCurve(path.line_width, points, *style, original, path.dash))
+    return items
