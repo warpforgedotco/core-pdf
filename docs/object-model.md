@@ -79,10 +79,14 @@ module holds PDF structure as bytes.
 
 `scripts/check_pypdf_bytes.py` writes each upstream PDF through the real pypdf 6.15.0 and the
 facade the same way and compares the bytes. An incremental update is identical on all 168
-files that pypdf can update and that are not encrypted, and CI fails if one differs. pypdf does
-not encrypt the objects of an update to an encrypted file, so the facade does not follow it on
-those 5. Full rewrites are identical on 165 of 173 files through `clone_from` and 167 of 173
-through `append`, and the rest are being closed.
+files that pypdf can update and that are not encrypted. pypdf does not encrypt the objects of
+an update to an encrypted file, so the facade does not follow it on those 5. Full rewrites are
+identical on 165 of 173 files through `clone_from` and 171 of 173 through `append`. CI fails on
+any other difference. The rest are departures the script lists with their reasons, each where
+pypdf loses data: it leaves `/Info` values pointing at objects it never writes (5 files), drops
+`/K` from a structure tree (1), reads a number into a name after a NUL byte (1 file, both
+modes), and copies a page outside the page tree through a form field (1). One more clone
+differs on an encrypted source.
 
 Matching pypdf means following it where it changes data: reals are rounded to pypdf's
 precision, and a name read from GBK or Latin-1 bytes is written as UTF-8. The facade departs
