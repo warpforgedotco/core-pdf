@@ -75,6 +75,20 @@ SUITES = {
     ),
 }
 
+# The release tag each checkout under tests/upstream sits at, and that tag's commit. Moving a
+# pin above means moving the checkout and this entry with it; check_upstream_versions.py
+# --checkouts fails when a recorded checkout is not at its commit.
+RELEASES = {
+    "pdfminer.six": ("20260107", "9e1243c4ad000bf9bbe60e81fc8dde2fccc0ed3b"),
+    "pdfplumber": ("v0.11.10", "7d4f2f582f2d99f9e60ba522fdf7afd2f6d54c62"),
+    "pypdf": ("7.0.0", "8eeb0509d712e324e68e2bd38aff69e3b672e0cd"),
+    "x-ray": ("v0.4.0", "4dd5b0bcc5cdd774b9e82fc47b1d7208e92e4779"),
+    "unstructured": ("0.27.36", "9d9437d6094c1ffa3e6df72a38db5fb59216fe8f"),
+    # llama_index tags only its core releases. v0.14.25 is llama-index-core 0.14.25, and its
+    # llama-index-readers-file directory is the 0.7.0 release's (98c52d8, the version bump).
+    "llama_index": ("v0.14.25", "f12d46acab73f5b2243ef49c2f00101617b38ce4"),
+}
+
 
 def pytest_command(
     suite: Suite,
