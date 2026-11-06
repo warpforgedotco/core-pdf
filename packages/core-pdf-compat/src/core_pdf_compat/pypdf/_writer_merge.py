@@ -167,7 +167,10 @@ class MergeWriter:
         raw_form = root.raw_get("/AcroForm")
         if "/AcroForm" not in self._root_object:
             kept = DictionaryObject()
-            if isinstance(raw_form, IndirectObject):
+            if isinstance(raw_form, IndirectObject) and raw_form.idnum in translated:
+                # Already copied, through a field that refers to it: pypdf reuses that copy.
+                reference = IndirectObject(translated[raw_form.idnum], 0, self)
+            elif isinstance(raw_form, IndirectObject):
                 # pypdf clones the form through its reference: the dictionary is numbered
                 # first, then what it holds, in order.
                 reference = self._add_object(kept)
@@ -362,10 +365,23 @@ class MergeWriter:
         elif isinstance(target, ArrayObject) and target:
             page = self._get_cloned_page(target[0], pages, reader)
             if page is not None:
-                copy = self._clone(annotation, reader, ("/A",))
-                new_action = self._clone(action, reader, ("/D",))
-                new_action[NameObject("/D")] = self._link_with_page(page, reader, target)
-                copy[NameObject("/A")] = new_action
+                link = self._link_with_page(page, reader, target)
+                if isinstance(annotation.raw_get("/A"), IndirectObject):
+                    copy = self._clone(annotation, reader, ("/A",))
+                    new_action = self._clone(action, reader, ("/D",))
+                    new_action[NameObject("/D")] = link
+                    copy[NameObject("/A")] = new_action
+                else:
+                    # pypdf leaves /D out at every level, so /A keeps its place in the copy.
+                    kept = DictionaryObject()
+                    for key, item in dict.items(annotation):
+                        if key == "/A":
+                            item = DictionaryObject(
+                                {k: v for k, v in dict.items(action) if k != "/D"}
+                            )
+                        dict.__setitem__(kept, key, item)
+                    copy = self._import(kept, reader)
+                    copy["/A"][NameObject("/D")] = link
                 output.append(self._add_object(copy))
 
     def clean_page(self, page: Any) -> Any:
