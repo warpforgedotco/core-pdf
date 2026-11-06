@@ -227,7 +227,7 @@ PDFs, file by file, and fails on any difference a script does not list with its 
 | ------ | ------- | ------ |
 | `check_pypdf_bytes.py` | pypdf 7.0.0 | Written bytes identical on every file pypdf writes, in each mode |
 | `check_pypdf_reads.py` | pypdf 7.0.0 | Every object read identical, plain, RC4 and AES |
-| `check_pypdf_text.py` | pypdf 7.0.0 | `extract_text` identical on all 3,890 pages compared, plain and layout |
+| `check_pypdf_text.py` | pypdf 7.0.0 | `extract_text` identical on every page compared (3,823 on CI), plain and layout |
 | `check_pdfminer_output.py` | pdfminer.six 20260107 | Text identical on 178 of 184 files, layout on 179 |
 | `check_pdfplumber_output.py` | pdfplumber 0.11.10 | Identical apart from 6 listed files |
 | `check_unstructured_output.py` | unstructured 0.27.36 | 215 of 216 files identical |
