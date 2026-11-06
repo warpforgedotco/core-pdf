@@ -70,7 +70,12 @@ class PdfObject:
         target = clone.indirect_reference
         if not force_duplicate and target is not None and target.pdf == pdf_dest:
             return clone
-        reference = self._own_reference()
+        # Read directly, without a call per element, for the many direct objects of large
+        # arrays, which pypdf 6.21.4 clones as cheaply (#4152).
+        if type(self)._own_reference is PdfObject._own_reference:
+            reference = self.__dict__.get("indirect_reference", _NEVER_NUMBERED)
+        else:
+            reference = self._own_reference()
         if reference is _NEVER_NUMBERED:
             return clone
         number = len(pdf_dest._objects) + 1
@@ -117,6 +122,17 @@ class _CopiedObject(PdfObject):
 class NullObject(_CopiedObject):
     def _copy(self) -> Self:
         return type(self)()
+
+    def clone(
+        self,
+        pdf_dest: Any,
+        force_duplicate: bool = False,
+        ignore_fields: Sequence[str | int] | None = (),
+    ) -> Any:
+        if "indirect_reference" not in self.__dict__:
+            # A direct null: arrays such as a /ParentTree's hold thousands of them.
+            return NullObject()
+        return super().clone(pdf_dest, force_duplicate, ignore_fields)
 
     def hash_bin(self) -> int:
         return hash((self.__class__,))
@@ -238,7 +254,7 @@ class NameObject(str, _CopiedObject, metaclass=_NameMeta):
         return super().__new__(cls, value)
 
     def _copy(self) -> NameObject:
-        return NameObject(self)
+        return str.__new__(NameObject, self)
 
     def hash_bin(self) -> int:
         return hash((self.__class__, self))
@@ -381,7 +397,11 @@ class ArrayObject(list[Any], PdfObject):
             return self
         array = self._reference_clone(ArrayObject(), pdf_dest, True)
         for item in self:
-            array.append(_cloned_item(item, pdf_dest, force_duplicate, ignore_fields))
+            if type(item) in _SCALAR_TYPES:
+                # Neither a stream nor a reference, so cloned without the checks below.
+                array.append(item.clone(pdf_dest, force_duplicate, ignore_fields))
+            else:
+                array.append(_cloned_item(item, pdf_dest, force_duplicate, ignore_fields))
         return array
 
     def hash_bin(self) -> int:
@@ -431,6 +451,20 @@ class ArrayObject(list[Any], PdfObject):
 def _in_destination(value: Any, pdf_dest: Any, force_duplicate: bool) -> bool:
     reference = value.indirect_reference
     return not force_duplicate and reference is not None and reference.pdf == pdf_dest
+
+
+# Direct objects of these exact types are neither streams nor references.
+_SCALAR_TYPES = frozenset(
+    (
+        BooleanObject,
+        ByteStringObject,
+        FloatObject,
+        NameObject,
+        NullObject,
+        NumberObject,
+        TextStringObject,
+    )
+)
 
 
 def _cloned_item(item: Any, pdf_dest: Any, force_duplicate: bool, ignore_fields: Any) -> Any:
@@ -547,7 +581,7 @@ class DictionaryObject(dict[Any, Any], PdfObject):
                 copy = value.clone(pdf_dest, force_duplicate, ignored)
                 self[key.clone(pdf_dest)] = copy.indirect_reference
             elif key not in self:
-                self[key._copy() if isinstance(key, NameObject) else NameObject(key)] = (
+                self[str.__new__(NameObject, key)] = (
                     value.clone(pdf_dest, force_duplicate, ignored)
                     if hasattr(value, "clone")
                     else value

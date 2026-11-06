@@ -21,7 +21,6 @@ from core_pdf.impl.recovery_lexer import PdfLexer as RecoveryLexer
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
-from core_pdf_compat.pypdf import filters
 from core_pdf_compat.pypdf._configuration import (
     Configuration,
     apply_configuration,
@@ -801,7 +800,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def _check_stream_length(
         self, stream: PdfStream, entry: Any, number: int, generation: int
     ) -> None:
-        limit = filters.MAX_DECLARED_STREAM_LENGTH
+        limit = get_configuration().maximum_declared_stream_length
         declared = stream.dictionary.get("Length")
         if isinstance(declared, PdfReference):
             length = self.get_object(
