@@ -38,20 +38,11 @@ PATTERNS = (
     "tests/upstream/pypdf/resources/*.pdf",
     "tests/upstream/pypdf/sample-files/**/*.pdf",
 )
-INFO_REFERENCES = (
-    "pypdf copies /Info shallowly and writes its indirect values with the source's numbers, "
-    "which point at nothing in the output, so the metadata is lost"
-)
 NUL_NAME = (
     "pypdf does not end a name at a NUL byte and reads the next number into it, which breaks "
     "the colour space"
 )
 DEPARTURES: dict[tuple[str, str], str] = {
-    ("clone", "font-size-test.pdf"): INFO_REFERENCES,
-    ("clone", "cupertino_usd_4-6-16.pdf"): INFO_REFERENCES,
-    ("clone", "nics-background-checks-2015-11.pdf"): INFO_REFERENCES,
-    ("clone", "nics-background-checks-2015-11-rotated.pdf"): INFO_REFERENCES,
-    ("clone", "issue-316-example.pdf"): INFO_REFERENCES,
     ("clone", "hello_structure.pdf"): (
         "pypdf drops /K from the structure tree root and a section element"
     ),

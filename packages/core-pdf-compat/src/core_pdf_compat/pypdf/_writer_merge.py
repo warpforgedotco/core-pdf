@@ -46,7 +46,6 @@ class MergeWriter:
     add_outline_item: Any
     add_named_destination_array: Any
     _add_object: Any
-    _mark_part_of_document: Any
     _translation: Any
     _import: Any
     add_page: Any
@@ -156,7 +155,6 @@ class MergeWriter:
         self._merge_form(reader)
         if "/B" not in excluded:
             self.add_filtered_articles("", source_pages, reader)
-        self._mark_part_of_document(self._root_object.indirect_reference)
 
     def _merge_form(self, reader: Any) -> None:
         root = reader.root_object
