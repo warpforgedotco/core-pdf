@@ -586,9 +586,9 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         for resource_name, raw_font in raw_fonts.items():
             font = as_dict(raw_font)
             if font is None:
-                if self.options.layout and self.document.resolver.resolve(raw_font) is None:
-                    # pypdf's layout mode skips what is not a font dictionary, but fails
-                    # on a reference its reader reads as Python's None.
+                if self.options.layout and self._reads_as_none(raw_font):
+                    # pypdf's layout mode skips what is not a font dictionary, a null among
+                    # them, but fails on a reference its reader reads as Python's None.
                     raise AttributeError("'NoneType' object has no attribute 'get_object'")
                 continue
             known = font_cache.get(id(font))
@@ -609,6 +609,13 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
             if known[1] is not None:
                 fonts[str(resource_name)] = known[1]
         return fonts
+
+    def _reads_as_none(self, raw: object) -> bool:
+        """Whether the facade reader, which reads objects as pypdf's does, gives None."""
+        value = to_generic(raw, self.options.reader)
+        if isinstance(value, IndirectObject):
+            return value.get_object() is None
+        return value is None
 
     def legacy_font(self, font: dict[object, object]) -> LegacyFont | None:
         resolve = self.document.resolver.resolve
