@@ -37,6 +37,7 @@ from core_pdf_compat.pypdf._reader_scan import (
     DECODE_KEY_REFERENCE,
     INDIRECT_HEADER,
     NAME_INTO_NUL,
+    OBJECT_HEADER,
     OBJECT_VALUES_END,
     PYPDF_ONLY_ESCAPE,
     XrefScan,
@@ -62,6 +63,7 @@ from core_pdf_compat.pypdf.generic import (
     IndirectObject,
     NameObject,
     NullObject,
+    NumberObject,
     RectangleObject,
     StreamObject,
     TextStringObject,
@@ -72,9 +74,10 @@ from core_pdf_compat.pypdf.generic import (
 from core_pdf_compat.pypdf.pagerange import PageRange, parse_filename_page_ranges
 from core_pdf_compat.pypdf.papersizes import PaperSize
 from core_pdf_spec.exceptions import PdfParseError, PdfPasswordError
+from core_pdf_spec.s_07_filters.errors import FilterError
 from core_pdf_spec.s_07_security.output import is_signature_contents
 from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.xref import key_for
+from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, key_for
 
 __version__ = "6.15.0"
 
@@ -118,6 +121,11 @@ def _holds_reference(value: Any) -> bool:
     return False
 
 
+def _holds_object(data: bytes, offset: object, number: int, generation: int) -> bool:
+    header = OBJECT_HEADER.match(data, offset) if isinstance(offset, int) else None
+    return header is not None and (int(header[1]), int(header[2])) == (number, generation)
+
+
 class PdfReader(PdfDocCommon, ClosingMixin):
     def __init__(
         self,
@@ -137,6 +145,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             sys.maxsize if root_object_recovery_limit is None else root_object_recovery_limit
         )
         self._pdf: PdfDocument | None = None
+        self._core_xref_differs = False
         self._decryption_pending = False
         self._checked_object_streams: set[int] = set()
         self._known_objects: set[tuple[int, int]] = set()
@@ -172,6 +181,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             self._pdf = None
         if password is not None and self._pdf is not None and not self.is_encrypted:
             raise PdfReadError("Not an encrypted file")
+        self._align_core_xref()
 
     def _get_named_destinations(
         self,
@@ -316,6 +326,47 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         index = identifiers.get(page.indirect_reference.idnum)
         return None if index is None else self._pdf.pages[index]
 
+    def _align_core_xref(self) -> None:
+        """Point core's recovered cross-reference table at the objects pypdf's reader reads.
+
+        A damaged file can leave an entry of core's recovered table at an offset that holds no
+        such object, or leave out an object, where pypdf's xref walk found it; core then reads
+        it where pypdf's get_object does.
+        """
+        source = self._pdf
+        if source is None or not source.xref_was_recovered:
+            return
+        core = source.xref
+        for generation, entries in self.xref.items():
+            free = self.xref_free_entry.get(generation, {})
+            for number, offset in entries.items():
+                key = key_for(number, generation)
+                entry = core.get(key)
+                if entry is None and not free.get(number, False) and isinstance(offset, int):
+                    self._core_xref_differs = True
+                    found = self._pypdf_object_offset(number, generation, offset)
+                    core[key] = PdfXRefEntry(found, generation)
+                    source.resolver.objects.pop(key, None)
+                    continue
+                if entry is None or entry.object_stream is not None or entry.offset == offset:
+                    continue
+                self._core_xref_differs = True
+                if not (
+                    _holds_object(self._data, offset, number, generation)
+                    and not _holds_object(self._data, entry.offset, number, generation)
+                ):
+                    continue
+                core[key] = entry._replace(offset=offset)
+                source.resolver.objects.pop(key, None)
+
+    def _pypdf_object_offset(self, number: int, generation: int, offset: int) -> int:
+        """Where pypdf's get_object reads the object: its xref offset when the header there
+        matches, else the first `number generation obj` in the file, else its xref offset."""
+        if _holds_object(self._data, offset, number, generation):
+            return offset
+        match = re.search(rf"\s{number}\s+{generation}\s+obj".encode(), self._data)
+        return offset if match is None else match.start(0) + 1
+
     def get_object(self, indirect_reference: Any) -> Any:
         if self._decryption_pending:
             raise FileNotDecryptedError("File has not been decrypted")
@@ -349,25 +400,38 @@ class PdfReader(PdfDocCommon, ClosingMixin):
             self._stream_replaced = True
 
     def _read_object(self, number: int, generation: int) -> Any:
+        if (number, generation) in self._known_objects:
+            reference = IndirectObject(number, generation, self)
+            raise LimitReachedError(f"Detected loop with self reference for {reference!r}.")
         source = self._pdf
         if getattr(self, "_stream_replaced", False):
             return self._repaired_object(number, generation, PdfReadError("stream replaced"))
         if source is not None and key_for(number, generation) in source.xref:
             if self.strict:
                 self._check_header_as_pypdf(source.xref[key_for(number, generation)])
+            core_offset = source.xref[key_for(number, generation)].offset
+            offset = self.xref.get(generation, {}).get(number)
+            if isinstance(offset, int) and isinstance(core_offset, int) and offset != core_offset:
+                # Core recovered the object somewhere else than pypdf's xref walk found it.
+                return self._repaired_object(number, generation, None)
             if number in self.xref_objStm:
                 self._check_object_stream(self.xref_objStm[number][0])
             try:
                 resolved = source.resolver.resolve(PdfReference(number, generation))
             except PdfParseError as error:
                 return self._repaired_object(number, generation, error)
+            except FilterError:
+                if number not in self.xref_objStm:
+                    raise
+                # Core cannot decode the object stream; pypdf decodes it tolerantly.
+                return self._object_from_stream_as_pypdf(number)
             entry = source.xref[key_for(number, generation)]
             if isinstance(resolved, PdfStream):
                 if resolved.dictionary.get("Length") == PdfReference(number, generation):
                     # pypdf reads /Length while reading the object, so it meets it again.
                     reference = IndirectObject(number, generation, self)
                     raise LimitReachedError(f"Detected loop with self reference for {reference!r}.")
-                self._check_stream_length(resolved, entry)
+                self._check_stream_length(resolved, entry, number, generation)
                 resolved = self._as_pypdf_reads(resolved, entry, number, generation)
             in_object_stream = getattr(entry, "object_stream", None) is not None
             if not in_object_stream and (
@@ -547,6 +611,33 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         stream.seek(-1, 1)
         return read_object(stream, self)
 
+    def _object_from_stream_as_pypdf(self, number: int) -> Any:
+        """pypdf's _get_object_from_stream: its index and object read from the stream's data
+        as pypdf decodes it, or a null object when the stream does not list it.
+        """
+        stream_number = self.xref_objStm[number][0]
+        object_stream = self.get_object(stream_number)
+        data = BytesIO(object_stream.get_data())
+        count = min(int(object_stream["/N"]), data.getbuffer().nbytes // 3)
+        index: list[tuple[int, int]] = []
+        for _ in range(count):
+            read_non_whitespace(data)
+            data.seek(-1, 1)
+            listed = NumberObject.read_from_stream(data)
+            read_non_whitespace(data)
+            data.seek(-1, 1)
+            position = NumberObject.read_from_stream(data)
+            read_non_whitespace(data)
+            data.seek(-1, 1)
+            index.append((int(listed), int(position)))
+        for entry_number, entry_offset in index:
+            if entry_number == number:
+                data.seek(int(object_stream["/First"]) + entry_offset, 0)
+                read_non_whitespace(data)
+                data.seek(-1, 1)
+                return read_object(data, self)
+        return NullObject()
+
     def _repaired_object(self, number: int, generation: int, error: Exception | None) -> Any:
         """The object as pypdf's get_object reads it, when core cannot parse the one at its
         offset: pypdf's own xref offset, then the first `number generation obj` in the file,
@@ -656,9 +747,22 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 changed = True
         return stream.replace(dictionary=restored) if changed else stream
 
-    def _check_stream_length(self, stream: PdfStream, entry: Any) -> None:
+    def _check_stream_length(
+        self, stream: PdfStream, entry: Any, number: int, generation: int
+    ) -> None:
         limit = filters.MAX_DECLARED_STREAM_LENGTH
         declared = stream.dictionary.get("Length")
+        if isinstance(declared, PdfReference):
+            length = self.get_object(
+                IndirectObject(declared.object_number, declared.generation_number, self)
+            )
+            if length is not None and not isinstance(length, (int, float)):
+                # pypdf compares the length with 0, and the object stays known to its reader,
+                # so reading it again detects a loop.
+                self._known_objects.add((number, generation))
+                raise TypeError(
+                    f"'>=' not supported between instances of '{type(length).__name__}' and 'int'"
+                )
         if isinstance(declared, int):
             if declared > limit:
                 raise LimitReachedError(
@@ -701,8 +805,11 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def _check_object_stream(self, number: int) -> None:
         if number in self._checked_object_streams:
             return
-        self._checked_object_streams.add(number)
         stream = self.get_object(number)
+        if stream is None:
+            # pypdf checks obj_stm["/Type"] first, each time it reads from the stream.
+            raise TypeError("'NoneType' object is not subscriptable")
+        self._checked_object_streams.add(number)
         data = stream.get_data()
         count = stream["/N"]
         maximum = len(data) // 3
