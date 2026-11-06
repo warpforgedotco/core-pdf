@@ -9,10 +9,6 @@ incremental: PdfWriter(incremental=True), a new /Title, write.
 clone: PdfWriter(clone_from=...), write.
 append: PdfWriter(), append(reader), write.
 
-An encrypted source is reported apart. pypdf writes an incremental update to it without
-encrypting the new objects or carrying /Encrypt, which readers cannot decrypt, so the facade
-does not follow it there.
-
 Every difference fails the check unless DEPARTURES lists it, with the reason the facade does
 not follow pypdf there. A listed file that matches fails it too, so the list stays true.
 """
@@ -87,10 +83,6 @@ def main() -> int:
     paths = sorted({path for pattern in PATTERNS for path in glob.glob(pattern, recursive=True)})
     for path in paths:
         data = open(path, "rb").read()  # noqa: SIM115, PTH123
-        try:
-            encrypted = real.PdfReader(io.BytesIO(data)).is_encrypted
-        except Exception:  # noqa: BLE001
-            encrypted = False
         for name, write in MODES.items():
             try:
                 expected = write(real, data)
@@ -109,8 +101,6 @@ def main() -> int:
                 if listed is not None:
                     counts[f"{name}: LISTED BUT IDENTICAL"] += 1
                     problems.append(f"{name} {path}: listed as a departure but identical")
-            elif encrypted:
-                counts[f"{name}: differ, encrypted source"] += 1
             elif listed is not None:
                 counts[f"{name}: differ, listed departure"] += 1
             else:

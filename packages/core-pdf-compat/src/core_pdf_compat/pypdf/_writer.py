@@ -474,9 +474,10 @@ class PageObject(DictionaryObject):
 class SaveReport(NamedTuple):
     """How the last save was made. Every write sets ``PdfWriter.last_save``.
 
-    A full rewrite holds only what the document reaches. An incremental update keeps the
-    source's bytes, so ``superseded`` objects stay readable in their earlier version, and so
-    do ``removed`` ones, which the document no longer reaches.
+    ``removed`` names objects the document no longer reaches that are still in the file. A
+    full rewrite writes every object the writer holds, as pypdf does, so it keeps them. An
+    incremental update keeps the source's bytes, so ``superseded`` objects stay readable in
+    their earlier version, and so do removed ones.
     """
 
     kind: Literal["full", "incremental"]
@@ -1459,12 +1460,28 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         for key in TRAILER_KEYS:
             editable.trailer.pop(key, None)
         editable.trailer.update(trailer)
-        # An xref stream either way, as in pypdf.
-        return editable.save_incremental(xref_stream=True, layout=ObjectLayout.SPACED)
+        # An xref stream either way, and an encrypted source's update in the clear, as in pypdf.
+        return editable.save_incremental(
+            xref_stream=True, layout=ObjectLayout.SPACED, keep_encryption=False
+        )
 
     def _report_save(self) -> None:
         if not self.incremental:
-            self.last_save = SaveReport("full", self._objects_written, (), ())
+            # pypdf writes every object it holds, so what the document no longer reaches is
+            # still in the file, and named here.
+            reached = {reference.object_number for reference in self._reachable()}
+            kept = tuple(
+                index + 1
+                for index, item in enumerate(self._objects)
+                if item is not None and index + 1 not in reached
+            )
+            self.last_save = SaveReport("full", self._objects_written, (), kept)
+            if kept:
+                logger.warning(
+                    "Saved %d objects the document no longer reaches, as pypdf does. "
+                    "EditableDocument.save leaves them out.",
+                    len(kept),
+                )
             return
         changed = {reference.idnum for reference in self.list_objects_in_increment()}
         present = {

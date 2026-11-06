@@ -223,6 +223,7 @@ class EditableDocument:
         *,
         xref_stream: bool | None = None,
         layout: ObjectLayout = ObjectLayout.COMPACT,
+        keep_encryption: bool = True,
     ) -> SavedPdf:
         """Append changed objects after the original bytes, which stay identical.
 
@@ -237,6 +238,10 @@ class EditableDocument:
 
         `layout=ObjectLayout.SPACED` writes the update as pypdf does, from the objects to the
         xref stream, so the pypdf facade's output matches pypdf's byte for byte.
+
+        `keep_encryption=False` writes an encrypted input's update as pypdf does: its objects in
+        the clear and no /Encrypt in the new trailer. Readers then treat the file as plain, so
+        the earlier objects no longer decrypt. Only the pypdf facade asks for this.
         """
         original = bytes(self.document.raw_data)
         previous = XRefScanner.find_startxref(original)
@@ -246,7 +251,9 @@ class EditableDocument:
         if xref_stream is False and continues_stream:
             raise PdfUnsupportedError("a file that uses xref streams must be updated by one")
         use_stream = continues_stream if xref_stream is None else xref_stream
-        security = None if self.security is None else self.sealing_handler()
+        security = None
+        if self.security is not None and keep_encryption:
+            security = self.sealing_handler()
         output = bytearray(original)
         # pypdf's layout appends right after the last byte, as pypdf does.
         if not output.endswith(b"\n") and layout is not ObjectLayout.SPACED:
