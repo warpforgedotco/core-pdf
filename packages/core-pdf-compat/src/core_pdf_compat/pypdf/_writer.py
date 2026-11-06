@@ -601,6 +601,8 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         self._count_limit = incremental_clone_object_count_limit or sys.maxsize
         self._id_limit = incremental_clone_object_id_limit or sys.maxsize
         self._header = b"%PDF-1.3"
+        # The document appended to, in incremental mode only.
+        self._reader: Any = None
         if self.incremental:
             fileobj = self._incremental_source(fileobj)
             self._reader = fileobj
@@ -901,8 +903,10 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             raise PyPdfError("Too many recursive calls!")
         if source is not None:
             # As in pypdf: the page's links may aim at pages not added yet, so they are kept
-            # and patched to the copies when the file is written.
-            self._unresolved_links.extend(extract_links(output, page))
+            # and patched to the copies when the file is written. Excluded annotations,
+            # as append and merge exclude them while cloning, have no links to pair.
+            if "/Annots" not in excluded:
+                self._unresolved_links.extend(extract_links(output, page))
             self._merged_in_pages[page.indirect_reference] = output.indirect_reference
         return output
 
@@ -1401,6 +1405,14 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 stream.name,
             )
         self._resolve_links()
+        if (
+            self.incremental
+            and self._reader.is_encrypted
+            and len(self.list_objects_in_increment()) > 0
+        ):
+            raise NotImplementedError(
+                "Writing incremental updates of encrypted PDF files is currently not supported."
+            )
         stream.write(self.write_bytes())
 
     def _resolve_links(self) -> None:

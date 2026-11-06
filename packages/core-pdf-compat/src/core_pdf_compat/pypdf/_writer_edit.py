@@ -118,10 +118,21 @@ class EditWriter:
         added[NameObject("/P")] = page.indirect_reference
         if page.annotations is None:
             page[NameObject("/Annots")] = ArrayObject()
-        if added.get_resolved("/Subtype") == "/Link" and "/Dest" in added:
-            deferred = added["/Dest"]
+        deferred = added.get("/Dest")
+        if (
+            added.get("/Subtype") == "/Link"
+            and isinstance(deferred, DictionaryObject)
+            and "target_page_index" in deferred
+        ):
             fit = Fit(fit_type=deferred["fit"], fit_args=dict.__getitem__(deferred, "fit_args"))
-            target = Destination(NameObject("/LinkName"), deferred["target_page_index"], fit)
+            index = deferred["target_page_index"]
+            # A page that exists already is referenced; a later one stays a number (pypdf #4076).
+            target_page: Any = (
+                self.pages[index].indirect_reference
+                if 0 <= index < len(self.pages)
+                else NumberObject(index)
+            )
+            target = Destination(NameObject("/LinkName"), target_page, fit)
             added[NameObject("/Dest")] = target.dest_array
         page.annotations.append(self._add_object(added))
         if added.get_resolved("/Subtype") == "/Popup" and "/Parent" in added:
@@ -129,7 +140,7 @@ class EditWriter:
         return added
 
     def add_uri(self, page_number: int, uri: str, rect: Any, border: Any = None) -> None:
-        page = self.pages[page_number]
+        page = self._get_page_reference(page_number).get_object()
         if isinstance(rect, str):
             rect = RectangleObject(float(item) for item in rect.strip("[] ").split())
         elif not isinstance(rect, RectangleObject):

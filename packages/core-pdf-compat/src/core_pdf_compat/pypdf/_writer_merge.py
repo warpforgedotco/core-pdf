@@ -1,4 +1,4 @@
-# Follows pypdf's merging, Copyright (c) 2006-2008, Mathieu Fenniak,
+# Follows pypdf 6.21.4's merging, Copyright (c) 2006-2008, Mathieu Fenniak,
 # under its BSD-style license.
 """The parts of PdfWriter that merge another document: pages, outline, links, forms, articles.
 
@@ -145,13 +145,19 @@ class MergeWriter:
             self._insert_filtered_outline(filtered, parent, None)
 
         if "/Annots" not in excluded:
+            parent_fields: dict[int, DictionaryObject] = {}
             for added in source_pages.values():
                 links = self._insert_filtered_annotations(
-                    added.original_page.get("/Annots", []), added, source_pages, reader
+                    added.original_page.get("/Annots", []),
+                    added,
+                    source_pages,
+                    reader,
+                    parent_fields=parent_fields,
                 )
                 if len(links) > 0:
                     added[NameObject("/Annots")] = links
                 self.clean_page(added)
+            self._set_cloned_kids(parent_fields, reader)
         self._merge_form(reader)
         if "/B" not in excluded:
             self.add_filtered_articles("", source_pages, reader)
@@ -309,7 +315,12 @@ class MergeWriter:
         return ArrayObject([page, *(self._import(item, reader) for item in array[1:])])
 
     def _insert_filtered_annotations(
-        self, annots: Any, page: Any, pages: dict[int, Any], reader: Any
+        self,
+        annots: Any,
+        page: Any,
+        pages: dict[int, Any],
+        reader: Any,
+        parent_fields: dict[int, DictionaryObject] | None = None,
     ) -> ArrayObject:
         del page
         output = ArrayObject()
@@ -333,11 +344,70 @@ class MergeWriter:
             )
             if go_to:
                 self._filter_go_to(annotation, action, pages, reader, output)
+            elif (
+                parent_fields is not None
+                and annotation.get("/Subtype") == "/Widget"
+                and isinstance(annotation.get("/Parent"), IndirectObject)
+            ):
+                output.append(self._clone_widget_annotation(annotation, reader, parent_fields))
             elif "/Dest" not in annotation:
                 output.append(self._add_object(self._clone(annotation, reader)))
             else:
                 self._filter_dest(annotation, pages, reader, output)
         return output
+
+    def _clone_ignoring(self, source: Any, reader: Any, ignored: tuple[str, ...]) -> Any:
+        """pypdf's clone with top-level keys left out: numbered first, then its entries in
+        order, and recorded as the copy of its source, which a second clone returns."""
+        translated = self._translation(reader)
+        reference = source.indirect_reference
+        own = reference is not None and reference.pdf is reader
+        if own and reference.idnum in translated:
+            existing = IndirectObject(translated[reference.idnum], 0, self).get_object()
+            if existing is not None and len(existing) > 0:
+                return existing
+        copy = DictionaryObject()
+        number = self._add_object(copy)
+        if own:
+            translated[reference.idnum] = number.idnum
+        for key, item in dict.items(source):
+            if key not in ignored:
+                dict.__setitem__(copy, key, self._import(item, reader))
+        return copy
+
+    def _clone_widget_annotation(
+        self, annotation: Any, reader: Any, parent_fields: dict[int, DictionaryObject]
+    ) -> IndirectObject:
+        """A widget linked to copies of its parent fields made without their /Kids, so that
+        sibling fields' widgets and pages left out stay out (pypdf #4078). _set_cloned_kids
+        fills the kids in once every annotation is copied."""
+        clone = self._clone_ignoring(annotation, reader, ("/Parent",))
+        source, target = annotation, clone
+        while isinstance(source.get("/Parent"), IndirectObject):
+            parent_reference = source.get("/Parent")
+            source_parent = parent_reference.get_object()
+            if not isinstance(source_parent, DictionaryObject):
+                break
+            parent = self._clone_ignoring(source_parent, reader, ("/Kids", "/Parent"))
+            target[NameObject("/Parent")] = parent.indirect_reference
+            if parent_reference.idnum in parent_fields:
+                # The ancestors are linked already.
+                break
+            parent_fields[parent_reference.idnum] = source_parent
+            source, target = source_parent, parent
+        return cast(IndirectObject, clone.indirect_reference)
+
+    def _set_cloned_kids(self, parent_fields: dict[int, DictionaryObject], reader: Any) -> None:
+        """The copied parent fields' /Kids: the copied kids, in their original order."""
+        translated = self._translation(reader)
+        for idnum, source_parent in parent_fields.items():
+            kids = source_parent.get("/Kids", ArrayObject())
+            parent = IndirectObject(translated[idnum], 0, self).get_object()
+            parent[NameObject("/Kids")] = ArrayObject(
+                IndirectObject(translated[kid.idnum], 0, self)
+                for kid in kids
+                if isinstance(kid, IndirectObject) and kid.idnum in translated
+            )
 
     def _filter_dest(self, annotation: Any, pages: Any, reader: Any, output: ArrayObject) -> None:
         target = annotation["/Dest"]
@@ -422,6 +492,9 @@ class MergeWriter:
         node = node.get_object()
         if is_null_or_none(node):
             node = DictionaryObject()
+        if not isinstance(node, DictionaryObject):
+            logger.warning("Outline node is not a dictionary: %s", node)
+            return output
         if node.get_resolved("/Type", "") == "/Outlines" or "/Title" not in node:
             if id(node) in visited:
                 logger.warning("Detected cycle in outlines.")
@@ -435,6 +508,9 @@ class MergeWriter:
             return output
         while True:
             node = cast(Any, node.get_object())
+            if not isinstance(node, DictionaryObject):
+                logger.warning("Outline node is not a dictionary: %s", node)
+                break
             if id(node) in visited:
                 logger.warning("Detected cycle in outlines.")
                 break
@@ -504,7 +580,7 @@ class MergeWriter:
         elif isinstance(reader, IndirectObject):
             copies.pop(id(reader.pdf), None)
         else:
-            raise Exception("invalid parameter {reader}")
+            raise TypeError(f"Invalid parameter {reader}")
 
 
 __all__ = ["MergeWriter"]

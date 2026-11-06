@@ -54,6 +54,7 @@ from core_pdf_compat.pypdf.constants import (
 )
 from core_pdf_compat.pypdf.errors import (
     STREAM_TRUNCATED_PREMATURELY,
+    LimitReachedError,
     PdfReadError,
     PdfStreamError,
     PyPdfError,
@@ -374,8 +375,12 @@ class TreeObject(DictionaryObject):
 
     def _link_child(self, child_obj: Any, reference: Any, before: Any) -> None:
         after = self["/Last"]
+        visited: set[int] = set()
         # pypdf starts this walk at /Last, so a `before` other than the last child appends.
         while after.indirect_reference != before:
+            if id(after) in visited:
+                raise LimitReachedError("Detected cycle in tree structure.")
+            visited.add(id(after))
             if "/Next" not in after:
                 after[NameObject("/Next")] = reference
                 child_obj[NameObject("/Prev")] = after.indirect_reference
@@ -422,12 +427,16 @@ class TreeObject(DictionaryObject):
         previous = previous_ref = None
         current_ref = _raw(self, "/First")
         visited: set[int] = set()
-        while current_ref is not None and id(current := current_ref.get_object()) not in visited:
-            visited.add(id(current))
+        while current_ref is not None:
+            current = current_ref.get_object()
             if current == child_obj:
-                self._unlink_child(previous, previous_ref, current)
+                # Bound to TreeObject, as the parent may be a plain dictionary from a file.
+                TreeObject._unlink_child(self, previous, previous_ref, current)
                 _reset_tree_links(child_obj)
                 return
+            if id(current) in visited:
+                raise LimitReachedError("Detected cyclic /Next hierarchy.")
+            visited.add(id(current))
             previous, previous_ref = current, current_ref
             current_ref = _none_if_null(_raw(current, "/Next"))
         raise ValueError("Removal couldn't find item in tree")
@@ -507,6 +516,15 @@ class Destination(TreeObject):
 
     # The dictionary this was read from, when it came from a file.
     node: DictionaryObject | None = None
+
+    def remove_from_tree(self) -> None:
+        """Remove the outline item this was built from: outline items are detached copies."""
+        if self.node is None:
+            super().remove_from_tree()
+        elif "/Parent" not in self.node:
+            raise ValueError("Removed child does not appear to be a tree item")
+        else:
+            TreeObject.remove_child(cast("TreeObject", self.node["/Parent"]), self.node)
 
     def __init__(self, title: str | bytes, page: Any, fit: Fit) -> None:
         self._filtered_children: list[Any] = []
