@@ -49,7 +49,10 @@ SUITES = {
         ("pypdf[full]==6.15.0",),
         ("pyyaml", "pillow", "cryptography", "fpdf2", "defusedxml", "pytest-socket"),
     ),
-    "xray": Suite("x-ray", ("tests",), "xray=xray", ("x-ray",), ("pymupdf", "requests")),
+    # The x-ray checkout is 0.3.6; 0.4.0 on PyPI made inspect() async.
+    "xray": Suite(
+        "x-ray", ("tests",), "xray=xray", ("x-ray==0.3.6",), ("pymupdf==1.24.14", "requests")
+    ),
     "unstructured": Suite(
         "unstructured",
         ("test_unstructured/partition/pdf_image",),
@@ -67,8 +70,9 @@ SUITES = {
         "llama_index",
         (f"{LLAMA_READERS}/tests",),
         "llama_index.readers.file=llamaindex",
-        ("llama-index-readers-file", "pypdf"),
-        ("llama-index-core", "pytest-mock"),
+        # pypdf as the pypdf suite pins it, so its text changes don't show up here.
+        ("llama-index-readers-file==0.7.0", "pypdf[full]==6.15.0"),
+        ("llama-index-core==0.14.25", "pytest-mock"),
     ),
 }
 
