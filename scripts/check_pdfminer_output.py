@@ -68,6 +68,8 @@ TIES = frozenset(
         "GeoTopo-komprimiert.pdf",
         "GeoTopo.pdf",
         "billionaires_page.pdf",
+        # Page 5: Linux CI and macOS order two one-letter boxes at x 530.942 differently.
+        "issue-848.pdf",
         "issue-90-example.pdf",
         "kampo.pdf",
         "mathpaper.pdf",
