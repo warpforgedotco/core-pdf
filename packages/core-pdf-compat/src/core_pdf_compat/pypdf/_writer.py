@@ -28,7 +28,7 @@ from core_pdf_spec.s_07_syntax.serialize import ObjectLayout, serialize_object
 
 from ._doc_common import DocumentInformation, PdfDocCommon, _VirtualList, highest_header
 from ._encryption import EncryptAlgorithm, Encryption
-from ._generic_trees import EmbeddedFile
+from ._generic_trees import EmbeddedFile, ReferenceLink, extract_links
 from ._images import (
     ImageFile,
     VirtualListImages,
@@ -525,6 +525,9 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         self._info_obj: Any = None
         self._ID: Any = None
         self.flattened_pages: list[PageObject] = []
+        # Links on added pages, and where each added page went, for _resolve_links.
+        self._unresolved_links: list[tuple[ReferenceLink, ReferenceLink]] = []
+        self._merged_in_pages: dict[Any, Any] = {}
         self._count_limit = incremental_clone_object_count_limit or sys.maxsize
         self._id_limit = incremental_clone_object_id_limit or sys.maxsize
         self._header = b"%PDF-1.3"
@@ -802,13 +805,6 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
     def _add_page(self, page: Any, index: int, excluded_keys: Iterable[Any] = ()) -> PageObject:
         if not isinstance(page, PageObject) or page.get("/Type") != "/Page":
             raise ValueError("Invalid page object")
-        annotations = page.get_resolved("/Annots")
-        if not (is_null_or_none(annotations) or isinstance(annotations, ArrayObject)):
-            logger.warning(
-                "Expected annotation arrays: %s %s. Ignoring annotations.",
-                annotations,
-                ArrayObject(),
-            )
         # Numbers in the list mean a limit on the depth in pypdf: only the page's level is cut.
         excluded = {key for key in excluded_keys if isinstance(key, str)}
         output = self._import_page(page, excluded | {"/Parent", "/StructParents"})
@@ -827,11 +823,18 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         current: Any = node
         for _ in range(1000):
             if is_null_or_none(current):
-                return output
+                break
             item = current.get_object()
             item[NameObject("/Count")] = NumberObject(item["/Count"] + 1)
             current = item.get("/Parent")
-        raise PyPdfError("Too many recursive calls!")
+        else:
+            raise PyPdfError("Too many recursive calls!")
+        if source is not None:
+            # As in pypdf: the page's links may aim at pages not added yet, so they are kept
+            # and patched to the copies when the file is written.
+            self._unresolved_links.extend(extract_links(output, page))
+            self._merged_in_pages[page.indirect_reference] = output.indirect_reference
+        return output
 
     def add_page(self, page: Any, excluded_keys: Iterable[Any] = ()) -> PageObject:
         return self._add_page(page, len(self.flattened_pages), excluded_keys)
@@ -1336,7 +1339,19 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 "File <%s> to write to is not in binary mode. It may not be written to correctly.",
                 stream.name,
             )
+        self._resolve_links()
         stream.write(self.write_bytes())
+
+    def _resolve_links(self) -> None:
+        """Aim the links of added pages at the copies of their target pages, as pypdf does."""
+        for new_link, old_link in self._unresolved_links:
+            old_page = old_link.find_referenced_page()
+            if not old_page:
+                continue
+            new_page = self._merged_in_pages.get(old_page)
+            if new_page is None:
+                continue
+            new_link.patch_reference(self, new_page)
 
     def encrypt(
         self,
