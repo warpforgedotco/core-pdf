@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-import contextlib
+import io
 from collections.abc import Mapping
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
 
-from core_pdf import PdfDocument
-from core_pdf.impl.recovery_xref import XRefScanner
 from core_pdf.impl.types import Record, frozen_setattr
-from core_pdf_spec.s_07_content.inline_images import validate_inline_images
-from core_pdf_spec.s_07_filters.errors import FilterParseError
 
-from ..pypdf._text import LegacyTextCaches, extract_legacy_text
-from ._structure import finds_startxref, validate_pypdf_page_tree
+from .. import pypdf
 
 
 class MetadataMode(StrEnum):
@@ -42,25 +37,28 @@ class _MetadataMixin:
     text_template: str
 
     def get_content(self, metadata_mode: object = None) -> str:
-        mode = str(getattr(metadata_mode, "value", metadata_mode or MetadataMode.NONE)).casefold()
-        if mode in {"none", "metadata_mode.none"}:
+        # As llama-index-core's TextNode: the text alone when the mode or the metadata is empty.
+        mode = _mode(metadata_mode, MetadataMode.NONE)
+        metadata = self.get_metadata_str(mode)
+        if mode == "none" or not metadata:
             return self.text
-        excluded = (
-            self.excluded_llm_metadata_keys
-            if mode.endswith("llm")
-            else self.excluded_embed_metadata_keys
-        )
-        metadata = _metadata_text(self.metadata, excluded, self.metadata_template)
         return self.text_template.format(metadata_str=metadata, content=self.text).strip()
 
     def get_metadata_str(self, mode: object = None) -> str:
-        value = str(getattr(mode, "value", mode or MetadataMode.ALL)).casefold()
+        value = _mode(mode, MetadataMode.ALL)
+        if value == "none":
+            return ""
         excluded = (
             self.excluded_llm_metadata_keys
-            if value.endswith("llm")
-            else (self.excluded_embed_metadata_keys if value.endswith("embed") else frozenset())
+            if value == "llm"
+            else (self.excluded_embed_metadata_keys if value == "embed" else frozenset())
         )
         return _metadata_text(self.metadata, excluded, self.metadata_template)
+
+
+def _mode(mode: object, default: MetadataMode) -> str:
+    value = str(getattr(mode, "value", mode or default)).casefold()
+    return value.removeprefix("metadata_mode.").removeprefix("metadatamode.")
 
 
 class Document(Record, _MetadataMixin):
@@ -146,6 +144,13 @@ class Document(Record, _MetadataMixin):
                 self.text_template,
             )
         )
+
+    def get_content(self, metadata_mode: object = None) -> str:
+        # llama-index-core keeps no text resource for a Document made with empty text, and a
+        # Document without one has empty content whatever the metadata.
+        if not self.text:
+            return ""
+        return super().get_content(metadata_mode)
 
     @property
     def doc_id(self) -> str:
@@ -283,49 +288,45 @@ def load_data(
     **kwargs: object,
 ) -> list[Document]:
     del kwargs, max_characters
-    source_path = Path(source)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-    source_data = source_path.read_bytes()
-    if not finds_startxref(source_data):
-        raise ValueError("incomplete PDF cross-reference terminator")
-    if XRefScanner.find_startxref(source_data) is None:
-        raise ValueError("PDF does not contain a startxref marker")
-    with PdfDocument.open(source_data) as pdf:
-        validate_pypdf_page_tree(pdf)
-        pages = pdf.pages
-        for page in pages:
-            for stream in page.content_streams:
-                with contextlib.suppress(FilterParseError):
-                    validate_inline_images(stream.data)
-        labels = pdf.build_page_labels(page_count=len(pages)) if pages else None
-        # llama-index's PDFReader returns pypdf's extract_text() for each page.
-        caches = LegacyTextCaches()
-        return [
-            Document(
-                extract_legacy_text(page, caches),
-                {
-                    **(dict(extra_info) if extra_info is not None else {}),
-                    "page_label": (labels[page_number - 1] if labels else None) or str(page_number),
-                    "file_name": source_path.name,
-                },
-            )
-            for page_number, page in enumerate(pages, 1)
-        ]
+    return PDFReader().load_data(source, extra_info=extra_info)
 
 
+# PDFReader is ported from llama-index-readers-file (llama_index/readers/file/docs/base.py),
+# Copyright (c) Jerry Liu, under the MIT License. It reads through the pypdf facade, as
+# llama_index reads through pypdf, so text, page labels and errors are pypdf's.
 class PDFReader:
     def __init__(self, return_full_document: bool | None = False) -> None:
         self.return_full_document = return_full_document
 
     def load_data(
-        self, file: object, extra_info: Mapping[str, Any] | None = None, fs: object = None
+        self,
+        file: object,
+        extra_info: Mapping[str, Any] | None = None,
+        fs: Any = None,
     ) -> list[Document]:
-        del fs
-        documents = load_data(file, extra_info=extra_info)
-        if not self.return_full_document:
-            return documents
-        metadata = dict(extra_info) if extra_info is not None else {}
-        metadata["file_name"] = Path(file).name  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        return [Document("\n".join(document.text for document in documents), metadata)]
+        if not isinstance(file, (Path, PurePosixPath)):
+            file = (Path if fs is None else PurePosixPath)(file)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        with open(file, "rb") if fs is None else fs.open(str(file), "rb") as fp:  # noqa: PTH123
+            # A file from another filesystem is read into memory first, as llama_index does.
+            stream = fp if fs is None else io.BytesIO(fp.read())
+            pdf = pypdf.PdfReader(stream)
+            num_pages = len(pdf.pages)
+            docs = []
+            if self.return_full_document:
+                metadata: dict[str, Any] = {"file_name": file.name}
+                if extra_info is not None:
+                    metadata.update(extra_info)
+                text = "\n".join(pdf.pages[page].extract_text() for page in range(num_pages))
+                docs.append(Document(text, metadata))
+            else:
+                for page in range(num_pages):
+                    page_text = pdf.pages[page].extract_text()
+                    page_label = pdf.page_labels[page]
+                    metadata = {"page_label": page_label, "file_name": file.name}
+                    if extra_info is not None:
+                        metadata.update(extra_info)
+                    docs.append(Document(page_text, metadata))
+            return docs
 
 
 def get_nodes_from_documents(source: object, *, max_characters: int = 2000) -> list[Node]:

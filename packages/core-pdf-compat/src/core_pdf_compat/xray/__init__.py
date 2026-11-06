@@ -11,7 +11,7 @@ from typing import Any
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
 from core_pdf.impl.capture_program import PageProgram
-from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfPasswordError, PdfUnsupportedError
 from core_pdf.impl.fonts_cmap import ToUnicodeCMap
 from core_pdf.impl.geometry import (
     bbox_intersects,
@@ -584,21 +584,81 @@ def _source_bytes(source: object) -> bytes | None:
     return None
 
 
-def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
-    output: dict[int, list[dict[str, object]]] = {}
+# x-ray opens the file with PyMuPDF, whose errors are RuntimeErrors of its own. These stand in
+# for them under the same names and messages, so code catching them by built-in class still does.
+class FileDataError(RuntimeError):
+    """PyMuPDF cannot open the file."""
+
+
+class FileNotFoundError(RuntimeError):  # noqa: A001
+    """PyMuPDF's: the named file does not exist."""
+
+
+class EmptyFileError(FileDataError):
+    """PyMuPDF's: the file or stream is empty."""
+
+
+def _check_source(source: object) -> None:
+    """Raise what PyMuPDF's Document raises before it reads a missing, odd or empty source."""
+    if isinstance(source, bytes):
+        if not source:
+            raise EmptyFileError("Cannot open empty stream.")
+        return
+    if not isinstance(source, (str, PathLike)) or str(source).startswith("https://"):
+        return
+    filename = str(source)
+    path = Path(filename)
+    if not path.exists():
+        raise FileNotFoundError(f"no such file: '{filename}'")
+    if not path.is_file():
+        raise FileDataError(f"'{filename}' is no file")
+    if path.stat().st_size == 0:
+        raise EmptyFileError(f"Cannot open empty file: {filename=}.")
+
+
+def _open_failure(source: object) -> FileDataError:
+    """The error PyMuPDF's Document raises for a source it cannot open."""
+    if isinstance(source, bytes):
+        return FileDataError("Failed to open stream")
+    return FileDataError(f"Failed to open file {str(source)!r}.")
+
+
+def _open(source: Any) -> XrayDocument | None:
+    """The document as PyMuPDF opens it, None when it opens with nothing to inspect."""
+    _check_source(source)
     try:
         document = XrayDocument.open(source)
-    except PdfUnsupportedError:
+    except PdfUnsupportedError as error:
+        # A page tree inside object streams is out of MuPDF's reach when it cannot read them,
+        # and the document opens with no pages.
         raw_data = _source_bytes(source)
         if (
             raw_data is not None
             and re.search(rb"/Type\s*/ObjStm\b", raw_data)
             and not re.search(rb"/Type\s*/Page\b", raw_data)
         ):
-            return {}
-        raise
-    with document:
+            return None
+        if isinstance(error, PdfPasswordError):
+            # PyMuPDF opens a file it cannot decrypt, then refuses to load its pages.
+            raise ValueError("document closed or encrypted") from None
+        raise _open_failure(source) from error
+    try:
         _validate_mupdf_structure(document)
+        if document.trailer_dict.get("Root") is None:
+            # MuPDF fails to open a file in which repair finds no catalog.
+            raise PdfUnsupportedError("missing catalog root")
+    except PdfUnsupportedError as error:
+        document.close()
+        raise _open_failure(source) from error
+    return document
+
+
+def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
+    output: dict[int, list[dict[str, object]]] = {}
+    document = _open(source)
+    if document is None:
+        return {}
+    with document:
         recovery = _DocumentRecovery(document)
         try:
             for page in document.pages:
