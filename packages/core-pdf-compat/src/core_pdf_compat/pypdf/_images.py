@@ -10,10 +10,6 @@ from collections.abc import Callable, Iterator, Sequence
 from io import BytesIO
 from typing import Any
 
-import numpy
-
-from core_pdf.impl.graphics_image_samples import ImageHeader
-from core_pdf.impl.graphics_images import decode_image
 from core_pdf_compat.pypdf.constants import (
     _INLINE_IMAGE_KEY_MAPPING,
     _INLINE_IMAGE_VALUE_MAPPING,
@@ -26,17 +22,9 @@ from core_pdf_compat.pypdf.generic import (
     NameObject,
     StreamObject,
     is_null_or_none,
-    to_core,
 )
-from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 logger = logging.getLogger(__name__)
-
-# core-pdf would composite these. pypdf applies /SMask itself and ignores the others.
-COMPOSITING_KEYS = frozenset({"SMask", "Mask", "SMaskInData", "Matte"})
-INDEXED_COLOR_SPACE_LENGTH = 4
 
 
 def _pillow() -> Any:
@@ -50,144 +38,18 @@ def _pillow() -> Any:
     return Image
 
 
-def _core_value(value: Any, seen: frozenset[int] = frozenset()) -> Any:
-    """``value`` as core-pdf objects with every reference followed, as the decoder needs."""
-    resolved = value.get_object() if isinstance(value, IndirectObject) else value
-    if id(resolved) in seen:
-        return None
-    seen |= {id(resolved)}
-    if isinstance(resolved, StreamObject):
-        dictionary = {
-            key[1:]: _core_value(dict.__getitem__(resolved, key), seen)
-            for key in dict.keys(resolved)
-        }
-        return PdfStream(dictionary, resolved._stored_data())
-    if isinstance(resolved, dict):
-        return {
-            key[1:]: _core_value(dict.__getitem__(resolved, key), seen)
-            for key in dict.keys(resolved)
-        }
-    if isinstance(resolved, list):
-        return [
-            _core_value(list.__getitem__(resolved, index), seen) for index in range(len(resolved))
-        ]
-    return to_core(resolved)
-
-
-def _fitted_samples(x_object: Any, dictionary: dict[Any, Any]) -> ImageSource:
-    # Pillow reads as many samples as it needs, so pypdf accepts data of the wrong length.
-    unfiltered = {
-        key: value for key, value in dictionary.items() if key not in {"Filter", "DecodeParms"}
-    }
-    header = ImageHeader(unfiltered)
-    bits_per_pixel = header.bits * len(header.space().component_ranges)
-    length = (header.width * bits_per_pixel + 7) // 8 * header.height
-    return ImageSource(x_object.get_data()[:length].ljust(length, b"\x00"), unfiltered)
-
-
-def _samples_image(x_object: Any) -> Any:
-    image = _pillow()
-    dictionary = {
-        key: value
-        for key, value in _core_value(x_object).dictionary.items()
-        if key not in COMPOSITING_KEYS
-    }
-    size = (x_object["/Width"], x_object["/Height"])
-    try:
-        raster = decode_image(ImageSource(x_object._stored_data(), dictionary))
-        if raster is None and not dictionary.get("ImageMask"):
-            raster = decode_image(_fitted_samples(x_object, dictionary))
-    except (FilterError, ValueError) as error:
-        raise PdfReadError(str(error)) from error
-    if raster is None:
-        # A stencil mask has no colors of its own.
-        return image.frombytes("1", size, x_object.get_data())
-    array = numpy.asarray(raster.array)
-    return image.fromarray(array[:, :, 0] if array.shape[2] == 1 else array)
-
-
-def _check_color_space(x_object: Any) -> None:
-    color_space = x_object.get_resolved("/ColorSpace")
-    if isinstance(color_space, IndirectObject):
-        color_space = color_space.get_object()
-    if isinstance(color_space, list) and color_space[:1] == ["/Indexed"]:
-        # AutoDesk files write `/DeviceRGB\x00255`, which pypdf reads as one name holding the
-        # base and hival, and accepts, as it does here.
-        autodesk = len(color_space) == 3 and "\x00" in str(color_space[1])
-        if len(color_space) != INDEXED_COLOR_SPACE_LENGTH and not autodesk:
-            raise PdfReadError(
-                f"Expected color space with {INDEXED_COLOR_SPACE_LENGTH} values, "
-                f"got {len(color_space)}: {color_space}"
-            )
-    elif is_null_or_none(color_space) and not x_object.get_resolved("/ImageMask"):
-        raise PdfReadError(f"ColorSpace field not found in {x_object}")
-
-
-def _opened_image(x_object: Any, last_filter: Any) -> tuple[Any, str, str]:
-    image = _pillow()
-    if last_filter in {"/DCTDecode", "/DCT"}:
-        return image.open(BytesIO(x_object.get_data())), "JPEG", ".jpg"
-    if last_filter == "/JPXDecode":
-        return image.open(BytesIO(x_object.get_data())), "JPEG2000", ".jp2"
-    if last_filter in {"/CCITTFaxDecode", "/CCF"}:
-        return image.open(BytesIO(x_object.get_data()), formats=("TIFF",)), "TIFF", ".tiff"
-    _check_color_space(x_object)
-    if last_filter in {"/LZWDecode", "/LZW"}:
-        return _samples_image(x_object), "TIFF", ".tiff"
-    return _samples_image(x_object), "PNG", ".png"
-
-
-def _with_alpha(img: Any, x_object: Any, visited: set[int]) -> tuple[Any, bool]:
-    mask = x_object.get_resolved("/SMask")
-    if is_null_or_none(mask):
-        return img, False
-    if id(mask) in visited:
-        logger.warning("Ignoring cyclic /SMask reference in %r", x_object)
-        return img, False
-    alpha = xobject_image(mask, visited=visited)[2]
-    if img.size != alpha.size:
-        logger.warning("image and mask size not matching: %r", x_object)
-        return img, True
-    if img.mode not in {"L", "LA", "RGB", "RGBA"}:
-        img = img.convert("RGB")
-    img.putalpha(alpha.convert("L"))
-    return img, True
-
-
 def xobject_image(
     x_object: Any,
     pillow_parameters: dict[str, Any] | None = None,
     visited: set[int] | None = None,
-) -> tuple[str, bytes, Any]:
-    """The file extension, file bytes and Pillow image for an image XObject."""
-    image = _pillow()
-    visited = set() if visited is None else visited
-    visited.add(id(x_object))
-    filters = x_object.get_resolved("/Filter")
-    last_filter = filters[-1] if isinstance(filters, list) and filters else filters
-    img, image_format, extension = _opened_image(x_object, last_filter)
-    img, has_alpha = _with_alpha(img, x_object, visited)
-    if has_alpha:
-        image_format, extension = (
-            ("JPEG2000", ".jp2") if "JPEG" in image_format else ("PNG", ".png")
-        )
-    parameters = dict(pillow_parameters or {})
-    if image_format == "JPEG":
-        img.format = "JPEG"
-        parameters.setdefault("quality", "keep")
-    output = BytesIO()
-    try:
-        img.save(output, format=image_format, **parameters)
-    except OSError:
-        image_format, extension = "PNG", ".png"
-        output = BytesIO()
-        img.convert("RGBA").save(output, format=image_format)
-    data = output.getvalue()
-    try:
-        return extension, data, image.open(BytesIO(data))
-    except OSError as error:
-        logger.warning("Failed loading image: %s", error)
-        return extension, data, None
+) -> tuple[str | None, bytes, Any]:
+    """The file extension, file bytes and Pillow image for an image XObject, as pypdf makes
+    them: core-pdf decodes the filters and pypdf's conversion builds the image.
+    """
+    _pillow()
+    from core_pdf_compat.pypdf._image_xobject import _xobj_to_image  # noqa: PLC0415
+
+    return _xobj_to_image(x_object, pillow_parameters, visited)
 
 
 class ImageFile:
@@ -226,7 +88,7 @@ class ImageFile:
         extension, self.data, self.image = xobject_image(
             reference.get_object(), pillow_parameters=kwargs
         )
-        self.name = self.name[: self.name.rfind(".")] + extension
+        self.name = self.name[: self.name.rfind(".")] + str(extension)
 
     def __str__(self) -> str:
         return f"{type(self).__name__}(name={self.name}, data: {len(self.data)} Byte)"
