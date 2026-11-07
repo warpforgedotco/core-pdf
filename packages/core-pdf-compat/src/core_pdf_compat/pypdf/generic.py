@@ -1014,6 +1014,11 @@ def create_string_object(
 
 def to_generic(value: Any, pdf: Any = None) -> Any:
     """Present a core-pdf object as a pypdf one, leaving references unresolved."""
+    convert = _TO_GENERIC.get(type(value))
+    return _to_generic_by_checks(value, pdf) if convert is None else convert(value, pdf)
+
+
+def _to_generic_by_checks(value: Any, pdf: Any = None) -> Any:
     if value is None:
         return NullObject()
     if isinstance(value, bool):
@@ -1075,6 +1080,11 @@ def _core_dictionary(items: Iterable[tuple[Any, Any]]) -> dict[Any, Any]:
 
 def to_core(value: Any) -> Any:
     """Convert a pypdf object for core-pdf's serializer."""
+    convert = _TO_CORE.get(type(value))
+    return _to_core_by_checks(value) if convert is None else convert(value)
+
+
+def _to_core_by_checks(value: Any) -> Any:
     if isinstance(value, (NullObject, type(None))):
         return None
     if isinstance(value, IndirectObject):
@@ -1104,6 +1114,57 @@ def to_core(value: Any) -> Any:
     if isinstance(value, list):
         return [to_core(item) for item in list.__iter__(value)]
     return value
+
+
+# The conversions above test types in order, millions of times when a writer converts a whole
+# document. For these exact types the order always ends at the same branch: none of them
+# defines core_form, none is a BareKeyword, and none is an instance of a type tested before
+# its own. Their branches are looked up by type; any other type, subclasses included, still
+# goes through the tests.
+def _generic_mapping(value: Any, pdf: Any) -> DictionaryObject:
+    output = DictionaryObject()
+    for key, item in value.items():
+        dict.__setitem__(output, _generic_key(key), to_generic(item, pdf))
+    return output
+
+
+def _generic_array(value: Any, pdf: Any) -> ArrayObject:
+    array = ArrayObject()
+    array.extend(to_generic(item, pdf) for item in value)
+    return array
+
+
+_TO_GENERIC: dict[type, Callable[[Any, Any], Any]] = {
+    type(None): lambda _value, _pdf: NullObject(),
+    bool: lambda value, _pdf: BooleanObject(value),
+    int: lambda value, _pdf: NumberObject(value),
+    float: lambda value, _pdf: FloatObject(value),
+    str: lambda value, _pdf: _generic_key(value),
+    PdfName: lambda value, _pdf: _generic_key(value),
+    PdfString: lambda value, _pdf: create_string_object(bytes(value.data)),
+    PdfReference: lambda value, pdf: IndirectObject(
+        value.object_number, value.generation_number, pdf
+    ),
+    dict: _generic_mapping,
+    list: _generic_array,
+}
+
+_TO_CORE: dict[type, Callable[[Any], Any]] = {
+    type(None): lambda _value: None,
+    NullObject: lambda _value: None,
+    IndirectObject: lambda value: PdfReference(value.idnum, value.generation),
+    BooleanObject: lambda value: value.value,
+    NumberObject: int,
+    FloatObject: float,
+    NameObject: lambda value: PdfName(_name_bytes(value)),
+    ByteStringObject: lambda value: PdfString(bytes(value), is_literal=False),
+    TextStringObject: lambda value: PdfString(_encode_text(value)),
+    StreamObject: lambda value: PdfStream(
+        _core_dictionary(dict.items(value)), value._stored_data()
+    ),
+    DictionaryObject: lambda value: _core_dictionary(dict.items(value)),
+    ArrayObject: lambda value: [to_core(item) for item in list.__iter__(value)],
+}
 
 
 class StreamParsingBudget(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
