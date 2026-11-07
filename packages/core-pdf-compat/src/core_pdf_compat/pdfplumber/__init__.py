@@ -1621,6 +1621,10 @@ class PDF(ClosingMixin, Container):
         self.laparams = laparams
         self._page_selection = tuple(pages) if pages is not None else None
         self._pages: list[Page] | None = None
+        # The pages pdfminer finds, once read. They depend only on the document and
+        # self._retyped, which stay as opened, so a later read (close() reads the pages
+        # again, as pdfplumber does) finds the same ones without parsing the xref again.
+        self._resolvable: tuple[tuple[int, Any], ...] | None = None
         self._objects: dict[str, list[ObjectDict]] | None = None
         self._rect_edges: list[ObjectDict] | None = None
         self._curve_edges: list[ObjectDict] | None = None
@@ -1662,7 +1666,11 @@ class PDF(ClosingMixin, Container):
 
                 doctop = 0.0
                 self._pages = []
-                resolvable = tuple(pdfminer_resolvable_pages(self._document, self._retyped))
+                resolvable = self._resolvable
+                if resolvable is None:
+                    resolvable = self._resolvable = tuple(
+                        pdfminer_resolvable_pages(self._document, self._retyped)
+                    )
                 selected = set(self._page_selection) if self._page_selection is not None else None
                 for page_number, (index, engine_page) in enumerate(resolvable, 1):
                     if selected is not None and page_number not in selected:
