@@ -7,8 +7,6 @@ from core_pdf.impl.fonts_helpers import build_decode_table
 from core_pdf.impl.text import is_rtl_character
 from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, multiply_affine
 
-EMBEDDED_FONT_PROGRAM_KEYS = ("FontFile", "FontFile2", "FontFile3")
-
 PREDEFINED_ENCODING_CODECS = {
     "Identity-H": "utf-16-be",
     "Identity-V": "utf-16-be",
@@ -182,10 +180,6 @@ def ensure_line_break(output_parts: list[str], output_last: str) -> str:
         output_parts.append("\n")
         return "\n"
     return output_last
-
-
-def embedded_font_program_count(descriptor: Mapping[object, object]) -> int:
-    return sum(descriptor.get(key) is not None for key in EMBEDDED_FONT_PROGRAM_KEYS)
 
 
 def type1_encoding_entries(segment: bytes) -> Iterator[tuple[int, str]]:
