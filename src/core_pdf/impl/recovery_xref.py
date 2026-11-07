@@ -815,9 +815,14 @@ def decode_xref_stream_rows(
 
 
 def bare_stream_marker(data: PdfByteBuffer, offset: int, marker: int, scan_end: int) -> int:
-    stream_marker = data.find(b"stream", offset, scan_end)
+    # A "stream" keyword counts only before the next "obj", so the search stops there rather
+    # than running on to scan_end for every object, which made a scan of a file with many
+    # objects after its last stream quadratic. The two words cannot overlap, so a "stream"
+    # that starts before the next "obj" also ends before it, and the result is unchanged.
     next_object_marker = data.find(b"obj", marker + 3, scan_end)
-    if stream_marker < 0 or 0 <= next_object_marker <= stream_marker:
+    search_end = scan_end if next_object_marker < 0 else next_object_marker
+    stream_marker = data.find(b"stream", offset, search_end)
+    if stream_marker < 0:
         return -1
     prefix = data[marker + 3 : stream_marker]
     uncommented = b"\n".join(line.split(b"%", 1)[0] for line in prefix.splitlines())

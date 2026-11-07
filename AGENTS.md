@@ -30,7 +30,7 @@ To validate against the locked dependencies, use `uv run --locked` with the rele
 
 ## Benchmarks
 
-`tests/benchmarks` holds CodSpeed benchmarks of core's saves and each facade's main calls, on upstream test PDFs (it needs the pdfplumber, pypdf and x-ray submodules). Run them locally with `uv run --all-packages --group benchmark --extra unstructured pytest tests/benchmarks --codspeed`. The `CodSpeed` workflow runs them under CPU simulation on every pull request and on main, and reports each change against main. To compare a facade's speed with the real library's, use `scripts/benchmark_facades.py`.
+`tests/benchmarks` holds CodSpeed benchmarks of core's saves and each facade's main calls, on upstream test PDFs (it needs the pdfplumber, pypdf, unstructured and x-ray submodules). Run them locally with `uv run --all-packages --group benchmark --extra unstructured pytest tests/benchmarks --codspeed`. The `CodSpeed` workflow runs them under CPU simulation on every pull request and on main, and reports each change against main. To compare a facade's speed with the real library's, use `scripts/benchmark_facades.py`.
 
 ## Compiled modules
 

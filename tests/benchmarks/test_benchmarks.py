@@ -30,6 +30,8 @@ FILES = {
     "fontsampler": "pypdf/resources/fontsampler.pdf",
     "rect-ordering": "x-ray/tests/assets/rect_ordering_3.20.pdf",
     "whitespace-redactions": "x-ray/tests/assets/whitespace_redactions.pdf",
+    # Stale xref offsets: opening it falls back to a scan of the whole file.
+    "da-1p": "unstructured/example-docs/pdf/DA-1p.pdf",
 }
 PAGES = 5
 
@@ -154,7 +156,7 @@ def test_pypdf(benchmark: Any, operation: str, name: str) -> None:
     benchmark(run, source)
 
 
-@pytest.mark.parametrize("name", ["rect-ordering", "whitespace-redactions", "pr-138"])
+@pytest.mark.parametrize("name", ["rect-ordering", "whitespace-redactions", "pr-138", "da-1p"])
 def test_pdfminer_extract_text(benchmark: Any, name: str) -> None:
     import core_pdf_compat.pdfminer as high_level  # noqa: PLC0415
 
