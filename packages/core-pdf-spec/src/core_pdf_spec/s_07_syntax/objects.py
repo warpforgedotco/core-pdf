@@ -124,16 +124,6 @@ class PdfObjectStream:
                 raise PdfParseError("invalid compressed object reference")
             return self.get(expected_reference)
 
-    def object_bytes(self, reference: int | PdfReference) -> bytes | None:
-        object_number = stream_object_number(reference)
-        if object_number is None:
-            return None
-        with self.lock:
-            offset = self.index.get(object_number)
-            if offset is None:
-                return None
-            return self.raw_body[offset : self.ends[offset]]
-
     def parse_object_at(self, offset: int, end: int) -> Any:
         if not 0 <= offset < end <= len(self.raw_body):
             raise PdfParseError("invalid object stream object bounds")

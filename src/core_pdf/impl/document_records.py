@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from core_pdf.impl.pdf_values import decode_pdf_text_string
 from core_pdf.impl.types import PdfName, PdfString, RecordType, Rectangle, ReplaceFields
-from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 
 
@@ -21,14 +20,6 @@ class RawNamedDestination(ReplaceFields, metaclass=RecordType, frozen=False, eq=
     type: str | None
     args: PdfArray
     raw: PdfObject | str
-
-
-class RawEmbeddedFile(ReplaceFields, metaclass=RecordType, frozen=False, eq=False):
-    name: str
-    filename: str
-    filespec: PdfDict
-    stream: PdfStream
-    data: bytes
 
 
 class RawAnnotation:
@@ -137,7 +128,6 @@ class RawFormField:
 
 __all__ = (
     "RawAnnotation",
-    "RawEmbeddedFile",
     "RawFormField",
     "RawLink",
     "RawNamedDestination",

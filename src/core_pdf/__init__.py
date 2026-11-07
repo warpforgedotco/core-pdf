@@ -35,7 +35,6 @@ if TYPE_CHECKING:
         TableReference,
         TableRowBand,
         TableView,
-        TextLineReference,
         TextView,
     )
     from core_pdf.impl.page_selection import PageSelection
@@ -79,7 +78,6 @@ EXPORTS = {
     "TableRowBand": ("core_pdf.impl.output_model", "TableRowBand"),
     "TextView": ("core_pdf.impl.output_model", "TextView"),
     "TextWord": ("core_pdf.impl.text", "TextWord"),
-    "TextLineReference": ("core_pdf.impl.output_model", "TextLineReference"),
     "PdfPage": ("core_pdf.impl.document_page", "PdfPage"),
     "PdfDecryptionError": ("core_pdf.impl.exceptions", "PdfDecryptionError"),
     "PdfDocumentClosedError": ("core_pdf.impl.exceptions", "PdfDocumentClosedError"),
@@ -118,7 +116,6 @@ __all__ = (
     "TableRowBand",
     "TextView",
     "TextWord",
-    "TextLineReference",
     "PdfPage",
     "PdfDecryptionError",
     "PdfDocumentClosedError",
