@@ -8,6 +8,7 @@ import sys
 import urllib.error
 import urllib.request
 from collections import defaultdict
+from collections.abc import Iterator
 from http import HTTPStatus
 from math import floor, isfinite
 from os import PathLike
@@ -373,12 +374,39 @@ class _BoxGrid:
         return sorted(found)
 
 
+# Two or more hex strings shown with Tj. Written as one string then more, not as a repeated
+# group, the pattern starts with a literal "<" the regex engine searches for quickly; a
+# repeated group made it try every byte of the file.
+HEX_STRINGS_SHOWN = re.compile(rb"<[0-9A-Fa-f]+>(?:<[0-9A-Fa-f]+>)+\s*Tj\b")
+HEX_STRING = re.compile(rb"<([0-9A-Fa-f]+)>")
+WORD_BYTES = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_")
+ASCII_WHITESPACE = frozenset(b" \t\n\r\x0b\x0c")
+TRAILER_ROOT = re.compile(rb"/Root\s+([^>]+)")
+
+
 def _operand_overrides(raw_data: bytes) -> dict[bytes, bytes]:
     return {
         bytes.fromhex(groups[0].decode()): bytes.fromhex(groups[-1].decode())
-        for match in re.finditer(rb"(?:<[0-9A-Fa-f]+>){2,}\s*Tj\b", raw_data)
-        if len(groups := re.findall(rb"<([0-9A-Fa-f]+)>", match.group())) > 1
+        for match in HEX_STRINGS_SHOWN.finditer(raw_data)
+        if len(groups := HEX_STRING.findall(match.group())) > 1
     }
+
+
+def _trailer_keyword_ends(raw_data: bytes) -> Iterator[int]:
+    """Where each match of rb"\\btrailer\\b" ends, found without the regex.
+
+    A leading \\b keeps the regex engine from searching for the literal, so it tried every byte
+    of the file. A bytes pattern's word characters are [A-Za-z0-9_], and "trailer" cannot
+    overlap itself, so every delimited occurrence is a match.
+    """
+    start = raw_data.find(b"trailer")
+    while start >= 0:
+        end = start + 7
+        if (start == 0 or raw_data[start - 1] not in WORD_BYTES) and (
+            end == len(raw_data) or raw_data[end] not in WORD_BYTES
+        ):
+            yield end
+        start = raw_data.find(b"trailer", start + 7)
 
 
 def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, object]]:
@@ -559,18 +587,25 @@ def _validate_mupdf_structure(document: PdfDocument) -> None:
         ):
             raise PdfUnsupportedError("invalid trailing PDF data")
     if any(
-        not raw_data[match.end() :].lstrip().startswith(b"<<")
-        for match in re.finditer(rb"\btrailer\b", raw_data)
+        not raw_data.startswith(b"<<", _skip_whitespace(raw_data, end))
+        for end in _trailer_keyword_ends(raw_data)
     ):
         raise PdfUnsupportedError("invalid trailer dictionary")
     if eof < 0:
-        for match in re.finditer(rb"\btrailer\b", raw_data):
-            trailer_data = raw_data[match.end() :]
-            root = re.search(rb"/Root\s+([^>]+)", trailer_data)
+        for end in _trailer_keyword_ends(raw_data):
+            # The pattern has no anchor, so searching from the end is searching the rest.
+            root = TRAILER_ROOT.search(raw_data, end)
             if root is not None and re.match(rb"\d+\s+\d+\s+R\b", root.group(1)) is None:
                 raise PdfUnsupportedError("invalid trailer root")
         if re.search(rb"\xff{32,}", raw_data[-256:]):
             raise PdfUnsupportedError("invalid binary trailer data")
+
+
+def _skip_whitespace(raw_data: bytes, position: int) -> int:
+    """Where bytes.lstrip() would leave raw_data[position:] starting."""
+    while position < len(raw_data) and raw_data[position] in ASCII_WHITESPACE:
+        position += 1
+    return position
 
 
 def _raw_highlight_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, object]]:
