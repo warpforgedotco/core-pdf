@@ -1,0 +1,65 @@
+name: CodSpeed
+
+# Runs tests/benchmarks under CodSpeed's CPU simulation on every pull request and on main, so
+# each pull request shows how it moves core's and the facades' speed against main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # CodSpeed authenticates a public repository with OpenID Connect
+
+env:
+  DO_NOT_TRACK: "1"
+  UNSTRUCTURED_DISABLE_NOTICE: "1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmarks:
+    # Three shards run side by side; CodSpeed joins their results into one report.
+    name: Benchmarks / ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: core, pypdf, llamaindex and x-ray
+            select: core or pypdf or llamaindex or xray
+          - shard: pdfplumber
+            select: pdfplumber
+          - shard: pdfminer and unstructured
+            select: pdfminer or unstructured
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Check out the upstream checkouts that hold the benchmark files
+        run: git submodule update --init --depth 1 tests/upstream/pdfplumber tests/upstream/pypdf tests/upstream/x-ray
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.6"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install workspace packages and the benchmark tools
+        run: uv sync --locked --all-packages --group benchmark --extra unstructured
+
+      - name: Run the benchmarks
+        uses: CodSpeedHQ/action@92f529b65998c99845563df24d208b2a60e6dad3 # v5.6.0
+        with:
+          mode: simulation
+          run: uv run --locked --no-sync pytest tests/benchmarks --codspeed -p no:cacheprovider -k "${{ matrix.select }}"
+
+      - name: Prune uv cache
+        if: always()
+        run: uv cache prune --ci
