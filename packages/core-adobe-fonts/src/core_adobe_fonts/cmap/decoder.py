@@ -320,9 +320,6 @@ class CMapDecoder:
             remove_codes_in_range(mappings, start_bytes, end_bytes)
             ranges.append(make_range(start_bytes, end_bytes, cid))
 
-    def mapped_cid(self, code: bytes) -> int | None:
-        return mapped_code(code, self.cid_mappings, self.cid_ranges_by_lead_byte)
-
     def mapped_notdef(self, code: bytes) -> int | None:
         return mapped_code(code, self.notdef_mappings, self.notdef_ranges_by_lead_byte)
 

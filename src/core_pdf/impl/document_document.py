@@ -31,7 +31,6 @@ from core_pdf.impl.caches import DocumentCaches
 from core_pdf.impl.document_metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.document_page import PAGE_INHERITED_KEYS, PdfPage, goto_action_destination
 from core_pdf.impl.document_records import (
-    RawEmbeddedFile,
     RawFormField,
     RawNamedDestination,
     RawOutlineItem,
@@ -44,7 +43,7 @@ from core_pdf.impl.document_standards import (
     find_pdf_header,
     preserve_historical_version,
 )
-from core_pdf.impl.document_structure import StructureTree, resolve_optional_dict
+from core_pdf.impl.document_structure import StructureTree
 from core_pdf.impl.exceptions import (
     ExtractionScope,
     PdfDocumentClosedError,
@@ -803,16 +802,6 @@ class PdfDocument(Generic[PageT]):
     def page_count(self) -> int:
         return len(self.pages)
 
-    def declared_page_count(self) -> int:
-        if not self.page_tree_was_recovered:
-            try:
-                count = self.resolver.resolve(self.page_tree_root().get("Count"))
-                if type(count) is int and count >= 0:
-                    return count
-            except PdfParseError, ValueError:
-                pass
-        return len(self.pages)
-
     @property
     def metadata(self) -> dict[str, object]:
         value = self.get_metadata()
@@ -839,17 +828,6 @@ class PdfDocument(Generic[PageT]):
                 record=record,
             )
             for page_index, record in pending
-        )
-
-    def extract_form_fields(
-        self, *, pages: PageSelection | None = None
-    ) -> tuple[PageScoped[Any], ...]:
-        selected = tuple(self.iter_selected_pages(pages))
-        grouped = self.fields_by_page(tuple(page for _index, page in selected))
-        return self.scoped_pending(
-            (page_index, record)
-            for page_index, _page in selected
-            for record in grouped.get(page_index, ())
         )
 
     def extract(
@@ -1098,50 +1076,6 @@ class PdfDocument(Generic[PageT]):
             node = parent
         return node
 
-    def embedded_files(self) -> list[RawEmbeddedFile]:
-        names = self.resolver.dict_at(self.catalog(), "Names")
-        if names is None:
-            return []
-        embedded_tree = resolve_optional_dict(
-            self.resolver, names.get("EmbeddedFiles"), "invalid EmbeddedFiles name tree"
-        )
-        if embedded_tree is None:
-            return []
-
-        recovery = self.recovery
-        records: list[RawEmbeddedFile] = []
-        for name, value in iter_name_tree_items(
-            embedded_tree,
-            self.resolver.resolve,
-            self.resolver.resolve_str,
-            on_malformed=recovery.malformed,
-        ):
-            try:
-                record = self.embedded_file_record(name, value)
-            except ValueError:
-                if recovery.enabled:
-                    continue
-                raise
-            records.append(record)
-        return records
-
-    def embedded_file_record(self, name: str, value: object) -> RawEmbeddedFile:
-        filespec = self.resolver.as_dict(value)
-        if filespec is None:
-            raise ValueError("invalid embedded file spec")
-        ef = self.resolver.dict_at(filespec, "EF")
-        if ef is None:
-            raise ValueError("invalid embedded file stream")
-        stream = self.resolver.resolve(ef.get("UF") or ef.get("F"))
-        if not isinstance(stream, PdfStream):
-            raise ValueError("invalid embedded file stream")
-        filename = (
-            self.resolver.resolve_str(filespec.get("UF"))
-            or self.resolver.resolve_str(filespec.get("F"))
-            or name
-        )
-        return RawEmbeddedFile(name, filename, filespec, stream, stream.data)
-
     def __enter__(self) -> Self:
         if self.closed:
             raise PdfDocumentClosedError("PDF document is closed")
@@ -1381,9 +1315,6 @@ class PdfDocument(Generic[PageT]):
         except PdfParseError, ValueError:
             page_nodes = []
         yield from page_nodes or self.recovered_page_nodes()
-
-    def build_page_dicts(self) -> list[PdfDict]:
-        return [page_node.dictionary for page_node in self.iter_recovered_page_nodes()]
 
     @property
     def xref_context(self) -> SemanticContext | None:

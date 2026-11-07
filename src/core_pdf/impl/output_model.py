@@ -419,12 +419,6 @@ class TextView(ViewCache, GeneratedRecord):
         return "\n\n".join(parts)
 
 
-class TextLineReference(GeneratedRecord):
-    page_number: int
-    line_index: int
-    line: TextLine
-
-
 class TableView(GeneratedRecord):
     tables: tuple[Table, ...]
     page_number: int | None = None
@@ -446,18 +440,6 @@ class DocumentTextView(GeneratedRecord):
     @property
     def blocks(self) -> tuple[Block, ...]:
         return tuple(block for page in self.pages for block in page.blocks)
-
-    @property
-    def line_references(self) -> tuple[TextLineReference, ...]:
-        return tuple(
-            TextLineReference(
-                page_number=(page.page_number if page.page_number is not None else page_number),
-                line_index=index,
-                line=line,
-            )
-            for page_number, page in enumerate(self.pages, start=1)
-            for index, line in enumerate(page.lines)
-        )
 
     @property
     def words(self) -> tuple[TextWord, ...]:

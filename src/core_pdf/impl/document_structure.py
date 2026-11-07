@@ -148,7 +148,6 @@ class StructureNode:
 class StructureElement(StructureNode):
     __slots__ = (
         "actual_text_value",
-        "alternate_description_value",
         "attributes_value",
         "class_name_value",
         "element_cache",
@@ -175,7 +174,6 @@ class StructureElement(StructureNode):
         self.type_value: Any = MISSING
         self.title_value: Any = MISSING
         self.language_value: Any = MISSING
-        self.alternate_description_value: Any = MISSING
         self.actual_text_value: Any = MISSING
         self.attributes_value: Any = MISSING
         self.class_name_value: Any = MISSING
@@ -249,14 +247,6 @@ class StructureElement(StructureNode):
         if self.language_value is MISSING:
             self.language_value = self.document.resolver.resolve_str(self.props.get("Lang"))
         return self.language_value
-
-    @property
-    def alternate_description(self) -> str | None:
-        if self.alternate_description_value is MISSING:
-            self.alternate_description_value = self.document.resolver.resolve_str(
-                self.props.get("Alt")
-            )
-        return self.alternate_description_value
 
     @property
     def actual_text(self) -> str | None:
