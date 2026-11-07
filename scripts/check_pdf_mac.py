@@ -11,6 +11,10 @@ encryption must be refused. Every altered file must be refused: changed bytes, a
 MAC, a ByteRange that misses bytes, a missing declaration or salt, a MAC attached to a signature,
 and unsupported or unprotected algorithms.
 
+It then reads iText's own PDF MAC test files (scripts/itext_test_files.py): files iText wrote
+with each digest, one with AES-GCM, one from a third-party tool, and its tampered, stripped and
+saltless copies. Those it wrote must open, and the rest must be refused.
+
 uv run --all-packages python scripts/check_pdf_mac.py
 """
 
@@ -33,6 +37,10 @@ from core_pdf.impl.exceptions import PdfError, PdfUnsupportedError
 from core_pdf.impl.types import PdfName, PdfString
 from core_pdf_crypto.pdf_mac import PdfMacIntegrityInfo
 from core_pdf_spec.s_07_syntax.serialize import serialize_object
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.itext_test_files import fetched  # noqa: E402
 
 ENCRYPTION = "tests/upstream/pypdf/resources/encryption"
 SOURCES = (
@@ -319,6 +327,52 @@ def check_source(path: str, password: str, counts: collections.Counter[str]) -> 
                 print(f"{name}: {path}: {kind}: {text}")
 
 
+# iText's files, all with the password "123", and what core must do with each: "opened", or
+# the error class and words its message or cause must contain.
+ITEXT_FILES = {
+    "macProtectedDocument.pdf": "opened",
+    "thirdPartyMacProtectedDocument.pdf": "opened",
+    "cmp_standaloneMacStandardEncryptionTest.pdf": "opened",
+    "cmp_standaloneMacWithAllHashAlgorithmsTest1.pdf": "opened",
+    "cmp_standaloneMacWithAllHashAlgorithmsTest2.pdf": "opened",
+    "cmp_standaloneMacWithAllHashAlgorithmsTest3.pdf": "opened",
+    "cmp_standaloneMacWithAllHashAlgorithmsTest4.pdf": "opened",
+    "cmp_standaloneMacWithAllHashAlgorithmsTest5.pdf": "opened",
+    "cmp_standaloneMacWithAllHashAlgorithmsTest6.pdf": "opened",
+    "cmp_macEncryptionWithAesGsmTest.pdf": "opened",
+    "invalidMacProtectedDocument.pdf": ("PdfDecryptionError", "document digest does not match"),
+    "thirdPartyMacProtectedDocumentTampered.pdf": (
+        "PdfDecryptionError",
+        "document digest does not match",
+    ),
+    # /P demands a MAC and the trailer has none.
+    "macProtectionStrippedTest.pdf": ("PdfDecryptionError", "Invalid PDF MAC"),
+    "noSaltTest.pdf": ("PdfDecryptionError", "Invalid PDF MAC"),
+    "signedMacProtectedDocument.pdf": ("PdfUnsupportedError", "Attached-to-signature"),
+    "thirdPartyMacProtectedAndSignedDocument.pdf": ("PdfUnsupportedError", "Attached-to-signature"),
+}
+
+
+def check_itext_files(counts: collections.Counter[str]) -> None:
+    paths = fetched()
+    for name, expected in ITEXT_FILES.items():
+        data = paths[name].read_bytes()
+        kind, text = outcome(data, "123")
+        if expected == "opened":
+            good = kind == "opened"
+            if good:
+                with PdfDocument.open(data, password="123") as document:
+                    kept = refused(EditableDocument(document).save)
+                    decrypted = EditableDocument(document).save(encryption="decrypt")
+                good = kept and not decrypted.encrypted and b"/AuthCode" not in decrypted
+            counts["itext_opened" if good else "itext_mishandled"] += 1
+        else:
+            good = kind == expected[0] and expected[1] in text
+            counts["itext_refused" if good else "itext_mishandled"] += 1
+        if not good:
+            print(f"iText {name}: {kind}: {text}")
+
+
 def refused(action: Callable[[], object]) -> bool:
     try:
         action()
@@ -331,6 +385,7 @@ def main() -> int:
     counts: collections.Counter[str] = collections.Counter()
     for path, password in SOURCES:
         check_source(path, password, counts)
+    check_itext_files(counts)
     print(dict(counts))
     allowed = {
         "valid_opened",
@@ -339,11 +394,15 @@ def main() -> int:
         "wrong_password_refused",
         "altered_refused",
         "unsupported_refused",
+        "itext_opened",
+        "itext_refused",
     }
     expected = len(SOURCES) * len(ACCEPTED)
     complete = counts["valid_opened"] == expected
     complete = complete and counts["altered_refused"] == len(SOURCES) * len(REFUSED)
     complete = complete and counts["unsupported_refused"] == len(SOURCES) * len(UNSUPPORTED)
+    itext_total = counts["itext_opened"] + counts["itext_refused"]
+    complete = complete and itext_total == len(ITEXT_FILES)
     return 0 if complete and not set(counts) - allowed else 1
 
 
