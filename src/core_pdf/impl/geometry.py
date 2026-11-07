@@ -138,10 +138,26 @@ def intersect_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle
 
 
 def bbox_union(boxes: Iterable[Sequence[float]]) -> Rectangle | None:
-    result: Rectangle | None = None
-    for box in boxes:
-        result = union_bbox(result, (float(box[0]), float(box[1]), float(box[2]), float(box[3])))
-    return result
+    # One pass, the same as folding union_bbox over the boxes: CPython's min(acc, v) returns
+    # v only when v < acc, and max(acc, v) only when v > acc, so each test below keeps the
+    # value min and max would, NaN and signed zeros included, without a tuple per box.
+    iterator = iter(boxes)
+    for box in iterator:
+        x0, y0, x1, y1 = float(box[0]), float(box[1]), float(box[2]), float(box[3])
+        break
+    else:
+        return None
+    for box in iterator:
+        left, bottom, right, top = float(box[0]), float(box[1]), float(box[2]), float(box[3])
+        if left < x0:
+            x0 = left
+        if bottom < y0:
+            y0 = bottom
+        if right > x1:
+            x1 = right
+        if top > y1:
+            y1 = top
+    return (x0, y0, x1, y1)
 
 
 def bbox_intersects(left: Sequence[float], right: Sequence[float]) -> bool:
