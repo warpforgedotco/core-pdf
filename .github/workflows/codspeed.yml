@@ -22,9 +22,20 @@ concurrency:
 
 jobs:
   benchmarks:
-    name: Benchmarks
+    # Three shards run side by side; CodSpeed joins their results into one report.
+    name: Benchmarks / ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: core, pypdf, llamaindex and x-ray
+            select: core or pypdf or llamaindex or xray
+          - shard: pdfplumber
+            select: pdfplumber
+          - shard: pdfminer and unstructured
+            select: pdfminer or unstructured
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -47,7 +58,7 @@ jobs:
         uses: CodSpeedHQ/action@92f529b65998c99845563df24d208b2a60e6dad3 # v5.6.0
         with:
           mode: simulation
-          run: uv run --locked --no-sync pytest tests/benchmarks --codspeed -p no:cacheprovider
+          run: uv run --locked --no-sync pytest tests/benchmarks --codspeed -p no:cacheprovider -k "${{ matrix.select }}"
 
       - name: Prune uv cache
         if: always()

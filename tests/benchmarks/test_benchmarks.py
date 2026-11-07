@@ -191,8 +191,11 @@ PLUMBER_CHECKS: dict[str, Callable[[Any], object]] = {
 }
 
 
-@pytest.mark.parametrize("check", list(PLUMBER_CHECKS))
-@pytest.mark.parametrize("name", ["pr-138", "federal-register"])
+# Every check on one file; on the larger file only chars, as each check parses the pages first.
+@pytest.mark.parametrize(
+    ("name", "check"),
+    [*(("pr-138", check) for check in PLUMBER_CHECKS), ("federal-register", "chars")],
+)
 def test_pdfplumber(benchmark: Any, check: str, name: str) -> None:
     from core_pdf_compat import pdfplumber  # noqa: PLC0415
 
@@ -207,7 +210,7 @@ def test_pdfplumber(benchmark: Any, check: str, name: str) -> None:
     benchmark(run)
 
 
-@pytest.mark.parametrize("name", ["pr-138", "federal-register"])
+@pytest.mark.parametrize("name", ["pr-138"])
 def test_unstructured_partition_fast(benchmark: Any, name: str) -> None:
     from core_pdf_compat.unstructured import partition_pdf  # noqa: PLC0415
 
