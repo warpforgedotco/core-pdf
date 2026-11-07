@@ -412,10 +412,13 @@ def pdfminer_ligature_overrides(
                 overrides[id(glyph)] = (glyph_name_text, box, glyph.baseline)
                 skipped.update(id(item) for item in difference_cluster[1:])
                 continue
-            planned_text = _expected_ligature(glyph)
-            if planned_text is None:
+            # Not a run of the name's characters: what its encoding names may still be one.
+            difference_ligature = _expected_ligature(glyph)
+            if difference_ligature is None:
                 continue
-        expected_ligature = planned_text
+            expected_ligature = difference_ligature
+        else:
+            expected_ligature = planned_text
         ligature_cluster: tuple[Any, ...] | None = None
         legacy_text: str | None = None
         for cluster_size in (3, 2):
@@ -478,6 +481,10 @@ def _ligature_plan(glyph: Any) -> tuple[str, str] | None:
 
 
 def _expected_ligature(glyph: Any) -> str | None:
+    """The ligature character the glyph's encoding names for its code, or None if none does.
+
+    The /Differences name comes first, then the base encoding's entry, as in pdfminer.
+    """
     decoder = glyph.font_decoder
     glyph_name = decoder_encoding_differences(decoder).get(glyph.char_code)
     base_table = base_encoding_table(decoder_base_encoding(decoder))
