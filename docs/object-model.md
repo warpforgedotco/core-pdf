@@ -243,8 +243,12 @@ versions.
 
 ### Known gaps
 
-- R7 (AES-GCM) keep-encryption has no real fixture, and PDF MAC refusal was tested with an
-  injected `/AuthCode`, not a real MAC file.
+- R7 (AES-GCM) keep-encryption has no real fixture.
+- No file under `tests/upstream` carries a PDF MAC, and no library the facades follow writes
+  one. `scripts/check_pdf_mac.py` adds standalone MACs to pypdf's real revision 6 files, with
+  tokens it builds itself from ISO 32004 and RFC 5652. Core opens the correct ones, refuses to
+  keep their encryption on save, and refuses each altered file for the reason expected. A MAC
+  written by another tool has not been checked.
 - Ghostscript refused AES-256-R5 with a four-character password, including on real pypdf's
   own file. qpdf, Poppler and pypdf open those files, and a seven-character password works.
 
