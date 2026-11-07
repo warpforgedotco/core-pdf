@@ -599,10 +599,8 @@ class SaveReport(NamedTuple):
     removed: tuple[int, ...]
 
 
-def _digest(value: Any) -> bytes | None:
-    if value is None:
-        return None
-    return hashlib.blake2b(serialize_object(to_core(value)), digest_size=16).digest()
+def _digest_core(core: Any) -> bytes:
+    return hashlib.blake2b(serialize_object(core), digest_size=16).digest()
 
 
 class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon):
@@ -635,6 +633,10 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         # For an incremental update: a digest of each object as read, and what the file reached.
         self._original_hash: list[bytes | None] = []
         self._original_reachable: set[int] = set()
+        # While the writer opens and while it writes: each object's core form by index, and
+        # the changed objects. Nothing changes the objects meanwhile, so the steps share them.
+        self._write_cores: dict[int, Any] | None = None
+        self._write_increment: list[IndirectObject] | None = None
         self.last_save: SaveReport | None = None
         self._objects_written = 0
         self._info_obj: Any = None
@@ -1228,8 +1230,16 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         self._check_trailer_size(reader)
         # Before flattening, which moves inherited entries into the pages as pypdf does.
         if self.incremental:
-            self._original_hash = [_digest(item) for item in self._objects]
-            self._original_reachable = {ref.object_number for ref in self._reachable()}
+            # One core form per object serves both the hashes and the reachability walk.
+            self._write_cores = {}
+            try:
+                self._original_hash = [
+                    None if item is None else _digest_core(self._core_form(index))
+                    for index, item in enumerate(self._objects)
+                ]
+                self._original_reachable = {ref.object_number for ref in self._reachable()}
+            finally:
+                self._write_cores = None
         self._flatten()
         for page in self.flattened_pages:
             self._replace_object(page.indirect_reference, page)
@@ -1442,12 +1452,29 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
 
     def list_objects_in_increment(self) -> list[IndirectObject]:
         """The new and changed objects an incremental save writes."""
+        if self._write_increment is not None:
+            return list(self._write_increment)
         known = len(self._original_hash)
-        return [
+        changed = [
             item.indirect_reference
             for index, item in enumerate(self._objects)
-            if item is not None and (index >= known or _digest(item) != self._original_hash[index])
+            if item is not None
+            and (
+                index >= known or _digest_core(self._core_form(index)) != self._original_hash[index]
+            )
         ]
+        if self._write_cores is not None:
+            self._write_increment = changed
+        return list(changed)
+
+    def _core_form(self, index: int) -> Any:
+        """The core form of self._objects[index], made once per write."""
+        cores = self._write_cores
+        if cores is None:
+            return to_core(self._objects[index])
+        if index not in cores:
+            cores[index] = to_core(self._objects[index])
+        return cores[index]
 
     def write_stream(self, stream: Any) -> None:
         if hasattr(stream, "mode") and "b" not in stream.mode:
@@ -1456,15 +1483,21 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 stream.name,
             )
         self._resolve_links()
-        if (
-            self.incremental
-            and self._reader.is_encrypted
-            and len(self.list_objects_in_increment()) > 0
-        ):
-            raise NotImplementedError(
-                "Writing incremental updates of encrypted PDF files is currently not supported."
-            )
-        stream.write(self.write_bytes())
+        self._write_cores = {}
+        try:
+            if (
+                self.incremental
+                and self._reader.is_encrypted
+                and len(self.list_objects_in_increment()) > 0
+            ):
+                raise NotImplementedError(
+                    "Writing incremental updates of encrypted PDF files is currently not supported."
+                )
+            data = self.write_bytes()
+        finally:
+            self._write_cores = None
+            self._write_increment = None
+        stream.write(data)
 
     def _resolve_links(self) -> None:
         """Aim the links of added pages at the copies of their target pages, as pypdf does."""
@@ -1558,7 +1591,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             item = self._objects[number - 1]
             if item is None:
                 continue
-            core = to_core(item)
+            core = self._core_form(number - 1)
             output[PdfReference(number, 0)] = core
             pending.extend(references_in(core))
         return output
@@ -1578,9 +1611,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         objects: dict[PdfReference, Any] = {}
         for index, item in enumerate(self._objects):
             if item is not None:
-                number = index + 1
-                core = to_core(item)
-                objects[PdfReference(number, 0)] = core
+                objects[PdfReference(index + 1, 0)] = self._core_form(index)
         self._objects_written = len(objects)
         trailer = self._trailer()
         security = None
