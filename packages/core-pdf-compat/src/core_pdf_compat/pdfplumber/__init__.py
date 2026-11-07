@@ -75,29 +75,6 @@ def cluster_by(
     return [list(group) for _, group in groupby(ordered, lambda item: cluster_ids[getter(item)])]
 
 
-def cluster_by_preserving_order(
-    values: Iterable[Any], key: Callable[[Any], Any] | str, tolerance: float = 0
-) -> list[list[Any]]:
-    getter = itemgetter(key) if isinstance(key, str) else key
-    items = list(values)
-    numeric_groups = cluster_by((getter(item) for item in items), lambda value: value, tolerance)
-    cluster_ids = {
-        value: cluster_index
-        for cluster_index, group in enumerate(numeric_groups)
-        for value in group
-    }
-    groups: list[list[Any]] = []
-    previous_cluster: int | None = None
-    for item in items:
-        cluster = cluster_ids[getter(item)]
-        if not groups or cluster != previous_cluster:
-            groups.append([item])
-        else:
-            groups[-1].append(item)
-        previous_cluster = cluster
-    return groups
-
-
 # What reading a page raises: core-pdf's errors, and those the facade raises as pdfminer's
 # interpreter does (PSSyntaxError, PDFKeyError, KeyError, AssertionError), all of which
 # pdfplumber's Page.layout wraps in PdfminerException.
@@ -1418,10 +1395,6 @@ class PageImage:
         cells = getattr(table, "cells", ())
         return self.draw_rects((cell for cell in cells if cell is not None), **kwargs)
 
-    def draw_words(self, words: Iterable[Any], **kwargs: Any) -> PageImage:
-        self._drawings.extend(("word", (word, kwargs)) for word in words)
-        return self
-
     def save(self, path: str | Any, format: str | None = None, **kwargs: Any) -> None:
         del format
         channels = self.raster.channels
@@ -1488,7 +1461,7 @@ class PageImage:
                 )
 
         for kind, (value, options) in self._drawings:
-            if kind in {"line", "rect", "word"}:
+            if kind in {"line", "rect"}:
                 ink = color(options.get("stroke"), (255, 0, 0))
                 if kind == "line" and isinstance(value, Mapping) and "pts" in value:
                     coords = tuple(value["pts"])
@@ -1503,7 +1476,7 @@ class PageImage:
                     continue
                 x0, y0 = point(float(coords[0]), float(coords[1]))
                 x1, y1 = point(float(coords[2]), float(coords[3]))
-                if kind in {"rect", "word"} and options.get("fill") is not None:
+                if kind == "rect" and options.get("fill") is not None:
                     fill = color(options["fill"], ink)
                     for y in range(min(y0, y1), max(y0, y1) + 1):
                         for x in range(min(x0, x1), max(x0, x1) + 1):
