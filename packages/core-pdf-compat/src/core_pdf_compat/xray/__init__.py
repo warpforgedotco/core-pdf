@@ -8,6 +8,7 @@ import sys
 import urllib.error
 import urllib.request
 from collections import defaultdict
+from collections.abc import Iterator
 from http import HTTPStatus
 from math import floor, isfinite
 from os import PathLike
@@ -391,23 +392,21 @@ def _operand_overrides(raw_data: bytes) -> dict[bytes, bytes]:
     }
 
 
-def _trailer_keyword_ends(raw_data: bytes) -> list[int]:
+def _trailer_keyword_ends(raw_data: bytes) -> Iterator[int]:
     """Where each match of rb"\\btrailer\\b" ends, found without the regex.
 
     A leading \\b keeps the regex engine from searching for the literal, so it tried every byte
     of the file. A bytes pattern's word characters are [A-Za-z0-9_], and "trailer" cannot
     overlap itself, so every delimited occurrence is a match.
     """
-    ends: list[int] = []
     start = raw_data.find(b"trailer")
     while start >= 0:
         end = start + 7
         if (start == 0 or raw_data[start - 1] not in WORD_BYTES) and (
             end == len(raw_data) or raw_data[end] not in WORD_BYTES
         ):
-            ends.append(end)
+            yield end
         start = raw_data.find(b"trailer", start + 7)
-    return ends
 
 
 def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, object]]:
@@ -587,11 +586,13 @@ def _validate_mupdf_structure(document: PdfDocument) -> None:
             or re.search(rb"[0-9A-Fa-f]{64}\"[0-9A-Fa-f]{64}", trailing)
         ):
             raise PdfUnsupportedError("invalid trailing PDF data")
-    trailer_ends = _trailer_keyword_ends(raw_data)
-    if any(not raw_data.startswith(b"<<", _skip_whitespace(raw_data, end)) for end in trailer_ends):
+    if any(
+        not raw_data.startswith(b"<<", _skip_whitespace(raw_data, end))
+        for end in _trailer_keyword_ends(raw_data)
+    ):
         raise PdfUnsupportedError("invalid trailer dictionary")
     if eof < 0:
-        for end in trailer_ends:
+        for end in _trailer_keyword_ends(raw_data):
             # The pattern has no anchor, so searching from the end is searching the rest.
             root = TRAILER_ROOT.search(raw_data, end)
             if root is not None and re.match(rb"\d+\s+\d+\s+R\b", root.group(1)) is None:
