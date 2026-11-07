@@ -434,16 +434,28 @@ def _group_objects(chars: list[LTChar], params: LAParams) -> list[LTTextLine]:
             current = [item]
             previous = item
             continue
+        # previous.is_voverlap, voverlap, hdistance and their vertical twins, inlined. Under
+        # the overlap test, voverlap's min(abs(py0 - iy1), abs(py1 - iy0)) is replaced by
+        # min(iy1 - py0, py1 - iy0), and hoverlap's likewise: each abs(lo - hi) with lo <= hi
+        # equals hi - lo but for the sign of a zero, and min then < cannot tell those apart.
+        # Z3 proves both steps over every pair of binary64 values, NaN and infinities
+        # included.
+        px0, py0, px1, py1 = previous.x0, previous.y0, previous.x1, previous.y1
+        ix0, iy0, ix1, iy1 = item.x0, item.y0, item.x1, item.y1
+        voverlaps = iy0 <= py1 and py0 <= iy1
+        hoverlaps = ix0 <= px1 and px0 <= ix1
         horizontal = (
-            previous.is_voverlap(item)
-            and min(previous.height, item.height) * params.line_overlap < previous.voverlap(item)
-            and previous.hdistance(item) < max(previous.width, item.width) * params.char_margin
+            voverlaps
+            and min(previous.height, item.height) * params.line_overlap < min(iy1 - py0, py1 - iy0)
+            and (0.0 if hoverlaps else min(abs(px0 - ix1), abs(px1 - ix0)))
+            < max(previous.width, item.width) * params.char_margin
         )
         vertical = (
             params.detect_vertical
-            and previous.is_hoverlap(item)
-            and min(previous.width, item.width) * params.line_overlap < previous.hoverlap(item)
-            and previous.vdistance(item) < max(previous.height, item.height) * params.char_margin
+            and hoverlaps
+            and min(previous.width, item.width) * params.line_overlap < min(ix1 - px0, px1 - ix0)
+            and (0.0 if voverlaps else min(abs(py0 - iy1), abs(py1 - iy0)))
+            < max(previous.height, item.height) * params.char_margin
         )
         continues = (horizontal and not current_vertical) or (vertical and current_vertical)
         if len(current) > 1 and continues:
