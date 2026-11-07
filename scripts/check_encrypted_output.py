@@ -4,6 +4,10 @@ Each file is opened, edited and saved every way the policy allows. The output mu
 the same pages and text, and must refuse a wrong password. qpdf, when installed, is a second
 reader. Tampered files must be refused, and key material must stay out of reprs.
 
+Revision 7 (AES-GCM) uses iText's test files (scripts/itext_test_files.py), as nothing under
+tests/upstream has one: saves that keep the encryption must reopen with either password and the
+same content, and copies with a changed ciphertext, IV or GCM tag must be refused.
+
 uv run --all-packages python scripts/check_encrypted_output.py
 """
 
@@ -21,6 +25,10 @@ from core_pdf.impl.exceptions import PdfError, PdfPasswordError, PdfUnsupportedE
 from core_pdf.impl.types import PdfName, PdfString
 from core_pdf_spec.s_07_security.output import ALGORITHMS
 from core_pdf_spec.s_07_syntax.stream import PdfStream
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.itext_test_files import fetched  # noqa: E402
 
 ENCRYPTION = "tests/upstream/pypdf/resources/encryption"
 # (pattern, password that opens the file)
@@ -306,6 +314,58 @@ def check_xref_stream_files(counts: collections.Counter[str]) -> None:
     check_output("stream update", data, "foo", page_texts_of(saved), counts, encrypted=True)
 
 
+def content_bytes(document: Any) -> list[bytes]:
+    return [b"".join(stream.data for stream in page.content_streams) for page in document.pages]
+
+
+def check_aes_gcm(counts: collections.Counter[str]) -> None:
+    """Revision 7 keeps its encryption on save; tampered AES-GCM objects are refused."""
+    paths = fetched()
+    with PdfDocument.open(paths["simpleDocument.pdf"].read_bytes()) as plain:
+        expected = content_bytes(plain)
+    with PdfDocument.open(paths["encryptedDocument.pdf"].read_bytes(), password="secret") as source:
+        same = revision(source) == 7 and content_bytes(source) == expected
+        counts["gcm_read" if same else "gcm_read_wrong"] += 1
+        for label, save in (
+            ("full", EditableDocument(source).save),
+            ("incremental", EditableDocument(source).save_incremental),
+        ):
+            data = save()
+            good = data.encryption == "AES-256-GCM"
+            for password in ("secret", "supersecret"):
+                with PdfDocument.open(bytes(data), password=password) as result:
+                    good = good and revision(result) == 7
+                    good = good and content_bytes(result) == expected
+            good = good and refused_password(bytes(data))
+            counts["gcm_kept" if good else "gcm_broken"] += 1
+            if not good:
+                print(f"AES-GCM {label} save did not keep revision 7 and the content")
+    for name in ("Ciphertext", "Iv", "Mac"):
+        data = paths[f"encryptedDocumentTampered{name}.pdf"].read_bytes()
+        try:
+            with PdfDocument.open(data, password="secret") as document:
+                content_bytes(document)
+                page_texts(document)
+        except PdfError:
+            counts["gcm_tampered_refused"] += 1
+        else:
+            counts["gcm_tampered_accepted"] += 1
+            print(f"AES-GCM file with a changed {name} opened")
+
+
+def revision(document: Any) -> int | None:
+    handler = document.security_handler
+    return None if handler is None else handler.config.revision
+
+
+def refused_password(data: bytes) -> bool:
+    try:
+        PdfDocument.open(data, password=WRONG_PASSWORD).close()
+    except PdfPasswordError:
+        return True
+    return False
+
+
 def page_texts_of(data: bytes) -> list[str]:
     with PdfDocument.open(bytes(data), password="foo") as document:
         return page_texts(document)
@@ -328,6 +388,7 @@ def main() -> int:
     check_refusals(counts)
     check_exemptions(counts)
     check_xref_stream_files(counts)
+    check_aes_gcm(counts)
     print(dict(counts))
     allowed = {
         "files_with_text",
@@ -344,6 +405,9 @@ def main() -> int:
         "metadata_kept",
         "plain_stays_plain",
         "xref_stream_continued",
+        "gcm_read",
+        "gcm_kept",
+        "gcm_tampered_refused",
     }
     return 1 if set(counts) - allowed else 0
 

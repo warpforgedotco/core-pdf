@@ -243,8 +243,13 @@ versions.
 
 ### Known gaps
 
-- R7 (AES-GCM) keep-encryption has no real fixture, and PDF MAC refusal was tested with an
-  injected `/AuthCode`, not a real MAC file.
+- No file under `tests/upstream` uses AES-GCM (revision 7) or a PDF MAC, and no library the
+  facades follow writes either. iText Core 9 writes both, so the checks fetch its test files,
+  pinned by release and sha256 in `tests/compat/itext_test_files.tsv`.
+  `check_encrypted_output.py` keeps revision 7 on full and incremental saves and refuses
+  tampered AES-GCM files. `check_pdf_mac.py` opens iText's MAC files, with every digest, and one
+  from a third-party tool, and refuses the tampered, stripped and saltless ones. It also builds
+  its own MACs on pypdf's revision 6 files. No MAC from Acrobat has been checked.
 - Ghostscript refused AES-256-R5 with a four-character password, including on real pypdf's
   own file. qpdf, Poppler and pypdf open those files, and a seven-character password works.
 

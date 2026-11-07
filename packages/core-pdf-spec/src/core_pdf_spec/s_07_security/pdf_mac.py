@@ -52,8 +52,10 @@ def validate_pdf_mac_extension(declarations: object) -> None:
         extension_level = declaration.get("ExtensionLevel")
         revision = declaration.get("ExtensionRevision")
         url = declaration.get("URL")
+        # ISO 32000-2 Table 49: /Type is optional, and iText leaves it out.
         if (
-            declaration.get("Type") == PdfName.of("DeveloperExtensions")
+            declaration.get("Type", PdfName.of("DeveloperExtensions"))
+            == PdfName.of("DeveloperExtensions")
             and declaration.get("BaseVersion") == PdfName.of("2.0")
             and type(extension_level) is int
             and extension_level == 32004
