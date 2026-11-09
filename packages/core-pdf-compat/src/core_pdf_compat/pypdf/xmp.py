@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["decimal"]
+
 import datetime
 import decimal
 import re

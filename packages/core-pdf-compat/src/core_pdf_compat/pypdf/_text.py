@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf_compat.pypdf._charsets",
+    "core_pdf_compat.pypdf._core_metrics",
+    "core_pdf_compat.pypdf._generic_content",
+    "core_pdf_compat.pypdf._layout",
+    "core_pdf_compat.pypdf.errors",
+]
+
 import logging
 import re
 import string

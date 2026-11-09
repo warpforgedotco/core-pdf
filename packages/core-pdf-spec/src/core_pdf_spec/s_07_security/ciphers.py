@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_crypto"]
+
 from types import TracebackType
 
 from core_pdf_crypto import ciphers

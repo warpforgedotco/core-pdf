@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_crypto.pdf_mac"]
+
 from core_pdf_crypto.errors import UnsupportedAlgorithmError
 from core_pdf_crypto.pdf_mac import validate_pdf_mac_token
 from core_pdf_spec.exceptions import PdfDecryptionError, PdfUnsupportedError

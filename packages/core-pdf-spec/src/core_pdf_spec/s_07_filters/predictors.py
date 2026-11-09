@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_jbig2.bitmap", "core_pdf_spec.samples"]
+
 from collections.abc import Callable
 
 import numpy

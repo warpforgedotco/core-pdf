@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_spec.s_09_fonts.font_program_truetype"]
+
 import re
 from binascii import unhexlify
 from collections.abc import Iterable

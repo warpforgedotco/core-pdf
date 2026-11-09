@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf.impl.fonts_program_type1"]
+
 from typing import Any
 
 from core_pdf.impl.exceptions import PdfParseError

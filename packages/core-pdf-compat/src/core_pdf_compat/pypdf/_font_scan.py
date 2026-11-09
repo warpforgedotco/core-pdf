@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
+
 import logging
 from collections.abc import Callable, Sequence
 from typing import Any

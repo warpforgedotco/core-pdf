@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf_spec.s_08_graphics.image_spec",
+    "core_pdf_spec.s_08_graphics.pdf_function",
+]
+
 from collections.abc import Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, overload
 

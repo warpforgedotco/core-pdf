@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__lazy_modules__ = ["heapq"]
+
 import heapq
 from collections.abc import Iterator
 from math import ceil

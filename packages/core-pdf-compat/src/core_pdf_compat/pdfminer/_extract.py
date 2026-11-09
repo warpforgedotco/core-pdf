@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__lazy_modules__ = ["html"]
+
 from collections.abc import Iterable, Iterator
 from html import escape
 from io import TextIOBase

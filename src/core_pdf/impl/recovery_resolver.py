@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf.impl.recovery_objects", "core_pdf_spec.s_07_syntax.objects"]
+
 from collections.abc import Mapping
 from typing import Any, overload
 

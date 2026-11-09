@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_jbig2.bitmap"]
+
 from core_jbig2.bitmap import invert_packed_bitmap
 from core_jbig2.codec import (
     JBIG2PageDecoder,

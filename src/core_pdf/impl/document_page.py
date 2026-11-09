@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf.impl.capture_page",
+    "core_pdf.impl.document_structure",
+    "core_pdf.impl.extract_pipeline",
+    "core_pdf.impl.graphics_images",
+    "core_pdf.impl.output_model",
+    "core_pdf.impl.raw_media",
+    "core_pdf.impl.render_model",
+    "core_pdf.impl.render_page",
+    "core_pdf_spec.s_08_graphics.image_spec",
+]
+
 from collections import deque
 from collections.abc import Iterable, Mapping
 from contextlib import suppress

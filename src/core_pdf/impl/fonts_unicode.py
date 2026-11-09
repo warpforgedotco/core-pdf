@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf.impl.fonts_cff_repair",
+    "gzip",
+    "importlib.resources",
+    "importlib.resources.abc",
+]
+
 import gzip
 import struct
 import unicodedata

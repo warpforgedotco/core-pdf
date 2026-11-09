@@ -2,6 +2,8 @@
 # Jeremy Singer-Vine, under the MIT License.
 from __future__ import annotations
 
+__lazy_modules__ = ["base64", "csv"]
+
 import base64
 import csv
 import json

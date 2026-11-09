@@ -9,6 +9,8 @@ opening a file: the same strict errors, the same warnings for what it tolerates,
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
+
 import logging
 import re
 import sys

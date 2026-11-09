@@ -2,6 +2,15 @@
 # pypdf._reader.PdfReader, Copyright (c) 2006, Mathieu Fenniak, under its BSD-style license.
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf_compat.pypdf._crypt_providers",
+    "core_pdf_compat.pypdf._page_labels",
+    "core_pdf_compat.pypdf.errors",
+    "core_pdf_compat.pypdf.pagerange",
+    "core_pdf_compat.pypdf.papersizes",
+    "core_pdf_spec.s_07_security.output",
+]
+
 import contextlib
 import functools
 import logging

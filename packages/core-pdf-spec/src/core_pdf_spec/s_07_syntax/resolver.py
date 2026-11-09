@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_spec.s_07_syntax.objects"]
+
 import contextlib
 import mmap
 import threading

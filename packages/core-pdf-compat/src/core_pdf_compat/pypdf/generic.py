@@ -5,6 +5,12 @@ Bytes are always written by core_pdf_spec's serializer, so there is one writer.
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf_compat.pypdf._generic_content",
+    "core_pdf_compat.pypdf.errors",
+    "core_pdf_spec.s_07_syntax.serialize",
+]
+
 import codecs
 import functools
 import hashlib

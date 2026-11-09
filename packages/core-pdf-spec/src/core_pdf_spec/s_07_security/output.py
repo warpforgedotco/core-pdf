@@ -4,13 +4,15 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_crypto.ciphers"]
+
 import secrets
 import struct
 from collections.abc import Callable
 from copy import replace
 from typing import Any, ClassVar
 
-from core_pdf_crypto.ciphers import aes_cbc_encrypt, aes_ecb_encrypt
+from core_pdf_crypto.ciphers import aes_cbc_encrypt, aes_ecb_encrypt, rc4_crypt
 from core_pdf_spec.s_07_security.standard import (
     PDF_MAC_PERMISSION_MASK,
     REVISION_3_PERMISSION_BITS,
@@ -25,7 +27,6 @@ from core_pdf_spec.s_07_security.standard import (
     normalize_password,
     pad_password,
     rc4_cascade,
-    rc4_crypt,
 )
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name

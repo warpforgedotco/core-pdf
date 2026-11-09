@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf.impl.graphics_images",
+    "core_pdf_spec.s_08_graphics",
+    "core_pdf_spec.s_08_graphics.geometry",
+    "core_pdf_spec.s_08_graphics.image_spec",
+    "core_pdf_spec.s_11_transparency.soft_masks",
+]
+
 from array import array
 from collections.abc import Callable, Mapping
 from contextlib import suppress
