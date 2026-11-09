@@ -78,7 +78,7 @@ jobs:
       # on the repo checkout.
       - name: Check the sdist builds standalone
         run: |
-          uv venv --python 3.14 /tmp/sdist-check
+          uv venv --python 3.15 /tmp/sdist-check
           uv pip install --python /tmp/sdist-check/bin/python --no-binary :all: dist/*.tar.gz
 
       - name: Upload sdist
