@@ -30,6 +30,8 @@ class Suite(NamedTuple):
     aliases: str
     reference: tuple[str, ...]
     requires: tuple[str, ...] = ()
+    # A Python other than the workspace's own, in an isolated environment.
+    python: str | None = None
 
 
 LLAMA_READERS = "llama-index-integrations/readers/llama-index-readers-file"
@@ -63,6 +65,8 @@ SUITES = {
             "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/"
             "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
         ),
+        # unstructured[pdf] needs onnxruntime, which has no CPython 3.15 wheels yet.
+        "3.14",
     ),
     "llamaindex": Suite(
         "llama_index",
@@ -124,9 +128,14 @@ def pytest_command(
 
 def environment_command(suite: Suite, *, reference: bool) -> list[str]:
     """The `uv run` prefix that gives a suite's tests their environment."""
-    base = ["uv", "run", "--python", "3.14"]
+    base = ["uv", "run"]
+    if suite.python is not None:
+        base += ["--python", suite.python]
+    if reference or suite.python is not None:
+        # Isolated, so a run on another Python leaves the workspace's .venv alone.
+        base.append("--isolated")
     if reference:
-        base += ["--no-project", "--isolated"]
+        base.append("--no-project")
         packages = suite.reference
     else:
         base += ["--project", str(ROOT), "--all-packages", "--group", "test"]
