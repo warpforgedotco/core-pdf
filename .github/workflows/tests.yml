@@ -18,6 +18,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    # A pull request that changes only documentation skips the suites, proofs and install
+    # checks, which read no Markdown; Quality and the build still run on it.
+    name: Changed files
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.files.outputs.code }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Decide whether anything besides documentation changed
+        id: files
+        run: |
+          # The pull request's merge commit has the base branch as its first parent.
+          if git diff --name-only HEAD^1 HEAD | grep -qvE '^docs/|\.md$'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   quality:
     name: Quality
     runs-on: ubuntu-latest
@@ -87,6 +110,8 @@ jobs:
     # Each floor package and the specification library must install with only
     # their own declared dependencies.
     # One job for all six: each check takes seconds, and a job per package held a runner each.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Standalone packages
     runs-on: ubuntu-latest
 
@@ -120,6 +145,8 @@ jobs:
     # Core must never import or discover its companions: with only core-pdf and
     # its declared dependencies installed, core-pdf-ocr, core-pdf-validate, and
     # core-pdf-compat must be absent and the engine must still import.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Core installs without its companions
     runs-on: ubuntu-latest
 
@@ -150,6 +177,8 @@ jobs:
 
   upstream-suites:
     # Each facade runs its reference library's own tests, so a failure here means a regression.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Upstream suite / ${{ matrix.suite }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -207,6 +236,8 @@ jobs:
 
   proofs:
     # The object model proofs, in two shards that run beside the suites.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Proofs / ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
