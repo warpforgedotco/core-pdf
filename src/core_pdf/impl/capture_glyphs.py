@@ -352,9 +352,13 @@ def capture_glyphs(
     seqno: int,
     cluster_start: int,
     options: CaptureOptions,
+    width_source: Callable[[int], float] | tuple[dict[Any, float], float],
+    out_glyphs: list[GlyphObservation],
     /,
 ) -> GlyphCapture:
-    result = GlyphCapture()
+    """width_source is glyph_width_source(decoder.glyph_width); observations are appended
+    to out_glyphs, which the returned capture holds."""
+    result = GlyphCapture(out_glyphs)
     if not glyphs:
         return result
     effective_font_name = decoder.font_name or font_name
@@ -365,7 +369,7 @@ def capture_glyphs(
             glyphs,
             DECODED_GLYPH_LAYOUT,
             OBSERVATION_LAYOUT,
-            glyph_width_source(decoder.glyph_width),
+            width_source,
             decoder.glyph_bbox if options.ink_bounds else None,
             font_size,
             char_space,

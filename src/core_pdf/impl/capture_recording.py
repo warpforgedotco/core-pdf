@@ -20,7 +20,13 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 import numpy
 
 from core_pdf.impl.caches import IdentityCache
-from core_pdf.impl.capture_glyphs import GlyphCapture, GlyphPaint, capture_glyphs, glyph_style
+from core_pdf.impl.capture_glyphs import (
+    GlyphCapture,
+    GlyphPaint,
+    capture_glyphs,
+    glyph_style,
+    glyph_width_source,
+)
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CapturedProgram, CaptureOptions
 from core_pdf.impl.capture_records import (
     EMPTY_DRAWING_ITEMS,
@@ -184,6 +190,7 @@ class TextLayout:
         "style",
         "space_width",
         "run_provenance",
+        "width_source",
     )
 
     decoder: FontDecoder
@@ -205,6 +212,8 @@ class TextLayout:
     effective_font_height: float
     actual_text_span: MarkedContentEntry | None
     style: GlyphStyle | None
+    # What capture_glyphs reads this decoder's widths from, looked up once per layout.
+    width_source: Callable[[int], float] | tuple[dict[Any, float], float]
     space_width: float
     run_provenance: tuple[tuple[str, object], ...]
 
@@ -782,6 +791,7 @@ class TextState(RecoveringTextState):
         )
         layout.actual_text_span = self.current_capture_actual_text_span()
         layout.style = None
+        layout.width_source = glyph_width_source(font_decoder.glyph_width)
         mcid = self.current_marked_content_mcid()
         layout.run_provenance = (
             ("font_name", graphics.current_font),
@@ -905,9 +915,10 @@ class TextState(RecoveringTextState):
                 seqno,
                 self.glyph_cluster_count,
                 self.options,
+                layout.width_source,
+                # The observations go straight into the program's list, when it keeps them.
+                self.glyphs if options.glyphs else [],
             )
-            if options.glyphs:
-                self.glyphs.extend(captured.glyphs)
             self.glyph_cluster_count += captured.cluster_count
             if not self.options.text_runs:
                 self.sequence = seqno + 1
