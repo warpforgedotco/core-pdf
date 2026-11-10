@@ -55,6 +55,7 @@ class ObjectResolver:
         "decipher",
         "objects",
         "object_streams",
+        "failed_object_streams",
         "lock",
         "thread_state",
         "_semantic_context",
@@ -74,6 +75,10 @@ class ObjectResolver:
         self._semantic_context = semantic_context
         self.objects: ObjectCache = {}
         self.object_streams: dict[int, PdfObjectStream] = {}
+        # A container that failed to build fails again for every object it holds, so the
+        # error is kept, with the decipher it was built under, which security negotiation
+        # may still set.
+        self.failed_object_streams: dict[int, tuple[Decipher | None, Exception]] = {}
         self.lock = threading.RLock()
         self.thread_state = threading.local()
 
@@ -106,6 +111,7 @@ class ObjectResolver:
         streams = tuple(self.object_streams.values())
         self.objects.clear()
         self.object_streams.clear()
+        self.failed_object_streams.clear()
         return streams
 
     def close(self) -> None:
@@ -220,12 +226,21 @@ class ObjectResolver:
     def get_object_stream(self, stream_number: int) -> PdfObjectStream | None:
         with self.lock:
             container = self.object_streams.get(stream_number)
+            failure = self.failed_object_streams.get(stream_number)
         if container is not None:
             return container
+        if failure is not None and failure[0] is self.decipher:
+            raise failure[1].with_traceback(None)
         stream = self.resolve(PdfReference(stream_number))
         if type(stream) is not PdfStream:
             return None
-        candidate = self.create_object_stream(stream)
+        decipher = self.decipher
+        try:
+            candidate = self.create_object_stream(stream)
+        except Exception as error:
+            with self.lock:
+                self.failed_object_streams[stream_number] = (decipher, error)
+            raise
         with self.lock:
             container = self.object_streams.setdefault(stream_number, candidate)
         if container is not candidate:
