@@ -145,15 +145,6 @@ def pdfminer_base_ctm(page: PdfPage) -> PdfminerMatrix:
     return (1, 0, 0, 1, -x0, -y0)
 
 
-class TextMark(NamedTuple):
-    glyph_index: int
-    mcid: int | None
-    tag: str | None
-    color_space: str | None
-    stroke_color: Any
-    fill_color: Any
-
-
 class PdfminerTextState(TextState):
     def __init__(self, document: Any, *, page_clip: Rectangle | None = None) -> None:
         super().__init__(
@@ -171,7 +162,6 @@ class PdfminerTextState(TextState):
         self.painted_paths: list[PaintedPath] = []
         self.vertical_line: Any = None
         self.vertical_offset = (0.0, 0.0)
-        self.text_marks: list[TextMark] = []
         self.current_mcid: int | None = None
         self.current_tag: str | None = None
         self.layout_events: list[LayoutEvent] = []
@@ -201,25 +191,7 @@ class PdfminerTextState(TextState):
         self.current_tag = None
         self.current_mcid = None
 
-    @staticmethod
-    def raw_color(color: Any, space: Any) -> Any:
-        # The default gray is held as RGB; pdfminer reports it as written.
-        if color is not None and space is not None and space.kind == "DeviceGray":
-            return color[:1]
-        return color
-
     def show_text(self, *arguments: Any, **options: Any) -> Any:
-        fill_space = self.graphics.fill_space
-        self.text_marks.append(
-            TextMark(
-                len(self.glyphs),
-                self.current_mcid,
-                self.current_tag,
-                None if fill_space is None else fill_space.kind,
-                self.raw_color(self.graphics.stroke_color, self.graphics.stroke_space),
-                self.raw_color(self.graphics.fill_color, fill_space),
-            )
-        )
         start = len(self.glyphs)
         result = super().show_text(*arguments, **options)
         if len(self.glyphs) > start and not self.hidden_depth:
@@ -540,11 +512,7 @@ class PdfminerTextState(TextState):
         self.text_boundary(self, "shown")
 
 
-def pdfminer_page_capture(
-    page: PdfPage,
-    *,
-    strict_cmaps: bool = True,
-) -> tuple[PdfminerProgram, tuple[PaintedPath, ...], tuple[TextMark, ...]]:
+def pdfminer_page_program(page: PdfPage, *, strict_cmaps: bool = True) -> PdfminerProgram:
     """strict_cmaps: whether glyphs of a font whose embedded CMap pdfminer cannot find
     advance nothing, as in pdfminer; unstructured parses those CMaps itself."""
     state = PdfminerTextState(page.document, page_clip=page.effective_page_clip())
@@ -554,7 +522,7 @@ def pdfminer_page_capture(
     state.base_ctm = pdfminer_base_ctm(page)
     page.consume_contents(state)
     state.run_accumulator.flush()
-    program = PdfminerProgram(
+    return PdfminerProgram(
         runs=tuple(state.runs),
         glyphs=tuple(state.glyphs),
         drawings=tuple(state.drawings),
@@ -566,11 +534,6 @@ def pdfminer_page_capture(
         painted_paths=tuple(state.painted_paths),
         glyph_matrices=state.glyph_matrices,
     )
-    return program, program.painted_paths, tuple(state.text_marks)
-
-
-def pdfminer_page_program(page: PdfPage, *, strict_cmaps: bool = True) -> PdfminerProgram:
-    return pdfminer_page_capture(page, strict_cmaps=strict_cmaps)[0]
 
 
 def pdfminer_validate_page_resources(page: PdfPage) -> None:
