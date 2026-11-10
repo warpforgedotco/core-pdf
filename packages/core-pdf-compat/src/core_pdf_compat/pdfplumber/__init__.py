@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf.impl.raw_media", "core_pdf_compat.pdfplumber.page"]
+
 import builtins
 import math
 import re

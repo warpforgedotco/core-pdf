@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
+
 import logging
 from binascii import Error as BinasciiError
 from binascii import unhexlify

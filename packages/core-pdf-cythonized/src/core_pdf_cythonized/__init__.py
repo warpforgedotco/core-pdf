@@ -1,5 +1,33 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+# Kernels load when first used (Python 3.15+).
+__lazy_modules__ = [
+    "core_pdf_cythonized._bezier",
+    "core_pdf_cythonized._blend",
+    "core_pdf_cythonized._blend_visible",
+    "core_pdf_cythonized._composite",
+    "core_pdf_cythonized._coverage",
+    "core_pdf_cythonized._coverage_blend",
+    "core_pdf_cythonized._distinct_rows",
+    "core_pdf_cythonized._downsample",
+    "core_pdf_cythonized._features",
+    "core_pdf_cythonized._glyph_bitmap",
+    "core_pdf_cythonized._jbig2",
+    "core_pdf_cythonized._knockout",
+    "core_pdf_cythonized._nonisolated",
+    "core_pdf_cythonized._outline",
+    "core_pdf_cythonized._rect",
+    "core_pdf_cythonized._sample_blit",
+    "core_pdf_cythonized._segments",
+    "core_pdf_cythonized._shading",
+    "core_pdf_cythonized._source_plane",
+    "core_pdf_cythonized._stroke",
+    "core_pdf_cythonized._stroke_segment",
+    "core_pdf_cythonized._supersample",
+    "core_pdf_cythonized._truetype",
+    "core_pdf_cythonized._type1",
+    "core_pdf_cythonized._type2",
+]
 
 from core_pdf_cythonized._bezier import cubic_sample_times
 from core_pdf_cythonized._blend import blend_normal_alpha_array_numpy

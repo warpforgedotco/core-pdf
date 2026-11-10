@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_crypto", "core_pdf_crypto.ciphers"]
+
 import logging
 import secrets
 from importlib.metadata import version

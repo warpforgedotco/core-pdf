@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf.impl.document_structure",
+    "core_pdf.impl.extract_selection",
+    "core_pdf.impl.output_model",
+    "core_pdf.impl.page_selection",
+    "core_pdf.impl.raw_media",
+    "core_pdf.impl.recovery_trees",
+    "core_pdf_spec.s_07_document",
+    "core_pdf_spec.s_07_document.document_labels",
+    "core_pdf_spec.s_07_document.fields",
+]
+
 import contextlib
 import mmap
 import struct

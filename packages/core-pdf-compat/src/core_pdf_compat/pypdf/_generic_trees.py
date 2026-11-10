@@ -36,6 +36,8 @@ to ``generic.to_core`` through ``core_form``, and core_pdf_spec's serializer doe
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
+
 import bisect
 import logging
 from collections.abc import Callable, Iterable, Iterator

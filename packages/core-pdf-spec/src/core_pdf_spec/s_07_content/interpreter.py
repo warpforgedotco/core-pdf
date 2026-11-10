@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf_spec.s_08_graphics.geometry",
+    "core_pdf_spec.s_09_fonts.metrics",
+    "core_pdf_spec.s_11_transparency.soft_masks",
+]
+
 import typing
 from collections.abc import Callable
 from copy import copy

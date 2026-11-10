@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf_crypto.ciphers",
+    "core_pdf_spec.s_07_security.ciphers",
+    "hmac",
+    "secrets",
+]
+
 import secrets
 import stringprep
 import struct

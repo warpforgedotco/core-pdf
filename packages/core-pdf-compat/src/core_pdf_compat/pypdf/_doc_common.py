@@ -35,6 +35,8 @@ inherit it unchanged.
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
+
 import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import datetime

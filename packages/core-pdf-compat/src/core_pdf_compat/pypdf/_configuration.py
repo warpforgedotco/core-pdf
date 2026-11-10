@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
+
 import functools
 import shutil
 from collections.abc import Generator

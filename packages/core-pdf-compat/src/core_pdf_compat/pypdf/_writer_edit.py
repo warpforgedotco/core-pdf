@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_spec.s_07_syntax.serialize"]
+
 import logging
 from collections.abc import Iterable
 from typing import Any, NoReturn

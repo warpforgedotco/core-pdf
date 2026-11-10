@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["base64", "core_pdf_compat.pypdf.errors", "subprocess", "tempfile"]
+
 import binascii
 import importlib
 import logging

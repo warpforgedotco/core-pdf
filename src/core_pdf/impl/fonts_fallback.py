@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf.impl.fonts_program_truetype", "importlib.resources"]
+
 from collections.abc import Callable
 from functools import cache
 from importlib.resources import files

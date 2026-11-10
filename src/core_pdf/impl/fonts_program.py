@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf._vendor.fontTools.ttLib",
+    "core_pdf.impl.fonts_program_truetype",
+    "core_pdf.impl.fonts_program_type1",
+]
+
 from collections.abc import Callable
 from contextlib import suppress
 from io import BytesIO

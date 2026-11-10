@@ -36,6 +36,10 @@ To validate against the locked dependencies, use `uv run --locked` with the rele
 
 `core-pdf-cythonized` compiles its Python files with Cython, and a build can leave `.so` files beside them in `packages/core-pdf-cythonized/src/`. Those shadow later edits to the `.py` files. After changing that package, rebuild it with `uv sync --all-packages --reinstall-package core-pdf-cythonized` before testing.
 
+## Lazy imports
+
+CI and development run on Python 3.15; the packages still support 3.14. Modules list the imports a text extraction does not need in `__lazy_modules__`, which 3.15 loads on first use and 3.14 ignores, so do not use the `lazy` keyword (a syntax error on 3.14). The list names the module in the `from` clause: `from importlib import resources` needs `"importlib"`. An eager `from module import name` of a name that module imported lazily loads it, so import such names from where they are defined. `scripts/check_lazy_imports.py` fails if a text extraction loads a module that should stay deferred.
+
 ## Upstream versions
 
 The facades support the latest release of each library they follow (pypdf, pdfminer.six, pdfplumber, unstructured, llama-index-readers-file, x-ray). The upstream suites in `scripts/run_upstream_suite.py` pin those latest versions, and the comparison scripts (`scripts/check_*_output.py`, `check_pypdf_bytes.py`, `check_pypdf_reads.py`, `check_encrypt_readers.py`) compare against the same pins. The `Upstream releases` workflow checks the pins against PyPI each week and keeps one open issue while any is behind; `uv run --no-project python scripts/check_upstream_versions.py` does the same check locally.

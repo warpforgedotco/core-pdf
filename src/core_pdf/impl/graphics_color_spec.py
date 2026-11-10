@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf.impl.graphics_icc_profiles"]
+
 from contextlib import suppress
 from math import isfinite
 from types import MappingProxyType

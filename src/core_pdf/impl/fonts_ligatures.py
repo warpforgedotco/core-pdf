@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf.impl.fonts_program_truetype"]
+
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_encoding import normalized_base_font_name
 from core_pdf.impl.fonts_program_truetype import (

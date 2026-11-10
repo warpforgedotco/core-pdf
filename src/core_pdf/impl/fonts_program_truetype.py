@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf._vendor.fontTools.ttLib"]
+
 import logging
 import struct
 import threading

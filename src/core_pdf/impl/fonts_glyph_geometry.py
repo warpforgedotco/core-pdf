@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf.impl.fonts_raster_kernel"]
+
 from typing import TYPE_CHECKING, Any
 
 import numpy

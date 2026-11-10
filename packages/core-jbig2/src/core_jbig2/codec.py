@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_jbig2.bitmap"]
+
 from typing import ClassVar
 
 from core_jbig2.bitmap import (

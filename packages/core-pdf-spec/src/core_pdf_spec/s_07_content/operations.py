@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_spec.s_07_syntax.serialize"]
+
 from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, NamedTuple, TypeAlias
 

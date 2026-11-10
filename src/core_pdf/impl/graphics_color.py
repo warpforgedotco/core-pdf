@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf.impl.array_views", "core_pdf.impl.graphics_image_samples"]
+
 from collections.abc import Sequence
 from typing import Any, TypeAlias
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_spec.s_07_security.pdf_mac"]
+
 from collections.abc import Callable, Sequence
 
 from core_pdf_spec.exceptions import PdfUnsupportedError

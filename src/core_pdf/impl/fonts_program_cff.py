@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf.impl.fonts_cff_repair", "core_pdf.impl.fonts_raster_kernel"]
+
 from collections.abc import Callable
 from math import isfinite
 from typing import Any

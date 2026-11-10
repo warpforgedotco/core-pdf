@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "core_pdf.impl.document_editing",
+    "core_pdf_spec.s_07_security.output",
+    "core_pdf_spec.s_07_syntax.serialize",
+    "secrets",
+]
+
 import hashlib
 import logging
 import secrets

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf_spec.s_08_graphics.geometry"]
+
 import math
 from collections.abc import Iterable, Sequence
 from typing import Any, overload

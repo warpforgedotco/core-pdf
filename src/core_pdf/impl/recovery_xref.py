@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["core_pdf.impl.recovery_objects"]
+
 import mmap
 import zlib
 from collections.abc import Iterator
