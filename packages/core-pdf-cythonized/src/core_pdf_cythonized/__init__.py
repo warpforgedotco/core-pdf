@@ -2,6 +2,7 @@
 
 # Kernels load when first used (Python 3.15+).
 __lazy_modules__ = [
+    "core_pdf_cythonized._area_gaps",
     "core_pdf_cythonized._bezier",
     "core_pdf_cythonized._blend",
     "core_pdf_cythonized._blend_visible",
@@ -29,6 +30,7 @@ __lazy_modules__ = [
     "core_pdf_cythonized._type2",
 ]
 
+from core_pdf_cythonized._area_gaps import AreaGapQueue
 from core_pdf_cythonized._bezier import cubic_sample_times
 from core_pdf_cythonized._blend import blend_normal_alpha_array_numpy
 from core_pdf_cythonized._blend_visible import blend_visible_rgba
@@ -99,6 +101,7 @@ from core_pdf_cythonized._type2 import type2_glyph_geometry
 from core_pdf_cythonized._xref_headers import object_headers_match
 
 __all__ = (
+    "AreaGapQueue",
     "cell_distance_map",
     "glyph_feature_cells",
     "merge_collinear_rows",

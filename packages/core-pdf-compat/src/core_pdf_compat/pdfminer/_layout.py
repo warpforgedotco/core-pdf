@@ -8,6 +8,7 @@ from math import ceil
 from typing import Any, ClassVar
 
 from core_pdf.impl.geometry import bbox_union
+from core_pdf.impl.spatial import AreaGapQueue
 from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
 
 
@@ -668,6 +669,74 @@ class _TextGroup(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     vertical: bool = False
 
 
+class _PairQueue:
+    """pdfminer's group_textboxes queue: every pair of items by distance, on a heap.
+
+    The distance is the area of the two items' union box less both their areas. Each
+    item's corners and area are kept by id, and min(a, b) and max(a, b) are spelled out as
+    Python evaluates them, NaN included. AreaGapQueue does the same in C.
+    """
+
+    def __init__(self, boxes: list[tuple[float, float, float, float]]) -> None:
+        self.bounds: dict[int, tuple[float, float, float, float, float]] = {}
+        for index, (x0, y0, x1, y1) in enumerate(boxes):
+            self.bounds[index] = (x0, y0, x1, y1, (x1 - x0) * (y1 - y0))
+        self.active: dict[int, None] = dict.fromkeys(range(len(boxes)))
+        self.queue: list[tuple[bool, float, int, int]] = []
+        for first in range(len(boxes)):
+            self.gaps(first, range(first + 1, len(boxes)), self.queue)
+        heapq.heapify(self.queue)
+        self.compact_at = len(self.active) // 2
+        self.last: tuple[bool, float, int, int] = (False, 0.0, 0, 0)
+
+    def gaps(
+        self, first: int, others: Iterable[int], out: list[tuple[bool, float, int, int]]
+    ) -> None:
+        fx0, fy0, fx1, fy1, first_area = self.bounds[first]
+        append = out.append
+        for other in others:
+            ox0, oy0, ox1, oy1, other_area = self.bounds[other]
+            x0 = ox0 if ox0 < fx0 else fx0
+            y0 = oy0 if oy0 < fy0 else fy0
+            x1 = ox1 if ox1 > fx1 else fx1
+            y1 = oy1 if oy1 > fy1 else fy1
+            append((False, (x1 - x0) * (y1 - y0) - first_area - other_area, first, other))
+
+    def pop(self) -> tuple[bool, int, int] | None:
+        queue = self.queue
+        active = self.active
+        while queue:
+            entry = heapq.heappop(queue)
+            if entry[2] in active and entry[3] in active:
+                self.last = entry
+                return entry[0], entry[2], entry[3]
+        return None
+
+    def push_skipped(self) -> None:
+        _skip, distance, first, second = self.last
+        heapq.heappush(self.queue, (True, distance, first, second))
+
+    def merge(
+        self, first: int, second: int, group: int, bbox: tuple[float, float, float, float]
+    ) -> None:
+        active = self.active
+        del active[first], active[second], self.bounds[first], self.bounds[second]
+        x0, y0, x1, y1 = bbox
+        self.bounds[group] = (x0, y0, x1, y1, (x1 - x0) * (y1 - y0))
+        merged: list[tuple[bool, float, int, int]] = []
+        self.gaps(group, active, merged)
+        for entry in merged:
+            heapq.heappush(self.queue, entry)
+        active[group] = None
+        if len(active) <= self.compact_at:
+            if len(self.queue) > len(active) * (len(active) - 1):
+                self.queue = [
+                    entry for entry in self.queue if entry[2] in active and entry[3] in active
+                ]
+                heapq.heapify(self.queue)
+            self.compact_at = len(active) // 2
+
+
 def _reading_order(
     boxes: list[LTTextBox],
     boxes_flow: float | None,
@@ -696,37 +765,14 @@ def _reading_order(
     for box in boxes:
         plane.add(box)
     retained_groups: list[_TextGroup] = []
-
-    # pdfminer's distance between two items: the area of their union box less both their
-    # areas. It is computed for every pair, so each item's corners and area are kept by id,
-    # and min(a, b) and max(a, b) are spelled out as Python evaluates them, NaN included.
-    bounds: dict[int, tuple[float, float, float, float, float]] = {}
-    for index, box in enumerate(boxes):
-        bx0, by0, bx1, by1 = box.bbox
-        bounds[index] = (bx0, by0, bx1, by1, (bx1 - bx0) * (by1 - by0))
-
-    def gaps_from(
-        first_id: int, others: Iterable[int], queue: list[tuple[bool, float, int, int]]
-    ) -> None:
-        fx0, fy0, fx1, fy1, first_area = bounds[first_id]
-        append = queue.append
-        for other_id in others:
-            ox0, oy0, ox1, oy1, other_area = bounds[other_id]
-            x0 = ox0 if ox0 < fx0 else fx0
-            y0 = oy0 if oy0 < fy0 else fy0
-            x1 = ox1 if ox1 > fx1 else fx1
-            y1 = oy1 if oy1 > fy1 else fy1
-            append((False, (x1 - x0) * (y1 - y0) - first_area - other_area, first_id, other_id))
-
-    queue: list[tuple[bool, float, int, int]] = []
-    for first_index in range(len(boxes)):
-        gaps_from(first_index, range(first_index + 1, len(boxes)), queue)
-    heapq.heapify(queue)
-    compact_at = len(active) // 2
-    while queue:
-        skip_between, _distance, first_id, second_id = heapq.heappop(queue)
-        if first_id not in active or second_id not in active:
-            continue
+    corners = [box.bbox for box in boxes]
+    # The C queue reads coordinates as doubles; boxes built from glyphs always hold floats.
+    exact_floats = all(type(value) is float for corner in corners for value in corner)
+    queue: AreaGapQueue | _PairQueue = (
+        AreaGapQueue(corners) if exact_floats else _PairQueue(corners)
+    )
+    while (popped := queue.pop()) is not None:
+        skip_between, first_id, second_id = popped
         active_first = active[first_id]
         active_second = active[second_id]
         union = bbox_union((active_first.bbox, active_second.bbox)) or active_first.bbox
@@ -746,7 +792,7 @@ def _reading_order(
                 item is not active_first and item is not active_second for item in plane.find(query)
             )
         ):
-            heapq.heappush(queue, (True, _distance, first_id, second_id))
+            queue.push_skipped()
             continue
         vertical = (
             isinstance(active_first, LTTextBoxVertical)
@@ -757,7 +803,6 @@ def _reading_order(
         group = _TextGroup([active_first, active_second], union, vertical)
         retained_groups.append(group)
         del active[first_id], active[second_id]
-        del bounds[first_id], bounds[second_id]
         group_id = next_id
         next_id += 1
         if not active:
@@ -765,19 +810,9 @@ def _reading_order(
             break
         plane.remove(active_first)
         plane.remove(active_second)
-        gx0, gy0, gx1, gy1 = union
-        bounds[group_id] = (gx0, gy0, gx1, gy1, (gx1 - gx0) * (gy1 - gy0))
-        merged: list[tuple[bool, float, int, int]] = []
-        gaps_from(group_id, active, merged)
-        for entry in merged:
-            heapq.heappush(queue, entry)
+        queue.merge(first_id, second_id, group_id, union)
         active[group_id] = group
         plane.add(group)
-        if len(active) <= compact_at:
-            if len(queue) > len(active) * (len(active) - 1):
-                queue = [entry for entry in queue if entry[2] in active and entry[3] in active]
-                heapq.heapify(queue)
-            compact_at = len(active) // 2
 
     return flatten_text_group(next(iter(active.values())), boxes_flow)
 
