@@ -296,6 +296,7 @@ jobs:
           $run/check_encrypted_output.py
           $run/check_pdf_mac.py
           $run/check_lazy_imports.py
+          $run/check_area_gap_queue.py
           uv run --locked --all-packages --group test --with "pypdf[full]==7.0.0" python scripts/check_encrypt_readers.py
 
       - name: PdfWriter output, and bytes and reads against the real pypdf

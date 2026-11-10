@@ -10,6 +10,7 @@ import numpy
 
 from core_pdf.impl.geometry import bbox_area
 from core_pdf.impl.types import GeneratedRecord, Rectangle
+from core_pdf_cythonized import AreaGapQueue
 
 ClusterLinkage: TypeAlias = Literal["chain", "anchor", "mean"]
 BandLinkage: TypeAlias = Literal["anchor", "window"]
@@ -188,6 +189,7 @@ def interval_overlap_pairs(
 
 
 __all__ = (
+    "AreaGapQueue",
     "BandLinkage",
     "BoxIndex",
     "ClusterLinkage",
