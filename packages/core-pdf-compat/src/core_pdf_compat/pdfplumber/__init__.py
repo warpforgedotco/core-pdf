@@ -8,8 +8,7 @@ import re
 import struct
 import warnings
 import zlib
-from bisect import bisect_right
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from copy import copy
 from io import BytesIO
 from itertools import accumulate, groupby, pairwise
@@ -231,7 +230,8 @@ class EnginePageAdapter:
             rotation=int(page.rotation),
         )
 
-    def text_characters(self) -> Iterator[Any]:
+    def char_objects(self, doctop: float) -> list[ObjectDict]:
+        # pdfplumber's char objects, as process_object makes them from pdfminer.six's LTChar.
         from ..pdfminer._capture import pdfminer_validate_page_resources
         from ..pdfminer._fonts import (
             pdfminer_descent,
@@ -251,17 +251,6 @@ class EnginePageAdapter:
         widths: dict[tuple[Any, ...], float] = {}
         descents: dict[int, tuple[Any, float]] = {}
 
-        def glyph_key(glyph: Any) -> tuple[Any, ...]:
-            return (
-                glyph.font_decoder,
-                glyph.char_code,
-                glyph.cid,
-                glyph.code_bytes,
-                glyph.unicode_source,
-                glyph.text,
-                glyph.alternates,
-            )
-
         resolver = self.page.document.resolver
         font_names: dict[int, tuple[object, Any]] = {}
 
@@ -276,6 +265,18 @@ class EnginePageAdapter:
 
         marks = self._text_marks
         mark_starts = [mark.glyph_index for mark in marks]
+        mark_count = len(marks)
+        # Glyph indexes rise, so the current mark moves forward only: the last one that starts
+        # at or before the glyph, or, before the first mark starts, the last mark.
+        mark_position = -1
+        info = self.info
+        pa, pb, pc, pd, pe, pf = info.pdfminer_ctm
+        page_number = info.number
+        media_x0 = info.media_x0
+        media_top = info.media_top
+        page_height = info.page_height
+        nfc = self.unicode_norm == "NFC"
+        objects: list[ObjectDict] = []
         vertical_run = 0.0
         for glyph_index, glyph in enumerate(projected_glyphs):
             if pdfminer_embedded_cmap_is_unusable(glyph):
@@ -283,7 +284,15 @@ class EnginePageAdapter:
             if id(glyph) in skipped_ligature_parts:
                 continue
             ligature = ligatures.get(id(glyph))
-            key = glyph_key(glyph)
+            key = (
+                glyph.font_decoder,
+                glyph.char_code,
+                glyph.cid,
+                glyph.code_bytes,
+                glyph.unicode_source,
+                glyph.text,
+                glyph.alternates,
+            )
             if ligature is not None:
                 text = ligature[0]
             else:
@@ -300,9 +309,11 @@ class EnginePageAdapter:
                 )
             if known[1]:
                 continue
-            mark = marks[bisect_right(mark_starts, glyph_index) - 1] if marks else None
-            if mark is None:
+            if not mark_count:
                 continue
+            while mark_position + 1 < mark_count and mark_starts[mark_position + 1] <= glyph_index:
+                mark_position += 1
+            mark = marks[mark_position]
             # pdfminer.six's LTChar (pdfminer/layout.py): a box from two corners of the glyph
             # placed by the char matrix, which is the text matrix times the CTM, without rise.
             a, b, c, d, e, f = mark.matrix
@@ -311,7 +322,8 @@ class EnginePageAdapter:
             scaling = mark.scaling
             decoder = glyph.font_decoder
             baseline = ligature[2] if ligature is not None else glyph.baseline
-            if decoder.is_vertical:
+            is_vertical = decoder.is_vertical
+            if is_vertical:
                 w1y, vx, vy = decoder.vertical_glyph_metric(glyph.cid)
                 explicit = glyph.cid in getattr(decoder.metrics, "vertical_metrics", {})
                 scale = font_size * 0.001
@@ -344,7 +356,6 @@ class EnginePageAdapter:
                 advance = width * font_size * scaling
                 lower_left = (0.0, descent + rise)
                 upper_right = (advance, descent + rise + font_size)
-            pa, pb, pc, pd, pe, pf = self.info.pdfminer_ctm
             matrix = (
                 a * pa + b * pc,
                 a * pb + b * pd,
@@ -355,28 +366,56 @@ class EnginePageAdapter:
             )
             # pdfminer.six's apply_matrix_rect: the box around all four placed corners.
             ma, mb, mc, md, me, mf = matrix
-            xs = [
-                ma * x + mc * y + me
-                for x in (lower_left[0], upper_right[0])
-                for y in (lower_left[1], upper_right[1])
-            ]
-            ys = [
-                mb * x + md * y + mf
-                for x in (lower_left[0], upper_right[0])
-                for y in (lower_left[1], upper_right[1])
-            ]
-            x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
-            yield SimpleNamespace(
-                text=text,
-                bbox=SimpleNamespace(x0=x0, y0=y0, x1=x1, y1=y1),
-                font_name=font_name(decoder),
-                font_size=x1 - x0 if decoder.is_vertical else y1 - y0,
-                upright=ma * md * scaling > 0 and mb * mc <= 0,
-                advance=advance,
-                sequence=glyph.seqno,
-                matrix=matrix,
-                mark=mark,
+            left, bottom = lower_left
+            right, top = upper_right
+            x_ll = ma * left + mc * bottom + me
+            x_lt = ma * left + mc * top + me
+            x_rl = ma * right + mc * bottom + me
+            x_rt = ma * right + mc * top + me
+            y_ll = mb * left + md * bottom + mf
+            y_lt = mb * left + md * top + mf
+            y_rl = mb * right + md * bottom + mf
+            y_rt = mb * right + md * top + mf
+            x0 = min(x_ll, x_lt, x_rl, x_rt)
+            x1 = max(x_ll, x_lt, x_rl, x_rt)
+            y0 = min(y_ll, y_lt, y_rl, y_rt)
+            y1 = max(y_ll, y_lt, y_rl, y_rt)
+            if nfc and text == "\u037e":
+                text = ";"
+            # pdfplumber's process_object: the box measured from the top of the page, with
+            # the keys in the order _envelope gives them.
+            char_x0 = x0 + media_x0
+            char_top = page_height - y1 + media_top
+            char_x1 = x1 + media_x0
+            char_bottom = page_height - y0 + media_top
+            objects.append(
+                {
+                    "object_type": "char",
+                    "page_number": page_number,
+                    "x0": char_x0,
+                    "x1": char_x1,
+                    "top": char_top,
+                    "bottom": char_bottom,
+                    "doctop": doctop + char_top,
+                    "width": char_x1 - char_x0,
+                    "height": char_bottom - char_top,
+                    "text": text,
+                    "y0": y0,
+                    "y1": y1,
+                    "fontname": font_name(decoder),
+                    "size": x1 - x0 if is_vertical else y1 - y0,
+                    "stroking_color": mark.stroke_color,
+                    "non_stroking_color": mark.fill_color,
+                    "upright": ma * md * scaling > 0 and mb * mc <= 0,
+                    "adv": advance,
+                    "seqno": glyph.seqno,
+                    "matrix": matrix,
+                    "ncs": mark.color_space,
+                    "mcid": mark.mcid,
+                    "tag": mark.tag,
+                }
             )
+        return objects
 
     def page_program(self) -> Any:
         # Only drawings and images are read from this program (characters come from
@@ -482,41 +521,6 @@ def _annotation_text(value: Any, name: str, raise_errors: bool) -> Any:
                 f"Could not decode {name} of annotation. {name} will be missing.", stacklevel=2
             )
             return value
-
-
-def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
-    # pdfplumber's process_object: pdfminer.six's box measured from the top of the page.
-    box = item.bbox
-    info = page.info
-    text = item.text
-    if page.unicode_norm == "NFC" and text == "\u037e":
-        text = ";"
-    mark = item.mark
-    return _envelope(
-        "char",
-        info.number,
-        (
-            box.x0 + info.media_x0,
-            info.page_height - box.y1 + info.media_top,
-            box.x1 + info.media_x0,
-            info.page_height - box.y0 + info.media_top,
-        ),
-        doctop,
-        text=text,
-        y0=box.y0,
-        y1=box.y1,
-        fontname=item.font_name,
-        size=item.font_size,
-        stroking_color=mark.stroke_color,
-        non_stroking_color=mark.fill_color,
-        upright=item.upright,
-        adv=item.advance,
-        seqno=item.sequence,
-        matrix=item.matrix,
-        ncs=mark.color_space,
-        mcid=mark.mcid,
-        tag=mark.tag,
-    )
 
 
 def _page_point(page: EnginePageAdapter, point: tuple[float, float]) -> tuple[float, float]:
@@ -763,10 +767,7 @@ class Page(Container):
 
     def _parse_objects(self) -> dict[str, list[ObjectDict]]:
         objects: dict[str, list[ObjectDict]] = {
-            "char": [
-                _char(self._adapter, c, self.initial_doctop)
-                for c in self._adapter.text_characters()
-            ]
+            "char": self._adapter.char_objects(self.initial_doctop)
         }
         for path_object in _path_objects(self._adapter, self.initial_doctop):
             objects.setdefault(path_object["object_type"], []).append(path_object)
