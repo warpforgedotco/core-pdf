@@ -177,8 +177,12 @@ def project_page(
     glyph_texts: dict[tuple[Any, ...], str] = {}
     glyph_widths: dict[tuple[Any, ...], tuple[float | None, float]] = {}
     descents: dict[int, tuple[Any, float]] = {}
+    # Per font decoder: whether it is a CID font and whether it writes vertically.
+    decoder_kinds: dict[int, tuple[Any, bool, bool]] = {}
+    strict_resources = policy.strict_resources
+    page_rotation = int(page.rotation) % 360
     for glyph_index, glyph in enumerate(projected_glyphs):
-        if policy.strict_resources and pdfminer_embedded_cmap_is_unusable(glyph):
+        if strict_resources and pdfminer_embedded_cmap_is_unusable(glyph):
             continue
         source_provenance = glyph.provenance
         if source_provenance:
@@ -217,6 +221,15 @@ def project_page(
         text = (ligature[0] if ligature is not None else glyph_text) or ""
         if not text and glyph.text != EMPTY_GLYPH_TEXT:
             continue
+        font_decoder = glyph.font_decoder
+        kinds = decoder_kinds.get(id(font_decoder))
+        if kinds is None or kinds[0] is not font_decoder:
+            kinds = decoder_kinds[id(font_decoder)] = (
+                font_decoder,
+                getattr(font_decoder, "is_cid_font", False),
+                getattr(font_decoder, "is_vertical", False),
+            )
+        is_cid_font, is_vertical = kinds[1], kinds[2]
         effective_font_size = glyph.effective_font_size or glyph.font_size
         effective_font_height = glyph.effective_font_height or effective_font_size
         if (
@@ -237,7 +250,7 @@ def project_page(
             y1 = y0 + glyph.font_size
         width_code = (
             glyph.cid
-            if getattr(glyph.font_decoder, "is_cid_font", False)
+            if is_cid_font
             else glyph.char_code
             if glyph.char_code is not None
             else glyph.cid
@@ -271,11 +284,7 @@ def project_page(
             resolved_text_matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
         horizontal_scale = float(glyph_provenance.get("horizontal_scale", 100.0)) * 0.01
         coordinates_in_layout_space = False
-        if (
-            getattr(glyph.font_decoder, "is_vertical", False)
-            and baseline is not None
-            and width_code is not None
-        ):
+        if is_vertical and baseline is not None and width_code is not None:
             metric = glyph.font_decoder.vertical_glyph_metric(width_code)
             origin_x, origin_y = _pdfminer_layout_origin(
                 baseline,
@@ -384,7 +393,6 @@ def project_page(
                 x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
             else:
                 media_left, media_bottom, _media_right, _media_top = page_media_box
-                page_rotation = int(page.rotation) % 360
                 layout_origin_x = origin_x - media_left
                 layout_origin_y = origin_y - media_bottom
                 (
@@ -436,7 +444,7 @@ def project_page(
             x0, y0, x1, y1 = _pdfminer_layout_figure_box(
                 (x0, y0, x1, y1),
                 page_media_box,
-                int(page.rotation) % 360,
+                page_rotation,
                 page_width,
                 page_height,
             )
@@ -445,12 +453,12 @@ def project_page(
             text,
             pdfminer_font_name(glyph),
             # pdfminer's size is the box's height, or its width for vertical writing.
-            x1 - x0 if getattr(glyph.font_decoder, "is_vertical", False) else y1 - y0,
+            x1 - x0 if is_vertical else y1 - y0,
         )
         chars_by_glyph[glyph_index] = character
     events = getattr(products, "layout_events", ())
     painted_paths = getattr(products, "painted_paths", ())
-    rotation = int(page.rotation) % 360
+    rotation = page_rotation
     layout_width, layout_height = (
         (page_height, page_width) if rotation % 180 else (page_width, page_height)
     )
