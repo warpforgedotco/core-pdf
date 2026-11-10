@@ -9,7 +9,7 @@ from typing import Any
 
 BULLET_CHARS = "\x95•‣⁃ㅤ⁌⁍∙○●◘◦☙❥❧⦾⦿-–\uf0b7*·"
 
-# The patterns below are unstructured 0.27.36's, from unstructured.nlp.patterns (Apache-2.0).
+# The patterns below are unstructured 0.27.37's, from unstructured.nlp.patterns (Apache-2.0).
 # Since 0.27, "-" and "–" are bullets only when whitespace or the end of the text follows
 # them, so a leading minus sign or a hyphenated value is not a list item. Upstream anchors
 # that branch with "(?<=\n)|\A"; the facade only matches at the start of a text, where the

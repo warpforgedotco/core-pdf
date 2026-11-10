@@ -203,7 +203,7 @@ All six are done. Numbers are from main, and CI reruns each of these checks on e
 | pypdf | 1,829 of 2,294 | 465 |
 | pdfplumber | 169 | 0 |
 | pdfminer | 126 | 0 |
-| unstructured | 83 | 0 |
+| unstructured | 105 | 0 |
 | llama_index | 27 | 0 |
 | x-ray | 14 | 1 |
 
@@ -234,7 +234,7 @@ with its reason:
 | `check_pypdf_text.py` | pypdf 7.0.0 | `extract_text` identical on every page compared (3,868 on CI), plain and layout |
 | `check_pdfminer_output.py` | pdfminer.six 20260107 | All 326 files: text identical on 321, layout on 320; the rest have the same boxes in an order pdfminer leaves to a tie-break |
 | `check_pdfplumber_output.py` | pdfplumber 0.11.10 | All 326 files the same, errors included: 1,105 pages on each check |
-| `check_unstructured_output.py` | unstructured 0.27.36 | 311 files identical; 15 over 30 pages skipped |
+| `check_unstructured_output.py` | unstructured 0.27.37 | 311 files identical; 15 over 30 pages skipped |
 | `check_llamaindex_output.py` | llama-index-readers-file 0.7.0, pypdf 6.21.4 | Identical apart from 11 listed files, where pypdf 7.0.0's text differs |
 | `check_xray_output.py` | x-ray 0.4.0 | 210 identical, 5 with the same error; 1 file PyMuPDF crashes on is not compared |
 

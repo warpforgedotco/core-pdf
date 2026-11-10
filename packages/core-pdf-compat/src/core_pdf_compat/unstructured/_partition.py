@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import enum
 import io
 import os
 import re
 from importlib import import_module
 from os import PathLike
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
@@ -14,9 +15,6 @@ from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf_compat.pdfminer._extract import extract_document_pages
 from core_pdf_compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
 from core_pdf_compat.pdfminer._projection import UNSTRUCTURED_POLICY
-from core_pdf_compat.pypdf import PdfReader
-from core_pdf_compat.pypdf.errors import LimitReachedError
-from core_pdf_compat.pypdf.generic import ArrayObject, IndirectObject
 
 from ._classification import (
     BULLET,
@@ -40,30 +38,175 @@ from ._regions import (
     layout_regions,
     region_order,
 )
+from .errors import UnprocessableEntityError
 
-# unstructured 0.27.36's is_pdf_too_complex constants (Apache-2.0).
-GRAPHICS_OPS = re.compile(
+# unstructured 0.27.37's pdf_complexity constants (Apache-2.0).
+GRAPHICS_OPS_PATTERN = re.compile(
     rb"(?:^|(?<=\s))(?:m|l|c|v|y|h|re|S|s|f|F|f\*|B|B\*|b|b\*|n|W|W\*|cm|q|Q|"
     rb"Do|g|G|rg|RG|k|K|cs|CS|w|J|j|M|d|i|gs)(?=\s|$)",
     re.MULTILINE,
 )
 
-TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)", re.MULTILINE)
+TEXT_OPS_PATTERN = re.compile(
+    rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)", re.MULTILINE
+)
 
-MIN_RAW_STREAM_BYTES = 100_000
+DEFAULT_MIN_FILE_SIZE_BYTES = 0
 
-# Since 0.27 every file is inspected (the 1 MB floor is now 0), and these caps fail closed
-# against crafted content streams (CVE-2026-33123): per page, then per document.
-MAX_RAW_STREAM_BYTES = 50 * 1024 * 1024
+DEFAULT_MIN_RAW_STREAM_BYTES = 100_000
 
-MAX_CONTENT_ARRAY_ENTRIES = 10_000
+# These caps fail closed against crafted content streams (CVE-2026-33123): per page, then
+# per document.
+DEFAULT_MAX_RAW_STREAM_BYTES = 50 * 1024 * 1024
 
-MAX_TOTAL_STREAM_BYTES = 1024 * 1024 * 1024
+DEFAULT_MAX_CONTENT_STREAM_ARRAY_ENTRIES = 10_000
 
-MAX_TOTAL_ARRAY_ENTRIES = 1_000_000
+DEFAULT_MAX_TOTAL_STREAM_BYTES = 1024 * 1024 * 1024
+
+DEFAULT_MAX_TOTAL_ARRAY_ENTRIES = 1_000_000
 
 
-def pdf_too_complex(filename: object, password: str) -> bool:
+class PdfComplexity(enum.Enum):
+    """Why PDFMiner text extraction should be avoided for a PDF."""
+
+    VECTOR_HEAVY = "vector_heavy"
+    """Graphics operators dominate a page's text operators, as in CAD drawings."""
+    EXCEEDS_LIMITS = "exceeds_limits"
+    """A page's content streams exceed the decoded-byte or array-entry caps."""
+
+
+def limit_reached(error: Exception) -> bool:
+    # pypdf's LimitReachedError, from the pypdf facade or from pypdf itself: callers may hand
+    # in a reader of either, as unstructured's own tests do.
+    return any(cls.__name__ == "LimitReachedError" for cls in type(error).__mro__)
+
+
+def pdf_complexity(
+    filename: str = "",
+    file: bytes | IO[bytes] | None = None,
+    max_graphics_ops: int = 10_000,
+    min_graphics_to_text_ratio: float = 20.0,
+    min_file_size_bytes: int = DEFAULT_MIN_FILE_SIZE_BYTES,
+    min_raw_stream_bytes: int = DEFAULT_MIN_RAW_STREAM_BYTES,
+    max_raw_stream_bytes: int = DEFAULT_MAX_RAW_STREAM_BYTES,
+    max_content_stream_array_entries: int = DEFAULT_MAX_CONTENT_STREAM_ARRAY_ENTRIES,
+    max_total_stream_bytes: int = DEFAULT_MAX_TOTAL_STREAM_BYTES,
+    max_total_array_entries: int = DEFAULT_MAX_TOTAL_ARRAY_ENTRIES,
+) -> PdfComplexity | None:
+    """Return why PDFMiner text extraction should be avoided for a PDF, or None.
+
+    Ported from unstructured 0.27.37's pdf_complexity (Apache-2.0), reading the file with
+    the pypdf facade as unstructured reads it with pypdf. A page is vector-heavy when its
+    content holds over max_graphics_ops graphics operators and min_graphics_to_text_ratio
+    for each text operator; a vector-heavy page does not end the scan, because the
+    CVE-2026-33123 caps on the later pages take precedence. A stream pypdf refuses to decode
+    fails closed; any other unreadable stream skips itself, and a file that cannot be read
+    keeps the verdict reached so far.
+    """
+    # Looked up on the public module, which stands for unstructured.partition.pdf, so
+    # patching PdfReader there takes effect as it does upstream.
+    reader_class: Any = import_module("core_pdf_compat.unstructured").PdfReader
+    original_pos: int | None = None
+    vector_heavy = False
+    try:
+        if file is not None and not isinstance(file, bytes) and hasattr(file, "tell"):
+            original_pos = file.tell()
+        if file is not None:
+            if isinstance(file, bytes):
+                file_size = len(file)
+            else:
+                file.seek(0, 2)
+                file_size = file.tell()
+                file.seek(original_pos or 0)
+        elif filename:
+            file_size = os.path.getsize(filename)
+        else:
+            return None
+        if file_size < min_file_size_bytes:
+            return None
+        if file is not None:
+            if isinstance(file, bytes):
+                reader = reader_class(io.BytesIO(file))
+            else:
+                file.seek(0)
+                reader = reader_class(file)
+        else:
+            reader = reader_class(filename)
+        if not reader.pages:
+            return None
+        total_raw_bytes = 0
+        total_array_entries = 0
+        for page in reader.pages:
+            contents = page.get("/Contents")
+            if contents is None:
+                continue
+            # dict.get leaves /Contents unresolved; an indirect array takes the array branch.
+            try:
+                if hasattr(contents, "get_object"):
+                    contents = contents.get_object()
+            except Exception:  # noqa: BLE001
+                continue
+            raw_data: bytes | bytearray = b""
+            # Both pypdfs' ArrayObject subclass list.
+            if isinstance(contents, list):
+                if len(contents) > max_content_stream_array_entries:
+                    return PdfComplexity.EXCEEDS_LIMITS
+                # Every slot is charged, streams or not.
+                total_array_entries += len(contents)
+                if total_array_entries > max_total_array_entries:
+                    return PdfComplexity.EXCEEDS_LIMITS
+                accumulated = bytearray()
+                for item in contents:
+                    try:
+                        obj = item.get_object() if hasattr(item, "get_object") else item
+                        if not hasattr(obj, "get_data"):
+                            continue
+                        chunk = obj.get_data()
+                    except Exception as error:  # noqa: BLE001
+                        if limit_reached(error):
+                            return PdfComplexity.EXCEEDS_LIMITS
+                        continue
+                    total_raw_bytes += len(chunk)
+                    if total_raw_bytes > max_total_stream_bytes:
+                        return PdfComplexity.EXCEEDS_LIMITS
+                    if len(accumulated) + len(chunk) > max_raw_stream_bytes:
+                        return PdfComplexity.EXCEEDS_LIMITS
+                    accumulated.extend(chunk)
+                raw_data = accumulated
+            elif hasattr(contents, "get_data"):
+                try:
+                    chunk = contents.get_data()
+                except Exception as error:  # noqa: BLE001
+                    if limit_reached(error):
+                        return PdfComplexity.EXCEEDS_LIMITS
+                    continue
+                total_raw_bytes += len(chunk)
+                if total_raw_bytes > max_total_stream_bytes or len(chunk) > max_raw_stream_bytes:
+                    return PdfComplexity.EXCEEDS_LIMITS
+                raw_data = chunk
+            if vector_heavy or len(raw_data) < min_raw_stream_bytes:
+                continue
+            graphics = sum(1 for _ in GRAPHICS_OPS_PATTERN.finditer(raw_data))
+            if graphics <= max_graphics_ops:
+                continue
+            text = sum(1 for _ in TEXT_OPS_PATTERN.finditer(raw_data))
+            if graphics / max(text, 1) > min_graphics_to_text_ratio:
+                vector_heavy = True
+    except Exception:  # noqa: BLE001
+        return PdfComplexity.VECTOR_HEAVY if vector_heavy else None
+    finally:
+        if (
+            file is not None
+            and not isinstance(file, bytes)
+            and hasattr(file, "seek")
+            and original_pos is not None
+        ):
+            file.seek(original_pos)
+    return PdfComplexity.VECTOR_HEAVY if vector_heavy else None
+
+
+def pdfminer_fails(filename: object, password: str) -> bool:
+    # The files on which unstructured's PDFMiner extraction raises, so it reads no text.
     with PdfDocument.open(filename, password=password) as document:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         try:
             strict_xref_error = document.strict_xref_validation_error()
@@ -88,86 +231,18 @@ def pdf_too_complex(filename: object, password: str) -> bool:
                     and font.get("DescendantFonts") is None
                 ):
                     return True
-    return graphics_heavy(filename)
-
-
-def graphics_heavy(filename: object) -> bool:
-    # Ported from unstructured 0.27.36's is_pdf_too_complex (Apache-2.0), on the pypdf facade
-    # as unstructured reads the file with pypdf. A page is too complex when its content holds
-    # over 10,000 graphics operators, 20 for each text operator, or when it breaks one of the
-    # CVE-2026-33123 caps. A stream pypdf refuses to decode (LimitReachedError) fails closed;
-    # any other failure skips that stream, or passes the whole file.
-    try:
-        if isinstance(filename, (bytes, str)) and (
-            isinstance(filename, bytes) or filename.startswith("%PDF")
-        ):
-            data = filename if isinstance(filename, bytes) else filename.encode("latin-1")
-            reader = PdfReader(io.BytesIO(data))
-        else:
-            reader = PdfReader(filename)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        if not reader.pages:
-            return False
-        total_bytes = 0
-        total_entries = 0
-        for page in reader.pages:
-            contents = page.get("/Contents")
-            if contents is None:
-                continue
-            # dict.get leaves /Contents unresolved; 0.27 resolves it, so an indirect array
-            # takes the array branch.
-            try:
-                if hasattr(contents, "get_object"):
-                    contents = contents.get_object()
-            except Exception:  # noqa: BLE001
-                continue
-            raw_data: bytes | bytearray = b""
-            if isinstance(contents, ArrayObject):
-                if len(contents) > MAX_CONTENT_ARRAY_ENTRIES:
-                    return True
-                # Every slot is charged, streams or not.
-                total_entries += len(contents)
-                if total_entries > MAX_TOTAL_ARRAY_ENTRIES:
-                    return True
-                accumulated = bytearray()
-                for item in contents:
-                    try:
-                        obj = item.get_object() if isinstance(item, IndirectObject) else item
-                        if not hasattr(obj, "get_data"):
-                            continue
-                        chunk = obj.get_data()
-                    except LimitReachedError:
-                        return True
-                    except Exception:  # noqa: BLE001
-                        continue
-                    total_bytes += len(chunk)
-                    if total_bytes > MAX_TOTAL_STREAM_BYTES:
-                        return True
-                    if len(accumulated) + len(chunk) > MAX_RAW_STREAM_BYTES:
-                        return True
-                    accumulated.extend(chunk)
-                raw_data = accumulated
-            elif hasattr(contents, "get_data"):
-                try:
-                    chunk = contents.get_data()
-                except LimitReachedError:
-                    return True
-                except Exception:  # noqa: BLE001
-                    continue
-                total_bytes += len(chunk)
-                if total_bytes > MAX_TOTAL_STREAM_BYTES or len(chunk) > MAX_RAW_STREAM_BYTES:
-                    return True
-                raw_data = chunk
-            if len(raw_data) < MIN_RAW_STREAM_BYTES:
-                continue
-            graphics = sum(1 for _ in GRAPHICS_OPS.finditer(raw_data))
-            if graphics <= 10_000:
-                continue
-            text = sum(1 for _ in TEXT_OPS.finditer(raw_data))
-            if graphics / max(text, 1) > 20.0:
-                return True
-    except Exception:  # noqa: BLE001
-        return False
     return False
+
+
+def complexity_of(source: bytes | str | PathLike[str]) -> PdfComplexity | None:
+    # unstructured.partition.pdf.pdf_complexity, looked up on the public module so patching
+    # it there takes effect, and called by keyword as unstructured calls it.
+    package: Any = import_module("core_pdf_compat.unstructured")
+    if isinstance(source, bytes):
+        return package.pdf_complexity(filename="", file=source)
+    if isinstance(source, str) and source.startswith("%PDF"):
+        return package.pdf_complexity(filename="", file=source.encode("latin-1"))
+    return package.pdf_complexity(filename=os.fspath(source), file=None)
 
 
 STRATEGIES = frozenset({"auto", "fast", "hi_res", "ocr_only"})
@@ -222,8 +297,21 @@ def partition_pdf(
     include_metadata = bool(kwargs.pop("include_metadata", True))
     word_margin = float(kwargs.pop("pdfminer_word_margin", 0.185) or 0.185)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     password = str(kwargs.pop("password", "") or "")
+    # unstructured 0.27.37: the fast strategy reads text only through PDFMiner, so a
+    # vector-heavy PDF is still extracted and one over the decoding limits is refused rather
+    # than returned empty. The other strategies skip PDFMiner on either, and their hi_res
+    # and OCR fallbacks need models the facade has none of.
+    complexity = complexity_of(filename)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+    fast = str(strategy) == "fast"
+    if complexity is PdfComplexity.EXCEEDS_LIMITS and fast:
+        raise UnprocessableEntityError(
+            "PDF content streams exceed the decoding limits for text extraction, and the"
+            " fast strategy has no other way to read the document's text."
+        )
+    if complexity is not None and not fast:
+        return []
     try:
-        if pdf_too_complex(filename, password):
+        if pdfminer_fails(filename, password):
             return []
     except PdfPasswordError, PdfEmptySourceError:
         return []

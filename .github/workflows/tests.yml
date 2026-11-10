@@ -288,7 +288,7 @@ jobs:
         if: matrix.shard == 'unstructured, llama_index and x-ray'
         run: |
           # unstructured[pdf] needs onnxruntime, which has no CPython 3.15 wheels yet.
-          uv run --python 3.14 --isolated --locked --all-packages --group test --extra unstructured --with "unstructured[pdf]==0.27.36" python scripts/check_unstructured_output.py
+          uv run --python 3.14 --isolated --locked --all-packages --group test --extra unstructured --with "unstructured[pdf]==0.27.37" python scripts/check_unstructured_output.py
           uv run --locked --all-packages --group test --with "llama-index-readers-file==0.7.0" --with "llama-index-core==0.14.25" --with "pypdf[full]==6.21.4" python scripts/check_llamaindex_output.py
           uv run --locked --all-packages --group test --with "x-ray==0.4.0" --with "pymupdf==1.24.14" python scripts/check_xray_output.py
 

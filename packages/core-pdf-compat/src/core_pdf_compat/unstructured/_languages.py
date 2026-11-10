@@ -12,7 +12,7 @@ type LanguageFallback = Callable[[str], list[str] | None]
 
 ASCII_TEXT = re.compile(r"^[\x00-\x7F]+$")
 
-# langdetect guesses poorly below this many words, so short ASCII text is English.
+# langdetect guesses poorly below this many words, so detection calls short ASCII text English.
 MINIMUM_DETECTABLE_WORDS = 5
 
 
@@ -87,9 +87,11 @@ def text_languages(
 ) -> list[str] | None:
     if languages[0] == "" or not text.strip():
         return None
-    if ASCII_TEXT.match(text) and len(text.split()) < MINIMUM_DETECTABLE_WORDS:
-        return ["eng"] if fallback is None else fallback_languages(fallback(text))
     if "auto" in languages:
+        # Since 0.27.37 only detection defaults short ASCII text to English: languages the
+        # caller names apply to short text too, and the fallback is not called.
+        if ASCII_TEXT.match(text) and len(text.split()) < MINIMUM_DETECTABLE_WORDS:
+            return ["eng"] if fallback is None else fallback_languages(fallback(text))
         return detected_languages(text)
     return [code for language in languages if (code := requested_language(language))]
 

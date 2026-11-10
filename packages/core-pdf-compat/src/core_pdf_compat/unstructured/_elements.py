@@ -94,7 +94,7 @@ class Text(Element):
     pass
 
 
-# unstructured (0.25 through 0.27.36) has no UncategorizedText class: Text stands for it.
+# unstructured (0.25 through 0.27.37) has no UncategorizedText class: Text stands for it.
 UncategorizedText = Text
 
 
