@@ -205,32 +205,31 @@ def pdf_complexity(
     return PdfComplexity.VECTOR_HEAVY if vector_heavy else None
 
 
-def pdfminer_fails(filename: object, password: str) -> bool:
+def pdfminer_fails(document: PdfDocument) -> bool:
     # The files on which unstructured's PDFMiner extraction raises, so it reads no text.
-    with PdfDocument.open(filename, password=password) as document:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        try:
-            strict_xref_error = document.strict_xref_validation_error()
-        except PdfError as error:
-            # An unrecognized header version stops the strict reading at startxref.
-            strict_xref_error = str(error)
-        if strict_xref_error == "invalid hex string" or (
-            strict_xref_error is not None and document.raw_data.find(b"%%EOF") < 0
-        ):
-            return True
-        if document.xref_recovery_reason == "xref section loop detected":
-            return True
-        for page in document.pages:
-            fonts = page.resources.get("Font")
-            if not isinstance(fonts, dict):
-                continue
-            for raw_font in fonts.values():
-                font = document.resolver.as_dict(raw_font)
-                if (
-                    font is not None
-                    and recover_pdf_name(font.get("Subtype")) == "Type0"
-                    and font.get("DescendantFonts") is None
-                ):
-                    return True
+    try:
+        strict_xref_error = document.strict_xref_validation_error()
+    except PdfError as error:
+        # An unrecognized header version stops the strict reading at startxref.
+        strict_xref_error = str(error)
+    if strict_xref_error == "invalid hex string" or (
+        strict_xref_error is not None and document.raw_data.find(b"%%EOF") < 0
+    ):
+        return True
+    if document.xref_recovery_reason == "xref section loop detected":
+        return True
+    for page in document.pages:
+        fonts = page.resources.get("Font")
+        if not isinstance(fonts, dict):
+            continue
+        for raw_font in fonts.values():
+            font = document.resolver.as_dict(raw_font)
+            if (
+                font is not None
+                and recover_pdf_name(font.get("Subtype")) == "Type0"
+                and font.get("DescendantFonts") is None
+            ):
+                return True
     return False
 
 
@@ -311,17 +310,17 @@ def partition_pdf(
     if complexity is not None and not fast:
         return []
     try:
-        if pdfminer_fails(filename, password):
-            return []
+        document = PdfDocument.open(
+            filename,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            password=password,
+            recovery_scan_all_revisions=False,
+        )
     except PdfPasswordError, PdfEmptySourceError:
         return []
     result: list[Element] = []
-    document = PdfDocument.open(
-        filename,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        password=password,
-        recovery_scan_all_revisions=False,
-    )
     try:
+        if pdfminer_fails(document):
+            return []
         pages = extract_document_pages(
             document, LAParams(word_margin=word_margin), policy=UNSTRUCTURED_POLICY
         )
