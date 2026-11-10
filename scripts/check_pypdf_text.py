@@ -16,7 +16,8 @@ Every difference fails the check unless DEPARTURES lists its (mode, file name) p
 reason the facade does not follow pypdf 6.21.4 there. A listed file that matches fails the check
 too, so the list stays true.
 
-Pass file paths to check only those files and print every differing page.
+Pass file paths to check only those files and print every differing page. Files are compared
+in parallel, one process per CPU; --jobs N sets the number of processes.
 """
 
 import collections
@@ -27,6 +28,7 @@ import os
 import sys
 import time
 import warnings
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -126,9 +128,26 @@ def compare(
             )
 
 
-def main(argv: list[str]) -> int:
+def quiet() -> None:
     logging.disable(logging.CRITICAL)
     warnings.simplefilter("ignore")
+
+
+def compare_file(path: str, every: bool) -> tuple[collections.Counter[str], list[str]]:
+    counts: collections.Counter[str] = collections.Counter()
+    problems: list[str] = []
+    started = time.perf_counter()
+    compare(path, counts, problems, every=every)
+    if os.environ.get("CHECK_TIMES"):
+        print(f"{time.perf_counter() - started:8.2f}s {path}", file=sys.stderr)
+    return counts, problems
+
+
+def main(argv: list[str]) -> int:
+    quiet()
+    jobs = os.process_cpu_count() or 1
+    if argv[:1] == ["--jobs"]:
+        jobs, argv = int(argv[1]), argv[2:]
     counts: collections.Counter[str] = collections.Counter()
     problems: list[str] = []
     paths = argv
@@ -141,11 +160,16 @@ def main(argv: list[str]) -> int:
         found = [str(path) for path in downloads if path.suffix == ".pdf" and path.exists()]
         upstream = {path for pattern in PATTERNS for path in glob.glob(pattern, recursive=True)}
         paths = sorted(upstream.union(found))
-    for path in paths:
-        started = time.perf_counter()
-        compare(path, counts, problems, every=bool(argv))
-        if os.environ.get("CHECK_TIMES"):
-            print(f"{time.perf_counter() - started:8.2f}s {path}", file=sys.stderr)
+    # The largest files start first, so that one long file does not finish alone at the end;
+    # results are taken in path order, so the report reads as a serial run's.
+    every = bool(argv)
+    by_size = sorted(paths, key=lambda path: -Path(path).stat().st_size)
+    with ProcessPoolExecutor(max_workers=jobs, initializer=quiet) as pool:
+        futures = {path: pool.submit(compare_file, path, every) for path in by_size}
+        for path in paths:
+            file_counts, file_problems = futures[path].result()
+            counts.update(file_counts)
+            problems.extend(file_problems)
     for key, count in sorted(counts.items()):
         print(f"{count:>6}  {key}")
     for problem in problems:
