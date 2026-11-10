@@ -127,6 +127,9 @@ line-length = 100
 # coordinates as_floats has already proved finite, so the NaN difference the
 # two spellings have cannot arise here.
 "src/core_pdf/impl/capture_glyphs.py" = ["FURB136"]
+# The same for the pdfminer layout's distance between every pair of text boxes; the
+# conditionals are written as min(first, other) evaluates, so NaN gives the same result.
+"packages/core-pdf-compat/src/core_pdf_compat/pdfminer/_layout.py" = ["FURB136"]
 # Scanner callbacks share the (data, pos, ..., semantic_context) signature.
 "src/core_pdf/impl/recovery_xref.py" = ["ARG001", "ARG004"]
 # Content operator handlers and semantic-sink callbacks share fixed signatures.
