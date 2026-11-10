@@ -6,6 +6,10 @@ on:
   push:
     branches: [main]
   pull_request:
+    # Documentation changes no benchmark; main still runs on every push, as the baseline.
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   workflow_dispatch:
 
 permissions:
