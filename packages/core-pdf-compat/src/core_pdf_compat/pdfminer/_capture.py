@@ -193,12 +193,24 @@ class PdfminerTextState(TextState):
         self.current_tag = None
         self.current_mcid = None
 
-    def show_text(self, *arguments: Any, **options: Any) -> Any:
-        start = len(self.glyphs)
-        result = super().show_text(*arguments, **options)
-        if len(self.glyphs) > start and not self.hidden_depth:
-            self.layout_events.append(("glyphs", start, len(self.glyphs)))
-        return result
+    def show_text(
+        self,
+        state: object,
+        text: str,
+        data: bytes | memoryview,
+        glyphs: tuple[Any, ...],
+        decoder: Any,
+        adv_x: float,
+        adv_y: float,
+        *,
+        glyph_paint: GlyphPaint | None = None,
+    ) -> None:
+        # Named parameters rather than *args: this runs once per glyph.
+        captured = self.glyphs
+        start = len(captured)
+        super().show_text(state, text, data, glyphs, decoder, adv_x, adv_y, glyph_paint=glyph_paint)
+        if len(captured) > start and not self.hidden_depth:
+            self.layout_events.append(("glyphs", start, len(captured)))
 
     def op_Do(self, operands: ContentOperands, depth: int) -> ContentStreamFrame | None:
         name = self.resolver.resolve_name(operands[0]) if operands else None
