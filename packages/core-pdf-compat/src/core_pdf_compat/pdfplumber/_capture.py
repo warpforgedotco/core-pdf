@@ -16,6 +16,7 @@ import math
 from typing import Any, NamedTuple, cast
 
 from core_pdf import PdfPage
+from core_pdf.impl.capture_glyphs import GlyphPaint
 from core_pdf.impl.capture_program import CapturedProgram
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_metrics import FONT_DATA
@@ -580,28 +581,43 @@ class PlumberTextState(PdfminerTextState):
 
     # What the walk records, stamped with that state.
 
-    def show_text(self, *arguments: Any, **options: Any) -> Any:
+    def show_text(
+        self,
+        state: object,
+        text: str,
+        data: bytes | memoryview,
+        glyphs: tuple[Any, ...],
+        decoder: Any,
+        adv_x: float,
+        adv_y: float,
+        *,
+        glyph_paint: GlyphPaint | None = None,
+    ) -> None:
+        # Named parameters rather than *args: this runs once per glyph.
         start = len(self.glyphs)
+        graphics = self.graphics
         # pdfminer.six's char matrix: the text matrix at the glyph times the CTM, no rise.
-        placed = self.text_matrix.multiply(self.graphics.ctm)
+        placed = self.text_matrix.multiply(graphics.ctm)
         matrix = (placed.a, placed.b, placed.c, placed.d, placed.e, placed.f)
-        result = super().show_text(*arguments, **options)
+        super().show_text(state, text, data, glyphs, decoder, adv_x, adv_y, glyph_paint=glyph_paint)
         miner = self.miner
+        scolor = miner.scolor
+        ncolor = miner.ncolor
+        horizontal_scale = graphics.horizontal_scale
         self.plumber_marks.append(
             PlumberMark(
                 start,
                 self.current_mcid,
                 self.current_tag,
                 miner.ncs[0],
-                miner.scolor if isinstance(miner.scolor, tuple) else (miner.scolor,),
-                miner.ncolor if isinstance(miner.ncolor, tuple) else (miner.ncolor,),
+                scolor if isinstance(scolor, tuple) else (scolor,),
+                ncolor if isinstance(ncolor, tuple) else (ncolor,),
                 matrix,
-                self.graphics.rise,
-                self.graphics.horizontal_scale * 0.01,
-                self.graphics.char_space * self.graphics.horizontal_scale * 0.01,
+                graphics.rise,
+                horizontal_scale * 0.01,
+                graphics.char_space * horizontal_scale * 0.01,
             )
         )
-        return result
 
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         # The paths pdfplumber reports are the ones miner_paint records.
