@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+import os
 from pathlib import Path
 
 from setuptools import setup
@@ -27,7 +28,16 @@ SOURCES = sorted(
 )
 
 
+# The kernels are independent modules, so they compile side by side: one process each.
+JOBS = os.cpu_count() or 1
+
+
 class BuildExtWithStrictFloats(build_ext):
+    def finalize_options(self) -> None:
+        super().finalize_options()
+        if self.parallel is None:
+            self.parallel = JOBS
+
     def build_extensions(self) -> None:
         compiler_type = self.compiler.compiler_type
         flags = CONTRACTION_FLAGS.get(compiler_type)
@@ -59,6 +69,7 @@ def extensions() -> list:
             for source in SOURCES
         ],
         language_level="3",
+        nthreads=JOBS,
         compiler_directives={
             "boundscheck": False,
             "wraparound": False,
