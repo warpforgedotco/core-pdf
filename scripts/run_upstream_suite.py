@@ -56,10 +56,10 @@ SUITES = {
     "unstructured": Suite(
         "unstructured",
         ("test_unstructured/partition/pdf_image",),
-        "unstructured.partition.pdf=unstructured",
-        ("unstructured[pdf]==0.27.36",),
+        "unstructured.partition.pdf=unstructured,unstructured.errors=unstructured.errors",
+        ("unstructured[pdf]==0.27.37",),
         (
-            "unstructured[pdf]==0.27.36",
+            "unstructured[pdf]==0.27.37",
             "pytest-mock",
             "spacy>=3.8.15,<3.9.0",
             "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/"
@@ -87,7 +87,7 @@ RELEASES = {
     "pdfplumber": ("v0.11.10", "7d4f2f582f2d99f9e60ba522fdf7afd2f6d54c62"),
     "pypdf": ("7.0.0", "8eeb0509d712e324e68e2bd38aff69e3b672e0cd"),
     "x-ray": ("v0.4.0", "4dd5b0bcc5cdd774b9e82fc47b1d7208e92e4779"),
-    "unstructured": ("0.27.36", "9d9437d6094c1ffa3e6df72a38db5fb59216fe8f"),
+    "unstructured": ("0.27.37", "293d235cfcd5f5e89c3cc5ff85562005e182ae33"),
     # llama_index tags only its core releases. v0.14.25 is llama-index-core 0.14.25, and its
     # llama-index-readers-file directory is the 0.7.0 release's (98c52d8, the version bump).
     "llama_index": ("v0.14.25", "f12d46acab73f5b2243ef49c2f00101617b38ce4"),
