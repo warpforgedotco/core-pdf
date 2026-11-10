@@ -59,17 +59,6 @@ def _pdfminer_form_glyph_is_clipped(provenance: dict[str, Any]) -> bool:
     return right <= left and top <= bottom
 
 
-def _pdfminer_layout_origin(
-    baseline: tuple[float, float, float, float],
-    *,
-    normalize_noise: bool,
-) -> tuple[float, float]:
-    origin_x, origin_y = baseline[0], baseline[1]
-    if normalize_noise:
-        return round(origin_x, 12), round(origin_y, 12)
-    return origin_x, origin_y
-
-
 def _pdfminer_rotated_text_matrix(
     origin_x: float,
     origin_y: float,
@@ -171,7 +160,13 @@ def project_page(
     chars_by_glyph: dict[int, LTChar] = {}
     glyph_matrices: dict[int, Any] = getattr(products, "glyph_matrices", {})
     vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
-    provenance_dicts: dict[int, tuple[object, dict[str, Any]]] = {}
+    # Per provenance: [source, its dict, then what the loop derives from that dict alone,
+    # each worked out where the loop first needs it (None until then): whether a form
+    # clips the glyph away, the text matrix and its six-value form, the horizontal scale,
+    # the text rise and the four matrix values as floats.
+    provenance_dicts: dict[int, list[Any]] = {}
+    empty_provenance: list[Any] = [None] * 7
+    empty_provenance[1] = {}
     # A page repeats a few hundred distinct glyphs; their pdfminer text, widths and
     # descent depend only on the font decoder and the glyph fields in these keys.
     glyph_texts: dict[tuple[Any, ...], str] = {}
@@ -179,23 +174,43 @@ def project_page(
     descents: dict[int, tuple[Any, float]] = {}
     # Per font decoder: whether it is a CID font and whether it writes vertically.
     decoder_kinds: dict[int, tuple[Any, bool, bool]] = {}
+    # Per font decoder: whether pdfminer cannot use its embedded CMap, and its font name.
+    unusable_cmaps: dict[int, tuple[Any, bool]] = {}
+    font_names: dict[int, tuple[Any, Any]] = {}
     strict_resources = policy.strict_resources
     page_rotation = int(page.rotation) % 360
     for glyph_index, glyph in enumerate(projected_glyphs):
-        if strict_resources and pdfminer_embedded_cmap_is_unusable(glyph):
-            continue
+        if strict_resources:
+            cmap_decoder = glyph.font_decoder
+            unusable = unusable_cmaps.get(id(cmap_decoder))
+            if unusable is None or unusable[0] is not cmap_decoder:
+                unusable = unusable_cmaps[id(cmap_decoder)] = (
+                    cmap_decoder,
+                    pdfminer_embedded_cmap_is_unusable(glyph),
+                )
+            if unusable[1]:
+                continue
         source_provenance = glyph.provenance
+        known: list[Any] | None
         if source_provenance:
             known = provenance_dicts.get(id(source_provenance))
             if known is None or known[0] is not source_provenance:
-                known = provenance_dicts[id(source_provenance)] = (
+                known = provenance_dicts[id(source_provenance)] = [
                     source_provenance,
                     dict(source_provenance),
-                )
-            glyph_provenance = known[1]
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ]
         else:
-            glyph_provenance = {}
-        if _pdfminer_form_glyph_is_clipped(glyph_provenance):
+            known = empty_provenance
+        glyph_provenance: dict[str, Any] = known[1]
+        clipped = known[2]
+        if clipped is None:
+            clipped = known[2] = _pdfminer_form_glyph_is_clipped(glyph_provenance)
+        if clipped:
             continue
         if id(glyph) in skipped_ligature_parts:
             continue
@@ -275,21 +290,27 @@ def project_page(
             ) ** 0.5
             effective_font_size = baseline_length / font_width
         orientation = glyph.rotation_angle % 360
-        text_matrix = glyph_provenance.get("text_matrix")
-        if isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 6:
-            resolved_text_matrix = text_matrix
-        elif isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 4:
-            resolved_text_matrix = (*text_matrix, 0.0, 0.0)
-        else:
-            resolved_text_matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-        horizontal_scale = float(glyph_provenance.get("horizontal_scale", 100.0)) * 0.01
+        matrices = known[3]
+        if matrices is None:
+            text_matrix = glyph_provenance.get("text_matrix")
+            if isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 6:
+                resolved_text_matrix = text_matrix
+            elif isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 4:
+                resolved_text_matrix = (*text_matrix, 0.0, 0.0)
+            else:
+                resolved_text_matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+            matrices = known[3] = (text_matrix, resolved_text_matrix)
+        text_matrix, resolved_text_matrix = matrices
+        if known[4] is None:
+            known[4] = float(glyph_provenance.get("horizontal_scale", 100.0)) * 0.01
+        horizontal_scale: float = known[4]
         coordinates_in_layout_space = False
         if is_vertical and baseline is not None and width_code is not None:
             metric = glyph.font_decoder.vertical_glyph_metric(width_code)
-            origin_x, origin_y = _pdfminer_layout_origin(
-                baseline,
-                normalize_noise=effective_font_size == glyph.font_size,
-            )
+            # The layout origin, rounded to 12 places when the size was not rescaled.
+            origin_x, origin_y = baseline[0], baseline[1]
+            if effective_font_size == glyph.font_size:
+                origin_x, origin_y = round(origin_x, 12), round(origin_y, 12)
             matrix_a, matrix_b, matrix_c, matrix_d, _matrix_e, _matrix_f = (
                 float(value) for value in resolved_text_matrix
             )
@@ -312,7 +333,9 @@ def project_page(
                 # pdfminer's own arithmetic, from LTChar: its rounding decides which boxes
                 # touch, and so which lines group.
                 char_a, char_b, char_c, char_d, char_e, char_f = exact_matrix
-                rise = float(glyph_provenance.get("text_rise", 0.0) or 0.0)
+                rise = known[5]
+                if rise is None:
+                    rise = known[5] = float(glyph_provenance.get("text_rise", 0.0) or 0.0)
                 font_size = glyph.font_size
                 vertical_metrics = getattr(glyph.font_decoder, "vertical_metrics", {})
                 # pdfminer centres a glyph W2 gives no displacement for at half the size.
@@ -353,13 +376,14 @@ def project_page(
             and isinstance(text_matrix, (tuple, list))
             and len(text_matrix) == 4
         ):
-            matrix_a, matrix_b, matrix_c, matrix_d = map(float, text_matrix)
-            origin_x, origin_y = _pdfminer_layout_origin(
-                baseline,
-                normalize_noise=(
-                    bool(glyph_index) and projected_glyphs[glyph_index - 1].font_decoder.is_vertical
-                ),
-            )
+            floats = known[6]
+            if floats is None:
+                floats = known[6] = tuple(map(float, text_matrix))
+            matrix_a, matrix_b, matrix_c, matrix_d = floats
+            # The layout origin, rounded to 12 places after a vertical glyph.
+            origin_x, origin_y = baseline[0], baseline[1]
+            if glyph_index and projected_glyphs[glyph_index - 1].font_decoder.is_vertical:
+                origin_x, origin_y = round(origin_x, 12), round(origin_y, 12)
             decoder = glyph.font_decoder
             known_descent = descents.get(id(decoder))
             if known_descent is None or known_descent[0] is not decoder:
@@ -373,7 +397,9 @@ def project_page(
                 # pdfminer's own arithmetic, from LTChar: its rounding decides which boxes
                 # touch, and so which lines group.
                 char_a, char_b, char_c, char_d, char_e, char_f = exact_matrix
-                rise = float(glyph_provenance.get("text_rise", 0.0) or 0.0)
+                rise = known[5]
+                if rise is None:
+                    rise = known[5] = float(glyph_provenance.get("text_rise", 0.0) or 0.0)
                 font_size = glyph.font_size
                 exact_advance = normalized_width * font_size * horizontal_scale
                 low = descent + rise
@@ -448,10 +474,13 @@ def project_page(
                 page_width,
                 page_height,
             )
+        named = font_names.get(id(font_decoder))
+        if named is None or named[0] is not font_decoder:
+            named = font_names[id(font_decoder)] = (font_decoder, pdfminer_font_name(glyph))
         character = LTChar(
             (x0, y0, x1, y1),
             text,
-            pdfminer_font_name(glyph),
+            named[1],
             # pdfminer's size is the box's height, or its width for vertical writing.
             x1 - x0 if is_vertical else y1 - y0,
         )
