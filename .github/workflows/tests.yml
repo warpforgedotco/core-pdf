@@ -182,10 +182,11 @@ jobs:
         uses: ./.github/actions/install-pdf-tools
 
       - name: Restore pypdf's downloaded test files
-        # pypdf's tests fetch about 380 files from the web. They are kept between runs, and
-        # the harness downloads only what is missing.
+        # pypdf's tests fetch about 380 files from the web, and the harness downloads only what
+        # the cache lacks. The Package cache workflow fills the cache from main; saving it here
+        # too would keep a 420 MB copy for each pull request that changes pypdf's tests.
         if: matrix.suite == 'pypdf'
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: tests/upstream/pypdf/tests/pdf_cache
           key: pypdf-test-files-${{ hashFiles('tests/upstream/pypdf/tests/**/*.py', 'tests/upstream/pypdf/tests/example_files.yaml', 'tests/compat/pypdf_test_files.tsv') }}-v3
