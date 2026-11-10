@@ -148,7 +148,9 @@ def pdfminer_base_ctm(page: PdfPage) -> PdfminerMatrix:
 class PdfminerTextState(TextState):
     def __init__(self, document: Any, *, page_clip: Rectangle | None = None) -> None:
         super().__init__(
-            document, page_clip=page_clip, options=CaptureOptions(ink_bounds=False, text_runs=False)
+            document,
+            page_clip=page_clip,
+            options=CaptureOptions(ink_bounds=False, text_runs=False, render_details=False),
         )
         self.cursor = 0.0
         # pdfminer's text line matrix holds a vertical cursor beside the horizontal one:
