@@ -452,21 +452,21 @@ class PdfminerTextState(TextState):
             return
         if not isinstance(array, (list, tuple)):
             return
-        if not self.append_glyph_run(array, decoder):
-            self.append_glyphs_one_by_one(array, decoder)
+        self.append_glyphs(array, decoder)
         self.text_matrix = self.text_matrix._replace(
             e=self.cursor * self.line_matrix.a + self.line_matrix.e + self.vertical_offset[0],
             f=self.cursor * self.line_matrix.b + self.line_matrix.f + self.vertical_offset[1],
         )
         self.text_boundary(self, "shown")
 
-    def append_glyph_run(self, array: list[Any] | tuple[Any, ...], decoder: Any) -> bool:
-        """Show a horizontal TJ array's glyphs in one show_glyph_run call.
+    def append_glyphs(self, array: list[Any] | tuple[Any, ...], decoder: Any) -> None:
+        """Show a horizontal TJ array's glyphs where pdfminer's render_string places them.
 
-        Each glyph is placed where pdfminer's PDFTextDevice.render_string places it, and
-        advanced by its pdfminer width, which depends only on its decoder and decoded
-        fields. False, having shown nothing, when a glyph's text splits, which takes
-        show_text one glyph at a time.
+        Each glyph sits at the cursor on the line matrix and moves it by its pdfminer width,
+        which depends only on its decoder and decoded fields. Glyphs go to show_glyph_run
+        together. A glyph whose text splits is shown alone between runs, its width taken
+        from what it captured, as pdfminer measures the first part; a run show_glyph_run
+        declines is shown a glyph at a time, at the same places.
         """
         graphics = self.graphics
         scale = graphics.horizontal_scale * 0.01
@@ -477,10 +477,16 @@ class PdfminerTextState(TextState):
         line = self.line_matrix
         la, lb, le, lf = line.a, line.b, line.e, line.f
         offset_x, offset_y = self.vertical_offset
+        # pdfminer's char matrix: the line matrix times the ctm, translated by the cursor.
+        line_ctm = (
+            mult_matrix(line, self.pdfminer_ctm(graphics.ctm))
+            if self.vertical_offset == (0.0, 0.0) and not self.hidden_depth
+            else None
+        )
         widths = self.glyph_widths
         cursor = self.cursor
         needs_spacing = False
-        glyphs: list[Any] = []
+        run: list[Any] = []
         texts: list[str] = []
         origins: list[float] = []
         cursors: list[float] = []
@@ -493,50 +499,125 @@ class PdfminerTextState(TextState):
                 continue
             for decoded in decoder.decode_glyphs(value.data):
                 text = decoded.unicode or EMPTY_GLYPH_TEXT
-                if decoded.split_unicode and len(text) > 1:
-                    return False
                 if needs_spacing:
                     cursor += char_space
-                origins.append(cursor * la + le + offset_x)
-                origins.append(cursor * lb + lf + offset_y)
-                cursors.append(cursor)
-                key = (
-                    decoder,
-                    decoded.char_code,
-                    decoded.cid,
-                    decoded.code_bytes,
-                    decoded.unicode_source,
-                    text,
-                    decoded.alternates,
-                )
-                width = widths.get(key)
-                if width is None:
-                    width = self.pdfminer_width(key)
-                cursor += width * font_size * scale
+                e = cursor * la + le + offset_x
+                f = cursor * lb + lf + offset_y
+                if decoded.split_unicode and len(text) > 1:
+                    self.show_run(run, texts, origins, cursors, decoder, line_ctm)
+                    run, texts, origins, cursors = [], [], [], []
+                    start = self.show_alone(decoded, text, e, f, cursor, decoder, line_ctm)
+                    if start is not None:
+                        glyph = self.glyphs[start]
+                        key = (
+                            glyph.font_decoder,
+                            glyph.char_code,
+                            glyph.cid,
+                            glyph.code_bytes,
+                            glyph.unicode_source,
+                            glyph.text,
+                            glyph.alternates,
+                        )
+                        width = widths.get(key)
+                        if width is None:
+                            width = self.pdfminer_width(key)
+                        cursor += width * font_size * scale
+                else:
+                    run.append(decoded)
+                    texts.append(text)
+                    origins.append(e)
+                    origins.append(f)
+                    cursors.append(cursor)
+                    key = (
+                        decoder,
+                        decoded.char_code,
+                        decoded.cid,
+                        decoded.code_bytes,
+                        decoded.unicode_source,
+                        text,
+                        decoded.alternates,
+                    )
+                    width = widths.get(key)
+                    if width is None:
+                        width = self.pdfminer_width(key)
+                    cursor += width * font_size * scale
                 if decoded.width_code == 32:
                     cursor += word_space
                 needs_spacing = True
-                glyphs.append(decoded)
-                texts.append(text)
-        if glyphs:
-            captured = self.glyphs
-            start = len(captured)
-            paint = self.shared_paint()
-            if (
-                self.show_glyph_run(tuple(glyphs), texts, origins, decoder, glyph_paint=paint)
-                is None
-            ):
-                return False
-            if not self.hidden_depth:
-                # One event for the run, which the layout walk reads glyph by glyph.
-                self.layout_events.append(("glyphs", start, len(captured)))
-            if self.vertical_offset == (0.0, 0.0) and not self.hidden_depth:
-                a, b, c, d, e, f = mult_matrix(line, self.pdfminer_ctm(graphics.ctm))
-                matrices = self.glyph_matrices
-                for index, x in enumerate(cursors, start):
-                    matrices[index] = (a, b, c, d, x * a + 0 * c + e, x * b + 0 * d + f)
+        self.show_run(run, texts, origins, cursors, decoder, line_ctm)
         self.cursor = cursor
-        return True
+
+    def show_run(
+        self,
+        run: list[Any],
+        texts: list[str],
+        origins: list[float],
+        cursors: list[float],
+        decoder: Any,
+        line_ctm: PdfminerMatrix | None,
+    ) -> None:
+        """Show placed glyphs in one show_glyph_run call, or one at a time if it declines."""
+        if not run:
+            return
+        captured = self.glyphs
+        start = len(captured)
+        if (
+            self.show_glyph_run(
+                tuple(run), texts, origins, decoder, glyph_paint=self.shared_paint()
+            )
+            is None
+        ):
+            for index, decoded in enumerate(run):
+                self.show_alone(
+                    decoded,
+                    texts[index],
+                    origins[2 * index],
+                    origins[2 * index + 1],
+                    cursors[index],
+                    decoder,
+                    line_ctm,
+                )
+            return
+        if not self.hidden_depth:
+            # One event for the run, which the layout walk reads glyph by glyph.
+            self.layout_events.append(("glyphs", start, len(captured)))
+        if line_ctm is not None:
+            a, b, c, d, e, f = line_ctm
+            matrices = self.glyph_matrices
+            for index, x in enumerate(cursors, start):
+                matrices[index] = (a, b, c, d, x * a + 0 * c + e, x * b + 0 * d + f)
+
+    def show_alone(
+        self,
+        decoded: Any,
+        text: str,
+        e: float,
+        f: float,
+        x: float,
+        decoder: Any,
+        line_ctm: PdfminerMatrix | None,
+    ) -> int | None:
+        """Show one placed glyph with show_text; the index of its first capture, if any."""
+        self.text_matrix = self.text_matrix._replace(e=e, f=f)
+        start = len(self.glyphs)
+        # This capture records no text runs, and show_text reads the glyph advance only for
+        # runs, so it is not computed.
+        self.show_text(
+            self,
+            text,
+            decoded.code_bytes,
+            (decoded,),
+            decoder,
+            0.0,
+            0.0,
+            glyph_paint=self.shared_paint(),
+        )
+        if len(self.glyphs) == start:
+            return None
+        if line_ctm is not None:
+            a, b, c, d, le, lf = line_ctm
+            self.glyph_matrices[start] = (a, b, c, d, x * a + 0 * c + le, x * b + 0 * d + lf)
+        return start
 
     def pdfminer_width(self, key: tuple[Any, ...]) -> float:
         """The advance pdfminer gives a glyph, in text space units per font size unit,
@@ -547,84 +628,6 @@ class PdfminerTextState(TextState):
             width = 0.0
         self.glyph_widths[key] = width
         return width
-
-    def append_glyphs_one_by_one(self, array: list[Any] | tuple[Any, ...], decoder: Any) -> None:
-        scale = self.graphics.horizontal_scale * 0.01
-        adjustment_scale = 0.001 * self.graphics.font_size * scale
-        char_space = self.graphics.char_space * scale
-        word_space = 0.0 if decoder.is_cid_font else self.graphics.word_space * scale
-        needs_spacing = False
-        paint: GlyphPaint | None = None
-        # pdfminer's PDFTextDevice.render_string: the line matrix times the ctm, then each
-        # character translated along it by the cursor.
-        exact = self.vertical_offset == (0.0, 0.0) and not self.hidden_depth
-        line_ctm = (
-            mult_matrix(self.line_matrix, self.pdfminer_ctm(self.graphics.ctm)) if exact else None
-        )
-        for value in array:
-            if isinstance(value, (int, float)):
-                self.cursor -= value * adjustment_scale
-                needs_spacing = True
-                continue
-            if not isinstance(value, PdfString):
-                continue
-            for decoded in decoder.decode_glyphs(value.data):
-                if needs_spacing:
-                    self.cursor += char_space
-                matrix = self.text_matrix
-                line = self.line_matrix
-                self.text_matrix = type(matrix)(
-                    matrix.a,
-                    matrix.b,
-                    matrix.c,
-                    matrix.d,
-                    self.cursor * line.a + line.e + self.vertical_offset[0],
-                    self.cursor * line.b + line.f + self.vertical_offset[1],
-                )
-                start = len(self.glyphs)
-                if paint is None:
-                    paint = self.shared_paint()
-                # This capture records no text runs, and show_text reads the glyph
-                # advance only for runs, so it is not computed.
-                self.show_text(
-                    self,
-                    decoded.unicode or EMPTY_GLYPH_TEXT,
-                    decoded.code_bytes,
-                    (decoded,),
-                    decoder,
-                    0.0,
-                    0.0,
-                    glyph_paint=paint,
-                )
-                if len(self.glyphs) > start:
-                    if line_ctm is not None:
-                        a, b, c, d, e, f = line_ctm
-                        x = self.cursor
-                        self.glyph_matrices[start] = (
-                            a,
-                            b,
-                            c,
-                            d,
-                            x * a + 0 * c + e,
-                            x * b + 0 * d + f,
-                        )
-                    glyph = self.glyphs[start]
-                    key = (
-                        glyph.font_decoder,
-                        glyph.char_code,
-                        glyph.cid,
-                        glyph.code_bytes,
-                        glyph.unicode_source,
-                        glyph.text,
-                        glyph.alternates,
-                    )
-                    width = self.glyph_widths.get(key)
-                    if width is None:
-                        width = self.pdfminer_width(key)
-                    self.cursor += width * self.graphics.font_size * scale
-                if decoded.width_code == 32:
-                    self.cursor += word_space
-                needs_spacing = True
 
 
 def pdfminer_page_program(page: PdfPage, *, strict_cmaps: bool = True) -> PdfminerProgram:
