@@ -90,25 +90,19 @@ def search_key(text: str) -> str:
 
 
 def is_rtl_character(character: str) -> bool:
-    return any(
-        start <= character <= end
-        for start, end in (
-            ("\u0590", "\u08ff"),
-            ("\ufb1d", "\ufdff"),
-            ("\ufe70", "\ufeff"),
-        )
+    return character >= "\u0590" and (
+        character <= "\u08ff"
+        or ("\ufb1d" <= character <= "\ufdff")
+        or ("\ufe70" <= character <= "\ufeff")
     )
 
 
 def is_neutral_character(character: str) -> bool:
-    return any(
-        start <= character <= end
-        for start, end in (
-            ("\x00", "\x2f"),
-            ("\x3a", "\x40"),
-            ("\u2000", "\u206f"),
-            ("\u20a0", "\u21ff"),
-        )
+    return (
+        character <= "\x2f"
+        or ("\x3a" <= character <= "\x40")
+        or ("\u2000" <= character <= "\u206f")
+        or ("\u20a0" <= character <= "\u21ff")
     )
 
 
