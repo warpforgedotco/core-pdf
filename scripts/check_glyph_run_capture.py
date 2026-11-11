@@ -5,9 +5,10 @@ as they show it one glyph at a time.
 
 The captures place each glyph of a horizontal TJ array themselves and show the array in one
 TextState.show_glyph_run call, which captures every glyph as show_text captures it alone.
-This captures the first pages of the upstream test PDFs both ways, the second with the run
-path turned off, and compares every glyph observation, glyph matrix, layout event, drawing
-and pdfplumber char mark; it fails on the first page that differs.
+This captures the first pages of the upstream test PDFs both ways, the second with
+show_glyph_run declining, so that each run is shown a glyph at a time, and compares every
+glyph observation, glyph matrix, layout event, drawing and pdfplumber char mark; it fails
+on the first page that differs.
 
 uv run --all-packages python scripts/check_glyph_run_capture.py [pages per file]
 """
@@ -22,7 +23,8 @@ import warnings
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf_compat.pdfminer._capture import PdfminerTextState, pdfminer_page_program
+from core_pdf.impl.capture_recording import TextState
+from core_pdf_compat.pdfminer._capture import pdfminer_page_program
 from core_pdf_compat.pdfplumber._capture import plumber_page_capture
 
 CORPUS = (
@@ -89,8 +91,8 @@ def plumber(page: Any) -> tuple[Any, ...]:
     return program(captured), ADDRESS.sub("@", repr(marks)), len(paths)
 
 
-def by_glyph_only(self: PdfminerTextState, array: Any, decoder: Any) -> bool:
-    return False
+def declined(*_args: Any, **_kwargs: Any) -> None:
+    return None
 
 
 def main(argv: list[str]) -> int:
@@ -102,12 +104,12 @@ def main(argv: list[str]) -> int:
         print("no upstream test PDFs: run git submodule update --init --recursive --depth 1")
         return 1
     shown_as_runs = 0
-    append_glyph_run = PdfminerTextState.append_glyph_run
+    show_glyph_run = TextState.show_glyph_run
 
-    def counted(self: PdfminerTextState, array: Any, decoder: Any) -> bool:
+    def counted(self: TextState, *args: Any, **kwargs: Any) -> Any:
         nonlocal shown_as_runs
-        shown = append_glyph_run(self, array, decoder)
-        shown_as_runs += shown
+        shown = show_glyph_run(self, *args, **kwargs)
+        shown_as_runs += shown is not None
         return shown
 
     pages = 0
@@ -120,16 +122,17 @@ def main(argv: list[str]) -> int:
             continue
         for number, page in enumerate(file_pages):
             pages += 1
-            PdfminerTextState.append_glyph_run = counted  # type: ignore[method-assign]
+            TextState.show_glyph_run = counted  # type: ignore[method-assign]
             try:
                 as_runs = capture(page)
             finally:
-                PdfminerTextState.append_glyph_run = append_glyph_run  # type: ignore[method-assign]
-            PdfminerTextState.append_glyph_run = by_glyph_only  # type: ignore[method-assign]
+                TextState.show_glyph_run = show_glyph_run  # type: ignore[method-assign]
+            # Declined, every run is shown a glyph at a time with show_text.
+            TextState.show_glyph_run = declined  # type: ignore[method-assign]
             try:
                 by_glyph = capture(page)
             finally:
-                PdfminerTextState.append_glyph_run = append_glyph_run  # type: ignore[method-assign]
+                TextState.show_glyph_run = show_glyph_run  # type: ignore[method-assign]
             if as_runs != by_glyph:
                 failures.append(f"{path} page {number + 1}")
     print(
