@@ -69,17 +69,20 @@ def text_word_tokens(text: str) -> tuple[str, ...]:
 def reconcile_text_words(
     text: str,
     words: tuple[TextWord, ...],
+    source: str = "unknown",
 ) -> tuple[TextWord, ...]:
+    """The words of text: the given ones where they spell it, else its tokens, unboxed and
+    labelled with source."""
     tokens = text_word_tokens(text)
     if not tokens:
         return ()
     if not words:
-        return tuple(TextWord(token) for token in tokens)
+        return tuple(TextWord(token, source=source) for token in tokens)
     if tuple(word.text for word in words) == tokens:
         return words
     if len(words) == len(tokens):
         return tuple(replace(word, text=token) for word, token in zip(words, tokens, strict=True))
-    return tuple(TextWord(token) for token in tokens)
+    return tuple(TextWord(token, source=source) for token in tokens)
 
 
 def search_key(text: str) -> str:
