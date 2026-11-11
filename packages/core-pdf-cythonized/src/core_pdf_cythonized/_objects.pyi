@@ -18,6 +18,11 @@ class ObjectScanner:
         strict: bool = False,
     ) -> None: ...
     def release(self) -> None: ...
+    def parse_indirect(
+        self,
+        pos: int,
+        decipher: Callable[[int, int, bytes, None], bytes | memoryview] | None = None,
+    ) -> tuple[int, int, Any, int, bool] | None: ...
     def parse_dictionary(
         self,
         pos: int,

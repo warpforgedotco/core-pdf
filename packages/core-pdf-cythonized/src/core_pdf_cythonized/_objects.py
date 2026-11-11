@@ -106,6 +106,98 @@ class ObjectScanner:
     def parse_array(self, pos: cython.Py_ssize_t, decipher=None, object_number=0, generation=0):
         return self.parse(pos, False, decipher, object_number, generation)
 
+    def parse_indirect(self, pos: cython.Py_ssize_t, decipher=None):
+        """(object number, generation, value, end, complete) for the indirect object at pos.
+
+        Takes only a header both lexers read alike -- an object number from 1 and a
+        generation up to 65535 in plain digits without a leading zero, each followed by
+        white-space, then obj and a separator -- and a value it reads itself. complete is
+        True when endobj follows the value, and end is past it; otherwise the value is a
+        dictionary, end is just past it, and the lexer goes on to its stream and endobj.
+        None, for anything else, leaves the object to the lexer from pos.
+        """
+        if pos < 0 or self.data == cython.NULL:
+            return None
+        data: cython.p_const_uchar = self.data
+        length: cython.Py_ssize_t = self.length
+        cursor: cython.Py_ssize_t = self.skip_ignored(pos)
+        number: int64_t = self.header_integer(cython.address(cursor), 10)
+        generation: int64_t = self.header_integer(cython.address(cursor), 5)
+        if number < 1 or generation < 0 or generation > 65535:
+            return None
+        if not (
+            cursor + 3 <= length
+            and data[cursor] == 111
+            and data[cursor + 1] == 98
+            and data[cursor + 2] == 106
+            and (cursor + 3 == length or self.separator[data[cursor + 3]])
+        ):
+            return None
+        cursor = self.skip_ignored(cursor + 3)
+        if cursor + 6 <= length and self.is_endobj(cursor):
+            # An empty object, which each lexer reads its own way.
+            return None
+        # Made into Python ints once, for the decipher and the result.
+        object_number = number
+        generation_number = generation
+        self.decipher = decipher
+        self.object_number = object_number
+        self.generation = generation_number
+        try:
+            if cursor + 1 < length and data[cursor] == 60 and data[cursor + 1] == 60:
+                value = self.dictionary(cython.address(cursor), 0)
+            elif cursor < length and data[cursor] == 91:
+                value = self.array(cython.address(cursor), 0)
+            else:
+                value = self.value(cython.address(cursor), 0, False)
+        finally:
+            self.decipher = None
+        if value is BAIL:
+            return None
+        end: cython.Py_ssize_t = self.skip_ignored(cursor)
+        if end + 6 <= length and self.is_endobj(end) and self.word_end(end) == end + 6:
+            return object_number, generation_number, value, end + 6, True
+        if type(value) is dict:
+            return object_number, generation_number, value, cursor, False
+        return None
+
+    @cython.cfunc
+    @cython.exceptval(check=False)
+    def header_integer(self, cursor: cython.p_Py_ssize_t, limit: cython.int) -> int64_t:
+        # A header number: up to limit plain digits without a leading zero, then white-space,
+        # which the cursor moves past. -1 when the bytes are anything else.
+        data: cython.p_const_uchar = self.data
+        start: cython.Py_ssize_t = cursor[0]
+        end: cython.Py_ssize_t = start
+        value: int64_t = 0
+        while end < self.length and is_digit(data[end]) and end - start < limit:
+            value = value * 10 + (data[end] - 48)
+            end += 1
+        if (
+            end == start
+            or (end - start > 1 and data[start] == 48)
+            or end >= self.length
+            or not self.whitespace[data[end]]
+        ):
+            return -1
+        while end < self.length and self.whitespace[data[end]]:
+            end += 1
+        cursor[0] = end
+        return value
+
+    @cython.cfunc
+    @cython.exceptval(check=False)
+    def is_endobj(self, pos: cython.Py_ssize_t) -> cython.bint:
+        data: cython.p_const_uchar = self.data + pos
+        return (
+            data[0] == 101
+            and data[1] == 110
+            and data[2] == 100
+            and data[3] == 111
+            and data[4] == 98
+            and data[5] == 106
+        )
+
     @cython.cfunc
     def parse(
         self,
@@ -545,17 +637,7 @@ class ObjectScanner:
         if byte == 47:
             return self.name(pos)
         end: cython.Py_ssize_t = self.word_end(start)
-        if (
-            strip_endobj
-            and not self.strict
-            and end - start > 6
-            and self.data[end - 6] == 101
-            and self.data[end - 5] == 110
-            and self.data[end - 4] == 100
-            and self.data[end - 3] == 111
-            and self.data[end - 2] == 98
-            and self.data[end - 1] == 106
-        ):
+        if strip_endobj and not self.strict and end - start > 6 and self.is_endobj(end - 6):
             end -= 6
         if self.number_kind(start, end):
             return self.number_or_reference(start, end, pos)
