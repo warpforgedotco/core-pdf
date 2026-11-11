@@ -619,6 +619,49 @@ class PlumberTextState(PdfminerTextState):
             )
         )
 
+    def show_glyph_run(
+        self,
+        glyphs: tuple[Any, ...],
+        texts: list[str],
+        origins: list[float],
+        decoder: Any,
+        *,
+        glyph_paint: GlyphPaint | None = None,
+    ) -> tuple[tuple[float, float, float, float], list[float]] | None:
+        start = len(self.glyphs)
+        shown = super().show_glyph_run(glyphs, texts, origins, decoder, glyph_paint=glyph_paint)
+        if shown is None:
+            return None
+        (a, b, c, d), placed = shown
+        graphics = self.graphics
+        miner = self.miner
+        scolor = miner.scolor
+        ncolor = miner.ncolor
+        stroking = scolor if isinstance(scolor, tuple) else (scolor,)
+        non_stroking = ncolor if isinstance(ncolor, tuple) else (ncolor,)
+        horizontal_scale = graphics.horizontal_scale
+        scaling = horizontal_scale * 0.01
+        char_space = graphics.char_space * horizontal_scale * 0.01
+        marks = self.plumber_marks
+        # As show_text marks each glyph: its char matrix is the text matrix at the glyph
+        # times the CTM.
+        for index in range(len(glyphs)):
+            marks.append(
+                PlumberMark(
+                    start + index,
+                    self.current_mcid,
+                    self.current_tag,
+                    miner.ncs[0],
+                    stroking,
+                    non_stroking,
+                    (a, b, c, d, placed[2 * index], placed[2 * index + 1]),
+                    graphics.rise,
+                    scaling,
+                    char_space,
+                )
+            )
+        return shown
+
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         # The paths pdfplumber reports are the ones miner_paint records.
         super(PdfminerTextState, self).paint_path(state, source, kind, fill_rule)
