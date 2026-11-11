@@ -92,7 +92,7 @@ from core_pdf_cythonized._sample_blit import (
     sample_opaque_pixels,
 )
 from core_pdf_cythonized._segments import merge_collinear_rows
-from core_pdf_cythonized._serialize import ObjectWriter
+from core_pdf_cythonized._serialize import ObjectWriter, collect_references
 from core_pdf_cythonized._shading import shading_blend, shading_t, shading_values
 from core_pdf_cythonized._source_plane import accumulate_source_plane
 from core_pdf_cythonized._stroke import stroke_polylines
@@ -105,6 +105,7 @@ from core_pdf_cythonized._xref_headers import object_headers_match
 
 __all__ = (
     "ObjectWriter",
+    "collect_references",
     "AreaGapQueue",
     "cell_distance_map",
     "glyph_feature_cells",

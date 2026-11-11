@@ -14,6 +14,7 @@ from core_pdf.impl.object_serialize import serialize_indirect_object, serialize_
 from core_pdf.impl.recovery_lexer import StrictPdfLexer
 from core_pdf.impl.recovery_xref import XRefScanner
 from core_pdf.impl.types import PdfReference, PdfString
+from core_pdf_cythonized import collect_references
 from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_security.output import (
     NewEncryption,
@@ -94,19 +95,8 @@ def mutable_copy(value: Any) -> Any:
 
 
 def references_in(value: Any) -> list[PdfReference]:
-    found: list[PdfReference] = []
-    pending = [value]
-    while pending:
-        item = pending.pop()
-        if isinstance(item, PdfReference):
-            found.append(item)
-        elif isinstance(item, PdfStream):
-            pending.extend(item.dictionary.values())
-        elif isinstance(item, dict):
-            pending.extend(item.values())
-        elif isinstance(item, (list, tuple)):
-            pending.extend(item)
-    return found
+    """Every reference in value, depth first; the order decides the order of a save."""
+    return collect_references(value, PdfReference, PdfStream)
 
 
 class EditableDocument:
