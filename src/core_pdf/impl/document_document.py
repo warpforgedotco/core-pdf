@@ -439,6 +439,7 @@ def object_headers_present_by_entry(data: Any, keys: list[int], offsets: list[in
 
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
+SECURITY_TRAILER_KEYS = frozenset({"Encrypt", "AuthCode"})
 
 
 def first_indexes(values: Iterable[object]) -> dict[object, int]:
@@ -547,11 +548,14 @@ def check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
             names: set[bytes] = set()
             for key, value in dictionary.items():
                 raw_name = key.value if isinstance(key, PdfName) else key
-                lexer = PdfLexer(b"/" + raw_name.encode("latin-1"))
-                try:
-                    name = bytes(lexer.read_name())
-                finally:
-                    lexer.close()
+                if "#" in raw_name:
+                    lexer = PdfLexer(b"/" + raw_name.encode("latin-1"))
+                    try:
+                        name = bytes(lexer.read_name())
+                    finally:
+                        lexer.close()
+                else:
+                    name = raw_name.encode("latin-1")
                 if top and name not in {b"Encrypt", b"AuthCode", b"ID"}:
                     continue
                 if name in names:
@@ -1556,11 +1560,19 @@ class PdfDocument(Generic[PageT]):
         return False
 
     def is_valid_catalog_root(self, root_ref: object) -> bool:
-        resolver = ObjectResolver(
-            self.raw_data,
-            self.xref,
-            semantic_context=self.xref_context,
+        reuse_resolver = (
+            self.trailer_dict.get("Encrypt") is None and self.trailer_dict.get("AuthCode") is None
         )
+        if reuse_resolver:
+            resolver = self.resolver
+            resolver.xref = self.xref
+        else:
+            resolver = ObjectResolver(
+                self.raw_data,
+                self.xref,
+                semantic_context=self.xref_context,
+            )
+        valid = False
         try:
             root = resolver.as_dict(root_ref)
             if root is None:
@@ -1574,11 +1586,16 @@ class PdfDocument(Generic[PageT]):
             if node_type != "Pages":
                 return False
             kids, count = page_tree_extent(resolver.resolve, pages)
-            return kids is not None or count is not None
+            valid = kids is not None or count is not None
+            return valid
         except Exception:
             return False
         finally:
-            resolver.close()
+            if not reuse_resolver:
+                resolver.close()
+            elif not valid:
+                for stream in resolver.detach_parsed_caches():
+                    stream.close()
 
     def infer_catalog_root(self) -> PdfReference | None:
         data = self.raw_data
@@ -1730,15 +1747,19 @@ class PdfDocument(Generic[PageT]):
         missing_keys = [key for key in TRAILER_METADATA_KEYS if trailer.get(key) is None]
         if not missing_keys:
             return trailer
+        if not self.xref_was_recovered and SECURITY_TRAILER_KEYS.issuperset(missing_keys):
+            return trailer
         if not self.xref_was_recovered and not any(
             markers_present(
                 self.raw_data, tuple(b"/" + key.encode("ascii") for key in missing_keys)
             )
         ):
             return trailer
-        if missing_keys == ["Encrypt"] and not self.xref_was_recovered:
-            return trailer
-        if missing_keys == ["Encrypt"] and self.raw_data.find(b"Encrypt") < 0:
+        if (
+            SECURITY_TRAILER_KEYS.issuperset(missing_keys)
+            and self.raw_data.find(b"Encrypt") < 0
+            and self.raw_data.find(b"AuthCode") < 0
+        ):
             return trailer
         recovered = self.infer_trailer_metadata()
         if not recovered:
@@ -1763,7 +1784,12 @@ class PdfDocument(Generic[PageT]):
         missing_keys = [key for key in TRAILER_METADATA_KEYS if key not in metadata]
         if not missing_keys:
             return metadata
-        if missing_keys == ["Encrypt"] and metadata and self.raw_data.find(b"Encrypt") < 0:
+        if (
+            SECURITY_TRAILER_KEYS.issuperset(missing_keys)
+            and metadata
+            and self.raw_data.find(b"Encrypt") < 0
+            and self.raw_data.find(b"AuthCode") < 0
+        ):
             return metadata
 
         for candidate in self.iter_recoverable_xref_stream_dictionaries():
@@ -1843,11 +1869,6 @@ class PdfDocument(Generic[PageT]):
                     yield dictionary
         finally:
             lexer.close()
-
-    def may_be_xref_stream(self, data: bytes | mmap.mmap, offset: int, end: int) -> bool:
-        if data.find(b"#", offset, end) >= 0 or data.find(b"XRef", offset, end) >= 0:
-            return True
-        return data.find(b"/W", offset, end) >= 0 and data.find(b"/Size", offset, end) >= 0
 
     def is_valid_trailer_metadata_value(self, key: str, value: object) -> bool:
         if key == "Info":

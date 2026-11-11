@@ -13,7 +13,7 @@ import gzip
 import struct
 import unicodedata
 from collections.abc import Collection, Iterable
-from functools import cache
+from functools import cache, lru_cache
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from itertools import islice
@@ -291,15 +291,21 @@ def replace_unicode_from_glyph_names(
     return text if out is None else "".join(out)
 
 
+@lru_cache(maxsize=128)
+def cached_to_unicode_cmap(data: bytes) -> ToUnicodeCMap:
+    return ToUnicodeCMap(
+        data,
+        usecmap_resolver=resolve_cmap_resource,
+    )
+
+
 def parse_to_unicode(font: dict[str, Any]) -> ToUnicodeCMap | None:
     to_unicode_obj = font.get("ToUnicode")
     if not isinstance(to_unicode_obj, PdfStream):
         return None
     try:
-        return ToUnicodeCMap(
-            to_unicode_obj.data,
-            usecmap_resolver=resolve_cmap_resource,
-        )
+        data = to_unicode_obj.data
+        return cached_to_unicode_cmap(data if type(data) is bytes else bytes(data))
     except PdfParseError, ValueError:
         return None
 

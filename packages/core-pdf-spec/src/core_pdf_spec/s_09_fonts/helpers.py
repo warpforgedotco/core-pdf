@@ -16,24 +16,25 @@ BASE_ENCODING_GLYPH_NAMES: dict[str, tuple[str, ...]] = {
     "WinAnsiEncoding": WIN_ANSI_ENCODING_GLYPH_NAMES,
     "MacRomanEncoding": MAC_ROMAN_ENCODING_GLYPH_NAMES,
 }
+WIN_ANSI_PRE_1_3_GLYPH_NAMES: tuple[str, ...] = tuple(
+    "bullet" if code in (0x80, 0x8E, 0x9E) else name
+    for code, name in enumerate(WIN_ANSI_ENCODING_GLYPH_NAMES)
+)
+PDF_1_3 = PdfVersion(1, 3)
 
 
 def get_base_encoding_glyph_names(
     base_encoding: str, *, context: SemanticContext | None = None
 ) -> tuple[str, ...]:
     require_recognized_version(context, "font-encoding semantics require a recognized PDF version")
-    names = BASE_ENCODING_GLYPH_NAMES[base_encoding]
     if (
         base_encoding == "WinAnsiEncoding"
         and context is not None
         and context.version is not None
-        and context.version < PdfVersion(1, 3)
+        and context.version < PDF_1_3
     ):
-        historical = list(names)
-        for code in (0x80, 0x8E, 0x9E):
-            historical[code] = "bullet"
-        return tuple(historical)
-    return names
+        return WIN_ANSI_PRE_1_3_GLYPH_NAMES
+    return BASE_ENCODING_GLYPH_NAMES[base_encoding]
 
 
 def strip_subset_tag(font_name: str) -> str:
@@ -77,6 +78,8 @@ def build_simple_encoding_glyph_names(
         "StandardEncoding" if authoritative_builtin else base_encoding or "StandardEncoding",
         context=context,
     )
+    if not authoritative_builtin and not builtin_encoding and not differences:
+        return base_names
     names = [".notdef"] * 256 if authoritative_builtin else list(base_names)
     for mapping in (builtin_encoding, differences):
         for code, name in mapping.items():

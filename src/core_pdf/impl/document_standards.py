@@ -130,6 +130,8 @@ def discover_document_standards(
                 StandardsDiagnostic("invalid-catalog", "Cannot read catalog", "catalog"),
             ),
         )
+    if "Version" not in catalog and catalog.get("Extensions") is None:
+        return header
     version: PdfVersion | None = None
     declaration: str | None = None
     if "Version" in catalog:
@@ -273,6 +275,8 @@ def discover_extensions(
 
 
 def extension_diagnostics(standards: DocumentStandards) -> DocumentStandards:
+    if not standards.extensions:
+        return standards
     diagnostics = list(standards.diagnostics)
     for extension in standards.extensions:
         source = f"catalog/Extensions/{extension.prefix}"
@@ -325,7 +329,9 @@ def preserve_historical_version(
         )
     previous = trailer.get("Prev")
     if previous is None:
-        return extension_diagnostics(replace(standards, diagnostics=tuple(diagnostics)))
+        return extension_diagnostics(
+            replace(standards, diagnostics=tuple(diagnostics)) if recovered else standards
+        )
     sections: list[XRefRevision] = []
     try:
         if type(previous) is not int:

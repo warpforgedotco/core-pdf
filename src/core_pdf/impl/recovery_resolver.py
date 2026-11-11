@@ -56,6 +56,9 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
     def close(self) -> None:
         with self.lock:
             self.parsed_objects = {}
+            lexers, self.lexer_pool[:] = list(self.lexer_pool), []
+        for lexer in lexers:
+            lexer.close()
         super().close()
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
@@ -141,13 +144,6 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
                     self.lexer_pool.append(lexer)
                     return
         lexer.close()
-
-    def detach_parsed_caches(self) -> tuple[core_pdf_spec.s_07_syntax.objects.PdfObjectStream, ...]:
-        with self.lock:
-            lexers, self.lexer_pool[:] = list(self.lexer_pool), []
-        for lexer in lexers:
-            lexer.close()
-        return super().detach_parsed_caches()
 
     def recover_indirect_object(
         self, lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer, offset: int

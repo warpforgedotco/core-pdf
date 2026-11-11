@@ -48,6 +48,12 @@ STREAM_DECODE_KEYS = frozenset(
 )
 
 
+class _ResolverThreadState(threading.local):
+    def __init__(self) -> None:
+        super().__init__()
+        self.resolving: set[int] = set()
+
+
 class ObjectResolver:
     __slots__ = (
         "data",
@@ -80,7 +86,7 @@ class ObjectResolver:
         # may still set.
         self.failed_object_streams: dict[int, tuple[Decipher | None, Exception]] = {}
         self.lock = threading.RLock()
-        self.thread_state = threading.local()
+        self.thread_state = _ResolverThreadState()
 
     @property
     def semantic_context(self) -> SemanticContext | None:
@@ -134,10 +140,7 @@ class ObjectResolver:
             if cached is not MISSING:
                 return cached  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
-        resolving = getattr(self.thread_state, "resolving", None)
-        if resolving is None:
-            resolving = set()
-            self.thread_state.resolving = resolving
+        resolving = self.thread_state.resolving
         if cache_key in resolving:
             return ref
 
@@ -264,19 +267,15 @@ class ObjectResolver:
         return container.get_at_index(index, expected_reference=ref)
 
     def resolve_stream(self, stream: PdfStream) -> PdfStream:
-        selected = {
-            key: value
-            for key, value in stream.dictionary.items()
-            if decoded_name(key) in STREAM_DECODE_KEYS
-        }
-        if not selected:
-            return stream
-        resolved = self.deep_resolve(selected)
-        if resolved is selected:
-            return stream
-        dictionary = dict(stream.dictionary)
-        dictionary.update(resolved)  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
-        return stream.replace(dictionary=dictionary)
+        updated: PdfDict | None = None
+        for key, value in stream.dictionary.items():
+            if decoded_name(key) in STREAM_DECODE_KEYS:
+                resolved = self.deep_resolve(value)
+                if resolved is not value:
+                    if updated is None:
+                        updated = dict(stream.dictionary)
+                    updated[key] = resolved
+        return stream if updated is None else stream.replace(dictionary=updated)
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
         return self.xref.get(key_for(ref.object_number, ref.generation_number))

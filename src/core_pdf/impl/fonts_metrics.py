@@ -6,6 +6,7 @@ __lazy_modules__ = ["core_pdf_spec.s_09_fonts"]
 
 import contextlib
 from collections.abc import Mapping
+from functools import lru_cache
 from typing import Any
 
 from core_adobe_fonts.afm import core14
@@ -27,15 +28,16 @@ from core_pdf_spec.s_09_fonts import metrics
 LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
 
 
+@lru_cache(maxsize=128)
 def standard_14_widths(
     base_font_name: str | None, decode_table: tuple[str, ...] | None
 ) -> Mapping[int, float] | None:
-    literal = (
-        tuple(LIGATURE_TEXT_TO_CHAR.get(text, text) for text in decode_table)
-        if decode_table is not None
-        else None
-    )
-    canonical = METRIC_RECORD_NAMES.get(base_font_name, base_font_name) if base_font_name else None
+    if base_font_name is None or decode_table is None:
+        return None
+    canonical = METRIC_RECORD_NAMES.get(base_font_name)
+    if canonical is None:
+        return None
+    literal = tuple(LIGATURE_TEXT_TO_CHAR.get(text, text) for text in decode_table)
     return metrics.standard_14_widths(canonical, literal)
 
 
