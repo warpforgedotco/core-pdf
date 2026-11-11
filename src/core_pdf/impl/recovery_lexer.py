@@ -7,7 +7,7 @@ import mmap
 import re
 from collections.abc import Callable
 from copy import replace
-from typing import Any
+from typing import Any, ClassVar
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
@@ -112,42 +112,6 @@ def reader_rules_for(context: SemanticContext | None) -> LexicalRules:
     return reader_lexical_rules(rules) if reader_rules is None else reader_rules
 
 
-def parse_scanned_indirect_object(
-    lexer: StrictPdfLexer | PdfLexer, expected_reference: PdfReference | None
-) -> Any:
-    """The indirect object at lexer.pos, read by the compiled scanner, or MISSING.
-
-    The scanner takes a plainly written object whole, or its dictionary, after which this
-    reads the stream and endobj as the lexer's parse_indirect_object would. MISSING, having
-    read nothing, leaves the rest -- and a header naming another object, which raises -- to
-    the lexer's own code.
-    """
-    scanned = lexer.object_scanner().parse_indirect(lexer.pos, lexer.decipher)
-    if scanned is None:
-        return MISSING
-    number, generation, value, end, complete = scanned
-    if expected_reference is not None and (
-        number != expected_reference.object_number
-        or generation != expected_reference.generation_number
-    ):
-        return MISSING
-    lexer.pos = end
-    if complete:
-        return value
-    previous_number, previous_generation = lexer.current_obj_num, lexer.current_gen_num
-    lexer.current_obj_num, lexer.current_gen_num = number, generation
-    try:
-        lexer.pos = lexer.skip_ignored_at(lexer.pos)
-        start = lexer.stream_data_start()
-        if start is not None:
-            lexer.pos = start
-            value = lexer.parse_stream(value)
-    finally:
-        lexer.current_obj_num, lexer.current_gen_num = previous_number, previous_generation
-    lexer.read_indirect_terminator()
-    return value
-
-
 class BareKeyword(str):
     """A word in the file that is not a PDF value, such as `OBJR` without its slash.
 
@@ -158,16 +122,24 @@ class BareKeyword(str):
     __slots__ = ()
 
 
-class StrictPdfLexer(lexer.PdfLexer):
-    """The spec's strict lexer, reading arrays and dictionaries with the compiled scanner.
+class ScannedLexer(lexer.PdfLexer):
+    """The spec's lexer, reading with the compiled ObjectScanner what the scanner takes.
 
-    The scanner runs in strict mode, which bails on whatever the strict lexer would read
-    differently (an invalid or null name escape, a non-canonical reference, an endobj glued to
-    a value, and everything the scanner never reads itself), so the lexer's own code takes
-    those and returns or raises as it always has.
+    The scanner returns None for whatever it does not read exactly as the lexer would, and
+    the lexer's own code then reads the same bytes from the same position.
     """
 
     __slots__ = ("scanner", "scanner_rules")
+
+    # Strict mode bails on whatever the spec's strict lexer reads differently from the reader.
+    strict_scanner: ClassVar[bool] = False
+    # Whether parse_indirect_object hands whole objects to the scanner. A subclass, which may
+    # read strings, dictionaries or streams its own way, keeps its code unless it sets this.
+    scans_indirect_objects: ClassVar[bool] = False
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls.scans_indirect_objects = cls.__dict__.get("scans_indirect_objects", False)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.scanner: ObjectScanner | None = None
@@ -194,7 +166,7 @@ class StrictPdfLexer(lexer.PdfLexer):
                 scanned_name,
                 PdfString,
                 PdfReference,
-                strict=True,
+                strict=self.strict_scanner,
             )
             self.scanner_rules = rules
         return scanner
@@ -219,21 +191,69 @@ class StrictPdfLexer(lexer.PdfLexer):
         return values
 
     def parse_indirect_object(self, *, expected_reference: PdfReference | None = None) -> Any:
-        if type(self) is StrictPdfLexer:
-            parsed = parse_scanned_indirect_object(self, expected_reference)
+        if self.scans_indirect_objects:
+            parsed = self.parse_scanned_indirect_object(expected_reference)
             if parsed is not MISSING:
                 return parsed
         return super().parse_indirect_object(expected_reference=expected_reference)
 
+    def parse_scanned_indirect_object(self, expected_reference: PdfReference | None) -> Any:
+        """The indirect object at pos, read by the compiled scanner, or MISSING.
 
-class PdfLexer(lexer.PdfLexer):
+        The scanner takes a plainly written object whole, or its dictionary, after which this
+        reads the stream and endobj as parse_indirect_object would. MISSING, having read
+        nothing, leaves the rest -- and a header naming another object, which raises -- to
+        the lexer's own code.
+        """
+        scanned = self.object_scanner().parse_indirect(self.pos, self.decipher)
+        if scanned is None:
+            return MISSING
+        number, generation, value, end, complete = scanned
+        if expected_reference is not None and (
+            number != expected_reference.object_number
+            or generation != expected_reference.generation_number
+        ):
+            return MISSING
+        self.pos = end
+        if complete:
+            return value
+        previous_number, previous_generation = self.current_obj_num, self.current_gen_num
+        self.current_obj_num, self.current_gen_num = number, generation
+        try:
+            self.pos = self.skip_ignored_at(self.pos)
+            start = self.stream_data_start()
+            if start is not None:
+                self.pos = start
+                value = self.parse_stream(value)
+        finally:
+            self.current_obj_num, self.current_gen_num = previous_number, previous_generation
+        self.read_indirect_terminator()
+        return value
+
+
+class StrictPdfLexer(ScannedLexer):
+    """The spec's strict lexer, reading with the compiled scanner in strict mode.
+
+    Strict mode bails on whatever the strict lexer would read differently (an invalid or null
+    name escape, a non-canonical reference, an endobj glued to a value, and everything the
+    scanner never reads itself), so the lexer's own code takes those and returns or raises as
+    it always has.
+    """
+
+    __slots__ = ()
+
+    strict_scanner = True
+    scans_indirect_objects = True
+
+
+class PdfLexer(ScannedLexer):
     __slots__ = (
         "mode",
-        "scanner",
-        "scanner_rules",
         "copied_data",
         "on_irregular_dictionary",
     )
+
+    scans_indirect_objects = True
 
     def __init__(
         self,
@@ -245,8 +265,6 @@ class PdfLexer(lexer.PdfLexer):
         semantic_context: SemanticContext | None = None,
         mode: RecoveryMode = RecoveryMode.TOLERANT,
     ) -> None:
-        self.scanner: ObjectScanner | None = None
-        self.scanner_rules: LexicalRules | None = None
         self.copied_data: bytes | None = None
         # Told when a dictionary repeats a key or needs recovery: what a reader with other
         # rules may read differently, or warn about.
@@ -261,9 +279,6 @@ class PdfLexer(lexer.PdfLexer):
         self.mode = mode
 
     def close(self) -> None:
-        if self.scanner is not None:
-            self.scanner.release()
-            self.scanner = None
         self.copied_data = None
         super().close()
 
@@ -275,51 +290,6 @@ class PdfLexer(lexer.PdfLexer):
         if copied is None:
             copied = self.copied_data = self.raw_data.tobytes()
         return copied
-
-    def object_scanner(self) -> ObjectScanner:
-        rules = self.lexical_rules
-        scanner = self.scanner
-        if scanner is None or self.scanner_rules is not rules:
-            scanner = self.scanner = ObjectScanner(
-                self.raw_data,
-                rules.whitespace_table,
-                rules.separator_table,
-                rules.name_escapes,
-                rules.split_whitespace_compatible,
-                SCANNED_NAMES,
-                scanned_name,
-                PdfString,
-                PdfReference,
-            )
-            self.scanner_rules = rules
-        return scanner
-
-    def scanner_args(self) -> tuple[int] | tuple[int, Decipher, int, int]:
-        if self.decipher is not None and self.current_obj_num is not None:
-            return (self.pos, self.decipher, self.current_obj_num, self.current_gen_num or 0)
-        return (self.pos,)
-
-    def parse_dictionary(self) -> PdfDict:
-        parsed = self.object_scanner().parse_dictionary(*self.scanner_args())
-        if parsed is None:
-            return super().parse_dictionary()
-        dictionary, self.pos = parsed
-        return dictionary
-
-    def parse_array(self) -> list[Any]:
-        parsed = self.object_scanner().parse_array(*self.scanner_args())
-        if parsed is None:
-            return super().parse_array()
-        values, self.pos = parsed
-        return values
-
-    def parse_indirect_object(self, *, expected_reference: PdfReference | None = None) -> Any:
-        # Subclasses read strings, dictionaries or streams their own way, so keep their code.
-        if type(self) is PdfLexer:
-            parsed = parse_scanned_indirect_object(self, expected_reference)
-            if parsed is not MISSING:
-                return parsed
-        return super().parse_indirect_object(expected_reference=expected_reference)
 
     def select_lexical_rules(self, context: SemanticContext | None) -> LexicalRules:
         return reader_rules_for(context)
