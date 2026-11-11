@@ -12,7 +12,7 @@ from typing import Any
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
 from core_pdf.impl.recovery_policy import RecoveryMode
-from core_pdf.impl.types import PdfByteBuffer, PdfName, PdfReference, PdfString
+from core_pdf.impl.types import MISSING, PdfByteBuffer, PdfName, PdfReference, PdfString
 from core_pdf_cythonized import ObjectScanner
 from core_pdf_spec.s_07_filters.decode_spec import StreamDecoder
 from core_pdf_spec.s_07_syntax import lexer
@@ -112,6 +112,42 @@ def reader_rules_for(context: SemanticContext | None) -> LexicalRules:
     return reader_lexical_rules(rules) if reader_rules is None else reader_rules
 
 
+def parse_scanned_indirect_object(
+    lexer: StrictPdfLexer | PdfLexer, expected_reference: PdfReference | None
+) -> Any:
+    """The indirect object at lexer.pos, read by the compiled scanner, or MISSING.
+
+    The scanner takes a plainly written object whole, or its dictionary, after which this
+    reads the stream and endobj as the lexer's parse_indirect_object would. MISSING, having
+    read nothing, leaves the rest -- and a header naming another object, which raises -- to
+    the lexer's own code.
+    """
+    scanned = lexer.object_scanner().parse_indirect(lexer.pos, lexer.decipher)
+    if scanned is None:
+        return MISSING
+    number, generation, value, end, complete = scanned
+    if expected_reference is not None and (
+        number != expected_reference.object_number
+        or generation != expected_reference.generation_number
+    ):
+        return MISSING
+    lexer.pos = end
+    if complete:
+        return value
+    previous_number, previous_generation = lexer.current_obj_num, lexer.current_gen_num
+    lexer.current_obj_num, lexer.current_gen_num = number, generation
+    try:
+        lexer.pos = lexer.skip_ignored_at(lexer.pos)
+        start = lexer.stream_data_start()
+        if start is not None:
+            lexer.pos = start
+            value = lexer.parse_stream(value)
+    finally:
+        lexer.current_obj_num, lexer.current_gen_num = previous_number, previous_generation
+    lexer.read_indirect_terminator()
+    return value
+
+
 class BareKeyword(str):
     """A word in the file that is not a PDF value, such as `OBJR` without its slash.
 
@@ -181,6 +217,13 @@ class StrictPdfLexer(lexer.PdfLexer):
             return super().parse_array()
         values, self.pos = parsed
         return values
+
+    def parse_indirect_object(self, *, expected_reference: PdfReference | None = None) -> Any:
+        if type(self) is StrictPdfLexer:
+            parsed = parse_scanned_indirect_object(self, expected_reference)
+            if parsed is not MISSING:
+                return parsed
+        return super().parse_indirect_object(expected_reference=expected_reference)
 
 
 class PdfLexer(lexer.PdfLexer):
@@ -269,6 +312,14 @@ class PdfLexer(lexer.PdfLexer):
             return super().parse_array()
         values, self.pos = parsed
         return values
+
+    def parse_indirect_object(self, *, expected_reference: PdfReference | None = None) -> Any:
+        # Subclasses read strings, dictionaries or streams their own way, so keep their code.
+        if type(self) is PdfLexer:
+            parsed = parse_scanned_indirect_object(self, expected_reference)
+            if parsed is not MISSING:
+                return parsed
+        return super().parse_indirect_object(expected_reference=expected_reference)
 
     def select_lexical_rules(self, context: SemanticContext | None) -> LexicalRules:
         return reader_rules_for(context)
