@@ -878,12 +878,13 @@ class TextState(RecoveringTextState):
     ) -> tuple[tuple[float, float, float, float], list[float]] | None:
         """Show each horizontal glyph as show_text would show it alone, in one call.
 
-        Glyph i is shown with the text it is given, texts[i], and the text matrix moved to
+        Glyph i is shown with the text it is given, texts[i] -- its unicode, or one character
+        when that is empty, else the run is declined -- and the text matrix moved to
         the origin (origins[2 * i], origins[2 * i + 1]); the text matrix itself is left as
         it was. Returns the linear part of the text matrix times the ctm and each glyph's
         origin under it, or None, having shown nothing, when the capture records runs or
         the glyphs need show_text one at a time: vertical text, an ActualText span, a
-        glyph whose text splits.
+        glyph whose text splits, texts other than those.
         """
         font_decoder: FontDecoder = decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         options = self.options
@@ -918,6 +919,11 @@ class TextState(RecoveringTextState):
                 else:
                     combined[index] = e * ca + f * cc + ce
                     combined[index + 1] = e * cb + f * cd + cf
+        for glyph, text in zip(glyphs, texts, strict=True):
+            # The capture takes a glyph's text from the joined texts only when its unicode
+            # is empty, so each text must be its unicode, or one character without one.
+            if text != glyph.unicode and (glyph.unicode or len(text) != 1):
+                return None
         layout = self.current_text_layout(font_decoder, glyph_paint, A, B, C, D, first_identity)
         if layout.actual_text_span is not None:
             return None
