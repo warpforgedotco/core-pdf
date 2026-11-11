@@ -7,6 +7,8 @@ from collections.abc import Iterable, Mapping
 from operator import itemgetter
 from typing import Any
 
+import numpy
+
 from . import BBox, ObjectDict, Page, merge_edges, utils
 
 DEFAULT_SNAP_TOLERANCE = 3
@@ -369,21 +371,29 @@ class Table:
         chars = self.page.chars
         table_arr = []
 
-        def char_in_bbox(char: ObjectDict, bbox: BBox) -> bool:
-            v_mid = (char["top"] + char["bottom"]) / 2
-            h_mid = (char["x0"] + char["x1"]) / 2
-            x0, top, x1, bottom = bbox
-            return bool((h_mid >= x0) and (h_mid < x1) and (v_mid >= top) and (v_mid < bottom))
+        # pdfplumber's char_in_bbox recomputes each char's midpoints for every row and then
+        # every cell. They are computed once here, with the same expressions, and each row and
+        # cell selects its chars with the same four comparisons, vectorized: chars keep their
+        # order, and a NaN midpoint fails every comparison as it does in Python.
+        h_mids = numpy.array([(char["x0"] + char["x1"]) / 2 for char in chars], dtype=float)
+        v_mids = numpy.array([(char["top"] + char["bottom"]) / 2 for char in chars], dtype=float)
 
+        def inside(indices: numpy.ndarray[Any, Any], bbox: BBox) -> numpy.ndarray[Any, Any]:
+            x0, top, x1, bottom = bbox
+            h = h_mids[indices]
+            v = v_mids[indices]
+            return indices[(h >= x0) & (h < x1) & (v >= top) & (v < bottom)]
+
+        every_char = numpy.arange(len(chars))
         for row in self.rows:
             arr = []
-            row_chars = [char for char in chars if char_in_bbox(char, row.bbox)]
+            row_indices = inside(every_char, row.bbox)
 
             for cell in row.cells:
                 if cell is None:
                     cell_text = None
                 else:
-                    cell_chars = [char for char in row_chars if char_in_bbox(char, cell)]
+                    cell_chars = [chars[index] for index in inside(row_indices, cell).tolist()]
 
                     if len(cell_chars):
                         if "layout" in kwargs:
