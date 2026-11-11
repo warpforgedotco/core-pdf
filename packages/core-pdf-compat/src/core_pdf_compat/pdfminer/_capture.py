@@ -224,22 +224,6 @@ class PdfminerTextState(TextState):
         if len(captured) > start and not self.hidden_depth:
             self.layout_events.append(("glyphs", start, len(captured)))
 
-    def show_glyph_run(
-        self,
-        glyphs: tuple[Any, ...],
-        texts: list[str],
-        origins: list[float],
-        decoder: Any,
-        *,
-        glyph_paint: GlyphPaint | None = None,
-    ) -> tuple[tuple[float, float, float, float], list[float]] | None:
-        captured = self.glyphs
-        start = len(captured)
-        shown = super().show_glyph_run(glyphs, texts, origins, decoder, glyph_paint=glyph_paint)
-        if len(captured) > start and not self.hidden_depth:
-            self.layout_events.append(("glyphs", start, len(captured)))
-        return shown
-
     def op_Do(self, operands: ContentOperands, depth: int) -> ContentStreamFrame | None:
         name = self.resolver.resolve_name(operands[0]) if operands else None
         self.pending_xobject = name
@@ -527,7 +511,7 @@ class PdfminerTextState(TextState):
                 )
                 width = widths.get(key)
                 if width is None:
-                    width = widths[key] = self.pdfminer_width(decoder, decoded, text)
+                    width = self.pdfminer_width(key)
                 cursor += width * font_size * scale
                 if decoded.width_code == 32:
                     cursor += word_space
@@ -535,13 +519,17 @@ class PdfminerTextState(TextState):
                 glyphs.append(decoded)
                 texts.append(text)
         if glyphs:
-            start = len(self.glyphs)
-            paint = self.run_paint()
+            captured = self.glyphs
+            start = len(captured)
+            paint = self.shared_paint()
             if (
                 self.show_glyph_run(tuple(glyphs), texts, origins, decoder, glyph_paint=paint)
                 is None
             ):
                 return False
+            if not self.hidden_depth:
+                # One event for the run, which the layout walk reads glyph by glyph.
+                self.layout_events.append(("glyphs", start, len(captured)))
             if self.vertical_offset == (0.0, 0.0) and not self.hidden_depth:
                 a, b, c, d, e, f = mult_matrix(line, self.pdfminer_ctm(graphics.ctm))
                 matrices = self.glyph_matrices
@@ -550,31 +538,15 @@ class PdfminerTextState(TextState):
         self.cursor = cursor
         return True
 
-    def run_paint(self) -> GlyphPaint:
-        """The paint of glyphs shown now.
-
-        It is the shared glyph paint, which the dispatcher drops whenever the state it
-        depends on changes, so the text layout made for it serves every string until then.
-        """
-        paint = self.shared_glyph_paint
-        if paint is None:
-            paint = self.shared_glyph_paint = self.glyph_paint(self.capture_color(stroke=False))
-        return paint
-
-    def pdfminer_width(self, decoder: Any, decoded: Any, text: str) -> float:
-        """The advance pdfminer gives the glyph, in text space units per font size unit."""
-        glyph = PdfminerGlyphProbe(
-            decoder,
-            decoded.char_code,
-            decoded.cid,
-            decoded.code_bytes,
-            decoded.unicode_source,
-            text,
-            decoded.alternates,
-        )
+    def pdfminer_width(self, key: tuple[Any, ...]) -> float:
+        """The advance pdfminer gives a glyph, in text space units per font size unit,
+        cached under key: the PdfminerGlyphProbe fields it depends on."""
+        glyph = PdfminerGlyphProbe._make(key)
+        width = pdfminer_normalized_width(glyph)
         if self.strict_cmaps and pdfminer_embedded_cmap_is_unusable(glyph):
-            return 0.0
-        return pdfminer_normalized_width(glyph)
+            width = 0.0
+        self.glyph_widths[key] = width
+        return width
 
     def append_glyphs_one_by_one(self, array: list[Any] | tuple[Any, ...], decoder: Any) -> None:
         scale = self.graphics.horizontal_scale * 0.01
@@ -611,7 +583,7 @@ class PdfminerTextState(TextState):
                 )
                 start = len(self.glyphs)
                 if paint is None:
-                    paint = self.run_paint()
+                    paint = self.shared_paint()
                 # This capture records no text runs, and show_text reads the glyph
                 # advance only for runs, so it is not computed.
                 self.show_text(
@@ -648,10 +620,7 @@ class PdfminerTextState(TextState):
                     )
                     width = self.glyph_widths.get(key)
                     if width is None:
-                        width = pdfminer_normalized_width(glyph)
-                        if self.strict_cmaps and pdfminer_embedded_cmap_is_unusable(glyph):
-                            width = 0.0
-                        self.glyph_widths[key] = width
+                        width = self.pdfminer_width(key)
                     self.cursor += width * self.graphics.font_size * scale
                 if decoded.width_code == 32:
                     self.cursor += word_space
