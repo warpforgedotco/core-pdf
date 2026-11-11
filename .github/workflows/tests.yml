@@ -11,6 +11,13 @@ permissions:
 env:
   DO_NOT_TRACK: "1"
   UNSTRUCTURED_DISABLE_NOTICE: "1"
+  # unstructured[pdf] pulls in torch, and PyPI's Linux torch is the CUDA build: about 3 GB of
+  # nvidia wheels a run, on runners without a GPU. These pages list only the CPU builds of
+  # torch and torchvision, which uv prefers to PyPI's (a +cpu local version sorts higher), so
+  # nothing else changes. Not --index: the CPU index also holds old copies of other packages
+  # (certifi among them), and its first-index precedence breaks the resolution. The steps
+  # that install unstructured[pdf] set UV_FIND_LINKS to this; no other job needs the site.
+  CPU_TORCH_FIND_LINKS: https://download.pytorch.org/whl/cpu/torch/,https://download.pytorch.org/whl/cpu/torchvision/
 
 # A new push supersedes the previous checks for the same pull request.
 concurrency:
@@ -235,6 +242,8 @@ jobs:
           restore-keys: pypdf-test-files-
 
       - name: Run the suite against the facade
+        env:
+          UV_FIND_LINKS: ${{ matrix.suite == 'unstructured' && env.CPU_TORCH_FIND_LINKS || '' }}
         run: uv run --locked --all-packages --group test python scripts/run_upstream_suite.py ${{ matrix.suite }}
 
       - name: Compare with the real pypdf
@@ -358,6 +367,8 @@ jobs:
       - name: unstructured against the real library
         if: matrix.shard == 'unstructured'
         # unstructured[pdf] needs onnxruntime, which has no CPython 3.15 wheels yet.
+        env:
+          UV_FIND_LINKS: ${{ env.CPU_TORCH_FIND_LINKS }}
         run: uv run --python 3.14 --isolated --locked --all-packages --group test --extra unstructured --with "unstructured[pdf]==0.27.37" python scripts/check_unstructured_output.py
 
       - name: llama_index against the real library
