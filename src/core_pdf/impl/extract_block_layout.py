@@ -134,15 +134,16 @@ def style_enabled(reference: object, name: str) -> bool:
 def group_text_and_words(
     observations: ObservationBatch,
     indexes: numpy.ndarray | list[int],
+    source: str,
 ) -> tuple[str, tuple[TextWord, ...]]:
+    """A line's text and its words, labelled with source."""
     all_references = observations.references
     references = [all_references[index] for index in indexes]
     if references and all(isinstance(reference, TextRun) for reference in references):
         line = LayoutLine(cast("list[TextRun]", references))
         reconstructed = line.reconstructed_text()
         text = reconstructed.text.strip()
-        layout_words = line.text_and_words(reconstructed)[1]
-        return text, reconcile_text_words(text, layout_words)
+        return text, reconcile_text_words(text, line.words(reconstructed, source), source)
     parts: list[str] = []
     candidate_words: list[TextWord] = []
     for index in indexes:
@@ -159,9 +160,9 @@ def group_text_and_words(
         tokens = text_word_tokens(text)
         bbox = observations.bbox[index]
         word_bbox = bbox_tuple(bbox) if len(tokens) == 1 else None
-        candidate_words.extend(TextWord(token, bbox=word_bbox) for token in tokens)
+        candidate_words.extend(TextWord(token, bbox=word_bbox, source=source) for token in tokens)
     combined = "".join(parts)
-    return combined, reconcile_text_words(combined, tuple(candidate_words))
+    return combined, reconcile_text_words(combined, tuple(candidate_words), source)
 
 
 def color_is_emphasis(color: object) -> bool:
@@ -271,12 +272,13 @@ def build_lines(
         )
     ):
         group_indexes = selected_indexes[start:stop]
+        source = labels.get(source_low, "hybrid") if source_low == source_high else "hybrid"
         if group_order is not None and not source_low == source_high == NATIVE_SOURCE:
             text, words = group_text_and_words(
-                observations, group_order(observations, selected[start:stop])
+                observations, group_order(observations, selected[start:stop]), source
             )
         else:
-            text, words = group_text_and_words(observations, group_indexes)
+            text, words = group_text_and_words(observations, group_indexes, source)
         if not text:
             continue
         native_references = [
@@ -319,19 +321,6 @@ def build_lines(
                 )
             )
             pending_space = reference.text.endswith(SPAN_TRAILING_SPACE)
-        source = labels.get(source_low, "hybrid") if source_low == source_high else "hybrid"
-        words = tuple(
-            type(word)(
-                word.text,
-                word.bbox,
-                word.line_index,
-                word.word_index,
-                word.block_index,
-                word.page_number,
-                source,
-            )
-            for word in words
-        )
         group_box = group_boxes[group_index]
         output.append(
             ParsedLine(

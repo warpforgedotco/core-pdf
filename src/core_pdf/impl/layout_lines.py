@@ -86,30 +86,19 @@ class LayoutLine:
 
         return reconstruct_layout_line_text(self.runs, is_all_caps_text=self.is_all_caps_text)
 
-    def text_and_words(
-        self, reconstructed: LayoutLineText | None = None
-    ) -> tuple[str, tuple[TextWord, ...]]:
-        if reconstructed is None:
-            reconstructed = self.reconstructed_text()
-        parts: list[str] = []
+    def words(self, reconstructed: LayoutLineText, source: str) -> tuple[TextWord, ...]:
+        """The words of the reconstructed line, each boxed and labelled with source."""
         words: list[TextWord] = []
         word = ""
         word_x0 = word_y0 = word_x1 = word_y1 = 0.0
-        append_part = parts.append
         append_word = words.append
 
         def flush_word() -> None:
             nonlocal word, word_x0, word_y0, word_x1, word_y1
             if not word:
                 return
-            append_word(TextWord(word, (word_x0, word_y0, word_x1, word_y1)))
+            append_word(TextWord(word, (word_x0, word_y0, word_x1, word_y1), 0, 0, 0, None, source))
             word = ""
-
-        def append_space() -> None:
-            if parts and parts[-1] == " ":
-                return
-            flush_word()
-            append_part(" ")
 
         def merge_box(bx0: float, by0: float, bx1: float, by1: float) -> None:
             nonlocal word_x0, word_y0, word_x1, word_y1
@@ -127,24 +116,23 @@ class LayoutLine:
 
         for segment in reconstructed.segments:
             if segment.separator_before:
-                append_space()
+                flush_word()
             text = segment.text
             text_length = len(text)
             step_box = even_char_steps(segment, text_length)
             if step_box is None:
                 for index, char in enumerate(text):
                     if char.isspace():
-                        append_space()
+                        flush_word()
                         continue
                     merge_box(*layout_line_segment_char_bbox(segment, index, text_length))
                     word += char
-                    append_part(char)
                 continue
             vertical, low, step, fixed_low, fixed_high = step_box
             for match in TEXT_RUNS.finditer(text):
                 chunk = match.group()
                 if chunk[0].isspace():
-                    append_space()
+                    flush_word()
                     continue
                 first_low = low + step * match.start()
                 last_high = (low + step * (match.end() - 1)) + step
@@ -153,10 +141,9 @@ class LayoutLine:
                 else:
                     merge_box(first_low, fixed_low, last_high, fixed_high)
                 word += chunk
-                append_part(chunk)
 
         flush_word()
-        return "".join(parts).rstrip(), tuple(words)
+        return tuple(words)
 
 
 TEXT_RUNS = re.compile(r"\S+|\s+")
