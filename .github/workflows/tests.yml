@@ -302,6 +302,7 @@ jobs:
           $run/check_indirect_object_scanner.py
           $run/check_object_writer.py
           $run/check_glyph_run_capture.py
+          $run/check_plumber_chars.py
           uv run --locked --all-packages --group test --with "pypdf[full]==7.0.0" python scripts/check_encrypt_readers.py
 
       - name: PdfWriter output, and bytes and reads against the real pypdf

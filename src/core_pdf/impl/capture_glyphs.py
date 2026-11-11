@@ -28,10 +28,11 @@ from core_pdf_cythonized import (
     SlotLayout,
     capture_horizontal_glyphs,
     horizontal_glyph_geometry,
+    plumber_char_dicts,
     untrack_tuple,
 )
 
-__all__ = ["untrack_tuple"]
+__all__ = ["plumber_char_dicts", "untrack_tuple"]
 
 TextBasis = tuple[float, float, float, float, float, float]
 
