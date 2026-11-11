@@ -738,7 +738,7 @@ def capture_horizontal_glyphs(
     With origins, each glyph is shown on its own, as a call per glyph would show it:
     glyph i at the basis origin (origins[2 * i], origins[2 * i + 1]) rather than after
     the glyphs before it, visible when visible and visibility[i] are both true, under
-    sequence number seqno + i.
+    sequence number seqno + i; it then returns no run boxes.
     """
     n: cython.Py_ssize_t = len(glyphs)
     i: cython.Py_ssize_t
@@ -918,10 +918,14 @@ def capture_horizontal_glyphs(
                 bmp[i],
                 cython.address(geometry),
             )
-            union_into(
-                advance_union, geometry.ax0, geometry.ay0, geometry.ax1, geometry.ay1, i == 0
-            )
-            union_into(ink_union, geometry.ix0, geometry.iy0, geometry.ix1, geometry.iy1, i == 0)
+            if not per_glyph:
+                # A run's boxes; glyphs shown each on their own make no run.
+                union_into(
+                    advance_union, geometry.ax0, geometry.ay0, geometry.ax1, geometry.ay1, i == 0
+                )
+                union_into(
+                    ink_union, geometry.ix0, geometry.iy0, geometry.ix1, geometry.iy1, i == 0
+                )
             confidence = None
             if confidence_cache is not None:
                 try:
@@ -1019,6 +1023,8 @@ def capture_horizontal_glyphs(
 
     if not kept:
         return (0, None, None, None)
+    if per_glyph:
+        return (kept, None, None, run_confidence)
     return (
         kept,
         (advance_union[0], advance_union[1], advance_union[2], advance_union[3]),
