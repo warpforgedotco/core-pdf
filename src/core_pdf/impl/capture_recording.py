@@ -51,7 +51,7 @@ from core_pdf.impl.capture_recovery import (
     ContentFallback,
     content_scanner,
 )
-from core_pdf.impl.capture_text_runs import RunAccumulator, is_garbage_text
+from core_pdf.impl.capture_text_runs import RunAccumulator, is_visible_text
 from core_pdf.impl.capture_tolerant_state import CaptureCaches, RecoveringTextState
 from core_pdf.impl.fonts_decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.fonts_ligatures import detect_ligature_overrides
@@ -744,6 +744,17 @@ class TextState(RecoveringTextState):
                 )
             )
 
+    def shared_paint(self) -> GlyphPaint:
+        """The paint of the current fill color and state, made once until it changes.
+
+        The dispatcher drops it, with the text layout, whenever an operator changes what it
+        depends on, so a layout made for it serves every string until then.
+        """
+        paint = self.shared_glyph_paint
+        if paint is None:
+            paint = self.shared_glyph_paint = self.glyph_paint(self.capture_color(stroke=False))
+        return paint
+
     def new_text_layout(
         self,
         font_decoder: FontDecoder,
@@ -758,11 +769,7 @@ class TextState(RecoveringTextState):
         layout.decoder = font_decoder
         layout.given_paint = glyph_paint
         if glyph_paint is None and not font_decoder.is_type3 and graphics.soft_mask is None:
-            glyph_paint = self.shared_glyph_paint
-            if glyph_paint is None:
-                glyph_paint = self.shared_glyph_paint = self.glyph_paint(
-                    self.capture_color(stroke=False)
-                )
+            glyph_paint = self.shared_paint()
         layout.glyph_paint = glyph_paint
         graphics_visible = self.is_graphics_visible()
         fs = graphics.font_size
@@ -898,47 +905,40 @@ class TextState(RecoveringTextState):
         # The text matrix times the ctm, as Matrix.multiply computes it for each glyph.
         if ctm == IDENTITY_MATRIX:
             A, B, C, D = ta, tb, tc, td
-            combined = list(origins)
+            combined = origins
         else:
             ca, cb, cc, cd, ce, cf = ctm
             A = ta * ca + tb * cc
             B = ta * cb + tb * cd
             C = tc * ca + td * cc
             D = tc * cb + td * cd
+            # multiply returns the ctm itself for a glyph at the identity text matrix, whose
+            # linear part can differ from the product's in the sign of a zero.
+            ctm_linear_differs = identity_linear and not same_floats((A, B, C, D), (ca, cb, cc, cd))
             combined = [0.0] * len(origins)
             for index in range(0, len(origins), 2):
                 e = origins[index]
                 f = origins[index + 1]
                 if identity_linear and e == 0.0 and f == 0.0:
-                    # multiply returns the ctm itself here, whose linear part can differ
-                    # from the product's in the sign of a zero.
-                    if not same_floats((A, B, C, D), (ca, cb, cc, cd)):
+                    if ctm_linear_differs:
                         return None
                     combined[index] = ce
                     combined[index + 1] = cf
                 else:
                     combined[index] = e * ca + f * cc + ce
                     combined[index + 1] = e * cb + f * cd + cf
-        for glyph, text in zip(glyphs, texts, strict=True):
+        layout = self.current_text_layout(font_decoder, glyph_paint, A, B, C, D, first_identity)
+        if layout.actual_text_span is not None:
+            return None
+        paints_text = layout.paints_text
+        visibility = bytearray(len(glyphs))
+        for index, (glyph, text) in enumerate(zip(glyphs, texts, strict=True)):
             # The capture takes a glyph's text from the joined texts only when its unicode
             # is empty, so each text must be its unicode, or one character without one.
             if (text != glyph.unicode) if glyph.unicode else (len(text) != 1):
                 return None
-        layout = self.current_text_layout(font_decoder, glyph_paint, A, B, C, D, first_identity)
-        if layout.actual_text_span is not None:
-            return None
-        if layout.paints_text:
-            visibility = bytes(
-                not (
-                    (ord(text[0]) < 32 or 0xE000 <= ord(text[0]) <= 0xF8FF)
-                    and is_garbage_text(text)
-                )
-                if text
-                else False
-                for text in texts
-            )
-        else:
-            visibility = bytes(len(glyphs))
+            if paints_text and is_visible_text(text):
+                visibility[index] = 1
         if layout.pushes_clip_scope:
             self.emit_clip_scope_push()
         style = layout.style
@@ -952,7 +952,7 @@ class TextState(RecoveringTextState):
             font_decoder,
             (A, B, C, D),
             combined,
-            visibility,
+            bytes(visibility),
             layout.font_size,
             layout.font_scale,
             layout.ascent,
@@ -1001,12 +1001,7 @@ class TextState(RecoveringTextState):
             font_decoder, glyph_paint, A, B, C, D, text_matrix == IDENTITY_MATRIX
         )
 
-        visible = False
-        if text and layout.paints_text:
-            first_code = ord(text[0])
-            visible = not (
-                (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and is_garbage_text(text)
-            )
+        visible = bool(text) and layout.paints_text and is_visible_text(text)
         if layout.pushes_clip_scope:
             self.emit_clip_scope_push()
 

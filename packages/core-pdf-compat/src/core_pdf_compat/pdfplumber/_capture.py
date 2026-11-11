@@ -13,6 +13,7 @@ The rules follow pdfminer.six's ``PDFPageInterpreter`` (pdfminer/pdfinterp.py), 
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from typing import Any, NamedTuple, cast
 
 from core_pdf import PdfPage
@@ -600,26 +601,7 @@ class PlumberTextState(PdfminerTextState):
         placed = self.text_matrix.multiply(graphics.ctm)
         matrix = (placed.a, placed.b, placed.c, placed.d, placed.e, placed.f)
         super().show_text(state, text, data, glyphs, decoder, adv_x, adv_y, glyph_paint=glyph_paint)
-        miner = self.miner
-        scolor = miner.scolor
-        ncolor = miner.ncolor
-        horizontal_scale = graphics.horizontal_scale
-        self.plumber_marks.append(
-            untrack_tuple(
-                PlumberMark(
-                    start,
-                    self.current_mcid,
-                    self.current_tag,
-                    miner.ncs[0],
-                    scolor if isinstance(scolor, tuple) else (scolor,),
-                    ncolor if isinstance(ncolor, tuple) else (ncolor,),
-                    matrix,
-                    graphics.rise,
-                    horizontal_scale * 0.01,
-                    graphics.char_space * horizontal_scale * 0.01,
-                )
-            )
-        )
+        self.append_marks(start, (matrix,))
 
     def show_glyph_run(
         self,
@@ -635,37 +617,53 @@ class PlumberTextState(PdfminerTextState):
         if shown is None:
             return None
         (a, b, c, d), placed = shown
+        # As show_text marks each glyph: its char matrix is the text matrix at the glyph
+        # times the CTM.
+        self.append_marks(
+            start,
+            ((a, b, c, d, placed[index], placed[index + 1]) for index in range(0, len(placed), 2)),
+        )
+        return shown
+
+    def append_marks(
+        self, start: int, matrices: Iterable[tuple[float, float, float, float, float, float]]
+    ) -> None:
+        """Mark the glyphs from start on, one per char matrix, with the current state.
+
+        A page keeps its marks while its chars are wanted, and marks hold only numbers,
+        strings and tuples of them, so the collector need not walk them.
+        """
         graphics = self.graphics
         miner = self.miner
         scolor = miner.scolor
         ncolor = miner.ncolor
-        stroking = scolor if isinstance(scolor, tuple) else (scolor,)
-        non_stroking = ncolor if isinstance(ncolor, tuple) else (ncolor,)
+        stroking = untrack_tuple(scolor if isinstance(scolor, tuple) else (scolor,))
+        non_stroking = untrack_tuple(ncolor if isinstance(ncolor, tuple) else (ncolor,))
+        mcid = self.current_mcid
+        tag = self.current_tag
+        color_space = miner.ncs[0]
+        rise = graphics.rise
         horizontal_scale = graphics.horizontal_scale
         scaling = horizontal_scale * 0.01
         char_space = graphics.char_space * horizontal_scale * 0.01
-        marks = self.plumber_marks
-        # As show_text marks each glyph: its char matrix is the text matrix at the glyph
-        # times the CTM. A page keeps its marks while its chars are wanted, and marks hold
-        # only numbers, strings and tuples of them, so the collector need not walk them.
-        for index in range(len(glyphs)):
-            marks.append(
+        append = self.plumber_marks.append
+        for index, matrix in enumerate(matrices, start):
+            append(
                 untrack_tuple(
                     PlumberMark(
-                        start + index,
-                        self.current_mcid,
-                        self.current_tag,
-                        miner.ncs[0],
+                        index,
+                        mcid,
+                        tag,
+                        color_space,
                         stroking,
                         non_stroking,
-                        (a, b, c, d, placed[2 * index], placed[2 * index + 1]),
-                        graphics.rise,
+                        matrix,
+                        rise,
                         scaling,
                         char_space,
                     )
                 )
             )
-        return shown
 
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         # The paths pdfplumber reports are the ones miner_paint records.
