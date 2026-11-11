@@ -114,6 +114,7 @@ def reconstruct_layout_line_text(
         is_tracked_glyph_line=is_tracked_glyph_line,
         is_formula_like_line=is_formula_like_line,
         suppress_tiny_page_footer=(len(sorted_runs) <= 3 and max_text_font_size <= 5.0),
+        non_space_runs=non_space_runs,
     ).build()
 
 
@@ -231,6 +232,7 @@ class GlyphLineBuilder:
         is_tracked_glyph_line: bool = False,
         is_formula_like_line: bool = False,
         suppress_tiny_page_footer: bool = False,
+        non_space_runs: list[TextRun] | None = None,
     ) -> None:
         self.runs = runs
         self.text_runs_sorted_by_x0: list[TextRun] | None = None
@@ -250,11 +252,14 @@ class GlyphLineBuilder:
             if is_tracked_glyph_line
             else None
         )
-        non_space_runs = [run for run in runs if run.has_text]
+        if non_space_runs is None:
+            non_space_runs = [run for run in runs if run.has_text]
         self.explicit_spaces_control_glyph_gaps = (
             layout_text_rules.explicit_spaces_should_control_glyph_gaps(
                 non_space_runs,
-                explicit_space_count=sum(1 for run in runs if run.text_is_space),
+                explicit_space_count=sum(1 for run in runs if run.text_is_space)
+                if self.has_explicit_spaces
+                else 0,
             )
         )
         self.next_non_space_texts: list[str] = []
@@ -264,7 +269,9 @@ class GlyphLineBuilder:
             if is_table_like_line or is_tracked_glyph_line or self.has_explicit_spaces
             else layout_text_rules.estimated_char_width_for_suspect_line(runs)
         )
-        self.column_gap_threshold = layout_text_rules.column_gap_threshold_for_runs(runs)
+        self.column_gap_threshold = layout_text_rules.column_gap_threshold_for_runs(
+            runs, non_space_runs
+        )
         if self.has_explicit_spaces:
             self.prepare_explicit_space_context()
 

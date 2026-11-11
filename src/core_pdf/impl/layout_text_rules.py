@@ -374,8 +374,11 @@ def tracked_glyph_word_gap_threshold(runs: list[TextRun]) -> float | None:
     return max(median_gap * 2.2, typical_height * 0.22, 1.5)
 
 
-def column_gap_threshold_for_runs(runs: list[TextRun]) -> float:
-    non_space_runs = [run for run in runs if run.has_text]
+def column_gap_threshold_for_runs(
+    runs: list[TextRun], non_space_runs: list[TextRun] | None = None
+) -> float:
+    if non_space_runs is None:
+        non_space_runs = [run for run in runs if run.has_text]
     heights = [run.height for run in non_space_runs if run.height > 0.0]
     spaces = [run.space_width for run in non_space_runs if run.space_width > 0.0]
     typical_height = median_low(heights) if heights else 0.0
@@ -646,8 +649,11 @@ def baseline_midpoint(
 
 
 def formula_like_runs(runs: list[TextRun]) -> bool:
-    text = "".join(run.text for run in runs if run.has_text)
-    return bool(FORMULA_MARKERS.intersection(text))
+    return any(
+        not run.text.isascii() and not FORMULA_MARKERS.isdisjoint(run.text)
+        for run in runs
+        if run.has_text
+    )
 
 
 def reorder_stacked_formula_numerators(runs: list[TextRun]) -> list[TextRun]:

@@ -14,6 +14,7 @@ from array import array
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from copy import copy, replace
+from functools import lru_cache
 from math import copysign, hypot, isfinite
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
@@ -83,6 +84,7 @@ from core_pdf_spec.s_07_content.streams import ContentStreamExecutor, ContentStr
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
+from core_pdf_spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
 from core_pdf_spec.s_08_graphics import image_spec
 from core_pdf_spec.s_08_graphics.color import color_space_paints
 from core_pdf_spec.s_08_graphics.color_rendering import (
@@ -430,6 +432,25 @@ def native_state_operators(
     )
 
 
+DEFAULT_OPERATOR_NAMES: frozenset[bytes] = frozenset(
+    name.encode("latin-1") for name in CONTENT_OPERATOR_HANDLERS
+)
+
+
+@lru_cache(maxsize=16)
+def cached_native_operators(operators: frozenset[str]) -> NativeOperators:
+    return NativeOperators(
+        operators,
+        GLYPH_PAINT_KEEPING_OPERATORS,
+        LINE_MOVING_OPERATORS,
+        TEXT_LAYOUT_KEEPING_OPERATORS,
+        DEVICE_GRAY,
+        DEVICE_RGB,
+        DEVICE_CMYK,
+        Matrix,
+    )
+
+
 class CaptureStreamExecutor(ContentStreamExecutor):
     state: TextState  # ty: ignore[invalid-mutable-override]
     _operator_names: frozenset[bytes] | None = None
@@ -458,6 +479,8 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         state = self.state
         if table is not state.default_handlers:
             return frozenset(name.encode("latin-1") for name in table)
+        if len(table) == len(DEFAULT_OPERATOR_NAMES):
+            return DEFAULT_OPERATOR_NAMES
         names = self._operator_names
         if names is None:
             names = self._operator_names = frozenset(name.encode("latin-1") for name in table)
@@ -472,20 +495,7 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         if default and cached is not None and cached[0] is table:
             return cached[1]
         operators = native_state_operators(table, state)
-        native = (
-            NativeOperators(
-                operators,
-                GLYPH_PAINT_KEEPING_OPERATORS,
-                LINE_MOVING_OPERATORS,
-                TEXT_LAYOUT_KEEPING_OPERATORS,
-                DEVICE_GRAY,
-                DEVICE_RGB,
-                DEVICE_CMYK,
-                Matrix,
-            )
-            if operators
-            else None
-        )
+        native = cached_native_operators(operators) if operators else None
         if default:
             self._native_operators = (table, native)
         return native
@@ -598,16 +608,16 @@ class TextState(RecoveringTextState):
         self.last_fill_color: CaptureColorMemo | None = None
         self.last_stroke_color: CaptureColorMemo | None = None
 
+        raster_font_provider = getattr(document, "raster_font_provider", None)
+        resolver_context = getattr(document.resolver, "semantic_context", None)
+        font_context = getattr(document, "font_semantic_context", resolver_context)
+
         def font_provider(font: PdfDict, resources: PdfDict) -> FontDecoder:
             return FontDecoder(
                 font,
                 ligature_overrides=detect_ligature_overrides(document, resources, font),
-                raster_font_provider=getattr(document, "raster_font_provider", None),
-                semantic_context=getattr(
-                    document,
-                    "font_semantic_context",
-                    getattr(document.resolver, "semantic_context", None),
-                ),
+                raster_font_provider=raster_font_provider,
+                semantic_context=font_context,
             )
 
         super().__init__(
@@ -615,7 +625,7 @@ class TextState(RecoveringTextState):
             sink=self,
             font_provider=font_provider,
             lexer_factory=PdfLexer,
-            semantic_context=getattr(document.resolver, "semantic_context", None),
+            semantic_context=resolver_context,
             caches=caches,
         )
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 __lazy_modules__ = ["core_pdf.impl.fonts_program_truetype"]
 
+from collections.abc import Container
+
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_encoding import normalized_base_font_name
 from core_pdf.impl.fonts_program_truetype import (
@@ -18,6 +20,10 @@ from core_pdf_spec.s_07_syntax_primitives.coercion import (
     parse_float_strict,
     parse_int_strict,
 )
+
+MAC_ROMAN_CHARS: tuple[str, ...] = tuple(bytes([code]).decode("mac_roman") for code in range(256))
+MAC_ROMAN_CODEPOINTS: tuple[int, ...] = tuple(ord(ch) for ch in MAC_ROMAN_CHARS)
+LIGATURE_STARTERS: frozenset[str] = frozenset("ftscFTSC")
 
 
 def get_font_file(document: ReferenceResolver, font_obj: object) -> PdfStream | None:
@@ -48,7 +54,7 @@ def find_companion_font(
     document: ReferenceResolver,
     resources: object,
     base_name: str,
-    ligature_starters: set[str],
+    ligature_starters: Container[str],
 ) -> tuple[dict[int, float], dict[str, float], bytes | None]:
     if not isinstance(resources, dict):
         return {}, {}, None
@@ -86,6 +92,12 @@ def find_companion_font(
         starter_widths: dict[int, float] = {}
         starter_chars: dict[str, float] = {}
         for i, width_value in enumerate(widths_raw):
+            code = fc_int + i
+            if code < 0 or code > 255:
+                continue
+            character = MAC_ROMAN_CHARS[code]
+            if character not in ligature_starters:
+                continue
             try:
                 width = parse_float_strict(
                     document.resolve(width_value), "invalid font widths array"
@@ -94,16 +106,8 @@ def find_companion_font(
                 continue
             if width <= 0:
                 continue
-            code = fc_int + i
-            if code < 0 or code > 255:
-                continue
-            try:
-                character = bytes([code]).decode("mac_roman")
-            except UnicodeDecodeError:
-                character = chr(code) if code < 128 else ""
-            if character in ligature_starters:
-                starter_widths[code] = width
-                starter_chars[character] = width
+            starter_widths[code] = width
+            starter_chars[character] = width
 
         if starter_widths:
             font_file = get_font_file(document, fobj)
@@ -143,7 +147,7 @@ def detect_ligature_overrides(
 
     try:
         starter_widths, starter_chars, companion_data = find_companion_font(
-            document, resources, base_name, set("ftscFTSC")
+            document, resources, base_name, LIGATURE_STARTERS
         )
     except ValueError:
         if load_font_file_tables(font_file) is None:
@@ -160,36 +164,27 @@ def detect_ligature_overrides(
     if lig_widths_raw is not None and not isinstance(lig_widths_raw, (list, tuple)):
         raise ValueError("invalid font widths array")
     overrides: dict[int, str] = {}
+    ft_width = starter_chars.get("f", 0.0) + starter_chars.get("t", 0.0)
+    if ft_width <= 0 or lig_widths_raw is None:
+        return overrides
 
-    for pdf_code in range(first_char_int, last_char_int + 1):
-        if pdf_code < 0 or pdf_code > 255:
-            continue
-        try:
-            codepoint = ord(bytes([pdf_code]).decode("mac_roman"))
-        except UnicodeDecodeError:
-            codepoint = pdf_code
-
-        if codepoint in parsed_primary.unicode_cmap:
+    unicode_cmap = parsed_primary.unicode_cmap
+    for pdf_code in range(max(0, first_char_int), min(255, last_char_int) + 1):
+        if MAC_ROMAN_CODEPOINTS[pdf_code] in unicode_cmap:
             continue
 
-        glyph_id = pdf_code - first_char_int
-        body_bbox, has_dot = parsed_primary.composite_body_bbox(glyph_id)
-        if not (has_dot and body_bbox):
+        width_index = pdf_code - first_char_int
+        if not 0 <= width_index < len(lig_widths_raw):
+            continue
+        width_value = lig_widths_raw[width_index]
+        if not is_pdf_number(width_value):
+            continue
+        lig_width = float(width_value)
+        if not (lig_width and 0.85 <= lig_width / ft_width <= 0.98):
             continue
 
-        ft_width = starter_chars.get("f", 0.0) + starter_chars.get("t", 0.0)
-        if ft_width <= 0:
-            continue
-
-        lig_width = 0.0
-        if lig_widths_raw is not None:
-            width_index = pdf_code - first_char_int
-            if 0 <= width_index < len(lig_widths_raw):
-                width_value = lig_widths_raw[width_index]
-                if is_pdf_number(width_value):
-                    lig_width = float(width_value)
-
-        if lig_width and 0.85 <= lig_width / ft_width <= 0.98:
+        body_bbox, has_dot = parsed_primary.composite_body_bbox(width_index)
+        if has_dot and body_bbox:
             overrides[pdf_code] = "ft"
 
     return overrides
