@@ -36,6 +36,13 @@ class ResolutionNode:
 
 
 def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> object:
+    if type(value) not in GRAPH_TYPES:
+        return value
+    if type(value) is list and GRAPH_TYPES.isdisjoint(map(type, value)):
+        return value
+    if type(value) is dict and GRAPH_TYPES.isdisjoint(map(type, value.values())):
+        return value
+
     reference_values: dict[tuple[int, int], object] = {}
 
     def resolve_once(reference: object) -> object:
@@ -48,6 +55,10 @@ def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> 
     root = resolve_reference_chain(value, resolve_once)
     if type(root) not in CONTAINER_TYPES:
         return root
+    if type(root) is list and GRAPH_TYPES.isdisjoint(map(type, root)):
+        return root
+    if type(root) is dict and GRAPH_TYPES.isdisjoint(map(type, root.values())):
+        return root
 
     nodes = {id(root): ResolutionNode(root)}
     pending = [id(root)]
@@ -59,15 +70,19 @@ def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> 
             values: list[object] = [original.dictionary]
         elif type(original) is dict:
             mapping = original
+            if GRAPH_TYPES.isdisjoint(map(type, mapping.values())):
+                continue
             node.keys = tuple(mapping)
             values = list(mapping.values())
         else:
+            if type(original) is list and GRAPH_TYPES.isdisjoint(map(type, original)):
+                continue
             values = list(original)  # type: ignore[call-overload]  # ty: ignore[invalid-argument-type]
             node.changed = type(original) is tuple
+            if GRAPH_TYPES.isdisjoint(map(type, values)):
+                node.values = values
+                continue
 
-        if GRAPH_TYPES.isdisjoint(map(type, values)):
-            node.values = values
-            continue
         for item in values:
             resolved = resolve_reference_chain(item, resolve_once)
             node.values.append(resolved)
@@ -82,6 +97,8 @@ def resolve_object_graph(value: object, resolve: Callable[[object], object]) -> 
                 child.parents.add(marker)
 
     pending = [marker for marker, node in nodes.items() if node.changed]
+    if not pending:
+        return root
     while pending:
         for parent in nodes[pending.pop()].parents:
             if not nodes[parent].changed:

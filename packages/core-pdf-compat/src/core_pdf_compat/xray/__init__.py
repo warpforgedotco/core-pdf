@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mmap
 import re
 import struct
 import sys
@@ -325,7 +326,7 @@ class _DocumentRecovery:
 
     def operand_overrides(self) -> dict[bytes, bytes]:
         if self.overrides is None:
-            self.overrides = _operand_overrides(bytes(self.document.raw_data))
+            self.overrides = _operand_overrides(self.document.raw_data)
         return self.overrides
 
 
@@ -384,7 +385,7 @@ ASCII_WHITESPACE = frozenset(b" \t\n\r\x0b\x0c")
 TRAILER_ROOT = re.compile(rb"/Root\s+([^>]+)")
 
 
-def _operand_overrides(raw_data: bytes) -> dict[bytes, bytes]:
+def _operand_overrides(raw_data: bytes | mmap.mmap) -> dict[bytes, bytes]:
     return {
         bytes.fromhex(groups[0].decode()): bytes.fromhex(groups[-1].decode())
         for match in HEX_STRINGS_SHOWN.finditer(raw_data)
@@ -426,7 +427,6 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
     annotation_boxes = {
         tuple(annotation.rect) for annotation in annotations if annotation.subtype == "Highlight"
     }
-    {tuple(annotation.rect) for annotation in annotations if annotation.subtype == "Widget"}
     non_annotation_rectangles = [
         rectangle for rectangle in rectangles if rectangle.bbox not in annotation_boxes
     ]
@@ -446,15 +446,16 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
     operand_overrides = recovery.operand_overrides()
     glyphs = program.glyphs
     raster_page = _PageRaster(page, program)
-    sequence_parts: defaultdict[int, list[bytes]] = defaultdict(list)
-    for glyph in glyphs:
-        sequence_parts[glyph.seqno].append(glyph.code_bytes)
-    sequence_codes = {seqno: b"".join(parts) for seqno, parts in sequence_parts.items()}
-    overridden_sequences = {
-        seqno: operand_overrides[codes]
-        for seqno, codes in sequence_codes.items()
-        if codes in operand_overrides
-    }
+    overridden_sequences: dict[int, bytes] = {}
+    if operand_overrides:
+        sequence_parts: defaultdict[int, list[bytes]] = defaultdict(list)
+        for glyph in glyphs:
+            sequence_parts[glyph.seqno].append(glyph.code_bytes)
+        overridden_sequences = {
+            seqno: operand_overrides[codes]
+            for seqno, parts in sequence_parts.items()
+            if (codes := b"".join(parts)) in operand_overrides
+        }
     emitted_overrides: set[int] = set()
     characters: list[_Character] = []
     for glyph in glyphs:

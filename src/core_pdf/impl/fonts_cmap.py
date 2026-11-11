@@ -348,11 +348,20 @@ class ToUnicodeCMap(cmap_tounicode.ToUnicodeCMap):
 
         mappings = self.mappings
         lengths = self.decode_lengths or (1,)
+        mappings_get = mappings.get
+        if lengths == (1,):
+            result = "".join(
+                chr(b) if (mapped := mappings_get(SINGLE_BYTE_VALUES[b])) is None else mapped
+                for b in data
+            )
+            if not preserve_nulls and "\x00" in result:
+                return result.replace("\x00", "")
+            return result
+
         n = len(data)
         out: list[str] = []
         out_append = out.append
         pos = 0
-        mappings_get = mappings.get
         while pos < n:
             match_found = False
             for length in lengths:
@@ -360,7 +369,7 @@ class ToUnicodeCMap(cmap_tounicode.ToUnicodeCMap):
                     continue
 
                 if length == 1:
-                    chunk = bytes((data[pos],))
+                    chunk = SINGLE_BYTE_VALUES[data[pos]]
                 else:
                     chunk = data[pos : pos + length]
 
@@ -386,6 +395,9 @@ class ToUnicodeCMap(cmap_tounicode.ToUnicodeCMap):
         if not preserve_nulls and "\x00" in result:
             return result.replace("\x00", "")
         return result
+
+
+SINGLE_BYTE_VALUES: tuple[bytes, ...] = tuple(bytes((b,)) for b in range(256))
 
 
 def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:

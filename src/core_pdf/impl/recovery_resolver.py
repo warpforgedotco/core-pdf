@@ -40,7 +40,7 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
     __slots__ = ("irregular_dictionaries", "lexer_pool", "parsed_objects", "parsed_rules")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.lexer_pool: list[PdfLexer] = []
+        self.lexer_pool: list[PdfLexer] | None = []
         # The indirect objects whose dictionaries repeat a key or needed recovery, as their
         # lexers note them.
         self.irregular_dictionaries: set[tuple[int, int]] = set()
@@ -56,6 +56,11 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
     def close(self) -> None:
         with self.lock:
             self.parsed_objects = {}
+            lexers = self.lexer_pool
+            self.lexer_pool = None
+        if lexers:
+            for lexer in lexers:
+                lexer.close()
         super().close()
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
@@ -116,8 +121,8 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
         )
 
     def get_lexer(self) -> PdfLexer:
-        pool = self.lexer_pool
         with self.lock:
+            pool = self.lexer_pool
             lexer = pool.pop() if pool else None
         if lexer is None:
             lexer = PdfLexer(
@@ -137,17 +142,11 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
     def release_lexer(self, lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer) -> None:
         if type(lexer) is PdfLexer and lexer.raw_data.obj is self.data.obj:
             with self.lock:
-                if len(self.lexer_pool) < LEXER_POOL_LIMIT:
-                    self.lexer_pool.append(lexer)
+                pool = self.lexer_pool
+                if pool is not None and len(pool) < LEXER_POOL_LIMIT:
+                    pool.append(lexer)
                     return
         lexer.close()
-
-    def detach_parsed_caches(self) -> tuple[core_pdf_spec.s_07_syntax.objects.PdfObjectStream, ...]:
-        with self.lock:
-            lexers, self.lexer_pool[:] = list(self.lexer_pool), []
-        for lexer in lexers:
-            lexer.close()
-        return super().detach_parsed_caches()
 
     def recover_indirect_object(
         self, lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer, offset: int

@@ -16,6 +16,7 @@ __lazy_modules__ = [
 
 import contextlib
 import mmap
+import re
 import struct
 import threading
 from array import array
@@ -439,6 +440,19 @@ def object_headers_present_by_entry(data: Any, keys: list[int], offsets: list[in
 
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
+SECURITY_TRAILER_KEYS = frozenset({"Encrypt", "AuthCode"})
+ESCAPED_SECURITY_NAME_RE = re.compile(
+    rb"/(?:(?:E|#45)(?:n|#6[eE])(?:c|#63)(?:r|#72)(?:y|#79)(?:p|#70)(?:t|#74)"
+    rb"|(?:A|#41)(?:u|#75)(?:t|#74)(?:h|#68)(?:C|#43)(?:o|#6[fF])(?:d|#64)(?:e|#65))"
+)
+
+
+def has_security_metadata_marker(data: bytes | mmap.mmap) -> bool:
+    if data.find(b"Encrypt") >= 0 or data.find(b"AuthCode") >= 0:
+        return True
+    if data.find(b"#") < 0:
+        return False
+    return ESCAPED_SECURITY_NAME_RE.search(data) is not None
 
 
 def first_indexes(values: Iterable[object]) -> dict[object, int]:
@@ -547,11 +561,14 @@ def check_security_aliases(trailer: PdfDict, resolver: ObjectResolver) -> None:
             names: set[bytes] = set()
             for key, value in dictionary.items():
                 raw_name = key.value if isinstance(key, PdfName) else key
-                lexer = PdfLexer(b"/" + raw_name.encode("latin-1"))
-                try:
-                    name = bytes(lexer.read_name())
-                finally:
-                    lexer.close()
+                if "#" in raw_name:
+                    lexer = PdfLexer(b"/" + raw_name.encode("latin-1"))
+                    try:
+                        name = bytes(lexer.read_name())
+                    finally:
+                        lexer.close()
+                else:
+                    name = raw_name.encode("latin-1")
                 if top and name not in {b"Encrypt", b"AuthCode", b"ID"}:
                     continue
                 if name in names:
@@ -1409,7 +1426,7 @@ class PdfDocument(Generic[PageT]):
                 )
                 revisions = self.read_xref_revisions(start, read_section, brute_force)
                 self.xref = merge_xref_sections(revision.entries for revision in revisions)
-                self.trailer_dict = revisions[0].trailer
+                self.trailer_dict = self.merge_revision_trailers(revisions)
                 self.repair_stale_xref_offsets(brute_force)
                 self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
                 root_ref = self.trailer_dict.get("Root")
@@ -1556,11 +1573,19 @@ class PdfDocument(Generic[PageT]):
         return False
 
     def is_valid_catalog_root(self, root_ref: object) -> bool:
-        resolver = ObjectResolver(
-            self.raw_data,
-            self.xref,
-            semantic_context=self.xref_context,
+        reuse_resolver = (
+            self.trailer_dict.get("Encrypt") is None and self.trailer_dict.get("AuthCode") is None
         )
+        if reuse_resolver:
+            resolver = self.resolver
+            resolver.xref = self.xref
+        else:
+            resolver = ObjectResolver(
+                self.raw_data,
+                self.xref,
+                semantic_context=self.xref_context,
+            )
+        valid = False
         try:
             root = resolver.as_dict(root_ref)
             if root is None:
@@ -1574,11 +1599,16 @@ class PdfDocument(Generic[PageT]):
             if node_type != "Pages":
                 return False
             kids, count = page_tree_extent(resolver.resolve, pages)
-            return kids is not None or count is not None
+            valid = kids is not None or count is not None
+            return valid
         except Exception:
             return False
         finally:
-            resolver.close()
+            if not reuse_resolver:
+                resolver.close()
+            elif not valid:
+                for stream in resolver.detach_parsed_caches():
+                    stream.close()
 
     def infer_catalog_root(self) -> PdfReference | None:
         data = self.raw_data
@@ -1726,19 +1756,44 @@ class PdfDocument(Generic[PageT]):
             lexer.close()
             resolver.close()
 
+    def merge_revision_trailers(self, revisions: Sequence[XRefRevision]) -> PdfDict:
+        trailer = revisions[0].trailer
+        if len(revisions) == 1:
+            return trailer
+        missing_keys = [key for key in TRAILER_METADATA_KEYS if trailer.get(key) is None]
+        if not missing_keys:
+            return trailer
+        merged: PdfDict | None = None
+        for revision in revisions[1:]:
+            candidate = revision.trailer
+            for key in missing_keys:
+                if (merged or trailer).get(key) is not None or key not in candidate:
+                    continue
+                value = candidate[key]
+                if self.is_valid_trailer_metadata_value(key, value):
+                    if merged is None:
+                        merged = dict(trailer)
+                    merged[key] = value
+        return trailer if merged is None else merged
+
     def merge_recovered_trailer_metadata(self, trailer: PdfDict) -> PdfDict:
         missing_keys = [key for key in TRAILER_METADATA_KEYS if trailer.get(key) is None]
         if not missing_keys:
             return trailer
-        if not self.xref_was_recovered and not any(
-            markers_present(
-                self.raw_data, tuple(b"/" + key.encode("ascii") for key in missing_keys)
+        if SECURITY_TRAILER_KEYS.issuperset(missing_keys):
+            if not has_security_metadata_marker(self.raw_data):
+                return trailer
+        elif not self.xref_was_recovered and not (
+            any(
+                markers_present(
+                    self.raw_data, tuple(b"/" + key.encode("ascii") for key in missing_keys)
+                )
+            )
+            or (
+                not SECURITY_TRAILER_KEYS.isdisjoint(missing_keys)
+                and has_security_metadata_marker(self.raw_data)
             )
         ):
-            return trailer
-        if missing_keys == ["Encrypt"] and not self.xref_was_recovered:
-            return trailer
-        if missing_keys == ["Encrypt"] and self.raw_data.find(b"Encrypt") < 0:
             return trailer
         recovered = self.infer_trailer_metadata()
         if not recovered:
@@ -1763,7 +1818,11 @@ class PdfDocument(Generic[PageT]):
         missing_keys = [key for key in TRAILER_METADATA_KEYS if key not in metadata]
         if not missing_keys:
             return metadata
-        if missing_keys == ["Encrypt"] and metadata and self.raw_data.find(b"Encrypt") < 0:
+        if (
+            SECURITY_TRAILER_KEYS.issuperset(missing_keys)
+            and metadata
+            and not has_security_metadata_marker(self.raw_data)
+        ):
             return metadata
 
         for candidate in self.iter_recoverable_xref_stream_dictionaries():
@@ -1843,11 +1902,6 @@ class PdfDocument(Generic[PageT]):
                     yield dictionary
         finally:
             lexer.close()
-
-    def may_be_xref_stream(self, data: bytes | mmap.mmap, offset: int, end: int) -> bool:
-        if data.find(b"#", offset, end) >= 0 or data.find(b"XRef", offset, end) >= 0:
-            return True
-        return data.find(b"/W", offset, end) >= 0 and data.find(b"/Size", offset, end) >= 0
 
     def is_valid_trailer_metadata_value(self, key: str, value: object) -> bool:
         if key == "Info":

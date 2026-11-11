@@ -120,11 +120,13 @@ class ToUnicodeCMap:
             parent = self.resolve_parent(
                 parent_name, usecmap_resolver, inheritance_depth + 1, ancestor_names
             )
-        self.code_space_ranges = (
-            tuple(parent.code_space_ranges if parent else ()) + parsed.code_space_ranges
-        )
-        self.mappings = dict(parent.mappings) if parent else {}
-        self.mappings.update(parsed.mappings)
+        if parent is not None:
+            self.code_space_ranges = tuple(parent.code_space_ranges) + parsed.code_space_ranges
+            self.mappings = dict(parent.mappings)
+            self.mappings.update(parsed.mappings)
+        else:
+            self.code_space_ranges = parsed.code_space_ranges
+            self.mappings = parsed.mappings
         self.validate_mappings()
         lengths = set(map(len, self.mappings))
         lengths.update(len(end) for _, end in self.code_space_ranges)

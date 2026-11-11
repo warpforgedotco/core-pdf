@@ -185,10 +185,6 @@ def glyph_name_part_to_unicode(name: str, *, unknown_name: str | None = None) ->
     if result is not None:
         return result
 
-    for base in (name.replace("_", "") if "_" in name else None,):
-        if base and base != name and base in GLYPH_DATA:
-            return GLYPH_DATA[base]
-
     for suffix in ("small", "superior", "inferior", "oldstyle", "fitted"):
         if name.endswith(suffix) and len(name) > len(suffix):
             base = name[: -len(suffix)]
@@ -300,6 +296,7 @@ def normalize_ligature_text(text: str) -> str:
     return LIGATURE_TEXT_OVERRIDES.get(text, text)
 
 
+@lru_cache(maxsize=4096)
 def unicode_for_glyph_name(glyph_name: str) -> str | None:
     mapped = glyph_name_to_unicode(glyph_name)
     if not mapped or (mapped == glyph_name and len(glyph_name) != 1):
@@ -404,12 +401,12 @@ def build_simple_encoding_glyph_names(
 ) -> tuple[str, ...]:
     return helpers.build_simple_encoding_glyph_names(
         base_encoding,
-        {
-            int(code): name or ".notdef"
-            for code, name in builtin_encoding.items()
-            if 0 <= code < 256
-        },
-        {int(code): name or ".notdef" for code, name in differences.items() if 0 <= code < 256},
+        {int(code): name or ".notdef" for code, name in builtin_encoding.items() if 0 <= code < 256}
+        if builtin_encoding
+        else builtin_encoding,
+        {int(code): name or ".notdef" for code, name in differences.items() if 0 <= code < 256}
+        if differences
+        else differences,
         authoritative_builtin=authoritative_builtin,
         context=encoding_context(context),
     )

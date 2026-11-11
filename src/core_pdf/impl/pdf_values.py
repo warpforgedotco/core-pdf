@@ -12,8 +12,10 @@ from core_pdf_spec.types import PdfName
 
 
 def recover_pdf_name(value: object, default: str | None = None) -> str | None:
+    if type(value) is PdfName:
+        return value.str_value
     name = decoded_name(value, default)
-    if not isinstance(value, PdfName) and name is not None and name.startswith("/"):
+    if name is not None and name.startswith("/"):
         return name[1:]
     return name
 
