@@ -1024,8 +1024,9 @@ class ContentScanner:
         negative: cython.bint
 
         while True:
-            with cython.nogil:
-                p = self.skip_ignored(self.cursor)
+            # Called with the GIL held: releasing it around a skip of a few bytes, once a
+            # token, cost more than the skip itself.
+            p = self.skip_ignored(self.cursor)
             self.cursor = p
             if p >= n:
                 return p
