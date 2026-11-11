@@ -4,11 +4,11 @@
 
 core_pdf.impl.object_serialize writes PDF objects with core-pdf-cythonized's ObjectWriter,
 which must give the bytes core_pdf_spec.s_07_syntax.serialize gives, in both layouts. This
-serializes every object of the upstream test PDFs both ways, then values generated around
-what the writer handles itself and what it hands back (names with every byte, literal and hex
-strings with every byte, ints of every size, int and str subclasses, reals, bytes, nested
-dictionaries, lists and tuples, other mappings and sequences, streams, unwritable values),
-and fails on the first output or error that differs.
+serializes every object of the upstream test PDFs both ways, then deep and cyclic values,
+then values generated around what the writer handles itself and what it hands back (names
+with every byte, literal and hex strings with every byte, ints of every size, int and str
+subclasses, reals, bytes, nested dictionaries, lists and tuples, other mappings and
+sequences, streams, unwritable values), and fails on the first output or error that differs.
 
 uv run --all-packages python scripts/check_object_writer.py [generated values]
 """
@@ -116,6 +116,23 @@ def main(argv: list[str]) -> int:
                 for layout in ObjectLayout
                 if outcome(spec.serialize_object, value, layout)
                 != outcome(object_serialize.serialize_object, value, layout)
+            )
+    # Containers nested past the writer's depth, deep enough to recurse past Python's limit,
+    # and cyclic: the writer hands them to the spec's serializer, which raises.
+    deep: object = 1
+    for level in range(160):
+        deep = [deep] if level % 2 else {"K": deep}
+    cyclic: list[object] = []
+    cyclic.append({"Self": cyclic})
+    very_deep: object = None
+    for _ in range(sys.getrecursionlimit() * 2):
+        very_deep = [very_deep]
+    for value in (deep, cyclic, very_deep):
+        for layout in ObjectLayout:
+            differences.extend(
+                f"{layout.name} nested {type(value).__name__}"
+                for expected, actual in pairs
+                if outcome(expected, value, layout) != outcome(actual, value, layout)
             )
     rng = random.Random(0)
     for _ in range(count):

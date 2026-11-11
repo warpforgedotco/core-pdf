@@ -7,6 +7,10 @@ from cython.cimports.cpython.mem import PyMem_Free, PyMem_Realloc
 from cython.cimports.libc.stdio import snprintf
 from cython.cimports.libc.string import memcpy
 
+# Containers nested deeper than this go to the spec's serializer, whose Python recursion
+# raises RecursionError for a cyclic or too deep value, where C recursion would overflow.
+MAX_DEPTH = cython.declare(cython.int, 64)
+
 HEX_UPPER = cython.declare(cython.p_const_char, b"0123456789ABCDEF")
 HEX_LOWER = cython.declare(cython.p_const_char, b"0123456789abcdef")
 
@@ -66,11 +70,13 @@ class ObjectWriter:
     buffer: cython.p_char
     size: cython.Py_ssize_t
     capacity: cython.Py_ssize_t
+    depth: cython.int
 
     def __cinit__(self):
         self.buffer = cython.NULL
         self.size = 0
         self.capacity = 0
+        self.depth = 0
 
     def __init__(
         self,
@@ -94,6 +100,7 @@ class ObjectWriter:
     def serialize(self, value) -> bytes:
         """The bytes of value, as serialize_object(value, layout) gives them."""
         self.size = 0
+        self.depth = 0
         self.write_value(value)
         return PyBytes_FromStringAndSize(self.buffer, self.size)
 
@@ -305,10 +312,16 @@ class ObjectWriter:
             self.write_byte(0x20)
             self.write_integer(value.generation_number)
             return self.write(b" R", 2)
-        if isinstance(value, self.stream_type):
+        if self.depth >= MAX_DEPTH or not (
+            cls is dict or cls is list or cls is tuple or isinstance(value, self.stream_type)
+        ):
+            return self.write_bytes(self.fallback(value))
+        self.depth += 1
+        try:
+            if cls is dict:
+                return self.write_dictionary(value)
+            if cls is list or cls is tuple:
+                return self.write_array(value)
             return self.write_stream(value)
-        if cls is dict:
-            return self.write_dictionary(value)
-        if cls is list or cls is tuple:
-            return self.write_array(value)
-        return self.write_bytes(self.fallback(value))
+        finally:
+            self.depth -= 1
