@@ -41,9 +41,9 @@ For Lab color conversion, `s_08_graphics.color_math.lab_components_to_xyz` accep
 NumPy float32 rows of actual `(L*, a*, b*)` components and a reference white point.
 Image sample decoding and range enforcement belong to the caller.
 
-The current spec version is `0.14.1`, released independently of core. During `0.x`, breaking
+The current spec version is `0.15.0`, released independently of core. During `0.x`, breaking
 changes to supported interfaces require a new minor version. Core currently accepts
-`>=0.14.1,<0.15.0`; changes to that range require core integration.
+`>=0.15.0,<0.16.0`; changes to that range require core integration.
 Release the spec wheel before a core release requiring a spec version that is not yet published.
 
 Document format, specification edition, developer extensions, and conformance profiles are
@@ -234,6 +234,11 @@ changes: a `-0.0 w` now stores a line width of `0.0`.
 `0.14.1` builds its records with `core-records` 0.2's generated methods; behaviour and
 signatures are unchanged, and the `_post_init` hooks of `PdfVersion`, `LexicalRules`, and
 `ColorRendering` are now `__post_init__`.
+
+`0.15.0` splits `PdfLexer.parse_indirect_object` at its header: `parse_indirect_body` reads
+the value and `endobj`, taking a dictionary the caller has read already, and
+`stream_or_dictionary` reads the stream after a dictionary, as `parse_dictionary_or_stream`
+did inline. Behaviour is unchanged.
 
 When migrating to `0.10.0`, stop using these exports, which nothing in the workspace called:
 
