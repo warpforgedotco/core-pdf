@@ -36,7 +36,7 @@ from core_pdf_cythonized._area_gaps import AreaGapQueue
 from core_pdf_cythonized._bezier import cubic_sample_times
 from core_pdf_cythonized._blend import blend_normal_alpha_array_numpy
 from core_pdf_cythonized._blend_visible import blend_visible_rgba
-from core_pdf_cythonized._chars import plumber_char_dicts
+from core_pdf_cythonized._chars import no_char, pdfminer_chars, plumber_char_dicts
 from core_pdf_cythonized._cmap import scan_to_unicode_cmap
 from core_pdf_cythonized._composite import (
     composite_elementary_normal,
@@ -106,6 +106,8 @@ from core_pdf_cythonized._type2 import type2_glyph_geometry
 from core_pdf_cythonized._xref_headers import object_headers_match
 
 __all__ = (
+    "no_char",
+    "pdfminer_chars",
     "plumber_char_dicts",
     "ObjectWriter",
     "collect_references",
