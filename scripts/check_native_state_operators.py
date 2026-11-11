@@ -7,11 +7,17 @@ capture state itself when core_pdf.impl.capture_recording.native_state_operators
 spec handlers unoverridden; the handlers stay the reference. Every capture here runs twice,
 once as shipped and once with native_state_operators reporting nothing, so that every
 operator goes through its handler, and the two must agree bit for bit: the captured program,
-the state at every handler the scanner still calls (so between the native operators, not
-just after them), and the state at the end. The captures are the first pages of upstream test
-files, content written around the operators' edge cases (clamps, negative zeros, rounding
-order, declined operands, unbalanced saves), and random operator sequences; then the native
-operators must be applied without their handlers, and an overridden handler keeps its own.
+and the state at each point both runs reach -- every call to a handler of an operator the
+scanner does not apply itself (Tf, Tj, BT, ET, ...), and the end of the capture. The native
+operators' handlers are not traced: a native run never calls them, so a point before one has
+no counterpart there, and wrapping them would make native_state_operators take them for
+overrides and apply none natively. Their effect is compared at the next shared point, which
+the edge cases and random contents put after short runs of native operators.
+
+The captures are the first pages of upstream test files, content written around the
+operators' edge cases (clamps, negative zeros, rounding order, declined operands, unbalanced
+saves), and random operator sequences; then the native operators must be applied without
+their handlers, and an overridden handler keeps its own.
 
 uv run --all-packages python scripts/check_native_state_operators.py [random contents]
 """
@@ -135,6 +141,8 @@ def captured(
         return call
 
     def recorded_table(self: Any) -> dict[str, Any]:
+        # The native operators' handlers stay as they are: wrapped, they would read as
+        # overrides, and native_state_operators would apply none of them natively.
         handlers = dict(table(self))
         for name, handler in handlers.items():
             if name not in NATIVE_NAMES:
