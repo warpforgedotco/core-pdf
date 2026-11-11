@@ -3,6 +3,15 @@ description: >-
   Install the PDF tools the upstream suites and proofs use, from a cache of the .deb files
   kept per runner image, so most runs do not touch the often slow package mirror.
 
+inputs:
+  save:
+    description: >-
+      Save the .deb files when the cache missed. The Package cache workflow fills the cache
+      from main; in a pull request one job saves, as every job saving the same key raced and
+      all but one failed with "Unable to reserve cache".
+    required: false
+    default: "false"
+
 runs:
   using: composite
   steps:
@@ -15,7 +24,7 @@ runs:
       # The package mirror is often slow, so the .deb files are kept between runs. The key
       # follows the runner image, whose own packages they must fit.
       id: apt-cache
-      uses: actions/cache@v6
+      uses: actions/cache/restore@v6
       with:
         path: ~/apt-debs
         key: apt-${{ steps.image.outputs.version }}-ghostscript-jbig2dec-poppler-qpdf-v1
@@ -42,3 +51,10 @@ runs:
           sudo dpkg -i ~/apt-debs/*.deb
         fi
         gs --version && jbig2dec --version && pdftoppm -v && qpdf --version
+
+    - name: Save Ghostscript, jbig2dec, Poppler and qpdf packages
+      if: inputs.save == 'true' && steps.apt-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ~/apt-debs
+        key: ${{ steps.apt-cache.outputs.cache-primary-key }}

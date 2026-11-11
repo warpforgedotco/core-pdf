@@ -30,6 +30,8 @@ jobs:
 
       - name: Install Ghostscript, jbig2dec, Poppler and qpdf
         uses: ./.github/actions/install-pdf-tools
+        with:
+          save: "true"
 
   pypdf-files:
     name: Fill the pypdf test file cache

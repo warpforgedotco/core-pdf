@@ -185,19 +185,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite:
-          - pdfplumber
-          - pdfminer
-          - xray
-          - llamaindex
-          - unstructured
-          - pypdf
+        # Each suite runs its own library's tests, in that library's checkout alone.
+        include:
+          - suite: pdfplumber
+            checkout: tests/upstream/pdfplumber
+          - suite: pdfminer
+            checkout: tests/upstream/pdfminer.six
+          - suite: xray
+            checkout: tests/upstream/x-ray
+          - suite: llamaindex
+            checkout: tests/upstream/llama_index
+          - suite: unstructured
+            checkout: tests/upstream/unstructured
+          - suite: pypdf
+            checkout: tests/upstream/pypdf
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
+
+      - name: Check out the suite's upstream checkout
+        # Only the checkout the suite reads: cloning all of them, llama_index above all, took
+        # about 25 s per job. --recursive brings pypdf's sample-files.
+        run: git submodule update --init --recursive --depth 1 -- ${{ matrix.checkout }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -209,6 +219,9 @@ jobs:
 
       - name: Install Ghostscript, jbig2dec, Poppler and qpdf
         uses: ./.github/actions/install-pdf-tools
+        with:
+          # One job saves on a miss, until the Package cache workflow fills the key from main.
+          save: ${{ matrix.suite == 'pdfminer' }}
 
       - name: Restore pypdf's downloaded test files
         # pypdf's tests fetch about 380 files from the web, and the harness downloads only what
@@ -235,7 +248,7 @@ jobs:
         run: uv cache prune --ci
 
   proofs:
-    # The object model proofs, in two shards that run beside the suites.
+    # The object model proofs, in shards that run beside the suites.
     needs: changes
     if: needs.changes.outputs.code == 'true'
     name: Proofs / ${{ matrix.shard }}
@@ -244,18 +257,34 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard:
-          - core
-          - pypdf output
-          - pypdf text
-          - pdfminer and pdfplumber
-          - unstructured, llama_index and x-ray
+        # checkouts lists the upstream checkouts a shard's checks read; empty means all of
+        # them. The checks skip a missing file without failing, so a shard must list every
+        # checkout its globs and named files reach. check_native_state_operators.py names
+        # files in llama_index, and the pdfminer, pdfplumber and unstructured checks glob
+        # tests/upstream/**/*.pdf.
+        include:
+          - shard: core
+            checkouts: tests/upstream/pdfminer.six tests/upstream/pdfplumber tests/upstream/pypdf tests/upstream/llama_index
+          - shard: pypdf output
+            checkouts: tests/upstream/pdfminer.six tests/upstream/pdfplumber tests/upstream/pypdf
+          - shard: pypdf text
+            checkouts: tests/upstream/pdfminer.six tests/upstream/pdfplumber tests/upstream/pypdf
+          - shard: pdfminer and pdfplumber
+            checkouts: ""
+          - shard: unstructured
+            checkouts: ""
+          - shard: llama_index
+            checkouts: tests/upstream/pdfminer.six tests/upstream/pdfplumber tests/upstream/pypdf
+          - shard: x-ray
+            checkouts: tests/upstream/pdfminer.six tests/upstream/pdfplumber tests/upstream/pypdf tests/upstream/x-ray
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
+
+      - name: Check out the upstream checkouts the shard reads
+        # --recursive brings pypdf's sample-files.
+        run: git submodule update --init --recursive --depth 1 -- ${{ matrix.checkouts }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -324,13 +353,22 @@ jobs:
           uv run --locked --all-packages --group test --with "pdfminer.six==20260107" python scripts/check_pdfminer_output.py
           uv run --locked --all-packages --group test --with "pdfplumber==0.11.10" python scripts/check_pdfplumber_output.py
 
-      - name: unstructured, llama_index and x-ray against the real libraries
-        if: matrix.shard == 'unstructured, llama_index and x-ray'
-        run: |
-          # unstructured[pdf] needs onnxruntime, which has no CPython 3.15 wheels yet.
-          uv run --python 3.14 --isolated --locked --all-packages --group test --extra unstructured --with "unstructured[pdf]==0.27.37" python scripts/check_unstructured_output.py
-          uv run --locked --all-packages --group test --with "llama-index-readers-file==0.7.0" --with "llama-index-core==0.14.25" --with "pypdf[full]==6.21.4" python scripts/check_llamaindex_output.py
-          uv run --locked --all-packages --group test --with "x-ray==0.4.0" --with "pymupdf==1.24.14" python scripts/check_xray_output.py
+      # unstructured, llama_index and x-ray each have a shard: in one job they took about 16 min,
+      # the longest of the run.
+      - name: unstructured against the real library
+        if: matrix.shard == 'unstructured'
+        # unstructured[pdf] needs onnxruntime, which has no CPython 3.15 wheels yet.
+        run: uv run --python 3.14 --isolated --locked --all-packages --group test --extra unstructured --with "unstructured[pdf]==0.27.37" python scripts/check_unstructured_output.py
+
+      - name: llama_index against the real library
+        if: matrix.shard == 'llama_index'
+        # llama-index-readers-file 0.7.0 resolves pandas 2.3.3, which has no CPython 3.15 wheels:
+        # on 3.15 uv built it from source, about 4 min, on every run.
+        run: uv run --python 3.14 --isolated --locked --all-packages --group test --with "llama-index-readers-file==0.7.0" --with "llama-index-core==0.14.25" --with "pypdf[full]==6.21.4" python scripts/check_llamaindex_output.py
+
+      - name: x-ray against the real library
+        if: matrix.shard == 'x-ray'
+        run: uv run --locked --all-packages --group test --with "x-ray==0.4.0" --with "pymupdf==1.24.14" python scripts/check_xray_output.py
 
       - name: Prune uv cache
         if: ${{ always() && !cancelled() }}
