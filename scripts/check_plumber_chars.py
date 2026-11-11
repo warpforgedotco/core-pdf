@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import glob
 import logging
+import struct
 import sys
 import warnings
 from collections.abc import Generator
@@ -32,9 +33,9 @@ CORPUS = (
 
 
 def exact(value: object) -> object:
-    """A key equal only for values of the same type and the same bits."""
+    """A key equal only for values of the same type and the same bits, NaN payloads too."""
     if type(value) is float:
-        return ("float", value.hex())
+        return ("float", struct.pack(">d", value))
     if isinstance(value, (tuple, list)):
         return (type(value).__name__, tuple(exact(item) for item in value))
     return (type(value).__name__, repr(value))

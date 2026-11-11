@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+# Only pdfplumber's chars need this kernel (Python 3.15+).
+__lazy_modules__ = ["core_pdf_cythonized._chars"]
+
 from collections.abc import Callable
 from dataclasses import dataclass, field  # noqa: TID251
 from typing import Any
@@ -28,9 +31,9 @@ from core_pdf_cythonized import (
     SlotLayout,
     capture_horizontal_glyphs,
     horizontal_glyph_geometry,
-    plumber_char_dicts,
     untrack_tuple,
 )
+from core_pdf_cythonized._chars import plumber_char_dicts
 
 __all__ = ["plumber_char_dicts", "untrack_tuple"]
 
