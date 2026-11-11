@@ -4,7 +4,7 @@ Compiled kernels for `core-pdf` hot paths.
 
 `core-pdf` depends on this distribution and imports from it directly. There is
 no pure-Python fallback: when a kernel lands here, the Python it replaced is
-deleted -- with four exceptions, `ObjectScanner`, `AreaGapQueue`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
+deleted -- with five exceptions, `ObjectScanner`, `ObjectWriter`, `AreaGapQueue`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
 ## Source form
@@ -71,7 +71,7 @@ decoder now reports arithmetic generic regions as unsupported, as it already
 did MMR and text regions. Core's `RecoveryJBIG2PageDecoder` checks the region
 header and calls the kernel.
 
-## Four kernels keep their Python
+## Five kernels keep their Python
 
 `ObjectScanner` is the other exception, in the opposite direction: it mirrors
 code that is not deleted. The Python it mirrors is `core-pdf-spec`'s object
@@ -98,6 +98,14 @@ object, a glued or missing `endobj` -- and lexer subclasses keep their own code.
 `scripts/check_indirect_object_scanner.py` reads every uncompressed object of the
 upstream test files, deciphered and not, and objects generated around those cases,
 with each lexer and with a subclass keeping the lexer's code, and fails on any
+difference.
+
+`ObjectWriter` mirrors `core-pdf-spec`'s `serialize_object` the same way: core's
+`core_pdf.impl.object_serialize`, which core's saves and the pypdf facade write through,
+takes the bytes from it, and it hands the spec's serializer what it does not write itself
+-- reals, bytes, mappings and sequences other than dicts, lists and tuples.
+`scripts/check_object_writer.py` serializes every object of the upstream test files in
+both layouts, and values generated around those cases, both ways and fails on any
 difference.
 
 `AreaGapQueue` keeps its Python too: the reading order of
@@ -192,6 +200,7 @@ Nothing checks the result on the platforms that build wheels.
 | `composite_nonisolated_blend` | the general branch of `core_pdf.impl.render_target.composite_nonisolated_group` (deleted): the effective-alpha quantization, the boolean gathers into float64, the clip and the `blend_visible_pixels` scatter, for every blend mode it reaches. Its backdrop removal mirrors `core_pdf_spec.s_11_transparency.groups.remove_group_backdrop`, which spec keeps; `remove_group_backdrop_samples` exposes the copy, and `tests/src/core_pdf/test_nonisolated_backdrop_contracts.py` pins it to spec's function and the whole kernel to the spec composition it replaced | 14.3x over the 114 non-isolated groups a census of the fixture corpus reaches (79.3 to 5.6 ns/px); PyMuPDF test_4479 render 46.6 to 19.0 ms (-59%, one 428x951 Darken group), test_2885 251 to 227 ms (-10%) |
 | `object_headers_match` | the anchored `OBJECT_HEADER_RE` match and its two `int()` comparisons in `core_pdf.impl.document_document.xref_entry_matches_header` (deleted), run per in-use xref entry at open | one pass over every entry instead of a match object and two conversions each (471,099 over the corpus); corpus open 2.80 to 2.73 s. An object number too large for 63 bits is settled by core by digits |
 | `decrypt_type1` | nothing deleted: mirrors `core_adobe_fonts.type1.program.decrypt_type1`, which that pure-Python package keeps; core's `Type1FontProgram` decrypts its eexec section and every charstring with this | 1.36 s of a 400-document extraction sample over 41,241 calls, at about 100 ns a byte in Python; first-page extract of f1040nr 0.17 to 0.13 s, layout-parser-paper 0.11 to 0.09 s |
+| `ObjectWriter` | nothing deleted: mirrors `serialize_object` of `core_pdf_spec.s_07_syntax.serialize`, which writes what it hands back | -8 to -21% on the pypdf reads, clones, appends and incremental writes and core rewrites of the benchmarks (pypdf reads of issue-598 236 to 197 ms, core rewrite of issue-914-xmp 16.6 to 13.1 ms) |
 | `ObjectScanner` | nothing deleted: mirrors `parse_dictionary`, `parse_array` and `parse_indirect_object` of `core_pdf.impl.recovery_lexer.PdfLexer`, which falls back to them, and in strict mode those of the spec's `PdfLexer`, for `StrictPdfLexer` | 5.5x on parsing the indirect objects of the benchmark corpus (201 to 37 ms), 99% of calls taking the compiled path; -30 to -46% on document open, -3 to -55% on first-page extraction. Whole indirect objects (40,762 of 40,775 corpus objects): core rewrite of issue-598 141 to 80 ms, pypdf reads 246 to 193 ms and clone 286 to 234 ms of it, pdfminer text of DA-1p 84 to 65 ms |
 | `AreaGapQueue` | nothing deleted: the pair queue of `_reading_order` in `core_pdf_compat.pdfminer._layout`, whose `_PairQueue` takes boxes with non-float coordinates | layout analysis of 256 test pages 1.46 to 0.73 s (2.18 s before the distances were inlined) |
 | `fill_edge_rows` | the edge-index lists and ten numpy calls of `core_pdf.impl.capture_records.CapturedPath.fill_edge_array` (deleted) | 9.9x over 22,830 corpus render calls (447 to 45 ms, median 31 points); rasterize of test_3362 352 to 218 ms, test_3806 1530 to 1316 ms |

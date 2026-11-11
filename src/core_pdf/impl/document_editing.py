@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Self
 
 from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.object_serialize import serialize_indirect_object, serialize_object
 from core_pdf.impl.recovery_lexer import StrictPdfLexer
 from core_pdf.impl.recovery_xref import XRefScanner
 from core_pdf.impl.types import PdfReference, PdfString
@@ -22,12 +23,7 @@ from core_pdf_spec.s_07_security.output import (
     encryption_dictionary,
 )
 from core_pdf_spec.s_07_security.standard import StandardSecurityHandler
-from core_pdf_spec.s_07_syntax.serialize import (
-    ObjectLayout,
-    serialize_indirect_object,
-    serialize_object,
-    serialize_xref_stream,
-)
+from core_pdf_spec.s_07_syntax.serialize import ObjectLayout, serialize_xref_stream
 from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 if TYPE_CHECKING:

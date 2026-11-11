@@ -27,10 +27,11 @@ from core_pdf.impl.document_editing import (
     references_in,
     serialize_body,
 )
+from core_pdf.impl.object_serialize import serialize_object
 from core_pdf.impl.types import PdfReference
 from core_pdf_spec.exceptions import PdfParseError as CorePdfParseError
 from core_pdf_spec.s_07_security.output import describe_encryption
-from core_pdf_spec.s_07_syntax.serialize import ObjectLayout, serialize_object
+from core_pdf_spec.s_07_syntax.serialize import ObjectLayout
 
 from ._doc_common import DocumentInformation, PdfDocCommon, _VirtualList, highest_header
 from ._encryption import EncryptAlgorithm, Encryption
