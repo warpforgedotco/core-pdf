@@ -922,7 +922,7 @@ class TextState(RecoveringTextState):
         for glyph, text in zip(glyphs, texts, strict=True):
             # The capture takes a glyph's text from the joined texts only when its unicode
             # is empty, so each text must be its unicode, or one character without one.
-            if text != glyph.unicode and (glyph.unicode or len(text) != 1):
+            if (text != glyph.unicode) if glyph.unicode else (len(text) != 1):
                 return None
         layout = self.current_text_layout(font_decoder, glyph_paint, A, B, C, D, first_identity)
         if layout.actual_text_span is not None:
