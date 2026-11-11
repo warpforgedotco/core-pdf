@@ -11,9 +11,11 @@ __lazy_modules__ = [
 
 import gzip
 import struct
+import threading
 import unicodedata
+from collections import OrderedDict
 from collections.abc import Collection, Iterable
-from functools import cache, lru_cache
+from functools import cache
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from itertools import islice
@@ -291,12 +293,51 @@ def replace_unicode_from_glyph_names(
     return text if out is None else "".join(out)
 
 
-@lru_cache(maxsize=128)
+MAX_CACHED_TO_UNICODE_ENTRIES = 128
+MAX_CACHED_TO_UNICODE_STREAM_BYTES = 64 * 1024
+MAX_CACHED_TO_UNICODE_MAPPINGS = 4096
+MAX_TO_UNICODE_CACHE_BYTES = 2 * 1024 * 1024
+TO_UNICODE_MAPPING_ENTRY_OVERHEAD = 64
+
+TO_UNICODE_CMAP_CACHE: OrderedDict[bytes, tuple[ToUnicodeCMap, int]] = OrderedDict()
+TO_UNICODE_CMAP_CACHE_LOCK = threading.Lock()
+to_unicode_cache_bytes = 0
+
+
 def cached_to_unicode_cmap(data: bytes) -> ToUnicodeCMap:
-    return ToUnicodeCMap(
+    global to_unicode_cache_bytes
+    if len(data) > MAX_CACHED_TO_UNICODE_STREAM_BYTES:
+        return ToUnicodeCMap(
+            data,
+            usecmap_resolver=resolve_cmap_resource,
+        )
+    with TO_UNICODE_CMAP_CACHE_LOCK:
+        cached = TO_UNICODE_CMAP_CACHE.get(data)
+        if cached is not None:
+            TO_UNICODE_CMAP_CACHE.move_to_end(data)
+            return cached[0]
+    cmap = ToUnicodeCMap(
         data,
         usecmap_resolver=resolve_cmap_resource,
     )
+    mapping_count = len(cmap.mappings)
+    entry_bytes = len(data) + mapping_count * TO_UNICODE_MAPPING_ENTRY_OVERHEAD
+    if mapping_count > MAX_CACHED_TO_UNICODE_MAPPINGS or entry_bytes > MAX_TO_UNICODE_CACHE_BYTES:
+        return cmap
+    with TO_UNICODE_CMAP_CACHE_LOCK:
+        existing = TO_UNICODE_CMAP_CACHE.get(data)
+        if existing is not None:
+            TO_UNICODE_CMAP_CACHE.move_to_end(data)
+            return existing[0]
+        while TO_UNICODE_CMAP_CACHE and (
+            len(TO_UNICODE_CMAP_CACHE) >= MAX_CACHED_TO_UNICODE_ENTRIES
+            or to_unicode_cache_bytes + entry_bytes > MAX_TO_UNICODE_CACHE_BYTES
+        ):
+            _, (_, evicted_bytes) = TO_UNICODE_CMAP_CACHE.popitem(last=False)
+            to_unicode_cache_bytes -= evicted_bytes
+        TO_UNICODE_CMAP_CACHE[data] = (cmap, entry_bytes)
+        to_unicode_cache_bytes += entry_bytes
+    return cmap
 
 
 def parse_to_unicode(font: dict[str, Any]) -> ToUnicodeCMap | None:

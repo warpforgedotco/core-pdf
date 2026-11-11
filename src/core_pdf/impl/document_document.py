@@ -16,6 +16,7 @@ __lazy_modules__ = [
 
 import contextlib
 import mmap
+import re
 import struct
 import threading
 from array import array
@@ -440,6 +441,18 @@ def object_headers_present_by_entry(data: Any, keys: list[int], offsets: list[in
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
 SECURITY_TRAILER_KEYS = frozenset({"Encrypt", "AuthCode"})
+ESCAPED_SECURITY_NAME_RE = re.compile(
+    rb"/(?:(?:E|#45)(?:n|#6[eE])(?:c|#63)(?:r|#72)(?:y|#79)(?:p|#70)(?:t|#74)"
+    rb"|(?:A|#41)(?:u|#75)(?:t|#74)(?:h|#68)(?:C|#43)(?:o|#6[fF])(?:d|#64)(?:e|#65))"
+)
+
+
+def has_security_metadata_marker(data: bytes | mmap.mmap) -> bool:
+    if data.find(b"Encrypt") >= 0 or data.find(b"AuthCode") >= 0:
+        return True
+    if data.find(b"#") < 0:
+        return False
+    return ESCAPED_SECURITY_NAME_RE.search(data) is not None
 
 
 def first_indexes(values: Iterable[object]) -> dict[object, int]:
@@ -1413,7 +1426,7 @@ class PdfDocument(Generic[PageT]):
                 )
                 revisions = self.read_xref_revisions(start, read_section, brute_force)
                 self.xref = merge_xref_sections(revision.entries for revision in revisions)
-                self.trailer_dict = revisions[0].trailer
+                self.trailer_dict = self.merge_revision_trailers(revisions)
                 self.repair_stale_xref_offsets(brute_force)
                 self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
                 root_ref = self.trailer_dict.get("Root")
@@ -1743,22 +1756,43 @@ class PdfDocument(Generic[PageT]):
             lexer.close()
             resolver.close()
 
+    def merge_revision_trailers(self, revisions: Sequence[XRefRevision]) -> PdfDict:
+        trailer = revisions[0].trailer
+        if len(revisions) == 1:
+            return trailer
+        missing_keys = [key for key in TRAILER_METADATA_KEYS if trailer.get(key) is None]
+        if not missing_keys:
+            return trailer
+        merged: PdfDict | None = None
+        for revision in revisions[1:]:
+            candidate = revision.trailer
+            for key in missing_keys:
+                if (merged or trailer).get(key) is not None or key not in candidate:
+                    continue
+                value = candidate[key]
+                if self.is_valid_trailer_metadata_value(key, value):
+                    if merged is None:
+                        merged = dict(trailer)
+                    merged[key] = value
+        return trailer if merged is None else merged
+
     def merge_recovered_trailer_metadata(self, trailer: PdfDict) -> PdfDict:
         missing_keys = [key for key in TRAILER_METADATA_KEYS if trailer.get(key) is None]
         if not missing_keys:
             return trailer
-        if not self.xref_was_recovered and SECURITY_TRAILER_KEYS.issuperset(missing_keys):
-            return trailer
-        if not self.xref_was_recovered and not any(
-            markers_present(
-                self.raw_data, tuple(b"/" + key.encode("ascii") for key in missing_keys)
+        if SECURITY_TRAILER_KEYS.issuperset(missing_keys):
+            if not has_security_metadata_marker(self.raw_data):
+                return trailer
+        elif not self.xref_was_recovered and not (
+            any(
+                markers_present(
+                    self.raw_data, tuple(b"/" + key.encode("ascii") for key in missing_keys)
+                )
             )
-        ):
-            return trailer
-        if (
-            SECURITY_TRAILER_KEYS.issuperset(missing_keys)
-            and self.raw_data.find(b"Encrypt") < 0
-            and self.raw_data.find(b"AuthCode") < 0
+            or (
+                not SECURITY_TRAILER_KEYS.isdisjoint(missing_keys)
+                and has_security_metadata_marker(self.raw_data)
+            )
         ):
             return trailer
         recovered = self.infer_trailer_metadata()
@@ -1787,8 +1821,7 @@ class PdfDocument(Generic[PageT]):
         if (
             SECURITY_TRAILER_KEYS.issuperset(missing_keys)
             and metadata
-            and self.raw_data.find(b"Encrypt") < 0
-            and self.raw_data.find(b"AuthCode") < 0
+            and not has_security_metadata_marker(self.raw_data)
         ):
             return metadata
 

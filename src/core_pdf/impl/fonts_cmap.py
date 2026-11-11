@@ -350,7 +350,10 @@ class ToUnicodeCMap(cmap_tounicode.ToUnicodeCMap):
         lengths = self.decode_lengths or (1,)
         mappings_get = mappings.get
         if lengths == (1,):
-            result = "".join(mappings_get(SINGLE_BYTE_VALUES[b]) or chr(b) for b in data)
+            result = "".join(
+                chr(b) if (mapped := mappings_get(SINGLE_BYTE_VALUES[b])) is None else mapped
+                for b in data
+            )
             if not preserve_nulls and "\x00" in result:
                 return result.replace("\x00", "")
             return result
