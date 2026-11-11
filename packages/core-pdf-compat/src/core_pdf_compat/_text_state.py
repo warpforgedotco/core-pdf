@@ -220,6 +220,34 @@ class TextMachine[FontT]:
     def flush(self) -> None:
         self.text, self.output_last = flush_text(self.output_parts, self.text, self.output_last)
 
+    def add_directional_parts(self, parts: Sequence[str]) -> None:
+        """add_directional for each part, in order.
+
+        In a left-to-right run every part goes to its end but a lone right-to-left
+        character, which turns the run, so the parts up to one are appended at once.
+        """
+        index = 0
+        count = len(parts)
+        while index < count:
+            if not self.rtl:
+                end = index
+                while end < count:
+                    part = parts[end]
+                    if (
+                        len(part) == 1
+                        and part >= "\u0590"
+                        and not is_neutral_character(part)
+                        and is_rtl_character(part)
+                    ):
+                        break
+                    end += 1
+                if end > index:
+                    self.text += parts[index] if end == index + 1 else "".join(parts[index:end])
+                    index = end
+                    continue
+            self.add_directional(parts[index])
+            index += 1
+
     def add_directional(self, value: str) -> None:
         # The run a direction change completes goes to the output, before the new run.
         self.text, self.rtl, completed = append_directional_text(self.text, self.rtl, value)
