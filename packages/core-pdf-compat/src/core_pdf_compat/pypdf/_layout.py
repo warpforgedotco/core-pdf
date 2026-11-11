@@ -46,7 +46,20 @@ class _FontView:
     """What layout needs from a font. ``font`` is None for one pypdf cannot read."""
 
     def __init__(self, font: Any) -> None:
-        self.font = None if font is None else replace(font, space_width=font.natural_space_width)
+        self.font = (
+            None
+            if font is None
+            else (
+                font
+                if font.space_width == font.natural_space_width
+                else replace(
+                    font,
+                    space_width=font.natural_space_width,
+                    simple_byte_table=None,
+                    parts_cache=None,
+                )
+            )
+        )
         self.interpretable = font is not None and font.interpretable
         self.space_width = 250.0 if font is None else font.natural_space_width
 
