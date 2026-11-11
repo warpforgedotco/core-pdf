@@ -145,6 +145,18 @@ def pdfminer_base_ctm(page: PdfPage) -> PdfminerMatrix:
     return (1, 0, 0, 1, -x0, -y0)
 
 
+class PdfminerGlyphProbe(NamedTuple):
+    """The fields of a glyph observation pdfminer's width depends on."""
+
+    font_decoder: Any
+    char_code: int | None
+    cid: int | None
+    code_bytes: bytes
+    unicode_source: str
+    text: str
+    alternates: tuple[str, ...]
+
+
 class PdfminerTextState(TextState):
     def __init__(self, document: Any, *, page_clip: Rectangle | None = None) -> None:
         super().__init__(
@@ -211,6 +223,22 @@ class PdfminerTextState(TextState):
         super().show_text(state, text, data, glyphs, decoder, adv_x, adv_y, glyph_paint=glyph_paint)
         if len(captured) > start and not self.hidden_depth:
             self.layout_events.append(("glyphs", start, len(captured)))
+
+    def show_glyph_run(
+        self,
+        glyphs: tuple[Any, ...],
+        texts: list[str],
+        origins: list[float],
+        decoder: Any,
+        *,
+        glyph_paint: GlyphPaint | None = None,
+    ) -> tuple[tuple[float, float, float, float], list[float]] | None:
+        captured = self.glyphs
+        start = len(captured)
+        shown = super().show_glyph_run(glyphs, texts, origins, decoder, glyph_paint=glyph_paint)
+        if len(captured) > start and not self.hidden_depth:
+            self.layout_events.append(("glyphs", start, len(captured)))
+        return shown
 
     def op_Do(self, operands: ContentOperands, depth: int) -> ContentStreamFrame | None:
         name = self.resolver.resolve_name(operands[0]) if operands else None
@@ -440,10 +468,119 @@ class PdfminerTextState(TextState):
             return
         if not isinstance(array, (list, tuple)):
             return
+        if not self.append_glyph_run(array, decoder):
+            self.append_glyphs_one_by_one(array, decoder)
+        self.text_matrix = self.text_matrix._replace(
+            e=self.cursor * self.line_matrix.a + self.line_matrix.e + self.vertical_offset[0],
+            f=self.cursor * self.line_matrix.b + self.line_matrix.f + self.vertical_offset[1],
+        )
+        self.text_boundary(self, "shown")
+
+    def append_glyph_run(self, array: list[Any] | tuple[Any, ...], decoder: Any) -> bool:
+        """Show a horizontal TJ array's glyphs in one show_glyph_run call.
+
+        Each glyph is placed where pdfminer's PDFTextDevice.render_string places it, and
+        advanced by its pdfminer width, which depends only on its decoder and decoded
+        fields. False, having shown nothing, when a glyph's text splits, which takes
+        show_text one glyph at a time.
+        """
+        graphics = self.graphics
+        scale = graphics.horizontal_scale * 0.01
+        font_size = graphics.font_size
+        adjustment_scale = 0.001 * font_size * scale
+        char_space = graphics.char_space * scale
+        word_space = 0.0 if decoder.is_cid_font else graphics.word_space * scale
+        line = self.line_matrix
+        la, lb, le, lf = line.a, line.b, line.e, line.f
+        offset_x, offset_y = self.vertical_offset
+        widths = self.glyph_widths
+        cursor = self.cursor
+        needs_spacing = False
+        glyphs: list[Any] = []
+        texts: list[str] = []
+        origins: list[float] = []
+        cursors: list[float] = []
+        for value in array:
+            if isinstance(value, (int, float)):
+                cursor -= value * adjustment_scale
+                needs_spacing = True
+                continue
+            if not isinstance(value, PdfString):
+                continue
+            for decoded in decoder.decode_glyphs(value.data):
+                text = decoded.unicode or EMPTY_GLYPH_TEXT
+                if decoded.split_unicode and len(text) > 1:
+                    return False
+                if needs_spacing:
+                    cursor += char_space
+                origins.append(cursor * la + le + offset_x)
+                origins.append(cursor * lb + lf + offset_y)
+                cursors.append(cursor)
+                key = (
+                    decoder,
+                    decoded.char_code,
+                    decoded.cid,
+                    decoded.code_bytes,
+                    decoded.unicode_source,
+                    text,
+                    decoded.alternates,
+                )
+                width = widths.get(key)
+                if width is None:
+                    width = widths[key] = self.pdfminer_width(decoder, decoded, text)
+                cursor += width * font_size * scale
+                if decoded.width_code == 32:
+                    cursor += word_space
+                needs_spacing = True
+                glyphs.append(decoded)
+                texts.append(text)
+        if glyphs:
+            start = len(self.glyphs)
+            paint = self.run_paint()
+            if (
+                self.show_glyph_run(tuple(glyphs), texts, origins, decoder, glyph_paint=paint)
+                is None
+            ):
+                return False
+            if self.vertical_offset == (0.0, 0.0) and not self.hidden_depth:
+                a, b, c, d, e, f = mult_matrix(line, self.pdfminer_ctm(graphics.ctm))
+                matrices = self.glyph_matrices
+                for index, x in enumerate(cursors, start):
+                    matrices[index] = (a, b, c, d, x * a + 0 * c + e, x * b + 0 * d + f)
+        self.cursor = cursor
+        return True
+
+    def run_paint(self) -> GlyphPaint:
+        """The paint of glyphs shown now.
+
+        It is the shared glyph paint, which the dispatcher drops whenever the state it
+        depends on changes, so the text layout made for it serves every string until then.
+        """
+        paint = self.shared_glyph_paint
+        if paint is None:
+            paint = self.shared_glyph_paint = self.glyph_paint(self.capture_color(stroke=False))
+        return paint
+
+    def pdfminer_width(self, decoder: Any, decoded: Any, text: str) -> float:
+        """The advance pdfminer gives the glyph, in text space units per font size unit."""
+        glyph = PdfminerGlyphProbe(
+            decoder,
+            decoded.char_code,
+            decoded.cid,
+            decoded.code_bytes,
+            decoded.unicode_source,
+            text,
+            decoded.alternates,
+        )
+        if self.strict_cmaps and pdfminer_embedded_cmap_is_unusable(glyph):
+            return 0.0
+        return pdfminer_normalized_width(glyph)
+
+    def append_glyphs_one_by_one(self, array: list[Any] | tuple[Any, ...], decoder: Any) -> None:
         scale = self.graphics.horizontal_scale * 0.01
         adjustment_scale = 0.001 * self.graphics.font_size * scale
         char_space = self.graphics.char_space * scale
-        word_space = 0.0 if decoder.is_cid_font else self.graphics.word_space * scale  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        word_space = 0.0 if decoder.is_cid_font else self.graphics.word_space * scale
         needs_spacing = False
         paint: GlyphPaint | None = None
         # pdfminer's PDFTextDevice.render_string: the line matrix times the ctm, then each
@@ -474,7 +611,7 @@ class PdfminerTextState(TextState):
                 )
                 start = len(self.glyphs)
                 if paint is None:
-                    paint = self.glyph_paint(self.capture_color(stroke=False))
+                    paint = self.run_paint()
                 # This capture records no text runs, and show_text reads the glyph
                 # advance only for runs, so it is not computed.
                 self.show_text(
@@ -519,11 +656,6 @@ class PdfminerTextState(TextState):
                 if decoded.width_code == 32:
                     self.cursor += word_space
                 needs_spacing = True
-        self.text_matrix = self.text_matrix._replace(
-            e=self.cursor * self.line_matrix.a + self.line_matrix.e + self.vertical_offset[0],
-            f=self.cursor * self.line_matrix.b + self.line_matrix.f + self.vertical_offset[1],
-        )
-        self.text_boundary(self, "shown")
 
 
 def pdfminer_page_program(page: PdfPage, *, strict_cmaps: bool = True) -> PdfminerProgram:
