@@ -139,14 +139,34 @@ def positioned_text(
     cell stays on its line.
     """
     trailing = text[-1:] or output_last[-1:]
-    previous = multiply_affine(previous_text_matrix, previous_current_matrix)
-    current = multiply_affine(text_matrix, current_matrix)
-    delta_x = current[4] - previous[4]
-    delta_y = current[5] - previous[5]
-    # The deltas are in the space of the text matrix times the CTM, so are the scales.
-    previous_scale_x = math.hypot(previous[0], previous[1])
-    previous_scale_y = math.hypot(previous[2], previous[3])
-    current_scale_y = math.hypot(current[2], current[3])
+    if previous_text_matrix == text_matrix and previous_current_matrix == current_matrix:
+        if (
+            line_span is not None
+            and (trailing not in ("", "\n") or line_span[1] == line_span[2])
+            and line_height >= 0.0
+            and font_size > 0.0
+            and space_width > 0.0
+            and string_width >= 0.0
+            and (
+                text_matrix[0] * current_matrix[0] + text_matrix[1] * current_matrix[2] != 0.0
+                or text_matrix[0] * current_matrix[1] + text_matrix[1] * current_matrix[3] != 0.0
+            )
+        ):
+            return text, output_last, line_span
+        current = previous = multiply_affine(text_matrix, current_matrix)
+        delta_x = 0.0
+        delta_y = 0.0
+        previous_scale_x = math.hypot(current[0], current[1])
+        previous_scale_y = current_scale_y = math.hypot(current[2], current[3])
+    else:
+        previous = multiply_affine(previous_text_matrix, previous_current_matrix)
+        current = multiply_affine(text_matrix, current_matrix)
+        delta_x = current[4] - previous[4]
+        delta_y = current[5] - previous[5]
+        # The deltas are in the space of the text matrix times the CTM, so are the scales.
+        previous_scale_x = math.hypot(previous[0], previous[1])
+        previous_scale_y = math.hypot(previous[2], previous[3])
+        current_scale_y = math.hypot(current[2], current[3])
     horizontal = orientation(current) in (0, 180)
     moved_height, moved_width = (delta_y, delta_x) if horizontal else (delta_x, delta_y)
     axis_index = 5 if horizontal else 4
@@ -270,8 +290,10 @@ class TextMachine[FontT]:
             string_width=string_width,
             line_span=self.line_span,
         )
-        self.previous_tm = self.tm.copy()
-        self.previous_cm = self.cm.copy()
+        if self.previous_tm != self.tm:
+            self.previous_tm = self.tm.copy()
+        if self.previous_cm != self.cm:
+            self.previous_cm = self.cm.copy()
 
     def apply_state_operator(self, operator: str, operands: Sequence[object]) -> bool:
         match operator:

@@ -245,12 +245,6 @@ class EnginePageAdapter:
         pdfminer_validate_page_resources(self.page)
         projected_glyphs: tuple[Any, ...] = self.pdfminer_program().glyphs
         ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
-        provenances: dict[int, tuple[object, bool, dict[str, Any]]] = {}
-        # A page repeats a few hundred glyphs thousands of times; these depend only on
-        # the font decoder and the glyph fields in the key.
-        glyph_texts: dict[tuple[Any, ...], str] = {}
-        widths: dict[tuple[Any, ...], float] = {}
-        descents: dict[int, tuple[Any, float]] = {}
 
         resolver = self.page.document.resolver
         font_names: dict[int, tuple[object, Any]] = {}
@@ -265,11 +259,6 @@ class EnginePageAdapter:
             return known[1]
 
         marks = self._text_marks
-        mark_starts = [mark.glyph_index for mark in marks]
-        mark_count = len(marks)
-        # Glyph indexes rise, so the current mark moves forward only: the last one that starts
-        # at or before the glyph, or, before the first mark starts, the last mark.
-        mark_position = -1
         info = self.info
         pa, pb, pc, pd, pe, pf = info.pdfminer_ctm
         page_number = info.number
@@ -299,6 +288,17 @@ class EnginePageAdapter:
         )
         if compiled is not None:
             return compiled
+        provenances: dict[int, tuple[object, bool, dict[str, Any]]] = {}
+        # A page repeats a few hundred glyphs thousands of times; these depend only on
+        # the font decoder and the glyph fields in the key.
+        glyph_texts: dict[tuple[Any, ...], str] = {}
+        widths: dict[tuple[Any, ...], float] = {}
+        descents: dict[int, tuple[Any, float]] = {}
+        mark_starts = [mark.glyph_index for mark in marks]
+        mark_count = len(marks)
+        # Glyph indexes rise, so the current mark moves forward only: the last one that starts
+        # at or before the glyph, or, before the first mark starts, the last mark.
+        mark_position = -1
         objects: list[ObjectDict] = []
         vertical_run = 0.0
         for glyph_index, glyph in enumerate(projected_glyphs):

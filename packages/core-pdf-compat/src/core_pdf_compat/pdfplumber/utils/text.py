@@ -583,39 +583,37 @@ class WordExtractor:
     ) -> Generator[T_obj_list, None, None]:
         current_word: T_obj_list = []
 
-        def start_next_word(
-            new_char: Optional[T_obj],
-        ) -> Generator[T_obj_list, None, None]:
-            nonlocal current_word
-
-            if current_word:
-                yield current_word
-
-            current_word = [] if new_char is None else [new_char]
-
         xt = self.x_tolerance
         xtr = self.x_tolerance_ratio
         yt = self.y_tolerance
         ytr = self.y_tolerance_ratio
+        keep_blank = self.keep_blank_chars
+        split_punct = self.split_at_punctuation
+        char_begins_new_word = self.char_begins_new_word
 
         for char in ordered_chars:
             text = char["text"]
 
-            if not self.keep_blank_chars and text.isspace():
-                yield from start_next_word(None)
+            if not keep_blank and text.isspace():
+                if current_word:
+                    yield current_word
+                    current_word = []
 
-            elif text in self.split_at_punctuation:
-                yield from start_next_word(char)
-                yield from start_next_word(None)
+            elif text in split_punct:
+                if current_word:
+                    yield current_word
+                yield [char]
+                current_word = []
 
-            elif current_word and self.char_begins_new_word(
+            elif current_word and char_begins_new_word(
                 current_word[-1],
                 char,
                 direction,
                 x_tolerance=(xt if xtr is None else xtr * current_word[-1]["size"]),
                 y_tolerance=(yt if ytr is None else ytr * current_word[-1]["size"]),
             ):
-                yield from start_next_word(char)
+                yield current_word
+                current_word = [char]
 
             else:
                 current_word.append(char)
