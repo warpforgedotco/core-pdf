@@ -64,6 +64,7 @@ from core_pdf_cythonized._glyphs import (
     SlotLayout,
     capture_horizontal_glyphs,
     horizontal_glyph_geometry,
+    untrack_tuple,
 )
 from core_pdf_cythonized._jbig2 import decode_arithmetic_generic_template0
 from core_pdf_cythonized._knockout import (
@@ -111,6 +112,7 @@ __all__ = (
     "OBSERVATION_FIELDS",
     "SlotLayout",
     "capture_horizontal_glyphs",
+    "untrack_tuple",
     "ContentScanner",
     "NativeOperators",
     "ObjectScanner",

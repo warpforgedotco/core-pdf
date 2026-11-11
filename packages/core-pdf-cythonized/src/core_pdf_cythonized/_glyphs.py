@@ -18,12 +18,14 @@ from cython.cimports.core_pdf_cythonized._glyphs import (
     Py_T_OBJECT_EX,
     PyMemberDef,
     PyMemberDescrObject,
+    PyObject_GC_IsTracked,
+    PyObject_GC_UnTrack,
 )
 from cython.cimports.core_pdf_cythonized._pymath import py_max, py_min
 from cython.cimports.cpython.dict import PyDict_Check, PyDict_GetItemWithError
 from cython.cimports.cpython.object import PyObject
 from cython.cimports.cpython.ref import Py_INCREF
-from cython.cimports.libc.math import ceil, isnan
+from cython.cimports.libc.math import ceil, isnan, signbit
 from cython.cimports.libc.stdlib import free, malloc
 
 MEMBER_DESCRIPTOR = cython.declare(object, types.MemberDescriptorType)
@@ -636,6 +638,60 @@ def wants_glyph_bitmap(text: typing.Optional[str], labels: frozenset) -> cython.
     return (0xE000 <= code <= 0xF8FF) or code < 32
 
 
+@cython.cfunc
+@cython.inline
+@cython.exceptval(check=False)
+def same_double(a: cython.double, b: cython.double) -> cython.bint:
+    # Equal with the same sign: the float objects of the two would print and compare alike.
+    return a == b and signbit(a) == signbit(b)
+
+
+@cython.cfunc
+@cython.inline
+def float_tuple(a: object, b: object, c: object, d: object) -> tuple:
+    # Floats make no reference cycle, so the collector need never visit the tuple.
+    out: tuple = (a, b, c, d)
+    PyObject_GC_UnTrack(out)
+    return out
+
+
+@cython.cfunc
+def reuse(value: cython.double, x0: cython.double, f0: object, x1: cython.double, f1: object):
+    # The float object already made for an identical value, or a new one.
+    if same_double(value, x0):
+        return f0
+    if same_double(value, x1):
+        return f1
+    return value
+
+
+TUPLE_SIZE = cython.declare(cython.Py_ssize_t, tuple.__basicsize__)
+
+
+def untrack_tuple(value: object) -> object:
+    """value, left out of the cyclic collector's walks when it can make no cycle.
+
+    A tuple, or a subclass instance holding nothing beside its items, whose items are all
+    untracked -- after untracking each item that is a tuple of untracked items -- can
+    reach no tracked object, so no cycle runs through it. The collector untracks plain
+    tuples like this itself when it first visits them, but never a subclass's.
+    """
+    item: object
+    if isinstance(value, tuple) and PyObject_GC_IsTracked(value):
+        cls = type(value)
+        if cls is not tuple and (cls.__basicsize__ != TUPLE_SIZE or cls.__dictoffset__):
+            return value
+        for item in value:
+            if PyObject_GC_IsTracked(item):
+                if type(item) is not tuple:
+                    return value
+                untrack_tuple(item)
+                if PyObject_GC_IsTracked(item):
+                    return value
+        PyObject_GC_UnTrack(value)
+    return value
+
+
 def capture_horizontal_glyphs(
     text: str,
     glyphs: tuple,
@@ -714,6 +770,11 @@ def capture_horizontal_glyphs(
         clip_page,
         visible,
     )
+    # The linear part of every glyph's outline transform, made into floats once.
+    transform_a: object = g.transform_a
+    transform_b: object = g.transform_b
+    transform_c: object = g.transform_c
+    transform_d: object = g.transform_d
     off: cython.p_double = cython.cast(
         cython.p_double, malloc((n or 1) * cython.sizeof(cython.double))
     )
@@ -755,6 +816,15 @@ def capture_horizontal_glyphs(
     observation: object
     confidence: object
     glyph_seqno: object
+    cluster_key: tuple
+    advance_box: tuple
+    ink_box: tuple
+    baseline: tuple
+    fx0: object
+    fy0: object
+    fx1: object
+    fy1: object
+    by: object
     run_confidence: object = None
     empty: object = ()
     transform: object
@@ -873,30 +943,53 @@ def capture_horizontal_glyphs(
                     slot_get(glyph, gs[G_UNICODE_SOURCE]),
                     slot_get(glyph, gs[G_ALTERNATES]),
                 )
-            transform = (
-                (
-                    g.transform_a,
-                    g.transform_b,
-                    g.transform_c,
-                    g.transform_d,
+            if want_render:
+                transform = (
+                    transform_a,
+                    transform_b,
+                    transform_c,
+                    transform_d,
                     geometry.tx,
                     geometry.ty,
                 )
-                if want_render
-                else None
+                PyObject_GC_UnTrack(transform)
+            else:
+                transform = None
+            # An ink box no glyph box refines is the advance box, and a baseline runs
+            # along its edges, so they share its tuple and floats where the values match.
+            fx0 = geometry.ax0
+            fy0 = geometry.ay0
+            fx1 = geometry.ax1
+            fy1 = geometry.ay1
+            advance_box = float_tuple(fx0, fy0, fx1, fy1)
+            if (
+                same_double(geometry.ix0, geometry.ax0)
+                and same_double(geometry.iy0, geometry.ay0)
+                and same_double(geometry.ix1, geometry.ax1)
+                and same_double(geometry.iy1, geometry.ay1)
+            ):
+                ink_box = advance_box
+            else:
+                ink_box = float_tuple(geometry.ix0, geometry.iy0, geometry.ix1, geometry.iy1)
+            by = reuse(geometry.by0, geometry.ay0, fy0, geometry.ay1, fy1)
+            baseline = float_tuple(
+                reuse(geometry.bx0, geometry.ax0, fx0, geometry.ax1, fx1),
+                by,
+                reuse(geometry.bx1, geometry.ax0, fx0, geometry.ax1, fx1),
+                by if same_double(geometry.by1, geometry.by0) else geometry.by1,
             )
             observation = observation_type.__new__(observation_type)
             slot_init(observation, os[0], style)
             slot_init(observation, os[1], chunk_text)
-            slot_init(observation, os[2], (geometry.ix0, geometry.iy0, geometry.ix1, geometry.iy1))
-            slot_init(observation, os[3], (geometry.ax0, geometry.ay0, geometry.ax1, geometry.ay1))
+            slot_init(observation, os[2], ink_box)
+            slot_init(observation, os[3], advance_box)
             slot_init(observation, os[4], glyph_seqno)
             slot_init(observation, os[5], slot_get(glyph, gs[G_CODE_BYTES]))
             slot_init(observation, os[6], slot_get(glyph, gs[G_CHAR_CODE]))
             slot_init(observation, os[7], slot_get(glyph, gs[G_CID]))
             slot_init(observation, os[8], slot_get(glyph, gs[G_GID]))
             slot_init(observation, os[9], font_name)
-            slot_init(observation, os[10], (geometry.bx0, geometry.by0, geometry.bx1, geometry.by1))
+            slot_init(observation, os[10], baseline)
             slot_init(observation, os[11], True if geometry.visible else False)
             slot_init(observation, os[12], confidence)
             slot_init(observation, os[13], slot_get(glyph, gs[G_UNICODE_SOURCE]))
@@ -907,7 +1000,9 @@ def capture_horizontal_glyphs(
             slot_init(observation, os[18], slot_get(glyph, gs[G_BITMAP_CODE]) if bmp[i] else None)
             slot_init(observation, os[19], transform)
             slot_init(observation, os[20], True)
-            slot_init(observation, os[21], (glyph_seqno, cluster_start + i))
+            cluster_key = (glyph_seqno, cluster_start + i)
+            PyObject_GC_UnTrack(cluster_key)
+            slot_init(observation, os[21], cluster_key)
             out_glyphs.append(observation)
             if want_runs:
                 if run_confidence is None:

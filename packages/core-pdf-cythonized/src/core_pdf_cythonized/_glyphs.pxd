@@ -8,6 +8,8 @@ cdef extern from "Python.h":
     ctypedef struct PyMemberDescrObject:
         PyMemberDef* d_member
     int Py_T_OBJECT_EX
+    void PyObject_GC_UnTrack(object op)
+    bint PyObject_GC_IsTracked(object op)
 
 
 # DecodedGlyph fields, in this order.

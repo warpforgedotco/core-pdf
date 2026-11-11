@@ -16,7 +16,7 @@ import math
 from typing import Any, NamedTuple, cast
 
 from core_pdf import PdfPage
-from core_pdf.impl.capture_glyphs import GlyphPaint
+from core_pdf.impl.capture_glyphs import GlyphPaint, untrack_tuple
 from core_pdf.impl.capture_program import CapturedProgram
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_metrics import FONT_DATA
@@ -605,17 +605,19 @@ class PlumberTextState(PdfminerTextState):
         ncolor = miner.ncolor
         horizontal_scale = graphics.horizontal_scale
         self.plumber_marks.append(
-            PlumberMark(
-                start,
-                self.current_mcid,
-                self.current_tag,
-                miner.ncs[0],
-                scolor if isinstance(scolor, tuple) else (scolor,),
-                ncolor if isinstance(ncolor, tuple) else (ncolor,),
-                matrix,
-                graphics.rise,
-                horizontal_scale * 0.01,
-                graphics.char_space * horizontal_scale * 0.01,
+            untrack_tuple(
+                PlumberMark(
+                    start,
+                    self.current_mcid,
+                    self.current_tag,
+                    miner.ncs[0],
+                    scolor if isinstance(scolor, tuple) else (scolor,),
+                    ncolor if isinstance(ncolor, tuple) else (ncolor,),
+                    matrix,
+                    graphics.rise,
+                    horizontal_scale * 0.01,
+                    graphics.char_space * horizontal_scale * 0.01,
+                )
             )
         )
 
@@ -644,20 +646,23 @@ class PlumberTextState(PdfminerTextState):
         char_space = graphics.char_space * horizontal_scale * 0.01
         marks = self.plumber_marks
         # As show_text marks each glyph: its char matrix is the text matrix at the glyph
-        # times the CTM.
+        # times the CTM. A page keeps its marks while its chars are wanted, and marks hold
+        # only numbers, strings and tuples of them, so the collector need not walk them.
         for index in range(len(glyphs)):
             marks.append(
-                PlumberMark(
-                    start + index,
-                    self.current_mcid,
-                    self.current_tag,
-                    miner.ncs[0],
-                    stroking,
-                    non_stroking,
-                    (a, b, c, d, placed[2 * index], placed[2 * index + 1]),
-                    graphics.rise,
-                    scaling,
-                    char_space,
+                untrack_tuple(
+                    PlumberMark(
+                        start + index,
+                        self.current_mcid,
+                        self.current_tag,
+                        miner.ncs[0],
+                        stroking,
+                        non_stroking,
+                        (a, b, c, d, placed[2 * index], placed[2 * index + 1]),
+                        graphics.rise,
+                        scaling,
+                        char_space,
+                    )
                 )
             )
         return shown
