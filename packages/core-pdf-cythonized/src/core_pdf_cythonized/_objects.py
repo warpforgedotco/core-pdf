@@ -59,6 +59,9 @@ class ObjectScanner:
     object_number: object
     generation: object
     name_is_contents: cython.bint
+    # The strict lexer's reading: an invalid or null name escape and an endobj glued to a
+    # value are left to the lexer, which raises, where the recovery reader keeps them.
+    strict: cython.bint
 
     def __init__(
         self,
@@ -71,6 +74,7 @@ class ObjectScanner:
         name_of,
         string_type,
         reference_type,
+        strict: cython.bint = False,
     ):
         if len(whitespace_table) != 256 or len(separator_table) != 256:
             raise ValueError("lexical tables must have 256 entries")
@@ -87,6 +91,7 @@ class ObjectScanner:
         self.name_of = name_of
         self.string_type = string_type
         self.reference_type = reference_type
+        self.strict = strict
 
     def release(self):
         self.view = None
@@ -273,7 +278,9 @@ class ObjectScanner:
                     continue
                 high = HEX_VALUE[data[index + 1]] if index + 1 < end else 255
                 low = HEX_VALUE[data[index + 2]] if index + 2 < end else 255
-                if high == 255 or low == 255:
+                if high == 255 or low == 255 or (self.strict and (high << 4) | low == 0):
+                    if self.strict:
+                        return BAIL
                     decoded.append(35)
                     index += 1
                 else:
@@ -496,8 +503,27 @@ class ObjectScanner:
             return BAIL
         if object_number < 0 or not 0 <= generation <= 65535:
             return BAIL
+        if self.strict and (
+            object_number == 0
+            or not self.canonical_digits(start, end)
+            or not self.canonical_digits(next_start, next_end)
+        ):
+            # The strict lexer takes only plain digits without a leading zero, and object
+            # numbers from 1; it is left to raise, or to read a lenient context's own way.
+            return BAIL
         pos[0] = marker_end
         return self.reference_type(object_number, generation)
+
+    @cython.cfunc
+    @cython.exceptval(check=False)
+    def canonical_digits(self, start: cython.Py_ssize_t, end: cython.Py_ssize_t) -> cython.bint:
+        index: cython.Py_ssize_t
+        if end <= start or (end - start > 1 and self.data[start] == 48):
+            return False
+        for index in range(start, end):
+            if not is_digit(self.data[index]):
+                return False
+        return True
 
     @cython.cfunc
     def value(
@@ -521,6 +547,7 @@ class ObjectScanner:
         end: cython.Py_ssize_t = self.word_end(start)
         if (
             strip_endobj
+            and not self.strict
             and end - start > 6
             and self.data[end - 6] == 101
             and self.data[end - 5] == 110
@@ -553,6 +580,8 @@ class ObjectScanner:
             if self.data[cursor] != 47:
                 return BAIL
             key = self.name(cython.address(cursor))
+            if key is BAIL:
+                return BAIL
             if self.name_is_contents and self.decipher is not None and self.hex_follows(cursor):
                 return BAIL
             if key in values:

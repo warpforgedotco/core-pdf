@@ -15,6 +15,7 @@ class ObjectScanner:
         name_of: Callable[[bytes], Any],
         string_type: Callable[..., Any],
         reference_type: Callable[[int, int], Any],
+        strict: bool = False,
     ) -> None: ...
     def release(self) -> None: ...
     def parse_dictionary(

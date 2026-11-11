@@ -4,7 +4,7 @@ Compiled kernels for `core-pdf` hot paths.
 
 `core-pdf` depends on this distribution and imports from it directly. There is
 no pure-Python fallback: when a kernel lands here, the Python it replaced is
-deleted -- with three exceptions, `ObjectScanner`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
+deleted -- with four exceptions, `ObjectScanner`, `AreaGapQueue`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
 ## Source form
@@ -71,7 +71,7 @@ decoder now reports arithmetic generic regions as unsupported, as it already
 did MMR and text regions. Core's `RecoveryJBIG2PageDecoder` checks the region
 header and calls the kernel.
 
-## Three kernels keep their Python
+## Four kernels keep their Python
 
 `ObjectScanner` is the other exception, in the opposite direction: it mirrors
 code that is not deleted. The Python it mirrors is `core-pdf-spec`'s object
@@ -80,6 +80,20 @@ reader subclass of it still parses everything the scanner declines. So the
 scanner owns a subset of the grammar exactly -- well-formed dictionaries and
 arrays under the reader's rules -- and returns None for the rest, after which
 the reader parses the same bytes in Python from the same position.
+
+Built with `strict=True`, it serves the spec's strict lexer the same way, through
+`core_pdf.impl.recovery_lexer.StrictPdfLexer`: it also declines what the strict
+lexer reads differently from the reader -- an invalid or null name escape, a
+reference that is not plain digits or names object 0, and an `endobj` glued to a
+value -- so the lexer raises or reads those as it always has.
+`scripts/check_strict_object_scanner.py` parses every object of the upstream test
+files, and objects generated around those cases, with both and fails on any
+difference.
+
+`AreaGapQueue` keeps its Python too: the reading order of
+`core_pdf_compat.pdfminer._layout` takes it when every box coordinate is a float
+and `_PairQueue` otherwise, and `scripts/check_area_gap_queue.py` drives both
+through the same random runs.
 
 That makes divergence possible where elsewhere it is not, so a change to either
 side has to be made in both.
@@ -168,7 +182,8 @@ Nothing checks the result on the platforms that build wheels.
 | `composite_nonisolated_blend` | the general branch of `core_pdf.impl.render_target.composite_nonisolated_group` (deleted): the effective-alpha quantization, the boolean gathers into float64, the clip and the `blend_visible_pixels` scatter, for every blend mode it reaches. Its backdrop removal mirrors `core_pdf_spec.s_11_transparency.groups.remove_group_backdrop`, which spec keeps; `remove_group_backdrop_samples` exposes the copy, and `tests/src/core_pdf/test_nonisolated_backdrop_contracts.py` pins it to spec's function and the whole kernel to the spec composition it replaced | 14.3x over the 114 non-isolated groups a census of the fixture corpus reaches (79.3 to 5.6 ns/px); PyMuPDF test_4479 render 46.6 to 19.0 ms (-59%, one 428x951 Darken group), test_2885 251 to 227 ms (-10%) |
 | `object_headers_match` | the anchored `OBJECT_HEADER_RE` match and its two `int()` comparisons in `core_pdf.impl.document_document.xref_entry_matches_header` (deleted), run per in-use xref entry at open | one pass over every entry instead of a match object and two conversions each (471,099 over the corpus); corpus open 2.80 to 2.73 s. An object number too large for 63 bits is settled by core by digits |
 | `decrypt_type1` | nothing deleted: mirrors `core_adobe_fonts.type1.program.decrypt_type1`, which that pure-Python package keeps; core's `Type1FontProgram` decrypts its eexec section and every charstring with this | 1.36 s of a 400-document extraction sample over 41,241 calls, at about 100 ns a byte in Python; first-page extract of f1040nr 0.17 to 0.13 s, layout-parser-paper 0.11 to 0.09 s |
-| `ObjectScanner` | nothing deleted: mirrors `parse_dictionary` and `parse_array` of `core_pdf.impl.recovery_lexer.PdfLexer`, which falls back to them | 5.5x on parsing the indirect objects of the benchmark corpus (201 to 37 ms), 99% of calls taking the compiled path; -30 to -46% on document open, -3 to -55% on first-page extraction |
+| `ObjectScanner` | nothing deleted: mirrors `parse_dictionary` and `parse_array` of `core_pdf.impl.recovery_lexer.PdfLexer`, which falls back to them, and in strict mode those of the spec's `PdfLexer`, for `StrictPdfLexer` | 5.5x on parsing the indirect objects of the benchmark corpus (201 to 37 ms), 99% of calls taking the compiled path; -30 to -46% on document open, -3 to -55% on first-page extraction |
+| `AreaGapQueue` | nothing deleted: the pair queue of `_reading_order` in `core_pdf_compat.pdfminer._layout`, whose `_PairQueue` takes boxes with non-float coordinates | layout analysis of 256 test pages 1.46 to 0.73 s (2.18 s before the distances were inlined) |
 | `fill_edge_rows` | the edge-index lists and ten numpy calls of `core_pdf.impl.capture_records.CapturedPath.fill_edge_array` (deleted) | 9.9x over 22,830 corpus render calls (447 to 45 ms, median 31 points); rasterize of test_3362 352 to 218 ms, test_3806 1530 to 1316 ms |
 | `glyph_bitmap_rows` | the per-row numpy scanline loop of `core_pdf.impl.fonts_raster_kernel.rasterize_contours`, which keeps it only for the inputs the kernel declines (a non-finite coordinate, a width past 62) | 42x over corpus glyph bitmaps; cold first-page extract of the NASA JBIG2 scan 538 to 412 ms |
 | `blend_visible_rgba` | the gather, float64 blend and scatter of `core_pdf.impl.render_blend.blend_visible_pixels` for normal, multiply and screen (deleted for those modes; color dodge and burn keep numpy) | 10.9x over 2,287 corpus render calls (561 to 52 ms); rasterize of test_3806, 408 multiply image blits, 1324 to 1062 ms |
@@ -212,3 +227,9 @@ Needs a C compiler. From the workspace root:
 ```sh
 uv sync --all-packages --all-groups
 ```
+
+The build takes any Cython from 3.1 on. Cython 3.2 and later crash compiling a tuple
+unpacking of a slice whose start is not a constant, such as `a, b = values[i:]` or
+`x, y = coords[i : i + 2]` ([cython/cython#8122](https://github.com/cython/cython/issues/8122),
+open as of 3.3.1). Bind the slice first (`pair = values[i:]`, then `a, b = pair`), or index
+the items one by one.
