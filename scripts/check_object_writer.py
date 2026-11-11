@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Check that core's compiled serializer writes exactly what the spec's serializer writes.
+"""Check that core's compiled serializer writes exactly what the spec's serializer writes,
+and that its compiled reference walk finds what the Python walk found.
 
 core_pdf.impl.object_serialize writes PDF objects with core-pdf-cythonized's ObjectWriter,
 which must give the bytes core_pdf_spec.s_07_syntax.serialize gives, in both layouts. This
@@ -9,6 +10,8 @@ then values generated around what the writer handles itself and what it hands ba
 with every byte, literal and hex strings with every byte, ints of every size, int and str
 subclasses, reals, bytes, nested dictionaries, lists and tuples, other mappings and
 sequences, streams, unwritable values), and fails on the first output or error that differs.
+Every object and generated value is also walked for its references both ways, which must
+give the same references in the same order, as a save writes objects in that order.
 
 uv run --all-packages python scripts/check_object_writer.py [generated values]
 """
@@ -28,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core_pdf import PdfDocument
 from core_pdf.impl import object_serialize
+from core_pdf.impl.document_editing import references_in
 from core_pdf.impl.recovery_lexer import BareKeyword
 from core_pdf_spec.s_07_syntax import serialize as spec
 from core_pdf_spec.s_07_syntax.serialize import ObjectLayout
@@ -38,6 +42,32 @@ from scripts.check_strict_object_scanner import CORPUS
 
 class Level(enum.IntEnum):
     LOW = 3
+
+
+def python_references_in(value: Any) -> list[PdfReference]:
+    """references_in as it was written in Python, the reference for the compiled walk."""
+    found: list[PdfReference] = []
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, PdfReference):
+            found.append(item)
+        elif isinstance(item, PdfStream):
+            pending.extend(item.dictionary.values())
+        elif isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            pending.extend(item)
+    return found
+
+
+def same_references(value: object) -> bool:
+    """Whether the compiled walk finds the very references, in the order, Python does."""
+    expected = python_references_in(value)
+    actual = references_in(value)
+    return len(expected) == len(actual) and all(
+        left is right for left, right in zip(expected, actual, strict=True)
+    )
 
 
 def outcome(serialize: Any, value: object, layout: ObjectLayout) -> tuple[Any, ...]:
@@ -111,6 +141,8 @@ def main(argv: list[str]) -> int:
             except Exception:  # noqa: BLE001
                 continue
             objects += 1
+            if not same_references(value):
+                differences.append(f"{path} {number} references")
             differences.extend(
                 f"{path} {number} {layout.name}"
                 for layout in ObjectLayout
@@ -137,6 +169,8 @@ def main(argv: list[str]) -> int:
     rng = random.Random(0)
     for _ in range(count):
         value = generated(rng)
+        if not same_references(value):
+            differences.append(f"references {value!r:.160}")
         layout = rng.choice(tuple(ObjectLayout))
         differences.extend(
             f"{layout.name} {value!r:.160}"

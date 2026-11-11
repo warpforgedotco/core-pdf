@@ -325,3 +325,33 @@ class ObjectWriter:
             return self.write_stream(value)
         finally:
             self.depth -= 1
+
+
+def collect_references(value, reference_type, stream_type) -> list:
+    """Every reference in value, depth first, in the order
+    core_pdf.impl.document_editing.references_in has always given them.
+
+    It pops the last pending value: a reference is found, a stream's dictionary values,
+    a dict's values, and a list's or tuple's items are pushed, in their order; anything
+    else is skipped. Subclasses go through their own values() and iteration.
+    """
+    found: list = []
+    pending: list = [value]
+    item: object
+    cls: type
+    while pending:
+        item = pending.pop()
+        cls = type(item)
+        if cls is list or cls is tuple:
+            pending.extend(item)
+        elif cls is dict:
+            pending.extend(cython.cast(dict, item).values())
+        elif isinstance(item, reference_type):
+            found.append(item)
+        elif isinstance(item, stream_type):
+            pending.extend(item.dictionary.values())
+        elif isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            pending.extend(item)
+    return found
