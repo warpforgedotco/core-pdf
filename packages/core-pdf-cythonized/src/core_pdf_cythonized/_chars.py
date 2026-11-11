@@ -270,3 +270,240 @@ def plumber_char_dicts(
             }
         )
     return objects
+
+
+# A glyph pdfminer_chars leaves to the Python loop, and one that makes no char.
+LEFT = cython.declare(object, None)
+NO_CHAR = cython.declare(object, object())
+
+
+def no_char() -> object:
+    """The marker pdfminer_chars returns for a glyph that makes no char."""
+    return NO_CHAR
+
+
+@cython.cfunc
+def provenance_entry(cache: dict, provenance: object, is_clipped: object) -> object:
+    # What a glyph's provenance gives every glyph that shares it: whether a form clips it
+    # away, its four-value text matrix as floats (None for any other), its horizontal scale
+    # and its text rise -- or None, which leaves its glyphs to the Python loop, where a
+    # value that does not convert raises as it always has.
+    known = cache.get(id(provenance))
+    if known is not None and cython.cast(tuple, known)[0] is provenance:
+        return cython.cast(tuple, known)[1]
+    entry: object = None
+    try:
+        values = dict(provenance)
+        clipped = bool(is_clipped(values))
+        text_matrix = values.get("text_matrix")
+        floats = None
+        if isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 4:
+            floats = tuple(map(float, text_matrix))
+        entry = (
+            clipped,
+            floats,
+            float(values.get("horizontal_scale", 100.0)) * 0.01,
+            float(values.get("text_rise", 0.0) or 0.0),
+        )
+    except Exception:  # noqa: BLE001
+        entry = None
+    cache[id(provenance)] = (provenance, entry)
+    return entry
+
+
+def pdfminer_chars(
+    glyphs,
+    glyph_matrices: dict,
+    strict_resources: cython.bint,
+    skipped: set,
+    ligatures: dict,
+    embedded_unusable,
+    is_clipped,
+    glyph_text,
+    projected_widths,
+    descent_of,
+    font_name,
+    char_type,
+    empty_glyph_text,
+) -> list:
+    """core_pdf_compat.pdfminer's project_page chars for plain horizontal text.
+
+    One entry per glyph: the LTChar the Python loop makes for it, no_char() for a glyph that
+    makes none, or None for a glyph left to the loop -- vertical text, a text matrix other
+    than four values, a glyph pdfminer's own char matrix does not place, one right after
+    vertical text, one the centring rule for a lone wide flat glyph moves, a provenance
+    that does not convert, or a number that is not a float. The arithmetic is the loop's,
+    in its order.
+    """
+    count: cython.Py_ssize_t = len(glyphs)
+    results: list = [LEFT] * count
+    glyph_index: cython.Py_ssize_t
+    glyph_texts: dict = {}
+    widths: dict = {}
+    descents: dict = {}
+    font_names: dict = {}
+    unusable: dict = {}
+    provenances: dict = {}
+    font_size = cython.declare(cython.double)
+    width = cython.declare(cython.double)
+    descent_unit = cython.declare(cython.double)
+    char_a = cython.declare(cython.double)
+    char_b = cython.declare(cython.double)
+    char_c = cython.declare(cython.double)
+    char_d = cython.declare(cython.double)
+    char_e = cython.declare(cython.double)
+    char_f = cython.declare(cython.double)
+    box_x0 = cython.declare(cython.double)
+    box_y0 = cython.declare(cython.double)
+    box_x1 = cython.declare(cython.double)
+    box_y1 = cython.declare(cython.double)
+    horizontal_scale: cython.double
+    rise: cython.double
+    descent: cython.double
+    advance: cython.double
+    low: cython.double
+    high: cython.double
+    x0: cython.double
+    y0: cython.double
+    x1: cython.double
+    y1: cython.double
+    for glyph_index in range(count):
+        glyph = glyphs[glyph_index]
+        decoder = glyph.font_decoder
+        if strict_resources and cached_by_identity(unusable, decoder, embedded_unusable, glyph):
+            results[glyph_index] = NO_CHAR
+            continue
+        provenance = glyph.provenance
+        if not provenance:
+            continue
+        entry = provenance_entry(provenances, provenance, is_clipped)
+        if entry is None:
+            continue
+        if cython.cast(tuple, entry)[0]:
+            results[glyph_index] = NO_CHAR
+            continue
+        if id(glyph) in skipped:
+            results[glyph_index] = NO_CHAR
+            continue
+        if not glyph.text:
+            results[glyph_index] = NO_CHAR
+            continue
+        ligature = ligatures.get(id(glyph))
+        box = ligature[1] if ligature is not None else glyph.advance_bbox
+        if len(box) != 4:
+            continue
+        baseline = ligature[2] if ligature is not None else glyph.baseline
+        key = (
+            decoder,
+            glyph.char_code,
+            glyph.cid,
+            glyph.code_bytes,
+            glyph.unicode_source,
+            glyph.text,
+            glyph.alternates,
+        )
+        text_of_glyph = None
+        if ligature is None:
+            text_of_glyph = glyph_texts.get(key)
+            if text_of_glyph is None:
+                text_of_glyph = glyph_texts[key] = glyph_text(glyph)
+        text = (ligature[0] if ligature is not None else text_of_glyph) or ""
+        if not text and glyph.text != empty_glyph_text:
+            results[glyph_index] = NO_CHAR
+            continue
+        if getattr(decoder, "is_vertical", False) or baseline is None:
+            continue
+        floats = cython.cast(tuple, entry)[1]
+        if floats is None:
+            continue
+        if glyph_index and glyphs[glyph_index - 1].font_decoder.is_vertical:
+            continue
+        if not exact_float(glyph.font_size, cython.address(font_size)):
+            continue
+        # The centring rule for a lone wide flat glyph keeps a count the loop must update.
+        if (
+            glyph.baseline is not None
+            and font_size > 0
+            and not glyph.effective_font_size
+            and exact_float(box[0], cython.address(box_x0))
+            and exact_float(box[1], cython.address(box_y0))
+            and exact_float(box[2], cython.address(box_x1))
+            and exact_float(box[3], cython.address(box_y1))
+            and box_x1 - box_x0 >= font_size * 0.8
+            and box_y1 - box_y0 <= font_size * 0.1
+        ):
+            continue
+        if not (
+            exact_float(box[0], cython.address(box_x0))
+            and exact_float(box[1], cython.address(box_y0))
+            and exact_float(box[2], cython.address(box_x1))
+            and exact_float(box[3], cython.address(box_y1))
+        ):
+            continue
+        exact_matrix = glyph_matrices.get(glyph_index)
+        if exact_matrix is None or len(exact_matrix) != 6:
+            continue
+        if not (
+            exact_float(exact_matrix[0], cython.address(char_a))
+            and exact_float(exact_matrix[1], cython.address(char_b))
+            and exact_float(exact_matrix[2], cython.address(char_c))
+            and exact_float(exact_matrix[3], cython.address(char_d))
+            and exact_float(exact_matrix[4], cython.address(char_e))
+            and exact_float(exact_matrix[5], cython.address(char_f))
+        ):
+            continue
+        width_code = (
+            glyph.cid
+            if getattr(decoder, "is_cid_font", False)
+            else glyph.char_code
+            if glyph.char_code is not None
+            else glyph.cid
+        )
+        widths_key = (*key, text_of_glyph is None)
+        known_widths = widths.get(widths_key)
+        if known_widths is None:
+            known_widths = widths[widths_key] = projected_widths(glyph, width_code, text_of_glyph)
+        if not exact_float(known_widths[1], cython.address(width)):
+            continue
+        if not exact_float(
+            cached_by_identity(descents, decoder, descent_of, glyph), cython.address(descent_unit)
+        ):
+            continue
+        horizontal_scale = cython.cast(tuple, entry)[2]
+        rise = cython.cast(tuple, entry)[3]
+        # pdfminer's own arithmetic, from LTChar: its rounding decides which boxes touch.
+        descent = descent_unit * font_size
+        advance = width * font_size * horizontal_scale
+        low = descent + rise
+        high = descent + rise + font_size
+        x0 = py_min(
+            py_min(py_min(char_a * 0.0 + char_c * low + char_e,
+                          char_a * advance + char_c * low + char_e),
+                   char_a * advance + char_c * high + char_e),
+            char_a * 0.0 + char_c * high + char_e,
+        )  # fmt: skip
+        x1 = py_max(
+            py_max(py_max(char_a * 0.0 + char_c * low + char_e,
+                          char_a * advance + char_c * low + char_e),
+                   char_a * advance + char_c * high + char_e),
+            char_a * 0.0 + char_c * high + char_e,
+        )  # fmt: skip
+        y0 = py_min(
+            py_min(py_min(char_b * 0.0 + char_d * low + char_f,
+                          char_b * advance + char_d * low + char_f),
+                   char_b * advance + char_d * high + char_f),
+            char_b * 0.0 + char_d * high + char_f,
+        )  # fmt: skip
+        y1 = py_max(
+            py_max(py_max(char_b * 0.0 + char_d * low + char_f,
+                          char_b * advance + char_d * low + char_f),
+                   char_b * advance + char_d * high + char_f),
+            char_b * 0.0 + char_d * high + char_f,
+        )  # fmt: skip
+        results[glyph_index] = char_type(
+            (x0, y0, x1, y1),
+            text,
+            cached_by_identity(font_names, decoder, font_name, glyph),
+            y1 - y0,
+        )
+    return results

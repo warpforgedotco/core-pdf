@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# Only pdfplumber's chars need this kernel (Python 3.15+).
+# Only the pdfplumber and pdfminer chars need this kernel (Python 3.15+).
 __lazy_modules__ = ["core_pdf_cythonized._chars"]
 
 from collections.abc import Callable
@@ -33,9 +33,9 @@ from core_pdf_cythonized import (
     horizontal_glyph_geometry,
     untrack_tuple,
 )
-from core_pdf_cythonized._chars import plumber_char_dicts
+from core_pdf_cythonized._chars import no_char, pdfminer_chars, plumber_char_dicts
 
-__all__ = ["plumber_char_dicts", "untrack_tuple"]
+__all__ = ["no_char", "pdfminer_chars", "plumber_char_dicts", "untrack_tuple"]
 
 TextBasis = tuple[float, float, float, float, float, float]
 

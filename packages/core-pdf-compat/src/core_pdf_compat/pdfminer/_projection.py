@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from core_pdf import PdfPage
+from core_pdf.impl.capture_glyphs import no_char, pdfminer_chars
 from core_pdf.impl.capture_program import CapturedProgram
 from core_pdf.impl.types import GeneratedRecord
 from core_pdf_spec.s_07_content.model import PATH_CLOSE, PATH_CURVE, PATH_OPERAND_COUNTS, PATH_RECT
@@ -157,7 +158,6 @@ def project_page(
         products = pdfminer_page_program(page, strict_cmaps=policy.strict_resources)
     projected_glyphs: tuple[Any, ...] = products.glyphs
     ligatures, skipped_ligature_parts = pdfminer_ligature_overrides(projected_glyphs)
-    chars_by_glyph: dict[int, LTChar] = {}
     glyph_matrices: dict[int, Any] = getattr(products, "glyph_matrices", {})
     vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
     # Per provenance: [source, its dict, then what the loop derives from that dict alone,
@@ -179,7 +179,26 @@ def project_page(
     font_names: dict[int, tuple[Any, Any]] = {}
     strict_resources = policy.strict_resources
     page_rotation = int(page.rotation) % 360
+    # The kernel writes the chars of plain horizontal text, in this loop's arithmetic; the
+    # loop, its reference, writes the glyphs it leaves (None), in order.
+    chars: list[Any] = pdfminer_chars(
+        projected_glyphs,
+        glyph_matrices,
+        strict_resources,
+        skipped_ligature_parts,
+        ligatures,
+        pdfminer_embedded_cmap_is_unusable,
+        _pdfminer_form_glyph_is_clipped,
+        pdfminer_glyph_text,
+        pdfminer_projected_widths,
+        pdfminer_descent,
+        pdfminer_font_name,
+        LTChar,
+        EMPTY_GLYPH_TEXT,
+    )
     for glyph_index, glyph in enumerate(projected_glyphs):
+        if chars[glyph_index] is not None:
+            continue
         if strict_resources:
             cmap_decoder = glyph.font_decoder
             unusable = unusable_cmaps.get(id(cmap_decoder))
@@ -484,7 +503,13 @@ def project_page(
             # pdfminer's size is the box's height, or its width for vertical writing.
             x1 - x0 if is_vertical else y1 - y0,
         )
-        chars_by_glyph[glyph_index] = character
+        chars[glyph_index] = character
+    no_glyph_char = no_char()
+    chars_by_glyph = {
+        index: character
+        for index, character in enumerate(chars)
+        if character is not None and character is not no_glyph_char
+    }
     events = getattr(products, "layout_events", ())
     painted_paths = getattr(products, "painted_paths", ())
     rotation = page_rotation

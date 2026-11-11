@@ -21,3 +21,19 @@ def plumber_char_dicts(
     doctop_value: float,
     nfc: bool,
 ) -> list[dict[str, Any]] | None: ...
+def no_char() -> object: ...
+def pdfminer_chars(
+    glyphs: Sequence[Any],
+    glyph_matrices: dict[int, Any],
+    strict_resources: bool,
+    skipped: set[int],
+    ligatures: dict[int, Any],
+    embedded_unusable: Callable[[Any], bool],
+    is_clipped: Callable[[dict[str, Any]], bool],
+    glyph_text: Callable[[Any], str],
+    projected_widths: Callable[[Any, int | None, str | None], tuple[float | None, float]],
+    descent_of: Callable[[Any], float],
+    font_name: Callable[[Any], Any],
+    char_type: Callable[..., Any],
+    empty_glyph_text: str,
+) -> list[Any]: ...
