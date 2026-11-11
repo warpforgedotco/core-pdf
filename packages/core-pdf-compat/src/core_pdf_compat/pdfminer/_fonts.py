@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
+from functools import lru_cache
 from typing import Any
 
 from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
@@ -75,6 +76,7 @@ def decoder_to_unicode(decoder: object) -> Any:
     return decoder.unicode.to_unicode if isinstance(decoder, FontDecoder) else None
 
 
+@lru_cache(maxsize=4096)
 def legacy_glyph_name_text(name: str) -> str:
     codepoints = LEGACY_AGL2UV.get(name)
     if codepoints is not None:
@@ -383,18 +385,24 @@ def pdfminer_ligature_overrides(
         kind, planned_text = plan
         if kind == "mapped":
             cluster_id = glyph.cluster_key
-            cluster = [glyph]
-            if cluster_id is not None:
-                next_index = index + 1
+            if (
+                cluster_id is not None
+                and index + 1 < len(glyphs)
+                and glyphs[index + 1].cluster_key == cluster_id
+            ):
+                cluster = [glyph, glyphs[index + 1]]
+                next_index = index + 2
                 while next_index < len(glyphs):
                     item = glyphs[next_index]
                     if item.cluster_key != cluster_id:
                         break
                     cluster.append(item)
                     next_index += 1
-            box = bbox_union(item.advance_bbox for item in cluster) or glyph.advance_bbox
+                box = bbox_union(item.advance_bbox for item in cluster) or glyph.advance_bbox
+                skipped.update(id(item) for item in cluster[1:])
+            else:
+                box = glyph.advance_bbox
             overrides[id(glyph)] = (planned_text, box, glyph.baseline)
-            skipped.update(id(item) for item in cluster[1:])
             continue
         if kind == "difference":
             glyph_name_text = planned_text
@@ -480,6 +488,9 @@ def _ligature_plan(glyph: Any) -> tuple[str, str] | None:
     return None if expected is None else ("ligature", expected)
 
 
+LIGATURE_CHARS = frozenset(LIGATURE_TEXT_TO_CHAR.values())
+
+
 def _expected_ligature(glyph: Any) -> str | None:
     """The ligature character the glyph's encoding names for its code, or None if none does.
 
@@ -489,10 +500,12 @@ def _expected_ligature(glyph: Any) -> str | None:
     glyph_name = decoder_encoding_differences(decoder).get(glyph.char_code)
     base_table = base_encoding_table(decoder_base_encoding(decoder))
     encoded_ligature = base_table[glyph.char_code] if 0 <= glyph.char_code < len(base_table) else ""
-    expected_ligature = LIGATURE_TEXT_TO_CHAR.get(
-        str(glyph_name) if glyph_name else "", encoded_ligature
+    expected_ligature = (
+        LIGATURE_TEXT_TO_CHAR.get(str(glyph_name), encoded_ligature)
+        if glyph_name
+        else encoded_ligature
     )
-    return expected_ligature if expected_ligature in LIGATURE_TEXT_TO_CHAR.values() else None
+    return expected_ligature if expected_ligature and expected_ligature in LIGATURE_CHARS else None
 
 
 def _pdfminer_builtin_width(glyph: Any, projected_text: str | None = None) -> float | None:

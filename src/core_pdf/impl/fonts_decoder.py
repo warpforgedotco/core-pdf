@@ -261,7 +261,7 @@ class FontDecoder:
             return ()
         if len(data) > STRING_GLYPH_CACHE_MAX_BYTES:
             return self.decode_glyphs_uncached(data)
-        key = bytes(data)
+        key = data if type(data) is bytes else bytes(data)
         cache = self.string_glyph_cache
         glyphs = cache.get(key)
         if glyphs is None:

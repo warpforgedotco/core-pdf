@@ -132,7 +132,7 @@ def content_operations(data: bytes) -> Iterator[ContentOperation]:
 
 
 def core_operations(data: bytes) -> Iterator[ContentOperation]:
-    if INLINE_IMAGE_START.search(data) is None:
+    if b"BI" not in data or INLINE_IMAGE_START.search(data) is None:
         yield from lexed_operations(data)
         return
     position = 0
@@ -273,19 +273,58 @@ class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     width_uses_source_code: bool
     # pypdf's layout mode skips the text of a Type3 font it cannot map to characters.
     interpretable: bool = True
+    simple_byte_table: tuple[tuple[tuple[str, ...], float], ...] | None = None
+    parts_cache: dict[bytes, tuple[tuple[str, ...], float]] | None = None
 
     __hash__ = None  # type: ignore[assignment]
 
+    def get_simple_byte_table(
+        self, table: tuple[str, ...]
+    ) -> tuple[tuple[tuple[str, ...], float], ...]:
+        cached = self.simple_byte_table
+        if cached is not None:
+            return cached
+        char_map_get = self.character_map.get
+        widths_get = self.widths.get
+        default_width = self.default_width
+        space_byte = self.space_code_bytes[0] if len(self.space_code_bytes) == 1 else -1
+        space_width = self.space_width
+        built = tuple(
+            (
+                tuple(char_map_get(character, character) for character in table[code]),
+                space_width if code == space_byte else float(int(widths_get(code, default_width))),
+            )
+            for code in range(256)
+        )
+        self.simple_byte_table = built
+        return built
+
     def decode_parts(self, data: bytes) -> tuple[tuple[str, ...], float]:
+        if not self.decoder.is_cid_font and self.encoding_table is not None:
+            byte_table = self.get_simple_byte_table(self.encoding_table)
+            if len(data) == 1:
+                return byte_table[data[0]]
+            cache = self.parts_cache
+            if cache is None:
+                cache = self.parts_cache = {}
+            elif len(data) <= 16 and (cached_result := cache.get(data)) is not None:
+                return cached_result
+            parts = tuple(part for code in data for part in byte_table[code][0])
+            width = sum(byte_table[code][1] for code in data)
+            if len(data) <= 16 and len(cache) < 4096:
+                cache[data] = (parts, width)
+            return parts, width
+        cache = self.parts_cache
+        can_cache = len(data) <= 16 and self.decoder.unicode.cff_unicode_repair_index is None
+        if can_cache:
+            if cache is None:
+                cache = self.parts_cache = {}
+            elif (cached_result := cache.get(data)) is not None:
+                return cached_result
         glyphs = self.decoder.decode_glyphs(data)
         width = sum(self.glyph_width(glyph) for glyph in glyphs)
         mapped_every_glyph = False
-        if not self.decoder.is_cid_font and self.encoding_table is not None:
-            # pypdf takes the characters the encoding gives one by one, so a glyph name it
-            # does not know ("/afii62766") reads as letters, each with its own direction.
-            parts = tuple(part for glyph in glyphs for part in self.simple_glyph_parts(glyph))
-            mapped_every_glyph = True
-        elif self.cmap is not None:
+        if self.cmap is not None:
             mappings = self.cmap.mappings
             parts = tuple(
                 mappings.get(
@@ -317,6 +356,8 @@ class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
             parts = tuple(self.glyph_text(glyph) for glyph in glyphs)
         if not any(parts) and not mapped_every_glyph:
             parts = tuple(data.decode("latin-1"))
+        if can_cache and cache is not None and len(cache) < 4096:
+            cache[data] = (parts, width)
         return parts, width
 
     def layout_word(self, data: bytes) -> tuple[str, str]:
@@ -1170,8 +1211,9 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
             visitor(text, cm, tm, self.font_resource(), self.font_size)
 
     def remember_position(self) -> None:
-        self.memo_cm = self.cm.copy()
-        self.memo_tm = self.tm.copy()
+        if self.options.visitor_text is not None:
+            self.memo_cm = self.cm.copy()
+            self.memo_tm = self.tm.copy()
 
     def flush(self) -> None:
         self.visit(self.text)
@@ -1189,8 +1231,8 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         current = multiply_affine(self.tm, self.cm)
         return orientation(current) in self.options.orientations
 
-    def positioned(self, string_width: float) -> None:
-        if not self.visible():
+    def positioned(self, string_width: float, *, known_visible: bool = False) -> None:
+        if not known_visible and not self.visible():
             return
         text, parts = self.text, len(self.output_parts)
         super().positioned(string_width)
@@ -1199,10 +1241,9 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         if not text or not self.text:
             self.remember_position()
 
-    def show(self, data: bytes) -> None:
-        if not self.visible():
+    def show(self, data: bytes, *, known_visible: bool = False) -> None:
+        if not known_visible and not self.visible():
             self.actual_height = self.font_size
-            self.positioned(0.0)
             return
         if self.font is None:
             parts, width = tuple(data.decode("latin-1")), len(data) * 500.0
@@ -1211,13 +1252,12 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         self.add_directional_parts(parts)
         self.accumulated_width += width * self.font_size
         self.actual_height = self.font_size
-        self.positioned(0.0)
+        self.positioned(0.0, known_visible=True)
 
     def show_name(self, name: PdfName) -> None:
         """pypdf shows a name operand as its own text, slash included, without the font."""
         if not self.visible():
             self.actual_height = self.font_size
-            self.positioned(0.0)
             return
         text = "/" + (recover_pdf_name(name) or "")
         width = 0.0
@@ -1235,7 +1275,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         self.text += text
         self.accumulated_width += width * self.font_size
         self.actual_height = self.font_size
-        self.positioned(0.0)
+        self.positioned(0.0, known_visible=True)
 
     def move_text(self, tx: float, ty: float) -> None:
         self.tm[4] += tx * self.tm[0] + ty * self.tm[2]
@@ -1289,10 +1329,19 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
                     self.positioned(0.0)
             case "TJ" if operands and isinstance(operands[0], list):
                 threshold = self.half_space_width * 0.95
+                is_visible: bool | None = None
                 for item in operands[0]:
                     match item:
                         case PdfString(data=data):
-                            self.show(bytes(data))
+                            if is_visible is None:
+                                is_visible = self.visible()
+                            if is_visible:
+                                self.show(
+                                    data if type(data) is bytes else bytes(data),
+                                    known_visible=True,
+                                )
+                            else:
+                                self.actual_height = self.font_size
                         case bool():
                             pass
                         case int() | float() if (
@@ -1301,15 +1350,19 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
                             and not self.text.endswith(" ")
                         ):
                             # pypdf shows a str " ", which it appends whatever the direction.
-                            if self.visible():
+                            if is_visible is None:
+                                is_visible = self.visible()
+                            if is_visible:
                                 self.text += " "
                                 self.accumulated_width += (
                                     self.font.synthetic_space_width
                                     if self.font is not None
                                     else 250.0
                                 ) * self.font_size
-                            self.actual_height = self.font_size
-                            self.positioned(0.0)
+                                self.actual_height = self.font_size
+                                self.positioned(0.0, known_visible=True)
+                            else:
+                                self.actual_height = self.font_size
             case "'":
                 self.process("T*", ())
                 self.process("Tj", operands)

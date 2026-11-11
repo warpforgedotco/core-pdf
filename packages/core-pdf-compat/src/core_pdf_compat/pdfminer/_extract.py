@@ -22,7 +22,6 @@ from ._layout import (
     LTPage,
     LTText,
     LTTextBox,
-    LTTextLine,
 )
 from ._pages import (
     pdfminer_resolvable_pages,
@@ -127,13 +126,13 @@ def render_text(item: Any, output: list[str]) -> None:
     Ported from pdfminer.six's TextConverter.receive_layout, Copyright (c) 2004-2016
     Yusuke Shinyama, under the MIT License.
     """
-    if isinstance(item, (LTPage, LTFigure, LTTextBox, LTTextLine)):
+    if isinstance(item, (LTPage, LTFigure, LTTextBox)):
         for child in item:
             render_text(child, output)
+        if isinstance(item, LTTextBox):
+            output.append("\n")
     elif isinstance(item, LTText):
         output.append(item.get_text())
-    if isinstance(item, LTTextBox):
-        output.append("\n")
 
 
 def extract_text_to_fp(

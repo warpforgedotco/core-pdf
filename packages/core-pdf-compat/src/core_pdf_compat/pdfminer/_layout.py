@@ -265,7 +265,10 @@ class _LTTextGroup[ItemT: LTText](LTComponent, LTText):
         return iter(self._objs)
 
     def get_text(self) -> str:
-        return "".join(item.get_text() for item in self._objs)
+        return "".join(
+            item.text if isinstance(item, (LTChar, LTAnno)) else item.get_text()
+            for item in self._objs
+        )
 
 
 class LTTextLine(_LTTextGroup[LTText]):
@@ -483,7 +486,9 @@ def _group_objects(chars: list[LTChar], params: LAParams) -> list[LTTextLine]:
 
 
 def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) -> bool:
-    if isinstance(first, LTTextLineHorizontal) and isinstance(second, LTTextLineHorizontal):
+    if (type(first) is LTTextLineHorizontal and type(second) is LTTextLineHorizontal) or (
+        isinstance(first, LTTextLineHorizontal) and isinstance(second, LTTextLineHorizontal)
+    ):
         tolerance = ratio * first.height
         return (
             not (second.x1 <= first.x0 or first.x1 <= second.x0)

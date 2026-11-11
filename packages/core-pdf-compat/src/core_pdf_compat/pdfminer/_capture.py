@@ -172,6 +172,7 @@ class PdfminerTextState(TextState):
         self.frame_cursors: dict[int, tuple[float, float]] = {}
         # A glyph's pdfminer advance depends only on its decoder and these fields.
         self.glyph_widths: dict[tuple[Any, ...], float] = {}
+        self.decoder_glyph_widths: dict[int, tuple[Any, dict[int, tuple[Any, float]]]] = {}
         # Flattening loses the operators pdfminer classifies paths by.
         self.painted_paths: list[PaintedPath] = []
         self.vertical_line: Any = None
@@ -484,12 +485,21 @@ class PdfminerTextState(TextState):
             else None
         )
         widths = self.glyph_widths
+        known_decoder_widths = self.decoder_glyph_widths.get(id(decoder))
+        if known_decoder_widths is None or known_decoder_widths[0] is not decoder:
+            known_decoder_widths = self.decoder_glyph_widths[id(decoder)] = (decoder, {})
+        decoder_widths = known_decoder_widths[1]
+        decoder_widths_get = decoder_widths.get
         cursor = self.cursor
         needs_spacing = False
         run: list[Any] = []
         texts: list[str] = []
         origins: list[float] = []
         cursors: list[float] = []
+        run_append = run.append
+        texts_append = texts.append
+        origins_append = origins.append
+        cursors_append = cursors.append
         for value in array:
             if isinstance(value, (int, float)):
                 cursor -= value * adjustment_scale
@@ -506,6 +516,10 @@ class PdfminerTextState(TextState):
                 if decoded.split_unicode and len(text) > 1:
                     self.show_run(run, texts, origins, cursors, decoder, line_ctm)
                     run, texts, origins, cursors = [], [], [], []
+                    run_append = run.append
+                    texts_append = texts.append
+                    origins_append = origins.append
+                    cursors_append = cursors.append
                     start = self.show_alone(decoded, text, e, f, cursor, decoder, line_ctm)
                     if start is not None:
                         glyph = self.glyphs[start]
@@ -523,23 +537,29 @@ class PdfminerTextState(TextState):
                             width = self.pdfminer_width(key)
                         cursor += width * font_size * scale
                 else:
-                    run.append(decoded)
-                    texts.append(text)
-                    origins.append(e)
-                    origins.append(f)
-                    cursors.append(cursor)
-                    key = (
-                        decoder,
-                        decoded.char_code,
-                        decoded.cid,
-                        decoded.code_bytes,
-                        decoded.unicode_source,
-                        text,
-                        decoded.alternates,
-                    )
-                    width = widths.get(key)
-                    if width is None:
-                        width = self.pdfminer_width(key)
+                    run_append(decoded)
+                    texts_append(text)
+                    origins_append(e)
+                    origins_append(f)
+                    cursors_append(cursor)
+                    decoded_id = id(decoded)
+                    known_width = decoder_widths_get(decoded_id)
+                    if known_width is not None and known_width[0] is decoded:
+                        width = known_width[1]
+                    else:
+                        key = (
+                            decoder,
+                            decoded.char_code,
+                            decoded.cid,
+                            decoded.code_bytes,
+                            decoded.unicode_source,
+                            text,
+                            decoded.alternates,
+                        )
+                        width = widths.get(key)
+                        if width is None:
+                            width = self.pdfminer_width(key)
+                        decoder_widths[decoded_id] = (decoded, width)
                     cursor += width * font_size * scale
                 if decoded.width_code == 32:
                     cursor += word_space

@@ -621,7 +621,7 @@ class PlumberTextState(PdfminerTextState):
         # times the CTM.
         self.append_marks(
             start,
-            ((a, b, c, d, placed[index], placed[index + 1]) for index in range(0, len(placed), 2)),
+            [(a, b, c, d, placed[index], placed[index + 1]) for index in range(0, len(placed), 2)],
         )
         return shown
 
@@ -647,20 +647,24 @@ class PlumberTextState(PdfminerTextState):
         scaling = horizontal_scale * 0.01
         char_space = graphics.char_space * horizontal_scale * 0.01
         append = self.plumber_marks.append
+        new_mark = tuple.__new__
         for index, matrix in enumerate(matrices, start):
             append(
                 untrack_tuple(
-                    PlumberMark(
-                        index,
-                        mcid,
-                        tag,
-                        color_space,
-                        stroking,
-                        non_stroking,
-                        matrix,
-                        rise,
-                        scaling,
-                        char_space,
+                    new_mark(
+                        PlumberMark,
+                        (
+                            index,
+                            mcid,
+                            tag,
+                            color_space,
+                            stroking,
+                            non_stroking,
+                            matrix,
+                            rise,
+                            scaling,
+                            char_space,
+                        ),
                     )
                 )
             )
