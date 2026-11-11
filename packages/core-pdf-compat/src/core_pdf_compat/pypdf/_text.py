@@ -1151,9 +1151,6 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         positive = [width for width in widths.values() if width > 0]
         return float(sum(positive) // len(positive)) if positive else 500.0
 
-    def add_text_unit(self, value: str) -> None:
-        self.add_directional(value)
-
     def font_resource(self) -> Any:
         """The current font as pypdf's dictionary, which visitors receive."""
         if self.font_name is None:
@@ -1211,8 +1208,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
             parts, width = tuple(data.decode("latin-1")), len(data) * 500.0
         else:
             parts, width = self.font.decode_parts(data)
-        for part in parts:
-            self.add_text_unit(part)
+        self.add_directional_parts(parts)
         self.accumulated_width += width * self.font_size
         self.actual_height = self.font_size
         self.positioned(0.0)
