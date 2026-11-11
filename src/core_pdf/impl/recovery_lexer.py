@@ -200,8 +200,8 @@ class ScannedLexer(lexer.PdfLexer):
     def parse_scanned_indirect_object(self, expected_reference: PdfReference | None) -> Any:
         """The indirect object at pos, read by the compiled scanner, or MISSING.
 
-        The scanner takes a plainly written object whole, or its dictionary, after which this
-        reads the stream and endobj as parse_indirect_object would. MISSING, having read
+        The scanner takes a plainly written object whole, or its dictionary, after which
+        parse_indirect_body reads the stream and endobj. MISSING, having read
         nothing, leaves the rest -- and a header naming another object, which raises -- to
         the lexer's own code.
         """
@@ -217,18 +217,7 @@ class ScannedLexer(lexer.PdfLexer):
         self.pos = end
         if complete:
             return value
-        previous_number, previous_generation = self.current_obj_num, self.current_gen_num
-        self.current_obj_num, self.current_gen_num = number, generation
-        try:
-            self.pos = self.skip_ignored_at(self.pos)
-            start = self.stream_data_start()
-            if start is not None:
-                self.pos = start
-                value = self.parse_stream(value)
-        finally:
-            self.current_obj_num, self.current_gen_num = previous_number, previous_generation
-        self.read_indirect_terminator()
-        return value
+        return self.parse_indirect_body(number, generation, value)
 
 
 class StrictPdfLexer(ScannedLexer):

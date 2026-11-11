@@ -383,13 +383,26 @@ class PdfLexer:
             expected_reference.generation_number,
         ):
             raise PdfParseError("indirect object header does not match expected reference")
+        return self.parse_indirect_body(obj_num, gen_num)
+
+    def parse_indirect_body(
+        self, obj_num: int, gen_num: int, dictionary: PdfDict | None = None
+    ) -> Any:
+        """7.3.10: the value of indirect object obj_num gen_num, after its header, and endobj.
+
+        dictionary is the object's dictionary when the caller has read it already, with pos
+        just past it; the stream after it, if any, and endobj are read as for any other.
+        """
         previous_obj, previous_gen = self.current_obj_num, self.current_gen_num
         self.current_obj_num, self.current_gen_num = obj_num, gen_num
         try:
-            self.pos = self.skip_ignored_at(self.pos)
-            if self.raw_data[self.pos : self.pos + 6] == b"endobj":
-                return self.handle_empty_indirect_object()
-            obj = self.parse_object()
+            if dictionary is not None:
+                obj = self.stream_or_dictionary(dictionary)
+            else:
+                self.pos = self.skip_ignored_at(self.pos)
+                if self.raw_data[self.pos : self.pos + 6] == b"endobj":
+                    return self.handle_empty_indirect_object()
+                obj = self.parse_object()
         finally:
             self.current_obj_num, self.current_gen_num = previous_obj, previous_gen
         self.read_indirect_terminator()
@@ -648,7 +661,10 @@ class PdfLexer:
         return raw_data
 
     def parse_dictionary_or_stream(self) -> Any:
-        dictionary = self.parse_dictionary()
+        return self.stream_or_dictionary(self.parse_dictionary())
+
+    def stream_or_dictionary(self, dictionary: PdfDict) -> Any:
+        """7.3.8: the stream whose dictionary was just read, or the dictionary alone."""
         self.pos = self.skip_ignored_at(self.pos)
         start = self.stream_data_start()
         if start is None:
