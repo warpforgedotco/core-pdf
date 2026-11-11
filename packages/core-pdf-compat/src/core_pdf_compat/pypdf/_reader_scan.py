@@ -643,8 +643,10 @@ STREAM_KEYWORD = re.compile(rb">>(?:[\x00\t\n\x0c\r ]|%[^\r\n]*)*stream")
 
 def stream_keyword(data: bytes, offset: int) -> re.Match[bytes] | None:
     """The stream keyword of the object at `offset`, not one of a later object."""
-    end = data.find(b"endobj", offset)
-    return STREAM_KEYWORD.search(data, offset, len(data) if end < 0 else end)
+    match = STREAM_KEYWORD.search(data, offset)
+    if match is None or data.find(b"endobj", offset, match.start()) >= 0:
+        return None
+    return match
 
 
 # pypdf ends a name at white-space or a delimiter, and its white-space leaves out NUL.

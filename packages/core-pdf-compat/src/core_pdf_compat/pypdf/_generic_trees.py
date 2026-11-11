@@ -39,6 +39,7 @@ from __future__ import annotations
 __lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
 
 import bisect
+import codecs
 import logging
 from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, datetime
@@ -88,6 +89,11 @@ PDFDOC_REVERSE = {
     for code, character in enumerate(PDFDOC_ENCODING_TABLE)
     if code not in PDFDOC_UNDEFINED
 }
+PDFDOC_DECODE_MAP = "".join(
+    "\ufffe" if code in PDFDOC_UNDEFINED else character
+    for code, character in enumerate(PDFDOC_ENCODING_TABLE)
+)
+PDFDOC_ENCODE_MAP = codecs.charmap_build(PDFDOC_DECODE_MAP)
 HEX_DIGITS = b"0123456789abcdefABCDEF"
 WHITESPACE = b" \n\r\t\x00\x0c"
 STRING_ESCAPES = {
@@ -103,24 +109,24 @@ BACKSLASH = 0x5C
 
 def encode_pdfdocencoding(unicode_string: str) -> bytes:
     try:
-        return bytes(PDFDOC_REVERSE[character] for character in unicode_string)
-    except KeyError:
+        return codecs.charmap_encode(unicode_string, "strict", PDFDOC_ENCODE_MAP)[0]
+    except UnicodeEncodeError:
         raise UnicodeEncodeError(
             "pdfdocencoding", unicode_string, -1, -1, "does not exist in translation table"
         ) from None
 
 
 def decode_pdfdocencoding(byte_array: bytes) -> str:
-    for byte in byte_array:
-        if byte in PDFDOC_UNDEFINED:
-            raise UnicodeDecodeError(
-                "pdfdocencoding",
-                bytes((byte,)),
-                -1,
-                -1,
-                "does not exist in translation table",
-            )
-    return "".join(PDFDOC_ENCODING_TABLE[byte] for byte in byte_array)
+    try:
+        return codecs.charmap_decode(byte_array, "strict", PDFDOC_DECODE_MAP)[0]
+    except UnicodeDecodeError as exc:
+        raise UnicodeDecodeError(
+            "pdfdocencoding",
+            byte_array[exc.start : exc.end],
+            -1,
+            -1,
+            "does not exist in translation table",
+        ) from None
 
 
 def hex_to_rgb(value: str) -> tuple[float, float, float]:

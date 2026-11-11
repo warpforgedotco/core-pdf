@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import codecs
+
 from core_pdf_spec.standards import PdfVersion, SemanticContext, require_recognized_version
 
 PDFDOC_ENCODING_OVERRIDES: dict[int, str] = {
@@ -51,6 +53,7 @@ CHR_TABLE: list[str] = [chr(i) for i in range(256)]
 PDFDOC_ENCODING_TABLE: list[str] = [
     PDFDOC_ENCODING_OVERRIDES.get(i, CHR_TABLE[i]) for i in range(256)
 ]
+PDFDOC_DECODE_MAP: str = "".join(PDFDOC_ENCODING_TABLE)
 
 
 def decode_pdf_text_string(
@@ -73,7 +76,7 @@ def decode_pdf_text_string(
             raise ValueError("invalid UTF-8 data") from exc
     if version is not None and version < PdfVersion(1, 3) and 0xA0 in data:
         raise ValueError("undefined PDFDocEncoding byte 0xA0 before PDF 1.3")
-    return "".join(PDFDOC_ENCODING_TABLE[b] for b in data)
+    return codecs.charmap_decode(data, "strict", PDFDOC_DECODE_MAP)[0]
 
 
 __all__ = ("PDFDOC_ENCODING_TABLE", "decode_pdf_text_string")

@@ -470,11 +470,15 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         source = self._pdf
         if getattr(self, "_stream_replaced", False):
             return self._repaired_object(number, generation, PdfReadError("stream replaced"))
-        if source is not None and key_for(number, generation) in source.xref:
+        if (
+            source is not None
+            and (entry := source.xref.get(key_for(number, generation))) is not None
+        ):
             if self.strict:
-                self._check_header_as_pypdf(source.xref[key_for(number, generation)])
-            core_offset = source.xref[key_for(number, generation)].offset
-            offset = self.xref.get(generation, {}).get(number)
+                self._check_header_as_pypdf(entry)
+            core_offset = entry.offset
+            gen_table = self.xref.get(generation)
+            offset = gen_table.get(number) if gen_table is not None else None
             if isinstance(offset, int) and isinstance(core_offset, int) and offset != core_offset:
                 # Core recovered the object somewhere else than pypdf's xref walk found it.
                 return self._repaired_object(number, generation, None)
@@ -491,8 +495,9 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                     raise
                 # Core cannot decode the object stream; pypdf decodes it tolerantly.
                 return self._object_from_stream_as_pypdf(number)
-            entry = source.xref[key_for(number, generation)]
+            is_stream = False
             if isinstance(resolved, PdfStream):
+                is_stream = True
                 if resolved.dictionary.get("Length") == PdfReference(number, generation):
                     # pypdf reads /Length while reading the object, so it meets it again.
                     reference = IndirectObject(number, generation, self)
@@ -501,7 +506,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
                 resolved = self._as_pypdf_reads(resolved, entry, number, generation)
             in_object_stream = getattr(entry, "object_stream", None) is not None
             if not in_object_stream and (
-                self._has_pypdf_only_value(entry)
+                self._has_pypdf_only_value(entry, is_stream=is_stream)
                 or self._has_irregular_dictionary(number, generation)
             ):
                 found = self._read_with_pypdf_rules(entry)
@@ -641,7 +646,7 @@ class PdfReader(PdfDocCommon, ClosingMixin):
     def _holds_nul(self) -> bool:
         return b"\x00" in self._data
 
-    def _has_pypdf_only_value(self, entry: Any) -> bool:
+    def _has_pypdf_only_value(self, entry: Any, *, is_stream: bool = True) -> bool:
         """Whether the object holds a value pypdf's parser reads differently from core's: a
         name running into a NUL byte, which pypdf reads as part of the name, or a string
         escape whose backslash pypdf keeps.
@@ -650,9 +655,20 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         if not isinstance(offset, int):
             return False
         data = self._data
+        if not is_stream:
+            endobj = data.find(b"endobj", offset)
+            if endobj >= 0 and (
+                (not self._holds_nul or data.find(b"\x00", offset, endobj) < 0)
+                and data.find(b"\\", offset, endobj) < 0
+            ):
+                return False
         end = OBJECT_VALUES_END.search(data, offset)
         stop = len(data) if end is None else end.start()
-        if self._holds_nul and NAME_INTO_NUL.search(data, offset, stop) is not None:
+        if (
+            self._holds_nul
+            and data.find(b"\x00", offset, stop) >= 0
+            and NAME_INTO_NUL.search(data, offset, stop) is not None
+        ):
             return True
         return data.find(b"\\", offset, stop) >= 0 and (
             PYPDF_ONLY_ESCAPE.search(data, offset, stop) is not None
@@ -800,6 +816,11 @@ class PdfReader(PdfDocCommon, ClosingMixin):
         """
         offset = getattr(entry, "offset", None)
         if not isinstance(offset, int) or self._pdf is None:
+            return stream
+        if not any(
+            (key.str_value if type(key) is PdfName else getattr(key, "value", key)) in DECODE_KEYS
+            for key in stream.dictionary
+        ):
             return stream
         keyword = stream_keyword(self._data, offset)
         if (

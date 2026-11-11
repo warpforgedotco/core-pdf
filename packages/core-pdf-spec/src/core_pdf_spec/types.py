@@ -19,14 +19,17 @@ MISSING: Final = MissingObject()
 
 
 class PdfName:
-    __slots__ = ("value_bytes", "str_value")
+    __slots__ = ("value_bytes", "str_value", "_hash")
 
     value_bytes: bytes
     str_value: str
+    _hash: int
 
     def __init__(self, value_bytes: bytes) -> None:
+        str_value = value_bytes.decode("latin-1")
         object.__setattr__(self, "value_bytes", value_bytes)
-        object.__setattr__(self, "str_value", value_bytes.decode("latin-1"))
+        object.__setattr__(self, "str_value", str_value)
+        object.__setattr__(self, "_hash", hash(str_value))
 
     @property
     def value(self) -> str:
@@ -60,7 +63,7 @@ class PdfName:
         return f"PdfName({self.value!r})"
 
     def __hash__(self) -> int:
-        return hash(self.str_value)
+        return self._hash
 
     def __eq__(self, other: object) -> bool:
         if type(other) is PdfName:
