@@ -78,6 +78,7 @@ from .errors import (
     PyPdfError,
 )
 from .generic import (
+    _SCALAR_TYPES,
     PAGE_FIT,
     ArrayObject,
     ByteStringObject,
@@ -1075,6 +1076,8 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         return output
 
     def _bring(self, value: Any, owner: Any, pending: list[Any], fields: Sequence[Any] = ()) -> Any:
+        if type(value) in _SCALAR_TYPES:
+            return value
         if isinstance(value, IndirectObject):
             if value.pdf is self:
                 return value
@@ -1093,9 +1096,12 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 duplicate.indirect_reference = None
             reference = self._add_object(duplicate)
             translated[value.idnum] = reference.idnum
-            pending.append(self._fill_copy(duplicate, target, owner, pending, fields))
+            if isinstance(target, (DictionaryObject, ArrayObject)):
+                pending.append(self._fill_copy(duplicate, target, owner, pending, fields))
             return reference
         duplicate = self._empty_copy(value)
+        if duplicate is value:
+            return value
         pending.append(self._fill_copy(duplicate, value, owner, pending, fields))
         # A page built outside a writer can hold a stream directly, which PDF does not allow.
         return self._add_object(duplicate) if isinstance(duplicate, StreamObject) else duplicate
@@ -1119,6 +1125,8 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         self, item: Any, owner: Any, pending: list[Any], fields: Sequence[Any]
     ) -> Any:
         """pypdf gives a stream in an array its own copy each time, so pages stop sharing it."""
+        if type(item) in _SCALAR_TYPES:
+            return item
         if isinstance(item, IndirectObject) and item.pdf is not self:
             target = item.get_object()
             if isinstance(target, StreamObject):
@@ -1143,10 +1151,14 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         that item holds the back link second. pypdf does this unless `value` was itself reached
         along a list, which its clone tracks in `visited`.
         """
-        kind = value.get_resolved("/Type")
+        kind_resolved = False
+        kind: Any = None
         for key, back in (("/Next", "/Prev"), ("/Prev", "/Next"), ("/N", "/V"), ("/V", "/N")):
-            if key in fields:
+            if key not in value or key in fields:
                 continue
+            if not kind_resolved:
+                kind = value.get_resolved("/Type")
+                kind_resolved = True
             start = len(pending)
             current: Any = value
             holder = duplicate
@@ -1170,6 +1182,8 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
                 self._chain_visited.add((id(link.pdf), link.idnum))
                 holder = reference.get_object() if isinstance(reference, IndirectObject) else None
                 members.append((current, holder))
+            if len(pending) == start and not members:
+                continue
             chain = list(reversed(pending[start:]))
             del pending[start:]
             if members and self._fills_head_first(value, duplicate, members[0], back):
@@ -1211,17 +1225,29 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             # As pypdf's DictionaryObject._clone: each level counts down the limited keys.
             if fields:
                 fields = _trimmed_ignore_fields(fields)
+            before = len(pending)
             self._number_chains(value, duplicate, owner, pending, fields)
-            yield
+            if len(pending) != before:
+                yield
             for key, item in dict.items(value):
                 if key in fields:
                     continue
+                if type(item) in _SCALAR_TYPES:
+                    dict.__setitem__(duplicate, key, item)
+                    continue
+                before = len(pending)
                 dict.__setitem__(duplicate, key, self._bring(item, owner, pending, fields))
-                yield
+                if len(pending) != before:
+                    yield
         elif isinstance(value, ArrayObject):
-            for item in value:
+            for item in list.__iter__(value):
+                if type(item) in _SCALAR_TYPES:
+                    duplicate.append(item)
+                    continue
+                before = len(pending)
                 duplicate.append(self._bring_array_item(item, owner, pending, fields))
-                yield
+                if len(pending) != before:
+                    yield
 
     def clone_reader_document_root(self, reader: Any) -> None:
         self._info_obj = None

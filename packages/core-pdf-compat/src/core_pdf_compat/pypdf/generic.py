@@ -317,7 +317,7 @@ class TextStringObject(str, _CopiedObject):
         return text
 
     def _copy(self) -> TextStringObject:
-        copy = TextStringObject(str(self))
+        copy = str.__new__(TextStringObject, self)
         copy._original_bytes = self._original_bytes
         copy.autodetect_pdfdocencoding = self.autodetect_pdfdocencoding
         copy.autodetect_utf16 = self.autodetect_utf16
@@ -974,6 +974,22 @@ def _decoded_text(text: str, original: bytes) -> TextStringObject:
     return output
 
 
+def _fast_text_string(
+    text: str,
+    original: bytes,
+    *,
+    pdfdoc: bool = False,
+    utf16: bool = False,
+    bom: bytes = b"",
+) -> TextStringObject:
+    output = str.__new__(TextStringObject, text)
+    output._original_bytes = original
+    output.autodetect_pdfdocencoding = pdfdoc
+    output.autodetect_utf16 = utf16
+    output.utf16_bom = bom
+    return output
+
+
 def _forced_text(data: bytes, encoding: str | list[str] | dict[int, str]) -> Any:
     if encoding == "bytes":
         return ByteStringObject(data)
@@ -1000,22 +1016,18 @@ def create_string_object(
         return _forced_text(string, forced_encoding)
     try:
         if string.startswith((codecs.BOM_UTF16_BE, codecs.BOM_UTF16_LE)):
-            output = _decoded_text(string.decode("utf-16"), string)
-            output.utf16_bom = string[:2]
-        elif string.startswith(b"\x00"):
-            output = _decoded_text(string.decode("utf-16be"), string)
-            output.utf16_bom = codecs.BOM_UTF16_BE
-        elif string[1:2] == b"\x00":
-            output = _decoded_text(string.decode("utf-16le"), string)
-            output.utf16_bom = codecs.BOM_UTF16_LE
-        else:
-            output = _decoded_text(decode_pdfdocencoding(string), string)
-            output.autodetect_pdfdocencoding, output.autodetect_utf16 = True, False
-            return output
+            return _fast_text_string(string.decode("utf-16"), string, utf16=True, bom=string[:2])
+        if string.startswith(b"\x00"):
+            return _fast_text_string(
+                string.decode("utf-16be"), string, utf16=True, bom=codecs.BOM_UTF16_BE
+            )
+        if string[1:2] == b"\x00":
+            return _fast_text_string(
+                string.decode("utf-16le"), string, utf16=True, bom=codecs.BOM_UTF16_LE
+            )
+        return _fast_text_string(decode_pdfdocencoding(string), string, pdfdoc=True)
     except UnicodeDecodeError:
         return ByteStringObject(string)
-    output.autodetect_utf16, output.autodetect_pdfdocencoding = True, False
-    return output
 
 
 def to_generic(value: Any, pdf: Any = None) -> Any:
@@ -1067,17 +1079,19 @@ class BareKeywordFound(Exception):  # noqa: N818
 
 
 def _generic_key(key: Any) -> NameObject:
-    text = getattr(key, "value", key)
+    text = key.str_value if type(key) is PdfName else getattr(key, "value", key)
     if text.isascii():
-        return NameObject(f"/{text}")
+        return str.__new__(NameObject, f"/{text}")
     data = key.value_bytes if isinstance(key, PdfName) else text.encode("latin-1")
     decoded = decode_name(data)
-    return NameObject(f"/{data.decode('charmap') if decoded is None else decoded}")
+    return str.__new__(NameObject, f"/{data.decode('charmap') if decoded is None else decoded}")
 
 
 def _core_key(key: str) -> Any:
-    name = _name_bytes(key)
-    return key[1:] if key.isascii() else PdfName(name)
+    if not key.startswith("/"):
+        raise PdfStreamError(f"Incorrect first char in NameObject, should start with '/': ({key})")
+    body = key[1:]
+    return body if body.isascii() else PdfName.of(body.encode("utf-8"))
 
 
 def _core_dictionary(items: Iterable[tuple[Any, Any]]) -> dict[Any, Any]:
@@ -1136,23 +1150,33 @@ def _generic_mapping(value: Any, pdf: Any) -> DictionaryObject:
 
 def _generic_array(value: Any, pdf: Any) -> ArrayObject:
     array = ArrayObject()
-    array.extend(to_generic(item, pdf) for item in value)
+    array.extend([to_generic(item, pdf) for item in value])
     return array
+
+
+def _generic_stream(value: PdfStream, pdf: Any) -> StreamObject:
+    items: dict[str, Any] = {
+        _generic_key(key): to_generic(item, pdf) for key, item in value.dictionary.items()
+    }
+    items["__streamdata__"] = bytes(value.raw_data)
+    return StreamObject.initialize_from_dictionary(items)
 
 
 _TO_GENERIC: dict[type, Callable[[Any, Any], Any]] = {
     type(None): lambda _value, _pdf: NullObject(),
     bool: lambda value, _pdf: BooleanObject(value),
-    int: lambda value, _pdf: NumberObject(value),
-    float: lambda value, _pdf: FloatObject(value),
+    int: lambda value, _pdf: int.__new__(NumberObject, value),
+    float: lambda value, _pdf: float.__new__(FloatObject, value),
     str: lambda value, _pdf: _generic_key(value),
     PdfName: lambda value, _pdf: _generic_key(value),
-    PdfString: lambda value, _pdf: create_string_object(bytes(value.data)),
+    PdfString: lambda value, _pdf: create_string_object(value.data),
     PdfReference: lambda value, pdf: IndirectObject(
         value.object_number, value.generation_number, pdf
     ),
+    PdfStream: _generic_stream,
     dict: _generic_mapping,
     list: _generic_array,
+    tuple: _generic_array,
 }
 
 _TO_CORE: dict[type, Callable[[Any], Any]] = {
@@ -1162,7 +1186,7 @@ _TO_CORE: dict[type, Callable[[Any], Any]] = {
     BooleanObject: lambda value: value.value,
     NumberObject: int,
     FloatObject: float,
-    NameObject: lambda value: PdfName(_name_bytes(value)),
+    NameObject: lambda value: PdfName.of(_name_bytes(value)),
     ByteStringObject: lambda value: PdfString(bytes(value), is_literal=False),
     TextStringObject: lambda value: PdfString(_encode_text(value)),
     StreamObject: lambda value: PdfStream(

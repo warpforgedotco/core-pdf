@@ -27,8 +27,30 @@ Point = tuple[float, float]
 
 
 def _bound(points: Iterable[Point]) -> tuple[float, float, float, float]:
-    xs, ys = zip(*points, strict=True)
-    return min(xs), min(ys), max(xs), max(ys)
+    if isinstance(points, (list, tuple)):
+        n = len(points)
+        if n == 2:
+            (x0, y0), (x1, y1) = points
+            return (
+                min(x0, x1),
+                min(y0, y1),
+                max(x1, x0),
+                max(y1, y0),
+            )
+        if n == 4:
+            (x0, y0), (x1, y1), (x2, y2), (x3, y3) = points
+            return (
+                min(x0, x1, x2, x3),
+                min(y0, y1, y2, y3),
+                max(x0, x1, x2, x3),
+                max(y0, y1, y2, y3),
+            )
+        if n > 0:
+            xs = [x for x, _ in points]
+            ys = [y for _, y in points]
+            return min(xs), min(ys), max(xs), max(ys)
+    xs_tup, ys_tup = zip(*points, strict=True)
+    return min(xs_tup), min(ys_tup), max(xs_tup), max(ys_tup)
 
 
 class LTCurve(LTComponent):

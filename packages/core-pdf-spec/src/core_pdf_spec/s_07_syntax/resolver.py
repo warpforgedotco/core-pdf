@@ -12,6 +12,7 @@ from core_pdf_spec.exceptions import PdfParseError
 from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.objects import PdfObjectStream
 from core_pdf_spec.s_07_syntax.resolution import (
+    GRAPH_TYPES,
     resolve_object_graph,
     resolve_reference_chain,
 )
@@ -24,7 +25,6 @@ from core_pdf_spec.s_07_syntax.types import (
 )
 from core_pdf_spec.s_07_syntax.xref import (
     PdfXRefEntry,
-    key_for,
 )
 from core_pdf_spec.s_07_syntax_primitives.coercion import (
     decoded_name,
@@ -134,7 +134,10 @@ class ObjectResolver:
         if type(ref) is not PdfReference:
             return ref  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
-        cache_key = key_for(ref.object_number, ref.generation_number)
+        cache_key = (ref.object_number << 16) | ref.generation_number
+        cached = self.objects.get(cache_key, MISSING)
+        if cached is not MISSING:
+            return cached  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
         with self.lock:
             cached = self.objects.get(cache_key, MISSING)
             if cached is not MISSING:
@@ -269,7 +272,7 @@ class ObjectResolver:
     def resolve_stream(self, stream: PdfStream) -> PdfStream:
         updated: PdfDict | None = None
         for key, value in stream.dictionary.items():
-            if decoded_name(key) in STREAM_DECODE_KEYS:
+            if type(value) in GRAPH_TYPES and decoded_name(key) in STREAM_DECODE_KEYS:
                 resolved = self.deep_resolve(value)
                 if resolved is not value:
                     if updated is None:
@@ -278,7 +281,7 @@ class ObjectResolver:
         return stream if updated is None else stream.replace(dictionary=updated)
 
     def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
-        return self.xref.get(key_for(ref.object_number, ref.generation_number))
+        return self.xref.get((ref.object_number << 16) | ref.generation_number)
 
     def missing_object(self, ref: PdfReference) -> object:
         return None
