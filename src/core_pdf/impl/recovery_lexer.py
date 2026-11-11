@@ -122,6 +122,67 @@ class BareKeyword(str):
     __slots__ = ()
 
 
+class StrictPdfLexer(lexer.PdfLexer):
+    """The spec's strict lexer, reading arrays and dictionaries with the compiled scanner.
+
+    The scanner runs in strict mode, which bails on whatever the strict lexer would read
+    differently (an invalid or null name escape, a non-canonical reference, an endobj glued to
+    a value, and everything the scanner never reads itself), so the lexer's own code takes
+    those and returns or raises as it always has.
+    """
+
+    __slots__ = ("scanner", "scanner_rules")
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.scanner: ObjectScanner | None = None
+        self.scanner_rules: LexicalRules | None = None
+        super().__init__(*args, **kwargs)
+
+    def close(self) -> None:
+        if self.scanner is not None:
+            self.scanner.release()
+            self.scanner = None
+        super().close()
+
+    def object_scanner(self) -> ObjectScanner:
+        rules = self.lexical_rules
+        scanner = self.scanner
+        if scanner is None or self.scanner_rules is not rules:
+            scanner = self.scanner = ObjectScanner(
+                self.raw_data,
+                rules.whitespace_table,
+                rules.separator_table,
+                rules.name_escapes,
+                rules.split_whitespace_compatible,
+                SCANNED_NAMES,
+                scanned_name,
+                PdfString,
+                PdfReference,
+                strict=True,
+            )
+            self.scanner_rules = rules
+        return scanner
+
+    def scanner_args(self) -> tuple[int] | tuple[int, Decipher, int, int]:
+        if self.decipher is not None and self.current_obj_num is not None:
+            return (self.pos, self.decipher, self.current_obj_num, self.current_gen_num or 0)
+        return (self.pos,)
+
+    def parse_dictionary(self) -> PdfDict:
+        parsed = self.object_scanner().parse_dictionary(*self.scanner_args())
+        if parsed is None:
+            return super().parse_dictionary()
+        dictionary, self.pos = parsed
+        return dictionary
+
+    def parse_array(self) -> list[Any]:
+        parsed = self.object_scanner().parse_array(*self.scanner_args())
+        if parsed is None:
+            return super().parse_array()
+        values, self.pos = parsed
+        return values
+
+
 class PdfLexer(lexer.PdfLexer):
     __slots__ = (
         "mode",

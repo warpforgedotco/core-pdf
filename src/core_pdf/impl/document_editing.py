@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Self
 
 from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.recovery_lexer import StrictPdfLexer
 from core_pdf.impl.recovery_xref import XRefScanner
 from core_pdf.impl.types import PdfReference, PdfString
 from core_pdf_spec.exceptions import PdfParseError
@@ -21,7 +22,6 @@ from core_pdf_spec.s_07_security.output import (
     encryption_dictionary,
 )
 from core_pdf_spec.s_07_security.standard import StandardSecurityHandler
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 from core_pdf_spec.s_07_syntax.serialize import (
     ObjectLayout,
     serialize_indirect_object,
@@ -350,7 +350,9 @@ class EditableDocument:
         """
         offsets, _ = self.existing_entries()
         resolver = self.document.resolver
-        lexer = PdfLexer(self.document.raw_data, reference_resolver=resolver.resolve)
+        # The strict lexer decides which objects keep their own bytes; its compiled
+        # reading of arrays and dictionaries returns what its own code would.
+        lexer = StrictPdfLexer(self.document.raw_data, reference_resolver=resolver.resolve)
         found: dict[int, bytes] = {}
         pending = list(objects)
         while pending:

@@ -113,6 +113,7 @@ line-length = 100
     "PERF401",
     "PLR1714",
     "SIM109",
+    "SIM110",
     "SIM113",
     "SIM114",
     "SIM210",
