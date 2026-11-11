@@ -392,6 +392,9 @@ class PdfLexer:
 
         dictionary is the object's dictionary when the caller has read it already, with pos
         just past it; the stream after it, if any, and endobj are read as for any other.
+        Its strings are taken as they are: with a decipher, the caller must have read it as
+        object obj_num gen_num (current_obj_num and current_gen_num set to them), as this
+        method sets them only while it reads.
         """
         previous_obj, previous_gen = self.current_obj_num, self.current_gen_num
         self.current_obj_num, self.current_gen_num = obj_num, gen_num
