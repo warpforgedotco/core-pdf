@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from typing import Any, ClassVar, TypeAlias, cast
 
 from core_pdf import PdfDocument
+from core_pdf.impl.capture_glyphs import plumber_char_dicts
 from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
 from core_pdf.impl.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
@@ -276,6 +277,28 @@ class EnginePageAdapter:
         media_top = info.media_top
         page_height = info.page_height
         nfc = self.unicode_norm == "NFC"
+        # Compiled for a page of horizontal text whose numbers are all floats; this loop is
+        # its reference, and writes the rest.
+        compiled = plumber_char_dicts(
+            projected_glyphs,
+            marks,
+            skipped_ligature_parts,
+            ligatures,
+            pdfminer_embedded_cmap_is_unusable,
+            pdfminer_glyph_text,
+            pdfminer_normalized_width,
+            pdfminer_descent,
+            font_name,
+            info.pdfminer_ctm,
+            page_number,
+            media_x0,
+            media_top,
+            page_height,
+            doctop,
+            nfc,
+        )
+        if compiled is not None:
+            return compiled
         objects: list[ObjectDict] = []
         vertical_run = 0.0
         for glyph_index, glyph in enumerate(projected_glyphs):
