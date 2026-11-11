@@ -74,4 +74,6 @@ def capture_horizontal_glyphs(
     bitmap_labels: frozenset[str],
     out_glyphs: list[Any],
     out_clusters: list[Any],
+    origins: list[float] | None = None,
+    visibility: bytes | None = None,
 ) -> tuple[int, Rectangle | None, Rectangle | None, float | None] | None: ...

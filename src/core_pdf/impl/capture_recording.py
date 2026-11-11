@@ -14,7 +14,7 @@ from array import array
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from copy import copy, replace
-from math import hypot, isfinite
+from math import copysign, hypot, isfinite
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy
@@ -23,6 +23,7 @@ from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_glyphs import (
     GlyphCapture,
     GlyphPaint,
+    capture_glyph_run,
     capture_glyphs,
     glyph_style,
     glyph_width_source,
@@ -134,6 +135,13 @@ class MarkedContentEntry(ReprFields, ReplaceFields, metaclass=RecordType, frozen
 
 
 MATRIX_TOLERANCE = 0.1
+
+
+def same_floats(left: tuple[float, ...], right: tuple[float, ...]) -> bool:
+    """Whether the floats are equal, a zero's sign included."""
+    return all(
+        a == b and copysign(1.0, a) == copysign(1.0, b) for a, b in zip(left, right, strict=True)
+    )
 
 
 def detect_rotation_from_linear(A: float, B: float, C: float, D: float) -> int:
@@ -806,6 +814,164 @@ class TextState(RecoveringTextState):
         )
         return layout
 
+    def current_text_layout(
+        self,
+        font_decoder: FontDecoder,
+        glyph_paint: GlyphPaint | None,
+        A: float,
+        B: float,
+        C: float,
+        D: float,
+        identity_text_matrix: bool,
+    ) -> TextLayout:
+        layout = self.text_layout
+        if (
+            layout is None
+            or layout.given_paint is not glyph_paint
+            or layout.decoder is not font_decoder
+            or layout.identity_text_matrix is not identity_text_matrix
+        ):
+            layout = self.new_text_layout(font_decoder, glyph_paint, A, B, C, D)
+            layout.identity_text_matrix = identity_text_matrix
+            self.text_layout = layout
+        return layout
+
+    def new_layout_style(
+        self, layout: TextLayout, A: float, B: float, C: float, D: float
+    ) -> GlyphStyle:
+        graphics = self.graphics
+        style = layout.style = glyph_style(
+            self.glyph_paint(layout.fill_color)
+            if layout.glyph_paint is None
+            else layout.glyph_paint,
+            layout.decoder,
+            layout.font_size,
+            layout.rotation,
+            layout.effective_font_size,
+            layout.effective_font_height,
+            (
+                ("source", self.capture_source),
+                ("stream_order", self.stream_order),
+                ("xobject_depth", self.xobject_depth),
+                ("clip_bbox", self.clip_bbox),
+                ("layout_form_bbox", self.layout_form_bbox),
+                ("layout_form_id", self.layout_form_id),
+                ("text_matrix", (A, B, C, D)),
+                ("text_render_mode", graphics.render_mode),
+                ("line_matrix_origin", (self.line_matrix.e, self.line_matrix.f)),
+                ("horizontal_scale", graphics.horizontal_scale),
+                ("char_space", graphics.char_space),
+                ("text_rise", layout.rise),
+            ),
+            self.text_object_id,
+        )
+        return style
+
+    def show_glyph_run(
+        self,
+        glyphs: tuple[DecodedGlyph, ...],
+        texts: list[str],
+        origins: list[float],
+        decoder: FontService,
+        *,
+        glyph_paint: GlyphPaint | None = None,
+    ) -> tuple[tuple[float, float, float, float], list[float]] | None:
+        """Show each horizontal glyph as show_text would show it alone, in one call.
+
+        Glyph i is shown with the text it is given, texts[i], and the text matrix moved to
+        the origin (origins[2 * i], origins[2 * i + 1]); the text matrix itself is left as
+        it was. Returns the linear part of the text matrix times the ctm and each glyph's
+        origin under it, or None, having shown nothing, when the capture records runs or
+        the glyphs need show_text one at a time: vertical text, an ActualText span, a
+        glyph whose text splits.
+        """
+        font_decoder: FontDecoder = decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        options = self.options
+        if not glyphs or font_decoder.is_vertical or options.text_runs or not options.glyphs:
+            return None
+        text_matrix = self.text_matrix
+        ctm = self.graphics.ctm
+        ta, tb, tc, td = text_matrix.a, text_matrix.b, text_matrix.c, text_matrix.d
+        identity_linear = ta == 1.0 and tb == 0.0 and tc == 0.0 and td == 1.0
+        first_identity = identity_linear and origins[0] == 0.0 and origins[1] == 0.0
+        # The text matrix times the ctm, as Matrix.multiply computes it for each glyph.
+        if ctm == IDENTITY_MATRIX:
+            A, B, C, D = ta, tb, tc, td
+            combined = list(origins)
+        else:
+            ca, cb, cc, cd, ce, cf = ctm
+            A = ta * ca + tb * cc
+            B = ta * cb + tb * cd
+            C = tc * ca + td * cc
+            D = tc * cb + td * cd
+            combined = [0.0] * len(origins)
+            for index in range(0, len(origins), 2):
+                e = origins[index]
+                f = origins[index + 1]
+                if identity_linear and e == 0.0 and f == 0.0:
+                    # multiply returns the ctm itself here, whose linear part can differ
+                    # from the product's in the sign of a zero.
+                    if not same_floats((A, B, C, D), (ca, cb, cc, cd)):
+                        return None
+                    combined[index] = ce
+                    combined[index + 1] = cf
+                else:
+                    combined[index] = e * ca + f * cc + ce
+                    combined[index + 1] = e * cb + f * cd + cf
+        layout = self.current_text_layout(font_decoder, glyph_paint, A, B, C, D, first_identity)
+        if layout.actual_text_span is not None:
+            return None
+        if layout.paints_text:
+            visibility = bytes(
+                not (
+                    (ord(text[0]) < 32 or 0xE000 <= ord(text[0]) <= 0xF8FF)
+                    and is_garbage_text(text)
+                )
+                if text
+                else False
+                for text in texts
+            )
+        else:
+            visibility = bytes(len(glyphs))
+        if layout.pushes_clip_scope:
+            self.emit_clip_scope_push()
+        style = layout.style
+        if style is None:
+            style = self.new_layout_style(layout, A, B, C, D)
+        graphics = self.graphics
+        seqno = self.sequence
+        count = capture_glyph_run(
+            "".join(texts),
+            glyphs,
+            font_decoder,
+            (A, B, C, D),
+            combined,
+            visibility,
+            layout.font_size,
+            layout.font_scale,
+            layout.ascent,
+            layout.descent,
+            layout.advance_scale,
+            graphics.char_space,
+            graphics.word_space,
+            graphics.horizontal_scale,
+            layout.rise,
+            style,
+            self.clip_bbox,
+            self.page_clip,
+            graphics.current_font,
+            seqno,
+            self.glyph_cluster_count,
+            options,
+            layout.width_source,
+            self.glyphs,
+        )
+        if count is None:
+            return None
+        self.glyph_cluster_count += count
+        self.sequence = seqno + len(glyphs)
+        return (A, B, C, D), combined
+
     def show_text(
         self,
         state: object,
@@ -825,17 +991,9 @@ class TextState(RecoveringTextState):
         combined = text_matrix.multiply(ctm)
         A, B, C, D, E, F = combined
         te, tf = text_matrix.e, text_matrix.f
-        identity_text_matrix = text_matrix == IDENTITY_MATRIX
-        layout = self.text_layout
-        if (
-            layout is None
-            or layout.given_paint is not glyph_paint
-            or layout.decoder is not font_decoder
-            or layout.identity_text_matrix is not identity_text_matrix
-        ):
-            layout = self.new_text_layout(font_decoder, glyph_paint, A, B, C, D)
-            layout.identity_text_matrix = identity_text_matrix
-            self.text_layout = layout
+        layout = self.current_text_layout(
+            font_decoder, glyph_paint, A, B, C, D, text_matrix == IDENTITY_MATRIX
+        )
 
         visible = False
         if text and layout.paints_text:
@@ -866,32 +1024,7 @@ class TextState(RecoveringTextState):
                 return
             style = layout.style
             if style is None:
-                graphics = self.graphics
-                style = layout.style = glyph_style(
-                    self.glyph_paint(fill_color)
-                    if layout.glyph_paint is None
-                    else layout.glyph_paint,
-                    font_decoder,
-                    fs,
-                    rot,
-                    effective_font_size,
-                    effective_font_height,
-                    (
-                        ("source", self.capture_source),
-                        ("stream_order", self.stream_order),
-                        ("xobject_depth", self.xobject_depth),
-                        ("clip_bbox", self.clip_bbox),
-                        ("layout_form_bbox", self.layout_form_bbox),
-                        ("layout_form_id", self.layout_form_id),
-                        ("text_matrix", (A, B, C, D)),
-                        ("text_render_mode", graphics.render_mode),
-                        ("line_matrix_origin", (self.line_matrix.e, self.line_matrix.f)),
-                        ("horizontal_scale", graphics.horizontal_scale),
-                        ("char_space", graphics.char_space),
-                        ("text_rise", rise),
-                    ),
-                    self.text_object_id,
-                )
+                style = self.new_layout_style(layout, A, B, C, D)
             graphics = self.graphics
             captured = capture_glyphs(
                 text,

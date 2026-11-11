@@ -330,6 +330,78 @@ def glyph_width_source(
     return glyph_width
 
 
+def capture_glyph_run(
+    text: str,
+    glyphs: tuple[DecodedGlyph, ...],
+    decoder: FontDecoder,
+    linear: tuple[float, float, float, float],
+    origins: list[float],
+    visibility: bytes,
+    font_size: float,
+    font_scale: float,
+    font_ascent: float,
+    font_descent: float,
+    advance_scale: float,
+    char_space: float,
+    word_space: float,
+    horizontal_scale: float,
+    rise: float,
+    style: GlyphStyle,
+    clip_bbox: Rectangle | None,
+    page_clip: Rectangle | None,
+    font_name: str | None,
+    seqno: int,
+    cluster_start: int,
+    options: CaptureOptions,
+    width_source: Callable[[int], float] | tuple[dict[Any, float], float],
+    out_glyphs: list[GlyphObservation],
+    /,
+) -> int | None:
+    """capture_glyphs for each horizontal glyph on its own, in one call.
+
+    Glyph i is captured as capture_glyphs would capture (glyphs[i],) alone with the
+    basis (origins[2 * i], origins[2 * i + 1], *linear), visible when visibility[i] is
+    nonzero, under sequence number seqno + i. text is each glyph's text joined, and a
+    glyph whose unicode is empty takes its one character. Returns how many observations
+    it appended, or None, having appended none, when a glyph needs its text split.
+    """
+    captured = capture_horizontal_glyphs(
+        text,
+        glyphs,
+        DECODED_GLYPH_LAYOUT,
+        OBSERVATION_LAYOUT,
+        width_source,
+        decoder.glyph_bbox if options.ink_bounds else None,
+        font_size,
+        char_space,
+        word_space,
+        horizontal_scale,
+        options.render_details,
+        False,
+        (0.0, 0.0, *linear),
+        font_ascent,
+        font_descent,
+        rise,
+        font_scale,
+        advance_scale,
+        clip_bbox,
+        page_clip,
+        True,
+        style,
+        seqno,
+        decoder.font_name or font_name,
+        cluster_start,
+        (CONFIDENCE_CACHE, glyph_unicode_confidence),
+        should_capture_suspicious_multi_glyph_bitmap,
+        GLYPH_BITMAP_LABELS,
+        out_glyphs,
+        [],
+        origins,
+        visibility,
+    )
+    return None if captured is None else captured[0]
+
+
 def capture_glyphs(
     text: str,
     glyphs: tuple[DecodedGlyph, ...],

@@ -91,6 +91,25 @@ GlyphGeometry = cython.struct(
 
 
 @cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def set_origin(
+    g: cython.pointer[GeometryBasis], base_x: cython.double, base_y: cython.double
+) -> cython.void:
+    # The basis values that depend on its origin; the rest depend on its linear part.
+    swap: cython.double
+    g.base_x = base_x
+    g.base_y = base_y
+    g.axis_y0 = base_y + g.dr * g.d
+    g.axis_y1 = base_y + g.ar * g.d
+    if g.axis_y0 > g.axis_y1:
+        swap = g.axis_y0
+        g.axis_y0 = g.axis_y1
+        g.axis_y1 = swap
+    g.axis_baseline_y = base_y + g.rise * g.d
+
+
+@cython.cfunc
 @cython.exceptval(-1, check=False)
 def load_basis(
     g: cython.pointer[GeometryBasis],
@@ -123,14 +142,7 @@ def load_basis(
     g.rise = rise
     g.ar = font_ascent + rise
     g.dr = font_descent + rise
-    g.axis_y0 = g.base_y + g.dr * g.d
-    g.axis_y1 = g.base_y + g.ar * g.d
-    swap: cython.double
-    if g.axis_y0 > g.axis_y1:
-        swap = g.axis_y0
-        g.axis_y0 = g.axis_y1
-        g.axis_y1 = swap
-    g.axis_baseline_y = g.base_y + rise * g.d
+    set_origin(g, g.base_x, g.base_y)
     g.font_ascent = font_ascent
     g.font_descent = font_descent
     g.font_scale = font_scale
@@ -655,6 +667,8 @@ def capture_horizontal_glyphs(
     bitmap_labels: frozenset,
     out_glyphs: list,
     out_clusters: list,
+    origins: list = None,
+    visibility: bytes = None,
 ):
     """capture_glyphs for horizontal text, or None when a glyph needs its text split.
 
@@ -664,6 +678,11 @@ def capture_horizontal_glyphs(
     the callable returns for them. Appends one observation per
     kept glyph to out_glyphs (and out_clusters when want_runs) and returns
     (kept, advance_union, ink_union, run_confidence).
+
+    With origins, each glyph is shown on its own, as a call per glyph would show it:
+    glyph i at the basis origin (origins[2 * i], origins[2 * i + 1]) rather than after
+    the glyphs before it, visible when visible and visibility[i] are both true, under
+    sequence number seqno + i.
     """
     n: cython.Py_ssize_t = len(glyphs)
     i: cython.Py_ssize_t
@@ -677,6 +696,9 @@ def capture_horizontal_glyphs(
     for i in range(n):
         if type(glyphs[i]) is not glyph_type:
             return None
+    per_glyph: cython.bint = origins is not None
+    if per_glyph and (len(origins) != 2 * n or visibility is None or len(visibility) != n):
+        raise ValueError("origins must hold two floats, and visibility a byte, per glyph")
 
     g = cython.declare(GeometryBasis)
     load_basis(
@@ -702,11 +724,21 @@ def capture_horizontal_glyphs(
         cython.p_double, malloc((4 * n or 1) * cython.sizeof(cython.double))
     )
     bmp: cython.p_char = cython.cast(cython.p_char, malloc((n or 1) * cython.sizeof(cython.char)))
-    if off is cython.NULL or adv is cython.NULL or box is cython.NULL or bmp is cython.NULL:
+    src: cython.p_Py_ssize_t = cython.cast(
+        cython.p_Py_ssize_t, malloc((n or 1) * cython.sizeof(cython.Py_ssize_t))
+    )
+    if (
+        off is cython.NULL
+        or adv is cython.NULL
+        or box is cython.NULL
+        or bmp is cython.NULL
+        or src is cython.NULL
+    ):
         free(off)
         free(adv)
         free(box)
         free(bmp)
+        free(src)
         raise MemoryError
     kept_glyphs: list = []
     chunk_texts: list = []
@@ -722,6 +754,7 @@ def capture_horizontal_glyphs(
     bbox: object
     observation: object
     confidence: object
+    glyph_seqno: object
     run_confidence: object = None
     empty: object = ()
     transform: object
@@ -782,8 +815,9 @@ def capture_horizontal_glyphs(
                 box[4 * kept + 1] = y0
                 box[4 * kept + 2] = x1
                 box[4 * kept + 3] = y1
-            off[kept] = offset
+            off[kept] = 0.0 if per_glyph else offset
             adv[kept] = advance
+            src[kept] = i
             bmp[kept] = (
                 1
                 if want_render and (wants_glyph_bitmap(chunk_text, bitmap_labels) or suspicious)
@@ -797,6 +831,12 @@ def capture_horizontal_glyphs(
         for i in range(kept):
             glyph = kept_glyphs[i]
             chunk_text = chunk_texts[i]
+            if per_glyph:
+                set_origin(cython.address(g), origins[2 * src[i]], origins[2 * src[i] + 1])
+                g.visible = visible and visibility[src[i]] != 0
+                glyph_seqno = seqno + src[i]
+            else:
+                glyph_seqno = seqno
             glyph_geometry(
                 cython.address(g),
                 off[i],
@@ -850,7 +890,7 @@ def capture_horizontal_glyphs(
             slot_init(observation, os[1], chunk_text)
             slot_init(observation, os[2], (geometry.ix0, geometry.iy0, geometry.ix1, geometry.iy1))
             slot_init(observation, os[3], (geometry.ax0, geometry.ay0, geometry.ax1, geometry.ay1))
-            slot_init(observation, os[4], seqno)
+            slot_init(observation, os[4], glyph_seqno)
             slot_init(observation, os[5], slot_get(glyph, gs[G_CODE_BYTES]))
             slot_init(observation, os[6], slot_get(glyph, gs[G_CHAR_CODE]))
             slot_init(observation, os[7], slot_get(glyph, gs[G_CID]))
@@ -867,7 +907,7 @@ def capture_horizontal_glyphs(
             slot_init(observation, os[18], slot_get(glyph, gs[G_BITMAP_CODE]) if bmp[i] else None)
             slot_init(observation, os[19], transform)
             slot_init(observation, os[20], True)
-            slot_init(observation, os[21], (seqno, cluster_start + i))
+            slot_init(observation, os[21], (glyph_seqno, cluster_start + i))
             out_glyphs.append(observation)
             if want_runs:
                 if run_confidence is None:
@@ -880,6 +920,7 @@ def capture_horizontal_glyphs(
         free(adv)
         free(box)
         free(bmp)
+        free(src)
 
     if not kept:
         return (0, None, None, None)
