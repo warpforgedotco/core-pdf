@@ -18,13 +18,24 @@ def resolve_cmap_resource(name: str) -> bytes | None:
     if not name or name in {".", ".."} or "/" in name or "\\" in name:
         return None
     deprecated: Traversable | None = None
-    for directory in cmap_directories():
-        child = directory.joinpath(name)
-        if child.is_file():
+    # PDF names are case-sensitive. Matching against each directory's listing, rather than
+    # asking the filesystem for the joined path, keeps a case-insensitive filesystem (macOS,
+    # Windows) from resolving "unigb-ucs2-h" to UniGB-UCS2-H when Linux would not.
+    for directory, names in cmap_directory_entries():
+        if name in names:
+            child = directory.joinpath(name)
             if "/deprecated/" not in str(child):
                 return child.read_bytes()
             deprecated = child
     return deprecated.read_bytes() if deprecated is not None else None
+
+
+@cache
+def cmap_directory_entries() -> tuple[tuple[Traversable, frozenset[str]], ...]:
+    return tuple(
+        (directory, frozenset(entry.name for entry in directory.iterdir() if entry.is_file()))
+        for directory in cmap_directories()
+    )
 
 
 @cache
