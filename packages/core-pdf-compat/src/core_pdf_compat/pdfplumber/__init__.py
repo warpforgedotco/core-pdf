@@ -119,7 +119,7 @@ class LatestCapture:
     def hold(self, adapter: EnginePageAdapter) -> None:
         previous, self.adapter = self.adapter, adapter
         if previous is not None and previous is not adapter:
-            previous._pdfminer_program = None
+            previous.drop_capture()
 
 
 class EnginePageAdapter:
@@ -467,9 +467,15 @@ class EnginePageAdapter:
         self.pdfminer_program()
         return self._painted_images
 
+    def drop_capture(self) -> None:
+        # What plumber_page_capture returned goes together: pdfminer_program walks the page
+        # again for all of it.
+        self._pdfminer_program = None
+        self._painted_paths = self._text_marks = self._painted_images = ()
+
     def flush_program(self) -> None:
         self._program = None
-        self._pdfminer_program = None
+        self.drop_capture()
 
     def images(self, program: Any | None = None) -> tuple[ImageRecord, ...]:
         if program is None:
@@ -717,6 +723,17 @@ class Page(Container):
         self._layout_page: Any | None = None
         self.is_original = True
         self.root_page = self
+
+    @property
+    def root_page(self) -> Page:
+        root: Page | None = self.__dict__.get("_root_page")
+        return self if root is None else root
+
+    @root_page.setter
+    def root_page(self, page: Page) -> None:
+        # A page that is its own root keeps no reference to itself, which would make every
+        # page a reference cycle that only the garbage collector frees.
+        self.__dict__["_root_page"] = None if page is self else page
 
     def _box_from_page(self, name: str) -> BBox | None:
         box = getattr(self._adapter.page, name, None)
