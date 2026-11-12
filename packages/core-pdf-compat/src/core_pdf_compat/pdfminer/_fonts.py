@@ -286,7 +286,7 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
             if base_text:
                 return base_text
         return f"(cid:{glyph.cid})"
-    if glyph.unicode_source == "encoding" and not glyph_name and glyph.char_code is not None:
+    if glyph.unicode_source == "encoding" and glyph.char_code is not None:
         base_text = _pdfminer_base_encoding_text(decoder, glyph.char_code)
         return base_text or f"(cid:{glyph.cid})"
     if glyph.unicode_source == "truetype_cmap" and decoder_to_unicode(decoder) is None:
@@ -536,9 +536,7 @@ def _pdfminer_builtin_width(glyph: Any, projected_text: str | None = None) -> fl
     base_font = str(values.get("BaseFont") or "")
     entry = FONT_DATA.get(base_font)
     if isinstance(entry, dict):
-        widths = entry.get("widths")
-        if not isinstance(widths, dict):
-            return None
+        widths = entry["widths"]
         if base_font == "ZapfDingbats":
             # pdfminer's table keys these glyphs apart from their text; see _zapf_dingbats.
             width = (
