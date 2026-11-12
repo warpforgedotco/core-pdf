@@ -28,10 +28,13 @@ class CaptureOptions(GeneratedRecord):
     text_runs: bool = True
     render_details: bool = True
     glyphs: bool = True
+    # A drawing's soft_mask_alpha decodes the image's whole soft mask; text extraction and
+    # the facades never read it.
+    soft_mask_alpha: bool = True
 
 
 DEFAULT_CAPTURE = CaptureOptions()
-EXTRACTION_CAPTURE = CaptureOptions(render_details=False)
+EXTRACTION_CAPTURE = CaptureOptions(render_details=False, soft_mask_alpha=False)
 
 
 @dataclass(frozen=True, slots=True)

@@ -267,14 +267,30 @@ def image_source_from_stream(
     resolver: PdfValueResolver,
     *,
     color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
-) -> tuple[ImageSource, float | None]:
-    source = image_spec.image_source_from_stream(
+) -> ImageSource:
+    return image_spec.image_source_from_stream(
         stream,
         resolver,
         semantic_context=getattr(resolver, "semantic_context", None),
         color_rendering=color_rendering,
     )
-    return source, soft_mask_mean_alpha(source)
+
+
+class CachedImageSource:
+    """An image XObject's source, and its soft mask's mean alpha once a capture asks for it."""
+
+    __slots__ = ("mean_alpha", "measured", "source")
+
+    def __init__(self, source: ImageSource) -> None:
+        self.source = source
+        self.mean_alpha: float | None = None
+        self.measured = False
+
+    def soft_mask_alpha(self) -> float | None:
+        if not self.measured:
+            self.mean_alpha = soft_mask_mean_alpha(self.source)
+            self.measured = True
+        return self.mean_alpha
 
 
 def soft_mask_mean_alpha(source: ImageSource) -> float | None:
@@ -1389,11 +1405,16 @@ class TextState(RecoveringTextState):
         cache = self.caches.capture_image_sources
         key = (id(xobj), rendering)
         cached = cache.get_key(xobj, key)
-        if cached is not None:
-            return cached
-        return cache.put_key(
-            xobj, key, image_source_from_stream(xobj, self.resolver, color_rendering=rendering)
-        )
+        if cached is None:
+            cached = cache.put_key(
+                xobj,
+                key,
+                CachedImageSource(
+                    image_source_from_stream(xobj, self.resolver, color_rendering=rendering)
+                ),
+            )
+        alpha = cached.soft_mask_alpha() if self.options.soft_mask_alpha else None
+        return cached.source, alpha
 
     def paint_image(self, state: object, xobj: PdfStream) -> None:
         xobj_dict = xobj.dictionary
@@ -1452,7 +1473,7 @@ class TextState(RecoveringTextState):
                 )
                 if color_resource is not None:
                     dictionary[PdfName.of("ColorSpace")] = color_resource
-            source, _ = image_source_from_stream(
+            source = image_source_from_stream(
                 PdfStream(raw_data=data, dictionary=dictionary),
                 self.resolver,
                 color_rendering=self.graphics.color_rendering,
@@ -1894,6 +1915,7 @@ __all__ = (
     "detect_rotation_from_linear",
     "StrokeLineRows",
     "flatten_path",
+    "CachedImageSource",
     "image_source_from_stream",
     "soft_mask_mean_alpha",
     "CaptureGraphicsSave",

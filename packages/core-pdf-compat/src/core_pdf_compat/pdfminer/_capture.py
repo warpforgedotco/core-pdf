@@ -162,7 +162,9 @@ class PdfminerTextState(TextState):
         super().__init__(
             document,
             page_clip=page_clip,
-            options=CaptureOptions(ink_bounds=False, text_runs=False, render_details=False),
+            options=CaptureOptions(
+                ink_bounds=False, text_runs=False, render_details=False, soft_mask_alpha=False
+            ),
         )
         self.cursor = 0.0
         # pdfminer's text line matrix holds a vertical cursor beside the horizontal one:
