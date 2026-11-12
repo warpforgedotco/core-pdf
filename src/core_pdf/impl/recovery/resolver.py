@@ -35,7 +35,13 @@ LEXER_POOL_LIMIT = 8
 
 
 class ObjectResolver(core_pdf.impl.spec.s_07_syntax.resolver.ObjectResolver):
-    __slots__ = ("irregular_dictionaries", "lexer_pool", "parsed_objects", "parsed_rules")
+    __slots__ = (
+        "irregular_dictionaries",
+        "lexer_pool",
+        "parsed_objects",
+        "parsed_rules",
+        "strict_reads",
+    )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.lexer_pool: list[PdfLexer] | None = []
@@ -44,12 +50,28 @@ class ObjectResolver(core_pdf.impl.spec.s_07_syntax.resolver.ObjectResolver):
         self.irregular_dictionaries: set[tuple[int, int]] = set()
         self.parsed_objects: dict[int, object] = {}
         self.parsed_rules: LexicalRules | None = None
+        # Once record_strict_reads is called, by offset, each plain indirect object the scanner
+        # read as the strict scanner would: (object number, generation, end, value, lexical
+        # rules). A save reuses these rather than reading the same bytes again with the strict
+        # lexer; nothing else pays for them.
+        self.strict_reads: dict[int, tuple[int, int, int, object, LexicalRules]] | None = None
         super().__init__(*args, **kwargs)
 
     def adopt_parsed_objects(self, objects: dict[int, object], rules: LexicalRules) -> None:
         with self.lock:
             self.parsed_objects = objects
             self.parsed_rules = rules
+
+    def record_strict_reads(self) -> None:
+        if self.strict_reads is None:
+            self.strict_reads = {}
+
+    def detach_parsed_caches(
+        self,
+    ) -> tuple[core_pdf.impl.spec.s_07_syntax.objects.PdfObjectStream, ...]:
+        if self.strict_reads is not None:
+            self.strict_reads = {}
+        return super().detach_parsed_caches()
 
     def close(self) -> None:
         with self.lock:
@@ -130,9 +152,11 @@ class ObjectResolver(core_pdf.impl.spec.s_07_syntax.resolver.ObjectResolver):
                 semantic_context=self.semantic_context,
             )
             lexer.on_irregular_dictionary = self.note_irregular_dictionary
+            lexer.strict_reads = self.strict_reads
             return lexer
         lexer.reference_resolver = self.resolve
         lexer.decipher = self.decipher
+        lexer.strict_reads = self.strict_reads
         if lexer.semantic_context is not self.semantic_context:
             lexer.semantic_context = self.semantic_context
         return lexer

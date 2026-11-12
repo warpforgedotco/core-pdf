@@ -25,6 +25,7 @@ from core_pdf.impl.spec.s_07_security.output import (
 from core_pdf.impl.spec.s_07_security.standard import StandardSecurityHandler
 from core_pdf.impl.spec.s_07_syntax.serialize import ObjectLayout, serialize_xref_stream
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import LexicalRules
 lazy from core_pdf_cythonized import collect_references
 
 if TYPE_CHECKING:
@@ -94,6 +95,37 @@ def mutable_copy(value: Any) -> Any:
     return value
 
 
+def scan_difference(
+    first: LexicalRules, second: LexicalRules, known: dict[int, re.Pattern[bytes] | bool]
+) -> re.Pattern[bytes] | bool:
+    """Where the object scanner may read differently under two lexical rules.
+
+    True when it reads alike everywhere, False when it may read differently anywhere, or a
+    pattern of the bytes its two tables classify differently: bytes it reads alike unless it
+    meets one of those.
+    """
+    if id(first) in known:
+        return known[id(first)]
+    difference: re.Pattern[bytes] | bool
+    if first is second:
+        difference = True
+    elif (
+        first.name_escapes != second.name_escapes
+        or first.split_whitespace_compatible != second.split_whitespace_compatible
+    ):
+        difference = False
+    else:
+        differing = bytes(
+            index
+            for index in range(256)
+            if first.whitespace_table[index] != second.whitespace_table[index]
+            or first.separator_table[index] != second.separator_table[index]
+        )
+        difference = re.compile(b"[" + re.escape(differing) + b"]") if differing else True
+    known[id(first)] = difference
+    return difference
+
+
 def references_in(value: Any) -> list[PdfReference]:
     """Every reference in value, depth first; the order decides the order of a save."""
     return collect_references(value, PdfReference, PdfStream)
@@ -119,6 +151,10 @@ class EditableDocument:
         # /Size is often wrong, so a new number must also clear every object in use.
         size = document.resolver.resolve(self.trailer.get("Size"))
         declared = size if isinstance(size, int) and size > 0 else 1
+        # The walk below reads every reachable object; a save can then reuse those readings.
+        record_strict_reads = getattr(document.resolver, "record_strict_reads", None)
+        if record_strict_reads is not None:
+            record_strict_reads()
         numbers = set(self.reachable_references())
         self.source_reachable = frozenset(numbers)
         if isinstance(self.encrypt_entry, PdfReference):
@@ -339,6 +375,10 @@ class EditableDocument:
         # The strict lexer decides which objects keep their own bytes; its compiled
         # reading of arrays and dictionaries returns what its own code would.
         lexer = StrictPdfLexer(self.document.raw_data, reference_resolver=resolver.resolve)
+        # An object the resolver's scanner already read as the strict scanner would, under the
+        # same lexical tables, has the strict reading and end the lexer would find again.
+        strict_reads = getattr(resolver, "strict_reads", None) or {}
+        differences: dict[int, re.Pattern[bytes] | bool] = {}
         found: dict[int, bytes] = {}
         pending = list(objects)
         while pending:
@@ -349,16 +389,29 @@ class EditableDocument:
                 continue
             if located[1] != reference.generation_number:
                 continue
-            lexer.rewind(located[0])
-            try:
-                parsed = lexer.parse_indirect_object(expected_reference=reference)
-            except PdfParseError:
-                continue
+            read = strict_reads.get(located[0])
+            reusable = False
+            if read is not None and read[0] == number and read[1] == located[1]:
+                difference = scan_difference(read[4], lexer.lexical_rules, differences)
+                # The scanner reads from the header to the byte after endobj.
+                reusable = difference is True or (
+                    isinstance(difference, re.Pattern)
+                    and difference.search(self.document.raw_data, located[0], read[2] + 1) is None
+                )
+            if read is not None and reusable:
+                parsed, end = read[3], read[2]
+            else:
+                lexer.rewind(located[0])
+                try:
+                    parsed = lexer.parse_indirect_object(expected_reference=reference)
+                except PdfParseError:
+                    continue
+                end = lexer.pos
             if isinstance(parsed, PdfStream):
                 length = resolver.resolve(parsed.dictionary.get("Length"))
                 if length != len(parsed.raw_data):
                     continue
-            found[number] = bytes(self.document.raw_data[located[0] : lexer.pos])
+            found[number] = bytes(self.document.raw_data[located[0] : end])
             # The resolver inlines some stream entries, so the kept bytes can refer to more
             # than the walk from the trailer saw.
             for target in references_in(parsed):
