@@ -54,6 +54,8 @@ from core_pdf.impl.spec.s_07_filters.predictors import (
     SUPPORTED_PREDICTOR_BITS,
     png_predict,
     tiff_predict,
+    tiff_predict_bits_with,
+    tiff_predict_words_with,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_null
 from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
@@ -262,21 +264,20 @@ def png_predict_codec(
         return None
 
 
-def tiff_predict_words_codec(
-    data: bytes | memoryview, columns: int, colors: int, dtype: str, sample_bytes: int
-) -> bytes:
-    bytes_per_row = colors * columns * sample_bytes
-    if bytes_per_row <= 0:
-        return b""
-    complete = (len(data) // bytes_per_row) * bytes_per_row
-    if complete == 0:
-        return b""
-    rows = numpy.frombuffer(data, dtype=dtype, count=complete // sample_bytes).reshape(
-        -1,
-        columns,
-        colors,
+def delta_decode_rows(samples: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
+    return numpy.asarray(imagecodecs.delta_decode(samples, axis=1))
+
+
+def unpack_bit_samples_codec(
+    rows: numpy.ndarray[Any, Any], sample_count: int, bits: int
+) -> numpy.ndarray[Any, Any]:
+    return numpy.asarray(
+        imagecodecs.packints_decode(rows.reshape(-1), numpy.uint8, bits, runlen=sample_count)
     )
-    return numpy.asarray(imagecodecs.delta_decode(rows, axis=1)).tobytes()
+
+
+def pack_bit_samples_codec(flat: numpy.ndarray[Any, Any], bits: int) -> bytes:
+    return numpy.asarray(imagecodecs.packints_encode(numpy.ascontiguousarray(flat), bits)).tobytes()
 
 
 def tiff_predict_codec(
@@ -284,41 +285,26 @@ def tiff_predict_codec(
 ) -> bytes | None:
     try:
         if bits_per_component == 8:
-            return tiff_predict_words_codec(data, columns, colors, "u1", 1)
+            return tiff_predict_words_with(
+                data, columns, colors, numpy.dtype("u1"), delta_decode_rows
+            )
         if bits_per_component == 16:
-            return tiff_predict_words_codec(data, columns, colors, ">u2", 2)
+            return tiff_predict_words_with(
+                data, columns, colors, numpy.dtype(">u2"), delta_decode_rows
+            )
         if bits_per_component in {1, 2, 4}:
-            return tiff_predict_bits_codec(data, columns, colors, bits_per_component)
+            return tiff_predict_bits_with(
+                data,
+                columns,
+                colors,
+                bits_per_component,
+                unpack_bit_samples_codec,
+                delta_decode_rows,
+                pack_bit_samples_codec,
+            )
     except Exception:
         return None
     return None
-
-
-def tiff_predict_bits_codec(
-    data: bytes | memoryview, columns: int, colors: int, bits: int
-) -> bytes:
-    sample_count = colors * columns
-    row_byte_length = max(1, (sample_count * bits + 7) // 8)
-    complete_rows = len(data) // row_byte_length
-    if complete_rows == 0:
-        return b""
-    encoded = numpy.frombuffer(
-        data,
-        dtype=numpy.uint8,
-        count=complete_rows * row_byte_length,
-    )
-    samples = numpy.asarray(
-        imagecodecs.packints_decode(encoded, numpy.uint8, bits, runlen=sample_count)
-    ).reshape(complete_rows, columns, colors)
-    accumulated = numpy.asarray(imagecodecs.delta_decode(samples, axis=1))
-    decoded = accumulated & numpy.uint8((1 << bits) - 1)
-    flat = decoded.reshape(complete_rows, sample_count)
-    samples_per_byte = 8 // bits
-    padding = (-sample_count) % samples_per_byte
-    if padding:
-        flat = numpy.pad(flat, ((0, 0), (0, padding)))
-    packed = imagecodecs.packints_encode(numpy.ascontiguousarray(flat), bits)
-    return numpy.asarray(packed).tobytes()
 
 
 def coerce_decoder_bytes(result: object) -> bytes:

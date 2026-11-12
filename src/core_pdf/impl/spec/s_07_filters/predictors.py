@@ -5,6 +5,7 @@ from __future__ import annotations
 __lazy_modules__ = ["core_pdf.impl.jbig2.bitmap", "core_pdf.impl.spec.samples"]
 
 from collections.abc import Callable
+from typing import Any
 
 import numpy
 
@@ -91,9 +92,19 @@ def png_predict(
     return bytes(out)
 
 
-def tiff_predict_words(
-    data: bytes | memoryview, columns: int, colors: int, dtype: numpy.dtype
+SampleArray = numpy.ndarray[Any, Any]
+
+
+def tiff_predict_words_with(
+    data: bytes | memoryview,
+    columns: int,
+    colors: int,
+    dtype: numpy.dtype[Any],
+    accumulate: Callable[[SampleArray], SampleArray],
 ) -> bytes:
+    """Undo TIFF predictor 2 on whole-byte samples; ``accumulate`` sums each row's samples
+    along axis 1 of a (rows, columns, colors) array.
+    """
     bytes_per_row = colors * columns * dtype.itemsize
     if bytes_per_row <= 0:
         return b""
@@ -103,14 +114,22 @@ def tiff_predict_words(
     rows = numpy.frombuffer(data, dtype=dtype, count=complete // dtype.itemsize).reshape(
         -1, columns, colors
     )
-    return (
-        numpy.cumsum(rows, axis=1, dtype=dtype.newbyteorder("="))
-        .astype(dtype, copy=False)
-        .tobytes()
-    )
+    return accumulate(rows).tobytes()
 
 
-def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:
+def tiff_predict_bits_with(
+    data: bytes | memoryview,
+    columns: int,
+    colors: int,
+    bits: int,
+    unpack: Callable[[SampleArray, int, int], SampleArray],
+    accumulate: Callable[[SampleArray], SampleArray],
+    pack: Callable[[SampleArray, int], bytes],
+) -> bytes:
+    """Undo TIFF predictor 2 on 1-, 2- or 4-bit samples. ``unpack`` turns (rows, row bytes)
+    into one byte per sample, ``accumulate`` sums along axis 1 of (rows, columns, colors), and
+    ``pack`` packs (rows, byte-aligned samples) back to bits.
+    """
     sample_count = colors * columns
     row_byte_length = max(1, (sample_count * bits + 7) // 8)
     complete_rows = len(data) // row_byte_length
@@ -120,19 +139,36 @@ def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits:
         data,
         dtype=numpy.uint8,
         count=complete_rows * row_byte_length,
-    )
-    samples = unpack_subbyte_rows(
-        encoded.reshape(complete_rows, row_byte_length), sample_count, bits
-    ).reshape(complete_rows, columns, colors)
-    accumulated = numpy.cumsum(samples, axis=1, dtype=numpy.uint8)
-    decoded = accumulated & numpy.uint8((1 << bits) - 1)
+    ).reshape(complete_rows, row_byte_length)
+    samples = unpack(encoded, sample_count, bits).reshape(complete_rows, columns, colors)
+    decoded = accumulate(samples) & numpy.uint8((1 << bits) - 1)
     flat = decoded.reshape(complete_rows, sample_count)
-    samples_per_byte = 8 // bits
-    padding = (-sample_count) % samples_per_byte
+    padding = (-sample_count) % (8 // bits)
     if padding:
         flat = numpy.pad(flat, ((0, 0), (0, padding)))
+    return pack(flat, bits)
+
+
+def cumsum_rows(samples: SampleArray) -> SampleArray:
+    dtype = samples.dtype
+    return numpy.cumsum(samples, axis=1, dtype=dtype.newbyteorder("=")).astype(dtype, copy=False)
+
+
+def pack_bit_samples(flat: SampleArray, bits: int) -> bytes:
     expanded = (flat[:, :, None] >> numpy.arange(bits - 1, -1, -1, dtype=numpy.uint8)) & 1
-    return numpy.packbits(expanded.reshape(complete_rows, -1), axis=1, bitorder="big").tobytes()
+    return numpy.packbits(expanded.reshape(len(flat), -1), axis=1, bitorder="big").tobytes()
+
+
+def tiff_predict_words(
+    data: bytes | memoryview, columns: int, colors: int, dtype: numpy.dtype[Any]
+) -> bytes:
+    return tiff_predict_words_with(data, columns, colors, dtype, cumsum_rows)
+
+
+def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:
+    return tiff_predict_bits_with(
+        data, columns, colors, bits, unpack_subbyte_rows, cumsum_rows, pack_bit_samples
+    )
 
 
 def tiff_predict(

@@ -1424,12 +1424,15 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
             page = NullObject() if dest.indirect_reference is None else dest.indirect_reference
             self._root_object[name] = Destination("Opening", page, PAGE_FIT).dest_array
 
+    def _set_catalog_name(self, key: str, value: Any, allowed: Any, label: str) -> None:
+        if not isinstance(value, NameObject):
+            if value not in allowed:
+                logger.warning("%s should be one of: %s", label, ", ".join(allowed))
+            value = NameObject(value)
+        self._root_object[NameObject(key)] = value
+
     def _set_page_layout(self, layout: Any) -> None:
-        if not isinstance(layout, NameObject):
-            if layout not in LAYOUTS:
-                logger.warning("Layout should be one of: %s", ", ".join(LAYOUTS))
-            layout = NameObject(layout)
-        self._root_object[NameObject("/PageLayout")] = layout
+        self._set_catalog_name("/PageLayout", layout, LAYOUTS, "Layout")
 
     def set_page_layout(self, layout: Any) -> None:
         self._set_page_layout(layout)
@@ -1454,11 +1457,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
 
     @page_mode.setter
     def page_mode(self, mode: Any) -> None:
-        if not isinstance(mode, NameObject):
-            if mode not in MODES:
-                logger.warning("Mode should be one of: %s", ", ".join(MODES))
-            mode = NameObject(mode)
-        self._root_object[NameObject("/PageMode")] = mode
+        self._set_catalog_name("/PageMode", mode, MODES, "Mode")
 
     def create_viewer_preferences(self) -> ViewerPreferences:
         preferences = ViewerPreferences()
