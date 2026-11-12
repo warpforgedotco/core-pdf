@@ -10,8 +10,12 @@ four. A class declares `__fields__` and writes its own `__init__`, `__eq__` and
 `RecordType` writes that boilerplate from the class body instead. Subclass
 `GeneratedRecord` for a frozen `Record`, or name `metaclass=RecordType` over other
 mixins. The annotated names, excluding `ClassVar`, are the fields in order, and a
-value assigned to one in the body is its default. `field(default_factory=f)` makes a default built by
-`f()` for each instance, also when `None` is passed for that field. For each class it builds
+value assigned to one in the body is its default. `field(default=..., default_factory=...,
+kw_only=...)` declares a field the way `dataclasses.field` does: `default_factory=f` builds the
+default with `f()` for each instance, also when `None` is passed for that field, and
+`kw_only=True` makes it a keyword-only `__init__` parameter. Keyword-only fields come after the
+positional ones (they are not reordered), and the class keyword `kw_only=True` marks every field
+the class adds. For each class it builds
 `__slots__`, `__fields__`, `__match_args__`, an `__init__` that stores through the
 slot descriptors (and then calls `__post_init__` when the class has one), `__eq__`
 (identity shortcut, exact class check, field-by-field `and`), `__hash__` over the
