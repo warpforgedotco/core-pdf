@@ -7,6 +7,63 @@ from cython.cimports.libc.string import memset
 
 __all__ = ("box_downsample_blocks",)
 
+# Summing whole rows first wins while blocks are narrow; for wide blocks of multi-channel
+# pixels the block-by-block loop below is faster (measured, see box_downsample_blocks).
+ROWS_FIRST_MAX_BLOCK_WIDTH = 16
+
+
+@cython.cfunc
+@cython.exceptval(check=False)
+@cython.nogil
+def downsample_by_rows(
+    grid: cython.const[cython.uchar][:, :, :],
+    row_edges: cython.const[cython.longlong][:],
+    column_edges: cython.const[cython.longlong][:],
+    out: cython.uchar[:, :, ::1],
+    sums: cython.p_uint,
+) -> cython.void:
+    """Box-downsample packed rows by summing each block's rows across the full width first
+    (one contiguous add per source row, which vectorizes), then each block's columns. The
+    unsigned sums are the same integers as summing block by block, in any order."""
+    target_height: cython.Py_ssize_t = row_edges.shape[0] - 1
+    target_width: cython.Py_ssize_t = column_edges.shape[0] - 1
+    channels: cython.Py_ssize_t = grid.shape[2]
+    span: cython.Py_ssize_t = column_edges[target_width] * channels
+    r: cython.Py_ssize_t
+    c: cython.Py_ssize_t
+    k: cython.Py_ssize_t
+    i: cython.Py_ssize_t
+    x: cython.Py_ssize_t
+    y: cython.Py_ssize_t
+    x0: cython.Py_ssize_t
+    x1: cython.Py_ssize_t
+    count: cython.longlong
+    row: cython.p_const_uchar
+    block: cython.p_uint
+    total: cython.uint
+    for r in range(target_height):
+        row = cython.address(grid[row_edges[r], 0, 0])
+        for i in range(span):
+            sums[i] = row[i]
+        for y in range(row_edges[r] + 1, row_edges[r + 1]):
+            row = cython.address(grid[y, 0, 0])
+            for i in range(span):
+                sums[i] += row[i]
+        for c in range(target_width):
+            x0 = column_edges[c]
+            x1 = column_edges[c + 1]
+            count = (row_edges[r + 1] - row_edges[r]) * (x1 - x0)
+            if count < 1:
+                count = 1
+            block = sums + x0 * channels
+            for k in range(channels):
+                total = 0
+                for x in range(x1 - x0):
+                    total += block[x * channels + k]
+                out[r, c, k] = cython.cast(
+                    cython.uchar, cython.cast(cython.longlong, total) // count
+                )
+
 
 def box_downsample_blocks(
     grid: cython.const[cython.uchar][:, :, :],
@@ -23,6 +80,27 @@ def box_downsample_blocks(
     output = numpy.empty((target_height, target_width, channels), dtype=numpy.uint8)
     out: cython.uchar[:, :, ::1] = output
     row_width: cython.Py_ssize_t = target_width * channels
+    packed: cython.bint = grid.strides[2] == 1 and grid.strides[1] == channels
+    rows_first: cython.bint = (
+        packed
+        and grid.shape[1] > 0
+        and (
+            channels == 1 or column_edges[target_width] <= ROWS_FIRST_MAX_BLOCK_WIDTH * target_width
+        )
+    )
+    if rows_first:
+        sums_rows: cython.p_uint = cython.cast(
+            cython.p_uint,
+            PyMem_Malloc(column_edges[target_width] * channels * cython.sizeof(cython.uint)),
+        )
+        if sums_rows == cython.NULL:
+            raise MemoryError()
+        try:
+            with cython.nogil:
+                downsample_by_rows(grid, row_edges, column_edges, out, sums_rows)
+        finally:
+            PyMem_Free(sums_rows)
+        return output
     sums: cython.p_uint = cython.cast(
         cython.p_uint, PyMem_Malloc(row_width * cython.sizeof(cython.uint))
     )
@@ -38,7 +116,6 @@ def box_downsample_blocks(
     base: cython.Py_ssize_t
     rows_in_block: cython.longlong
     count: cython.longlong
-    packed: cython.bint = grid.strides[2] == 1 and grid.strides[1] == channels
     row: cython.p_const_uchar
     p: cython.p_const_uchar
     s0: cython.uint
