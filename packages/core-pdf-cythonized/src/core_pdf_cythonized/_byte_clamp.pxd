@@ -2,9 +2,13 @@
 
 from libc.math cimport rint
 
+# Each lower bound is written `not (x >= 0)` rather than `x < 0` so that NaN, which fails
+# every comparison, clamps to 0 instead of reaching a float-to-int cast, which is undefined
+# for NaN in C. For every other value the two tests take the same branch.
+
 
 cdef inline unsigned char double_to_byte(double value) noexcept nogil:
-    if value < 0.0:
+    if not value >= 0.0:
         return 0
     if value > 255.0:
         return 255
@@ -14,7 +18,7 @@ cdef inline unsigned char double_to_byte(double value) noexcept nogil:
 cdef inline unsigned char float_to_byte(float value) noexcept nogil:
     cdef float ZERO = 0.0
     cdef float SCALE = 255.0
-    if value < ZERO:
+    if not value >= ZERO:
         return 0
     if value > SCALE:
         return 255
@@ -23,7 +27,7 @@ cdef inline unsigned char float_to_byte(float value) noexcept nogil:
 
 cdef inline int round_to_byte(double value) noexcept nogil:
     cdef double rounded = rint(value)
-    if rounded < 0.0:
+    if not rounded >= 0.0:
         return 0
     if rounded > 255.0:
         return 255
@@ -32,7 +36,7 @@ cdef inline int round_to_byte(double value) noexcept nogil:
 
 cdef inline double unit_to_byte(double value) noexcept nogil:
     value = rint(value * 255.0)
-    if value < 0.0:
+    if not value >= 0.0:
         return 0.0
     if value > 255.0:
         return 255.0
@@ -41,6 +45,8 @@ cdef inline double unit_to_byte(double value) noexcept nogil:
 
 cdef inline int unit_to_byte_checked(double value) except -1:
     cdef double scaled = rint(value * 255.0)
+    if scaled != scaled:  # NaN: 0, as the unchecked clamps give it
+        return 0
     if scaled < 0.0 or scaled > 255.0:
         raise ValueError("source_alpha must lie in [0, 1]")
     return <int> scaled
