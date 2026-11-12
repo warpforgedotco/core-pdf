@@ -463,10 +463,23 @@ def run_side(library: str, side: str, files: list[str], arguments: argparse.Name
     """The side's import time and versions, and per (operation, file) the timings."""
     found: dict[str, Any] = {"timings": {}, "excluded": {}}
     remaining = list(files)
-    command = [
+    reference_python = SUITES[LIBRARIES[library].suite].reference_python
+    workspace = [
         *("uv", "run", "--locked", "--all-packages", "--group", "test"),
         *LIBRARIES[library].uv_options,
-        *pins(library),
+    ]
+    if reference_python is None:
+        environment = [*workspace, *pins(library)]
+    elif side == "real":
+        # The real library cannot run on the workspace's Python (run_upstream_suite.py says
+        # why); it runs on its own, with none of the workspace's packages, and the facade
+        # without the real library.
+        reference = ("uv", "run", "--python", reference_python, "--isolated", "--no-project")
+        environment = [*reference, *pins(library)]
+    else:
+        environment = workspace
+    command = [
+        *environment,
         *("python", __file__, "--worker", library, side),
         *("--repeats", str(arguments.repeats), "--timeout", str(arguments.timeout)),
         *(option for name in arguments.operation or () for option in ("--operation", name)),
@@ -559,8 +572,11 @@ def report(results: dict[str, dict[str, dict]], arguments: argparse.Namespace) -
     for library, sides in results.items():
         real, facade = sides["real"], sides["facade"]
         versions = ", ".join(f"{name} {version}" for name, version in real["versions"].items())
+        python = real["python"]
+        if facade["python"] != python:
+            python = f"real {python}, facade {facade['python']}"
         lines.append(
-            f"| {library} | {versions} | {real['python']} | {seconds(real['imported'])} "
+            f"| {library} | {versions} | {python} | {seconds(real['imported'])} "
             f"| {seconds(facade['imported'])} | {seconds(real['warmed'])} "
             f"| {seconds(facade['warmed'])} |"
         )
