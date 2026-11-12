@@ -174,6 +174,11 @@ class _XrayCapture(TextState):
 _FILL_KINDS = frozenset({"fill", "fillstroke"})
 
 
+def _fill_records(page: Any, drawings: Any) -> Any:
+    """The records of the fill drawings, the only ones the overlay test looks at."""
+    return page.drawing_records(drawing for drawing in drawings if drawing.kind in _FILL_KINDS)
+
+
 class _RectangleFound(BaseException):
     """Raised out of the content stream by _DrawingsProbe at the first candidate rectangle; a
     BaseException so content recovery, which catches Exception, does not swallow it."""
@@ -191,7 +196,6 @@ class _DrawingsProbe(_XrayCapture):
         super().__init__(
             page.document, page_clip=page.effective_page_clip(), options=_DRAWINGS_CAPTURE
         )
-        self.page = page
         self.crop_box = crop_box
         self.user_unit = user_unit
         self.skipped_show = False
@@ -199,18 +203,9 @@ class _DrawingsProbe(_XrayCapture):
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         drawing_count = len(self.drawings)
         super().paint_path(state, source, kind, fill_rule)
-        # _path_rectangles' first test, on the captured drawings, before building records.
-        painted = [
-            drawing
-            for drawing in self.drawings[drawing_count:]
-            if drawing.kind in _FILL_KINDS
-            and drawing.fill is not None
-            and drawing.fill_opacity == 1
-            and drawing.path is not None
-        ]
-        if painted and any(
+        if any(
             _path_rectangles(drawing, self.crop_box, self.user_unit, self.rect_operands)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            for drawing in self.page.drawing_records(painted)
+            for drawing in self.drawings[drawing_count:]
         ):
             raise _RectangleFound
 
@@ -565,7 +560,7 @@ def _has_rectangles(page: Any, crop_box: tuple[float, ...], user_unit: float) ->
         state.release()
     return any(
         _path_rectangles(drawing, crop_box, user_unit, state.rect_operands)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        for drawing in page.drawing_records(drawings)
+        for drawing in drawings
     )
 
 
@@ -576,14 +571,16 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
     if not _has_rectangles(page, crop_box, user_unit):
         return []
     program, rect_operands = _capture_page(page)
-    drawings = page.drawing_records(program.drawings)
+    # _path_rectangles reads only fields a drawing record copies unchanged, so it takes the
+    # captured drawings: building a record for each cost a fifth of the facade's time.
     rectangles = [
         rectangle
-        for drawing in drawings
+        for drawing in program.drawings
         for rectangle in _path_rectangles(drawing, crop_box, user_unit, rect_operands)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
     ]
     if not rectangles:
         return []
+    drawings = _fill_records(page, program.drawings)
     annotations = page.get_annotations()
     annotation_boxes = {
         tuple(annotation.rect) for annotation in annotations if annotation.subtype == "Highlight"
