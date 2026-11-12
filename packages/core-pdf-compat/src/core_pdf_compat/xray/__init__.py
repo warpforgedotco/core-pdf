@@ -19,7 +19,7 @@ from typing import Any
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
 from core_pdf.impl.capture_page import capture_annotation_appearances
-from core_pdf.impl.capture_program import PageProgram
+from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture_recording import TextState
 from core_pdf.impl.exceptions import PdfPasswordError, PdfUnsupportedError
 from core_pdf.impl.fonts_cmap import ToUnicodeCMap
@@ -96,8 +96,15 @@ class _XrayCapture(TextState):
     MuPDF reports cannot be recovered from the flattened points.
     """
 
-    def __init__(self, document: Any, *, page_clip: Any) -> None:
-        super().__init__(document, hidden_layers=document.oc_hidden_layers(), page_clip=page_clip)
+    def __init__(
+        self, document: Any, *, page_clip: Any, options: CaptureOptions = DEFAULT_CAPTURE
+    ) -> None:
+        super().__init__(
+            document,
+            hidden_layers=document.oc_hidden_layers(),
+            page_clip=page_clip,
+            options=options,
+        )
         # The (x, y, w, h) operands of each re in a drawing painted with an identity CTM,
         # by the drawing's sequence number.
         self.rect_operands: dict[int, tuple[tuple[float, float, float, float], ...]] = {}
@@ -116,6 +123,69 @@ class _XrayCapture(TextState):
         super().paint_path(state, source, kind, fill_rule)
         if operands and len(self.drawings) > drawing_count:
             self.rect_operands[self.drawings[-1].seqno] = tuple(operands)
+
+
+_FILL_KINDS = frozenset({"fill", "fillstroke"})
+
+
+class _RectangleFound(BaseException):
+    """Raised out of the content stream by _DrawingsProbe at the first candidate rectangle; a
+    BaseException so content recovery, which catches Exception, does not swallow it."""
+
+
+class _DrawingsProbe(_XrayCapture):
+    """The page's drawings without its text, as x-ray's get_drawings() looks for rectangles
+    before it reads any text, stopping at the first candidate. Shown text changes the drawings
+    only through a Type3 glyph's procedure or a clipping render mode, so only those shows still
+    run."""
+
+    def __init__(self, page: Any, crop_box: tuple[float, ...], user_unit: float) -> None:
+        super().__init__(
+            page.document, page_clip=page.effective_page_clip(), options=_DRAWINGS_CAPTURE
+        )
+        self.page = page
+        self.crop_box = crop_box
+        self.user_unit = user_unit
+
+    def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
+        drawing_count = len(self.drawings)
+        super().paint_path(state, source, kind, fill_rule)
+        # _path_rectangles' first test, on the captured drawings, before building records.
+        painted = [
+            drawing
+            for drawing in self.drawings[drawing_count:]
+            if drawing.kind in _FILL_KINDS
+            and drawing.fill is not None
+            and drawing.fill_opacity == 1
+            and drawing.path is not None
+        ]
+        if painted and any(
+            _path_rectangles(drawing, self.crop_box, self.user_unit, self.rect_operands)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            for drawing in self.page.drawing_records(painted)
+        ):
+            raise _RectangleFound
+
+    def shows_paint(self) -> bool:
+        return 4 <= self.graphics.render_mode <= 7 or self.get_decoder().is_type3
+
+    def op_Tj(self, operands: Any, depth: int) -> None:
+        if operands and self.shows_paint():
+            super().op_Tj(operands, depth)
+
+    def op_TJ(self, operands: Any, depth: int) -> None:
+        if operands and self.shows_paint():
+            super().op_TJ(operands, depth)
+
+    def op_quote(self, operands: Any, depth: int) -> None:
+        if operands and self.shows_paint():
+            super().op_quote(operands, depth)
+
+    def op_double_quote(self, operands: Any, depth: int) -> None:
+        if operands and self.shows_paint():
+            super().op_double_quote(operands, depth)
+
+
+_DRAWINGS_CAPTURE = CaptureOptions(glyphs=False, text_runs=False)
 
 
 def _capture_page(page: Any) -> tuple[Any, dict[int, Any]]:
@@ -410,10 +480,37 @@ def _trailer_keyword_ends(raw_data: bytes) -> Iterator[int]:
         start = raw_data.find(b"trailer", start + 7)
 
 
+def _has_rectangles(page: Any, crop_box: tuple[float, ...], user_unit: float) -> bool:
+    """Whether the page may paint a rectangle that could be a redaction, found without
+    capturing its text. A wrong yes costs only time, as _page_redactions finds the rectangles
+    again; a wrong no would lose redactions. A page with a Highlight annotation always counts:
+    a font fontTools rejects while the text is captured sends it to _raw_highlight_redactions."""
+    if any(annotation.subtype == "Highlight" for annotation in page.get_annotations()):
+        return True
+    state = _DrawingsProbe(page, crop_box, user_unit)
+    try:
+        page.consume_contents(state)
+        state.run_accumulator.flush()
+        body = state.captured_program()
+        drawings = PageProgram(
+            body=body, appearances=capture_annotation_appearances(page, state)
+        ).drawings
+    except _RectangleFound:
+        return True
+    finally:
+        state.release()
+    return any(
+        _path_rectangles(drawing, crop_box, user_unit, state.rect_operands)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        for drawing in page.drawing_records(drawings)
+    )
+
+
 def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, object]]:
     source_crop_box = page.crop_box or page.media_box
     user_unit = page.user_unit
     crop_box = tuple(float(value) for value in source_crop_box)
+    if not _has_rectangles(page, crop_box, user_unit):
+        return []
     program, rect_operands = _capture_page(page)
     drawings = page.drawing_records(program.drawings)
     rectangles = [
