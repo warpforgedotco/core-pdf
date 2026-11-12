@@ -376,9 +376,9 @@ jobs:
 
       - name: llama_index against the real library
         if: matrix.shard == 'llama_index'
-        # llama-index-readers-file 0.7.0 resolves pandas 2.3.3, which has no CPython 3.15 wheels:
-        # on 3.15 uv built it from source, about 4 min, on every run.
-        run: uv run --python 3.14 --isolated --locked --all-packages --group test --with "llama-index-readers-file==0.7.0" --with "llama-index-core==0.14.25" --with "pypdf[full]==6.21.4" python scripts/check_llamaindex_output.py
+        # llama-index-readers-file 0.7.0 resolves pandas 2.3.3, which has no CPython 3.15 wheels,
+        # so uv builds it from source, about 4 min a run, until it has.
+        run: uv run --locked --all-packages --group test --with "llama-index-readers-file==0.7.0" --with "llama-index-core==0.14.25" --with "pypdf[full]==6.21.4" python scripts/check_llamaindex_output.py
 
       - name: x-ray against the real library
         if: matrix.shard == 'x-ray'
