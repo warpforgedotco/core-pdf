@@ -553,6 +553,12 @@ def sample_image_plane(
     plane: UInt8Array, u: numpy.ndarray[Any, Any], v: numpy.ndarray[Any, Any]
 ) -> UInt8Array:
     height, width = plane.shape
+    if u.shape[0] == 1 and v.ndim == 2 and v.shape[1] == 1:
+        # Separable coordinates (u by column, v by row): gather rows, then columns, the same
+        # samples the broadcast fancy index takes without building two index grids.
+        source_x = numpy.clip((u[0] * width).astype(numpy.intp), 0, width - 1)
+        source_y = numpy.clip(((1.0 - v[:, 0]) * height).astype(numpy.intp), 0, height - 1)
+        return plane[source_y][:, source_x]
     source_x = numpy.clip((u * width).astype(numpy.intp), 0, width - 1)
     source_y = numpy.clip(((1.0 - v) * height).astype(numpy.intp), 0, height - 1)
     return plane[source_y, source_x]
@@ -2514,6 +2520,10 @@ class RasterTarget:
             if clip_regions and not rectangular_clip
             else None
         )
+        # An axis-aligned placement (uy == vx == 0) makes u a function of the column and v of
+        # the row: the general expressions subtract an exact zero, so the separable ones give the
+        # same doubles up to the sign of a zero, which no comparison, cast or 1 - v can observe.
+        separable = uy == 0.0 and vx == 0.0
         tile_columns = min(ix1 - ix0, max(1, AFFINE_BLIT_SCRATCH_BYTES // 160))
         tile_rows = max(1, AFFINE_BLIT_SCRATCH_BYTES // (160 * tile_columns))
         for row_start in range(iy0, iy1, tile_rows):
@@ -2524,8 +2534,12 @@ class RasterTarget:
                 column_end = min(ix1, column_start + tile_columns)
                 page_x = x_centers(column_start, column_end)
                 rel_x = page_x[None, :] - p00[0]
-                source_u = (rel_x * vy - rel_y * vx) * inv_det
-                source_v = (ux * rel_y - uy * rel_x) * inv_det
+                if separable:
+                    source_u = (rel_x * vy) * inv_det
+                    source_v = (ux * rel_y) * inv_det
+                else:
+                    source_u = (rel_x * vy - rel_y * vx) * inv_det
+                    source_v = (ux * rel_y - uy * rel_x) * inv_det
                 visible = (
                     (source_u >= 0.0) & (source_u <= 1.0) & (source_v >= 0.0) & (source_v <= 1.0)
                 )
@@ -2539,7 +2553,11 @@ class RasterTarget:
                 sample_y = numpy.clip(
                     ((1.0 - source_v) * height_px).astype(numpy.intp), 0, height_px - 1
                 )
-                sampled = source_pixels[sample_y, sample_x, : 1 if comps == 1 else 3]
+                if separable:
+                    channels = source_pixels[:, :, : 1 if comps == 1 else 3]
+                    sampled = channels[sample_y[:, 0]][:, sample_x[0]]
+                else:
+                    sampled = source_pixels[sample_y, sample_x, : 1 if comps == 1 else 3]
                 target = target_pixels[row_start:row_end, column_start:column_end]
                 if can_write_opaque:
                     numpy.copyto(target[:, :, :3], sampled, where=visible[:, :, None])
@@ -2582,14 +2600,20 @@ class RasterTarget:
                 visible &= alpha_grid > 0
                 if not numpy.any(visible):
                     continue
-                source_colors = numpy.broadcast_to(sampled, (*visible.shape, 3))[visible]
+                if visible.all():
+                    # Every pixel visible: a C-order ravel lists them in boolean-index order.
+                    source_colors = numpy.broadcast_to(sampled, (*visible.shape, 3)).reshape(-1, 3)
+                    alphas = alpha_grid.reshape(-1) / 255.0
+                else:
+                    source_colors = numpy.broadcast_to(sampled, (*visible.shape, 3))[visible]
+                    alphas = alpha_grid[visible] / 255.0
                 blend_visible_pixels(
                     target,
                     visible,
                     source_colors[:, 0] / 255.0,
                     source_colors[:, 1] / 255.0,
                     source_colors[:, 2] / 255.0,
-                    alpha_grid[visible] / 255.0,
+                    alphas,
                     blend_resolved_mode,
                     semantic_context=self.semantic_context,
                 )
