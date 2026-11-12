@@ -747,23 +747,26 @@ def plumber_page_capture(
     state = PlumberTextState(page.document, page_clip=page.effective_page_clip())
     state.lexer_factory = PlumberContentLexer
     state.content_recovery = PdfminerRecovery()
-    page.consume_contents(state)
-    state.run_accumulator.flush()
-    program = CapturedProgram(
-        runs=tuple(state.runs),
-        glyphs=tuple(state.glyphs),
-        drawings=tuple(state.drawings),
-        inline_images=tuple(state.inline_images),
-        lines=state.lines.since(0),
-        text_boundaries=tuple(state.text_boundaries),
-        options=state.options,
-    )
-    return (
-        program,
-        tuple(state.miner_paths),
-        tuple(state.plumber_marks),
-        tuple(state.painted_images),
-    )
+    try:
+        page.consume_contents(state)
+        state.run_accumulator.flush()
+        program = CapturedProgram(
+            runs=tuple(state.runs),
+            glyphs=tuple(state.glyphs),
+            drawings=tuple(state.drawings),
+            inline_images=tuple(state.inline_images),
+            lines=state.lines.since(0),
+            text_boundaries=tuple(state.text_boundaries),
+            options=state.options,
+        )
+        return (
+            program,
+            tuple(state.miner_paths),
+            tuple(state.plumber_marks),
+            tuple(state.painted_images),
+        )
+    finally:
+        state.release()
 
 
 __all__ = (

@@ -660,20 +660,23 @@ def pdfminer_page_program(page: PdfPage, *, strict_cmaps: bool = True) -> Pdfmin
     state.lexer_factory = PdfminerContentLexer
     state.content_recovery = PdfminerRecovery()
     state.base_ctm = pdfminer_base_ctm(page)
-    page.consume_contents(state)
-    state.run_accumulator.flush()
-    return PdfminerProgram(
-        runs=tuple(state.runs),
-        glyphs=tuple(state.glyphs),
-        drawings=tuple(state.drawings),
-        inline_images=tuple(state.inline_images),
-        lines=state.lines.since(0),
-        text_boundaries=tuple(state.text_boundaries),
-        options=state.options,
-        layout_events=tuple(state.layout_events),
-        painted_paths=tuple(state.painted_paths),
-        glyph_matrices=state.glyph_matrices,
-    )
+    try:
+        page.consume_contents(state)
+        state.run_accumulator.flush()
+        return PdfminerProgram(
+            runs=tuple(state.runs),
+            glyphs=tuple(state.glyphs),
+            drawings=tuple(state.drawings),
+            inline_images=tuple(state.inline_images),
+            lines=state.lines.since(0),
+            text_boundaries=tuple(state.text_boundaries),
+            options=state.options,
+            layout_events=tuple(state.layout_events),
+            painted_paths=tuple(state.painted_paths),
+            glyph_matrices=state.glyph_matrices,
+        )
+    finally:
+        state.release()
 
 
 def pdfminer_validate_page_resources(page: PdfPage) -> None:
