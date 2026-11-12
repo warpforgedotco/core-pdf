@@ -137,7 +137,9 @@ class _DrawingsProbe(_XrayCapture):
     """The page's drawings without its text, as x-ray's get_drawings() looks for rectangles
     before it reads any text, stopping at the first candidate. Shown text changes the drawings
     only through a Type3 glyph's procedure or a clipping render mode, so only those shows still
-    run."""
+    run. A skipped show leaves the text position where it was, so a show that runs after one,
+    before BT resets the position, could paint elsewhere than in the full capture: the probe
+    answers yes there instead."""
 
     def __init__(self, page: Any, crop_box: tuple[float, ...], user_unit: float) -> None:
         super().__init__(
@@ -146,6 +148,7 @@ class _DrawingsProbe(_XrayCapture):
         self.page = page
         self.crop_box = crop_box
         self.user_unit = user_unit
+        self.skipped_show = False
 
     def paint_path(self, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
         drawing_count = len(self.drawings)
@@ -165,27 +168,37 @@ class _DrawingsProbe(_XrayCapture):
         ):
             raise _RectangleFound
 
-    def shows_paint(self) -> bool:
-        return 4 <= self.graphics.render_mode <= 7 or self.get_decoder().is_type3
+    def runs_show(self, operands: Any) -> bool:
+        if operands and (4 <= self.graphics.render_mode <= 7 or self.get_decoder().is_type3):
+            if self.skipped_show:
+                raise _RectangleFound
+            return True
+        self.skipped_show = True
+        return False
+
+    def op_BT(self, operands: Any, depth: int) -> None:
+        super().op_BT(operands, depth)
+        self.skipped_show = False
 
     def op_Tj(self, operands: Any, depth: int) -> None:
-        if operands and self.shows_paint():
+        if self.runs_show(operands):
             super().op_Tj(operands, depth)
 
     def op_TJ(self, operands: Any, depth: int) -> None:
-        if operands and self.shows_paint():
+        if self.runs_show(operands):
             super().op_TJ(operands, depth)
 
     def op_quote(self, operands: Any, depth: int) -> None:
-        if operands and self.shows_paint():
+        if self.runs_show(operands):
             super().op_quote(operands, depth)
 
     def op_double_quote(self, operands: Any, depth: int) -> None:
-        if operands and self.shows_paint():
+        if self.runs_show(operands):
             super().op_double_quote(operands, depth)
 
 
-_DRAWINGS_CAPTURE = CaptureOptions(glyphs=False, text_runs=False)
+# The probe reads only filled paths: no text, and no image's soft mask decoded for its alpha.
+_DRAWINGS_CAPTURE = CaptureOptions(glyphs=False, text_runs=False, soft_mask_alpha=False)
 
 
 def _capture_page(page: Any) -> tuple[Any, dict[int, Any]]:
