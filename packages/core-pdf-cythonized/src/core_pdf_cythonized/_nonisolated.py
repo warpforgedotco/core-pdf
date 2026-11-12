@@ -18,7 +18,7 @@ from cython.cimports.libc.math import rint
 from cython.cimports.libc.stdint import uint32_t, uint64_t
 from cython.cimports.libc.string import memcpy, memset
 
-__all__ = ("composite_nonisolated_blend", "remove_group_backdrop_samples")
+__all__ = ("composite_nonisolated_blend",)
 
 
 # Multiplicative hashing of the result cache's key; the top ten bits pick one
@@ -39,8 +39,9 @@ def backdrop_removed(
     initial: cython.double,
     accumulated: cython.double,
 ) -> cython.double:
-    """One component of core_pdf.impl.spec's remove_group_backdrop, which stays the
-    definition: the same float64 operations in the same order."""
+    """One component with the group backdrop removed (PDF 2.0, 11.4.4):
+    (color * complete - backdrop * (1 - accumulated) * initial) / accumulated,
+    or 0 where the accumulated group alpha is 0, in float64 and in that order."""
     backdrop_weight: cython.double = (1.0 - accumulated) * initial
     premultiplied: cython.double = color * complete - backdrop * backdrop_weight
     if accumulated != 0.0:
@@ -255,7 +256,7 @@ def composite_nonisolated_blend(
     The general branch of core_pdf.impl.render_target.composite_nonisolated_group:
     the effective alpha rint(source_alpha * opacity * 255 [* mask]) cast to
     uint8, then for each visible pixel the group backdrop removed as
-    core_pdf.impl.spec's remove_group_backdrop does, clipped to [0, 1], and blended
+    backdrop_removed computes it, clipped to [0, 1], and blended
     over the destination as render_blend.blend_visible_pixels does. mode is a
     kernel blend code (0 normal, 1 multiply, 2 screen, 3 color dodge, 4 color
     burn); revised selects the PDF 2.0 dodge and burn endpoints. With
@@ -396,40 +397,3 @@ def composite_nonisolated_blend(
                     cached_out[slot] = result
                 store_pixel(d, d_channel, result)
     return effective
-
-
-def remove_group_backdrop_samples(
-    components: cython.const[cython.double][:, :],
-    alpha: cython.const[cython.double][:],
-    backdrop_components: cython.const[cython.double][:, :],
-    backdrop_alpha: cython.const[cython.double][:],
-    group_alpha: cython.const[cython.double][:],
-):
-    """The backdrop removal composite_nonisolated_blend applies per pixel, over
-    rows of samples: core_pdf.impl.spec's remove_group_backdrop without validation,
-    returning the source components only. It exists to be checked against it."""
-    count: cython.Py_ssize_t = components.shape[0]
-    channels: cython.Py_ssize_t = components.shape[1]
-    if (
-        backdrop_components.shape[0] != count
-        or backdrop_components.shape[1] != channels
-        or alpha.shape[0] != count
-        or backdrop_alpha.shape[0] != count
-        or group_alpha.shape[0] != count
-    ):
-        raise ValueError("invalid transparency group samples")
-    source = numpy.empty((count, channels), dtype=numpy.float64)
-    out: cython.double[:, ::1] = source
-    i: cython.Py_ssize_t
-    k: cython.Py_ssize_t
-    with cython.nogil:
-        for i in range(count):
-            for k in range(channels):
-                out[i, k] = backdrop_removed(
-                    components[i, k],
-                    alpha[i],
-                    backdrop_components[i, k],
-                    backdrop_alpha[i],
-                    group_alpha[i],
-                )
-    return source

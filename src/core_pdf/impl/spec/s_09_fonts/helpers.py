@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from typing import Any
+from collections.abc import Mapping
 
 from core_pdf.impl.adobe_fonts.encodings import (
     MAC_ROMAN_ENCODING_GLYPH_NAMES,
     STANDARD_ENCODING_GLYPH_NAMES,
     WIN_ANSI_ENCODING_GLYPH_NAMES,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import decoded_name
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, require_recognized_version
 
 BASE_ENCODING_GLYPH_NAMES: dict[str, tuple[str, ...]] = {
@@ -45,35 +43,6 @@ def get_base_encoding_glyph_names(
     return BASE_ENCODING_GLYPH_NAMES[base_encoding]
 
 
-def strip_subset_tag(font_name: str) -> str:
-    if len(font_name) > 7 and font_name[6] == "+" and all("A" <= c <= "Z" for c in font_name[:6]):
-        return font_name[7:]
-    return font_name
-
-
-def parse_differences(
-    value: Any, resolve_name: Callable[[Any], str | None] | None = None
-) -> dict[int, str]:
-    if value is None:
-        return {}
-    if not isinstance(value, (list, tuple)):
-        raise ValueError("invalid encoding differences array")
-    result: dict[int, str] = {}
-    code: int | None = None
-    for item in value:
-        if type(item) is int:
-            if not 0 <= item <= 255:
-                raise ValueError("encoding difference code outside simple-font range")
-            code = item
-            continue
-        name = (resolve_name or decoded_name)(item)
-        if name is None or code is None or code > 255:
-            raise ValueError("invalid encoding difference")
-        result[code] = name
-        code += 1
-    return result
-
-
 def build_simple_encoding_glyph_names(
     base_encoding: str | None,
     builtin_encoding: Mapping[int, str],
@@ -100,8 +69,6 @@ def build_simple_encoding_glyph_names(
 __all__ = [
     "BASE_ENCODING_GLYPH_NAMES",
     "get_base_encoding_glyph_names",
-    "strip_subset_tag",
-    "parse_differences",
     "build_simple_encoding_glyph_names",
     "is_unicode_scalar",
     "symbol_character_code",

@@ -41,13 +41,6 @@ def eexec_ciphertext(data: bytes, length1: int | None, *, tolerant: bool = False
     return encrypted
 
 
-def decode_eexec_payload(data: bytes, length1: int | None) -> bytes:
-    decrypted = decrypt_type1(eexec_ciphertext(data, length1), 55665)
-    if len(decrypted) < 4:
-        raise ValueError("truncated Type 1 eexec section")
-    return decrypted[4:]
-
-
 def binary_entries(
     data: bytes, pattern: re.Pattern[bytes], *, skip_truncated: bool = False
 ) -> Iterator[tuple[bytes, bytes]]:
@@ -60,16 +53,6 @@ def binary_entries(
                 continue
             raise ValueError("truncated Type 1 binary entry")
         yield match.group(1), data[start:end]
-
-
-def decode_charstring(encrypted: bytes, len_iv: int) -> bytes:
-    if len_iv < -1:
-        raise ValueError("invalid Type 1 lenIV")
-    if len_iv == -1:
-        return encrypted
-    if len(encrypted) < len_iv:
-        raise ValueError("truncated Type 1 charstring prefix")
-    return decrypt_type1(encrypted, 4330)[len_iv:]
 
 
 TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+put\b")
@@ -96,10 +79,8 @@ def parse_type1_font_program_encoding(
 
 __all__ = [
     "decrypt_type1",
-    "decode_eexec_payload",
     "eexec_ciphertext",
     "binary_entries",
-    "decode_charstring",
     "TYPE1_ENCODING_ENTRY_RE",
     "parse_type1_font_program_encoding",
 ]

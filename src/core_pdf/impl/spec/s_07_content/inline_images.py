@@ -4,7 +4,6 @@ from __future__ import annotations
 
 __lazy_modules__ = ["core_pdf.impl.spec.s_07_syntax.serialize"]
 
-import re
 
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_filters.decode_spec import (
@@ -12,21 +11,11 @@ from core_pdf.impl.spec.s_07_filters.decode_spec import (
 )
 from core_pdf.impl.spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.serialize import serialize_name, serialize_object
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     decoded_name,
     is_pdf_null,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
-    full_source_bytes,
-    skip_comment,
-    skip_hex_string,
-    skip_literal_string,
-    skip_name,
-)
-from core_pdf.impl.spec.s_07_syntax_primitives.tokens import LexicalRules
-from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import PdfName
 from core_records import GeneratedRecord
 
@@ -253,90 +242,6 @@ def scan_inline_image_data(lexer: PdfLexer, dictionary: PdfDict, start: int) -> 
         pos = marker + 1
 
 
-INLINE_IMAGE_MARKER_RE = re.compile(rb"[%(/<>\[\]]|BI")
-
-
-def next_inline_image(
-    raw_bytes: bytes,
-    pos: int,
-    data_len: int,
-    rules: LexicalRules,
-) -> int | None:
-    container_depth = 0
-    while match := INLINE_IMAGE_MARKER_RE.search(raw_bytes, pos):
-        marker = match.start()
-        token = match.group()
-        if token == b"%":
-            pos = skip_comment(raw_bytes, marker, data_len)
-            continue
-        if token == b"(":
-            pos = skip_literal_string(raw_bytes, marker, data_len)
-            continue
-        if token == b"<":
-            if marker + 1 < data_len and raw_bytes[marker + 1] == 60:
-                container_depth += 1
-                pos = marker + 2
-            else:
-                pos = skip_hex_string(raw_bytes, marker, data_len)
-            continue
-        if token == b">":
-            if marker + 1 < data_len and raw_bytes[marker + 1] == 62:
-                container_depth = max(0, container_depth - 1)
-                pos = marker + 2
-            else:
-                pos = marker + 1
-            continue
-        if token == b"[":
-            container_depth += 1
-            pos = marker + 1
-            continue
-        if token == b"]":
-            container_depth = max(0, container_depth - 1)
-            pos = marker + 1
-            continue
-        if token == b"/":
-            pos = skip_name(raw_bytes, marker, data_len, rules=rules)
-            continue
-        after = match.end()
-        delimited = bool(
-            (marker == 0 or rules.separator_table[raw_bytes[marker - 1]])
-            and (after == data_len or rules.separator_table[raw_bytes[after]])
-        )
-        if not container_depth and delimited:
-            return after
-        pos = after
-    return None
-
-
-def serialize_inline_image(dictionary: PdfDict, data: bytes) -> bytes:
-    """Write BI, ID and EI, the inverse of parse_inline_image."""
-    entries = (
-        serialize_name(key) + b" " + serialize_object(item) for key, item in dictionary.items()
-    )
-    # The scan for EI needs white space before it, and drops that one byte.
-    return b" ".join((b"BI", *entries, b"ID")) + b" " + data + b"\nEI\n"
-
-
-def validate_inline_images(
-    data: bytes | memoryview, *, context: SemanticContext | None = None
-) -> None:
-    raw_bytes = full_source_bytes(data)
-    if raw_bytes is None:
-        raw_bytes = bytes(data)
-    data_len = len(raw_bytes)
-    pos = 0
-    lexer = PdfLexer(raw_bytes, semantic_context=context)
-    try:
-        while (
-            after := next_inline_image(raw_bytes, pos, data_len, lexer.lexical_rules)
-        ) is not None:
-            lexer.pos = after
-            parse_inline_image(lexer)
-            pos = lexer.pos
-    finally:
-        lexer.close()
-
-
 __all__ = (
     "InlineImage",
     "InlineImageDataLengthError",
@@ -344,6 +249,4 @@ __all__ = (
     "parse_inline_image",
     "parse_inline_image_data",
     "parse_inline_image_dictionary",
-    "serialize_inline_image",
-    "validate_inline_images",
 )
