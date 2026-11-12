@@ -16,6 +16,8 @@ from os import PathLike
 from pathlib import Path
 from typing import Any
 
+import numpy
+
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
 from core_pdf.impl.capture_page import capture_annotation_appearances
@@ -25,7 +27,6 @@ from core_pdf.impl.exceptions import PdfPasswordError, PdfUnsupportedError
 from core_pdf.impl.fonts_cmap import ToUnicodeCMap
 from core_pdf.impl.geometry import (
     bbox_intersects,
-    overlap_ratio_of,
 )
 from core_pdf.impl.render_page import compose_page
 from core_pdf.impl.spec.s_07_content.model import PATH_OPERAND_COUNTS, PATH_RECT, PdfPath
@@ -79,13 +80,58 @@ class _RecoveredFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=Fal
     __hash__ = None  # type: ignore[assignment]
 
 
-def _occluded(character: _Character, rectangle: _Rectangle, threshold: float) -> bool:
-    if not bbox_intersects(character.bbox, rectangle.bbox) or not (
-        rectangle.seqno > character.seqno
-        or (rectangle.allow_same_fill and rectangle.fill == character.fill)
-    ):
-        return False
-    return overlap_ratio_of(character.bbox, rectangle.bbox) > threshold
+def _python_min(a: Any, b: Any) -> Any:
+    """``min(a, b)`` elementwise: ``a`` unless ``b < a``, so a NaN ``b`` gives ``a``."""
+    return numpy.where(b < a, b, a)
+
+
+def _python_max(a: Any, b: Any) -> Any:
+    """``max(a, b)`` elementwise: ``a`` unless ``b > a``, so a NaN ``b`` gives ``a``."""
+    return numpy.where(b > a, b, a)
+
+
+def _occluded_mask(
+    characters: list[_Character], rectangles: list[_Rectangle], threshold: float
+) -> list[bool]:
+    """Whether each character is occluded: some rectangle drawn after it, or of its fill when
+    the rectangle allows that, intersects it and covers more than ``threshold`` of its area.
+    One array test per page, with the float64 operations of geometry.bbox_intersects and
+    overlap_ratio_of in the same order and Python's min and max, so NaN and infinite boxes
+    give the answers those functions give."""
+    if not characters or not rectangles:
+        return [False] * len(characters)
+    # Infinite and NaN coordinates overflow or divide as they do in Python, silently.
+    with numpy.errstate(all="ignore"):
+        boxes = numpy.array([character.bbox for character in characters], dtype=numpy.float64)
+        covers = numpy.array([rectangle.bbox for rectangle in rectangles], dtype=numpy.float64)
+        x0, y0, x1, y1 = (boxes[:, i, None] for i in range(4))
+        r0, s0, r1, s1 = (covers[None, :, i] for i in range(4))
+        width = _python_min(x1, r1) - _python_max(x0, r0)
+        height = _python_min(y1, s1) - _python_max(y0, s0)
+        intersection = numpy.where(width > 0.0, width, 0.0) * numpy.where(height > 0.0, height, 0.0)
+        fills: dict[object, int] = {}
+        character_fills = numpy.array(
+            [fills.setdefault(character.fill, len(fills)) for character in characters]
+        )
+        rectangle_fills = numpy.array(
+            [
+                fills.setdefault(rectangle.fill, len(fills)) if rectangle.allow_same_fill else -1
+                for rectangle in rectangles
+            ]
+        )
+        character_seqnos = numpy.array([character.seqno for character in characters])
+        rectangle_seqnos = numpy.array([rectangle.seqno for rectangle in rectangles])
+        above = (rectangle_seqnos[None, :] > character_seqnos[:, None]) | (
+            rectangle_fills[None, :] == character_fills[:, None]
+        )
+        box_width = boxes[:, 2] - boxes[:, 0]
+        box_height = boxes[:, 3] - boxes[:, 1]
+        area = (
+            numpy.where(box_width > 0.0, box_width, 0.0)
+            * numpy.where(box_height > 0.0, box_height, 0.0)
+        )[:, None]
+        covered = (intersection > 0.0) & above & (area > 0.0) & (intersection / area > threshold)
+        return covered.any(axis=1).tolist()
 
 
 class _XrayCapture(TextState):
@@ -545,18 +591,14 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
     non_annotation_rectangles = [
         rectangle for rectangle in rectangles if rectangle.bbox not in annotation_boxes
     ]
-    rectangle_grid = _BoxGrid([rectangle.bbox for rectangle in rectangles])
-    non_annotation_grid = _BoxGrid([rectangle.bbox for rectangle in non_annotation_rectangles])
     recovered_positions: dict[tuple[str, int], float] = {}
 
     def recover_font(font_name: str) -> _RecoveredFont | None:
         return recovery.font(page, font_name)
 
-    def occluded(character: _Character, candidates: list[_Rectangle], grid: _BoxGrid) -> bool:
-        return any(
-            _occluded(character, candidates[index], 0.8)
-            for index in grid.candidates(character.bbox)
-        )
+    # Characters to test against every rectangle, and those to test against the rectangles that
+    # are not Highlight annotations, in page order.
+    candidates: list[tuple[_Character, bool]] = []
 
     operand_overrides = recovery.operand_overrides()
     glyphs = program.glyphs
@@ -596,8 +638,7 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
                         glyph.seqno,
                         glyph.fill,
                     )
-                    if occluded(character, rectangles, rectangle_grid):
-                        characters.append(character)
+                    candidates.append((character, False))
                     x0 = x1
                 continue
         text = glyph.text
@@ -614,11 +655,17 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
                     recovered_positions[position_key] = x1
                     glyph_box = (x0, glyph_box[1], x1, glyph_box[3])
         character = _Character(glyph_box, text, glyph.seqno, glyph.fill)
-        if glyph.font_size * user_unit == 1.0:
-            is_occluded = occluded(character, non_annotation_rectangles, non_annotation_grid)
-        else:
-            is_occluded = occluded(character, rectangles, rectangle_grid)
-        if is_occluded:
+        candidates.append((character, glyph.font_size * user_unit == 1.0))
+    occluded_by_all = _occluded_mask(
+        [character for character, small in candidates if not small], rectangles, 0.8
+    )
+    occluded_by_non_annotation = _occluded_mask(
+        [character for character, small in candidates if small], non_annotation_rectangles, 0.8
+    )
+    all_results = iter(occluded_by_all)
+    non_annotation_results = iter(occluded_by_non_annotation)
+    for character, small in candidates:
+        if next(non_annotation_results if small else all_results):
             characters.append(character)
 
     redactions: list[dict[str, object]] = []
