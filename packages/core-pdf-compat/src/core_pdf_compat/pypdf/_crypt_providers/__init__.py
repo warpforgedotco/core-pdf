@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.crypto", "core_pdf.impl.crypto.ciphers"]
+__lazy_modules__ = ["core_pdf.impl.crypto", "core_pdf.impl.crypto.ciphers", "importlib.metadata"]
 
 import logging
 import secrets
@@ -14,10 +14,18 @@ from core_pdf_compat.pdfminer.arcfour import Arcfour
 from core_pdf_compat.pypdf.errors import PdfStreamError
 
 logger = logging.getLogger(__name__)
-crypt_provider = ("cryptography", version("cryptography"))
 BLOCK_BYTES = 16
 PADDING_ERROR = "Invalid padding bytes."
 LENGTH_ERROR = "The length of the provided data is not a multiple of the block length."
+
+
+def __getattr__(name: str) -> object:
+    # Looking cryptography's version up scans the installed distributions, so it waits until
+    # something reads crypt_provider, and is kept from then on.
+    if name == "crypt_provider":
+        provider = globals()["crypt_provider"] = ("cryptography", version("cryptography"))
+        return provider
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class CryptBase:
