@@ -19,6 +19,7 @@ from typing import Any, NamedTuple, cast
 from core_pdf import PdfPage
 from core_pdf.impl.capture_glyphs import GlyphPaint, untrack_tuple
 from core_pdf.impl.capture_program import CapturedProgram
+from core_pdf.impl.collector import pauses_collector
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_metrics import FONT_DATA
 from core_pdf.impl.spec.s_07_content.inline_images import (
@@ -739,6 +740,7 @@ class PlumberTextState(PdfminerTextState):
         super().paint_inline_image(state, image)
 
 
+@pauses_collector
 def plumber_page_capture(
     page: PdfPage,
 ) -> tuple[

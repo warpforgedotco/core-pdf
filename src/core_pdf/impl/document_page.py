@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, cast
 from core_pdf.impl.capture_page import capture_page_program
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture_recording import TextState
+from core_pdf.impl.collector import pauses_collector
 from core_pdf.impl.document_records import RawAnnotation, RawLink
 from core_pdf.impl.document_structure import PageStructure
 from core_pdf.impl.exceptions import ExtractionScope, PdfParseError
@@ -410,6 +411,7 @@ class PdfPage:
     def structured_view(self) -> Page:
         return self.extract()
 
+    @pauses_collector
     def extract(self) -> Page:
         with self.document.acquire_operation() as operation:
             context = ExtractionScope(cancelled=lambda: operation.cancelled)

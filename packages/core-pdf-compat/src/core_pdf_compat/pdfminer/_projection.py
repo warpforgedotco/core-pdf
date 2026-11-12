@@ -7,6 +7,7 @@ from typing import Any
 from core_pdf import PdfPage
 from core_pdf.impl.capture_glyphs import no_char, pdfminer_chars
 from core_pdf.impl.capture_program import CapturedProgram
+from core_pdf.impl.collector import pauses_collector
 from core_pdf.impl.spec.s_07_content.model import (
     PATH_CLOSE,
     PATH_CURVE,
@@ -147,6 +148,7 @@ def pdfminer_projected_widths(
     return font_width, normalized_width
 
 
+@pauses_collector
 def project_page(
     page: PdfPage,
     params: LAParams | None,
