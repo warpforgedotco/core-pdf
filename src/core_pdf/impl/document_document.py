@@ -25,7 +25,7 @@ from typing import (
     cast,
 )
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.caches import DocumentCaches
 from core_pdf.impl.collector import pauses_collector
@@ -95,12 +95,6 @@ from core_pdf.impl.types import (
     PdfSource,
     PdfString,
 )
-from core_pdf_cythonized import (
-    markers_present,
-    object_headers_match,
-    regions_with_markers,
-    security_marker_present,
-)
 lazy from core_pdf.impl.document_structure import StructureTree
 lazy from core_pdf.impl.extract_selection import extract_document
 lazy from core_pdf.impl.output_model import Document
@@ -110,6 +104,12 @@ lazy from core_pdf.impl.recovery_trees import iter_name_tree_items, iter_number_
 lazy from core_pdf.impl.spec.s_07_document import document_labels
 lazy from core_pdf.impl.spec.s_07_document.document_labels import PageLabelStyle
 lazy from core_pdf.impl.spec.s_07_document.fields import field_children, qualified_field_name
+lazy from core_pdf_cythonized import (
+    markers_present,
+    object_headers_match,
+    regions_with_markers,
+    security_marker_present,
+)
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_fallback import RasterFontProviderLike

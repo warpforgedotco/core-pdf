@@ -23,7 +23,7 @@ from core_pdf.impl.render_model import (
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource, SoftMask
-from core_pdf_cythonized import SlotLayout
+lazy from core_pdf_cythonized import SlotLayout
 
 PATH_PAINT_KINDS = {
     name: PathPaintKind(index) for index, name in enumerate(("fill", "stroke", "fillstroke"))

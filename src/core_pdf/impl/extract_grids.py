@@ -6,14 +6,14 @@ from bisect import bisect_right
 from collections import defaultdict
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.extract_contracts import ObservationBatch, PageAnalysis
 from core_pdf.impl.extract_table_core import cell_text
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.output_model import Table, TableCell
 from core_pdf.impl.spatial import DisjointSet
-from core_pdf_cythonized import merge_collinear_rows
+lazy from core_pdf_cythonized import merge_collinear_rows
 
 AXIS_TOLERANCE = 1.5
 

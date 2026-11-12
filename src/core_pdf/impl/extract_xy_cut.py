@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract_layout_rules import LAYOUT_RULES

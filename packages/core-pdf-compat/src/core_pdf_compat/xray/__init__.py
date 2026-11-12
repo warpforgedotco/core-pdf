@@ -16,7 +16,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError

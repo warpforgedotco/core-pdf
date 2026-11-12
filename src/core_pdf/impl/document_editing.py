@@ -25,7 +25,7 @@ from core_pdf.impl.spec.s_07_security.standard import StandardSecurityHandler
 from core_pdf.impl.spec.s_07_syntax.serialize import ObjectLayout, serialize_xref_stream
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import PdfReference, PdfString
-from core_pdf_cythonized import collect_references
+lazy from core_pdf_cythonized import collect_references
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_document import PdfDocument

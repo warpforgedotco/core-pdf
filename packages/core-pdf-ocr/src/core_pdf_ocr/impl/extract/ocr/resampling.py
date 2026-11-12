@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import nearest_indices, readonly
 

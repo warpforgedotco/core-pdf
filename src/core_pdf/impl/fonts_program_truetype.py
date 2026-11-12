@@ -8,7 +8,7 @@ from functools import partial
 from io import BytesIO
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import (
@@ -30,8 +30,8 @@ from core_pdf.impl.spec.s_09_fonts.helpers import (
     symbol_character_code,
 )
 from core_pdf.impl.types import Rectangle
-from core_pdf_cythonized import truetype_contours
 lazy from core_pdf._vendor.fontTools.ttLib import TTFont
+lazy from core_pdf_cythonized import truetype_contours
 
 
 def parse_truetype_program(data: bytes) -> TTFont:
@@ -117,7 +117,7 @@ def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...
     return tuple(tuple(contour) for contour in recording_to_contours(pen.value))
 
 
-TrueTypeTables = tuple[bytes, numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], int]
+type TrueTypeTables = tuple[bytes, numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], int]
 
 
 def truetype_tables(font: TTFont, glyph_data: bytes | None = None) -> TrueTypeTables | None:

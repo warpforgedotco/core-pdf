@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unicodedata
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.extract_block_layout import LayoutHooks
 from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource, PageFrame
@@ -13,7 +13,7 @@ SOURCE_LABELS = {
     int(ObservationSource.NATIVE): "native",
     int(ObservationSource.OCR): "ocr",
 }
-OCR_SOURCE = numpy.uint8(ObservationSource.OCR)
+OCR_SOURCE = int(ObservationSource.OCR)
 
 
 def group_order(observations: ObservationBatch, indexes: numpy.ndarray) -> numpy.ndarray:

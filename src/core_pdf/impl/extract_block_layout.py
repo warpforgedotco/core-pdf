@@ -8,7 +8,7 @@ from copy import replace
 from types import MappingProxyType
 from typing import cast
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract_block_order import (
@@ -51,7 +51,7 @@ SPAN_JOIN_NO_SPACE_BEFORE = (".", ",", ";", ":", "!", "?", ")", "]", "}")
 SPAN_TRAILING_SPACE = (" ", "\t", "\n")
 
 
-GroupOrder = Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray]
+type GroupOrder = Callable[[ObservationBatch, numpy.ndarray], numpy.ndarray]
 
 
 class LayoutHooks(GeneratedRecord):

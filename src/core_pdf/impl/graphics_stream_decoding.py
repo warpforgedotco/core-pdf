@@ -9,8 +9,8 @@ import zlib
 from collections.abc import Callable
 from typing import Any, NoReturn
 
-import numpy
 lazy import imagecodecs
+lazy import numpy
 
 from core_pdf.impl.graphics_decode_compat import (
     FilterParams,
@@ -68,8 +68,8 @@ from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
     WHITESPACE,
     WS_TABLE,
 )
-from core_pdf_cythonized import decode_arithmetic_generic_template0
 lazy from core_pdf.impl.jbig2.bitmap import compose_packed_bitmap_data
+lazy from core_pdf_cythonized import decode_arithmetic_generic_template0
 
 
 def thread_count(env_name: str) -> int:

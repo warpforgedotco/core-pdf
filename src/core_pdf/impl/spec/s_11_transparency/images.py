@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy
+lazy import numpy
 
 
 def unblend_matte_components(

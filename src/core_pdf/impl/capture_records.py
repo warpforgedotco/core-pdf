@@ -5,16 +5,16 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, overload
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.geometry import bbox_union, normalize_rect, points_bbox
 from core_pdf.impl.spec.s_07_content.streams import StreamKey
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import GeneratedRecord, RecordType, Rectangle, ReplaceFields, ReprFields
-from core_pdf_cythonized import fill_edge_rows, path_bounds
 lazy from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 lazy from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
+lazy from core_pdf_cythonized import fill_edge_rows, path_bounds
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture_program import CapturedProgram
@@ -43,18 +43,29 @@ class CapturedLine(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
 
 
 class CapturedLines(Sequence[CapturedLine]):
-    __slots__ = ("array",)
+    __slots__ = ("_array",)
 
-    array: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
+    _array: numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None
 
     def __init__(self, lines: Iterable[CapturedLine] = ()) -> None:
         rows = [(line.x0, line.y0, line.x1, line.y1, line.line_width) for line in lines]
-        self.array = read_only(numpy.array(rows, dtype=numpy.float64).reshape(-1, 5))
+        # No lines make their (0, 5) array when it is first read, so EMPTY_LINES, every
+        # program's default, needs no numpy at import.
+        self._array = (
+            read_only(numpy.array(rows, dtype=numpy.float64).reshape(-1, 5)) if rows else None
+        )
+
+    @property
+    def array(self) -> numpy.ndarray[Any, numpy.dtype[numpy.float64]]:
+        array = self._array
+        if array is None:
+            array = self._array = read_only(numpy.empty((0, 5), dtype=numpy.float64))
+        return array
 
     @classmethod
     def from_array(cls, array: numpy.ndarray[Any, Any]) -> CapturedLines:
         lines = cls.__new__(cls)
-        lines.array = read_only(array)
+        lines._array = read_only(array)
         return lines
 
     @classmethod
@@ -78,7 +89,8 @@ class CapturedLines(Sequence[CapturedLine]):
         return array[:, 0], array[:, 1], array[:, 2], array[:, 3]
 
     def __len__(self) -> int:
-        return len(self.array)
+        array = self._array
+        return 0 if array is None else len(array)
 
     @overload
     def __getitem__(self, index: int) -> CapturedLine: ...

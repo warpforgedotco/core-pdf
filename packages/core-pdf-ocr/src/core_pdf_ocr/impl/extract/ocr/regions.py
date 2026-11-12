@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.extract_grids import (
     axis_segments,

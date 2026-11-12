@@ -17,8 +17,6 @@ from core_pdf_cythonized._markers import (
     security_marker_present,
 )
 from core_pdf_cythonized._objects import ObjectScanner
-from core_pdf_cythonized._paths import fill_edge_rows, flatten_path_commands, path_bounds
-from core_pdf_cythonized._xref_headers import object_headers_match
 lazy from core_pdf_cythonized._area_gaps import AreaGapQueue
 lazy from core_pdf_cythonized._bezier import cubic_sample_times
 lazy from core_pdf_cythonized._blend import blend_normal_alpha_array_numpy
@@ -58,6 +56,7 @@ lazy from core_pdf_cythonized._outline import (
     outline_edges,
     translated_outline_edges,
 )
+lazy from core_pdf_cythonized._paths import fill_edge_rows, flatten_path_commands, path_bounds
 lazy from core_pdf_cythonized._rect import fill_rect_coverage
 lazy from core_pdf_cythonized._sample_blit import (
     alpha_channel,
@@ -74,6 +73,7 @@ lazy from core_pdf_cythonized._supersample import supersampled_coverage_plane
 lazy from core_pdf_cythonized._truetype import truetype_contours
 lazy from core_pdf_cythonized._type1 import decrypt_type1, type1_glyph_bounds
 lazy from core_pdf_cythonized._type2 import type2_glyph_geometry
+lazy from core_pdf_cythonized._xref_headers import object_headers_match
 
 __all__ = (
     "no_char",

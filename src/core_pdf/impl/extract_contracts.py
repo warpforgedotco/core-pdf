@@ -6,7 +6,7 @@ from collections.abc import Iterable, Sequence
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import make_column, readonly, validate_selection_mask
 from core_pdf.impl.capture_program import PageProgram
@@ -19,10 +19,10 @@ if TYPE_CHECKING:
     from core_pdf.impl.document_page import PdfPage
     from core_pdf.impl.document_records import RawAnnotation, RawFormField
 
-FloatArray = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
-IntArray = numpy.ndarray[Any, numpy.dtype[numpy.int64]]
-ByteArray = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
-BoolArray = numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
+type FloatArray = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
+type IntArray = numpy.ndarray[Any, numpy.dtype[numpy.int64]]
+type ByteArray = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
+type BoolArray = numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
 
 
 FULL_PAGE_IMAGE_COVERAGE = 0.90
@@ -62,14 +62,14 @@ class ObservationBatch(GeneratedRecord):
     references: tuple[TextReference | None, ...]
 
     array_columns: ClassVar[tuple[tuple[str, Any], ...]] = (
-        ("bbox", numpy.float32),
-        ("source", numpy.uint8),
-        ("confidence", numpy.float32),
-        ("sequence", numpy.int64),
-        ("visible", numpy.bool_),
-        ("rotation", numpy.int64),
-        ("font_size", numpy.float32),
-        ("line_break_before", numpy.bool_),
+        ("bbox", "float32"),
+        ("source", "uint8"),
+        ("confidence", "float32"),
+        ("sequence", "int64"),
+        ("visible", "bool"),
+        ("rotation", "int64"),
+        ("font_size", "float32"),
+        ("line_break_before", "bool"),
     )
 
     def __post_init__(self) -> None:

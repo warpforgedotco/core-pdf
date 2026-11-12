@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy
+lazy import numpy
 
 __all__ = ("unpack_subbyte_rows",)
 

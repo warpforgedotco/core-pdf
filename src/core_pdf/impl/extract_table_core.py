@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from functools import cached_property
 from typing import Protocol, TypeAlias
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract_contracts import ObservationBatch, PageAnalysis

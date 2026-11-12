@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, TypeAlias
+from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.jbig2.bitmap import uint8_view
 
-ByteBuffer: TypeAlias = bytes | bytearray | memoryview | numpy.ndarray[Any, Any]
-UInt8Array = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
-BoolArray = numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
+type ByteBuffer = bytes | bytearray | memoryview | numpy.ndarray[Any, Any]
+type UInt8Array = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
+type BoolArray = numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
 
 
 def readonly(array: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:

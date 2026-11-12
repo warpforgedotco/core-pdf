@@ -20,7 +20,7 @@ from core_pdf.impl.runs import TextRun
 from core_pdf.impl.spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf.impl.spec.s_08_graphics.geometry import unit_square_placement
 from core_pdf.impl.types import RecordType, ReprFields, field
-from core_pdf_cythonized import translated_outline_edges
+lazy from core_pdf_cythonized import translated_outline_edges
 
 
 def append_glyph_paint(

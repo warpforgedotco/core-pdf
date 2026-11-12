@@ -6,11 +6,11 @@ from collections.abc import Iterable, Iterator, Sequence
 from heapq import heappop, heappush
 from typing import Any, Literal, TypeAlias
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.geometry import bbox_area
 from core_pdf.impl.types import GeneratedRecord, Rectangle
-from core_pdf_cythonized import AreaGapQueue
+lazy from core_pdf_cythonized import AreaGapQueue
 
 ClusterLinkage: TypeAlias = Literal["chain", "anchor", "mean"]
 BandLinkage: TypeAlias = Literal["anchor", "window"]
@@ -21,7 +21,7 @@ class BoxIndex(GeneratedRecord):
     areas: numpy.ndarray[Any, Any]
 
     @classmethod
-    def from_boxes(cls, boxes: Iterable[Rectangle], dtype: Any = numpy.float64) -> BoxIndex:
+    def from_boxes(cls, boxes: Iterable[Rectangle], dtype: Any = "float64") -> BoxIndex:
         packed = numpy.asarray(tuple(boxes), dtype=dtype).reshape((-1, 4))
         packed.setflags(write=False)
         return cls.from_array(packed)

@@ -21,7 +21,6 @@ from core_pdf.impl.fonts_program_base import GlyphNaming, GlyphProgram
 from core_pdf.impl.geometry import points_bbox, union_bbox
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle
-from core_pdf_cythonized import type2_glyph_geometry
 lazy from core_pdf.impl.fonts_cff_repair import (
     EMPTY_FEATURE,
     CFFGlyphFeature,
@@ -31,6 +30,7 @@ lazy from core_pdf.impl.fonts_raster_kernel import (
     Contours,
     transform_contours,
 )
+lazy from core_pdf_cythonized import type2_glyph_geometry
 
 MALFORMED_CFF_TABLE = (IndexError, OverflowError, TypeError, ValueError)
 

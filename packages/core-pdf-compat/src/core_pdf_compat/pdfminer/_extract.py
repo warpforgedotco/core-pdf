@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, TextIO
 lazy from html import escape
 
-import numpy
+lazy import numpy
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf.impl.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError

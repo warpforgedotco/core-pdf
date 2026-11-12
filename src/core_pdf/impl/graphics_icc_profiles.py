@@ -6,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import cache, lru_cache
 from typing import Any
 
-import imagecodecs
-import numpy
+lazy import imagecodecs
+lazy import numpy
 
 from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.graphics_stream_decoding import thread_count
@@ -17,9 +17,9 @@ from core_pdf.impl.spec.s_08_graphics.color_rendering import (
     use_black_point_compensation,
 )
 from core_pdf.impl.types import GeneratedRecord
-from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
+lazy from core_pdf_cythonized import distinct_uint16_rows, gather_uint8_rows
 
-ByteSamples = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
+type ByteSamples = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 
 
 class IccProfileError(ValueError):

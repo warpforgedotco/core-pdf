@@ -6,7 +6,7 @@ from bisect import bisect_right
 from collections import Counter, defaultdict
 from itertools import combinations
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import finite_median
 from core_pdf.impl.extract_table_cleanup import clean_stream_table

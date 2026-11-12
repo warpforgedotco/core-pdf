@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.fonts_encoding import FontEncoding
@@ -12,8 +12,8 @@ from core_pdf.impl.fonts_fallback import fallback_glyph_outline
 from core_pdf.impl.fonts_metrics import FontMetricsModel
 from core_pdf.impl.fonts_program_base import NULL_PROGRAM, GlyphProgram
 from core_pdf.impl.types import Rectangle
-from core_pdf_cythonized import outline_coordinate_arrays
 lazy from core_pdf.impl.fonts_raster_kernel import Contours
+lazy from core_pdf_cythonized import outline_coordinate_arrays
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_fallback import RasterFontProviderLike

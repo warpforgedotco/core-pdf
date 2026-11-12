@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping
 from operator import itemgetter
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from . import BBox, ObjectDict, Page, merge_edges, utils
 

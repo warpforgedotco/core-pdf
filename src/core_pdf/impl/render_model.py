@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from copy import replace
 from enum import IntEnum
+from functools import cache
 from operator import attrgetter
 from typing import Any, ClassVar, Self, TypeIs, final
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import UInt8Array, uint8_image_view
 from core_pdf.impl.capture_records import CapturedPath, CapturedSoftMask, PatternPaint
@@ -96,8 +97,12 @@ class LineJoin(IntEnum):
 PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
 
 
-UNIT_MASK_TABLE = numpy.arange(256, dtype=numpy.float32) / 255.0
-UNIT_MASK_TABLE.setflags(write=False)
+@cache
+def unit_mask_table() -> numpy.ndarray[Any, numpy.dtype[numpy.float32]]:
+    """Each byte value as a mask alpha in [0, 1]."""
+    table = numpy.arange(256, dtype=numpy.float32) / 255.0
+    table.setflags(write=False)
+    return table
 
 
 @final
@@ -117,7 +122,7 @@ class SoftMaskPlane:
         return self.table[window]
 
     def values(self) -> numpy.ndarray[Any, numpy.dtype[numpy.float32]]:
-        return UNIT_MASK_TABLE if self.table is None else self.table
+        return unit_mask_table() if self.table is None else self.table
 
     @property
     def nbytes(self) -> int:

@@ -15,7 +15,7 @@ from core_pdf.impl.spec.s_07_syntax import serialize as spec
 from core_pdf.impl.spec.s_07_syntax.serialize import ObjectLayout
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
-from core_pdf_cythonized import ObjectWriter
+lazy from core_pdf_cythonized import ObjectWriter
 
 FALLBACKS = {layout: partial(spec.serialize_object, layout=layout) for layout in ObjectLayout}
 

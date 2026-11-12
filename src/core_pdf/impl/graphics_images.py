@@ -6,7 +6,7 @@ from contextlib import suppress
 from itertools import batched
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import readonly
 from core_pdf.impl.graphics_color import convert_cmyk, convert_image_data
@@ -42,7 +42,7 @@ from core_pdf.impl.spec.s_08_graphics.image_spec import (
 )
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.types import GeneratedRecord
-from core_pdf_cythonized import interleave_soft_mask
+lazy from core_pdf_cythonized import interleave_soft_mask
 
 
 def image_has_color_key_mask(dictionary: dict[Any, Any]) -> bool:
