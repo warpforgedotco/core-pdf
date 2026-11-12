@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from math import inf
-from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numpy
 
@@ -11,48 +11,20 @@ from core_pdf.impl.fonts_raster_kernel import (
     rasterize_contours,
 )
 from core_pdf.impl.geometry import points_bbox
-from core_pdf.impl.types import FrozenFields, ReplaceFields, ReprFields, frozen_setattr
+from core_pdf.impl.types import (
+    GeneratedRecord,
+)
 from core_pdf_cythonized import cell_distance_map, glyph_feature_cells
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_program_cff import CFFFont
 
 
-class CFFGlyphFeature(FrozenFields, ReplaceFields, ReprFields):
+class CFFGlyphFeature(GeneratedRecord):
     cells: tuple[tuple[int, int], ...]
     aspect: float
     contours: int
-    bitmap: tuple[int, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = ("cells", "aspect", "contours", "bitmap")
-    __match_args__ = ("cells", "aspect", "contours", "bitmap")
-
-    def __init__(
-        self,
-        cells: tuple[tuple[int, int], ...],
-        aspect: float,
-        contours: int,
-        bitmap: tuple[int, ...] = (),
-    ) -> None:
-        frozen_setattr(self, "cells", cells)
-        frozen_setattr(self, "aspect", aspect)
-        frozen_setattr(self, "contours", contours)
-        frozen_setattr(self, "bitmap", bitmap)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.cells == other.cells
-            and self.aspect == other.aspect
-            and self.contours == other.contours
-            and self.bitmap == other.bitmap
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.cells, self.aspect, self.contours, self.bitmap))
+    bitmap: tuple[int, ...] = ()
 
 
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())

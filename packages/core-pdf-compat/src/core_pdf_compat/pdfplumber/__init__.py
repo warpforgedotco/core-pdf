@@ -14,7 +14,7 @@ from io import BytesIO
 from itertools import accumulate, groupby, pairwise
 from operator import itemgetter
 from types import SimpleNamespace
-from typing import Any, ClassVar, TypeAlias, cast
+from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.capture_glyphs import plumber_char_dicts
@@ -30,13 +30,10 @@ from core_pdf.impl.graphics_stream_decoding import PNG_SIGNATURE, png_chunk
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.raw_media import ImageRecord
 from core_pdf.impl.types import (
-    FrozenFields,
+    GeneratedRecord,
     PdfName,
     PdfReference,
     PdfString,
-    ReplaceFields,
-    ReprFields,
-    frozen_setattr,
 )
 
 from .._shared import BBox, ClosingMixin, PdfInput
@@ -1288,26 +1285,9 @@ class FilteredPage(Page):
         return result
 
 
-class _ImageOriginal(FrozenFields, ReprFields, ReplaceFields):
+class _ImageOriginal(GeneratedRecord):
     width: int
     height: int
-
-    __fields__: ClassVar[tuple[str, ...]] = ("width", "height")
-    __match_args__ = ("width", "height")
-
-    def __init__(self, width: int, height: int) -> None:
-        frozen_setattr(self, "width", width)
-        frozen_setattr(self, "height", height)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.width == other.width and self.height == other.height
-
-    def __hash__(self) -> int:
-        return hash((self.width, self.height))
 
     @property
     def size(self) -> tuple[int, int]:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from functools import cached_property
-from typing import ClassVar, Protocol, TypeAlias
+from typing import Protocol, TypeAlias
 
 import numpy
 
@@ -14,10 +14,7 @@ from core_pdf.impl.output_model import Table, TableCell
 from core_pdf.impl.spatial import cluster_1d
 from core_pdf.impl.text import collapse_ws
 from core_pdf.impl.types import (
-    FrozenFields,
     GeneratedRecord,
-    ReplaceFields,
-    ReprFields,
     frozen_setattr,
 )
 
@@ -74,7 +71,7 @@ def character_spaced_cell(text: str) -> bool:
     return single_character / len(tokens) >= 0.50
 
 
-class TableFacts(FrozenFields, ReplaceFields, ReprFields):
+class TableFacts(GeneratedRecord):
     row_count: int
     nonempty_rows: int
     populated_rows: int
@@ -83,77 +80,6 @@ class TableFacts(FrozenFields, ReplaceFields, ReprFields):
     cell_count: int
     single_cell_rows: int
     filled_texts: tuple[str, ...]
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "row_count",
-        "nonempty_rows",
-        "populated_rows",
-        "columns",
-        "spanned_columns",
-        "cell_count",
-        "single_cell_rows",
-        "filled_texts",
-    )
-    __match_args__ = (
-        "row_count",
-        "nonempty_rows",
-        "populated_rows",
-        "columns",
-        "spanned_columns",
-        "cell_count",
-        "single_cell_rows",
-        "filled_texts",
-    )
-
-    def __init__(
-        self,
-        row_count: int,
-        nonempty_rows: int,
-        populated_rows: int,
-        columns: int,
-        spanned_columns: int,
-        cell_count: int,
-        single_cell_rows: int,
-        filled_texts: tuple[str, ...],
-    ) -> None:
-        frozen_setattr(self, "row_count", row_count)
-        frozen_setattr(self, "nonempty_rows", nonempty_rows)
-        frozen_setattr(self, "populated_rows", populated_rows)
-        frozen_setattr(self, "columns", columns)
-        frozen_setattr(self, "spanned_columns", spanned_columns)
-        frozen_setattr(self, "cell_count", cell_count)
-        frozen_setattr(self, "single_cell_rows", single_cell_rows)
-        frozen_setattr(self, "filled_texts", filled_texts)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.row_count == other.row_count
-            and self.nonempty_rows == other.nonempty_rows
-            and self.populated_rows == other.populated_rows
-            and self.columns == other.columns
-            and self.spanned_columns == other.spanned_columns
-            and self.cell_count == other.cell_count
-            and self.single_cell_rows == other.single_cell_rows
-            and self.filled_texts == other.filled_texts
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.row_count,
-                self.nonempty_rows,
-                self.populated_rows,
-                self.columns,
-                self.spanned_columns,
-                self.cell_count,
-                self.single_cell_rows,
-                self.filled_texts,
-            )
-        )
 
     @classmethod
     def from_rows(cls, rows: Sequence[Sequence[TableCell]]) -> TableFacts:

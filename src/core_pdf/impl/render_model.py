@@ -384,7 +384,23 @@ class PayloadItem:
 
 
 @final
-class GlyphBitmapItem(PaintItemBase, PayloadItem, ReplaceFields, ReprFields):
+class GlyphBitmapItem(
+    PaintItemBase,
+    PayloadItem,
+    ReplaceFields,
+    ReprFields,
+    metaclass=RecordType,
+    frozen=False,
+    eq=False,
+):
+    seqno: int
+    bbox: Any
+    fill: Any
+    fill_opacity: float | None
+    blend_mode: str | None
+    soft_mask_alpha: float | None
+    alpha_is_shape: bool
+    graphics_soft_mask: CapturedSoftMask | None
     __slots__ = ("visible", "bitmap", "bitmap_width", "bitmap_height", "payload")
 
     kind = "glyph"
@@ -394,52 +410,7 @@ class GlyphBitmapItem(PaintItemBase, PayloadItem, ReplaceFields, ReprFields):
     bitmap_height: Any
     payload: dict[str, Any]
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "seqno",
-        "bbox",
-        "fill",
-        "fill_opacity",
-        "blend_mode",
-        "soft_mask_alpha",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-        "visible",
-        "bitmap",
-        "bitmap_width",
-        "bitmap_height",
-        "payload",
-    )
     __match_args__ = ("seqno", "bbox", "bitmap")
-
-    def __init__(
-        self,
-        seqno: int,
-        bbox: Any,
-        fill: Any,
-        fill_opacity: float | None,
-        blend_mode: str | None,
-        soft_mask_alpha: float | None,
-        alpha_is_shape: bool,
-        graphics_soft_mask: CapturedSoftMask | None,
-        visible: object,
-        bitmap: Any,
-        bitmap_width: Any,
-        bitmap_height: Any,
-        payload: dict[str, Any],
-    ) -> None:
-        self.seqno = seqno
-        self.bbox = bbox
-        self.fill = fill
-        self.fill_opacity = fill_opacity
-        self.blend_mode = blend_mode
-        self.soft_mask_alpha = soft_mask_alpha
-        self.alpha_is_shape = alpha_is_shape
-        self.graphics_soft_mask = graphics_soft_mask
-        self.visible = visible
-        self.bitmap = bitmap
-        self.bitmap_width = bitmap_width
-        self.bitmap_height = bitmap_height
-        self.payload = payload
 
     @classmethod
     def from_data(cls, seqno: int, data: dict[str, Any]) -> Self:
@@ -461,7 +432,23 @@ class GlyphBitmapItem(PaintItemBase, PayloadItem, ReplaceFields, ReprFields):
 
 
 @final
-class ShadingItem(PaintItemBase, PayloadItem, ReplaceFields, ReprFields):
+class ShadingItem(
+    PaintItemBase,
+    PayloadItem,
+    ReplaceFields,
+    ReprFields,
+    metaclass=RecordType,
+    frozen=False,
+    eq=False,
+):
+    seqno: int
+    bbox: Any
+    fill: Any
+    fill_opacity: float | None
+    blend_mode: str | None
+    soft_mask_alpha: float | None
+    alpha_is_shape: bool
+    graphics_soft_mask: CapturedSoftMask | None
     __slots__ = ("rect", "dictionary", "color_rendering", "payload")
 
     kind = "shading"
@@ -470,49 +457,7 @@ class ShadingItem(PaintItemBase, PayloadItem, ReplaceFields, ReprFields):
     color_rendering: ColorRendering
     payload: dict[str, Any]
 
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "seqno",
-        "bbox",
-        "fill",
-        "fill_opacity",
-        "blend_mode",
-        "soft_mask_alpha",
-        "alpha_is_shape",
-        "graphics_soft_mask",
-        "rect",
-        "dictionary",
-        "color_rendering",
-        "payload",
-    )
     __match_args__ = ("seqno", "bbox", "dictionary")
-
-    def __init__(
-        self,
-        seqno: int,
-        bbox: Any,
-        fill: Any,
-        fill_opacity: float | None,
-        blend_mode: str | None,
-        soft_mask_alpha: float | None,
-        alpha_is_shape: bool,
-        graphics_soft_mask: CapturedSoftMask | None,
-        rect: Any,
-        dictionary: Any,
-        color_rendering: ColorRendering,
-        payload: dict[str, Any],
-    ) -> None:
-        self.seqno = seqno
-        self.bbox = bbox
-        self.fill = fill
-        self.fill_opacity = fill_opacity
-        self.blend_mode = blend_mode
-        self.soft_mask_alpha = soft_mask_alpha
-        self.alpha_is_shape = alpha_is_shape
-        self.graphics_soft_mask = graphics_soft_mask
-        self.rect = rect
-        self.dictionary = dictionary
-        self.color_rendering = color_rendering
-        self.payload = payload
 
     @classmethod
     def from_data(cls, seqno: int, data: dict[str, Any]) -> Self:
