@@ -145,6 +145,18 @@ files = [
     "test_unstructured/partition/pdf_image/test_pdfminer_processing.py",
     "test_unstructured/partition/pdf_image/test_pdfminer_utils.py",
 ]
+# The facade runs on CPython 3.15, where onnxruntime has no wheels, so unstructured-inference
+# and onnxruntime are stand-ins there (run_upstream_suite.py); a test that reaches one skips.
+stubs = ["onnxruntime", "unstructured_inference"]
+# These inject a load failure into the real onnxruntime in a child interpreter.
+deselect = [
+    "test_unstructured/partition/pdf_image/test_onnxruntime_load_failure.py::test_partition_pdf_imports_when_onnxruntime_is_installed_but_fails_to_load",
+    "test_unstructured/partition/pdf_image/test_onnxruntime_load_failure.py::test_fast_strategy_works_when_onnxruntime_fails_to_load",
+    "test_unstructured/partition/pdf_image/test_onnxruntime_load_failure.py::test_fast_strategy_keeps_link_annotations_when_onnxruntime_fails_to_load",
+    "test_unstructured/partition/pdf_image/test_onnxruntime_load_failure.py::test_fast_strategy_keeps_form_field_values_when_onnxruntime_fails_to_load",
+    "test_unstructured/partition/pdf_image/test_onnxruntime_load_failure.py::test_auto_strategy_matches_healthy_fast_when_onnxruntime_fails_to_load",
+    "test_unstructured/partition/pdf_image/test_onnxruntime_load_failure.py::test_remove_control_characters_alias_loads_inference_only_when_called",
+]
 
 [llamaindex]
 reason = "non-PDF readers"

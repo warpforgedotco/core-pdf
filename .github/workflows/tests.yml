@@ -242,8 +242,6 @@ jobs:
           restore-keys: pypdf-test-files-
 
       - name: Run the suite against the facade
-        env:
-          UV_FIND_LINKS: ${{ matrix.suite == 'unstructured' && env.CPU_TORCH_FIND_LINKS || '' }}
         run: uv run --locked --all-packages --group test python scripts/run_upstream_suite.py ${{ matrix.suite }}
 
       - name: Compare with the real pypdf
@@ -364,12 +362,17 @@ jobs:
 
       # unstructured, llama_index and x-ray each have a shard: in one job they took about 16 min,
       # the longest of the run.
+      # unstructured[pdf] needs onnxruntime, which has no CPython 3.15 wheels yet, so the real
+      # library runs on 3.14 in its own environment, between listing and comparing on 3.15.
       - name: unstructured against the real library
         if: matrix.shard == 'unstructured'
-        # unstructured[pdf] needs onnxruntime, which has no CPython 3.15 wheels yet.
         env:
           UV_FIND_LINKS: ${{ env.CPU_TORCH_FIND_LINKS }}
-        run: uv run --python 3.14 --isolated --locked --all-packages --group test --extra unstructured --with "unstructured[pdf]==0.27.37" python scripts/check_unstructured_output.py
+        run: |
+          mkdir -p .upstream-results
+          uv run --locked --all-packages --group test python scripts/check_unstructured_output.py --list .upstream-results/unstructured-files.txt
+          uv run --python 3.14 --isolated --no-project --with "unstructured[pdf]==0.27.37" python scripts/check_unstructured_output.py --record .upstream-results/unstructured-files.txt .upstream-results/unstructured-real.json
+          uv run --locked --all-packages --group test --extra unstructured python scripts/check_unstructured_output.py --compare .upstream-results/unstructured-files.txt .upstream-results/unstructured-real.json
 
       - name: llama_index against the real library
         if: matrix.shard == 'llama_index'

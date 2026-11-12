@@ -1,14 +1,24 @@
 r"""Check that the unstructured facade partitions PDFs as unstructured does, on the upstream PDFs.
 
-uv run --all-packages --with "unstructured[pdf]==0.27.37" \
-    python scripts/check_unstructured_output.py
+unstructured[pdf] needs onnxruntime, which has no CPython 3.15 wheels, and the workspace needs
+3.15, so the real library and the facade run in separate interpreters, in three steps:
 
-Each file goes through the real unstructured and the facade with
-partition_pdf(filename, strategy="fast"), and the elements are compared one by one: class
-name, category, text, and the metadata fields page_number, coordinates (points rounded to
-COORDINATE_DIGITS, system, layout size), languages, links, element_id, parent_id, filename,
-file_directory and filetype. A file that raises must raise the same exception type and
-message on both. The first difference of each file is printed.
+uv run --all-packages python scripts/check_unstructured_output.py --list files.txt
+uv run --python 3.14 --isolated --no-project --with "unstructured[pdf]==0.27.37" \
+    python scripts/check_unstructured_output.py --record files.txt real.json
+uv run --all-packages --extra unstructured python scripts/check_unstructured_output.py \
+    --compare files.txt real.json
+
+--list writes the files to compare, --record runs the real unstructured on them and keeps its
+elements, and --compare runs the facade and compares. --record imports nothing from the
+workspace.
+
+Each file goes through partition_pdf(filename, strategy="fast"), and the elements are
+compared one by one: class name, category, text, and the metadata fields page_number,
+coordinates (points rounded to COORDINATE_DIGITS, system, layout size), languages, links,
+element_id, parent_id, filename, file_directory and filetype. A file that raises must raise
+the same exception type and message on both. The first difference of each file is printed.
+Both sides go through the same JSON round trip, so a tuple and a list of the same items match.
 
 The files are every PDF under tests/upstream but pypdf's downloads in pdf_cache, which CI
 does not fetch for this check; symbolic links are left out, as each names a file covered
@@ -22,21 +32,17 @@ Every difference fails the check unless DEPARTURES lists it, with the reason the
 not follow unstructured there. A listed file that matches fails it too, so the list stays true.
 """
 
+import argparse
 import collections
 import glob
+import json
 import logging
 import os
 import sys
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-
-from unstructured.partition.pdf import (  # ty: ignore[unresolved-import]
-    partition_pdf as real_partition_pdf,
-)
-
-from core_pdf import PdfDocument
-from core_pdf_compat.unstructured import partition_pdf as facade_partition_pdf
 
 # Every PDF in the upstream checkouts but pypdf's downloads, which CI does not fetch for this
 # check. Symbolic links are left out: each points at a file covered under its own name, or at
@@ -52,6 +58,8 @@ DEPARTURES: dict[str, str] = {}
 
 
 def page_count(path: str) -> int:
+    from core_pdf import PdfDocument  # noqa: PLC0415  # the workspace is not in --record's
+
     try:
         with PdfDocument.open(path) as document:
             return len(document.pages)
@@ -92,16 +100,19 @@ def describe(element: Any) -> dict[str, object]:
     }
 
 
-def partition(function: Any, path: str) -> list[dict[str, object]] | str:
+Result = list[dict[str, Any]] | str
+
+
+def partition(function: Callable[..., Any], path: str) -> Result:
     try:
-        return [describe(element) for element in function(path, strategy="fast")]
+        elements: Result = [describe(element) for element in function(path, strategy="fast")]
     except Exception as error:  # noqa: BLE001
-        return f"raises {type(error).__name__}: {error}"
+        elements = f"raises {type(error).__name__}: {error}"
+    # The real side's elements come back from JSON; both go through it alike.
+    return json.loads(json.dumps(elements, default=repr))
 
 
-def first_difference(
-    expected: list[dict[str, object]] | str, actual: list[dict[str, object]] | str
-) -> str:
+def first_difference(expected: Result, actual: Result) -> str:
     if isinstance(expected, str) or isinstance(actual, str):
         summary = lambda value: value if isinstance(value, str) else f"{len(value)} elements"  # noqa: E731
         return f"unstructured {summary(expected)}, facade {summary(actual)}"
@@ -115,22 +126,46 @@ def first_difference(
     return f"unstructured {len(expected)} elements, facade {len(actual)}"
 
 
-def main() -> int:
-    logging.disable(logging.CRITICAL)
-    warnings.simplefilter("ignore")
+def list_files(out: Path) -> None:
     counts: collections.Counter[str] = collections.Counter()
-    problems: list[str] = []
     paths = sorted(
         path
         for path in glob.glob(PATTERN, recursive=True)
         if not path.startswith(DOWNLOADS) and not os.path.islink(path)
     )
+    kept = []
     for path in paths:
         if page_count(path) > MAX_PAGES:
             counts[f"skipped, over {MAX_PAGES} pages"] += 1
+        else:
+            kept.append(path)
+    out.write_text("".join(f"{path}\n" for path in kept))
+    for key, count in sorted(counts.items()):
+        print(f"{count:>6}  {key}")
+    print(f"{len(kept):>6}  to compare, listed in {out}")
+
+
+def record(files: Path, out: Path) -> None:
+    from unstructured.partition.pdf import partition_pdf  # noqa: PLC0415  # ty: ignore[unresolved-import]
+
+    results = {path: partition(partition_pdf, path) for path in files.read_text().splitlines()}
+    out.write_text(json.dumps(results))
+    print(f"{len(results):>6}  files partitioned by unstructured, written to {out}")
+
+
+def compare(files: Path, recorded: Path) -> int:
+    from core_pdf_compat.unstructured import partition_pdf  # noqa: PLC0415
+
+    expected_by_path = json.loads(recorded.read_text())
+    counts: collections.Counter[str] = collections.Counter()
+    problems: list[str] = []
+    for path in files.read_text().splitlines():
+        if path not in expected_by_path:
+            counts["NOT RECORDED"] += 1
+            problems.append(f"{path}: missing from {recorded}")
             continue
-        expected = partition(real_partition_pdf, path)
-        actual = partition(facade_partition_pdf, path)
+        expected = expected_by_path[path]
+        actual = partition(partition_pdf, path)
         listed = DEPARTURES.get(Path(path).name)
         if expected == actual:
             counts["identical"] += 1
@@ -149,6 +184,24 @@ def main() -> int:
         print(problem)
     failed = any(key.isupper() for key in counts)
     return 1 if failed else 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    steps = parser.add_mutually_exclusive_group(required=True)
+    steps.add_argument("--list", type=Path, metavar="FILES", help="write the files to compare")
+    steps.add_argument("--record", type=Path, nargs=2, metavar=("FILES", "OUT"))
+    steps.add_argument("--compare", type=Path, nargs=2, metavar=("FILES", "RECORDED"))
+    arguments = parser.parse_args()
+    logging.disable(logging.CRITICAL)
+    warnings.simplefilter("ignore")
+    if arguments.list:
+        list_files(arguments.list)
+        return 0
+    if arguments.record:
+        record(*arguments.record)
+        return 0
+    return compare(*arguments.compare)
 
 
 if __name__ == "__main__":
