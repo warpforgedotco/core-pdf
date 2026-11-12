@@ -24,8 +24,9 @@ not follow pdfminer there. A listed file that matches fails it too, so the list 
 
 pdfminer orders text boxes by merging the closest pair first, and breaks ties between equal
 distances by id(), a memory address, so for TIES files its own box order changes from run to
-run. There a file passes when it matches outright, or when the pages hold the same text boxes
-(each compared record by record, as above) in another order, and the same characters of text.
+run. There a file passes when its pages hold the same text boxes (each compared record by
+record, as above) in any order, and the same characters of text; it is counted under "ties in
+any order" whether or not this run's order matched, so the summary is the same on every run.
 Pass file names to check only those.
 """
 
@@ -283,16 +284,18 @@ def main(names: list[str]) -> int:
         }
         for check, (expected, actual, differ) in results.items():
             same, different, first = compare_pages(expected, actual, differ)
-            counts[f"{check} pages: identical"] += same
             listed = DEPARTURES.get((check, Path(path).name))
-            if first is not None and Path(path).name in TIES:
+            if Path(path).name in TIES:
+                # Counted the same whether pdfminer's id()-ordered ties happened to match this
+                # run or not, so the summary does not change from run to run.
                 reordered = same_boxes_in_any_order if check == "layout" else same_characters
                 if len(expected) == len(actual) and all(
                     map(reordered, expected, actual, strict=True)
                 ):
-                    counts[f"{check} files: same boxes, tied order differs"] += 1
-                    counts[f"{check} pages: same boxes, tied order differs"] += different
+                    counts[f"{check} files: same boxes, ties in any order"] += 1
+                    counts[f"{check} pages: same boxes, ties in any order"] += same + different
                     continue
+            counts[f"{check} pages: identical"] += same
             if first is None:
                 counts[f"{check} files: identical"] += 1
                 if listed is not None:
