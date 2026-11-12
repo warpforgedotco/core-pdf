@@ -4,7 +4,6 @@ from __future__ import annotations
 
 __lazy_modules__ = ["core_pdf.impl.crypto.pdf_mac"]
 
-from core_pdf.impl.crypto.errors import UnsupportedAlgorithmError
 from core_pdf.impl.crypto.pdf_mac import validate_pdf_mac_token
 from core_pdf.impl.spec.exceptions import PdfDecryptionError, PdfUnsupportedError
 from core_pdf.impl.spec.s_07_security.standard import StandardSecurityHandler
@@ -37,8 +36,6 @@ def validate_pdf_mac_if_present(
             handler.file_key,
             handler.config.kdf_salt,
         )
-    except UnsupportedAlgorithmError as exc:
-        raise PdfUnsupportedError(str(exc)) from exc
     except (ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
         raise PdfDecryptionError("Invalid PDF MAC") from exc
     return True

@@ -5,14 +5,9 @@ from __future__ import annotations
 __lazy_modules__ = ["core_pdf.impl.jbig2.bitmap"]
 
 from core_pdf.impl.jbig2.bitmap import invert_packed_bitmap
-from core_pdf.impl.jbig2.codec import (
-    JBIG2PageDecoder,
-    Jbig2ParseError,
-    Jbig2UnsupportedError,
-    parse_embedded_segments,
-)
+from core_pdf.impl.jbig2.codec import JBIG2PageDecoder, parse_embedded_segments
 from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
-from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
+from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import coerce_to_bytes, is_pdf_null
 
 
@@ -43,15 +38,10 @@ def decode_jbig2(
         except TypeError as exc:
             raise FilterParseError("invalid JBIG2 globals") from exc
 
-    try:
-        decoder = decoder_type()
-        for segment in parse_embedded_segments(globals_data + data):
-            decoder.decode_segment(segment)
-        return invert_packed_bitmap(decoder.finish())
-    except Jbig2UnsupportedError as exc:
-        raise FilterUnsupportedError(str(exc)) from exc
-    except Jbig2ParseError as exc:
-        raise FilterParseError(str(exc)) from exc
+    decoder = decoder_type()
+    for segment in parse_embedded_segments(globals_data + data):
+        decoder.decode_segment(segment)
+    return invert_packed_bitmap(decoder.finish())
 
 
 __all__ = ("decode_jbig2",)

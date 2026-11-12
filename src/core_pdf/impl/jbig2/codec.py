@@ -10,6 +10,7 @@ from core_pdf.impl.jbig2.bitmap import (
     compose_packed_bitmap_data,
     uint8_matrix_view,
 )
+from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_records import (
     GeneratedRecord,
     RecordType,
@@ -24,18 +25,6 @@ JBIG2_IMMEDIATE_TEXT_REGION = 6
 JBIG2_IMMEDIATE_LOSSLESS_TEXT_REGION = 7
 JBIG2_IMMEDIATE_GENERIC_REGION = 38
 JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION = 39
-
-
-class Jbig2Error(Exception):
-    pass
-
-
-class Jbig2ParseError(Jbig2Error):
-    pass
-
-
-class Jbig2UnsupportedError(Jbig2Error):
-    pass
 
 
 GENERIC_TEMPLATE_0_DEFAULT_AT = ((3, -1), (-3, -1), (2, -2), (-2, -2))
@@ -107,7 +96,7 @@ class JBIG2Image(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     @classmethod
     def create(cls, width: int, height: int) -> JBIG2Image:
         if width <= 0 or height <= 0:
-            raise Jbig2ParseError("invalid JBIG2 image dimensions")
+            raise FilterParseError("invalid JBIG2 image dimensions")
         stride = (width + 7) // 8
         return cls(width=width, height=height, stride=stride, data=bytearray(stride * height))
 
@@ -119,7 +108,7 @@ class JBIG2Image(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
 def read_be_int32(data: bytes, pos: int, *, signed: bool = False) -> int:
     chunk = data[pos : pos + 4]
     if len(chunk) != 4:
-        raise Jbig2ParseError("truncated JBIG2 data")
+        raise FilterParseError("truncated JBIG2 data")
     return int.from_bytes(chunk, "big", signed=signed)
 
 
@@ -130,7 +119,7 @@ def read_be_i8(data: bytes, pos: int) -> int:
 
 def parse_page_info(data: bytes) -> JBIG2PageInfo:
     if len(data) < 19:
-        raise Jbig2ParseError("truncated JBIG2 page info")
+        raise FilterParseError("truncated JBIG2 page info")
     width = read_be_int32(data, 0)
     height = read_be_int32(data, 4)
     x_resolution = read_be_int32(data, 8)
@@ -147,7 +136,7 @@ def parse_page_info(data: bytes) -> JBIG2PageInfo:
 
 def parse_region(data: bytes, kind: str) -> JBIG2Region:
     if len(data) < 17:
-        raise Jbig2ParseError(f"truncated JBIG2 {kind} region")
+        raise FilterParseError(f"truncated JBIG2 {kind} region")
     return JBIG2Region(
         width=read_be_int32(data, 0),
         height=read_be_int32(data, 4),
@@ -161,7 +150,7 @@ def parse_region(data: bytes, kind: str) -> JBIG2Region:
 def parse_generic_region_header(region: JBIG2Region) -> JBIG2GenericRegionHeader:
     data = region.raw
     if len(data) < 18:
-        raise Jbig2ParseError("truncated JBIG2 generic region")
+        raise FilterParseError("truncated JBIG2 generic region")
     flags = data[17]
     mmr = bool(flags & 1)
     template = (flags >> 1) & 3
@@ -171,7 +160,7 @@ def parse_generic_region_header(region: JBIG2Region) -> JBIG2GenericRegionHeader
     if not mmr:
         at_count = 4 if template == 0 else 1
         if len(data) < pos + at_count * 2:
-            raise Jbig2ParseError("truncated JBIG2 generic region")
+            raise FilterParseError("truncated JBIG2 generic region")
         for ignored in range(at_count):
             x = read_be_i8(data, pos)
             y = read_be_i8(data, pos + 1)
@@ -183,14 +172,14 @@ def parse_generic_region_header(region: JBIG2Region) -> JBIG2GenericRegionHeader
 def read_uint(data: bytes, pos: int, width: int) -> tuple[int, int]:
     end = pos + width
     if end > len(data):
-        raise Jbig2ParseError("truncated JBIG2 data")
+        raise FilterParseError("truncated JBIG2 data")
     return int.from_bytes(data[pos:end], "big"), end
 
 
 def read_segment_references(data: bytes, pos: int, count: int, width: int) -> tuple[list[int], int]:
     end = pos + count * width
     if end > len(data):
-        raise Jbig2ParseError("truncated JBIG2 segment references")
+        raise FilterParseError("truncated JBIG2 segment references")
     return [
         int.from_bytes(data[index : index + width], "big") for index in range(pos, end, width)
     ], end
@@ -199,7 +188,7 @@ def read_segment_references(data: bytes, pos: int, count: int, width: int) -> tu
 def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int]:
     start = pos
     if pos + 11 > len(data):
-        raise Jbig2ParseError("truncated JBIG2 segment header")
+        raise FilterParseError("truncated JBIG2 segment header")
     number, pos = read_uint(data, pos, 4)
     flags, pos = read_uint(data, pos, 1)
     retention_flags, pos = read_uint(data, pos, 1)
@@ -209,16 +198,16 @@ def parse_segment_header(data: bytes, pos: int) -> tuple[JBIG2SegmentHeader, int
         referred_to_count = ((retention_flags & 0x1F) << 24) | ref_count
         bit_bytes = (referred_to_count + 1 + 7) // 8
         if pos + bit_bytes > len(data):
-            raise Jbig2ParseError("truncated JBIG2 segment header")
+            raise FilterParseError("truncated JBIG2 segment header")
         pos += bit_bytes
     elif referred_to_count in (5, 6):
-        raise Jbig2ParseError("invalid JBIG2 referred-to segment count")
+        raise FilterParseError("invalid JBIG2 referred-to segment count")
     reference_width = 1 if number <= 256 else 2 if number <= 65536 else 4
     referred_to_segments, pos = read_segment_references(
         data, pos, referred_to_count, reference_width
     )
     if pos + (4 if (flags & 0x40) else 1) + 4 > len(data):
-        raise Jbig2ParseError("truncated JBIG2 segment header")
+        raise FilterParseError("truncated JBIG2 segment header")
     page_association, pos = read_uint(data, pos, 4 if flags & 0x40 else 1)
     data_length, pos = read_uint(data, pos, 4)
     return (
@@ -314,39 +303,39 @@ class JBIG2PageDecoder:
                 self.decode_generic_region(parse_generic_region_header(region))
         elif kind in (49, JBIG2_END_OF_FILE):
             if segment.data:
-                raise Jbig2ParseError("JBIG2 end marker has segment data")
+                raise FilterParseError("JBIG2 end marker has segment data")
         elif kind == 52:
             if len(segment.data) < 4:
-                raise Jbig2ParseError("truncated JBIG2 profiles segment")
+                raise FilterParseError("truncated JBIG2 profiles segment")
             count = read_be_int32(segment.data, 0)
             if len(segment.data) != 4 + count * 4:
-                raise Jbig2ParseError("invalid JBIG2 profiles segment length")
+                raise FilterParseError("invalid JBIG2 profiles segment length")
         elif kind == 62:
             if len(segment.data) < 4:
-                raise Jbig2ParseError("truncated JBIG2 extension segment")
+                raise FilterParseError("truncated JBIG2 extension segment")
             extension = read_be_int32(segment.data, 0)
             if extension & (1 << 31):
                 if not extension & (1 << 29):
-                    raise Jbig2ParseError("necessary JBIG2 extension requires reserved bit 29")
-                raise Jbig2UnsupportedError("unsupported necessary JBIG2 extension")
+                    raise FilterParseError("necessary JBIG2 extension requires reserved bit 29")
+                raise FilterUnsupportedError("unsupported necessary JBIG2 extension")
         elif kind in (0, 16, 20, 22, 23, 36, 40, 42, 43, 50, 53):
-            raise Jbig2UnsupportedError(f"unsupported JBIG2 segment type {kind}")
+            raise FilterUnsupportedError(f"unsupported JBIG2 segment type {kind}")
         else:
-            raise Jbig2ParseError(f"reserved JBIG2 segment type {kind}")
+            raise FilterParseError(f"reserved JBIG2 segment type {kind}")
 
     def decode_text_region(self, region: JBIG2Region) -> None:
         if len(region.raw) < 20:
-            raise Jbig2ParseError("truncated JBIG2 text region")
-        raise Jbig2UnsupportedError("JBIG2 text region decoding is not implemented")
+            raise FilterParseError("truncated JBIG2 text region")
+        raise FilterUnsupportedError("JBIG2 text region decoding is not implemented")
 
     def decode_generic_region(self, header: JBIG2GenericRegionHeader) -> None:
         if header.mmr:
-            raise Jbig2UnsupportedError("JBIG2 MMR region decoding is not implemented")
-        raise Jbig2UnsupportedError("JBIG2 arithmetic region decoding is not implemented")
+            raise FilterUnsupportedError("JBIG2 MMR region decoding is not implemented")
+        raise FilterUnsupportedError("JBIG2 arithmetic region decoding is not implemented")
 
     def finish(self) -> bytes:
         if self.image is None:
-            raise Jbig2UnsupportedError("JBIG2Decode produced no image")
+            raise FilterUnsupportedError("JBIG2Decode produced no image")
         return bytes(self.image.data)
 
 
@@ -372,7 +361,7 @@ def compose_packed_bitmap_region(
 ) -> None:
     operator = region_operator(region, page_info)
     if operator not in (0, 2):
-        raise Jbig2UnsupportedError(f"unsupported JBIG2 combination operator {operator}")
+        raise FilterUnsupportedError(f"unsupported JBIG2 combination operator {operator}")
     row_bytes = max(1, (region.width + 7) // 8)
     compose_packed_bitmap_data(
         packed_bitmap,
@@ -407,9 +396,6 @@ __all__ = (
     "JBIG2_IMMEDIATE_LOSSLESS_TEXT_REGION",
     "JBIG2_IMMEDIATE_GENERIC_REGION",
     "JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION",
-    "Jbig2Error",
-    "Jbig2ParseError",
-    "Jbig2UnsupportedError",
     "GENERIC_TEMPLATE_0_DEFAULT_AT",
     "JBIG2Segment",
     "JBIG2PageInfo",

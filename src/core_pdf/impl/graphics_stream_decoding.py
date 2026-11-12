@@ -40,9 +40,7 @@ from core_pdf.impl.jbig2.codec import (
     JBIG2_PAGE_INFO,
     JBIG2GenericRegionHeader,
     JBIG2PageDecoder,
-    Jbig2ParseError,
     JBIG2Region,
-    Jbig2UnsupportedError,
     compose_packed_bitmap_region,
 )
 from core_pdf.impl.spec.s_07_filters import codecs, decode_spec, jbig2, predictors
@@ -412,7 +410,7 @@ class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
         if image is None:
             return
         if len(region.raw) < 20:
-            raise Jbig2ParseError("truncated JBIG2 text region")
+            raise FilterParseError("truncated JBIG2 text region")
         bitmap = region.raw[20:]
         row_bytes = max(1, (region.width + 7) // 8)
         compose_packed_bitmap_data(
@@ -446,7 +444,7 @@ class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
             or header.prediction
             or header.adaptive_pixels != GENERIC_TEMPLATE_0_DEFAULT_AT
         ):
-            raise Jbig2UnsupportedError("unsupported JBIG2 generic bitmap template")
+            raise FilterUnsupportedError("unsupported JBIG2 generic bitmap template")
         bitmap = decode_arithmetic_generic_template0(
             region.raw[header.bitmap_start :], region.width, region.height
         )
