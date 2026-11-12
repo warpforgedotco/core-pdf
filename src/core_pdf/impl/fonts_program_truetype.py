@@ -28,7 +28,7 @@ from core_pdf.impl.fonts_raster_kernel import (
     scale_contours,
 )
 from core_pdf.impl.geometry import transform_bbox
-from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
+from core_pdf.impl.spec.s_09_fonts.helpers import (
     is_unicode_scalar,
     symbol_character_code,
 )

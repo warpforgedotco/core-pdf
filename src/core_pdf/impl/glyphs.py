@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeAlias
 
 from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.geometry import bbox_union
+from core_pdf.impl.spec.s_09_fonts.helpers import is_unicode_scalar
 from core_pdf.impl.types import RecordType, Rectangle, ReplaceFields, ReprFields
 
 Matrix6 = tuple[float, float, float, float, float, float]
@@ -603,7 +604,7 @@ def glyph_text_has_unsupported_codepoint(text: str) -> bool:
             return True
         if codepoint < 32 and char not in "\t\n\r":
             return True
-        if 0xD800 <= codepoint <= 0xDFFF:
+        if not is_unicode_scalar(codepoint):
             return True
         if 0xE000 <= codepoint <= 0xF8FF:
             return True
