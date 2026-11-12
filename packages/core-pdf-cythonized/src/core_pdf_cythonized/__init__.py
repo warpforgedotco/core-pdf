@@ -75,7 +75,11 @@ from core_pdf_cythonized._knockout import (
     composite_knockout_element,
     composite_knockout_group,
 )
-from core_pdf_cythonized._markers import markers_present, regions_with_markers
+from core_pdf_cythonized._markers import (
+    markers_present,
+    regions_with_markers,
+    security_marker_present,
+)
 from core_pdf_cythonized._nonisolated import composite_nonisolated_blend
 from core_pdf_cythonized._objects import ObjectScanner
 from core_pdf_cythonized._outline import (
@@ -114,6 +118,7 @@ __all__ = (
     "merge_collinear_rows",
     "markers_present",
     "regions_with_markers",
+    "security_marker_present",
     "DECODED_GLYPH_FIELDS",
     "OBSERVATION_FIELDS",
     "SlotLayout",

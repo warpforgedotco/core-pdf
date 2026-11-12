@@ -16,7 +16,6 @@ __lazy_modules__ = [
 
 import contextlib
 import mmap
-import re
 import struct
 import threading
 from array import array
@@ -116,7 +115,12 @@ from core_pdf.impl.types import (
     PdfSource,
     PdfString,
 )
-from core_pdf_cythonized import markers_present, object_headers_match, regions_with_markers
+from core_pdf_cythonized import (
+    markers_present,
+    object_headers_match,
+    regions_with_markers,
+    security_marker_present,
+)
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_fallback import RasterFontProviderLike
@@ -441,18 +445,12 @@ def object_headers_present_by_entry(data: Any, keys: list[int], offsets: list[in
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt", "AuthCode")
 SECURITY_TRAILER_KEYS = frozenset({"Encrypt", "AuthCode"})
-ESCAPED_SECURITY_NAME_RE = re.compile(
-    rb"/(?:(?:E|#45)(?:n|#6[eE])(?:c|#63)(?:r|#72)(?:y|#79)(?:p|#70)(?:t|#74)"
-    rb"|(?:A|#41)(?:u|#75)(?:t|#74)(?:h|#68)(?:C|#43)(?:o|#6[fF])(?:d|#64)(?:e|#65))"
-)
 
 
 def has_security_metadata_marker(data: bytes | mmap.mmap) -> bool:
-    if data.find(b"Encrypt") >= 0 or data.find(b"AuthCode") >= 0:
-        return True
-    if data.find(b"#") < 0:
-        return False
-    return ESCAPED_SECURITY_NAME_RE.search(data) is not None
+    # Encrypt or AuthCode anywhere, or the names /Encrypt and /AuthCode with #-escaped
+    # bytes, in one compiled pass instead of two full-file finds and a regex search.
+    return security_marker_present(data)
 
 
 def first_indexes(values: Iterable[object]) -> dict[object, int]:
