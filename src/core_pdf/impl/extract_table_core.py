@@ -72,6 +72,9 @@ def character_spaced_cell(text: str) -> bool:
 
 
 class TableFacts(GeneratedRecord):
+    # Unslotted fields, as before: the cached_property methods below cache in __dict__.
+    __slots__ = ("__dict__",)
+
     row_count: int
     nonempty_rows: int
     populated_rows: int
