@@ -75,7 +75,6 @@ SUITES = {
             "unstructured==0.27.37",
             "pdf2image>=1.17.0,<2",
             "pdfminer.six>=20251230,<20270000",
-            "pi-heif>=1.2.0,<2",
             "pikepdf>=10.3.0,<11",
             "pypdf>=6.9.1,<7",
             "unstructured-pytesseract>=0.3.15,<1",
