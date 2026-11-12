@@ -19,6 +19,7 @@ __all__ = (
     "RecordType",
     "ReplaceFields",
     "ReprFields",
+    "field",
     "frozen_setattr",
 )
 
@@ -113,6 +114,27 @@ class Record(FrozenFields, PickleFields, ReprFields, ReplaceFields):
 
 
 MISSING: Any = object()
+
+
+class Factory:
+    """A field default built per instance; see ``field``."""
+
+    __slots__ = ("make",)
+
+    def __init__(self, make: Callable[[], Any]) -> None:
+        self.make = make
+
+    def __repr__(self) -> str:
+        return f"field(default_factory={self.make!r})"
+
+
+def field(*, default_factory: Callable[[], Any]) -> Any:
+    """Default a field to ``default_factory()``, called for each instance that leaves the
+    field out or passes ``None`` for it.
+    """
+    return Factory(default_factory)
+
+
 CLASS_VARIABLE = re.compile(r"^\s*(?:typing\.)?ClassVar\b")
 
 type FieldSpecs = dict[str, tuple[Any, str]]
@@ -334,6 +356,15 @@ def field_setter(name: str, instance: object, value: object) -> None:
     frozen_setattr(instance, name, value)
 
 
+def factory_setter(
+    setter: Callable[[object, object], None],
+    make: Callable[[], Any],
+    instance: object,
+    value: object,
+) -> None:
+    setter(instance, make() if value is None else value)
+
+
 class Pending:
     __slots__ = ("build", "fields", "name", "owner")
 
@@ -396,12 +427,20 @@ def check_defaults(name: str, specs: FieldSpecs) -> None:
 
 def build_init(specs: FieldSpecs, frozen: bool, cls: type) -> FunctionType:
     fields = tuple(specs)
-    defaults = tuple(default for default, _ in specs.values() if default is not MISSING)
+    defaults = tuple(
+        None if isinstance(default, Factory) else default
+        for default, _ in specs.values()
+        if default is not MISSING
+    )
     kind = "post_init" if hasattr(cls, "__post_init__") else "init"
-    if frozen:
+    has_factory = any(isinstance(default, Factory) for default, _ in specs.values())
+    if frozen or has_factory:
         scope = dict(BUILTINS)
-        for index, name in enumerate(fields):
-            scope[f"__set_{index}"] = slot_setter(cls, name)
+        for index, (name, (default, _)) in enumerate(specs.items()):
+            setter = slot_setter(cls, name)
+            if isinstance(default, Factory):
+                setter = partial(factory_setter, setter, default.make)
+            scope[f"__set_{index}"] = setter
         function = specialise(cls, kind, fields, scope, defaults or None)
     else:
         function = specialise(cls, f"mutable_{kind}", fields, BUILTINS, defaults or None)
@@ -410,7 +449,7 @@ def build_init(specs: FieldSpecs, frozen: bool, cls: type) -> FunctionType:
     return function
 
 
-@dataclass_transform(frozen_default=True, eq_default=True)
+@dataclass_transform(frozen_default=True, eq_default=True, field_specifiers=(field,))
 class RecordType(type):
     def __new__(
         mcs,

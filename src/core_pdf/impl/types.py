@@ -22,6 +22,7 @@ from core_records import (
     RecordType,
     ReplaceFields,
     ReprFields,
+    field,
     frozen_setattr,
 )
 
@@ -88,6 +89,7 @@ __all__ = (
     "Rectangle",
     "ReplaceFields",
     "ReprFields",
+    "field",
     "SeekableBinaryReader",
     "frozen_setattr",
 )

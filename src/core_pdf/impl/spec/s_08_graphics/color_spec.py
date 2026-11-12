@@ -17,7 +17,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     require_pdf_number_pairs,
 )
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, require_recognized_version
-from core_records import GeneratedRecord, frozen_setattr
+from core_records import GeneratedRecord, field
 
 ColorParams: TypeAlias = Mapping[str, object]
 ComponentRanges: TypeAlias = tuple[tuple[float, float], ...]
@@ -26,15 +26,15 @@ ComponentRanges: TypeAlias = tuple[tuple[float, float], ...]
 class ColorSpace(GeneratedRecord, eq=False):
     kind: str
     component_ranges: ComponentRanges
-    params: ColorParams
-    base: ColorSpace | None
-    alternate: ColorSpace | None
-    colorants: tuple[str, ...]
-    hival: int
-    lookup: bytes | None
-    tint_fn: object
-    icc_profile: bytes | None
-    devicen_attributes: DeviceNAttributes | None
+    params: ColorParams = field(default_factory=lambda: MappingProxyType({}))
+    base: ColorSpace | None = None
+    alternate: ColorSpace | None = None
+    colorants: tuple[str, ...] = ()
+    hival: int = 0
+    lookup: bytes | None = None
+    tint_fn: object = None
+    icc_profile: bytes | None = None
+    devicen_attributes: DeviceNAttributes | None = None
 
     __repr_fields__: ClassVar[tuple[str, ...] | None] = (
         "kind",
@@ -48,32 +48,6 @@ class ColorSpace(GeneratedRecord, eq=False):
         "tint_fn",
         "devicen_attributes",
     )
-
-    def __init__(
-        self,
-        kind: str,
-        component_ranges: ComponentRanges,
-        params: ColorParams | None = None,
-        base: ColorSpace | None = None,
-        alternate: ColorSpace | None = None,
-        colorants: tuple[str, ...] = (),
-        hival: int = 0,
-        lookup: bytes | None = None,
-        tint_fn: object = None,
-        icc_profile: bytes | None = None,
-        devicen_attributes: DeviceNAttributes | None = None,
-    ) -> None:
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "component_ranges", component_ranges)
-        frozen_setattr(self, "params", MappingProxyType({}) if params is None else params)
-        frozen_setattr(self, "base", base)
-        frozen_setattr(self, "alternate", alternate)
-        frozen_setattr(self, "colorants", colorants)
-        frozen_setattr(self, "hival", hival)
-        frozen_setattr(self, "lookup", lookup)
-        frozen_setattr(self, "tint_fn", tint_fn)
-        frozen_setattr(self, "icc_profile", icc_profile)
-        frozen_setattr(self, "devicen_attributes", devicen_attributes)
 
 
 class DeviceNProcess(GeneratedRecord, eq=False):

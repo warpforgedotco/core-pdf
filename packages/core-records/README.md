@@ -10,7 +10,8 @@ four. A class declares `__fields__` and writes its own `__init__`, `__eq__` and
 `RecordType` writes that boilerplate from the class body instead. Subclass
 `GeneratedRecord` for a frozen `Record`, or name `metaclass=RecordType` over other
 mixins. The annotated names, excluding `ClassVar`, are the fields in order, and a
-value assigned to one in the body is its default. For each class it builds
+value assigned to one in the body is its default. `field(default_factory=f)` makes a default built by
+`f()` for each instance, also when `None` is passed for that field. For each class it builds
 `__slots__`, `__fields__`, `__match_args__`, an `__init__` that stores through the
 slot descriptors (and then calls `__post_init__` when the class has one), `__eq__`
 (identity shortcut, exact class check, field-by-field `and`), `__hash__` over the

@@ -18,7 +18,7 @@ from core_pdf.impl.extract_selection import (
 from core_pdf.impl.geometry import bbox_tuple
 from core_pdf.impl.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.output_model import Document
-from core_pdf.impl.types import GeneratedRecord, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, field
 from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
     capture_from_program,
@@ -44,26 +44,10 @@ DOCUMENT_STROKED_MIN_GLYPH_COVERAGE = 0.70
 
 
 class FontEnrichment(GeneratedRecord, eq=False):
-    learned_unicode: LearnedUnicodeMap
-    recognition_by_index: Mapping[int, RecognitionResult]
-
-    def __init__(
-        self,
-        learned_unicode: LearnedUnicodeMap | None = None,
-        recognition_by_index: Mapping[int, RecognitionResult] | None = None,
-    ) -> None:
-        frozen_setattr(
-            self,
-            "learned_unicode",
-            (lambda: MappingProxyType({}))() if learned_unicode is None else learned_unicode,
-        )
-        frozen_setattr(
-            self,
-            "recognition_by_index",
-            (lambda: MappingProxyType({}))()
-            if recognition_by_index is None
-            else recognition_by_index,
-        )
+    learned_unicode: LearnedUnicodeMap = field(default_factory=lambda: MappingProxyType({}))
+    recognition_by_index: Mapping[int, RecognitionResult] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     __hash__ = None  # type: ignore[assignment]
 

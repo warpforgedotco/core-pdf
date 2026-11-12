@@ -8,7 +8,14 @@ from typing import Protocol, overload
 from core_pdf.impl.spec.s_07_syntax_primitives import text_string
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import decoded_name, parse_float, parse_int
 from core_pdf.impl.spec.types import PdfName
-from core_pdf.impl.types import PdfReference, PdfString, RecordType, ReplaceFields, ReprFields
+from core_pdf.impl.types import (
+    PdfReference,
+    PdfString,
+    RecordType,
+    ReplaceFields,
+    ReprFields,
+    field,
+)
 
 
 def recover_pdf_name(value: object, default: str | None = None) -> str | None:
@@ -70,23 +77,9 @@ class ReferenceResolver(Protocol):
 class CoercionFrame(ReplaceFields, ReprFields, metaclass=RecordType, frozen=False):
     original: object
     entries: Iterator[tuple[object, object]]
-    values: list[tuple[object, object]]
-    pending: tuple[object, object] | None
-    changed: bool
-
-    def __init__(
-        self,
-        original: object,
-        entries: Iterator[tuple[object, object]],
-        values: list[tuple[object, object]] | None = None,
-        pending: tuple[object, object] | None = None,
-        changed: bool = False,
-    ) -> None:
-        self.original = original
-        self.entries = entries
-        self.values = [] if values is None else values
-        self.pending = pending
-        self.changed = changed
+    values: list[tuple[object, object]] = field(default_factory=list)
+    pending: tuple[object, object] | None = None
+    changed: bool = False
 
     __hash__ = None  # type: ignore[assignment]
 

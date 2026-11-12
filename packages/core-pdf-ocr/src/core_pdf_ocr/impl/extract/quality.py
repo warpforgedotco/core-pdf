@@ -9,7 +9,7 @@ import numpy
 
 from core_pdf.impl.extract_capture import TextAnalysis, analyze_text
 from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf.impl.types import GeneratedRecord, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, field
 
 
 class CandidateMetrics(GeneratedRecord):
@@ -27,22 +27,8 @@ class Candidate(GeneratedRecord):
     mode: int
     observations: ObservationBatch
     metrics: CandidateMetrics
-    symbols: ObservationBatch
-    recognition_status: str
-
-    def __init__(
-        self,
-        mode: int,
-        observations: ObservationBatch,
-        metrics: CandidateMetrics,
-        symbols: ObservationBatch | None = None,
-        recognition_status: str = "not-run",
-    ) -> None:
-        frozen_setattr(self, "mode", mode)
-        frozen_setattr(self, "observations", observations)
-        frozen_setattr(self, "metrics", metrics)
-        frozen_setattr(self, "symbols", ObservationBatch.empty() if symbols is None else symbols)
-        frozen_setattr(self, "recognition_status", recognition_status)
+    symbols: ObservationBatch = field(default_factory=ObservationBatch.empty)
+    recognition_status: str = "not-run"
 
 
 class TextUtility(NamedTuple):

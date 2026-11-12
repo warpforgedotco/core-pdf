@@ -19,7 +19,7 @@ from core_pdf.impl.render_model import PathPaintKind
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf.impl.spec.s_08_graphics.geometry import unit_square_placement
-from core_pdf.impl.types import RecordType, ReprFields
+from core_pdf.impl.types import RecordType, ReprFields, field
 from core_pdf_cythonized import translated_outline_edges
 
 
@@ -81,25 +81,11 @@ def append_glyph_paint(
 
 
 class TextObjectState(ReprFields, metaclass=RecordType, frozen=False):
-    active: bool
-    group_open: bool
-    group_pending: bool
-    clipping_subpaths: list[CapturedSubpath]
-    object_id: int | None
-
-    def __init__(
-        self,
-        active: bool = False,
-        group_open: bool = False,
-        group_pending: bool = False,
-        clipping_subpaths: list[CapturedSubpath] | None = None,
-        object_id: int | None = None,
-    ) -> None:
-        self.active = active
-        self.group_open = group_open
-        self.group_pending = group_pending
-        self.clipping_subpaths = [] if clipping_subpaths is None else clipping_subpaths
-        self.object_id = object_id
+    active: bool = False
+    group_open: bool = False
+    group_pending: bool = False
+    clipping_subpaths: list[CapturedSubpath] = field(default_factory=list)
+    object_id: int | None = None
 
     __hash__ = None  # type: ignore[assignment]
 

@@ -23,6 +23,7 @@ from core_records import (
     RecordType,
     ReplaceFields,
     ReprFields,
+    field,
     frozen_setattr,
 )
 
@@ -45,12 +46,8 @@ PATH_OPERAND_COUNTS = {PATH_MOVE: 2, PATH_LINE: 2, PATH_CLOSE: 0, PATH_RECT: 4, 
 
 
 class PdfPath(ReplaceFields, metaclass=RecordType, frozen=False):
-    ops: bytearray
-    coords: array[float]
-
-    def __init__(self, ops: bytearray | None = None, coords: array[float] | None = None) -> None:
-        self.ops = bytearray() if ops is None else ops
-        self.coords = array("d") if coords is None else coords
+    ops: bytearray = field(default_factory=bytearray)
+    coords: array[float] = field(default_factory=lambda: array("d"))
 
     def __repr__(self) -> str:
         name = self.__class__.__qualname__
