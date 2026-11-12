@@ -374,15 +374,6 @@ class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
         except UnicodeDecodeError:
             return data.decode(codec, "replace"), space
 
-    def simple_glyph_parts(self, glyph: Any) -> tuple[str, ...]:
-        if len(glyph.code_bytes) != 1:
-            return (self.glyph_text(glyph),)
-        table = self.encoding_table
-        if table is None:
-            return (self.glyph_text(glyph),)
-        encoded = table[glyph.code_bytes[0]]
-        return tuple(self.character_map.get(character, character) for character in encoded)
-
     def glyph_width(self, glyph: Any) -> float:
         if (
             not self.decoder.is_cid_font
