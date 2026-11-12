@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 __lazy_modules__ = [
     "core_pdf.impl.graphics_functions",
     "core_pdf.impl.spec.s_08_graphics.image_spec",
@@ -30,13 +32,15 @@ from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_08_graphics.color_rendering import BlackPointCompensation
 from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
-from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.service import FontProvider, FontService
 from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import PdfReference, PdfString
 from core_pdf.impl.types import MISSING, MissingObject
+
+if TYPE_CHECKING:
+    from core_pdf.impl.capture_recording import CachedImageSource
 
 FontCompanions = dict[str, tuple[tuple[int, int], ...]]
 FontCompanionsCache = IdentityCache[FontCompanions]
@@ -108,7 +112,7 @@ class CaptureCaches:
     capture_soft_masks: IdentityCache[CapturedSoftMask | None]
     capture_mask_resources: IdentityCache[PdfDict]
     capture_active_mask_groups: set[int]
-    capture_image_sources: IdentityCache[tuple[ImageSource, float | None]]
+    capture_image_sources: IdentityCache[CachedImageSource]
     capture_font_decoders: dict[object, list[tuple[object, object, FontService]]]
     capture_font_companions: FontCompanionsCache
     capture_colors: BoundedDict[

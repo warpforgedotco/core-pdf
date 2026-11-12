@@ -103,7 +103,7 @@ def _source(value: PdfInput, password: str = "") -> PdfDocument:
 
 
 DRAWINGS_CAPTURE = CaptureOptions(
-    ink_bounds=False, text_runs=False, render_details=False, glyphs=False
+    ink_bounds=False, text_runs=False, render_details=False, glyphs=False, soft_mask_alpha=False
 )
 
 
