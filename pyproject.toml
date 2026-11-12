@@ -10,7 +10,7 @@ authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE.txt"]
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
     "numpy>=2.5.1",
@@ -189,7 +189,7 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.15"
 files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-records/src/core_records", "packages/core-pdf-cythonized/src/core_pdf_cythonized"]
 mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]

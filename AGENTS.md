@@ -37,7 +37,7 @@ To validate against the locked dependencies, use `uv run --locked` with the rele
 
 ## Lazy imports
 
-CI and development run on Python 3.15; the packages still support 3.14. Modules list the imports a text extraction does not need in `__lazy_modules__`, which 3.15 loads on first use and 3.14 ignores, so do not use the `lazy` keyword (a syntax error on 3.14). The list names the module in the `from` clause: `from importlib import resources` needs `"importlib"`. An eager `from module import name` of a name that module imported lazily loads it, so import such names from where they are defined. `scripts/check_lazy_imports.py` fails if a text extraction loads a module that should stay deferred.
+CI, development and the packages are Python 3.15 only. Modules list the imports a text extraction does not need in `__lazy_modules__`, which 3.15 loads on first use and 3.14 ignores, so do not use the `lazy` keyword (a syntax error on 3.14). The list names the module in the `from` clause: `from importlib import resources` needs `"importlib"`. An eager `from module import name` of a name that module imported lazily loads it, so import such names from where they are defined. `scripts/check_lazy_imports.py` fails if a text extraction loads a module that should stay deferred.
 
 ## Upstream versions
 

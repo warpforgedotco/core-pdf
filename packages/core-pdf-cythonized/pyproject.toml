@@ -7,7 +7,7 @@ license = "AGPL-3.0-only"
 license-files = ["LICENSE.txt"]
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 classifiers = ["Development Status :: 3 - Alpha"]
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 dependencies = [
     "numpy>=2.5.1",
 ]
@@ -33,16 +33,16 @@ core_pdf_cythonized = ["py.typed", "*.pyi"]
 "*" = ["**/__pycache__/*", "**/*.pyc"]
 
 [tool.cibuildwheel]
-# The workspace is Python 3.14+ only, and nothing here works on a
+# The workspace is Python 3.15+ only, and nothing here works on a
 # non-CPython interpreter: the kernels are CPython C-API extensions. The
-# selector already excludes PyPy and the free-threaded cp314t/cp315t builds,
+# selector already excludes PyPy and the free-threaded cp315t builds,
 # so no skip list is needed -- an explicit `skip = ["pp*"]` makes cibuildwheel
 # enable the PyPy group purely to exclude it again.
 #
-# cibuildwheel must be new enough to know cp314: v2.x selects nothing at all
-# and exits 3 with "No build identifiers selected". cp315 needs v4.3.1 or
-# later to build against the final 3.15.0 rather than a release candidate.
-build = ["cp314-*", "cp315-*"]
+# cp315 needs cibuildwheel v4.3.1 or later to build against the final 3.15.0
+# rather than a release candidate; older versions select nothing and exit 3
+# with "No build identifiers selected".
+build = ["cp315-*"]
 build-frontend = "build"
 
 # Architectures come from CIBW_ARCHS in .github/workflows/wheels.yml, one

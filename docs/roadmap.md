@@ -71,7 +71,7 @@ intent and PDF 2.0 black-point controls reach the current color-conversion pipel
 
 ## Dependency policy
 
-The core remains Python 3.14+, local, deterministic, and based on the existing parser,
+The core remains Python 3.15+, local, deterministic, and based on the existing parser,
 NumPy, and image-codec stack. OCR lives in the separate `core-pdf-ocr` package, which depends
 on core-pdf; the core never imports or discovers it. No LLM, VLLM, hosted API, vector database, or server
 is required. Future non-generative local model adapters may be optional extensions, but
