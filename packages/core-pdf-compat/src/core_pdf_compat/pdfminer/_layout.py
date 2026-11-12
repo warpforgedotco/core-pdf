@@ -12,76 +12,14 @@ from core_pdf.impl.spatial import AreaGapQueue
 from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
 
 
-class LAParams(ReprFields, ReplaceFields):
-    __slots__ = (
-        "line_overlap",
-        "char_margin",
-        "line_margin",
-        "word_margin",
-        "boxes_flow",
-        "detect_vertical",
-        "all_texts",
-    )
-
-    line_overlap: float
-    char_margin: float
-    line_margin: float
-    word_margin: float
-    boxes_flow: float | None
-    detect_vertical: bool
-    all_texts: bool
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "line_overlap",
-        "char_margin",
-        "line_margin",
-        "word_margin",
-        "boxes_flow",
-        "detect_vertical",
-        "all_texts",
-    )
-    __match_args__ = (
-        "line_overlap",
-        "char_margin",
-        "line_margin",
-        "word_margin",
-        "boxes_flow",
-        "detect_vertical",
-        "all_texts",
-    )
-
-    def __init__(
-        self,
-        line_overlap: float = 0.5,
-        char_margin: float = 2.0,
-        line_margin: float = 0.5,
-        word_margin: float = 0.1,
-        boxes_flow: float | None = 0.5,
-        detect_vertical: bool = False,
-        all_texts: bool = False,
-    ) -> None:
-        self.line_overlap = line_overlap
-        self.char_margin = char_margin
-        self.line_margin = line_margin
-        self.word_margin = word_margin
-        self.boxes_flow = boxes_flow
-        self.detect_vertical = detect_vertical
-        self.all_texts = all_texts
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.line_overlap == other.line_overlap
-            and self.char_margin == other.char_margin
-            and self.line_margin == other.line_margin
-            and self.word_margin == other.word_margin
-            and self.boxes_flow == other.boxes_flow
-            and self.detect_vertical == other.detect_vertical
-            and self.all_texts == other.all_texts
-        )
+class LAParams(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
+    line_overlap: float = 0.5
+    char_margin: float = 2.0
+    line_margin: float = 0.5
+    word_margin: float = 0.1
+    boxes_flow: float | None = 0.5
+    detect_vertical: bool = False
+    all_texts: bool = False
 
 
 class LTItem:
@@ -156,23 +94,8 @@ class LTText(LTItem):
         raise NotImplementedError
 
 
-class LTAnno(ReprFields, ReplaceFields, LTText):
-    __slots__ = ("text",)
-
+class LTAnno(ReprFields, ReplaceFields, LTText, metaclass=RecordType, frozen=False):
     text: str
-
-    __fields__: ClassVar[tuple[str, ...]] = ("text",)
-    __match_args__ = ("text",)
-
-    def __init__(self, text: str) -> None:
-        self.text = text
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.text == other.text
 
     def get_text(self) -> str:
         return self.text

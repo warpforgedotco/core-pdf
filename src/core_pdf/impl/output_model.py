@@ -11,7 +11,7 @@ from typing import Any, ClassVar, NoReturn, Protocol, Self, TypeAlias
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.page_selection import PageSelection
 from core_pdf.impl.text import TextWord, reconcile_text_words
-from core_pdf.impl.types import GeneratedRecord, Rectangle, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, Rectangle, field, frozen_setattr
 
 SCHEMA_VERSION = "5.0"
 
@@ -161,37 +161,14 @@ class TableAssociatedText(GeneratedRecord):
 
 class Table(FrozenMetadataFields, GeneratedRecord):
     order: int
-    rows: tuple[tuple[TableCell, ...], ...]
-    bbox: Rectangle | None
-    confidence: float | None
-    title: TableAssociatedText | None
-    caption: TableAssociatedText | None
-    row_bands: tuple[TableRowBand, ...]
-    column_bands: tuple[TableColumnBand, ...]
-    metadata: Mapping[str, Any]
-
-    def __init__(
-        self,
-        order: int,
-        rows: tuple[tuple[TableCell, ...], ...] = (),
-        bbox: Rectangle | None = None,
-        confidence: float | None = None,
-        title: TableAssociatedText | None = None,
-        caption: TableAssociatedText | None = None,
-        row_bands: tuple[TableRowBand, ...] = (),
-        column_bands: tuple[TableColumnBand, ...] = (),
-        metadata: Mapping[str, Any] | None = None,
-    ) -> None:
-        frozen_setattr(self, "order", order)
-        frozen_setattr(self, "rows", rows)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "confidence", confidence)
-        frozen_setattr(self, "title", title)
-        frozen_setattr(self, "caption", caption)
-        frozen_setattr(self, "row_bands", row_bands)
-        frozen_setattr(self, "column_bands", column_bands)
-        frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        self.__post_init__()
+    rows: tuple[tuple[TableCell, ...], ...] = ()
+    bbox: Rectangle | None = None
+    confidence: float | None = None
+    title: TableAssociatedText | None = None
+    caption: TableAssociatedText | None = None
+    row_bands: tuple[TableRowBand, ...] = ()
+    column_bands: tuple[TableColumnBand, ...] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
     node_kind: ClassVar[str] = "table"
 
@@ -220,22 +197,9 @@ class Table(FrozenMetadataFields, GeneratedRecord):
 
 class Figure(FrozenMetadataFields, GeneratedRecord):
     order: int
-    bbox: Rectangle | None
-    kind: str
-    metadata: Mapping[str, Any]
-
-    def __init__(
-        self,
-        order: int,
-        bbox: Rectangle | None = None,
-        kind: str = "figure",
-        metadata: Mapping[str, Any] | None = None,
-    ) -> None:
-        frozen_setattr(self, "order", order)
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "kind", kind)
-        frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        self.__post_init__()
+    bbox: Rectangle | None = None
+    kind: str = "figure"
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
     node_kind: ClassVar[str] = "figure"
 
@@ -727,23 +691,10 @@ class Diagnostic(GeneratedRecord):
 
 
 class Document(FrozenMetadataFields, ViewCache, GeneratedRecord):
-    pages: tuple[Page, ...]
-    metadata: Mapping[str, Any]
-    diagnostics: tuple[Diagnostic, ...]
-    schema_version: str
-
-    def __init__(
-        self,
-        pages: tuple[Page, ...] = (),
-        metadata: Mapping[str, Any] | None = None,
-        diagnostics: tuple[Diagnostic, ...] = (),
-        schema_version: str = SCHEMA_VERSION,
-    ) -> None:
-        frozen_setattr(self, "pages", pages)
-        frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        frozen_setattr(self, "diagnostics", diagnostics)
-        frozen_setattr(self, "schema_version", schema_version)
-        self.__post_init__()
+    pages: tuple[Page, ...] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    diagnostics: tuple[Diagnostic, ...] = ()
+    schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         if self.schema_version != SCHEMA_VERSION:

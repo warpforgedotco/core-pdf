@@ -4,9 +4,9 @@ import io
 from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from typing import Any, ClassVar
+from typing import Any
 
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, field
 
 from .. import pypdf
 
@@ -61,89 +61,14 @@ def _mode(mode: object, default: MetadataMode) -> str:
     return value.removeprefix("metadata_mode.").removeprefix("metadatamode.")
 
 
-class Document(Record, _MetadataMixin):
-    __slots__ = (
-        "text",
-        "metadata",
-        "id_",
-        "excluded_llm_metadata_keys",
-        "excluded_embed_metadata_keys",
-        "metadata_template",
-        "text_template",
-    )
-
+class Document(GeneratedRecord, _MetadataMixin):
     text: str
-    metadata: dict[str, Any]
-    id_: str
-    excluded_llm_metadata_keys: frozenset[str]
-    excluded_embed_metadata_keys: frozenset[str]
-    metadata_template: str
-    text_template: str
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "text",
-        "metadata",
-        "id_",
-        "excluded_llm_metadata_keys",
-        "excluded_embed_metadata_keys",
-        "metadata_template",
-        "text_template",
-    )
-    __match_args__ = (
-        "text",
-        "metadata",
-        "id_",
-        "excluded_llm_metadata_keys",
-        "excluded_embed_metadata_keys",
-        "metadata_template",
-        "text_template",
-    )
-
-    def __init__(
-        self,
-        text: str,
-        metadata: dict[str, Any] | None = None,
-        id_: str = "",
-        excluded_llm_metadata_keys: frozenset[str] = frozenset(),
-        excluded_embed_metadata_keys: frozenset[str] = frozenset(),
-        metadata_template: str = "{metadata}",
-        text_template: str = "{metadata_str}\n\n{content}",
-    ) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        frozen_setattr(self, "id_", id_)
-        frozen_setattr(self, "excluded_llm_metadata_keys", excluded_llm_metadata_keys)
-        frozen_setattr(self, "excluded_embed_metadata_keys", excluded_embed_metadata_keys)
-        frozen_setattr(self, "metadata_template", metadata_template)
-        frozen_setattr(self, "text_template", text_template)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.metadata == other.metadata
-            and self.id_ == other.id_
-            and self.excluded_llm_metadata_keys == other.excluded_llm_metadata_keys
-            and self.excluded_embed_metadata_keys == other.excluded_embed_metadata_keys
-            and self.metadata_template == other.metadata_template
-            and self.text_template == other.text_template
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.text,
-                self.metadata,
-                self.id_,
-                self.excluded_llm_metadata_keys,
-                self.excluded_embed_metadata_keys,
-                self.metadata_template,
-                self.text_template,
-            )
-        )
+    metadata: dict[str, Any] = field(default_factory=dict)
+    id_: str = ""
+    excluded_llm_metadata_keys: frozenset[str] = frozenset()
+    excluded_embed_metadata_keys: frozenset[str] = frozenset()
+    metadata_template: str = "{metadata}"
+    text_template: str = "{metadata_str}\n\n{content}"
 
     def get_content(self, metadata_mode: object = None) -> str:
         # llama-index-core keeps no text resource for a Document made with empty text, and a
@@ -160,105 +85,16 @@ class Document(Record, _MetadataMixin):
         return {"id_": self.doc_id, "text": self.text, "metadata": dict(self.metadata)}
 
 
-class Node(Record, _MetadataMixin):
-    __slots__ = (
-        "text",
-        "node_id",
-        "metadata",
-        "relationships",
-        "id_",
-        "excluded_llm_metadata_keys",
-        "excluded_embed_metadata_keys",
-        "metadata_template",
-        "text_template",
-    )
-
+class Node(GeneratedRecord, _MetadataMixin):
     text: str
-    node_id: str
-    metadata: dict[str, Any]
-    relationships: dict[str, str]
-    id_: str
-    excluded_llm_metadata_keys: frozenset[str]
-    excluded_embed_metadata_keys: frozenset[str]
-    metadata_template: str
-    text_template: str
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "text",
-        "node_id",
-        "metadata",
-        "relationships",
-        "id_",
-        "excluded_llm_metadata_keys",
-        "excluded_embed_metadata_keys",
-        "metadata_template",
-        "text_template",
-    )
-    __match_args__ = (
-        "text",
-        "node_id",
-        "metadata",
-        "relationships",
-        "id_",
-        "excluded_llm_metadata_keys",
-        "excluded_embed_metadata_keys",
-        "metadata_template",
-        "text_template",
-    )
-
-    def __init__(
-        self,
-        text: str,
-        node_id: str = "",
-        metadata: dict[str, Any] | None = None,
-        relationships: dict[str, str] | None = None,
-        id_: str = "",
-        excluded_llm_metadata_keys: frozenset[str] = frozenset(),
-        excluded_embed_metadata_keys: frozenset[str] = frozenset(),
-        metadata_template: str = "{metadata}",
-        text_template: str = "{metadata_str}\n\n{content}",
-    ) -> None:
-        frozen_setattr(self, "text", text)
-        frozen_setattr(self, "node_id", node_id)
-        frozen_setattr(self, "metadata", {} if metadata is None else metadata)
-        frozen_setattr(self, "relationships", {} if relationships is None else relationships)
-        frozen_setattr(self, "id_", id_)
-        frozen_setattr(self, "excluded_llm_metadata_keys", excluded_llm_metadata_keys)
-        frozen_setattr(self, "excluded_embed_metadata_keys", excluded_embed_metadata_keys)
-        frozen_setattr(self, "metadata_template", metadata_template)
-        frozen_setattr(self, "text_template", text_template)
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.text == other.text
-            and self.node_id == other.node_id
-            and self.metadata == other.metadata
-            and self.relationships == other.relationships
-            and self.id_ == other.id_
-            and self.excluded_llm_metadata_keys == other.excluded_llm_metadata_keys
-            and self.excluded_embed_metadata_keys == other.excluded_embed_metadata_keys
-            and self.metadata_template == other.metadata_template
-            and self.text_template == other.text_template
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.text,
-                self.node_id,
-                self.metadata,
-                self.relationships,
-                self.id_,
-                self.excluded_llm_metadata_keys,
-                self.excluded_embed_metadata_keys,
-                self.metadata_template,
-                self.text_template,
-            )
-        )
+    node_id: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    relationships: dict[str, str] = field(default_factory=dict)
+    id_: str = ""
+    excluded_llm_metadata_keys: frozenset[str] = frozenset()
+    excluded_embed_metadata_keys: frozenset[str] = frozenset()
+    metadata_template: str = "{metadata}"
+    text_template: str = "{metadata_str}\n\n{content}"
 
     @property
     def source_node(self) -> str | None:

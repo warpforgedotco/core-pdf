@@ -511,17 +511,7 @@ for style_field in STYLE_FIELDS:
     setattr(GlyphObservation, style_field, style_field_property(style_field))
 
 
-class GlyphCluster(ReprFields, ReplaceFields):
-    __slots__ = (
-        "cluster_id",
-        "text",
-        "glyphs",
-        "advance_bbox",
-        "ink_bbox",
-        "baseline",
-        "confidence",
-    )
-
+class GlyphCluster(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False, eq=False):
     cluster_id: int
     text: str
     glyphs: tuple[GlyphObservation, ...]
@@ -529,43 +519,6 @@ class GlyphCluster(ReprFields, ReplaceFields):
     ink_bbox: Rectangle
     baseline: Rectangle | None
     confidence: float | None
-
-    __fields__: ClassVar[tuple[str, ...]] = (
-        "cluster_id",
-        "text",
-        "glyphs",
-        "advance_bbox",
-        "ink_bbox",
-        "baseline",
-        "confidence",
-    )
-    __match_args__ = (
-        "cluster_id",
-        "text",
-        "glyphs",
-        "advance_bbox",
-        "ink_bbox",
-        "baseline",
-        "confidence",
-    )
-
-    def __init__(
-        self,
-        cluster_id: int,
-        text: str,
-        glyphs: tuple[GlyphObservation, ...],
-        advance_bbox: Rectangle,
-        ink_bbox: Rectangle,
-        baseline: Rectangle | None,
-        confidence: float | None,
-    ) -> None:
-        self.cluster_id = cluster_id
-        self.text = text
-        self.glyphs = glyphs
-        self.advance_bbox = advance_bbox
-        self.ink_bbox = ink_bbox
-        self.baseline = baseline
-        self.confidence = confidence
 
 
 CONFIDENCE_CACHE_LIMIT = 8192
