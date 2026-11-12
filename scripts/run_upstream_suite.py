@@ -30,8 +30,10 @@ class Suite(NamedTuple):
     aliases: str
     reference: tuple[str, ...]
     requires: tuple[str, ...] = ()
-    # A Python other than the workspace's own, in an isolated environment.
-    python: str | None = None
+    # The --reference run's Python, when the real library cannot run on the workspace's.
+    reference_python: str | None = None
+    # The facade run's packages in place of reference, when they differ.
+    facade_requires: tuple[str, ...] = ()
 
 
 LLAMA_READERS = "llama-index-integrations/readers/llama-index-readers-file"
@@ -59,14 +61,29 @@ SUITES = {
         "unstructured.partition.pdf=unstructured,unstructured.errors=unstructured.errors",
         ("unstructured[pdf]==0.27.37",),
         (
-            "unstructured[pdf]==0.27.37",
             "pytest-mock",
             "spacy>=3.8.15,<3.9.0",
             "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/"
             "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
         ),
-        # unstructured[pdf] needs onnxruntime, which has no CPython 3.15 wheels yet.
-        "3.14",
+        # unstructured[pdf] needs unstructured-inference, and that onnxruntime, which has no
+        # CPython 3.15 wheels yet: the real library runs on 3.14, and the facade on the
+        # workspace's 3.15 with the pdf extra's other packages, both of those stubbed
+        # (out_of_scope.toml).
+        reference_python="3.14",
+        facade_requires=(
+            "unstructured==0.27.37",
+            "pdf2image>=1.17.0,<2",
+            "pdfminer.six>=20251230,<20270000",
+            "pi-heif>=1.2.0,<2",
+            "pikepdf>=10.3.0,<11",
+            "pypdf>=6.9.1,<7",
+            "unstructured-pytesseract>=0.3.15,<1",
+            # unstructured imports these, which unstructured-inference brings otherwise.
+            "opencv-python>=4.13.0.90",
+            "pandas>=1.5.0",
+            "scipy>=1.17.0",
+        ),
     ),
     "llamaindex": Suite(
         "llama_index",
@@ -129,17 +146,14 @@ def pytest_command(
 def environment_command(suite: Suite, *, reference: bool) -> list[str]:
     """The `uv run` prefix that gives a suite's tests their environment."""
     base = ["uv", "run"]
-    if suite.python is not None:
-        base += ["--python", suite.python]
-    if reference or suite.python is not None:
-        # Isolated, so a run on another Python leaves the workspace's .venv alone.
-        base.append("--isolated")
     if reference:
-        base.append("--no-project")
+        if suite.reference_python is not None:
+            base += ["--python", suite.reference_python]
+        base += ["--isolated", "--no-project"]
         packages = suite.reference
     else:
         base += ["--project", str(ROOT), "--all-packages", "--group", "test"]
-        packages = ()
+        packages = suite.facade_requires
     for package in (*packages, *suite.requires, "pytest", "pytest-timeout", "pytest-xdist"):
         base += ["--with", package]
     return base
