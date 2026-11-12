@@ -7,7 +7,6 @@ uv sync --all-packages --all-groups --extra unstructured                 # insta
 uv run --all-packages --group lint ruff check .     # lint Python files
 uv run --all-packages --group lint ruff format --check .
 uv run --all-packages --group lint mypy             # static type checking
-uv run --all-packages --group lint lint-imports     # architecture: layer and dependency contracts
 uv run --all-packages --group lint --group test ty check
 prek run --all-files                 # run repository hooks across all files
 ```
