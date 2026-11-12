@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.spec.s_09_fonts.helpers"]
-
 import re
 from binascii import unhexlify
 from collections.abc import Iterable
@@ -23,8 +21,8 @@ from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import (
     cmap_source_range,
     decode_utf16be,
 )
-from core_pdf.impl.spec.s_09_fonts.helpers import is_unicode_scalar
 from core_pdf_cythonized import scan_to_unicode_cmap
+lazy from core_pdf.impl.spec.s_09_fonts.helpers import is_unicode_scalar
 
 RESOURCE_PACKAGE = "core_pdf.impl.adobe_fonts.cmap.data"
 

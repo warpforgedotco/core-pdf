@@ -2,14 +2,12 @@
 # Jeremy Singer-Vine, under the MIT License.
 from __future__ import annotations
 
-__lazy_modules__ = ["base64", "csv"]
-
-import base64
-import csv
 import json
 from collections.abc import Callable
 from io import StringIO
 from typing import Any, TextIO
+lazy import base64
+lazy import csv
 
 ENCODINGS_TO_TRY = ("utf-8", "latin-1", "utf-16", "utf-16le")
 CSV_COLS_REQUIRED = ["object_type"]

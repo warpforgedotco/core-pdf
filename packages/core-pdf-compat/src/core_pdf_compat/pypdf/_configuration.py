@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
-
 import functools
 import shutil
 from collections.abc import Generator
@@ -13,8 +11,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Literal
 
-from core_pdf_compat.pypdf.errors import DeprecationError
 from core_records import GeneratedRecord
+lazy from core_pdf_compat.pypdf.errors import DeprecationError
 
 
 @functools.cache

@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf.impl.spec.s_08_graphics.image_spec",
-    "core_pdf.impl.spec.s_08_graphics.pdf_function",
-]
-
 from collections.abc import Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, overload
 
@@ -15,11 +10,11 @@ import numpy
 from core_pdf.impl.geometry import bbox_union, normalize_rect, points_bbox
 from core_pdf.impl.spec.s_07_content.streams import StreamKey
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
-from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
 from core_pdf.impl.types import GeneratedRecord, RecordType, Rectangle, ReplaceFields, ReprFields
 from core_pdf_cythonized import fill_edge_rows, path_bounds
+lazy from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+lazy from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture_program import CapturedProgram

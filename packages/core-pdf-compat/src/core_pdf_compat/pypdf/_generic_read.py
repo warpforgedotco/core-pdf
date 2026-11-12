@@ -8,8 +8,6 @@ methods and read_object, whose positions, limits and error messages callers rely
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
-
 import logging
 import os
 import re
@@ -17,12 +15,6 @@ import sys
 from typing import Any
 
 from core_pdf_compat.pypdf._configuration import get_configuration
-from core_pdf_compat.pypdf.errors import (
-    STREAM_TRUNCATED_PREMATURELY,
-    LimitReachedError,
-    PdfReadError,
-    PdfStreamError,
-)
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BooleanObject,
@@ -33,6 +25,12 @@ from core_pdf_compat.pypdf.generic import (
     NullObject,
     NumberObject,
     StreamObject,
+)
+lazy from core_pdf_compat.pypdf.errors import (
+    STREAM_TRUNCATED_PREMATURELY,
+    LimitReachedError,
+    PdfReadError,
+    PdfStreamError,
 )
 
 logger = logging.getLogger(__name__)

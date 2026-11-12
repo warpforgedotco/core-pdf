@@ -2,25 +2,23 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.array_views", "core_pdf.impl.graphics_image_samples"]
-
 from collections.abc import Sequence
 from typing import Any, TypeAlias
 
 import numpy
 
-from core_pdf.impl.array_views import ByteBuffer, uint8_view
 from core_pdf.impl.graphics_color_spec import (
     GRAY_RGB_KINDS,
     ColorSpace,
     parse_color_space,
 )
-from core_pdf.impl.graphics_image_samples import (
+from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
+lazy from core_pdf.impl.array_views import ByteBuffer, uint8_view
+lazy from core_pdf.impl.graphics_image_samples import (
     ImageHeader,
     convert_components,
     convert_integer_image,
 )
-from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 ImageDict: TypeAlias = dict[str, object]
 

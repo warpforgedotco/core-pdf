@@ -2,12 +2,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf.impl.spec.s_08_graphics.geometry",
-    "core_pdf.impl.spec.s_09_fonts.metrics",
-    "core_pdf.impl.spec.s_11_transparency.soft_masks",
-]
-
 import typing
 from collections.abc import Callable
 from copy import copy
@@ -59,13 +53,13 @@ from core_pdf.impl.spec.s_08_graphics.color_spec import (
     ColorSpace,
     parse_color_space,
 )
-from core_pdf.impl.spec.s_08_graphics.geometry import transform_bbox
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
-from core_pdf.impl.spec.s_09_fonts.metrics import text_adjustment_vector
 from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontProvider, FontService
-from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
+lazy from core_pdf.impl.spec.s_08_graphics.geometry import transform_bbox
+lazy from core_pdf.impl.spec.s_09_fonts.metrics import text_adjustment_vector
+lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 
 NUMERIC_TYPES = frozenset((int, float))
 

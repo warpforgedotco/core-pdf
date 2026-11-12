@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.spec.s_09_fonts"]
-
 import contextlib
 from collections.abc import Mapping
 from functools import lru_cache
@@ -23,7 +21,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
     require_pdf_number,
 )
-from core_pdf.impl.spec.s_09_fonts import metrics
+lazy from core_pdf.impl.spec.s_09_fonts import metrics
 
 LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
 

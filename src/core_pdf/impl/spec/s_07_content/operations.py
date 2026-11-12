@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.spec.s_07_syntax.serialize"]
-
 from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, NamedTuple, TypeAlias
 
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content.inline_images import InlineImage, parse_inline_image
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.serialize import serialize_object
 from core_pdf.impl.spec.s_07_syntax.types import CachedPdfObject
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
@@ -21,6 +18,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.numbers import is_number_token
 from core_pdf.impl.spec.types import PdfName, PdfString
+lazy from core_pdf.impl.spec.s_07_syntax.serialize import serialize_object
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.streams import ContentStreamFrame

@@ -2,15 +2,6 @@
 # pypdf._reader.PdfReader, Copyright (c) 2006, Mathieu Fenniak, under its BSD-style license.
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf_compat.pypdf._crypt_providers",
-    "core_pdf_compat.pypdf._page_labels",
-    "core_pdf_compat.pypdf.errors",
-    "core_pdf_compat.pypdf.pagerange",
-    "core_pdf_compat.pypdf.papersizes",
-    "core_pdf.impl.spec.s_07_security.output",
-]
-
 import contextlib
 import functools
 import logging
@@ -29,7 +20,6 @@ from core_pdf.impl.exceptions import (
 from core_pdf.impl.recovery_lexer import PdfLexer as RecoveryLexer
 from core_pdf.impl.spec.exceptions import PdfParseError, PdfPasswordError
 from core_pdf.impl.spec.s_07_filters.errors import FilterError
-from core_pdf.impl.spec.s_07_security.output import is_signature_contents
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry, key_for
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
@@ -42,7 +32,6 @@ from core_pdf_compat.pypdf._configuration import (
     get_configuration,
     overwrite_configuration,
 )
-from core_pdf_compat.pypdf._crypt_providers import CryptAES
 from core_pdf_compat.pypdf._doc_common import DocumentInformation, PdfDocCommon, TraversalState
 from core_pdf_compat.pypdf._encryption import (
     PasswordType,
@@ -57,7 +46,6 @@ from core_pdf_compat.pypdf._generic_read import (
     skip_over_comment,
     skip_over_whitespace,
 )
-from core_pdf_compat.pypdf._page_labels import index2labels
 from core_pdf_compat.pypdf._page_tree import flatten_page_tree
 from core_pdf_compat.pypdf._reader_scan import (
     DECODE_KEY_REFERENCE,
@@ -72,13 +60,6 @@ from core_pdf_compat.pypdf._reader_scan import (
 )
 from core_pdf_compat.pypdf._text import LegacyTextCaches
 from core_pdf_compat.pypdf.constants import ImageType, ObjectDeletionFlag, UserAccessPermissions
-from core_pdf_compat.pypdf.errors import (
-    FileNotDecryptedError,
-    LimitReachedError,
-    PdfReadError,
-    PdfStreamError,
-    WrongPasswordError,
-)
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BareKeywordFound,
@@ -96,8 +77,18 @@ from core_pdf_compat.pypdf.generic import (
     is_null_or_none,
     to_generic,
 )
-from core_pdf_compat.pypdf.pagerange import PageRange, parse_filename_page_ranges
-from core_pdf_compat.pypdf.papersizes import PaperSize
+lazy from core_pdf.impl.spec.s_07_security.output import is_signature_contents
+lazy from core_pdf_compat.pypdf._crypt_providers import CryptAES
+lazy from core_pdf_compat.pypdf._page_labels import index2labels
+lazy from core_pdf_compat.pypdf.errors import (
+    FileNotDecryptedError,
+    LimitReachedError,
+    PdfReadError,
+    PdfStreamError,
+    WrongPasswordError,
+)
+lazy from core_pdf_compat.pypdf.pagerange import PageRange, parse_filename_page_ranges
+lazy from core_pdf_compat.pypdf.papersizes import PaperSize
 
 __version__ = "7.0.0"
 

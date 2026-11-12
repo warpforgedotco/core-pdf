@@ -4,10 +4,7 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["decimal"]
-
 import datetime
-import decimal
 import re
 from collections.abc import Callable, Iterator
 from string import hexdigits
@@ -16,6 +13,7 @@ from xml.dom.expatbuilder import ExpatBuilderNS
 from xml.dom.minidom import Document, ProcessingInstruction
 from xml.dom.minidom import Element as XmlElement
 from xml.parsers.expat import ExpatError
+lazy import decimal
 
 from ._configuration import get_configuration
 from .errors import DeprecationError, LimitReachedError, PdfReadError, XmpDocumentError

@@ -2,26 +2,13 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf._vendor.fontTools.ttLib",
-    "core_pdf.impl.fonts_program_truetype",
-    "core_pdf.impl.fonts_program_type1",
-]
-
 from collections.abc import Callable
 from contextlib import suppress
 from io import BytesIO
 from typing import Any
 
-from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.fonts_program_base import NULL_PROGRAM, GlyphProgram
 from core_pdf.impl.fonts_program_cff import CFFFont
-from core_pdf.impl.fonts_program_truetype import (
-    OpenTypeFontProgram,
-    TrueTypeFontProgram,
-    cached_truetype_program,
-)
-from core_pdf.impl.fonts_program_type1 import Type1FontProgram
 from core_pdf.impl.fonts_widths import recover_descendant
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -29,6 +16,13 @@ from core_pdf.impl.spec.s_09_fonts.dictionaries import (
     FontProgramInputs,
     prepare_font_program_inputs,
 )
+lazy from core_pdf._vendor.fontTools.ttLib import TTFont
+lazy from core_pdf.impl.fonts_program_truetype import (
+    OpenTypeFontProgram,
+    TrueTypeFontProgram,
+    cached_truetype_program,
+)
+lazy from core_pdf.impl.fonts_program_type1 import Type1FontProgram
 
 
 def tt_font(inputs: FontProgramInputs) -> TrueTypeFontProgram | None:

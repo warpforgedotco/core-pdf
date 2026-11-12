@@ -2,27 +2,19 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf.impl.fonts_cff_repair",
-    "gzip",
-    "importlib.resources",
-    "importlib.resources.abc",
-]
-
-import gzip
 import struct
 import threading
 import unicodedata
 from collections import OrderedDict
 from collections.abc import Collection, Iterable
 from functools import cache
-from importlib.resources import files
-from importlib.resources.abc import Traversable
 from itertools import islice
 from typing import Any
+lazy import gzip
+lazy from importlib.resources import files
+lazy from importlib.resources.abc import Traversable
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.fonts_cff_repair import CFFUnicodeRepairIndex, is_repairable_to_unicode_label
 from core_pdf.impl.fonts_cmap import (
     CMapDecoder,
     ToUnicodeCMap,
@@ -42,6 +34,10 @@ from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import (
     GeneratedRecord,
+)
+lazy from core_pdf.impl.fonts_cff_repair import (
+    CFFUnicodeRepairIndex,
+    is_repairable_to_unicode_label,
 )
 
 

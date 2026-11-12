@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
-
 import logging
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -13,7 +11,7 @@ from typing import Any
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.types import PdfName, PdfString
 from core_pdf_compat._text_state import legacy_base_table, predefined_encoding_codec
-from core_pdf_compat.pypdf.errors import LimitReachedError
+lazy from core_pdf_compat.pypdf.errors import LimitReachedError
 
 cmap_logger = logging.getLogger("core_pdf_compat.pypdf._cmap")
 font_logger = logging.getLogger("core_pdf_compat.pypdf._font")

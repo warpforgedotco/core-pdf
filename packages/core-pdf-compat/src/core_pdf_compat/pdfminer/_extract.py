@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-__lazy_modules__ = ["html"]
-
 from collections.abc import Iterable, Iterator
-from html import escape
 from io import TextIOBase
 from pathlib import Path
 from typing import Any, BinaryIO, TextIO
+lazy from html import escape
 
 import numpy
 

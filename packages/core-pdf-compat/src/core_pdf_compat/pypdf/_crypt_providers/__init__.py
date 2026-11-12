@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.crypto", "core_pdf.impl.crypto.ciphers", "importlib.metadata"]
-
 import logging
 import secrets
-from importlib.metadata import version
+lazy from importlib.metadata import version
 
-from core_pdf.impl.crypto import ciphers
-from core_pdf.impl.crypto.ciphers import rc4_crypt
 from core_pdf_compat.pdfminer.arcfour import Arcfour
 from core_pdf_compat.pypdf.errors import PdfStreamError
+lazy from core_pdf.impl.crypto import ciphers
+lazy from core_pdf.impl.crypto.ciphers import rc4_crypt
 
 logger = logging.getLogger(__name__)
 BLOCK_BYTES = 16

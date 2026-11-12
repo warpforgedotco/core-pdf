@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.jbig2.bitmap", "core_pdf.impl.spec.samples"]
-
 from collections.abc import Callable
 from typing import Any
 
 import numpy
 
-from core_pdf.impl.jbig2.bitmap import uint8_view
 from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.spec.s_07_filters.errors import (
     FilterParseError,
@@ -17,7 +14,8 @@ from core_pdf.impl.spec.s_07_filters.errors import (
     PredictorError,
     UnsupportedPngFilterError,
 )
-from core_pdf.impl.spec.samples import unpack_subbyte_rows
+lazy from core_pdf.impl.jbig2.bitmap import uint8_view
+lazy from core_pdf.impl.spec.samples import unpack_subbyte_rows
 
 SUPPORTED_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})
 SUBBYTE_PREDICTOR_BITS = frozenset({1, 2, 4})

@@ -2,24 +2,20 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf.impl.document_editing",
-    "core_pdf.impl.spec.s_07_security.output",
-    "core_pdf.impl.spec.s_07_syntax.serialize",
-    "secrets",
-]
-
 import hashlib
 import logging
-import secrets
 import sys
 from collections.abc import Iterable, Iterator, Sequence
 from copy import copy, replace
 from io import BytesIO, IOBase
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, NoReturn, cast
+lazy import secrets
 
-from core_pdf.impl.document_editing import (
+from core_pdf.impl.object_serialize import serialize_object
+from core_pdf.impl.spec.exceptions import PdfParseError as CorePdfParseError
+from core_pdf.impl.types import PdfReference
+lazy from core_pdf.impl.document_editing import (
     TRAILER_KEYS,
     EditableDocument,
     SavedPdf,
@@ -27,11 +23,8 @@ from core_pdf.impl.document_editing import (
     references_in,
     serialize_body,
 )
-from core_pdf.impl.object_serialize import serialize_object
-from core_pdf.impl.spec.exceptions import PdfParseError as CorePdfParseError
-from core_pdf.impl.spec.s_07_security.output import describe_encryption
-from core_pdf.impl.spec.s_07_syntax.serialize import ObjectLayout
-from core_pdf.impl.types import PdfReference
+lazy from core_pdf.impl.spec.s_07_security.output import describe_encryption
+lazy from core_pdf.impl.spec.s_07_syntax.serialize import ObjectLayout
 
 from ._doc_common import DocumentInformation, PdfDocCommon, _VirtualList, highest_header
 from ._encryption import EncryptAlgorithm, Encryption

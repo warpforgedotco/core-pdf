@@ -36,8 +36,6 @@ to ``generic.to_core`` through ``core_form``, and core_pdf.impl.spec's serialize
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
-
 import bisect
 import codecs
 import logging
@@ -56,13 +54,6 @@ from core_pdf_compat.pypdf.constants import (
 from core_pdf_compat.pypdf.constants import (
     TypArguments as TA,  # noqa: N817
 )
-from core_pdf_compat.pypdf.errors import (
-    STREAM_TRUNCATED_PREMATURELY,
-    LimitReachedError,
-    PdfReadError,
-    PdfStreamError,
-    PyPdfError,
-)
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BooleanObject,
@@ -78,6 +69,13 @@ from core_pdf_compat.pypdf.generic import (
     TextStringObject,
     create_string_object,
     is_null_or_none,
+)
+lazy from core_pdf_compat.pypdf.errors import (
+    STREAM_TRUNCATED_PREMATURELY,
+    LimitReachedError,
+    PdfReadError,
+    PdfStreamError,
+    PyPdfError,
 )
 
 logger = logging.getLogger(__name__)

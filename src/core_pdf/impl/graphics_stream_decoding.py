@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.jbig2.bitmap", "imagecodecs"]
-
 import binascii
 import os
 import struct
@@ -11,8 +9,8 @@ import zlib
 from collections.abc import Callable
 from typing import Any, NoReturn
 
-import imagecodecs
 import numpy
+lazy import imagecodecs
 
 from core_pdf.impl.graphics_decode_compat import (
     FilterParams,
@@ -31,7 +29,6 @@ from core_pdf.impl.graphics_filter_registry import (
     NativeImageCodec,
     TolerantFilter,
 )
-from core_pdf.impl.jbig2.bitmap import compose_packed_bitmap_data
 from core_pdf.impl.jbig2.codec import (
     GENERIC_TEMPLATE_0_DEFAULT_AT,
     JBIG2_IMMEDIATE_GENERIC_REGION,
@@ -72,6 +69,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
     WS_TABLE,
 )
 from core_pdf_cythonized import decode_arithmetic_generic_template0
+lazy from core_pdf.impl.jbig2.bitmap import compose_packed_bitmap_data
 
 
 def thread_count(env_name: str) -> int:

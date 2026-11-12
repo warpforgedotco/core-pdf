@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.graphics_icc_profiles"]
-
 from contextlib import suppress
 from math import isfinite
 from types import MappingProxyType
 
-from core_pdf.impl.graphics_icc_profiles import (
-    IccProfileError,
-    parse_icc_transform,
-)
 from core_pdf.impl.pdf_values import lenient_float, lenient_int, recover_pdf_name
 from core_pdf.impl.spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.spec.s_07_filters.errors import FilterError
@@ -25,6 +19,10 @@ from core_pdf.impl.spec.s_08_graphics.color_spec import (
     DeviceNAttributes,
     DeviceNProcess,
     parse_device_n_attributes,
+)
+lazy from core_pdf.impl.graphics_icc_profiles import (
+    IccProfileError,
+    parse_icc_transform,
 )
 
 GRAY_RGB_KINDS = frozenset({"DeviceGray", "DeviceRGB"})

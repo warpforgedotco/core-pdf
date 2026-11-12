@@ -35,8 +35,6 @@ inherit it unchanged.
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
-
 import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import datetime
@@ -50,7 +48,6 @@ from core_pdf_compat.pypdf.constants import (
 from core_pdf_compat.pypdf.constants import (
     FieldDictionaryAttributes as FA,  # noqa: N814
 )
-from core_pdf_compat.pypdf.errors import DeprecationError, LimitReachedError, PdfReadError
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BooleanObject,
@@ -71,6 +68,7 @@ from core_pdf_compat.pypdf.generic import (
     is_null_or_none,
 )
 from core_records import RecordType, ReplaceFields, ReprFields
+lazy from core_pdf_compat.pypdf.errors import DeprecationError, LimitReachedError, PdfReadError
 
 from ._generic_trees import _parse_pdf_date
 

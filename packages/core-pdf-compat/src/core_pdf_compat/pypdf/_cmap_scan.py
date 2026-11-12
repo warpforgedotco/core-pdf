@@ -3,13 +3,11 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
-
 import logging
 from binascii import Error as BinasciiError
 from binascii import unhexlify
 
-from core_pdf_compat.pypdf.errors import LimitReachedError
+lazy from core_pdf_compat.pypdf.errors import LimitReachedError
 
 logger = logging.getLogger(__name__)
 

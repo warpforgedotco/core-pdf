@@ -3,22 +3,20 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.fonts_program_truetype"]
-
 from collections.abc import Container
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_encoding import normalized_base_font_name
-from core_pdf.impl.fonts_program_truetype import (
-    TrueTypeFontProgram,
-    cached_truetype_program,
-)
 from core_pdf.impl.pdf_values import ReferenceResolver, recover_pdf_name
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     is_pdf_number,
     parse_float_strict,
     parse_int_strict,
+)
+lazy from core_pdf.impl.fonts_program_truetype import (
+    TrueTypeFontProgram,
+    cached_truetype_program,
 )
 
 MAC_ROMAN_CHARS: tuple[str, ...] = tuple(bytes([code]).decode("mac_roman") for code in range(256))

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf._vendor.fontTools.ttLib"]
-
 import logging
 import struct
 import threading
@@ -17,7 +15,6 @@ from core_pdf._vendor.fontTools.pens.recordingPen import (
     DecomposingRecordingPen,
 )
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
-from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.adobe_fonts.cff.charstrings import cubic_point
 from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.fonts_helpers import glyph_name_to_unicode
@@ -34,6 +31,7 @@ from core_pdf.impl.spec.s_09_fonts.helpers import (
 )
 from core_pdf.impl.types import Rectangle
 from core_pdf_cythonized import truetype_contours
+lazy from core_pdf._vendor.fontTools.ttLib import TTFont
 
 
 def parse_truetype_program(data: bytes) -> TTFont:

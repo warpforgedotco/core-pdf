@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["importlib.resources"]
-
 import gzip
 import mmap
 import re
@@ -11,8 +9,8 @@ import struct
 import unicodedata
 from collections.abc import Iterator, Mapping
 from functools import cache, lru_cache
-from importlib.resources import files
 from statistics import median_low
+lazy from importlib.resources import files
 
 from core_pdf.impl.geometry import interval_overlap
 from core_pdf.impl.runs import TextRun

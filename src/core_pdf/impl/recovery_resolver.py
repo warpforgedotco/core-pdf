@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.recovery_objects", "core_pdf.impl.spec.s_07_syntax.objects"]
-
 from collections.abc import Mapping
 from typing import Any, overload
 
 import core_pdf.impl.spec.s_07_syntax.lexer
-import core_pdf.impl.spec.s_07_syntax.objects
 import core_pdf.impl.spec.s_07_syntax.resolver
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
@@ -19,7 +16,6 @@ from core_pdf.impl.pdf_values import (
     recover_pdf_name,
 )
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.recovery_objects import PdfObjectStream
 from core_pdf.impl.recovery_xref import iter_indirect_object_headers
 from core_pdf.impl.spec.s_07_filters import pipeline
 from core_pdf.impl.spec.s_07_syntax import resources
@@ -32,6 +28,8 @@ from core_pdf.impl.spec.s_07_syntax.xref import (
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import LexicalRules
 from core_pdf.impl.types import MISSING, PdfReference, PdfString
+lazy import core_pdf.impl.spec.s_07_syntax.objects
+lazy from core_pdf.impl.recovery_objects import PdfObjectStream
 
 LEXER_POOL_LIMIT = 8
 

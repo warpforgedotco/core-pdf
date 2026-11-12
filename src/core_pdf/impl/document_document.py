@@ -2,18 +2,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf.impl.document_structure",
-    "core_pdf.impl.extract_selection",
-    "core_pdf.impl.output_model",
-    "core_pdf.impl.page_selection",
-    "core_pdf.impl.raw_media",
-    "core_pdf.impl.recovery_trees",
-    "core_pdf.impl.spec.s_07_document",
-    "core_pdf.impl.spec.s_07_document.document_labels",
-    "core_pdf.impl.spec.s_07_document.fields",
-]
-
 import contextlib
 import mmap
 import struct
@@ -56,7 +44,6 @@ from core_pdf.impl.document_standards import (
     find_pdf_header,
     preserve_historical_version,
 )
-from core_pdf.impl.document_structure import StructureTree
 from core_pdf.impl.exceptions import (
     ExtractionScope,
     PdfDocumentClosedError,
@@ -65,20 +52,12 @@ from core_pdf.impl.exceptions import (
     PdfSourceError,
     PdfUnsupportedError,
 )
-from core_pdf.impl.extract_selection import extract_document
 from core_pdf.impl.fonts_fallback import RasterFontRepository
-from core_pdf.impl.output_model import Document
-from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
 from core_pdf.impl.pdf_values import parse_text_string, recover_pdf_name
-from core_pdf.impl.raw_media import ImageRecord
 from core_pdf.impl.recovery_lexer import PdfLexer, reader_rules_for
 from core_pdf.impl.recovery_policy import MalformedFn, Recovery, recovery_policy
 from core_pdf.impl.recovery_resolver import ObjectResolver
-from core_pdf.impl.recovery_trees import iter_name_tree_items, iter_number_tree_items
 from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner, iter_indirect_object_headers
-from core_pdf.impl.spec.s_07_document import document_labels
-from core_pdf.impl.spec.s_07_document.document_labels import PageLabelStyle
-from core_pdf.impl.spec.s_07_document.fields import field_children, qualified_field_name
 from core_pdf.impl.spec.s_07_document.page import PageNode, iter_page_nodes
 from core_pdf.impl.spec.s_07_security.document import initialize_document_security
 from core_pdf.impl.spec.s_07_security.standard import (
@@ -122,6 +101,15 @@ from core_pdf_cythonized import (
     regions_with_markers,
     security_marker_present,
 )
+lazy from core_pdf.impl.document_structure import StructureTree
+lazy from core_pdf.impl.extract_selection import extract_document
+lazy from core_pdf.impl.output_model import Document
+lazy from core_pdf.impl.page_selection import PageSelection, resolve_page_selection
+lazy from core_pdf.impl.raw_media import ImageRecord
+lazy from core_pdf.impl.recovery_trees import iter_name_tree_items, iter_number_tree_items
+lazy from core_pdf.impl.spec.s_07_document import document_labels
+lazy from core_pdf.impl.spec.s_07_document.document_labels import PageLabelStyle
+lazy from core_pdf.impl.spec.s_07_document.fields import field_children, qualified_field_name
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_fallback import RasterFontProviderLike
