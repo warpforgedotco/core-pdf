@@ -771,3 +771,25 @@ def flatten_text_group(root: LTTextBox | _TextGroup, boxes_flow: float) -> list[
             )
         pending.extend(reversed(ordered))
     return result
+
+
+# The package exports these and they name it as their module, which is set here so that it
+# holds however they are first imported.
+for _exported in (
+    LAParams,
+    LTAnno,
+    LTChar,
+    LTComponent,
+    LTFigure,
+    LTImage,
+    LTItem,
+    LTPage,
+    LTText,
+    LTTextBox,
+    LTTextBoxHorizontal,
+    LTTextBoxVertical,
+    LTTextLine,
+    LTTextLineHorizontal,
+    LTTextLineVertical,
+):
+    _exported.__module__ = "core_pdf_compat.pdfminer"

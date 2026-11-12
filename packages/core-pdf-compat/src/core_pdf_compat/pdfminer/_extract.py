@@ -286,3 +286,9 @@ def _structured_output(
         )
         xml_parts.append("</page>")
     return "<pages>" + "".join(xml_parts) + "</pages>"
+
+
+# The package exports these and they name it as their module, which is set here so that it
+# holds however they are first imported.
+for _exported in (extract_pages, extract_text, extract_text_to_fp):
+    _exported.__module__ = "core_pdf_compat.pdfminer"
