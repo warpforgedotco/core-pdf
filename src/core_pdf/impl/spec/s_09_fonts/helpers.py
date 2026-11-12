@@ -23,6 +23,14 @@ WIN_ANSI_PRE_1_3_GLYPH_NAMES: tuple[str, ...] = tuple(
 PDF_1_3 = PdfVersion(1, 3)
 
 
+def symbol_character_code(codepoint: int) -> int:
+    return codepoint & 0xFF if 0xF000 <= codepoint <= 0xF2FF else codepoint
+
+
+def is_unicode_scalar(codepoint: int) -> bool:
+    return 0 <= codepoint < 0x110000 and not 0xD800 <= codepoint <= 0xDFFF
+
+
 def get_base_encoding_glyph_names(
     base_encoding: str, *, context: SemanticContext | None = None
 ) -> tuple[str, ...]:
@@ -95,6 +103,8 @@ __all__ = [
     "strip_subset_tag",
     "parse_differences",
     "build_simple_encoding_glyph_names",
+    "is_unicode_scalar",
+    "symbol_character_code",
     "STANDARD_ENCODING_GLYPH_NAMES",
     "MAC_ROMAN_ENCODING_GLYPH_NAMES",
     "WIN_ANSI_ENCODING_GLYPH_NAMES",

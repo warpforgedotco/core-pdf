@@ -371,4 +371,4 @@ def compile_calculator(
     return evaluate
 
 
-__all__ = ("STACK_LIMIT", "NESTING_LIMIT", "OPERATORS", "compile_calculator")
+__all__ = ("STACK_LIMIT", "NESTING_LIMIT", "OPERATORS", "bounds", "compile_calculator")

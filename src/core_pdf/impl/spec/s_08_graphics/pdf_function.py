@@ -7,6 +7,7 @@ from bisect import bisect_right
 from collections.abc import Callable
 from typing import Any
 
+from core_pdf.impl.postscript.calculator import bounds, compile_calculator
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
@@ -14,9 +15,12 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     require_pdf_number_array,
     require_pdf_number_pairs,
 )
-from core_pdf.impl.spec.s_08_graphics.calculator import compile_calculator_function
 
 PdfFunctionEvaluator = Callable[..., tuple[float, ...]]
+
+
+def calculator_bounds(value: object, kind: str) -> tuple[tuple[float, float], ...]:
+    return bounds(require_pdf_number_pairs(value, f"invalid calculator {kind}"), kind)
 
 
 def with_pdf_function_range(
@@ -201,7 +205,9 @@ def compile_pdf_function(
     if isinstance(function, PdfStream):
         function_type = require_function_type(function.dictionary)
         if function_type == 4:
-            return compile_calculator_function(function)
+            domains = calculator_bounds(function.dictionary.get("Domain"), "domain")
+            ranges = calculator_bounds(function.dictionary.get("Range"), "range")
+            return compile_calculator(function.data, domains, ranges)
         if function_type == 0:
             try:
                 return compile_sampled_function(function)

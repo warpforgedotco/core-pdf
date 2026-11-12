@@ -20,6 +20,7 @@ from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
 from core_pdf.impl.spec.s_09_fonts.helpers import (
     BASE_ENCODING_GLYPH_NAMES,
     get_base_encoding_glyph_names,
+    is_unicode_scalar,
 )
 from core_pdf.impl.spec.standards import SemanticContext, recognized_version
 
@@ -201,7 +202,7 @@ def glyph_name_part_to_unicode(name: str, *, unknown_name: str | None = None) ->
             chars = []
             for i in range(3, len(name), 4):
                 codepoint = int(name[i : i + 4], 16)
-                if 0xD800 <= codepoint <= 0xDFFF:
+                if not is_unicode_scalar(codepoint):
                     return name
                 chars.append(chr(codepoint))
             return "".join(chars)
@@ -210,7 +211,7 @@ def glyph_name_part_to_unicode(name: str, *, unknown_name: str | None = None) ->
     if is_u_codepoint(name):
         try:
             codepoint = int(name[1:], 16)
-            if 0xD800 <= codepoint <= 0xDFFF:
+            if not is_unicode_scalar(codepoint):
                 return name
             return chr(codepoint)
         except ValueError:
