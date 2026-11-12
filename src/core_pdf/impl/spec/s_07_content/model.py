@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from array import array
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Protocol, Self, TypeAlias
+from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
@@ -24,7 +24,6 @@ from core_records import (
     ReplaceFields,
     ReprFields,
     field,
-    frozen_setattr,
 )
 
 if TYPE_CHECKING:
@@ -86,25 +85,14 @@ class PdfPath(ReplaceFields, metaclass=RecordType, frozen=False):
         return ["re" if op == PATH_RECT else chr(op) for op in self.ops]
 
 
-class ShadingPattern(FrozenFields, PickleFields, ReprFields, metaclass=RecordType):
+class ShadingPattern(FrozenFields, PickleFields, ReprFields, ReplaceFields, metaclass=RecordType):
     dictionary: PdfDict
-    extgstate: PdfDict | None
+    extgstate: PdfDict | None = field(default=None, kw_only=True)
 
     __match_args__ = ("dictionary",)
 
-    def __init__(self, dictionary: PdfDict, *, extgstate: PdfDict | None = None) -> None:
-        frozen_setattr(self, "dictionary", dictionary)
-        frozen_setattr(self, "extgstate", extgstate)
 
-    def __replace__(self, /, **changes: Any) -> Self:
-        dictionary = changes.pop("dictionary", self.dictionary)
-        extgstate = changes.pop("extgstate", self.extgstate)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(dictionary, extgstate=extgstate)
-
-
-class TilingPattern(FrozenFields, PickleFields, ReprFields, metaclass=RecordType):
+class TilingPattern(FrozenFields, PickleFields, ReprFields, ReplaceFields, metaclass=RecordType):
     bbox: Rectangle
     x_step: float
     y_step: float
@@ -113,9 +101,9 @@ class TilingPattern(FrozenFields, PickleFields, ReprFields, metaclass=RecordType
     matrix: Matrix
     paint_type: int
     base_color: tuple[float, ...] | None
-    base_color_spec: ColorSpace | None
-    alpha_is_shape: bool
-    text_knockout: bool
+    base_color_spec: ColorSpace | None = field(default=None, kw_only=True)
+    alpha_is_shape: bool = field(default=False, kw_only=True)
+    text_knockout: bool = field(default=True, kw_only=True)
 
     __match_args__ = (
         "bbox",
@@ -127,61 +115,6 @@ class TilingPattern(FrozenFields, PickleFields, ReprFields, metaclass=RecordType
         "paint_type",
         "base_color",
     )
-
-    def __init__(
-        self,
-        bbox: Rectangle,
-        x_step: float,
-        y_step: float,
-        stream: PdfStream,
-        resources: PdfDict,
-        matrix: Matrix,
-        paint_type: int,
-        base_color: tuple[float, ...] | None,
-        *,
-        base_color_spec: ColorSpace | None = None,
-        alpha_is_shape: bool = False,
-        text_knockout: bool = True,
-    ) -> None:
-        frozen_setattr(self, "bbox", bbox)
-        frozen_setattr(self, "x_step", x_step)
-        frozen_setattr(self, "y_step", y_step)
-        frozen_setattr(self, "stream", stream)
-        frozen_setattr(self, "resources", resources)
-        frozen_setattr(self, "matrix", matrix)
-        frozen_setattr(self, "paint_type", paint_type)
-        frozen_setattr(self, "base_color", base_color)
-        frozen_setattr(self, "base_color_spec", base_color_spec)
-        frozen_setattr(self, "alpha_is_shape", alpha_is_shape)
-        frozen_setattr(self, "text_knockout", text_knockout)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        bbox = changes.pop("bbox", self.bbox)
-        x_step = changes.pop("x_step", self.x_step)
-        y_step = changes.pop("y_step", self.y_step)
-        stream = changes.pop("stream", self.stream)
-        resources = changes.pop("resources", self.resources)
-        matrix = changes.pop("matrix", self.matrix)
-        paint_type = changes.pop("paint_type", self.paint_type)
-        base_color = changes.pop("base_color", self.base_color)
-        base_color_spec = changes.pop("base_color_spec", self.base_color_spec)
-        alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
-        text_knockout = changes.pop("text_knockout", self.text_knockout)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            bbox,
-            x_step,
-            y_step,
-            stream,
-            resources,
-            matrix,
-            paint_type,
-            base_color,
-            base_color_spec=base_color_spec,
-            alpha_is_shape=alpha_is_shape,
-            text_knockout=text_knockout,
-        )
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern
@@ -195,38 +128,38 @@ class MarkedContentEntry(ReprFields, ReplaceFields, metaclass=RecordType, frozen
     __hash__ = None  # type: ignore[assignment]
 
 
-class GraphicsState(ReprFields, metaclass=RecordType, frozen=False):
-    ctm: Matrix
-    fill_color: tuple[float, ...] | None
-    fill_pattern: PatternPaint | None
-    fill_opacity: float
-    stroke_color: tuple[float, ...] | None
-    stroke_pattern: PatternPaint | None
-    stroke_opacity: float
-    fill_space: ColorSpace
-    stroke_space: ColorSpace
-    blend_mode: str | None
-    flatness: float
-    render_intent: str | None
-    black_point_compensation: BlackPointCompensation
-    line_width: float
-    line_cap: int
-    line_join: int
-    miter_limit: float
-    dash_pattern: tuple[tuple[float, ...], float]
-    font_size: float
-    horizontal_scale: float
-    char_space: float
-    word_space: float
-    rise: float
-    leading: float
-    render_mode: int
-    current_font: str | None
-    current_decoder: FontService | None
-    decoder_resources: PdfDict | None
-    alpha_is_shape: bool
-    text_knockout: bool
-    soft_mask: SoftMask | None
+class GraphicsState(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
+    ctm: Matrix = IDENTITY_MATRIX
+    fill_color: tuple[float, ...] | None = (0.0,)
+    fill_pattern: PatternPaint | None = None
+    fill_opacity: float = 1.0
+    stroke_color: tuple[float, ...] | None = (0.0,)
+    stroke_pattern: PatternPaint | None = None
+    stroke_opacity: float = 1.0
+    fill_space: ColorSpace = DEVICE_GRAY
+    stroke_space: ColorSpace = DEVICE_GRAY
+    blend_mode: str | None = None
+    flatness: float = 1.0
+    render_intent: str | None = None
+    black_point_compensation: BlackPointCompensation = "Default"
+    line_width: float = 1.0
+    line_cap: int = 0
+    line_join: int = 0
+    miter_limit: float = 10.0
+    dash_pattern: tuple[tuple[float, ...], float] = ((), 0.0)
+    font_size: float = 0.0
+    horizontal_scale: float = 100.0
+    char_space: float = 0.0
+    word_space: float = 0.0
+    rise: float = 0.0
+    leading: float = 0.0
+    render_mode: int = 0
+    current_font: str | None = None
+    current_decoder: FontService | None = None
+    decoder_resources: PdfDict | None = None
+    alpha_is_shape: bool = field(default=False, kw_only=True)
+    text_knockout: bool = field(default=True, kw_only=True)
+    soft_mask: SoftMask | None = field(default=None, kw_only=True)
 
     __match_args__ = (
         "ctm",
@@ -259,144 +192,7 @@ class GraphicsState(ReprFields, metaclass=RecordType, frozen=False):
         "decoder_resources",
     )
 
-    def __init__(
-        self,
-        ctm: Matrix = IDENTITY_MATRIX,
-        fill_color: tuple[float, ...] | None = (0.0,),
-        fill_pattern: PatternPaint | None = None,
-        fill_opacity: float = 1.0,
-        stroke_color: tuple[float, ...] | None = (0.0,),
-        stroke_pattern: PatternPaint | None = None,
-        stroke_opacity: float = 1.0,
-        fill_space: ColorSpace = DEVICE_GRAY,
-        stroke_space: ColorSpace = DEVICE_GRAY,
-        blend_mode: str | None = None,
-        flatness: float = 1.0,
-        render_intent: str | None = None,
-        black_point_compensation: BlackPointCompensation = "Default",
-        line_width: float = 1.0,
-        line_cap: int = 0,
-        line_join: int = 0,
-        miter_limit: float = 10.0,
-        dash_pattern: tuple[tuple[float, ...], float] = ((), 0.0),
-        font_size: float = 0.0,
-        horizontal_scale: float = 100.0,
-        char_space: float = 0.0,
-        word_space: float = 0.0,
-        rise: float = 0.0,
-        leading: float = 0.0,
-        render_mode: int = 0,
-        current_font: str | None = None,
-        current_decoder: FontService | None = None,
-        decoder_resources: PdfDict | None = None,
-        *,
-        alpha_is_shape: bool = False,
-        text_knockout: bool = True,
-        soft_mask: SoftMask | None = None,
-    ) -> None:
-        self.ctm = ctm
-        self.fill_color = fill_color
-        self.fill_pattern = fill_pattern
-        self.fill_opacity = fill_opacity
-        self.stroke_color = stroke_color
-        self.stroke_pattern = stroke_pattern
-        self.stroke_opacity = stroke_opacity
-        self.fill_space = fill_space
-        self.stroke_space = stroke_space
-        self.blend_mode = blend_mode
-        self.flatness = flatness
-        self.render_intent = render_intent
-        self.black_point_compensation = black_point_compensation
-        self.line_width = line_width
-        self.line_cap = line_cap
-        self.line_join = line_join
-        self.miter_limit = miter_limit
-        self.dash_pattern = dash_pattern
-        self.font_size = font_size
-        self.horizontal_scale = horizontal_scale
-        self.char_space = char_space
-        self.word_space = word_space
-        self.rise = rise
-        self.leading = leading
-        self.render_mode = render_mode
-        self.current_font = current_font
-        self.current_decoder = current_decoder
-        self.decoder_resources = decoder_resources
-        self.alpha_is_shape = alpha_is_shape
-        self.text_knockout = text_knockout
-        self.soft_mask = soft_mask
-
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        ctm = changes.pop("ctm", self.ctm)
-        fill_color = changes.pop("fill_color", self.fill_color)
-        fill_pattern = changes.pop("fill_pattern", self.fill_pattern)
-        fill_opacity = changes.pop("fill_opacity", self.fill_opacity)
-        stroke_color = changes.pop("stroke_color", self.stroke_color)
-        stroke_pattern = changes.pop("stroke_pattern", self.stroke_pattern)
-        stroke_opacity = changes.pop("stroke_opacity", self.stroke_opacity)
-        fill_space = changes.pop("fill_space", self.fill_space)
-        stroke_space = changes.pop("stroke_space", self.stroke_space)
-        blend_mode = changes.pop("blend_mode", self.blend_mode)
-        flatness = changes.pop("flatness", self.flatness)
-        render_intent = changes.pop("render_intent", self.render_intent)
-        black_point_compensation = changes.pop(
-            "black_point_compensation", self.black_point_compensation
-        )
-        line_width = changes.pop("line_width", self.line_width)
-        line_cap = changes.pop("line_cap", self.line_cap)
-        line_join = changes.pop("line_join", self.line_join)
-        miter_limit = changes.pop("miter_limit", self.miter_limit)
-        dash_pattern = changes.pop("dash_pattern", self.dash_pattern)
-        font_size = changes.pop("font_size", self.font_size)
-        horizontal_scale = changes.pop("horizontal_scale", self.horizontal_scale)
-        char_space = changes.pop("char_space", self.char_space)
-        word_space = changes.pop("word_space", self.word_space)
-        rise = changes.pop("rise", self.rise)
-        leading = changes.pop("leading", self.leading)
-        render_mode = changes.pop("render_mode", self.render_mode)
-        current_font = changes.pop("current_font", self.current_font)
-        current_decoder = changes.pop("current_decoder", self.current_decoder)
-        decoder_resources = changes.pop("decoder_resources", self.decoder_resources)
-        alpha_is_shape = changes.pop("alpha_is_shape", self.alpha_is_shape)
-        text_knockout = changes.pop("text_knockout", self.text_knockout)
-        soft_mask = changes.pop("soft_mask", self.soft_mask)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            ctm,
-            fill_color,
-            fill_pattern,
-            fill_opacity,
-            stroke_color,
-            stroke_pattern,
-            stroke_opacity,
-            fill_space,
-            stroke_space,
-            blend_mode,
-            flatness,
-            render_intent,
-            black_point_compensation,
-            line_width,
-            line_cap,
-            line_join,
-            miter_limit,
-            dash_pattern,
-            font_size,
-            horizontal_scale,
-            char_space,
-            word_space,
-            rise,
-            leading,
-            render_mode,
-            current_font,
-            current_decoder,
-            decoder_resources,
-            alpha_is_shape=alpha_is_shape,
-            text_knockout=text_knockout,
-            soft_mask=soft_mask,
-        )
 
     @property
     def color_rendering(self) -> ColorRendering:

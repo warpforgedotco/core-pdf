@@ -11,7 +11,7 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.spec.types import Rectangle
-from core_records import FrozenFields, PickleFields, RecordType, ReprFields, frozen_setattr
+from core_records import FrozenFields, PickleFields, RecordType, ReplaceFields, ReprFields, field
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 StreamKey = tuple[str, int, int]
 
 
-class StreamState(FrozenFields, PickleFields, ReprFields, metaclass=RecordType):
+class StreamState(FrozenFields, PickleFields, ReprFields, ReplaceFields, metaclass=RecordType):
     graphics_state: GraphicsState
     resources: PdfDict
     text_matrix: Matrix
@@ -30,11 +30,11 @@ class StreamState(FrozenFields, PickleFields, ReprFields, metaclass=RecordType):
     graphics_stack_len: int
     marked_content_stack_len: int
     xobject_depth: int
-    compatibility_depth: int
-    pending_clip_rule: str | None
-    initial_alpha_is_shape: bool
-    initial_text_knockout: bool
-    in_text_object: bool
+    compatibility_depth: int = field(default=0, kw_only=True)
+    pending_clip_rule: str | None = field(default=None, kw_only=True)
+    initial_alpha_is_shape: bool = field(default=False, kw_only=True)
+    initial_text_knockout: bool = field(default=True, kw_only=True)
+    in_text_object: bool = field(default=False, kw_only=True)
 
     __match_args__ = (
         "graphics_state",
@@ -46,71 +46,6 @@ class StreamState(FrozenFields, PickleFields, ReprFields, metaclass=RecordType):
         "marked_content_stack_len",
         "xobject_depth",
     )
-
-    def __init__(
-        self,
-        graphics_state: GraphicsState,
-        resources: PdfDict,
-        text_matrix: Matrix,
-        line_matrix: Matrix,
-        graphics_stack_floor: int,
-        graphics_stack_len: int,
-        marked_content_stack_len: int,
-        xobject_depth: int,
-        *,
-        compatibility_depth: int = 0,
-        pending_clip_rule: str | None = None,
-        initial_alpha_is_shape: bool = False,
-        initial_text_knockout: bool = True,
-        in_text_object: bool = False,
-    ) -> None:
-        frozen_setattr(self, "graphics_state", graphics_state)
-        frozen_setattr(self, "resources", resources)
-        frozen_setattr(self, "text_matrix", text_matrix)
-        frozen_setattr(self, "line_matrix", line_matrix)
-        frozen_setattr(self, "graphics_stack_floor", graphics_stack_floor)
-        frozen_setattr(self, "graphics_stack_len", graphics_stack_len)
-        frozen_setattr(self, "marked_content_stack_len", marked_content_stack_len)
-        frozen_setattr(self, "xobject_depth", xobject_depth)
-        frozen_setattr(self, "compatibility_depth", compatibility_depth)
-        frozen_setattr(self, "pending_clip_rule", pending_clip_rule)
-        frozen_setattr(self, "initial_alpha_is_shape", initial_alpha_is_shape)
-        frozen_setattr(self, "initial_text_knockout", initial_text_knockout)
-        frozen_setattr(self, "in_text_object", in_text_object)
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        graphics_state = changes.pop("graphics_state", self.graphics_state)
-        resources = changes.pop("resources", self.resources)
-        text_matrix = changes.pop("text_matrix", self.text_matrix)
-        line_matrix = changes.pop("line_matrix", self.line_matrix)
-        graphics_stack_floor = changes.pop("graphics_stack_floor", self.graphics_stack_floor)
-        graphics_stack_len = changes.pop("graphics_stack_len", self.graphics_stack_len)
-        marked_content_stack_len = changes.pop(
-            "marked_content_stack_len", self.marked_content_stack_len
-        )
-        xobject_depth = changes.pop("xobject_depth", self.xobject_depth)
-        compatibility_depth = changes.pop("compatibility_depth", self.compatibility_depth)
-        pending_clip_rule = changes.pop("pending_clip_rule", self.pending_clip_rule)
-        initial_alpha_is_shape = changes.pop("initial_alpha_is_shape", self.initial_alpha_is_shape)
-        initial_text_knockout = changes.pop("initial_text_knockout", self.initial_text_knockout)
-        in_text_object = changes.pop("in_text_object", self.in_text_object)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            graphics_state,
-            resources,
-            text_matrix,
-            line_matrix,
-            graphics_stack_floor,
-            graphics_stack_len,
-            marked_content_stack_len,
-            xobject_depth,
-            compatibility_depth=compatibility_depth,
-            pending_clip_rule=pending_clip_rule,
-            initial_alpha_is_shape=initial_alpha_is_shape,
-            initial_text_knockout=initial_text_knockout,
-            in_text_object=in_text_object,
-        )
 
 
 class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):

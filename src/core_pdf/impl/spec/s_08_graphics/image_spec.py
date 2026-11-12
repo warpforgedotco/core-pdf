@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Any
 
 from core_pdf.impl.spec.s_07_syntax.resolver import STREAM_DECODE_KEYS
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -14,7 +14,7 @@ from core_pdf.impl.spec.s_08_graphics.color_rendering import (
     parse_rendering_intent,
 )
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, require_recognized_version
-from core_records import GeneratedRecord, RecordType, ReprFields
+from core_records import GeneratedRecord, RecordType, ReplaceFields, ReprFields, field
 
 IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
     "Width",
@@ -35,45 +35,14 @@ class SoftMask(GeneratedRecord):
     dictionary: dict[Any, Any]
 
 
-class ImageSource(ReprFields, metaclass=RecordType, frozen=False, eq=False):
+class ImageSource(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False, eq=False):
     raw: bytes | memoryview
     dictionary: dict[Any, Any]
-    soft_mask: SoftMask | None
-    semantic_context: SemanticContext | None
-    color_rendering: ColorRendering
+    soft_mask: SoftMask | None = field(default=None, kw_only=True)
+    semantic_context: SemanticContext | None = field(default=None, kw_only=True)
+    color_rendering: ColorRendering = field(default=DEFAULT_COLOR_RENDERING, kw_only=True)
 
     __match_args__ = ("raw", "dictionary")
-
-    def __init__(
-        self,
-        raw: bytes | memoryview,
-        dictionary: dict[Any, Any],
-        *,
-        soft_mask: SoftMask | None = None,
-        semantic_context: SemanticContext | None = None,
-        color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
-    ) -> None:
-        self.raw = raw
-        self.dictionary = dictionary
-        self.soft_mask = soft_mask
-        self.semantic_context = semantic_context
-        self.color_rendering = color_rendering
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        raw = changes.pop("raw", self.raw)
-        dictionary = changes.pop("dictionary", self.dictionary)
-        soft_mask = changes.pop("soft_mask", self.soft_mask)
-        semantic_context = changes.pop("semantic_context", self.semantic_context)
-        color_rendering = changes.pop("color_rendering", self.color_rendering)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            raw,
-            dictionary,
-            soft_mask=soft_mask,
-            semantic_context=semantic_context,
-            color_rendering=color_rendering,
-        )
 
 
 def resolve_image_dictionary(dictionary: PdfDict, resolver: PdfValueResolver) -> PdfDict:

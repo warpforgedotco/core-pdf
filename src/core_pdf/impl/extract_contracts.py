@@ -13,7 +13,7 @@ from core_pdf.impl.capture_program import PageProgram
 from core_pdf.impl.geometry import interval_overlap, rect_tuple
 from core_pdf.impl.output_model import Table, TextLine
 from core_pdf.impl.runs import TextRun
-from core_pdf.impl.types import GeneratedRecord, field, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, field
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_page import PdfPage
@@ -298,37 +298,14 @@ class GlyphEvidence(GeneratedRecord):
 
 class RunSelection(GeneratedRecord):
     runs: tuple[TextRun, ...]
-    native_characters: int
-    visible_native_characters: int
-    suspicious_characters: int
-    text_quality: TextQualityStats
-    all_text_quality: TextQualityStats
-    glyphs: GlyphEvidence
-    painted_native_characters: int
-    trusted_hidden_text: bool
-
-    def __init__(
-        self,
-        runs: tuple[TextRun, ...],
-        *,
-        native_characters: int,
-        visible_native_characters: int,
-        suspicious_characters: int,
-        text_quality: TextQualityStats,
-        all_text_quality: TextQualityStats,
-        glyphs: GlyphEvidence,
-        painted_native_characters: int,
-        trusted_hidden_text: bool,
-    ) -> None:
-        frozen_setattr(self, "runs", runs)
-        frozen_setattr(self, "native_characters", native_characters)
-        frozen_setattr(self, "visible_native_characters", visible_native_characters)
-        frozen_setattr(self, "suspicious_characters", suspicious_characters)
-        frozen_setattr(self, "text_quality", text_quality)
-        frozen_setattr(self, "all_text_quality", all_text_quality)
-        frozen_setattr(self, "glyphs", glyphs)
-        frozen_setattr(self, "painted_native_characters", painted_native_characters)
-        frozen_setattr(self, "trusted_hidden_text", trusted_hidden_text)
+    native_characters: int = field(kw_only=True)
+    visible_native_characters: int = field(kw_only=True)
+    suspicious_characters: int = field(kw_only=True)
+    text_quality: TextQualityStats = field(kw_only=True)
+    all_text_quality: TextQualityStats = field(kw_only=True)
+    glyphs: GlyphEvidence = field(kw_only=True)
+    painted_native_characters: int = field(kw_only=True)
+    trusted_hidden_text: bool = field(kw_only=True)
 
 
 class PageEvidence(GeneratedRecord):

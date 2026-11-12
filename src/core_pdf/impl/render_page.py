@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from math import isfinite
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any
 
 import numpy
 
@@ -31,7 +31,7 @@ from core_pdf.impl.render_model import (
 from core_pdf.impl.render_target import RasterTarget
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.standards import SemanticContext
-from core_pdf.impl.types import RecordType, ReprFields
+from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields, field
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_page import PdfPage
@@ -53,62 +53,19 @@ def pixel_dimension(length: float, scale: float) -> int:
     return max(1, int(round(pixels)))
 
 
-class RenderedPage(ReprFields, metaclass=RecordType, frozen=False):
+class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     page_number: int
     width: float
     height: float
     rotate: int
     display_list: DisplayList
-    metadata: dict[str, Any]
-    semantic_context: SemanticContext | None
-    user_unit: float
+    metadata: dict[str, Any] = field(default_factory=dict)
+    semantic_context: SemanticContext | None = field(default=None, kw_only=True)
+    user_unit: float = field(default=1.0, kw_only=True)
 
     __match_args__ = ("page_number", "width", "height", "rotate", "display_list", "metadata")
 
-    def __init__(
-        self,
-        page_number: int,
-        width: float,
-        height: float,
-        rotate: int,
-        display_list: DisplayList,
-        metadata: dict[str, Any] | None = None,
-        *,
-        semantic_context: SemanticContext | None = None,
-        user_unit: float = 1.0,
-    ) -> None:
-        self.page_number = page_number
-        self.width = width
-        self.height = height
-        self.rotate = rotate
-        self.display_list = display_list
-        self.metadata = {} if metadata is None else metadata
-        self.semantic_context = semantic_context
-        self.user_unit = user_unit
-
     __hash__ = None  # type: ignore[assignment]
-
-    def __replace__(self, /, **changes: Any) -> Self:
-        page_number = changes.pop("page_number", self.page_number)
-        width = changes.pop("width", self.width)
-        height = changes.pop("height", self.height)
-        rotate = changes.pop("rotate", self.rotate)
-        display_list = changes.pop("display_list", self.display_list)
-        metadata = changes.pop("metadata", self.metadata)
-        semantic_context = changes.pop("semantic_context", self.semantic_context)
-        user_unit = changes.pop("user_unit", self.user_unit)
-        if changes:
-            raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
-        return self.__class__(
-            page_number,
-            width,
-            height,
-            rotate,
-            display_list,
-            metadata,
-            semantic_context=semantic_context,
-            user_unit=user_unit,
-        )
 
     def render_items(
         self,

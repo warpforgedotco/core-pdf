@@ -25,7 +25,7 @@ __all__ = (
 
 frozen_setattr = object.__setattr__
 
-RECORD_KEYWORDS = frozenset({"init", "frozen", "eq", "hash"})
+RECORD_KEYWORDS = frozenset({"init", "frozen", "eq", "hash", "kw_only"})
 
 
 def plain_keywords(kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -45,7 +45,8 @@ def specialise_inherited(cls: type, name: str) -> None:
         inherited_attribute(cls, "__init__"), fields
     ):
         return
-    method = pending_method(name, fields)
+    positional = getattr(cls, "__positional_fields__", None) if name == "__replace__" else None
+    method = pending_method(name, fields, positional)
     method.owner = cls
     setattr(cls, name, method)
 
@@ -116,23 +117,41 @@ class Record(FrozenFields, PickleFields, ReprFields, ReplaceFields):
 MISSING: Any = object()
 
 
-class Factory:
-    """A field default built per instance; see ``field``."""
+class Field:
+    """A field's default and calling convention, as ``field`` declares them."""
 
-    __slots__ = ("make",)
+    __slots__ = ("default", "kw_only", "make")
 
-    def __init__(self, make: Callable[[], Any]) -> None:
+    def __init__(self, default: Any, make: Callable[[], Any] | None, kw_only: bool) -> None:
+        self.default = default
         self.make = make
+        self.kw_only = kw_only
 
     def __repr__(self) -> str:
-        return f"field(default_factory={self.make!r})"
+        return (
+            f"field(default={self.default!r}, default_factory={self.make!r}, "
+            f"kw_only={self.kw_only})"
+        )
 
 
-def field(*, default_factory: Callable[[], Any]) -> Any:
-    """Default a field to ``default_factory()``, called for each instance that leaves the
-    field out or passes ``None`` for it.
+def field(
+    *,
+    default: Any = MISSING,
+    default_factory: Callable[[], Any] | None = None,
+    kw_only: bool = False,
+) -> Any:
+    """Declare a field's default and calling convention. ``default_factory`` builds the
+    default for each instance that leaves the field out or passes ``None`` for it, and
+    ``kw_only`` makes the field a keyword-only ``__init__`` parameter (keyword-only fields
+    come after the positional ones).
     """
-    return Factory(default_factory)
+    if default is not MISSING and default_factory is not None:
+        raise TypeError("a field cannot have both a default and a default_factory")
+    return Field(default, default_factory, kw_only)
+
+
+def field_spec(value: Any) -> Field:
+    return value if isinstance(value, Field) else Field(value, None, False)
 
 
 CLASS_VARIABLE = re.compile(r"^\s*(?:typing\.)?ClassVar\b")
@@ -191,28 +210,33 @@ def inherits_frozen_guard(bases: tuple[type, ...]) -> bool:
 
 TOKEN = re.compile(r"_f(\d+)_")
 BUILTINS: dict[str, Any] = {"__builtins__": builtins}
-TEMPLATES: dict[tuple[str, int], Template] = {}
+TEMPLATES: dict[tuple[str, int, int], Template] = {}
 
 
-def init_template(names: list[str]) -> list[str]:
+def init_signature(names: list[str], positional: int) -> str:
+    keywords = names[positional:]
+    return ", ".join(["self", *names[:positional], *(["*", *keywords] if keywords else [])])
+
+
+def init_template(names: list[str], positional: int) -> list[str]:
     body = [f"    __set_{index}(self, {name})" for index, name in enumerate(names)]
-    return [f"def __init__({', '.join(['self', *names])}):", *(body or ["    pass"])]
+    return [f"def __init__({init_signature(names, positional)}):", *(body or ["    pass"])]
 
 
-def mutable_init_template(names: list[str]) -> list[str]:
+def mutable_init_template(names: list[str], positional: int) -> list[str]:
     body = [f"    self.{name} = {name}" for name in names]
-    return [f"def __init__({', '.join(['self', *names])}):", *(body or ["    pass"])]
+    return [f"def __init__({init_signature(names, positional)}):", *(body or ["    pass"])]
 
 
-def post_init_template(names: list[str]) -> list[str]:
-    return [*init_template(names), "    self.__post_init__()"]
+def post_init_template(names: list[str], positional: int) -> list[str]:
+    return [*init_template(names, positional), "    self.__post_init__()"]
 
 
-def mutable_post_init_template(names: list[str]) -> list[str]:
-    return [*mutable_init_template(names), "    self.__post_init__()"]
+def mutable_post_init_template(names: list[str], positional: int) -> list[str]:
+    return [*mutable_init_template(names, positional), "    self.__post_init__()"]
 
 
-def eq_template(names: list[str]) -> list[str]:
+def eq_template(names: list[str], _positional: int) -> list[str]:
     compare = " and ".join(f"self.{name} == other.{name}" for name in names) or "True"
     return [
         "def __eq__(self, other):",
@@ -224,37 +248,38 @@ def eq_template(names: list[str]) -> list[str]:
     ]
 
 
-def hash_template(names: list[str]) -> list[str]:
+def hash_template(names: list[str], _positional: int) -> list[str]:
     return [
         "def __hash__(self):",
         f"    return hash(({''.join(f'self.{name}, ' for name in names)}))",
     ]
 
 
-def repr_template(names: list[str]) -> list[str]:
+def repr_template(names: list[str], _positional: int) -> list[str]:
     parts = ", ".join(f"{name}={{self.{name}!r}}" for name in names)
     return ["def __repr__(self):", f'    return f"{{self.__class__.__qualname__}}({parts})"']
 
 
-def replace_template(names: list[str]) -> list[str]:
+def replace_template(names: list[str], positional: int) -> list[str]:
+    arguments = [*names[:positional], *(f"{name}={name}" for name in names[positional:])]
     return [
         "def __replace__(self, /, **changes):",
         *(f"    {name} = changes.pop({name!r}, self.{name})" for name in names),
         "    if changes:",
         '        raise TypeError(f"__replace__() got unexpected keyword arguments'
         ' {sorted(changes)!r}")',
-        f"    return self.__class__({', '.join(names)})",
+        f"    return self.__class__({', '.join(arguments)})",
     ]
 
 
-def getstate_template(names: list[str]) -> list[str]:
+def getstate_template(names: list[str], _positional: int) -> list[str]:
     return [
         "def __getstate__(self):",
         f"    return [{', '.join(f'self.{name}' for name in names)}]",
     ]
 
 
-SOURCES: dict[str, Callable[[list[str]], list[str]]] = {
+SOURCES: dict[str, Callable[[list[str], int], list[str]]] = {
     "init": init_template,
     "mutable_init": mutable_init_template,
     "post_init": post_init_template,
@@ -267,14 +292,14 @@ SOURCES: dict[str, Callable[[list[str]], list[str]]] = {
 }
 
 
-type Patches = tuple[tuple[int, int | str], ...]
+type Patches = tuple[tuple[int, int | str | tuple[int, ...]], ...]
 
 
 class Template:
     __slots__ = ("code", "consts", "names", "varnames")
 
-    def __init__(self, kind: str, count: int) -> None:
-        source = "\n".join(SOURCES[kind]([f"_f{index}_" for index in range(count)]))
+    def __init__(self, kind: str, count: int, positional: int) -> None:
+        source = "\n".join(SOURCES[kind]([f"_f{index}_" for index in range(count)], positional))
         (self.code,) = (
             item
             for item in compile(source, "<record>", "exec").co_consts
@@ -295,8 +320,14 @@ class Template:
 
 
 def token_patches(items: tuple[Any, ...]) -> Patches:
-    patches: list[tuple[int, int | str]] = []
+    patches: list[tuple[int, int | str | tuple[int, ...]]] = []
     for position, item in enumerate(items):
+        if isinstance(item, tuple) and item:
+            # A call's keyword names, as a keyword-only __replace__ passes them.
+            matches = [TOKEN.fullmatch(name) if isinstance(name, str) else None for name in item]
+            if all(matches):
+                patches.append((position, tuple(int(match[1]) for match in matches if match)))
+                continue
         if not isinstance(item, str) or len(parts := TOKEN.split(item)) == 1:
             continue
         if len(parts) == 3 and parts[0] == parts[2] == "":
@@ -319,7 +350,12 @@ def patched[T](items: tuple[T, ...], patches: Patches, fields: tuple[str, ...]) 
         return items
     result: list[Any] = list(items)
     for position, patch in patches:
-        result[position] = fields[patch] if isinstance(patch, int) else patch.format(*fields)
+        if isinstance(patch, int):
+            result[position] = fields[patch]
+        elif isinstance(patch, tuple):
+            result[position] = tuple(fields[index] for index in patch)
+        else:
+            result[position] = patch.format(*fields)
     return tuple(result)
 
 
@@ -329,10 +365,15 @@ def specialise(
     fields: tuple[str, ...],
     scope: dict[str, Any] = BUILTINS,
     defaults: tuple[Any, ...] | None = None,
+    positional: int | None = None,
 ) -> FunctionType:
-    template = TEMPLATES.get((kind, len(fields)))
+    """Build ``kind`` for ``fields``; the first ``positional`` of them (all by default) are
+    positional parameters of ``__init__`` and arguments of ``__replace__``'s call.
+    """
+    split = len(fields) if positional is None else positional
+    template = TEMPLATES.get((kind, len(fields), split))
     if template is None:
-        template = TEMPLATES[kind, len(fields)] = Template(kind, len(fields))
+        template = TEMPLATES[kind, len(fields), split] = Template(kind, len(fields), split)
     name = template.code.co_name
     code = template.specialise(f"{cls.__qualname__}.{name}", fields)
     function = FunctionType(code, scope, name, defaults)
@@ -387,12 +428,14 @@ class Pending:
         return function if instance is None else function.__get__(instance, owner)
 
 
-def pending_method(kind: str, fields: tuple[str, ...]) -> Pending:
-    return Pending(kind, fields, partial(specialise_method, kind, fields))
+def pending_method(name: str, fields: tuple[str, ...], positional: int | None = None) -> Pending:
+    return Pending(name, fields, partial(specialise_method, name, fields, positional))
 
 
-def specialise_method(kind: str, fields: tuple[str, ...], cls: type) -> FunctionType:
-    return specialise(cls, kind, fields)
+def specialise_method(
+    kind: str, fields: tuple[str, ...], positional: int | None, cls: type
+) -> FunctionType:
+    return specialise(cls, kind, fields, positional=positional)
 
 
 def inherited_attribute(cls: type, name: str) -> object:
@@ -416,40 +459,61 @@ def specialises(cls: type, name: str, explicit: set[str]) -> bool:
     return isinstance(inherited, Pending) or inherited in GENERATED or inherited in SHARED
 
 
-def check_defaults(name: str, specs: FieldSpecs) -> None:
-    has_default = False
-    for field, (default, _) in specs.items():
-        if default is not MISSING:
-            has_default = True
-        elif has_default:
+def has_default(spec: Field) -> bool:
+    return spec.default is not MISSING or spec.make is not None
+
+
+def positional_count(name: str, specs: FieldSpecs) -> int:
+    """How many leading fields are positional; raises unless keyword-only fields come last
+    and no positional field without a default follows one with a default.
+    """
+    flags = [field_spec(default).kw_only for default, _ in specs.values()]
+    positional = flags.index(True) if True in flags else len(flags)
+    if any(not keyword for keyword in flags[positional:]):
+        raise TypeError(f"keyword-only fields must follow the positional ones in {name}")
+    defaulted = False
+    for field, (default, _) in list(specs.items())[:positional]:
+        if has_default(field_spec(default)):
+            defaulted = True
+        elif defaulted:
             raise TypeError(f"non-default field {field!r} follows a default field in {name}")
+    return positional
 
 
-def build_init(specs: FieldSpecs, frozen: bool, cls: type) -> FunctionType:
+def build_init(specs: FieldSpecs, frozen: bool, positional: int, cls: type) -> FunctionType:
     fields = tuple(specs)
-    defaults = tuple(
-        None if isinstance(default, Factory) else default
-        for default, _ in specs.values()
-        if default is not MISSING
-    )
+    field_specs = [field_spec(default) for default, _ in specs.values()]
+    stored = {
+        name: None if spec.make is not None else spec.default
+        for name, spec in zip(fields, field_specs, strict=True)
+        if has_default(spec)
+    }
+    defaults = tuple(value for name, value in stored.items() if fields.index(name) < positional)
+    keyword_defaults = {
+        name: value for name, value in stored.items() if name not in fields[:positional]
+    }
     kind = "post_init" if hasattr(cls, "__post_init__") else "init"
-    has_factory = any(isinstance(default, Factory) for default, _ in specs.values())
-    if frozen or has_factory:
+    if frozen or any(spec.make is not None for spec in field_specs):
         scope = dict(BUILTINS)
-        for index, (name, (default, _)) in enumerate(specs.items()):
+        for index, (name, spec) in enumerate(zip(fields, field_specs, strict=True)):
             setter = slot_setter(cls, name)
-            if isinstance(default, Factory):
-                setter = partial(factory_setter, setter, default.make)
+            if spec.make is not None:
+                setter = partial(factory_setter, setter, spec.make)
             scope[f"__set_{index}"] = setter
-        function = specialise(cls, kind, fields, scope, defaults or None)
+        function = specialise(cls, kind, fields, scope, defaults or None, positional)
     else:
-        function = specialise(cls, f"mutable_{kind}", fields, BUILTINS, defaults or None)
+        function = specialise(
+            cls, f"mutable_{kind}", fields, BUILTINS, defaults or None, positional
+        )
+    function.__kwdefaults__ = keyword_defaults or None
     function.__annotations__ = {name: annotation for name, (_, annotation) in specs.items()}
     function.__annotations__["return"] = "None"
     return function
 
 
-@dataclass_transform(frozen_default=True, eq_default=True, field_specifiers=(field,))
+@dataclass_transform(
+    frozen_default=True, eq_default=True, kw_only_default=False, field_specifiers=(field,)
+)
 class RecordType(type):
     def __new__(
         mcs,
@@ -462,6 +526,7 @@ class RecordType(type):
         frozen: bool = True,
         eq: bool = True,
         hash: bool | None = None,
+        kw_only: bool = False,
         **kwargs: Any,
     ) -> type:
         if namespace.get("__module__") == __name__ and name == "GeneratedRecord":
@@ -473,7 +538,11 @@ class RecordType(type):
         specs = inherited_specs(bases)
         for field, annotation in own.items():
             inherited = specs.get(field, (MISSING, annotation))[0]
-            specs[field] = (namespace.pop(field, inherited), annotation)
+            default = namespace.pop(field, inherited)
+            if kw_only and field not in specs:
+                spec = field_spec(default)
+                default = Field(spec.default, spec.make, kw_only=True)
+            specs[field] = (default, annotation)
         fields = tuple(specs)
         if tuple(namespace.get("__fields__", fields)) != fields:
             raise TypeError(f"{name}.__fields__ disagrees with its annotated fields {fields}")
@@ -493,9 +562,12 @@ class RecordType(type):
         )
         if "__hash__" not in explicit and not generate_hash and (hash is False or generate_eq):
             namespace["__hash__"] = None
+        positional = positional_count(name, specs)
+        namespace["__positional_fields__"] = positional
         if init and "__init__" not in explicit:
-            check_defaults(name, specs)
-            namespace["__init__"] = Pending("__init__", fields, partial(build_init, specs, frozen))
+            namespace["__init__"] = Pending(
+                "__init__", fields, partial(build_init, specs, frozen, positional)
+            )
         if generate_eq:
             namespace["__eq__"] = pending_method("__eq__", fields)
         if generate_hash:
