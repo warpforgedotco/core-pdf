@@ -23,6 +23,7 @@ from core_pdf.impl.types import (
     RecordType,
     ReplaceFields,
     ReprFields,
+    field,
     frozen_setattr,
 )
 
@@ -46,12 +47,7 @@ class RenderOptions(ReplaceFields, ReprFields, metaclass=RecordType, frozen=Fals
 class DisplayListItem(ReplaceFields, ReprFields, metaclass=RecordType, frozen=False):
     kind: str
     seqno: int
-    data: dict[str, Any]
-
-    def __init__(self, kind: str, seqno: int, data: dict[str, Any] | None = None) -> None:
-        self.kind = kind
-        self.seqno = seqno
-        self.data = {} if data is None else data
+    data: dict[str, Any] = field(default_factory=dict)
 
     __hash__ = None  # type: ignore[assignment]
 

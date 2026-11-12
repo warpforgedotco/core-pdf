@@ -13,7 +13,7 @@ from core_pdf.impl.capture_program import PageProgram
 from core_pdf.impl.geometry import interval_overlap, rect_tuple
 from core_pdf.impl.output_model import Table, TextLine
 from core_pdf.impl.runs import TextRun
-from core_pdf.impl.types import GeneratedRecord, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, field, frozen_setattr
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_page import PdfPage
@@ -338,52 +338,14 @@ class PageEvidence(GeneratedRecord):
     suspicious_characters: int
     image_count: int
     image_area_ratio: float
-    image_boxes: tuple[tuple[float, float, float, float], ...]
-    text_coverage: float
-    full_page_image: bool
-    text_quality: TextQualityStats
-    all_text_quality: TextQualityStats
-    glyphs: GlyphEvidence
-    painted_native_characters: int | None
-    trusted_hidden_text: bool
-
-    def __init__(
-        self,
-        page_area: float,
-        native_characters: int,
-        visible_native_characters: int,
-        suspicious_characters: int,
-        image_count: int,
-        image_area_ratio: float,
-        image_boxes: tuple[tuple[float, float, float, float], ...] = (),
-        text_coverage: float = 0.0,
-        full_page_image: bool = False,
-        text_quality: TextQualityStats | None = None,
-        all_text_quality: TextQualityStats | None = None,
-        glyphs: GlyphEvidence | None = None,
-        painted_native_characters: int | None = None,
-        trusted_hidden_text: bool = False,
-    ) -> None:
-        frozen_setattr(self, "page_area", page_area)
-        frozen_setattr(self, "native_characters", native_characters)
-        frozen_setattr(self, "visible_native_characters", visible_native_characters)
-        frozen_setattr(self, "suspicious_characters", suspicious_characters)
-        frozen_setattr(self, "image_count", image_count)
-        frozen_setattr(self, "image_area_ratio", image_area_ratio)
-        frozen_setattr(self, "image_boxes", image_boxes)
-        frozen_setattr(self, "text_coverage", text_coverage)
-        frozen_setattr(self, "full_page_image", full_page_image)
-        frozen_setattr(
-            self, "text_quality", TextQualityStats() if text_quality is None else text_quality
-        )
-        frozen_setattr(
-            self,
-            "all_text_quality",
-            TextQualityStats() if all_text_quality is None else all_text_quality,
-        )
-        frozen_setattr(self, "glyphs", GlyphEvidence() if glyphs is None else glyphs)
-        frozen_setattr(self, "painted_native_characters", painted_native_characters)
-        frozen_setattr(self, "trusted_hidden_text", trusted_hidden_text)
+    image_boxes: tuple[tuple[float, float, float, float], ...] = ()
+    text_coverage: float = 0.0
+    full_page_image: bool = False
+    text_quality: TextQualityStats = field(default_factory=TextQualityStats)
+    all_text_quality: TextQualityStats = field(default_factory=TextQualityStats)
+    glyphs: GlyphEvidence = field(default_factory=GlyphEvidence)
+    painted_native_characters: int | None = None
+    trusted_hidden_text: bool = False
 
     @classmethod
     def measure(

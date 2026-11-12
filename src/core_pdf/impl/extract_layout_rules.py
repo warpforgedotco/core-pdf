@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core_pdf.impl.types import GeneratedRecord, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, field
 
 
 class ReadingOrderRules(GeneratedRecord):
@@ -76,30 +76,10 @@ class PageRegionRules(GeneratedRecord):
 
 
 class LayoutRules(GeneratedRecord):
-    reading_order: ReadingOrderRules
-    xy_cut: XyCutRules
-    classification: ClassificationRules
-    page_regions: PageRegionRules
-
-    def __init__(
-        self,
-        reading_order: ReadingOrderRules | None = None,
-        xy_cut: XyCutRules | None = None,
-        classification: ClassificationRules | None = None,
-        page_regions: PageRegionRules | None = None,
-    ) -> None:
-        frozen_setattr(
-            self, "reading_order", ReadingOrderRules() if reading_order is None else reading_order
-        )
-        frozen_setattr(self, "xy_cut", XyCutRules() if xy_cut is None else xy_cut)
-        frozen_setattr(
-            self,
-            "classification",
-            ClassificationRules() if classification is None else classification,
-        )
-        frozen_setattr(
-            self, "page_regions", PageRegionRules() if page_regions is None else page_regions
-        )
+    reading_order: ReadingOrderRules = field(default_factory=ReadingOrderRules)
+    xy_cut: XyCutRules = field(default_factory=XyCutRules)
+    classification: ClassificationRules = field(default_factory=ClassificationRules)
+    page_regions: PageRegionRules = field(default_factory=PageRegionRules)
 
 
 LAYOUT_RULES = LayoutRules()

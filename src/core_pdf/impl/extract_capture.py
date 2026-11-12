@@ -27,23 +27,13 @@ from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.glyphs import GlyphClusterLike, GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.runs import TextRun
 from core_pdf.impl.text import collapse_ws
-from core_pdf.impl.types import GeneratedRecord, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, field
 
 
 class TextAnalysis(GeneratedRecord):
-    quality: TextQualityStats
-    characters: int
-    suspicious_characters: int
-
-    def __init__(
-        self,
-        quality: TextQualityStats | None = None,
-        characters: int = 0,
-        suspicious_characters: int = 0,
-    ) -> None:
-        frozen_setattr(self, "quality", TextQualityStats() if quality is None else quality)
-        frozen_setattr(self, "characters", characters)
-        frozen_setattr(self, "suspicious_characters", suspicious_characters)
+    quality: TextQualityStats = field(default_factory=TextQualityStats)
+    characters: int = 0
+    suspicious_characters: int = 0
 
 
 ASCII_VOWELS = frozenset("aeiouAEIOU")

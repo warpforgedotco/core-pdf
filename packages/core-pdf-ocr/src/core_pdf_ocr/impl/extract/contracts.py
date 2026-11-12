@@ -7,11 +7,9 @@ from typing import Any
 
 from core_pdf.impl import extract_contracts
 from core_pdf.impl.extract_contracts import (
-    GlyphEvidence,
     ObservationBatch,
-    TextQualityStats,
 )
-from core_pdf.impl.types import GeneratedRecord, RecordType, frozen_setattr
+from core_pdf.impl.types import GeneratedRecord, RecordType, field
 
 PSM_AUTO = 3
 PSM_SPARSE_TEXT = 11
@@ -89,60 +87,13 @@ class StrokedVectorTextEvidence(GeneratedRecord):
 
 
 class PageEvidence(extract_contracts.PageEvidence, metaclass=RecordType):
-    vector_complexity: int
-    image_filters: tuple[str, ...]
-    uncovered_vector_area: float | None
-    vector_text_trusted: bool
-    stroked_vector_text: StrokedVectorTextEvidence
-
-    def __init__(
-        self,
-        page_area: float,
-        native_characters: int,
-        visible_native_characters: int,
-        suspicious_characters: int,
-        image_count: int,
-        image_area_ratio: float,
-        image_boxes: tuple[tuple[float, float, float, float], ...] = (),
-        text_coverage: float = 0.0,
-        full_page_image: bool = False,
-        text_quality: TextQualityStats | None = None,
-        all_text_quality: TextQualityStats | None = None,
-        glyphs: GlyphEvidence | None = None,
-        painted_native_characters: int | None = None,
-        trusted_hidden_text: bool = False,
-        vector_complexity: int = 0,
-        image_filters: tuple[str, ...] = (),
-        uncovered_vector_area: float | None = None,
-        vector_text_trusted: bool = False,
-        stroked_vector_text: StrokedVectorTextEvidence | None = None,
-    ) -> None:
-        extract_contracts.PageEvidence.__init__(
-            self,
-            page_area,
-            native_characters,
-            visible_native_characters,
-            suspicious_characters,
-            image_count,
-            image_area_ratio,
-            image_boxes,
-            text_coverage,
-            full_page_image,
-            text_quality,
-            all_text_quality,
-            glyphs,
-            painted_native_characters,
-            trusted_hidden_text,
-        )
-        frozen_setattr(self, "vector_complexity", vector_complexity)
-        frozen_setattr(self, "image_filters", image_filters)
-        frozen_setattr(self, "uncovered_vector_area", uncovered_vector_area)
-        frozen_setattr(self, "vector_text_trusted", vector_text_trusted)
-        frozen_setattr(
-            self,
-            "stroked_vector_text",
-            StrokedVectorTextEvidence() if stroked_vector_text is None else stroked_vector_text,
-        )
+    vector_complexity: int = 0
+    image_filters: tuple[str, ...] = ()
+    uncovered_vector_area: float | None = None
+    vector_text_trusted: bool = False
+    stroked_vector_text: StrokedVectorTextEvidence = field(
+        default_factory=StrokedVectorTextEvidence
+    )
 
 
 class PageAnalysis(extract_contracts.PageAnalysis):
