@@ -23,6 +23,7 @@ from core_pdf._vendor.fontTools.ttLib import TTLibError
 from core_pdf.impl.capture_page import capture_annotation_appearances
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture_recording import TextState
+from core_pdf.impl.collector import pauses_collector
 from core_pdf.impl.exceptions import PdfPasswordError, PdfUnsupportedError
 from core_pdf.impl.fonts_cmap import ToUnicodeCMap
 from core_pdf.impl.geometry import (
@@ -244,6 +245,7 @@ _DRAWINGS_CAPTURE = CaptureOptions(glyphs=False, text_runs=False, soft_mask_alph
 _GLYPHS_CAPTURE = CaptureOptions(text_runs=False)
 
 
+@pauses_collector
 def _capture_page(page: Any) -> tuple[Any, dict[int, Any]]:
     """``page.get_page_program()`` without text runs, with the re operands ``_XrayCapture``
     keeps."""
@@ -539,6 +541,7 @@ def _trailer_keyword_ends(raw_data: bytes) -> Iterator[int]:
         start = raw_data.find(b"trailer", start + 7)
 
 
+@pauses_collector
 def _has_rectangles(page: Any, crop_box: tuple[float, ...], user_unit: float) -> bool:
     """Whether the page may paint a rectangle that could be a redaction, found without
     capturing its text. A wrong yes costs only time, as _page_redactions finds the rectangles

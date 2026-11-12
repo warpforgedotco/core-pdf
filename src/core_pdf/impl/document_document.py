@@ -40,6 +40,7 @@ from typing import (
 import numpy
 
 from core_pdf.impl.caches import DocumentCaches
+from core_pdf.impl.collector import pauses_collector
 from core_pdf.impl.document_metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.document_page import PAGE_INHERITED_KEYS, PdfPage, goto_action_destination
 from core_pdf.impl.document_records import (
@@ -857,6 +858,7 @@ class PdfDocument(Generic[PageT]):
             for page_index, record in pending
         )
 
+    @pauses_collector
     def extract(
         self,
         *,

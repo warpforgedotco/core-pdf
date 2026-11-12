@@ -19,6 +19,7 @@ from typing import Any, TypeAlias, cast
 from core_pdf import PdfDocument
 from core_pdf.impl.capture_glyphs import plumber_char_dicts
 from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
+from core_pdf.impl.collector import pauses_collector
 from core_pdf.impl.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.geometry import (
@@ -785,6 +786,7 @@ class Page(Container):
                 raise PdfminerException(error) from error
         return self._objects
 
+    @pauses_collector
     def _parse_objects(self) -> dict[str, list[ObjectDict]]:
         objects: dict[str, list[ObjectDict]] = {
             "char": self._adapter.char_objects(self.initial_doctop)

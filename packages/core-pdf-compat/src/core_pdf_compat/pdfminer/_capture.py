@@ -10,6 +10,7 @@ from core_pdf.impl.capture_glyphs import GlyphPaint
 from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
 from core_pdf.impl.capture_recording import TextState
 from core_pdf.impl.capture_recovery import CaptureRecovery
+from core_pdf.impl.collector import pauses_collector
 from core_pdf.impl.exceptions import PdfError, PdfParseError
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
@@ -652,6 +653,7 @@ class PdfminerTextState(TextState):
         return width
 
 
+@pauses_collector
 def pdfminer_page_program(page: PdfPage, *, strict_cmaps: bool = True) -> PdfminerProgram:
     """strict_cmaps: whether glyphs of a font whose embedded CMap pdfminer cannot find
     advance nothing, as in pdfminer; unstructured parses those CMaps itself."""

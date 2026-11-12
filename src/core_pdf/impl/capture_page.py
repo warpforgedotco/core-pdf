@@ -12,6 +12,7 @@ from core_pdf.impl.capture_program import (
     PageProgram,
 )
 from core_pdf.impl.capture_recording import TextState
+from core_pdf.impl.collector import pauses_collector
 from core_pdf.impl.document_records import RawAnnotation, RawFormField
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.geometry import normalize_rect, transform_bbox
@@ -174,6 +175,7 @@ def capture_annotation_appearances(
     return tuple(appearances)
 
 
+@pauses_collector
 def capture_page_program(
     page: PdfPage,
     *,
