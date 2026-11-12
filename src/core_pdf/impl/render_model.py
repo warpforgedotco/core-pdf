@@ -15,6 +15,9 @@ from core_pdf.impl.capture_records import CapturedPath, CapturedSoftMask, Patter
 from core_pdf.impl.geometry import clamp01, rect_tuple
 from core_pdf.impl.render_blend import color_rgba, declared_blend, scale_rgba_alpha
 from core_pdf.impl.render_paths import stroke_half_width, translate_rect
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.types import (
     GeneratedRecord,
     RecordType,
@@ -22,9 +25,6 @@ from core_pdf.impl.types import (
     ReprFields,
     frozen_setattr,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
-from core_pdf_spec.s_08_graphics.image_spec import ImageSource
 
 
 class RenderOptions(ReplaceFields, ReprFields, metaclass=RecordType, frozen=False):

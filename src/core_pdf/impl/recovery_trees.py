@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from core_pdf_spec.s_07_syntax import trees
-from core_pdf_spec.s_07_syntax.trees import (
+from core_pdf.impl.spec.s_07_syntax import trees
+from core_pdf.impl.spec.s_07_syntax.trees import (
     MalformedFn,
     MalformedTreeNode,
     NameDecodeFn,

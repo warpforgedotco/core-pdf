@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import re
 
-from core_adobe_fonts.type1 import program
-from core_adobe_fonts.type1.program import binary_entries, eexec_ciphertext
 from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import (
     RecordingPen,
 )
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
+from core_pdf.impl.adobe_fonts.type1 import program
+from core_pdf.impl.adobe_fonts.type1.program import binary_entries, eexec_ciphertext
 from core_pdf.impl.fonts_program_base import GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts_program_truetype import recording_to_contours
 from core_pdf.impl.fonts_raster_kernel import (

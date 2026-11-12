@@ -23,17 +23,14 @@ if [[ ! -x "${NUITKA_ROOT}/bin/nuitka" ]]; then
     exit 1
 fi
 
-# Standards packages beneath core-pdf-spec and the compiled kernels core
-# imports: source roots for PYTHONPATH and include flags for Nuitka (the fonts
-# package carries CMap package data). The kernels' extension modules sit in
+# Standards packages and the compiled kernels core imports: source roots for
+# PYTHONPATH and include flags for Nuitka (core_pdf carries the CMap package data). The kernels' extension modules sit in
 # their source root after the editable build `uv sync` performs.
-STANDARDS_DISTRIBUTIONS=(core-records core-postscript core-jbig2 core-pdf-crypto core-adobe-fonts core-pdf-cythonized)
-SOURCE_PATH="${PROJECT_ROOT}/src:${PROJECT_ROOT}/packages/core-pdf-spec/src"
+STANDARDS_DISTRIBUTIONS=(core-records core-postscript core-pdf-cythonized)
+SOURCE_PATH="${PROJECT_ROOT}/src"
 INCLUDE_ARGS=(
     --include-package=core_pdf
-    --include-package=core_pdf_spec
     --include-package-data=core_pdf
-    --include-package-data=core_pdf_spec
 )
 for distribution in "${STANDARDS_DISTRIBUTIONS[@]}"; do
     SOURCE_PATH="${SOURCE_PATH}:${PROJECT_ROOT}/packages/${distribution}/src"

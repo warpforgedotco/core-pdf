@@ -1,21 +1,21 @@
-"""pypdf's encryption shapes. The algorithms are in core_pdf_spec.s_07_security."""
+"""pypdf's encryption shapes. The algorithms are in core_pdf.impl.spec.s_07_security."""
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_spec.s_07_security.output"]
+__lazy_modules__ = ["core_pdf.impl.spec.s_07_security.output"]
 
 import logging
 from enum import Enum, IntEnum
 from typing import Any
 
-from core_pdf_spec.s_07_security.output import (
+from core_pdf.impl.spec.s_07_security.output import (
     ALGORITHMS,
     NewEncryption,
     create_security_handler,
     encryption_dictionary,
     modern_values,
 )
-from core_pdf_spec.s_07_security.standard import StandardSecurityHandler, saslprep
+from core_pdf.impl.spec.s_07_security.standard import StandardSecurityHandler, saslprep
 
 from ._crypt_providers import CryptAES, CryptBase, CryptIdentity, CryptRC4
 from .errors import PdfReadError

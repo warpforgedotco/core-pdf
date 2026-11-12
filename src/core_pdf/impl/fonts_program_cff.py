@@ -6,8 +6,8 @@ from collections.abc import Callable
 from math import isfinite
 from typing import Any
 
-from core_adobe_fonts.cff import font
-from core_adobe_fonts.cff.font import (
+from core_pdf.impl.adobe_fonts.cff import font
+from core_pdf.impl.adobe_fonts.cff.font import (
     CFF_EXPERT_ENCODING_CODES,
     CFF_EXPERT_STRINGS,
     CFF_EXPERT_SUBSET_STRINGS,
@@ -17,7 +17,7 @@ from core_adobe_fonts.cff.font import (
     STANDARD_GLYPH_SIDS,
     CffFontMatrix,
 )
-from core_adobe_fonts.encodings import STANDARD_ENCODING_GLYPH_NAMES
+from core_pdf.impl.adobe_fonts.encodings import STANDARD_ENCODING_GLYPH_NAMES
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.fonts_cff_repair import (
     EMPTY_FEATURE,
@@ -30,9 +30,9 @@ from core_pdf.impl.fonts_raster_kernel import (
     transform_contours,
 )
 from core_pdf.impl.geometry import points_bbox, union_bbox
+from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle
 from core_pdf_cythonized import type2_glyph_geometry
-from core_pdf_spec.s_08_graphics.matrix import Matrix
 
 MALFORMED_CFF_TABLE = (IndexError, OverflowError, TypeError, ValueError)
 

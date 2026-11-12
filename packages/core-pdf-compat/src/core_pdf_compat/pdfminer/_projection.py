@@ -7,8 +7,13 @@ from typing import Any
 from core_pdf import PdfPage
 from core_pdf.impl.capture_glyphs import no_char, pdfminer_chars
 from core_pdf.impl.capture_program import CapturedProgram
+from core_pdf.impl.spec.s_07_content.model import (
+    PATH_CLOSE,
+    PATH_CURVE,
+    PATH_OPERAND_COUNTS,
+    PATH_RECT,
+)
 from core_pdf.impl.types import GeneratedRecord
-from core_pdf_spec.s_07_content.model import PATH_CLOSE, PATH_CURVE, PATH_OPERAND_COUNTS, PATH_RECT
 
 from ._capture import (
     pdfminer_media_box,

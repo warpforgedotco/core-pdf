@@ -15,7 +15,7 @@ HEX_UPPER = cython.declare(cython.p_const_char, b"0123456789ABCDEF")
 HEX_LOWER = cython.declare(cython.p_const_char, b"0123456789abcdef")
 
 # 7.2.3: white-space and delimiter characters, written as #xx inside a name with every byte
-# outside the printable range, as core_pdf_spec.s_07_syntax.serialize.NAME_ESCAPED says.
+# outside the printable range, as core_pdf.impl.spec.s_07_syntax.serialize.NAME_ESCAPED says.
 NAME_ESCAPED = cython.declare(cython.uchar[256])
 # A literal string's escapes in the compact layout: the byte after the backslash, or 0.
 LITERAL_ESCAPE = cython.declare(cython.uchar[256])
@@ -50,7 +50,7 @@ def is_spaced_plain(byte: cython.uchar) -> cython.bint:
 
 @cython.cclass
 class ObjectWriter:
-    """core_pdf_spec.s_07_syntax.serialize.serialize_object, in C, for one layout.
+    """core_pdf.impl.spec.s_07_syntax.serialize.serialize_object, in C, for one layout.
 
     It writes None, booleans, ints, names (and the plain strings the lexer gives some names
     as), PdfStrings, references, streams, and exact dicts, lists and tuples of them byte for

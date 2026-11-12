@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import Protocol, overload
 
+from core_pdf.impl.spec.s_07_syntax_primitives import text_string
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import decoded_name, parse_float, parse_int
+from core_pdf.impl.spec.types import PdfName
 from core_pdf.impl.types import PdfReference, PdfString, RecordType, ReplaceFields, ReprFields
-from core_pdf_spec.s_07_syntax_primitives import text_string
-from core_pdf_spec.s_07_syntax_primitives.coercion import decoded_name, parse_float, parse_int
-from core_pdf_spec.types import PdfName
 
 
 def recover_pdf_name(value: object, default: str | None = None) -> str | None:

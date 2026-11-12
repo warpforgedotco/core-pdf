@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_jbig2.bitmap", "imagecodecs"]
+__lazy_modules__ = ["core_pdf.impl.jbig2.bitmap", "imagecodecs"]
 
 import binascii
 import os
@@ -14,20 +14,6 @@ from typing import Any, NoReturn
 import imagecodecs
 import numpy
 
-from core_jbig2.bitmap import compose_packed_bitmap_data
-from core_jbig2.codec import (
-    GENERIC_TEMPLATE_0_DEFAULT_AT,
-    JBIG2_IMMEDIATE_GENERIC_REGION,
-    JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION,
-    JBIG2_IMMEDIATE_TEXT_REGION,
-    JBIG2_PAGE_INFO,
-    JBIG2GenericRegionHeader,
-    JBIG2PageDecoder,
-    Jbig2ParseError,
-    JBIG2Region,
-    Jbig2UnsupportedError,
-    compose_packed_bitmap_region,
-)
 from core_pdf.impl.graphics_decode_compat import (
     FilterParams,
     filter_params,
@@ -45,33 +31,47 @@ from core_pdf.impl.graphics_filter_registry import (
     NativeImageCodec,
     TolerantFilter,
 )
-from core_pdf_cythonized import decode_arithmetic_generic_template0
-from core_pdf_spec.s_07_filters import codecs, decode_spec, jbig2, predictors
-from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
-from core_pdf_spec.s_07_filters.errors import (
+from core_pdf.impl.jbig2.bitmap import compose_packed_bitmap_data
+from core_pdf.impl.jbig2.codec import (
+    GENERIC_TEMPLATE_0_DEFAULT_AT,
+    JBIG2_IMMEDIATE_GENERIC_REGION,
+    JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION,
+    JBIG2_IMMEDIATE_TEXT_REGION,
+    JBIG2_PAGE_INFO,
+    JBIG2GenericRegionHeader,
+    JBIG2PageDecoder,
+    Jbig2ParseError,
+    JBIG2Region,
+    Jbig2UnsupportedError,
+    compose_packed_bitmap_region,
+)
+from core_pdf.impl.spec.s_07_filters import codecs, decode_spec, jbig2, predictors
+from core_pdf.impl.spec.s_07_filters.decode_spec import StreamDecodeSpec
+from core_pdf.impl.spec.s_07_filters.errors import (
     FilterParseError,
     FilterUnsupportedError,
     PredictorError,
 )
-from core_pdf_spec.s_07_filters.predictors import (
+from core_pdf.impl.spec.s_07_filters.predictors import (
     SUPPORTED_PREDICTOR_BITS,
     png_predict,
     tiff_predict,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_null
-from core_pdf_spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
-from core_pdf_spec.s_07_syntax_primitives.scanning import (
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_null
+from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import PDF_CONTENT_OPERATOR_BYTES
+from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     full_source_bytes,
     skip_comment,
     skip_hex_string,
     skip_literal_string,
 )
-from core_pdf_spec.s_07_syntax_primitives.tokens import (
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
     DELIMITERS,
     SEPARATOR_TABLE,
     WHITESPACE,
     WS_TABLE,
 )
+from core_pdf_cythonized import decode_arithmetic_generic_template0
 
 
 def thread_count(env_name: str) -> int:

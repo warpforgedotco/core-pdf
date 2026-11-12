@@ -21,6 +21,9 @@ from mmap import mmap
 from operator import itemgetter
 from typing import Any
 
+from core_pdf.impl.spec.exceptions import PdfParseError
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf_compat.pypdf.errors import (
     STREAM_TRUNCATED_PREMATURELY,
     EmptyFileError,
@@ -29,9 +32,6 @@ from core_pdf_compat.pypdf.errors import (
     PdfStreamError,
 )
 from core_pdf_compat.pypdf.generic import DictionaryObject, NameObject, read_object, to_generic
-from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer
-from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 logger = logging.getLogger(__name__)
 

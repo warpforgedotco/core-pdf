@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from functools import cache
 
-from core_adobe_fonts.afm.core14 import FONT_DATA
+from core_pdf.impl.adobe_fonts.afm.core14 import FONT_DATA
 
 # pypdf's font name, the Adobe core font whose widths it has, and the width it gives the
 # Euro sign, which the Adobe metrics leave out.

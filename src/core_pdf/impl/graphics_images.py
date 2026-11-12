@@ -24,25 +24,25 @@ from core_pdf.impl.graphics_stream_decoding import (
     decode_stream_data,
 )
 from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf.impl.types import GeneratedRecord
-from core_pdf_cythonized import interleave_soft_mask
-from core_pdf_spec.s_07_filters.decode_spec import StreamDecodeSpec
-from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_08_graphics.color_kernels import (
+from core_pdf.impl.spec.s_07_filters.decode_spec import StreamDecodeSpec
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     decode_sample_values,
     unpack_image_samples,
     unpack_subbyte_image_samples,
 )
-from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
-from core_pdf_spec.s_08_graphics.image_spec import (
+from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
+from core_pdf.impl.spec.s_08_graphics.image_spec import (
     ImageSource,
     SoftMask,
     image_color_rendering,
     image_decode_array_applies,
     image_smask_in_data,
 )
-from core_pdf_spec.standards import SemanticContext
+from core_pdf.impl.spec.standards import SemanticContext
+from core_pdf.impl.types import GeneratedRecord
+from core_pdf_cythonized import interleave_soft_mask
 
 
 def image_has_color_key_mask(dictionary: dict[Any, Any]) -> bool:

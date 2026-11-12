@@ -13,19 +13,19 @@ from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.object_serialize import serialize_indirect_object, serialize_object
 from core_pdf.impl.recovery_lexer import StrictPdfLexer
 from core_pdf.impl.recovery_xref import XRefScanner
-from core_pdf.impl.types import PdfReference, PdfString
-from core_pdf_cythonized import collect_references
-from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_security.output import (
+from core_pdf.impl.spec.exceptions import PdfParseError
+from core_pdf.impl.spec.s_07_security.output import (
     NewEncryption,
     create_security_handler,
     describe_encryption,
     encrypt_object,
     encryption_dictionary,
 )
-from core_pdf_spec.s_07_security.standard import StandardSecurityHandler
-from core_pdf_spec.s_07_syntax.serialize import ObjectLayout, serialize_xref_stream
-from core_pdf_spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_security.standard import StandardSecurityHandler
+from core_pdf.impl.spec.s_07_syntax.serialize import ObjectLayout, serialize_xref_stream
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.types import PdfReference, PdfString
+from core_pdf_cythonized import collect_references
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_document import PdfDocument

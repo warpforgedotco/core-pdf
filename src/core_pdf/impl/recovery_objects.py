@@ -7,21 +7,21 @@ import typing
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf_spec.s_07_syntax import objects
-from core_pdf_spec.s_07_syntax.objects import (
+from core_pdf.impl.spec.s_07_syntax import objects
+from core_pdf.impl.spec.s_07_syntax.objects import (
     parse_object_stream_pair,
 )
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import (
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
-from core_pdf_spec.s_07_syntax_primitives.tokens import WHITESPACE
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WHITESPACE
 
 if typing.TYPE_CHECKING:
     from typing import Any
 
-    from core_pdf_spec.s_07_syntax.types import PdfDict
-    from core_pdf_spec.standards import SemanticContext
+    from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+    from core_pdf.impl.spec.standards import SemanticContext
 
 
 class PdfObjectStream(objects.PdfObjectStream):

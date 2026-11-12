@@ -39,7 +39,7 @@ def backdrop_removed(
     initial: cython.double,
     accumulated: cython.double,
 ) -> cython.double:
-    """One component of core_pdf_spec's remove_group_backdrop, which stays the
+    """One component of core_pdf.impl.spec's remove_group_backdrop, which stays the
     definition: the same float64 operations in the same order."""
     backdrop_weight: cython.double = (1.0 - accumulated) * initial
     premultiplied: cython.double = color * complete - backdrop * backdrop_weight
@@ -255,7 +255,7 @@ def composite_nonisolated_blend(
     The general branch of core_pdf.impl.render_target.composite_nonisolated_group:
     the effective alpha rint(source_alpha * opacity * 255 [* mask]) cast to
     uint8, then for each visible pixel the group backdrop removed as
-    core_pdf_spec's remove_group_backdrop does, clipped to [0, 1], and blended
+    core_pdf.impl.spec's remove_group_backdrop does, clipped to [0, 1], and blended
     over the destination as render_blend.blend_visible_pixels does. mode is a
     kernel blend code (0 normal, 1 multiply, 2 screen, 3 color dodge, 4 color
     burn); revised selects the PDF 2.0 dodge and burn endpoints. With
@@ -406,7 +406,7 @@ def remove_group_backdrop_samples(
     group_alpha: cython.const[cython.double][:],
 ):
     """The backdrop removal composite_nonisolated_blend applies per pixel, over
-    rows of samples: core_pdf_spec's remove_group_backdrop without validation,
+    rows of samples: core_pdf.impl.spec's remove_group_backdrop without validation,
     returning the source components only. It exists to be checked against it."""
     count: cython.Py_ssize_t = components.shape[0]
     channels: cython.Py_ssize_t = components.shape[1]

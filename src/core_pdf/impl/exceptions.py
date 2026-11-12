@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from core_pdf_spec.exceptions import (
+from core_pdf.impl.spec.exceptions import (
     PdfDecryptionError,
     PdfError,
     PdfInvalidPermissionsError,

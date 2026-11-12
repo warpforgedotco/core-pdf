@@ -17,10 +17,10 @@ from core_pdf.impl.glyphs import GlyphObservation
 from core_pdf.impl.render_display import DisplayList
 from core_pdf.impl.render_model import PathPaintKind
 from core_pdf.impl.runs import TextRun
+from core_pdf.impl.spec.s_07_content.model import NON_PAINTING_RENDER_MODES
+from core_pdf.impl.spec.s_08_graphics.geometry import unit_square_placement
 from core_pdf.impl.types import RecordType, ReprFields
 from core_pdf_cythonized import translated_outline_edges
-from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES
-from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
 
 
 def append_glyph_paint(

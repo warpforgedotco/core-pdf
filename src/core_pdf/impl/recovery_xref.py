@@ -18,11 +18,10 @@ from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer, matches_keyword_with_one_substitution
 from core_pdf.impl.recovery_objects import PdfObjectStream
 from core_pdf.impl.recovery_policy import RecoveryMode
-from core_pdf.impl.types import PdfByteBuffer
-from core_pdf_spec.s_07_syntax import xref
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_07_syntax.xref import (
+from core_pdf.impl.spec.s_07_syntax import xref
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_07_syntax.xref import (
     XREF_ROW_SIZE,
     XREF_ROWS,
     ParsedXRefSection,
@@ -33,15 +32,16 @@ from core_pdf_spec.s_07_syntax.xref import (
     key_for,
     new_xref_entry,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import (
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
-from core_pdf_spec.s_07_syntax_primitives.scanning import (
+from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     FindableSizedBuffer,
     full_source_buffer,
 )
-from core_pdf_spec.s_07_syntax_primitives.tokens import WS_TABLE, LexicalRules
-from core_pdf_spec.standards import SemanticContext
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WS_TABLE, LexicalRules
+from core_pdf.impl.spec.standards import SemanticContext
+from core_pdf.impl.types import PdfByteBuffer
 
 
 def parse_object_marker_prefix(

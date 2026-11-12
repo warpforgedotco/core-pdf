@@ -20,7 +20,7 @@ from core_pdf.impl.graphics_image_samples import (
     convert_components,
     convert_integer_image,
 )
-from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
+from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 ImageDict: TypeAlias = dict[str, object]
 

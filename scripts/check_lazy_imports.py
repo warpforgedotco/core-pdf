@@ -23,8 +23,8 @@ TEXT_PDF = REPOSITORY_ROOT / "tests/upstream/pdfplumber/tests/pdfs/federal-regis
 DEFERRED = (
     "asn1crypto",
     "cryptography",
-    "core_pdf_crypto.ciphers",
-    "core_pdf_crypto.pdf_mac",
+    "core_pdf.impl.crypto.ciphers",
+    "core_pdf.impl.crypto.pdf_mac",
     "imagecodecs",
     "core_pdf._vendor.fontTools.ttLib",
     "core_pdf.impl.document_structure",
@@ -33,7 +33,7 @@ DEFERRED = (
     "core_pdf.impl.graphics_shading",
     "core_pdf.impl.render_page",
     "core_pdf.impl.render_target",
-    "core_pdf_spec.s_11_transparency.blend",
+    "core_pdf.impl.spec.s_11_transparency.blend",
 )
 
 WORKLOADS = {

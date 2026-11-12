@@ -1,6 +1,6 @@
 # ContentStream's attributes, messages and limits are ported from pypdf,
 # Copyright (c) 2006-2008, Mathieu Fenniak, under its BSD-style license. Its parsing
-# and writing are core_pdf_spec's, except inline images: where their data ends, and how
+# and writing are core_pdf.impl.spec's, except inline images: where their data ends, and how
 # they are written, follow pypdf.
 """pypdf's content stream object, and stream decoding through core-pdf's filters."""
 
@@ -11,6 +11,13 @@ from collections.abc import Mapping, Sequence
 from io import BytesIO
 from typing import IO, Any, cast
 
+from core_pdf.impl.spec.exceptions import PdfParseError
+from core_pdf.impl.spec.s_07_content.inline_images import InlineImage, parse_inline_image_dictionary
+from core_pdf.impl.spec.s_07_content.operations import (
+    parse_content_token,
+    serialize_content_operation,
+)
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.types import PdfString
 from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf._image_inline import read_inline_image_data
@@ -28,10 +35,6 @@ from core_pdf_compat.pypdf.generic import (
     to_core,
     to_generic,
 )
-from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_content.inline_images import InlineImage, parse_inline_image_dictionary
-from core_pdf_spec.s_07_content.operations import parse_content_token, serialize_content_operation
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer
 
 logger = logging.getLogger(__name__)
 

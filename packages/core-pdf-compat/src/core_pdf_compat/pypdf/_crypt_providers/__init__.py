@@ -1,17 +1,17 @@
-"""pypdf's crypt provider shapes, over core-pdf-crypto's ciphers."""
+"""pypdf's crypt provider shapes, over core_pdf.impl.crypto's ciphers."""
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_crypto", "core_pdf_crypto.ciphers"]
+__lazy_modules__ = ["core_pdf.impl.crypto", "core_pdf.impl.crypto.ciphers"]
 
 import logging
 import secrets
 from importlib.metadata import version
 
+from core_pdf.impl.crypto import ciphers
+from core_pdf.impl.crypto.ciphers import rc4_crypt
 from core_pdf_compat.pdfminer.arcfour import Arcfour
 from core_pdf_compat.pypdf.errors import PdfStreamError
-from core_pdf_crypto import ciphers
-from core_pdf_crypto.ciphers import rc4_crypt
 
 logger = logging.getLogger(__name__)
 crypt_provider = ("cryptography", version("cryptography"))

@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_spec.s_09_fonts"]
+__lazy_modules__ = ["core_pdf.impl.spec.s_09_fonts"]
 
 import contextlib
 from collections.abc import Mapping
 from functools import lru_cache
 from typing import Any
 
-from core_adobe_fonts.afm import core14
-from core_adobe_fonts.afm.core14 import Core14FontMetrics
+from core_pdf.impl.adobe_fonts.afm import core14
+from core_pdf.impl.adobe_fonts.afm.core14 import Core14FontMetrics
 from core_pdf.impl.fonts_cmap import CMapDecoder
 from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.fonts_widths import (
@@ -18,12 +18,12 @@ from core_pdf.impl.fonts_widths import (
     parse_font_widths,
     recover_descendant,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import (
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float_strict,
     parse_int_strict,
     require_pdf_number,
 )
-from core_pdf_spec.s_09_fonts import metrics
+from core_pdf.impl.spec.s_09_fonts import metrics
 
 LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
 

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.recovery_objects", "core_pdf_spec.s_07_syntax.objects"]
+__lazy_modules__ = ["core_pdf.impl.recovery_objects", "core_pdf.impl.spec.s_07_syntax.objects"]
 
 from collections.abc import Mapping
 from typing import Any, overload
 
-import core_pdf_spec.s_07_syntax.lexer
-import core_pdf_spec.s_07_syntax.objects
-import core_pdf_spec.s_07_syntax.resolver
+import core_pdf.impl.spec.s_07_syntax.lexer
+import core_pdf.impl.spec.s_07_syntax.objects
+import core_pdf.impl.spec.s_07_syntax.resolver
 from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
 from core_pdf.impl.pdf_values import (
@@ -21,22 +21,22 @@ from core_pdf.impl.pdf_values import (
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.recovery_objects import PdfObjectStream
 from core_pdf.impl.recovery_xref import iter_indirect_object_headers
-from core_pdf.impl.types import MISSING, PdfReference, PdfString
-from core_pdf_spec.s_07_filters import pipeline
-from core_pdf_spec.s_07_syntax import resources
-from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject, PdfValueResolver
-from core_pdf_spec.s_07_syntax.xref import (
+from core_pdf.impl.spec.s_07_filters import pipeline
+from core_pdf.impl.spec.s_07_syntax import resources
+from core_pdf.impl.spec.s_07_syntax.resolution import resolve_reference_chain
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject, PdfValueResolver
+from core_pdf.impl.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
 )
-from core_pdf_spec.s_07_syntax_primitives.tokens import LexicalRules
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import LexicalRules
+from core_pdf.impl.types import MISSING, PdfReference, PdfString
 
 LEXER_POOL_LIMIT = 8
 
 
-class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
+class ObjectResolver(core_pdf.impl.spec.s_07_syntax.resolver.ObjectResolver):
     __slots__ = ("irregular_dictionaries", "lexer_pool", "parsed_objects", "parsed_rules")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -82,7 +82,7 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
 
     def load_indirect_object(
         self,
-        lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer,
+        lexer: core_pdf.impl.spec.s_07_syntax.lexer.PdfLexer,
         offset: int,
         *,
         expected_reference: PdfReference,
@@ -139,7 +139,7 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
             lexer.semantic_context = self.semantic_context
         return lexer
 
-    def release_lexer(self, lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer) -> None:
+    def release_lexer(self, lexer: core_pdf.impl.spec.s_07_syntax.lexer.PdfLexer) -> None:
         if type(lexer) is PdfLexer and lexer.raw_data.obj is self.data.obj:
             with self.lock:
                 pool = self.lexer_pool
@@ -149,7 +149,7 @@ class ObjectResolver(core_pdf_spec.s_07_syntax.resolver.ObjectResolver):
         lexer.close()
 
     def recover_indirect_object(
-        self, lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer, offset: int
+        self, lexer: core_pdf.impl.spec.s_07_syntax.lexer.PdfLexer, offset: int
     ) -> object:
         data = lexer.raw_data
         search_start = max(0, offset - 128)

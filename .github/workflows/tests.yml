@@ -136,7 +136,7 @@ jobs:
 
       - name: Install each package alone and prove higher tiers are absent
         run: |
-          for package in core-records core-postscript core-jbig2 core-pdf-crypto core-adobe-fonts core-pdf-spec; do
+          for package in core-records core-postscript; do
             echo "::group::$package"
             # Each sync replaces the environment with only this package and its dependencies.
             uv sync --locked --package "$package"

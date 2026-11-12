@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from core_pdf.impl.pdf_values import decode_pdf_text_string
+from core_pdf.impl.spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 from core_pdf.impl.types import PdfName, PdfString, RecordType, Rectangle, ReplaceFields
-from core_pdf_spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 
 
 class RawOutlineItem(ReplaceFields, metaclass=RecordType, frozen=False, eq=False):

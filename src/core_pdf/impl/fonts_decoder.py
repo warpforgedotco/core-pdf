@@ -6,7 +6,7 @@ import typing
 from collections.abc import Callable
 from typing import Any
 
-from core_adobe_fonts.cmap.ranges import (
+from core_pdf.impl.adobe_fonts.cmap.ranges import (
     code_in_ranges,
 )
 from core_pdf.impl.caches import BoundedDict
@@ -26,10 +26,10 @@ from core_pdf.impl.fonts_unicode import (
 from core_pdf.impl.fonts_widths import effective_descriptor, recover_descendant
 from core_pdf.impl.glyphs import UnicodeSource
 from core_pdf.impl.pdf_values import recover_pdf_name
+from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
+from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph
+from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.types import RecordType, Rectangle
-from core_pdf_spec.s_08_graphics.matrix import Matrix
-from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph
-from core_pdf_spec.standards import SemanticContext
 
 if typing.TYPE_CHECKING:
     from core_pdf.impl.fonts_fallback import RasterFontProviderLike

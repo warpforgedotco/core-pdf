@@ -8,12 +8,12 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf.impl.types import GeneratedRecord
-from core_pdf_spec.s_07_filters import registry
-from core_pdf_spec.s_07_filters.registry import (
+from core_pdf.impl.spec.s_07_filters import registry
+from core_pdf.impl.spec.s_07_filters.registry import (
     FilterDecoder,
     FilterDescriptor,
 )
+from core_pdf.impl.types import GeneratedRecord
 
 FILTER_DESCRIPTORS = (
     *registry.FILTER_DESCRIPTORS,

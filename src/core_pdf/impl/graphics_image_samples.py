@@ -31,28 +31,28 @@ from core_pdf.impl.graphics_icc_profiles import (
     srgb_profile,
 )
 from core_pdf.impl.pdf_values import lenient_float, lenient_int
-from core_pdf_cythonized import code_presence, distinct_uint16_rows, gather_uint8_rows
-from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf_spec.s_08_graphics.color_kernels import (
+from core_pdf.impl.spec.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     color_key_alpha,
     decode_sample_values,
     unpack_image_samples,
 )
-from core_pdf_spec.s_08_graphics.color_math import (
+from core_pdf.impl.spec.s_08_graphics.color_math import (
     compensate_black_point_xyz,
     lab_components_to_xyz,
     xyz_to_lab_components,
 )
-from core_pdf_spec.s_08_graphics.color_rendering import (
+from core_pdf.impl.spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
     ColorRendering,
     use_black_point_compensation,
 )
-from core_pdf_spec.s_11_transparency.images import unblend_matte_components
-from core_pdf_spec.types import PdfName
+from core_pdf.impl.spec.s_11_transparency.images import unblend_matte_components
+from core_pdf.impl.spec.types import PdfName
+from core_pdf_cythonized import code_presence, distinct_uint16_rows, gather_uint8_rows
 
 
 class ImageHeader:

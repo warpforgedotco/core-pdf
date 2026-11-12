@@ -12,24 +12,24 @@ from typing import Any, ClassVar
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
 from core_pdf.impl.recovery_policy import RecoveryMode
-from core_pdf.impl.types import MISSING, PdfByteBuffer, PdfName, PdfReference, PdfString
-from core_pdf_cythonized import ObjectScanner
-from core_pdf_spec.s_07_filters.decode_spec import StreamDecoder
-from core_pdf_spec.s_07_syntax import lexer
-from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict
-from core_pdf_spec.s_07_syntax_primitives.numbers import is_integer_token, parse_integer_token
-from core_pdf_spec.s_07_syntax_primitives.scanning import (
+from core_pdf.impl.spec.s_07_filters.decode_spec import StreamDecoder
+from core_pdf.impl.spec.s_07_syntax import lexer
+from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict
+from core_pdf.impl.spec.s_07_syntax_primitives.numbers import is_integer_token, parse_integer_token
+from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     HEX_VALUE,
     FindableSizedBuffer,
     looks_like_indirect_object_header,
     read_literal_string,
 )
-from core_pdf_spec.s_07_syntax_primitives.tokens import (
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
     WHITESPACE,
     LexicalRules,
     lexical_rules,
 )
-from core_pdf_spec.standards import PdfVersion, SemanticContext, recognized_version
+from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, recognized_version
+from core_pdf.impl.types import MISSING, PdfByteBuffer, PdfName, PdfReference, PdfString
+from core_pdf_cythonized import ObjectScanner
 
 RECOVERABLE_DICTIONARY_KEY_NAMES = {
     b"Type",

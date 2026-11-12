@@ -13,13 +13,13 @@ from core_pdf.impl.graphics_icc_profiles import (
     parse_icc_transform,
 )
 from core_pdf.impl.pdf_values import lenient_float, lenient_int, recover_pdf_name
-from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import coerce_to_bytes
-from core_pdf_spec.s_08_graphics import color_spec
-from core_pdf_spec.s_08_graphics.color import color_space_paints
-from core_pdf_spec.s_08_graphics.color_spec import (
+from core_pdf.impl.spec.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import coerce_to_bytes
+from core_pdf.impl.spec.s_08_graphics import color_spec
+from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
+from core_pdf.impl.spec.s_08_graphics.color_spec import (
     ColorParams,
     ColorSpace,
     DeviceNAttributes,

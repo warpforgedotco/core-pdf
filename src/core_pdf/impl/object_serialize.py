@@ -2,7 +2,7 @@
 
 """ISO 32000-2 7.3: PDF objects as bytes, written by the compiled ObjectWriter.
 
-The writer writes what core_pdf_spec.s_07_syntax.serialize does byte for byte and hands
+The writer writes what core_pdf.impl.spec.s_07_syntax.serialize does byte for byte and hands
 it the values it does not write itself (reals among them), so core and the facades get the
 spec's bytes from compiled code. scripts/check_object_writer.py compares the two.
 """
@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from functools import partial
 
+from core_pdf.impl.spec.s_07_syntax import serialize as spec
+from core_pdf.impl.spec.s_07_syntax.serialize import ObjectLayout
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
 from core_pdf_cythonized import ObjectWriter
-from core_pdf_spec.s_07_syntax import serialize as spec
-from core_pdf_spec.s_07_syntax.serialize import ObjectLayout
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.types import PdfName, PdfReference, PdfString
 
 FALLBACKS = {layout: partial(spec.serialize_object, layout=layout) for layout in ObjectLayout}
 

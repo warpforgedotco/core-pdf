@@ -29,9 +29,9 @@ from core_pdf.impl.render_model import (
     RenderOptions,
 )
 from core_pdf.impl.render_target import RasterTarget
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.types import RecordType, ReprFields
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf_spec.standards import SemanticContext
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_page import PdfPage

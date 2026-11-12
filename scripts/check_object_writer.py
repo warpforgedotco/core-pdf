@@ -4,7 +4,7 @@
 and that its compiled reference walk finds what the Python walk found.
 
 core_pdf.impl.object_serialize writes PDF objects with core-pdf-cythonized's ObjectWriter,
-which must give the bytes core_pdf_spec.s_07_syntax.serialize gives, in both layouts. This
+which must give the bytes core_pdf.impl.spec.s_07_syntax.serialize gives, in both layouts. This
 serializes every object of the upstream test PDFs both ways, then deep and cyclic values,
 then values generated around what the writer handles itself and what it hands back (names
 with every byte, literal and hex strings with every byte, ints of every size, int and str
@@ -33,10 +33,10 @@ from core_pdf import PdfDocument
 from core_pdf.impl import object_serialize
 from core_pdf.impl.document_editing import references_in
 from core_pdf.impl.recovery_lexer import BareKeyword
-from core_pdf_spec.s_07_syntax import serialize as spec
-from core_pdf_spec.s_07_syntax.serialize import ObjectLayout
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.types import PdfName, PdfReference, PdfString
+from core_pdf.impl.spec.s_07_syntax import serialize as spec
+from core_pdf.impl.spec.s_07_syntax.serialize import ObjectLayout
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
 from scripts.check_strict_object_scanner import CORPUS
 
 

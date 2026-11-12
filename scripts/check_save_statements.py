@@ -34,6 +34,7 @@ from typing import Any
 
 from core_pdf import EditableDocument, PdfDocument
 from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf_compat.pypdf import PdfReader, PdfWriter
 from core_pdf_compat.pypdf.errors import PyPdfError
 from core_pdf_compat.pypdf.generic import (
@@ -44,7 +45,6 @@ from core_pdf_compat.pypdf.generic import (
     NumberObject,
     TextStringObject,
 )
-from core_pdf_spec.exceptions import PdfParseError
 
 PATTERNS = (
     "tests/upstream/pdfplumber/tests/pdfs/*.pdf",

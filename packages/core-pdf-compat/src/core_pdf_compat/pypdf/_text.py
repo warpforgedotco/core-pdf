@@ -17,14 +17,19 @@ from functools import cache
 from importlib.util import find_spec
 from typing import Any, Literal, cast
 
-from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
-from core_adobe_fonts.cff.font import CFF_STANDARD_STRINGS, CFFFont
+from core_pdf.impl.adobe_fonts.agl.glyph_list import GLYPH_DATA
+from core_pdf.impl.adobe_fonts.cff.font import CFF_STANDARD_STRINGS, CFFFont
 from core_pdf.impl.capture_recovery import ContentFallback, content_scanner
 from core_pdf.impl.fonts_cmap import ToUnicodeCMap
 from core_pdf.impl.fonts_decoder import FontDecoder
 from core_pdf.impl.fonts_metrics import LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
+from core_pdf.impl.spec.exceptions import PdfParseError
+from core_pdf.impl.spec.s_07_content.operations import ContentOperation, parse_content_token
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.types import (
     PdfName,
     PdfReference,
@@ -58,11 +63,6 @@ from core_pdf_compat.pypdf._glyph_names import extra_glyphs
 from core_pdf_compat.pypdf._layout import layout_text
 from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
 from core_pdf_compat.pypdf.generic import FloatObject, IndirectObject, NumberObject, to_generic
-from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_content.operations import ContentOperation, parse_content_token
-from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_08_graphics.matrix import multiply_affine
 from core_records import GeneratedRecord
 
 

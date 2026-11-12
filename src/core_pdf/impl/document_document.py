@@ -9,9 +9,9 @@ __lazy_modules__ = [
     "core_pdf.impl.page_selection",
     "core_pdf.impl.raw_media",
     "core_pdf.impl.recovery_trees",
-    "core_pdf_spec.s_07_document",
-    "core_pdf_spec.s_07_document.document_labels",
-    "core_pdf_spec.s_07_document.fields",
+    "core_pdf.impl.spec.s_07_document",
+    "core_pdf.impl.spec.s_07_document.document_labels",
+    "core_pdf.impl.spec.s_07_document.fields",
 ]
 
 import contextlib
@@ -76,6 +76,37 @@ from core_pdf.impl.recovery_policy import MalformedFn, Recovery, recovery_policy
 from core_pdf.impl.recovery_resolver import ObjectResolver
 from core_pdf.impl.recovery_trees import iter_name_tree_items, iter_number_tree_items
 from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner, iter_indirect_object_headers
+from core_pdf.impl.spec.s_07_document import document_labels
+from core_pdf.impl.spec.s_07_document.document_labels import PageLabelStyle
+from core_pdf.impl.spec.s_07_document.fields import field_children, qualified_field_name
+from core_pdf.impl.spec.s_07_document.page import PageNode, iter_page_nodes
+from core_pdf.impl.spec.s_07_security.document import initialize_document_security
+from core_pdf.impl.spec.s_07_security.standard import (
+    StandardSecurityHandler,
+    create_standard_security_handler,
+)
+from core_pdf.impl.spec.s_07_syntax.inherited_values import (
+    collect_inherited_values,
+    inherited_dictionary_value,
+)
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import (
+    InheritedValueMap,
+    PdfArray,
+    PdfDict,
+    PdfValueResolver,
+    ResolvedObjectCache,
+)
+from core_pdf.impl.spec.s_07_syntax.xref import (
+    PdfXRefEntry,
+    XRefRevision,
+    XRefSectionReader,
+    iter_xref_revisions,
+    key_for,
+    merge_xref_sections,
+)
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
+from core_pdf.impl.spec.standards import DocumentStandards, PdfVersion, SemanticContext
 from core_pdf.impl.types import (
     MISSING,
     PageScoped,
@@ -86,41 +117,10 @@ from core_pdf.impl.types import (
     PdfString,
 )
 from core_pdf_cythonized import markers_present, object_headers_match, regions_with_markers
-from core_pdf_spec.s_07_document import document_labels
-from core_pdf_spec.s_07_document.document_labels import PageLabelStyle
-from core_pdf_spec.s_07_document.fields import field_children, qualified_field_name
-from core_pdf_spec.s_07_document.page import PageNode, iter_page_nodes
-from core_pdf_spec.s_07_security.document import initialize_document_security
-from core_pdf_spec.s_07_security.standard import (
-    StandardSecurityHandler,
-    create_standard_security_handler,
-)
-from core_pdf_spec.s_07_syntax.inherited_values import (
-    collect_inherited_values,
-    inherited_dictionary_value,
-)
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import (
-    InheritedValueMap,
-    PdfArray,
-    PdfDict,
-    PdfValueResolver,
-    ResolvedObjectCache,
-)
-from core_pdf_spec.s_07_syntax.xref import (
-    PdfXRefEntry,
-    XRefRevision,
-    XRefSectionReader,
-    iter_xref_revisions,
-    key_for,
-    merge_xref_sections,
-)
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_int
-from core_pdf_spec.standards import DocumentStandards, PdfVersion, SemanticContext
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_fallback import RasterFontProviderLike
-    from core_pdf_spec.s_07_syntax.types import Decipher
+    from core_pdf.impl.spec.s_07_syntax.types import Decipher
 
 
 XREF_STREAM_MARKERS = (b"#", b"XRef", b"/W", b"/Size")

@@ -2,31 +2,31 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_spec.s_09_fonts.font_program_truetype"]
+__lazy_modules__ = ["core_pdf.impl.spec.s_09_fonts.font_program_truetype"]
 
 import re
 from binascii import unhexlify
 from collections.abc import Iterable
 from functools import lru_cache
 
-from core_adobe_fonts.cmap import decoder, tokenizer
-from core_adobe_fonts.cmap.decoder import CMapResourceResolver
-from core_adobe_fonts.cmap.ranges import ranges_overlap, validate_codespace_range
-from core_adobe_fonts.cmap.resources import resolve_cmap_resource
-from core_adobe_fonts.cmap.tokenizer import CMapBlock, CMapToken, iter_cmap_tokens
-from core_pdf_cythonized import scan_to_unicode_cmap
-from core_pdf_spec.s_07_syntax_primitives.scanning import read_literal_string
-from core_pdf_spec.s_09_fonts import cmap_tounicode
-from core_pdf_spec.s_09_fonts.cmap_tounicode import (
+from core_pdf.impl.adobe_fonts.cmap import decoder, tokenizer
+from core_pdf.impl.adobe_fonts.cmap.decoder import CMapResourceResolver
+from core_pdf.impl.adobe_fonts.cmap.ranges import ranges_overlap, validate_codespace_range
+from core_pdf.impl.adobe_fonts.cmap.resources import resolve_cmap_resource
+from core_pdf.impl.adobe_fonts.cmap.tokenizer import CMapBlock, CMapToken, iter_cmap_tokens
+from core_pdf.impl.spec.s_07_syntax_primitives.scanning import read_literal_string
+from core_pdf.impl.spec.s_09_fonts import cmap_tounicode
+from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import (
     CMapMappingBlock,
     ParsedToUnicodeCMap,
     cmap_mapping_blocks,
     cmap_source_range,
     decode_utf16be,
 )
-from core_pdf_spec.s_09_fonts.font_program_truetype import is_unicode_scalar
+from core_pdf.impl.spec.s_09_fonts.font_program_truetype import is_unicode_scalar
+from core_pdf_cythonized import scan_to_unicode_cmap
 
-RESOURCE_PACKAGE = "core_adobe_fonts.cmap.data"
+RESOURCE_PACKAGE = "core_pdf.impl.adobe_fonts.cmap.data"
 
 
 PREDEFINED_CMAP_UNICODE_CODECS: dict[str, str] = {

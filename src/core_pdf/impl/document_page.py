@@ -11,7 +11,7 @@ __lazy_modules__ = [
     "core_pdf.impl.raw_media",
     "core_pdf.impl.render_model",
     "core_pdf.impl.render_page",
-    "core_pdf_spec.s_08_graphics.image_spec",
+    "core_pdf.impl.spec.s_08_graphics.image_spec",
 ]
 
 from collections import deque
@@ -35,18 +35,18 @@ from core_pdf.impl.raw_media import DrawingRecord, ImageMetadata, ImageRecord
 from core_pdf.impl.recovery_resolver import resolve_resource_dict
 from core_pdf.impl.render_model import RenderOptions
 from core_pdf.impl.render_page import compose_page
-from core_pdf_spec.s_07_document.page import page_clip, page_rotation, page_user_unit
-from core_pdf_spec.s_07_syntax.inherited_values import collect_inherited_values
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import (
+from core_pdf.impl.spec.s_07_document.page import page_clip, page_rotation, page_user_unit
+from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import (
     CachedPdfObject,
     InheritedValueMap,
     PdfDict,
     PdfObject,
     PdfValueResolver,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_box
-from core_pdf_spec.s_08_graphics.image_spec import ImageSource
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_box
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_document import PdfDocument

@@ -1,8 +1,9 @@
 # PDF versions and standards validation
 
-`core-pdf-spec` shares its chapter algorithms across PDF versions; the external-standard
+`core_pdf.impl.spec` shares its chapter algorithms across PDF versions; the external-standard
 kernels it wraps (JBIG2, predictors, the PostScript calculator, CMS and PDF MAC ciphers, and
-the Adobe font formats) are their own distributions beneath it. A document's format
+the Adobe font formats) are modules beside it in `core_pdf.impl`, except the PostScript
+calculator, which is the `core-postscript` distribution. A document's format
 version, specification edition, developer extensions, and conformance claims are
 separate identities. Recognizing one does not mean every feature is implemented or
 that the document conforms.
@@ -48,8 +49,8 @@ unrecognized claims keep their source properties.
 ## Low-level semantics
 
 ```python
-from core_pdf_spec.standards import PdfVersion, SemanticContext
-from core_pdf_spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
+from core_pdf.impl.spec.standards import PdfVersion, SemanticContext
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 
 raw = b"\xef\xbb\xbfExample"
 assert decode_pdf_text_string(raw, context=SemanticContext(PdfVersion(1, 7))) == "ï»¿Example"

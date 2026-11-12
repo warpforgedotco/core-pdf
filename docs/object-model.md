@@ -31,7 +31,7 @@ in CI.
 
 | Layer | Package | Adds |
 | ----- | ------- | ---- |
-| Serializer | `core-pdf-spec` | PDF object to bytes, the inverse of the lexer |
+| Serializer | `core-pdf` (`core_pdf.impl.spec`) | PDF object to bytes, the inverse of the lexer |
 | Editable document | `core-pdf` | An object table over the resolver, with copy-on-write |
 | Writers | `core-pdf` | Full rewrite and incremental update, xref tables and streams |
 | Object types | `core-pdf-compat` | `NameObject`, `DictionaryObject` and friends, over core objects |

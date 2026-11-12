@@ -41,7 +41,7 @@ from core_pdf.impl.capture_recording import (
     NATIVE_STATE_HANDLERS,
     TextState,
 )
-from core_pdf_spec.s_07_content.model import GraphicsState
+from core_pdf.impl.spec.s_07_content.model import GraphicsState
 
 UPSTREAM = Path("tests/upstream")
 # Files the native operators were first checked on, with the pages to capture.

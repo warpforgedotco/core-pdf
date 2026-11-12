@@ -7,21 +7,21 @@ from collections.abc import Callable, Mapping
 from functools import lru_cache
 from typing import Any
 
-from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
-from core_adobe_fonts.agl.mapping import glyph_component_to_unicode
+from core_pdf.impl.adobe_fonts.agl.glyph_list import GLYPH_DATA
+from core_pdf.impl.adobe_fonts.agl.mapping import glyph_component_to_unicode
 from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf_spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
-from core_pdf_spec.s_09_fonts import helpers
-from core_pdf_spec.s_09_fonts.data.base_encodings import (
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
+from core_pdf.impl.spec.s_09_fonts import helpers
+from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-from core_pdf_spec.s_09_fonts.helpers import (
+from core_pdf.impl.spec.s_09_fonts.helpers import (
     BASE_ENCODING_GLYPH_NAMES,
     get_base_encoding_glyph_names,
 )
-from core_pdf_spec.standards import SemanticContext, recognized_version
+from core_pdf.impl.spec.standards import SemanticContext, recognized_version
 
 HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 
