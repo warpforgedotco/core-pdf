@@ -199,11 +199,16 @@ class _DrawingsProbe(_XrayCapture):
 
 # The probe reads only filled paths: no text, and no image's soft mask decoded for its alpha.
 _DRAWINGS_CAPTURE = CaptureOptions(glyphs=False, text_runs=False, soft_mask_alpha=False)
+# x-ray reads glyphs and drawings, never text runs.
+_GLYPHS_CAPTURE = CaptureOptions(text_runs=False)
 
 
 def _capture_page(page: Any) -> tuple[Any, dict[int, Any]]:
-    """``page.get_page_program()``, with the re operands ``_XrayCapture`` keeps."""
-    state = _XrayCapture(page.document, page_clip=page.effective_page_clip())
+    """``page.get_page_program()`` without text runs, with the re operands ``_XrayCapture``
+    keeps."""
+    state = _XrayCapture(
+        page.document, page_clip=page.effective_page_clip(), options=_GLYPHS_CAPTURE
+    )
     try:
         page.consume_contents(state)
         state.run_accumulator.flush()
