@@ -5,7 +5,7 @@ from __future__ import annotations
 __lazy_modules__ = ["core_pdf.impl.spec.s_08_graphics.geometry"]
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any, overload
 
 from core_pdf.impl.spec.s_08_graphics.geometry import points_bbox, transform_bbox
@@ -97,6 +97,27 @@ def finite_rect(box: object, *, require_positive: bool = True) -> Rectangle | No
     return (x0, y0, x1, y1)
 
 
+def combine_bbox(
+    left: Rectangle | None,
+    right: Rectangle | None,
+    near: Callable[[float, float], float],
+    far: Callable[[float, float], float],
+) -> Rectangle | None:
+    """Combine two boxes edge by edge, ``near`` on the lower-left and ``far`` on the
+    upper-right corner; a missing box yields the other.
+    """
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return (
+        near(left[0], right[0]),
+        near(left[1], right[1]),
+        far(left[2], right[2]),
+        far(left[3], right[3]),
+    )
+
+
 @overload
 def union_bbox(left: Rectangle, right: Rectangle) -> Rectangle: ...
 
@@ -106,16 +127,7 @@ def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | N
 
 
 def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
-    if left is None:
-        return right
-    if right is None:
-        return left
-    return (
-        min(left[0], right[0]),
-        min(left[1], right[1]),
-        max(left[2], right[2]),
-        max(left[3], right[3]),
-    )
+    return combine_bbox(left, right, min, max)
 
 
 def extend_baseline(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
@@ -127,16 +139,7 @@ def extend_baseline(left: Rectangle | None, right: Rectangle | None) -> Rectangl
 
 
 def intersect_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
-    if left is None:
-        return right
-    if right is None:
-        return left
-    return (
-        max(left[0], right[0]),
-        max(left[1], right[1]),
-        min(left[2], right[2]),
-        min(left[3], right[3]),
-    )
+    return combine_bbox(left, right, max, min)
 
 
 def bbox_union(boxes: Iterable[Sequence[float]]) -> Rectangle | None:
