@@ -31,7 +31,7 @@
 
 ``generic`` imports this module on its last line, so everything here sees a complete
 ``generic``. None of these types write bytes: anything with its own written form gives it
-to ``generic.to_core`` through ``core_form``, and core_pdf_spec's serializer does the rest.
+to ``generic.to_core`` through ``core_form``, and core_pdf.impl.spec's serializer does the rest.
 """
 
 from __future__ import annotations
@@ -46,6 +46,7 @@ from datetime import UTC, datetime
 from functools import cached_property
 from typing import Any, cast
 
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
 from core_pdf_compat.pypdf.constants import (
     CheckboxRadioButtonAttributes,
     FieldDictionaryAttributes,
@@ -78,7 +79,6 @@ from core_pdf_compat.pypdf.generic import (
     create_string_object,
     is_null_or_none,
 )
-from core_pdf_spec.s_07_syntax_primitives.text_string import PDFDOC_ENCODING_TABLE
 
 logger = logging.getLogger(__name__)
 

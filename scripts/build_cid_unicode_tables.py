@@ -20,8 +20,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "src/core_pdf/impl/data/cid_unicode"
 
-from core_adobe_fonts.cmap.ranges import code_in_ranges, iter_codespace_range  # noqa: E402
 from core_pdf.impl import fonts_unicode  # noqa: E402
+from core_pdf.impl.adobe_fonts.cmap.ranges import code_in_ranges, iter_codespace_range  # noqa: E402
 from core_pdf.impl.fonts_cmap import (  # noqa: E402
     CMapDecoder,
     resolve_cmap_decoder,

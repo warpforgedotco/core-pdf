@@ -1,0 +1,153 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from math import isfinite
+
+from core_pdf.impl.spec.s_07_syntax.inherited_values import add_inherited_values
+from core_pdf.impl.spec.s_07_syntax.types import InheritedValueMap, PdfDict
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import decoded_name
+from core_pdf.impl.spec.types import Rectangle
+from core_records import GeneratedRecord
+
+PAGE_INHERITED_KEYS = ("MediaBox", "CropBox", "Rotate", "Resources")
+
+
+class PageNode(GeneratedRecord):
+    dictionary: PdfDict
+    inherited_values: InheritedValueMap
+
+
+def page_clip(media: Rectangle, crop: Rectangle | None = None) -> Rectangle:
+    if crop is None:
+        return media
+    x0 = max(min(crop[0], crop[2]), min(media[0], media[2]))
+    y0 = max(min(crop[1], crop[3]), min(media[1], media[3]))
+    x1 = min(max(crop[0], crop[2]), max(media[0], media[2]))
+    y1 = min(max(crop[1], crop[3]), max(media[1], media[3]))
+    return (x0, y0, max(x0, x1), max(y0, y1))
+
+
+def page_rotation(value: object) -> int:
+    if value is None:
+        return 0
+    if type(value) is not int or value % 90:
+        raise ValueError("invalid page Rotate value")
+    return value % 360
+
+
+def page_user_unit(value: object) -> float:
+    if value is None:
+        return 1.0
+    if type(value) not in (int, float):
+        raise ValueError("invalid page UserUnit value")
+    try:
+        unit = float(value)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+    except OverflowError as error:
+        raise ValueError("invalid page UserUnit value") from error
+    if not isfinite(unit) or unit <= 0.0:
+        raise ValueError("invalid page UserUnit value")
+    return unit
+
+
+def page_inherited_values(
+    nodes: Iterable[PdfDict],
+    resolve: Callable[[object], object],
+    keys: tuple[str, ...] = PAGE_INHERITED_KEYS,
+) -> InheritedValueMap:
+    values: InheritedValueMap = {}
+    for node in nodes:
+        add_inherited_values(values, node, keys, resolve)
+    return values
+
+
+class LazyInheritedValues(Mapping[str, object]):
+    """A page's inherited values, resolved from its tree path when first read."""
+
+    __slots__ = ("nodes", "resolver", "inherited_keys", "resolved_values")
+
+    def __init__(
+        self,
+        nodes: tuple[PdfDict, ...],
+        resolve: Callable[[object], object],
+        keys: tuple[str, ...],
+    ) -> None:
+        self.nodes = nodes
+        self.resolver = resolve
+        self.inherited_keys = keys
+        self.resolved_values: InheritedValueMap | None = None
+
+    def resolved(self) -> InheritedValueMap:
+        values = self.resolved_values
+        if values is None:
+            values = self.resolved_values = page_inherited_values(
+                self.nodes, self.resolver, self.inherited_keys
+            )
+        return values
+
+    def __getitem__(self, key: str) -> object:
+        return self.resolved()[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.resolved())
+
+    def __len__(self) -> int:
+        return len(self.resolved())
+
+
+def iter_page_nodes(
+    root: object,
+    resolve: Callable[[object], object],
+    *,
+    inherited_keys: tuple[str, ...] = PAGE_INHERITED_KEYS,
+    node_type: Callable[[PdfDict], str | None] | None = None,
+    on_invalid_child: Callable[[object], bool] | None = None,
+    max_depth: int | None = None,
+    lazy_inherited: bool = False,
+) -> Iterator[PageNode]:
+    stack: list[tuple[object, int, tuple[PdfDict, ...], frozenset[int]]] = [
+        (root, 0, (), frozenset())
+    ]
+    while stack:
+        raw, depth, parents, ancestors = stack.pop()
+        if max_depth is not None and depth > max_depth:
+            raise ValueError("invalid page tree depth")
+        current = resolve(raw)
+        if not isinstance(current, dict):
+            if depth and on_invalid_child is not None and on_invalid_child(current):
+                continue
+            raise ValueError("invalid page tree node")
+        if id(current) in ancestors:
+            raise ValueError("page tree cycle detected")
+        kind = (
+            decoded_name(resolve(current.get("Type"))) if node_type is None else node_type(current)
+        )
+        if kind == "Page":
+            yield PageNode(
+                current,
+                LazyInheritedValues((current, *parents), resolve, inherited_keys)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                if lazy_inherited
+                else page_inherited_values((current, *parents), resolve, inherited_keys),
+            )
+        elif kind == "Pages":
+            kids = resolve(current.get("Kids"))
+            if not isinstance(kids, list):
+                raise ValueError("invalid page tree Kids array")
+            ancestry = ancestors | {id(current)}
+            parent_nodes = (current, *parents)
+            stack.extend((kid, depth + 1, parent_nodes, ancestry) for kid in reversed(kids))
+        else:
+            raise ValueError("invalid page tree node")
+
+
+__all__ = (
+    "PAGE_INHERITED_KEYS",
+    "LazyInheritedValues",
+    "PageNode",
+    "iter_page_nodes",
+    "page_clip",
+    "page_inherited_values",
+    "page_rotation",
+    "page_user_unit",
+)

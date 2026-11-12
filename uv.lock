@@ -8,16 +8,11 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "core-adobe-fonts",
-    "core-jbig2",
     "core-pdf",
     "core-pdf-compat",
-    "core-pdf-crypto",
     "core-pdf-cythonized",
     "core-pdf-ocr",
-    "core-pdf-spec",
     "core-pdf-validate",
-    "core-postscript",
     "core-records",
 ]
 
@@ -376,41 +371,14 @@ wheels = [
 ]
 
 [[package]]
-name = "core-adobe-fonts"
-version = "0.2.3"
-source = { editable = "packages/core-adobe-fonts" }
-dependencies = [
-    { name = "core-records" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "core-records", editable = "packages/core-records" }]
-
-[[package]]
-name = "core-jbig2"
-version = "0.3.2"
-source = { editable = "packages/core-jbig2" }
-dependencies = [
-    { name = "core-records" },
-    { name = "numpy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "core-records", editable = "packages/core-records" },
-    { name = "numpy", specifier = ">=2.5.1" },
-]
-
-[[package]]
 name = "core-pdf"
 version = "0.0.7"
 source = { editable = "." }
 dependencies = [
-    { name = "core-adobe-fonts" },
-    { name = "core-jbig2" },
+    { name = "asn1crypto" },
     { name = "core-pdf-cythonized" },
-    { name = "core-pdf-spec" },
     { name = "core-records" },
+    { name = "cryptography" },
     { name = "defusedxml" },
     { name = "imagecodecs" },
     { name = "numpy" },
@@ -444,11 +412,10 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "core-adobe-fonts", editable = "packages/core-adobe-fonts" },
-    { name = "core-jbig2", editable = "packages/core-jbig2" },
+    { name = "asn1crypto", specifier = ">=1.5.1" },
     { name = "core-pdf-cythonized", editable = "packages/core-pdf-cythonized" },
-    { name = "core-pdf-spec", editable = "packages/core-pdf-spec" },
     { name = "core-records", editable = "packages/core-records" },
+    { name = "cryptography", specifier = ">=50.0.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "imagecodecs", specifier = ">=2026.6.26" },
     { name = "numpy", specifier = ">=2.5.1" },
@@ -483,10 +450,7 @@ name = "core-pdf-compat"
 version = "0.0.7"
 source = { editable = "packages/core-pdf-compat" }
 dependencies = [
-    { name = "core-adobe-fonts" },
     { name = "core-pdf" },
-    { name = "core-pdf-crypto" },
-    { name = "core-pdf-spec" },
     { name = "numpy" },
 ]
 
@@ -503,10 +467,7 @@ unstructured = [
 
 [package.metadata]
 requires-dist = [
-    { name = "core-adobe-fonts", editable = "packages/core-adobe-fonts" },
     { name = "core-pdf", editable = "." },
-    { name = "core-pdf-crypto", editable = "packages/core-pdf-crypto" },
-    { name = "core-pdf-spec", editable = "packages/core-pdf-spec" },
     { name = "en-core-web-sm", marker = "extra == 'unstructured'", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "langdetect", marker = "extra == 'unstructured'", specifier = ">=1.0.9,<2.0.0" },
     { name = "numpy", specifier = ">=2.5.1" },
@@ -515,21 +476,6 @@ requires-dist = [
     { name = "spacy", marker = "extra == 'unstructured'", specifier = ">=3.8.15,<3.9.0" },
 ]
 provides-extras = ["unstructured", "pdfplumber"]
-
-[[package]]
-name = "core-pdf-crypto"
-version = "0.1.0"
-source = { editable = "packages/core-pdf-crypto" }
-dependencies = [
-    { name = "asn1crypto" },
-    { name = "cryptography" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "asn1crypto", specifier = ">=1.5.1" },
-    { name = "cryptography", specifier = ">=50.0.0" },
-]
 
 [[package]]
 name = "core-pdf-cythonized"
@@ -560,29 +506,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "core-pdf-spec"
-version = "0.15.0"
-source = { editable = "packages/core-pdf-spec" }
-dependencies = [
-    { name = "core-adobe-fonts" },
-    { name = "core-jbig2" },
-    { name = "core-pdf-crypto" },
-    { name = "core-postscript" },
-    { name = "core-records" },
-    { name = "numpy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "core-adobe-fonts", editable = "packages/core-adobe-fonts" },
-    { name = "core-jbig2", editable = "packages/core-jbig2" },
-    { name = "core-pdf-crypto", editable = "packages/core-pdf-crypto" },
-    { name = "core-postscript", editable = "packages/core-postscript" },
-    { name = "core-records", editable = "packages/core-records" },
-    { name = "numpy", specifier = ">=2.5.1" },
-]
-
-[[package]]
 name = "core-pdf-validate"
 version = "0.1.1"
 source = { editable = "packages/core-pdf-validate" }
@@ -598,17 +521,6 @@ requires-dist = [
     { name = "core-records", editable = "packages/core-records" },
     { name = "defusedxml", specifier = ">=0.7.1" },
 ]
-
-[[package]]
-name = "core-postscript"
-version = "0.1.1"
-source = { editable = "packages/core-postscript" }
-dependencies = [
-    { name = "core-records" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "core-records", editable = "packages/core-records" }]
 
 [[package]]
 name = "core-records"

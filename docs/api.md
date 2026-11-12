@@ -151,7 +151,7 @@ facade never loads the model.
 
 ## Low-level specification library
 
-`core-pdf-spec` is installable and versioned on its own as `core_pdf_spec`, with one
+`core_pdf.impl.spec` ships inside `core-pdf`, with one
 module group per PDF chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, and so on).
 It provides strict algorithms, PDF primitives, standard data, and semantic service
 protocols, with no document facade or command line. Its supported exports are the names
@@ -160,24 +160,22 @@ documented next to their strict implementations. Spec reports malformed input ra
 than repairing it, except where a referenced standard prescribes a fallback, and it is
 not a complete conformance validator.
 
-Core requires `core-pdf-spec>=0.15.0,<0.16.0` and `core-pdf-cythonized>=0.1.0,<0.2.0`;
-the latter carries compiled kernels with no pure-Python fallback, so core needs a
-wheel for the target platform or a C compiler at install time. Referenced-standard
-kernels (the PostScript calculator, JBIG2, ciphers and PDF MAC, and the Adobe font
-formats with their CMap data) are separately versioned floor packages that spec
-depends on and core may import directly: `core-postscript`, `core-jbig2`,
-`core-pdf-crypto`, and `core-adobe-fonts`, with `core-records`, the value-class mixins
-every workspace package's records share, beneath them. The JBIG2 MQ arithmetic decoder is the
-exception: it lives in `core-pdf-cythonized`, so spec on its own reports arithmetic-coded
-JBIG2 regions as unsupported and core decodes them. The PNG and TIFF predictor kernels are
+Core requires `core-pdf-cythonized>=0.1.0,<0.2.0`, which carries compiled kernels with
+no pure-Python fallback, so core needs a wheel for the target platform or a C compiler at
+install time. The referenced-standard kernels for the PostScript calculator, JBIG2,
+ciphers and PDF MAC, and the Adobe font formats with their CMap data ship inside
+`core-pdf` as `core_pdf.impl.postscript`, `core_pdf.impl.jbig2`, `core_pdf.impl.crypto`,
+and `core_pdf.impl.adobe_fonts`, with `core-records`, the value-class mixins every
+workspace package's records share, beneath them. The JBIG2 MQ
+arithmetic decoder lives in `core-pdf-cythonized`. The PNG and TIFF predictor kernels are
 small enough that they live in spec itself, as
-`core_pdf_spec.s_07_filters.predictors`. Core's public exceptions keep their names
+`core_pdf.impl.spec.s_07_filters.predictors`. Core's public exceptions keep their names
 and share spec's error identities. Reader recovery, fontTools backends, Unicode guesses,
 device color conversion, capture, extraction, and rendering stay in core.
 
 ## PDF versions and conformance claims
 
-`PdfDocument.standards` returns an immutable `core_pdf_spec.standards.DocumentStandards`
+`PdfDocument.standards` returns an immutable `core_pdf.impl.spec.standards.DocumentStandards`
 with the header, catalog, and effective versions, declared extensions, unverified
 profile claims, and declaration diagnostics. Its `.context` drives version-sensitive
 low-level semantics.

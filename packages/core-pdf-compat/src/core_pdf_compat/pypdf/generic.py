@@ -1,6 +1,6 @@
 """pypdf's object types, converted to and from core-pdf's parsed objects.
 
-Bytes are always written by core_pdf_spec's serializer, so there is one writer.
+Bytes are always written by core_pdf.impl.spec's serializer, so there is one writer.
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 __lazy_modules__ = [
     "core_pdf_compat.pypdf._generic_content",
     "core_pdf_compat.pypdf.errors",
-    "core_pdf_spec.s_07_syntax.serialize",
+    "core_pdf.impl.spec.s_07_syntax.serialize",
 ]
 
 import codecs
@@ -22,19 +22,19 @@ from typing import Any, ClassVar, Self, cast
 
 from core_pdf.impl.object_serialize import serialize_object
 from core_pdf.impl.recovery_lexer import BareKeyword
+from core_pdf.impl.spec.s_07_filters.codecs import encode_flate
+from core_pdf.impl.spec.s_07_syntax.serialize import (
+    ObjectLayout,
+    serialize_name,
+    serialize_spaced_real,
+)
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat.pypdf.errors import (
     LimitReachedError,
     PdfReadError,
     PdfStreamError,
 )
-from core_pdf_spec.s_07_filters.codecs import encode_flate
-from core_pdf_spec.s_07_syntax.serialize import (
-    ObjectLayout,
-    serialize_name,
-    serialize_spaced_real,
-)
-from core_pdf_spec.s_07_syntax.stream import PdfStream
 from core_records import RecordType, ReplaceFields, ReprFields
 
 logger = logging.getLogger(__name__)
@@ -686,7 +686,7 @@ class DictionaryObject(dict[Any, Any], PdfObject):
 
 
 # The stream classes' behaviour is ported from pypdf, Copyright (c) 2006-2008, Mathieu
-# Fenniak, under its BSD-style license. core_pdf_spec does the decoding and encoding.
+# Fenniak, under its BSD-style license. core_pdf.impl.spec does the decoding and encoding.
 class StreamObject(DictionaryObject):
     def __init__(self) -> None:
         super().__init__()

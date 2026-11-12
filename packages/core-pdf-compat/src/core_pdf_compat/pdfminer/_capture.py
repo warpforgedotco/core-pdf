@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field  # noqa: TID251
 from typing import Any, NamedTuple
 
-import core_pdf_spec.s_07_syntax.lexer
+import core_pdf.impl.spec.s_07_syntax.lexer
 from core_pdf import PdfPage
 from core_pdf.impl.capture_glyphs import GlyphPaint
 from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
@@ -13,14 +13,14 @@ from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.exceptions import PdfError, PdfParseError
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
+from core_pdf.impl.spec.s_07_content.inline_images import InlineImage
+from core_pdf.impl.spec.s_07_content.model import PdfPath
+from core_pdf.impl.spec.s_07_content.operations import ContentOperands
+from core_pdf.impl.spec.s_07_content.streams import ContentStreamFrame
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import PdfReference, PdfString, Rectangle
-from core_pdf_spec.s_07_content.inline_images import InlineImage
-from core_pdf_spec.s_07_content.model import PdfPath
-from core_pdf_spec.s_07_content.operations import ContentOperands
-from core_pdf_spec.s_07_content.streams import ContentStreamFrame
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict
-from core_pdf_spec.s_08_graphics.matrix import Matrix
 
 from ._fonts import (
     EMPTY_GLYPH_TEXT,
@@ -61,7 +61,7 @@ class PdfminerContentLexer(PdfLexer):
 class PdfminerRecovery(CaptureRecovery):
     def resume(
         self,
-        lexer: core_pdf_spec.s_07_syntax.lexer.PdfLexer,
+        lexer: core_pdf.impl.spec.s_07_syntax.lexer.PdfLexer,
         error: PdfParseError,
         kind: str,
         start: int,

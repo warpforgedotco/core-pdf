@@ -10,8 +10,7 @@ from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner
-from core_pdf.impl.types import PdfByteBuffer, PdfReference
-from core_pdf_spec.s_07_syntax.xref import (
+from core_pdf.impl.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefRevision,
     XRefTable,
@@ -19,6 +18,7 @@ from core_pdf_spec.s_07_syntax.xref import (
     key_for,
     merge_xref_sections,
 )
+from core_pdf.impl.types import PdfByteBuffer, PdfReference
 
 from .._shared import parse_indirect_object_at
 

@@ -16,14 +16,14 @@ from core_pdf.impl.document_records import RawAnnotation, RawFormField
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.geometry import normalize_rect, transform_bbox
 from core_pdf.impl.recovery_resolver import ObjectResolver, resolve_resource_dict
-from core_pdf_spec.s_07_document.annotation_appearance import (
+from core_pdf.impl.spec.s_07_document.annotation_appearance import (
     ANNOTATION_FLAG_HIDDEN,
     ANNOTATION_FLAG_NO_VIEW,
     appearance_matrix,
     normal_appearance_stream,
 )
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_document import PdfDocument

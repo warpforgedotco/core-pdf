@@ -39,10 +39,10 @@ from core_pdf.impl.fonts_widths import (
 )
 from core_pdf.impl.glyphs import UnicodeSource
 from core_pdf.impl.pdf_values import recover_pdf_name
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import (
     GeneratedRecord,
 )
-from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 
 def single_code_mapping(

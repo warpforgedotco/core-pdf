@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
+
+
+def info_dictionary(resolver: PdfValueResolver, trailer: PdfDict) -> PdfDict | None:
+    reference = trailer.get("Info")
+    if reference is None:
+        return None
+    info = resolver.resolve_dict(reference)
+    if not isinstance(info, dict):
+        raise ValueError("invalid trailer Info dictionary")
+    return info
+
+
+def catalog_metadata_stream(resolver: PdfValueResolver, catalog: object) -> PdfStream | None:
+    if not isinstance(catalog, dict):
+        raise ValueError("invalid trailer Root dictionary")
+    metadata = resolver.resolve(catalog.get("Metadata"))
+    if metadata is not None and not isinstance(metadata, PdfStream):
+        raise ValueError("invalid Metadata stream")
+    return metadata
+
+
+__all__ = (
+    "catalog_metadata_stream",
+    "info_dictionary",
+)

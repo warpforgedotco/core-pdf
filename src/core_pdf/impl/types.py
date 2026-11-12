@@ -5,7 +5,7 @@ from __future__ import annotations
 from os import PathLike
 from typing import Protocol, TypeAlias, TypeVar
 
-from core_pdf_spec.types import (
+from core_pdf.impl.spec.types import (
     MISSING,
     MissingObject,
     PdfByteBuffer,

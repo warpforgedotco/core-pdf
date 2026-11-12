@@ -4,10 +4,10 @@ from __future__ import annotations
 
 __lazy_modules__ = [
     "core_pdf.impl.graphics_images",
-    "core_pdf_spec.s_08_graphics",
-    "core_pdf_spec.s_08_graphics.geometry",
-    "core_pdf_spec.s_08_graphics.image_spec",
-    "core_pdf_spec.s_11_transparency.soft_masks",
+    "core_pdf.impl.spec.s_08_graphics",
+    "core_pdf.impl.spec.s_08_graphics.geometry",
+    "core_pdf.impl.spec.s_08_graphics.image_spec",
+    "core_pdf.impl.spec.s_11_transparency.soft_masks",
 ]
 
 from array import array
@@ -64,6 +64,29 @@ from core_pdf.impl.graphics_images import decode_soft_mask, image_overrides_grap
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer
 from core_pdf.impl.runs import TextRun
+from core_pdf.impl.spec.exceptions import PdfParseError
+from core_pdf.impl.spec.s_07_content import model
+from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter
+from core_pdf.impl.spec.s_07_content.model import NON_PAINTING_RENDER_MODES, GraphicsState, PdfPath
+from core_pdf.impl.spec.s_07_content.operations import OperationHandler
+from core_pdf.impl.spec.s_07_content.streams import ContentStreamExecutor, ContentStreamFrame
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
+from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
+from core_pdf.impl.spec.s_08_graphics import image_spec
+from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
+from core_pdf.impl.spec.s_08_graphics.color_rendering import (
+    DEFAULT_COLOR_RENDERING,
+    ColorRendering,
+    override_color_rendering,
+)
+from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
+from core_pdf.impl.spec.s_08_graphics.geometry import unit_square_placement
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontService
+from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask
 from core_pdf.impl.text import normalize_extracted_text
 from core_pdf.impl.types import (
     MISSING,
@@ -75,35 +98,12 @@ from core_pdf.impl.types import (
     ReprFields,
 )
 from core_pdf_cythonized import NativeOperators, SlotLayout, flatten_path_commands
-from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_content import model
-from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
-from core_pdf_spec.s_07_content.model import NON_PAINTING_RENDER_MODES, GraphicsState, PdfPath
-from core_pdf_spec.s_07_content.operations import OperationHandler
-from core_pdf_spec.s_07_content.streams import ContentStreamExecutor, ContentStreamFrame
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
-from core_pdf_spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
-from core_pdf_spec.s_08_graphics import image_spec
-from core_pdf_spec.s_08_graphics.color import color_space_paints
-from core_pdf_spec.s_08_graphics.color_rendering import (
-    DEFAULT_COLOR_RENDERING,
-    ColorRendering,
-    override_color_rendering,
-)
-from core_pdf_spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
-from core_pdf_spec.s_08_graphics.geometry import unit_square_placement
-from core_pdf_spec.s_08_graphics.image_spec import ImageSource
-from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
-from core_pdf_spec.s_09_fonts.service import DecodedFontGlyph, FontService
-from core_pdf_spec.s_11_transparency.soft_masks import SoftMask
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture_records import LayoutFormId
     from core_pdf.impl.document_document import PdfDocument
     from core_pdf.impl.recovery_resolver import ObjectResolver
-    from core_pdf_spec.s_07_content.inline_images import InlineImage
+    from core_pdf.impl.spec.s_07_content.inline_images import InlineImage
 
 
 CaptureMarks: TypeAlias = tuple[int, int, int, int, int, int]

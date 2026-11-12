@@ -6,12 +6,12 @@ import math
 from typing import Any
 
 from core_pdf.impl.pdf_values import lenient_float, lenient_int
-from core_pdf_spec.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax_primitives.coercion import parse_float
-from core_pdf_spec.s_08_graphics import pdf_function
-from core_pdf_spec.s_08_graphics.pdf_function import (
+from core_pdf.impl.spec.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float
+from core_pdf.impl.spec.s_08_graphics import pdf_function
+from core_pdf.impl.spec.s_08_graphics.pdf_function import (
     PdfFunctionEvaluator,
 )
 

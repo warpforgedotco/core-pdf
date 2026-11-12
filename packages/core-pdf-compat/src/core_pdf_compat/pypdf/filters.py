@@ -1,6 +1,6 @@
 # The decoders' error, limit and logging behaviour is ported from pypdf 7.0.0, Copyright (c)
 # 2006, Mathieu Fenniak and 2006-2008, Martin Thoma, under its BSD-style license.
-# core_pdf_spec does the LZW and predictor decoding where the two agree.
+# core_pdf.impl.spec does the LZW and predictor decoding where the two agree.
 """Stream filters with pypdf's signatures and limits."""
 
 from __future__ import annotations
@@ -23,6 +23,16 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from core_pdf.impl.spec.s_07_filters.codecs import (
+    IncompleteLzwError,
+    LzwOutputLimitError,
+    apply_ascii_hex,
+    apply_lzw,
+    encode_flate,
+)
+from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
+from core_pdf.impl.spec.s_07_filters.errors import PredictorError, UnsupportedPngFilterError
+from core_pdf.impl.spec.s_07_filters.predictors import png_predict, tiff_predict
 from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf.errors import (
     DependencyError,
@@ -39,16 +49,6 @@ from core_pdf_compat.pypdf.generic import (
     StreamObject,
     is_null_or_none,
 )
-from core_pdf_spec.s_07_filters.codecs import (
-    IncompleteLzwError,
-    LzwOutputLimitError,
-    apply_ascii_hex,
-    apply_lzw,
-    encode_flate,
-)
-from core_pdf_spec.s_07_filters.decode_spec import FilterParams
-from core_pdf_spec.s_07_filters.errors import PredictorError, UnsupportedPngFilterError
-from core_pdf_spec.s_07_filters.predictors import png_predict, tiff_predict
 from core_records import GeneratedRecord
 
 logger = logging.getLogger(__name__)

@@ -22,9 +22,9 @@ from typing import Any
 
 from core_pdf import EditableDocument, NewEncryption, PdfDocument
 from core_pdf.impl.exceptions import PdfError, PdfPasswordError, PdfUnsupportedError
+from core_pdf.impl.spec.s_07_security.output import ALGORITHMS
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import PdfName, PdfString
-from core_pdf_spec.s_07_security.output import ALGORITHMS
-from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

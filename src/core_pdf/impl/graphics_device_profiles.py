@@ -16,7 +16,7 @@ from core_pdf.impl.graphics_icc_profiles import (
     IccTransform,
     parse_icc_transform,
 )
-from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
+from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 
 INTERNAL_DEFAULT_CMYK_PROFILE = "SWOP2006_Coated5v2.icc"
 

@@ -16,11 +16,10 @@ dependencies = [
     "numpy>=2.5.1",
     "imagecodecs>=2026.6.26",
     "defusedxml>=0.7.1",
-    "core-pdf-spec>=0.15.0,<0.16.0",
-    "core-jbig2>=0.3.2,<0.4.0",
-    "core-adobe-fonts>=0.2.3,<0.3.0",
     "core-pdf-cythonized>=0.1.0,<0.2.0",
     "core-records>=0.2.0,<0.3.0",
+    "asn1crypto>=1.5.1",
+    "cryptography>=50.0.0",
 ]
 
 [project.scripts]
@@ -33,12 +32,7 @@ python-preference = "system"
 members = [
     "packages/core-pdf-ocr",
     "packages/core-pdf-compat",
-    "packages/core-pdf-spec",
     "packages/core-pdf-validate",
-    "packages/core-postscript",
-    "packages/core-jbig2",
-    "packages/core-pdf-crypto",
-    "packages/core-adobe-fonts",
     "packages/core-records",
     "packages/core-pdf-cythonized",
 ]
@@ -46,9 +40,6 @@ members = [
 [tool.uv.sources]
 core-pdf-cythonized = { workspace = true }
 core-records = { workspace = true }
-core-jbig2 = { workspace = true }
-core-adobe-fonts = { workspace = true }
-core-pdf-spec = { workspace = true }
 
 [project.urls]
 Repository = "https://github.com/warpforgedotco/core-pdf"
@@ -78,7 +69,7 @@ benchmark = [
 ]
 
 [tool.ruff]
-src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src", "packages/core-pdf-cythonized/src", "."]
+src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-records/src", "packages/core-pdf-cythonized/src", "."]
 extend-exclude = [
     ".claude/worktrees",
     "src/core_pdf/_vendor/fontTools",
@@ -99,10 +90,10 @@ line-length = 100
 # Import hook methods share the importlib signatures.
 "tests/compat/**" = ["ARG"]
 # Operator handlers share one dispatch signature: (operands, depth).
-"packages/core-pdf-spec/src/core_pdf_spec/s_07_content/interpreter.py" = ["ARG002"]
+"src/core_pdf/impl/spec/s_07_content/interpreter.py" = ["ARG002"]
 "packages/core-pdf-compat/src/core_pdf_compat/pdfminer/_capture.py" = ["ARG002"]
 # Stream filters share the FilterFn signature: (data, parms).
-"packages/core-pdf-spec/src/core_pdf_spec/s_07_filters/codecs.py" = ["ARG001"]
+"src/core_pdf/impl/spec/s_07_filters/codecs.py" = ["ARG001"]
 # Cython pure-mode kernels: each rewrite these rules suggest (`in` for chained
 # comparisons, min()/max() for conditional expressions, merged branches, ...)
 # compiles to different C.
@@ -137,10 +128,10 @@ line-length = 100
 "src/core_pdf/impl/capture_recording.py" = ["ARG002"]
 # Documented parsing extension hooks keep their signatures, in the strict base
 # and in the recovery overrides.
-"packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/lexer.py" = ["ARG002"]
-"packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/objects.py" = ["ARG002"]
-"packages/core-pdf-spec/src/core_pdf_spec/s_07_syntax/resolver.py" = ["ARG002"]
-"packages/core-pdf-spec/src/core_pdf_spec/s_07_content/streams.py" = ["ARG002"]
+"src/core_pdf/impl/spec/s_07_syntax/lexer.py" = ["ARG002"]
+"src/core_pdf/impl/spec/s_07_syntax/objects.py" = ["ARG002"]
+"src/core_pdf/impl/spec/s_07_syntax/resolver.py" = ["ARG002"]
+"src/core_pdf/impl/spec/s_07_content/streams.py" = ["ARG002"]
 "src/core_pdf/impl/recovery_lexer.py" = ["ARG002"]
 "src/core_pdf/impl/recovery_resolver.py" = ["ARG002"]
 "src/core_pdf/impl/fonts_cmap.py" = ["ARG002"]
@@ -199,8 +190,8 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.14"
-files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-spec/src/core_pdf_spec", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-postscript/src/core_postscript", "packages/core-jbig2/src/core_jbig2", "packages/core-pdf-crypto/src/core_pdf_crypto", "packages/core-adobe-fonts/src/core_adobe_fonts", "packages/core-records/src/core_records", "packages/core-pdf-cythonized/src/core_pdf_cythonized"]
-mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
+files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-records/src/core_records", "packages/core-pdf-cythonized/src/core_pdf_cythonized"]
+mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
 ignore_missing_imports = true
@@ -210,7 +201,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [tool.ty.environment]
-root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-spec/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-jbig2/src", "packages/core-pdf-crypto/src", "packages/core-adobe-fonts/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
+root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
 
 [tool.ty.src]
 exclude = [
@@ -245,3 +236,9 @@ core_pdf = ["py.typed"]
     "LICENSE*",
 ]
 "core_pdf.impl.data" = ["raster_fonts/**", "cid_unicode/*.bin.gz"]
+"core_pdf.impl.adobe_fonts.cmap" = ["data/cmaps/**"]
+"core_pdf.impl.adobe_fonts._vendor.font_data" = ["LICENSE*", "*.md"]
+"core_pdf.impl.adobe_fonts.afm" = ["*.txt", "*.md"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["**/__pycache__/*", "**/*.pyc", "*.pdf", "**/*.pdf"]

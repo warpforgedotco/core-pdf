@@ -28,11 +28,11 @@ from core_pdf.impl.geometry import (
     overlap_ratio_of,
 )
 from core_pdf.impl.render_page import compose_page
+from core_pdf.impl.spec.s_07_content.model import PATH_OPERAND_COUNTS, PATH_RECT, PdfPath
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf.impl.text import collapse_ws
 from core_pdf.impl.types import PdfReference, RecordType, ReplaceFields, ReprFields
-from core_pdf_spec.s_07_content.model import PATH_OPERAND_COUNTS, PATH_RECT, PdfPath
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX
 
 from .._shared import parse_indirect_object_at
 

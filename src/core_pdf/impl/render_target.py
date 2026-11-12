@@ -77,6 +77,11 @@ from core_pdf.impl.render_paths import (
     rasterize_unclipped_line_normal,
     stroke_half_width,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+from core_pdf.impl.spec.s_11_transparency.blend import BlendMode, blend_component, revised_blending
+from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.types import MISSING, MissingObject
 from core_pdf_cythonized import (
     accumulate_source_plane,
@@ -100,11 +105,6 @@ from core_pdf_cythonized import (
     stroke_segment_samples,
     supersampled_coverage_plane,
 )
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf_spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
-from core_pdf_spec.s_08_graphics.image_spec import ImageSource
-from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_component, revised_blending
-from core_pdf_spec.standards import SemanticContext
 
 SoftMaskKey = tuple[int, int, tuple[float, float]]
 

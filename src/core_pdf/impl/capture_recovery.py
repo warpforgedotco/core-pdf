@@ -4,22 +4,22 @@ from collections.abc import Callable, Iterator
 from typing import Literal
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.types import PdfName
-from core_pdf_cythonized import ContentScanner
-from core_pdf_spec.s_07_content.inline_images import (
+from core_pdf.impl.spec.s_07_content.inline_images import (
     InlineImage,
     InlineImageDataLengthError,
     scan_inline_image_data,
 )
-from core_pdf_spec.s_07_content.operations import (
+from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperand,
     ContentOperation,
     ContentToken,
     parse_content_token,
 )
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer
-from core_pdf_spec.s_07_syntax_primitives.tokens import WHITESPACE
-from core_pdf_spec.types import PdfString
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WHITESPACE
+from core_pdf.impl.spec.types import PdfString
+from core_pdf.impl.types import PdfName
+from core_pdf_cythonized import ContentScanner
 
 
 def recover_inline_image_position(

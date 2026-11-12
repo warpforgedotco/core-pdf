@@ -21,9 +21,9 @@ from core_pdf.impl.render_model import (
     is_plain_fill,
     path_paint_fields,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource, SoftMask
 from core_pdf_cythonized import SlotLayout
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf_spec.s_08_graphics.image_spec import ImageSource, SoftMask
 
 PATH_PAINT_KINDS = {
     name: PathPaintKind(index) for index, name in enumerate(("fill", "stroke", "fillstroke"))

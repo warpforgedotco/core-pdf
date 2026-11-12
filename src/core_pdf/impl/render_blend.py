@@ -10,10 +10,10 @@ import numpy
 from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.geometry import clamp01
 from core_pdf.impl.graphics_device_profiles import cmyk_floats_to_srgb, component_byte
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf.impl.spec.s_11_transparency.blend import BlendMode, blend_components
+from core_pdf.impl.spec.standards import PdfVersion, SemanticContext
 from core_pdf_cythonized import blend_visible_rgba
-from core_pdf_spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf_spec.s_11_transparency.blend import BlendMode, blend_components
-from core_pdf_spec.standards import PdfVersion, SemanticContext
 
 RASTER_NUMPY_SPAN_MIN_PIXELS = 32
 

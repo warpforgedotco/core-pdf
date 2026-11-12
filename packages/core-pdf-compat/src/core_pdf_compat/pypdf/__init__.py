@@ -8,7 +8,7 @@ __lazy_modules__ = [
     "core_pdf_compat.pypdf.errors",
     "core_pdf_compat.pypdf.pagerange",
     "core_pdf_compat.pypdf.papersizes",
-    "core_pdf_spec.s_07_security.output",
+    "core_pdf.impl.spec.s_07_security.output",
 ]
 
 import contextlib
@@ -27,6 +27,11 @@ from core_pdf.impl.exceptions import (
     PdfUnsupportedError,
 )
 from core_pdf.impl.recovery_lexer import PdfLexer as RecoveryLexer
+from core_pdf.impl.spec.exceptions import PdfParseError, PdfPasswordError
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
+from core_pdf.impl.spec.s_07_security.output import is_signature_contents
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry, key_for
 from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
@@ -93,11 +98,6 @@ from core_pdf_compat.pypdf.generic import (
 )
 from core_pdf_compat.pypdf.pagerange import PageRange, parse_filename_page_ranges
 from core_pdf_compat.pypdf.papersizes import PaperSize
-from core_pdf_spec.exceptions import PdfParseError, PdfPasswordError
-from core_pdf_spec.s_07_filters.errors import FilterError
-from core_pdf_spec.s_07_security.output import is_signature_contents
-from core_pdf_spec.s_07_syntax.stream import PdfStream
-from core_pdf_spec.s_07_syntax.xref import PdfXRefEntry, key_for
 
 __version__ = "7.0.0"
 

@@ -13,23 +13,23 @@ from defusedxml.ElementTree import fromstring
 
 from core_pdf.impl.exceptions import PdfError, PdfParseError
 from core_pdf.impl.recovery_resolver import ObjectResolver
-from core_pdf_spec.s_07_document.metadata import catalog_metadata_stream, info_dictionary
-from core_pdf_spec.s_07_document.standards import (
+from core_pdf.impl.spec.s_07_document.metadata import catalog_metadata_stream, info_dictionary
+from core_pdf.impl.spec.s_07_document.standards import (
     effective_pdf_version,
     parse_catalog_version,
     parse_extension,
     parse_header_version,
 )
-from core_pdf_spec.s_07_syntax.resolution import resolve_reference_chain
-from core_pdf_spec.s_07_syntax.types import Decipher, PdfDict, PdfValueResolver
-from core_pdf_spec.s_07_syntax.xref import (
+from core_pdf.impl.spec.s_07_syntax.resolution import resolve_reference_chain
+from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict, PdfValueResolver
+from core_pdf.impl.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefRevision,
     XRefScanner,
     iter_xref_revisions,
     overlay_xref_entries,
 )
-from core_pdf_spec.standards import (
+from core_pdf.impl.spec.standards import (
     DocumentStandards,
     PdfExtension,
     PdfVersion,
@@ -39,7 +39,7 @@ from core_pdf_spec.standards import (
     get_extension_coverage,
     get_standard_profile,
 )
-from core_pdf_spec.types import PdfByteBuffer, PdfName, PdfReference
+from core_pdf.impl.spec.types import PdfByteBuffer, PdfName, PdfReference
 
 RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 IDENTIFICATION_NAMESPACES = {

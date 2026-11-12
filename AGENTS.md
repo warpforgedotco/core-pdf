@@ -13,7 +13,7 @@ prek run --all-files                 # run repository hooks across all files
 
 ## Dependency Management
 
-Never edit `pyproject.toml` or `uv.lock` manually when adding or removing dependencies. Use `uv add --group <group> <package>` or `uv remove --group <group> <package>`; these commands update project metadata and the lockfile, and both generated changes should be reviewed and committed. Use the existing groups for their intended purpose: `lint` for Ruff, mypy, and ty, and `compiling` for Nuitka. For example, add a lint dependency with `uv add --group lint ruff`; do not create a new group when an existing group fits. A dependency of a workspace member is added with `uv add --package <member> <package>`; for another member, pass a version range such as `"core-jbig2>=0.1.0,<0.2.0"` and uv records the `{ workspace = true }` source itself.
+Never edit `pyproject.toml` or `uv.lock` manually when adding or removing dependencies. Use `uv add --group <group> <package>` or `uv remove --group <group> <package>`; these commands update project metadata and the lockfile, and both generated changes should be reviewed and committed. Use the existing groups for their intended purpose: `lint` for Ruff, mypy, and ty, and `compiling` for Nuitka. For example, add a lint dependency with `uv add --group lint ruff`; do not create a new group when an existing group fits. A dependency of a workspace member is added with `uv add --package <member> <package>`; for another member, pass a version range such as `"core-records>=0.2.0,<0.3.0"` and uv records the `{ workspace = true }` source itself.
 
 ## Commit & Pull Request Guidelines
 

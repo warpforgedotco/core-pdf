@@ -22,10 +22,10 @@ from typing import Any
 
 from core_pdf import PdfDocument
 from core_pdf.impl.recovery_lexer import StrictPdfLexer
+from core_pdf.impl.spec.exceptions import PdfParseError
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.types import PdfReference
-from core_pdf_spec.exceptions import PdfParseError
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer
-from core_pdf_spec.s_07_syntax.stream import PdfStream
 
 CORPUS = (
     "tests/upstream/pdfplumber/tests/pdfs/*.pdf",

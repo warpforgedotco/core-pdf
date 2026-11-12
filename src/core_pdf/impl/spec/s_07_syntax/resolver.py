@@ -1,0 +1,302 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+from __future__ import annotations
+
+__lazy_modules__ = ["core_pdf.impl.spec.s_07_syntax.objects"]
+
+import contextlib
+import mmap
+import threading
+
+from core_pdf.impl.spec.exceptions import PdfParseError
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
+from core_pdf.impl.spec.s_07_syntax.resolution import (
+    GRAPH_TYPES,
+    resolve_object_graph,
+    resolve_reference_chain,
+)
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import (
+    Decipher,
+    ObjectCache,
+    PdfDict,
+    PdfObject,
+)
+from core_pdf.impl.spec.s_07_syntax.xref import (
+    PdfXRefEntry,
+)
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
+    decoded_name,
+    parse_box,
+    require_pdf_integer,
+    require_pdf_number,
+)
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
+from core_pdf.impl.spec.standards import SemanticContext
+from core_pdf.impl.spec.types import MISSING, PdfReference, PdfString
+
+STREAM_DECODE_KEYS = frozenset(
+    {
+        "F",
+        "Filter",
+        "DecodeParms",
+        "DP",
+        "FFilter",
+        "FDecodeParms",
+    }
+)
+
+
+class _ResolverThreadState(threading.local):
+    def __init__(self) -> None:
+        super().__init__()
+        self.resolving: set[int] = set()
+
+
+class ObjectResolver:
+    __slots__ = (
+        "data",
+        "xref",
+        "decipher",
+        "objects",
+        "object_streams",
+        "failed_object_streams",
+        "lock",
+        "thread_state",
+        "_semantic_context",
+    )
+
+    def __init__(
+        self,
+        data: bytes | bytearray | memoryview | mmap.mmap,
+        xref: dict[int, PdfXRefEntry],
+        *,
+        decipher: Decipher | None = None,
+        semantic_context: SemanticContext | None = None,
+    ) -> None:
+        self.data = memoryview(data)
+        self.xref = xref
+        self.decipher = decipher
+        self._semantic_context = semantic_context
+        self.objects: ObjectCache = {}
+        self.object_streams: dict[int, PdfObjectStream] = {}
+        # A container that failed to build fails again for every object it holds, so the
+        # error is kept, with the decipher it was built under, which security negotiation
+        # may still set.
+        self.failed_object_streams: dict[int, tuple[Decipher | None, Exception]] = {}
+        self.lock = threading.RLock()
+        self.thread_state = _ResolverThreadState()
+
+    @property
+    def semantic_context(self) -> SemanticContext | None:
+        return self._semantic_context
+
+    @semantic_context.setter
+    def semantic_context(self, context: SemanticContext | None) -> None:
+        with self.lock:
+            if context == self._semantic_context:
+                return
+            streams = self.detach_parsed_caches()
+            self._semantic_context = context
+        for stream in streams:
+            stream.close()
+
+    def get_lexer(self) -> PdfLexer:
+        return PdfLexer(
+            self.data,
+            reference_resolver=self.resolve,
+            decipher=self.decipher,
+            semantic_context=self.semantic_context,
+        )
+
+    def release_lexer(self, lexer: PdfLexer) -> None:
+        lexer.close()
+
+    def detach_parsed_caches(self) -> tuple[PdfObjectStream, ...]:
+        streams = tuple(self.object_streams.values())
+        self.objects.clear()
+        self.object_streams.clear()
+        self.failed_object_streams.clear()
+        return streams
+
+    def close(self) -> None:
+        with self.lock:
+            streams = self.detach_parsed_caches()
+            self.decipher = None
+        for stream in streams:
+            stream.close()
+        with contextlib.suppress(ValueError):
+            self.data.release()
+        self.data = memoryview(b"")
+
+    def resolve(self, ref: object) -> PdfObject:
+        if type(ref) is not PdfReference:
+            return ref  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+
+        cache_key = (ref.object_number << 16) | ref.generation_number
+        cached = self.objects.get(cache_key, MISSING)
+        if cached is not MISSING:
+            return cached  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+        with self.lock:
+            cached = self.objects.get(cache_key, MISSING)
+            if cached is not MISSING:
+                return cached  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+
+        resolving = self.thread_state.resolving
+        if cache_key in resolving:
+            return ref
+
+        resolving.add(cache_key)
+        try:
+            resolved = self.resolve_reference(ref)
+        finally:
+            resolving.remove(cache_key)
+
+        with self.lock:
+            cached = self.objects.get(cache_key, MISSING)
+            if cached is not MISSING:
+                return cached  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+            self.objects[cache_key] = resolved  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        return resolved  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+
+    def deep_resolve(self, value: object) -> PdfObject:
+        return resolve_object_graph(value, self.resolve)  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
+
+    def resolve_dict(self, value: object) -> PdfDict | None:
+        resolved = self.deep_resolve(value)
+        return resolved if isinstance(resolved, dict) else None
+
+    def resolve_box(
+        self, value: object, *, python_syntax: bool = False
+    ) -> tuple[float, float, float, float] | None:
+        resolved = self.deep_resolve(value)
+        if resolved is None:
+            return None
+        box = parse_box(resolved, python_syntax=python_syntax)
+        if box is None:
+            raise ValueError("invalid box value")
+        return box
+
+    def resolve_font_dict(self, font: PdfDict) -> PdfDict:
+        has_resources = "Resources" in font
+        font_values = (
+            {key: value for key, value in font.items() if key != "Resources"}
+            if has_resources
+            else font
+        )
+        resolved_font = self.deep_resolve(font_values)
+        if not isinstance(resolved_font, dict):
+            raise ValueError("invalid font dictionary")
+        result = resolved_font
+        if has_resources:
+            result["Resources"] = font["Resources"]
+        return result
+
+    def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
+        resolved = resolve_reference_chain(value, self.resolve)
+        return default if resolved is None else require_pdf_number(resolved)
+
+    def resolve_name(self, value: object) -> str | None:
+        return decoded_name(resolve_reference_chain(value, self.resolve))
+
+    def resolve_int(self, value: object, default: int | None = None) -> int | None:
+        resolved = resolve_reference_chain(value, self.resolve)
+        return default if resolved is None else require_pdf_integer(resolved)
+
+    def resolve_str(self, value: object) -> str | None:
+        if type(value) is str:
+            return value
+
+        resolved = resolve_reference_chain(value, self.resolve)
+        if isinstance(resolved, PdfString):
+            return self.decode_text(resolved.data)
+        if isinstance(resolved, bytes):
+            return self.decode_text(resolved)
+        return resolved if isinstance(resolved, str) else None
+
+    def resolve_reference(self, ref: PdfReference) -> object:
+        entry = self.xref_entry(ref)
+        if entry is None or not entry.in_use:
+            resolved = self.missing_object(ref)
+        elif entry.object_stream is not None:
+            resolved = self.load_compressed_object(ref, entry)
+        else:
+            lexer = self.get_lexer()
+            try:
+                resolved = self.load_indirect_object(lexer, entry.offset, expected_reference=ref)
+            finally:
+                self.release_lexer(lexer)
+        return self.resolve_stream(resolved) if type(resolved) is PdfStream else resolved
+
+    def get_object_stream(self, stream_number: int) -> PdfObjectStream | None:
+        with self.lock:
+            container = self.object_streams.get(stream_number)
+            failure = self.failed_object_streams.get(stream_number)
+        if container is not None:
+            return container
+        if failure is not None and failure[0] is self.decipher:
+            raise failure[1].with_traceback(None)
+        stream = self.resolve(PdfReference(stream_number))
+        if type(stream) is not PdfStream:
+            return None
+        decipher = self.decipher
+        try:
+            candidate = self.create_object_stream(stream)
+        except Exception as error:
+            with self.lock:
+                self.failed_object_streams[stream_number] = (decipher, error)
+            raise
+        with self.lock:
+            container = self.object_streams.setdefault(stream_number, candidate)
+        if container is not candidate:
+            candidate.close()
+        return container
+
+    def load_compressed_object(self, ref: PdfReference, entry: PdfXRefEntry) -> object:
+        stream_number = entry.object_stream
+        index = entry.index_in_stream
+        if (
+            ref.generation_number != 0
+            or type(stream_number) is not int
+            or stream_number <= 0
+            or type(index) is not int
+            or index < 0
+        ):
+            raise PdfParseError("invalid compressed object cross-reference entry")
+        container = self.get_object_stream(stream_number)
+        if container is None:
+            raise PdfParseError("compressed object container is not a stream")
+        return container.get_at_index(index, expected_reference=ref)
+
+    def resolve_stream(self, stream: PdfStream) -> PdfStream:
+        updated: PdfDict | None = None
+        for key, value in stream.dictionary.items():
+            if type(value) in GRAPH_TYPES and decoded_name(key) in STREAM_DECODE_KEYS:
+                resolved = self.deep_resolve(value)
+                if resolved is not value:
+                    if updated is None:
+                        updated = dict(stream.dictionary)
+                    updated[key] = resolved
+        return stream if updated is None else stream.replace(dictionary=updated)
+
+    def xref_entry(self, ref: PdfReference) -> PdfXRefEntry | None:
+        return self.xref.get((ref.object_number << 16) | ref.generation_number)
+
+    def missing_object(self, ref: PdfReference) -> object:
+        return None
+
+    def create_object_stream(self, stream: PdfStream) -> PdfObjectStream:
+        return PdfObjectStream(stream, semantic_context=self.semantic_context)
+
+    def load_indirect_object(
+        self, lexer: PdfLexer, offset: int, *, expected_reference: PdfReference
+    ) -> object:
+        lexer.rewind(offset)
+        return lexer.parse_indirect_object(expected_reference=expected_reference)
+
+    def decode_text(self, data: bytes) -> str:
+        return decode_pdf_text_string(data, context=self.semantic_context)
+
+
+__all__ = ("ObjectResolver",)

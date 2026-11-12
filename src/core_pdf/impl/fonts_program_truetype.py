@@ -12,13 +12,13 @@ from typing import Any
 
 import numpy
 
-from core_adobe_fonts.cff.charstrings import cubic_point
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import (
     DecomposingRecordingPen,
 )
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
+from core_pdf.impl.adobe_fonts.cff.charstrings import cubic_point
 from core_pdf.impl.caches import BoundedDict
 from core_pdf.impl.fonts_helpers import glyph_name_to_unicode
 from core_pdf.impl.fonts_program_base import GlyphNaming, GlyphProgram
@@ -28,12 +28,12 @@ from core_pdf.impl.fonts_raster_kernel import (
     scale_contours,
 )
 from core_pdf.impl.geometry import transform_bbox
-from core_pdf.impl.types import Rectangle
-from core_pdf_cythonized import truetype_contours
-from core_pdf_spec.s_09_fonts.font_program_truetype import (
+from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
     is_unicode_scalar,
     symbol_character_code,
 )
+from core_pdf.impl.types import Rectangle
+from core_pdf_cythonized import truetype_contours
 
 
 def parse_truetype_program(data: bytes) -> TTFont:

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_spec.s_07_syntax.trees"]
+__lazy_modules__ = ["core_pdf.impl.spec.s_07_syntax.trees"]
 
 from typing import ClassVar
 
-from core_pdf_spec.s_07_syntax.trees import MalformedFn, raise_malformed
+from core_pdf.impl.spec.s_07_syntax.trees import MalformedFn, raise_malformed
 from core_records import GeneratedRecord
 
 

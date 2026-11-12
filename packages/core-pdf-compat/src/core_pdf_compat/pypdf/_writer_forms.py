@@ -13,7 +13,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any, NamedTuple, cast
 
-from core_adobe_fonts.agl.glyph_list import GLYPH_DATA
+from core_pdf.impl.adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_pdf.impl.fonts_metrics import FONT_DATA, standard_14_widths
 
 from ._page_merge import Transformation

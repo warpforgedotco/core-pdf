@@ -1,4 +1,4 @@
-from core_pdf_spec.s_07_filters.codecs import apply_run_length
+from core_pdf.impl.spec.s_07_filters.codecs import apply_run_length
 
 
 def rldecode(data: bytes) -> bytes:

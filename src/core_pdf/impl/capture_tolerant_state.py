@@ -4,8 +4,8 @@ from __future__ import annotations
 
 __lazy_modules__ = [
     "core_pdf.impl.graphics_functions",
-    "core_pdf_spec.s_08_graphics.image_spec",
-    "core_pdf_spec.s_11_transparency.soft_masks",
+    "core_pdf.impl.spec.s_08_graphics.image_spec",
+    "core_pdf.impl.spec.s_11_transparency.soft_masks",
 ]
 
 import typing
@@ -19,24 +19,24 @@ from core_pdf.impl.geometry import clamp01
 from core_pdf.impl.graphics_color_spec import parse_color_space
 from core_pdf.impl.graphics_functions import compile_pdf_function
 from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf.impl.types import MISSING, MissingObject
-from core_pdf_spec.s_07_content.interpreter import ContentInterpreter
-from core_pdf_spec.s_07_content.model import ContentSink
-from core_pdf_spec.s_07_content.operations import (
+from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter
+from core_pdf.impl.spec.s_07_content.model import ContentSink
+from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperands,
     OperationHandler,
 )
-from core_pdf_spec.s_07_content.streams import ContentStreamFrame
-from core_pdf_spec.s_07_syntax.lexer import PdfLexer
-from core_pdf_spec.s_07_syntax.types import PdfDict, PdfValueResolver
-from core_pdf_spec.s_08_graphics.color_rendering import BlackPointCompensation
-from core_pdf_spec.s_08_graphics.color_spec import ColorSpace
-from core_pdf_spec.s_08_graphics.image_spec import ImageSource
-from core_pdf_spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
-from core_pdf_spec.s_09_fonts.service import FontProvider, FontService
-from core_pdf_spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
-from core_pdf_spec.standards import SemanticContext
-from core_pdf_spec.types import PdfReference, PdfString
+from core_pdf.impl.spec.s_07_content.streams import ContentStreamFrame
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
+from core_pdf.impl.spec.s_08_graphics.color_rendering import BlackPointCompensation
+from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
+from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf.impl.spec.s_09_fonts.service import FontProvider, FontService
+from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
+from core_pdf.impl.spec.standards import SemanticContext
+from core_pdf.impl.spec.types import PdfReference, PdfString
+from core_pdf.impl.types import MISSING, MissingObject
 
 FontCompanions = dict[str, tuple[tuple[int, int], ...]]
 FontCompanionsCache = IdentityCache[FontCompanions]

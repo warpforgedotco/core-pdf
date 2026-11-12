@@ -1,4 +1,4 @@
-from core_pdf_spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
+from core_pdf.impl.spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
 
 
 def ascii85decode(data: bytes) -> bytes:

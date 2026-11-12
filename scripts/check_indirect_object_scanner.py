@@ -27,8 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core_pdf import PdfDocument
 from core_pdf.impl.recovery_lexer import PdfLexer, StrictPdfLexer
+from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.types import PdfReference
-from core_pdf_spec.exceptions import PdfParseError
 from scripts.check_strict_object_scanner import CORPUS, TAILS, canonical, generated
 
 
