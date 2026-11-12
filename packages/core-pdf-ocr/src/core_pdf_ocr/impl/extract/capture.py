@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from copy import replace
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl import extract_capture, extract_contracts
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.spec.s_07_filters.errors import (
@@ -90,7 +90,7 @@ def png_predict(
     return bytes(out)
 
 
-SampleArray = numpy.ndarray[Any, Any]
+type SampleArray = numpy.ndarray[Any, Any]
 
 
 def tiff_predict_words_with(

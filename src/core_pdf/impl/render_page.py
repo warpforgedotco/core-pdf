@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from math import isfinite
 from typing import TYPE_CHECKING, Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import (
     uint8_image_view,

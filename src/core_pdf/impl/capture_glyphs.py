@@ -23,7 +23,7 @@ from core_pdf.impl.glyphs import (
     min_optional_confidence,
 )
 from core_pdf.impl.types import RecordType, Rectangle, ReplaceFields, ReprFields
-from core_pdf_cythonized import (
+lazy from core_pdf_cythonized import (
     DECODED_GLYPH_FIELDS,
     OBSERVATION_FIELDS,
     SlotLayout,

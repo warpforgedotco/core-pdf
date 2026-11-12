@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from math import ceil, floor
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_records import CapturedPath
@@ -72,7 +72,7 @@ PixelSpan = tuple[int, int]
 RowSpans = tuple[PixelSpan, ...]
 
 
-RowSpanArrays = tuple[
+type RowSpanArrays = tuple[
     numpy.ndarray[Any, numpy.dtype[numpy.int64]], numpy.ndarray[Any, numpy.dtype[numpy.int64]]
 ]
 

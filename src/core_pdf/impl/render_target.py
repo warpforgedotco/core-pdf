@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from copy import replace
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import ByteBuffer, UInt8Array, uint8_image_view, uint8_view
 from core_pdf.impl.caches import ByteBudgetCache, IdentityCache
@@ -83,7 +83,7 @@ from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.spec.s_11_transparency.blend import BlendMode, blend_component, revised_blending
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.types import MISSING, MissingObject
-from core_pdf_cythonized import (
+lazy from core_pdf_cythonized import (
     accumulate_source_plane,
     alpha_channel,
     blend_coverage_counts,

@@ -6,7 +6,7 @@ import math
 from enum import StrEnum
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import (
     contiguous_bytes,

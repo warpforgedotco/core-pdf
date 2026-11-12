@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, TypeAlias
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.graphics_color_spec import (
     GRAY_RGB_KINDS,

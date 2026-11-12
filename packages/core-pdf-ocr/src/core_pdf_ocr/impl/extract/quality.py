@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import NamedTuple
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.extract_capture import TextAnalysis, analyze_text
 from core_pdf.impl.extract_contracts import ObservationBatch

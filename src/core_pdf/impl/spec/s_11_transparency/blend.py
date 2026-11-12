@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.spec.exceptions import PdfUnsupportedError
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, require_recognized_version
 
 BlendMode = Literal["ColorDodge", "ColorBurn"]
-BlendSamples = numpy.ndarray[Any, numpy.dtype[numpy.float64]]
+type BlendSamples = numpy.ndarray[Any, numpy.dtype[numpy.float64]]
 
 
 def revised_blending(context: SemanticContext | None) -> bool:

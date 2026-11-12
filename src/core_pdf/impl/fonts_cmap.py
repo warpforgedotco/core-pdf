@@ -21,8 +21,8 @@ from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import (
     cmap_source_range,
     decode_utf16be,
 )
-from core_pdf_cythonized import scan_to_unicode_cmap
 lazy from core_pdf.impl.spec.s_09_fonts.helpers import is_unicode_scalar
+lazy from core_pdf_cythonized import scan_to_unicode_cmap
 
 RESOURCE_PACKAGE = "core_pdf.impl.adobe_fonts.cmap.data"
 

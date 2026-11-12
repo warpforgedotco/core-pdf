@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import uint8_view
 from core_pdf.impl.capture_records import CapturedPath

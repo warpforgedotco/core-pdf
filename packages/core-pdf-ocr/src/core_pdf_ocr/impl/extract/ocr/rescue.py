@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import replace
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.extract_contracts import ObservationBatch
 from core_pdf.impl.types import GeneratedRecord

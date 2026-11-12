@@ -6,7 +6,7 @@ import re
 from copy import replace
 from typing import cast
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl import extract_contracts
 from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource

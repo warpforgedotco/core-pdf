@@ -18,7 +18,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.array_views import contiguous_bytes, finite_median
 from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource

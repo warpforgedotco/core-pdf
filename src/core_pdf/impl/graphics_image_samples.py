@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from functools import lru_cache
+from functools import cache, lru_cache
 from math import copysign
 from typing import Any
 
-import imagecodecs
-import numpy
+lazy import imagecodecs
+lazy import numpy
 
 from core_pdf.impl.caches import BoundedDict, IdentityCache
 from core_pdf.impl.graphics_color_spec import (
@@ -52,7 +52,7 @@ from core_pdf.impl.spec.s_08_graphics.color_rendering import (
 )
 from core_pdf.impl.spec.s_11_transparency.images import unblend_matte_components
 from core_pdf.impl.spec.types import PdfName
-from core_pdf_cythonized import code_presence, distinct_uint16_rows, gather_uint8_rows
+lazy from core_pdf_cythonized import code_presence, distinct_uint16_rows, gather_uint8_rows
 
 
 class ImageHeader:
@@ -492,30 +492,30 @@ def convert_integer_image(
     )
 
 
-ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
+type ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 
 
-SRGB_MATRIX = numpy.asarray(
-    (
-        (3.2404542, -1.5371385, -0.4985314),
-        (-0.9692660, 1.8760108, 0.0415560),
-        (0.0556434, -0.2040259, 1.0572252),
-    ),
-    dtype=numpy.float32,
+SRGB_MATRIX = (
+    (3.2404542, -1.5371385, -0.4985314),
+    (-0.9692660, 1.8760108, 0.0415560),
+    (0.0556434, -0.2040259, 1.0572252),
 )
 
 
-D50_TO_D65_MATRIX = numpy.asarray(
-    (
-        (0.955473, -0.023098, 0.063259),
-        (-0.028369, 1.009995, 0.021300),
-        (0.012314, -0.020507, 1.330365),
-    ),
-    dtype=numpy.float32,
+D50_TO_D65_MATRIX = (
+    (0.955473, -0.023098, 0.063259),
+    (-0.028369, 1.009995, 0.021300),
+    (0.012314, -0.020507, 1.330365),
 )
 
 
-D50_XYZ_TO_SRGB_MATRIX = (SRGB_MATRIX @ D50_TO_D65_MATRIX).astype(numpy.float32)
+@cache
+def d50_xyz_to_srgb_matrix() -> ColorSamples:
+    """XYZ under D50 to linear sRGB: the D50-to-D65 adaptation, then the sRGB matrix, each
+    in float32."""
+    srgb = numpy.asarray(SRGB_MATRIX, dtype=numpy.float32)
+    adaptation = numpy.asarray(D50_TO_D65_MATRIX, dtype=numpy.float32)
+    return (srgb @ adaptation).astype(numpy.float32)
 
 
 def linear_to_srgb(values: ColorSamples) -> ColorSamples:
@@ -528,7 +528,7 @@ def linear_to_srgb(values: ColorSamples) -> ColorSamples:
 
 
 def d50_xyz_to_srgb(values: ColorSamples) -> ColorSamples:
-    return linear_to_srgb(values @ D50_XYZ_TO_SRGB_MATRIX.T)
+    return linear_to_srgb(values @ d50_xyz_to_srgb_matrix().T)
 
 
 @lru_cache(maxsize=64)

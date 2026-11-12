@@ -18,7 +18,7 @@ from core_pdf.impl.fonts_raster_kernel import (
     transform_contours,
 )
 from core_pdf.impl.types import Rectangle
-from core_pdf_cythonized import decrypt_type1, type1_glyph_bounds
+lazy from core_pdf_cythonized import decrypt_type1, type1_glyph_bounds
 
 LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
 FONT_MATRIX_RE = re.compile(

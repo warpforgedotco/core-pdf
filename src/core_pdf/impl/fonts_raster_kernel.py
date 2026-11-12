@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from math import ceil
 
-import numpy
+lazy import numpy
 
-from core_pdf_cythonized import glyph_bitmap_rows
+lazy from core_pdf_cythonized import glyph_bitmap_rows
 
 Point = tuple[float, float]
 Contours = tuple[tuple[Point, ...], ...]

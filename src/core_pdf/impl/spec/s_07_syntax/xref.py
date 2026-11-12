@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator, Sequence
-from functools import partial
+from functools import cache, partial
 from itertools import batched, compress, repeat
 from operator import not_
 from typing import Any, Literal, NamedTuple, Protocol
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
@@ -82,8 +82,14 @@ XREF_ROWS = re.compile(rb"(?:[0-9]{10} [0-9]{5} [fn](?: \r| \n|\r\n))*")
 XREF_ROW_SIZE = 20
 
 new_xref_entry = partial(tuple.__new__, PdfXRefEntry)
-OFFSET_PLACES = 10 ** numpy.arange(9, -1, -1, dtype=numpy.int64)
-GENERATION_PLACES = 10 ** numpy.arange(4, -1, -1, dtype=numpy.int64)
+
+
+@cache
+def place_values(digits: int) -> numpy.ndarray[Any, numpy.dtype[numpy.int64]]:
+    """The value of each of digits decimal digits, most significant first."""
+    return 10 ** numpy.arange(digits - 1, -1, -1, dtype=numpy.int64)
+
+
 NUMPY_KEY_LIMIT = 1 << 46
 
 
@@ -93,10 +99,10 @@ def canonical_table_entries(
     rows = numpy.frombuffer(
         data, dtype=numpy.uint8, count=XREF_ROW_SIZE * count, offset=pos
     ).reshape(count, XREF_ROW_SIZE)
-    generations = (rows[:, 11:16].astype(numpy.int64) - 48) @ GENERATION_PLACES
+    generations = (rows[:, 11:16].astype(numpy.int64) - 48) @ place_values(5)
     if int(generations.max()) > 65535:
         return None
-    offsets = (rows[:, 0:10].astype(numpy.int64) - 48) @ OFFSET_PLACES
+    offsets = (rows[:, 0:10].astype(numpy.int64) - 48) @ place_values(10)
     in_use = rows[:, 17] == 110
     generation_list = generations.tolist()
     if start_obj + count < NUMPY_KEY_LIMIT:

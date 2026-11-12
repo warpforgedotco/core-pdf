@@ -10,7 +10,7 @@ from functools import lru_cache
 from math import copysign, hypot, isfinite
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.caches import IdentityCache
 from core_pdf.impl.capture_glyphs import (
@@ -84,12 +84,12 @@ from core_pdf.impl.types import (
     ReplaceFields,
     ReprFields,
 )
-from core_pdf_cythonized import NativeOperators, SlotLayout, flatten_path_commands
 lazy from core_pdf.impl.graphics_images import decode_soft_mask, image_overrides_graphics_soft_mask
 lazy from core_pdf.impl.spec.s_08_graphics import image_spec
 lazy from core_pdf.impl.spec.s_08_graphics.geometry import unit_square_placement
 lazy from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask
+lazy from core_pdf_cythonized import NativeOperators, SlotLayout, flatten_path_commands
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture_records import LayoutFormId

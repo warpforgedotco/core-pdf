@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import cache, lru_cache
 lazy from importlib import resources
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.graphics_icc_profiles import (
     ByteSamples,

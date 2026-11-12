@@ -5,7 +5,7 @@ from __future__ import annotations
 from operator import index
 from typing import Any
 
-import numpy
+lazy import numpy
 
 
 def uint8_view(

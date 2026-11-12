@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from math import inf
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.fonts_helpers import LEGITIMATE_MULTI_CHAR_GLYPHS
 from core_pdf.impl.fonts_raster_kernel import (
@@ -14,7 +14,7 @@ from core_pdf.impl.geometry import points_bbox
 from core_pdf.impl.types import (
     GeneratedRecord,
 )
-from core_pdf_cythonized import cell_distance_map, glyph_feature_cells
+lazy from core_pdf_cythonized import cell_distance_map, glyph_feature_cells
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts_program_cff import CFFFont
@@ -279,7 +279,7 @@ class CFFUnicodeRepairIndex:
 
 FEATURE_GRID_WIDTH = 18
 FEATURE_GRID_HEIGHT = 24
-FeatureArrays: TypeAlias = tuple[
+type FeatureArrays = tuple[
     numpy.ndarray[Any, Any],
     numpy.ndarray[Any, Any],
     numpy.ndarray[Any, Any],

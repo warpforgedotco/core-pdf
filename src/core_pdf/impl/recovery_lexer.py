@@ -29,7 +29,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
 )
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, recognized_version
 from core_pdf.impl.types import MISSING, PdfByteBuffer, PdfName, PdfReference, PdfString
-from core_pdf_cythonized import ObjectScanner
+lazy from core_pdf_cythonized import ObjectScanner
 
 RECOVERABLE_DICTIONARY_KEY_NAMES = {
     b"Type",

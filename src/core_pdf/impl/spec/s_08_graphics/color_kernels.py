@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.jbig2.bitmap import uint8_view
 from core_pdf.impl.spec.samples import unpack_subbyte_rows

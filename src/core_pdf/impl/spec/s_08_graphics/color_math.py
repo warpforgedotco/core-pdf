@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy
+lazy import numpy
 
-ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
+type ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 
 
 def lab_components_to_xyz(

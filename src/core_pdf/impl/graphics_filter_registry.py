@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.spec.s_07_filters import registry

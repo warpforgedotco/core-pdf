@@ -8,7 +8,7 @@ from copy import replace
 from heapq import heappop, heappush
 from typing import Protocol
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.extract_contracts import ParsedBlock, ParsedLine
 from core_pdf.impl.extract_layout_rules import LAYOUT_RULES

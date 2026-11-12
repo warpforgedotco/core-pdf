@@ -6,7 +6,7 @@ import math
 from functools import cache
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath
 from core_pdf.impl.runs import TextRun

@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from itertools import batched
 from typing import Any, ClassVar, cast
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data

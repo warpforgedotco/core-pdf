@@ -7,7 +7,7 @@ from bisect import bisect_left, bisect_right
 from copy import replace
 from statistics import fmean
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.capture_records import CapturedDrawing
 from core_pdf.impl.extract_block_layout import layout_element_order

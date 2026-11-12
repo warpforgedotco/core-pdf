@@ -19,7 +19,7 @@ from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WHITESPACE
 from core_pdf.impl.spec.types import PdfString
 from core_pdf.impl.types import PdfName
-from core_pdf_cythonized import ContentScanner
+lazy from core_pdf_cythonized import ContentScanner
 
 
 def recover_inline_image_position(

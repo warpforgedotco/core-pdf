@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.geometry import flip_rect_vertical
 from core_pdf.impl.types import GeneratedRecord

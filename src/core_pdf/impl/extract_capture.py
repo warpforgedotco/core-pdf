@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from itertools import chain
 from typing import Any
 
-import numpy
+lazy import numpy
 
 from core_pdf.impl.capture_program import EXTRACTION_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture_records import LayoutFormId
