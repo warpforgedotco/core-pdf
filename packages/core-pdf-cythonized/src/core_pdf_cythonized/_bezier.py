@@ -189,6 +189,10 @@ def sample_times_c(
     return j
 
 
+# The package compiles with boundscheck off, which turns p0[1] into an unchecked
+# tuple read: a point with fewer than two coordinates read past the tuple and
+# crashed the interpreter. Checked, it raises IndexError.
+@cython.boundscheck(True)
 def cubic_sample_times(p0: tuple, p1: tuple, p2: tuple, p3: tuple):
     x0: cython.double = p0[0]
     y0: cython.double = p0[1]
