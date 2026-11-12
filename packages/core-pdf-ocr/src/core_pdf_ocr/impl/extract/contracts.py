@@ -188,10 +188,6 @@ class WorkPlan(GeneratedRecord):
     allow_direct_image_ocr: bool = True
     augment_page_candidates: bool = False
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.reason, PagePlanReason):
-            object.__setattr__(self, "reason", PagePlanReason(self.reason))
-
     @property
     def image_regions_only(self) -> bool:
         return bool(self.ocr_passes) and all(

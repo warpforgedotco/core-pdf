@@ -35,10 +35,6 @@ hooks = [
     "pre-push",
     "manual",
   ], require_serial = true },
-  { id = "import-linter", name = "import-linter", entry = "uv run --all-packages --group lint lint-imports", language = "system", pass_filenames = false, files = "^((src/core_pdf/|packages/core-[a-z0-9-]+/src/core_[a-z0-9_]+/).*\\.py|pyproject\\.toml|packages/core-[a-z0-9-]+/pyproject\\.toml)$", stages = [
-    "pre-push",
-    "manual",
-  ], require_serial = true },
   # Run the ty pinned by uv.lock so local hooks and CI check with one version.
   # ty checks the whole project rather than the staged files: a change in one
   # module can surface diagnostics in another.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 WHITESPACE = b"\x00\t\n\x0c\r "
 DELIMITERS = b"()<>[]/%"
@@ -11,7 +12,7 @@ WS_TABLE = bytes([1 if i in WHITESPACE else 0 for i in range(256)])
 
 STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r\n" else 0 for i in range(256)])
 STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
-STRING_ESCAPE = {
+STRING_ESCAPE: dict[int, bytes] = {
     110: b"\n",
     114: b"\r",
     116: b"\t",
@@ -24,7 +25,12 @@ STRING_ESCAPE = {
 
 
 def read_literal_string(
-    data: bytes | memoryview, pos: int, data_len: int
+    data: bytes | memoryview,
+    pos: int,
+    data_len: int,
+    *,
+    unknown_escape: Callable[[int], bytes] | None = None,
+    eol_pair: Callable[[int, int], bool] | None = None,
 ) -> tuple[bytes | None, int]:
     pos += 1
     if isinstance(data, memoryview) and data.format != "B":
@@ -72,19 +78,40 @@ def read_literal_string(
                     count += 1
                 out.append(oct_val & 0xFF)
             elif esc in (10, 13):
-                if pos < data_len and esc == 13 and data[pos] == 10:
+                if pos < data_len and (
+                    eol_pair(esc, data[pos])
+                    if eol_pair is not None
+                    else esc == 13 and data[pos] == 10
+                ):
                     pos += 1
             elif (mapped := STRING_ESCAPE.get(esc)) is not None:
                 out.extend(mapped)
+            elif unknown_escape is not None:
+                out.extend(unknown_escape(esc))
             else:
                 out.append(esc)
         elif byte in {13, 10}:
             out.append(10)
-            if pos < data_len and byte == 13 and data[pos] == 10:
-                pos += 1
+            if pos < data_len:
+                next_byte = data[pos]
+                if (
+                    eol_pair(byte, next_byte)
+                    if eol_pair is not None
+                    else byte == 13 and next_byte == 10
+                ):
+                    pos += 1
         else:
             out.append(byte)
     return None, pos
 
 
-__all__ = ("WHITESPACE", "DELIMITERS", "SEPARATOR_TABLE", "WS_TABLE", "read_literal_string")
+__all__ = (
+    "WHITESPACE",
+    "DELIMITERS",
+    "SEPARATOR_TABLE",
+    "WS_TABLE",
+    "STRING_ESCAPE",
+    "STRING_SPECIAL_RE",
+    "STRING_SPECIAL_TABLE",
+    "read_literal_string",
+)

@@ -456,8 +456,6 @@ class PageStructure(Sequence[StructureElement | None]):
         obj = self.parents[idx]
         if obj is None:
             return None
-        if isinstance(obj, StructureElement):
-            return obj
         obj = self.page.document.resolver.resolve(obj)
         if not isinstance(obj, dict):
             raise ValueError("invalid page structure parent entry")

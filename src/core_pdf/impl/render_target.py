@@ -2880,8 +2880,6 @@ class RasterTarget:
         try:
             if isinstance(pattern, ShadingPattern):
                 dictionary = pattern.dictionary
-                if not isinstance(dictionary, dict):
-                    return False
                 shading_data = {
                     "dictionary": dictionary,
                     "bbox": data.bbox or clip_state.path_bbox(path),
