@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.spec.s_07_syntax.serialize"]
-
-
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,

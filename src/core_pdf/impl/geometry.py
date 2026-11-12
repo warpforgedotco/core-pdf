@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.spec.s_08_graphics.geometry"]
-
 import math
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any, overload
 
-from core_pdf.impl.spec.s_08_graphics.geometry import points_bbox, transform_bbox
 from core_pdf.impl.types import Rectangle
+lazy from core_pdf.impl.spec.s_08_graphics.geometry import points_bbox, transform_bbox
 
 
 def clamp01(value: float) -> float:

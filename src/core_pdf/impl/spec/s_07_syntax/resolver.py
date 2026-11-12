@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.spec.s_07_syntax.objects"]
-
 import contextlib
 import mmap
 import threading
 
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
 from core_pdf.impl.spec.s_07_syntax.resolution import (
     GRAPH_TYPES,
     resolve_object_graph,
@@ -35,6 +32,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import MISSING, PdfReference, PdfString
+lazy from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
 
 STREAM_DECODE_KEYS = frozenset(
     {

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.raw_media", "core_pdf_compat.pdfplumber.page"]
-
 import builtins
 import math
 import re
@@ -29,13 +27,13 @@ from core_pdf.impl.geometry import (
 )
 from core_pdf.impl.graphics_stream_decoding import PNG_SIGNATURE, png_chunk
 from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf.impl.raw_media import ImageRecord
 from core_pdf.impl.types import (
     GeneratedRecord,
     PdfName,
     PdfReference,
     PdfString,
 )
+lazy from core_pdf.impl.raw_media import ImageRecord
 
 from .._shared import BBox, ClosingMixin, PdfInput
 from ..pdfminer._parsing import pdfminer_open_error
@@ -2035,7 +2033,7 @@ __all__ = (
 )
 
 # Upstream exposes these as attributes after a bare `import pdfplumber`.
-import core_pdf_compat.pdfplumber.page  # noqa: E402, F401
+lazy import core_pdf_compat.pdfplumber.page  # noqa: E402, F401
 
 from . import (  # noqa: E402
     structure,

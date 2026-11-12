@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.recovery_objects"]
-
 import mmap
 import zlib
 from collections.abc import Iterator
@@ -16,7 +14,6 @@ from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.graphics_stream_decoding import decode_stream_data
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.recovery_lexer import PdfLexer, matches_keyword_with_one_substitution
-from core_pdf.impl.recovery_objects import PdfObjectStream
 from core_pdf.impl.recovery_policy import RecoveryMode
 from core_pdf.impl.spec.s_07_syntax import xref
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -42,6 +39,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WS_TABLE, LexicalRules
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.types import PdfByteBuffer
+lazy from core_pdf.impl.recovery_objects import PdfObjectStream
 
 
 def parse_object_marker_prefix(

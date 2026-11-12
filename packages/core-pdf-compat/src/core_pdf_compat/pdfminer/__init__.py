@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 # Importing a submodule runs this file first, and layout analysis is not needed to read objects.
-__lazy_modules__ = ["core_pdf_compat.pdfminer._extract", "core_pdf_compat.pdfminer._layout"]
-
-from ._extract import (
+lazy from ._extract import (
     extract_pages,
     extract_text,
     extract_text_to_fp,
 )
-from ._layout import (
+lazy from ._layout import (
     LAParams,
     LTAnno,
     LTChar,
@@ -25,7 +23,7 @@ from ._layout import (
     LTTextLineHorizontal,
     LTTextLineVertical,
 )
-from ._layout import (
+lazy from ._layout import (
     LTComponent as LTComponent,
 )
 

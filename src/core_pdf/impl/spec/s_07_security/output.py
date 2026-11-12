@@ -4,15 +4,12 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.crypto.ciphers"]
-
 import secrets
 import struct
 from collections.abc import Callable
 from copy import replace
 from typing import Any, ClassVar
 
-from core_pdf.impl.crypto.ciphers import aes_cbc_encrypt, aes_ecb_encrypt, rc4_crypt
 from core_pdf.impl.spec.s_07_security.standard import (
     PDF_MAC_PERMISSION_MASK,
     REVISION_3_PERMISSION_BITS,
@@ -32,6 +29,7 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import decoded_name
 from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
 from core_records import GeneratedRecord
+lazy from core_pdf.impl.crypto.ciphers import aes_cbc_encrypt, aes_ecb_encrypt, rc4_crypt
 
 # Name: (V, R, key bits, crypt filter method), with None for the V < 4 implicit RC4.
 ALGORITHMS: dict[str, tuple[int, int, int, CryptMethod | None]] = {

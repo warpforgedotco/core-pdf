@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 # Only the pdfplumber and pdfminer chars need this kernel (Python 3.15+).
-__lazy_modules__ = ["core_pdf_cythonized._chars"]
-
 from collections.abc import Callable
 from dataclasses import dataclass, field  # noqa: TID251
 from typing import Any
@@ -33,7 +31,7 @@ from core_pdf_cythonized import (
     horizontal_glyph_geometry,
     untrack_tuple,
 )
-from core_pdf_cythonized._chars import no_char, pdfminer_chars, plumber_char_dicts
+lazy from core_pdf_cythonized._chars import no_char, pdfminer_chars, plumber_char_dicts
 
 __all__ = ["no_char", "pdfminer_chars", "plumber_char_dicts", "untrack_tuple"]
 

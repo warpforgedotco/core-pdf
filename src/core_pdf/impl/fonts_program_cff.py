@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.fonts_cff_repair", "core_pdf.impl.fonts_raster_kernel"]
-
 from collections.abc import Callable
 from math import isfinite
 from typing import Any
@@ -19,20 +17,20 @@ from core_pdf.impl.adobe_fonts.cff.font import (
 )
 from core_pdf.impl.adobe_fonts.encodings import STANDARD_ENCODING_GLYPH_NAMES
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.fonts_cff_repair import (
-    EMPTY_FEATURE,
-    CFFGlyphFeature,
-    feature_from_contours,
-)
 from core_pdf.impl.fonts_program_base import GlyphNaming, GlyphProgram
-from core_pdf.impl.fonts_raster_kernel import (
-    Contours,
-    transform_contours,
-)
 from core_pdf.impl.geometry import points_bbox, union_bbox
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle
 from core_pdf_cythonized import type2_glyph_geometry
+lazy from core_pdf.impl.fonts_cff_repair import (
+    EMPTY_FEATURE,
+    CFFGlyphFeature,
+    feature_from_contours,
+)
+lazy from core_pdf.impl.fonts_raster_kernel import (
+    Contours,
+    transform_contours,
+)
 
 MALFORMED_CFF_TABLE = (IndexError, OverflowError, TypeError, ValueError)
 

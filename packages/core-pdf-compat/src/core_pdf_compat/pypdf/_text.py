@@ -1,13 +1,5 @@
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf_compat.pypdf._charsets",
-    "core_pdf_compat.pypdf._core_metrics",
-    "core_pdf_compat.pypdf._generic_content",
-    "core_pdf_compat.pypdf._layout",
-    "core_pdf_compat.pypdf.errors",
-]
-
 import logging
 import re
 import string
@@ -48,22 +40,22 @@ from core_pdf_compat._text_state import (
     predefined_encoding_codec,
     type1_encoding_entries,
 )
-from core_pdf_compat.pypdf._charsets import SYMBOL_ENCODING, ZAPF_DINGBATS_ENCODING
 from core_pdf_compat.pypdf._cmap_scan import scan_to_unicode
 from core_pdf_compat.pypdf._configuration import get_configuration
-from core_pdf_compat.pypdf._core_metrics import core_font_widths
 from core_pdf_compat.pypdf._font_scan import (
     font_logger,
     scan_cid_widths,
     scan_encoding,
     scan_simple_widths,
 )
-from core_pdf_compat.pypdf._generic_content import inline_image_spans
 from core_pdf_compat.pypdf._glyph_names import extra_glyphs
-from core_pdf_compat.pypdf._layout import layout_text
-from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
 from core_pdf_compat.pypdf.generic import FloatObject, IndirectObject, NumberObject, to_generic
 from core_records import GeneratedRecord
+lazy from core_pdf_compat.pypdf._charsets import SYMBOL_ENCODING, ZAPF_DINGBATS_ENCODING
+lazy from core_pdf_compat.pypdf._core_metrics import core_font_widths
+lazy from core_pdf_compat.pypdf._generic_content import inline_image_spans
+lazy from core_pdf_compat.pypdf._layout import layout_text
+lazy from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError
 
 
 def pypdf_data(stream: PdfStream) -> bytes:

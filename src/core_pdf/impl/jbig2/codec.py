@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.jbig2.bitmap"]
-
 from typing import ClassVar
 
-from core_pdf.impl.jbig2.bitmap import (
-    compose_packed_bitmap_data,
-    uint8_matrix_view,
-)
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_records import (
     GeneratedRecord,
     RecordType,
     ReplaceFields,
     ReprFields,
+)
+lazy from core_pdf.impl.jbig2.bitmap import (
+    compose_packed_bitmap_data,
+    uint8_matrix_view,
 )
 
 JBIG2_PAGE_INFO = 48

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.crypto.pdf_mac"]
-
-from core_pdf.impl.crypto.pdf_mac import validate_pdf_mac_token
 from core_pdf.impl.spec.exceptions import PdfDecryptionError, PdfUnsupportedError
 from core_pdf.impl.spec.s_07_security.standard import StandardSecurityHandler
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.types import MISSING, PdfByteBuffer, PdfName, PdfString
+lazy from core_pdf.impl.crypto.pdf_mac import validate_pdf_mac_token
 
 HEXADECIMAL_DIGITS = frozenset(b"0123456789ABCDEFabcdef")
 

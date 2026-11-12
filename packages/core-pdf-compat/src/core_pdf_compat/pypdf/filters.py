@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["base64", "core_pdf_compat.pypdf.errors", "subprocess", "tempfile"]
-
 import binascii
 import importlib
 import logging
@@ -14,14 +12,14 @@ import math
 import os
 import shutil
 import struct
-import subprocess
 import zlib
-from base64 import a85decode
 from functools import lru_cache
 from importlib.util import find_spec
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
+lazy import subprocess
+lazy from base64 import a85decode
+lazy from tempfile import TemporaryDirectory
 
 from core_pdf.impl.spec.s_07_filters.codecs import (
     IncompleteLzwError,
@@ -34,13 +32,6 @@ from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.spec.s_07_filters.errors import PredictorError, UnsupportedPngFilterError
 from core_pdf.impl.spec.s_07_filters.predictors import png_predict, tiff_predict
 from core_pdf_compat.pypdf._configuration import get_configuration
-from core_pdf_compat.pypdf.errors import (
-    DependencyError,
-    DeprecationError,
-    LimitReachedError,
-    PdfReadError,
-    PdfStreamError,
-)
 from core_pdf_compat.pypdf.generic import (
     BooleanObject,
     DictionaryObject,
@@ -50,6 +41,13 @@ from core_pdf_compat.pypdf.generic import (
     is_null_or_none,
 )
 from core_records import GeneratedRecord
+lazy from core_pdf_compat.pypdf.errors import (
+    DependencyError,
+    DeprecationError,
+    LimitReachedError,
+    PdfReadError,
+    PdfStreamError,
+)
 
 logger = logging.getLogger(__name__)
 

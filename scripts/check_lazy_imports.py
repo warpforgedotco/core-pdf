@@ -2,10 +2,10 @@
 
 """Check that a plain text extraction leaves the deferred modules unloaded.
 
-Modules list the imports a text extraction does not need in __lazy_modules__, which Python
-3.15 honours and 3.14 ignores. An eager import added later would load one of them again and
-quietly cost the time back, so this extracts the first page of a text PDF through each facade,
-each in a fresh interpreter, and fails naming any deferred module that loaded.
+Modules import what a text extraction does not need with `lazy import`. An eager import
+added later would load one of them again and quietly cost the time back, so this extracts
+the first page of a text PDF through each facade, each in a fresh interpreter, and fails
+naming any deferred module that loaded.
 """
 
 from __future__ import annotations
@@ -60,9 +60,6 @@ def loaded_modules(workload: str) -> set[str]:
 
 
 def main() -> int:
-    if sys.version_info < (3, 15):
-        print("lazy imports need Python 3.15; skipped")
-        return 0
     failed = False
     for workload in WORKLOADS:
         loaded = sorted(set(DEFERRED) & loaded_modules(workload))

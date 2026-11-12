@@ -9,8 +9,6 @@ opening a file: the same strict errors, the same warnings for what it tolerates,
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf_compat.pypdf.errors"]
-
 import logging
 import re
 import sys
@@ -24,14 +22,14 @@ from typing import Any
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf_compat.pypdf.errors import (
+from core_pdf_compat.pypdf.generic import DictionaryObject, NameObject, read_object, to_generic
+lazy from core_pdf_compat.pypdf.errors import (
     STREAM_TRUNCATED_PREMATURELY,
     EmptyFileError,
     LimitReachedError,
     PdfReadError,
     PdfStreamError,
 )
-from core_pdf_compat.pypdf.generic import DictionaryObject, NameObject, read_object, to_generic
 
 logger = logging.getLogger(__name__)
 

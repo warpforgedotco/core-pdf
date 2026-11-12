@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.jbig2.bitmap"]
-
-from core_pdf.impl.jbig2.bitmap import invert_packed_bitmap
 from core_pdf.impl.jbig2.codec import JBIG2PageDecoder, parse_embedded_segments
 from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import coerce_to_bytes, is_pdf_null
+lazy from core_pdf.impl.jbig2.bitmap import invert_packed_bitmap
 
 
 def decode_jbig2(

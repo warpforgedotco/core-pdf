@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.fonts_program_truetype", "importlib.resources"]
-
 from collections.abc import Callable
 from functools import cache
-from importlib.resources import files
 from typing import Any, Protocol
+lazy from importlib.resources import files
 
 from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
-from core_pdf.impl.fonts_program_truetype import TrueTypeFontProgram
 from core_pdf.impl.types import GeneratedRecord
+lazy from core_pdf.impl.fonts_program_truetype import TrueTypeFontProgram
 
 
 class PdfRasterFontRequest(GeneratedRecord):

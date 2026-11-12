@@ -2,16 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-__lazy_modules__ = [
-    "core_pdf.impl.graphics_functions",
-    "core_pdf.impl.spec.s_08_graphics.image_spec",
-    "core_pdf.impl.spec.s_11_transparency.soft_masks",
-]
-
 import typing
 from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING
 
 from core_pdf.impl.caches import BoundedDict, IdentityCache
 from core_pdf.impl.capture_records import CapturedSoftMask
@@ -19,7 +12,6 @@ from core_pdf.impl.capture_recovery import CaptureRecovery
 from core_pdf.impl.fonts_helpers import recover_strip_subset_tag
 from core_pdf.impl.geometry import clamp01
 from core_pdf.impl.graphics_color_spec import parse_color_space
-from core_pdf.impl.graphics_functions import compile_pdf_function
 from core_pdf.impl.pdf_values import recover_pdf_name
 from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf.impl.spec.s_07_content.model import ContentSink
@@ -34,10 +26,11 @@ from core_pdf.impl.spec.s_08_graphics.color_rendering import BlackPointCompensat
 from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.service import FontProvider, FontService
-from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import PdfReference, PdfString
 from core_pdf.impl.types import MISSING, MissingObject
+lazy from core_pdf.impl.graphics_functions import compile_pdf_function
+lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture_recording import CachedImageSource

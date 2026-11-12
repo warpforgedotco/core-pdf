@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["importlib"]
-
 from functools import cache, lru_cache
-from importlib import resources
+lazy from importlib import resources
 
 import numpy
 

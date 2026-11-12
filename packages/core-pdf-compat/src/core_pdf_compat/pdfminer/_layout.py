@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-__lazy_modules__ = ["heapq"]
-
-import heapq
 from collections.abc import Iterable, Iterator
 from math import ceil
 from typing import Any, ClassVar
+lazy import heapq
 
 from core_pdf.impl.geometry import bbox_union
 from core_pdf.impl.spatial import AreaGapQueue

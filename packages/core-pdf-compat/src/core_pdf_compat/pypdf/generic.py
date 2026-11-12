@@ -5,12 +5,6 @@ Bytes are always written by core_pdf.impl.spec's serializer, so there is one wri
 
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf_compat.pypdf._generic_content",
-    "core_pdf_compat.pypdf.errors",
-    "core_pdf.impl.spec.s_07_syntax.serialize",
-]
-
 import codecs
 import functools
 import hashlib
@@ -23,19 +17,19 @@ from typing import Any, ClassVar, Self, cast
 from core_pdf.impl.object_serialize import serialize_object
 from core_pdf.impl.recovery_lexer import BareKeyword
 from core_pdf.impl.spec.s_07_filters.codecs import encode_flate
-from core_pdf.impl.spec.s_07_syntax.serialize import (
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_records import RecordType, ReplaceFields, ReprFields
+lazy from core_pdf.impl.spec.s_07_syntax.serialize import (
     ObjectLayout,
     serialize_name,
     serialize_spaced_real,
 )
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
-from core_pdf_compat.pypdf.errors import (
+lazy from core_pdf_compat.pypdf.errors import (
     LimitReachedError,
     PdfReadError,
     PdfStreamError,
 )
-from core_records import RecordType, ReplaceFields, ReprFields
 
 logger = logging.getLogger(__name__)
 
@@ -1213,7 +1207,6 @@ def _encode_text(value: str) -> bytes:
     return text.get_encoded_bytes()
 
 
-from core_pdf_compat.pypdf._generic_content import ContentStream, decode_stream  # noqa: E402
 from core_pdf_compat.pypdf._generic_read import (  # noqa: E402
     decode_name,
     read_array,
@@ -1226,6 +1219,7 @@ from core_pdf_compat.pypdf._generic_read import (  # noqa: E402
     read_object,
     read_unsized,
 )
+lazy from core_pdf_compat.pypdf._generic_content import ContentStream, decode_stream  # noqa: E402
 
 __all__ = (
     "PAGE_FIT",

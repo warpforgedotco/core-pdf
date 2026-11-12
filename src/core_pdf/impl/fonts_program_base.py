@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.fonts_raster_kernel"]
-
 from abc import ABC, abstractmethod
 from typing import Protocol
 
-from core_pdf.impl.fonts_raster_kernel import Contours, rasterize_contours
 from core_pdf.impl.types import Rectangle
+lazy from core_pdf.impl.fonts_raster_kernel import Contours, rasterize_contours
 
 
 class GlyphNaming(Protocol):

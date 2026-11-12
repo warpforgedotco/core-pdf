@@ -2,30 +2,16 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf.impl.crypto.ciphers",
-    "hmac",
-    "secrets",
-]
-
-import secrets
 import stringprep
 import struct
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from hashlib import md5, sha256, sha384, sha512
-from hmac import compare_digest
 from types import MappingProxyType
 from typing import ClassVar, Literal
+lazy import secrets
+lazy from hmac import compare_digest
 
-from core_pdf.impl.crypto.ciphers import (
-    aes_cbc_decrypt,
-    aes_cbc_encrypt,
-    aes_ecb_decrypt,
-    aes_gcm_decrypt,
-    aes_gcm_encrypt,
-    rc4_crypt,
-)
 from core_pdf.impl.spec.exceptions import (
     PdfInvalidPermissionsError,
     PdfParseError,
@@ -42,6 +28,14 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 )
 from core_pdf.impl.spec.types import MISSING, PdfReference
 from core_records import GeneratedRecord
+lazy from core_pdf.impl.crypto.ciphers import (
+    aes_cbc_decrypt,
+    aes_cbc_encrypt,
+    aes_ecb_decrypt,
+    aes_gcm_decrypt,
+    aes_gcm_encrypt,
+    rc4_crypt,
+)
 
 CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
 PasswordKind = Literal["user", "owner"]

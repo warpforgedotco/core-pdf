@@ -2,40 +2,20 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = [
-    "core_pdf.impl.capture_page",
-    "core_pdf.impl.document_structure",
-    "core_pdf.impl.extract_pipeline",
-    "core_pdf.impl.graphics_images",
-    "core_pdf.impl.output_model",
-    "core_pdf.impl.raw_media",
-    "core_pdf.impl.render_model",
-    "core_pdf.impl.render_page",
-    "core_pdf.impl.spec.s_08_graphics.image_spec",
-]
-
 from collections import deque
 from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from copy import replace
 from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl.capture_page import capture_page_program
 from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
 from core_pdf.impl.capture_recording import TextState
 from core_pdf.impl.collector import pauses_collector
 from core_pdf.impl.document_records import RawAnnotation, RawLink
-from core_pdf.impl.document_structure import PageStructure
 from core_pdf.impl.exceptions import ExtractionScope, PdfParseError
-from core_pdf.impl.extract_pipeline import extract_page
 from core_pdf.impl.geometry import clamp01, rect_tuple
-from core_pdf.impl.graphics_images import decode_image
-from core_pdf.impl.output_model import Page
 from core_pdf.impl.pdf_values import parse_text_string
-from core_pdf.impl.raw_media import DrawingRecord, ImageMetadata, ImageRecord
 from core_pdf.impl.recovery_resolver import resolve_resource_dict
-from core_pdf.impl.render_model import RenderOptions
-from core_pdf.impl.render_page import compose_page
 from core_pdf.impl.spec.s_07_document.page import page_clip, page_rotation, page_user_unit
 from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -47,7 +27,15 @@ from core_pdf.impl.spec.s_07_syntax.types import (
     PdfValueResolver,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_box
-from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+lazy from core_pdf.impl.capture_page import capture_page_program
+lazy from core_pdf.impl.document_structure import PageStructure
+lazy from core_pdf.impl.extract_pipeline import extract_page
+lazy from core_pdf.impl.graphics_images import decode_image
+lazy from core_pdf.impl.output_model import Page
+lazy from core_pdf.impl.raw_media import DrawingRecord, ImageMetadata, ImageRecord
+lazy from core_pdf.impl.render_model import RenderOptions
+lazy from core_pdf.impl.render_page import compose_page
+lazy from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 
 if TYPE_CHECKING:
     from core_pdf.impl.document_document import PdfDocument

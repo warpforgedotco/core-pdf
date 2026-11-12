@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["importlib", "importlib.resources.abc"]
-
 from functools import cache, lru_cache
-from importlib import resources
-from importlib.resources.abc import Traversable
+lazy from importlib import resources
+lazy from importlib.resources.abc import Traversable
 
 from core_pdf.impl.adobe_fonts.cmap.decoder import CMapDecoder
 

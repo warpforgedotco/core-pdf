@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = ["core_pdf.impl.spec.s_07_security.pdf_mac"]
-
 from collections.abc import Callable, Sequence
 
 from core_pdf.impl.spec.exceptions import PdfUnsupportedError
-from core_pdf.impl.spec.s_07_security.pdf_mac import (
-    validate_pdf_mac_extension,
-    validate_pdf_mac_if_present,
-)
 from core_pdf.impl.spec.s_07_security.standard import (
     StandardSecurityHandler,
     create_standard_security_handler,
@@ -18,6 +12,10 @@ from core_pdf.impl.spec.s_07_security.standard import (
 from core_pdf.impl.spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict
 from core_pdf.impl.spec.types import PdfByteBuffer, PdfReference
+lazy from core_pdf.impl.spec.s_07_security.pdf_mac import (
+    validate_pdf_mac_extension,
+    validate_pdf_mac_if_present,
+)
 
 
 def initialize_document_security(
