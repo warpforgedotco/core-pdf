@@ -34,11 +34,12 @@ from typing import Any
 
 from core_pdf.impl.types import PdfByteBuffer
 
+from .casting import safe_int
 from .pdfdocument import PDFNoValidXRef
 from .pdfexceptions import PDFException, PDFKeyError, PDFNotImplementedError, PDFObjectNotFound
 from .pdfparser import PDFSyntaxError
 from .psexceptions import PSEOF, PSException, PSSyntaxError, PSTypeError
-from .utils import apply_png_predictor, apply_tiff_predictor, nunpack
+from .utils import apply_png_predictor, apply_tiff_predictor, choplist, nunpack
 
 EOL = re.compile(rb"[\r\n]")
 SPC = re.compile(rb"\s")
@@ -182,22 +183,6 @@ def literal_name(value: object) -> str:
         except UnicodeDecodeError:
             return str(value.name)
     return str(value)
-
-
-def safe_int(value: object) -> int | None:
-    try:
-        return int(value)  # type: ignore[call-overload]  # ty: ignore[invalid-argument-type]
-    except TypeError, ValueError:
-        return None
-
-
-def choplist(n: int, seq: Any) -> Iterator[tuple[Any, ...]]:
-    r = []
-    for x in seq:
-        r.append(x)
-        if len(r) == n:
-            yield tuple(r)
-            r = []
 
 
 class PDFStream:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 __lazy_modules__ = [
     "core_pdf.impl.crypto.ciphers",
-    "core_pdf.impl.spec.s_07_security.ciphers",
     "hmac",
     "secrets",
 ]
@@ -19,7 +18,14 @@ from hmac import compare_digest
 from types import MappingProxyType
 from typing import ClassVar, Literal
 
-from core_pdf.impl.crypto.ciphers import aes_cbc_encrypt, aes_gcm_encrypt, rc4_crypt
+from core_pdf.impl.crypto.ciphers import (
+    aes_cbc_decrypt,
+    aes_cbc_encrypt,
+    aes_ecb_decrypt,
+    aes_gcm_decrypt,
+    aes_gcm_encrypt,
+    rc4_crypt,
+)
 from core_pdf.impl.spec.exceptions import (
     PdfInvalidPermissionsError,
     PdfParseError,
@@ -27,11 +33,6 @@ from core_pdf.impl.spec.exceptions import (
     PdfUnsupportedError,
 )
 from core_pdf.impl.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
-from core_pdf.impl.spec.s_07_security.ciphers import (
-    aes_cbc_decrypt,
-    aes_ecb_decrypt,
-    aes_gcm_decrypt,
-)
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     coerce_to_bytes,

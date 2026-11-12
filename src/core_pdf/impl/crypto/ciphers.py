@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from core_pdf.impl.crypto.errors import DecryptionError
+from core_pdf.impl.spec.exceptions import PdfDecryptionError
 
 AES_GCM_KEY_BYTES = 32
 AES_GCM_IV_BYTES = 12
@@ -54,7 +54,7 @@ def aes_cbc_decrypt(
             unpadder = padding.PKCS7(algorithm.block_size).unpadder()
             plaintext = unpadder.update(plaintext) + unpadder.finalize()
     except ValueError as exc:
-        raise DecryptionError("Invalid encrypted object ciphertext") from exc
+        raise PdfDecryptionError("Invalid encrypted object ciphertext") from exc
     return plaintext
 
 
@@ -64,7 +64,7 @@ def aes_ecb_decrypt(key: bytes, ciphertext: bytes) -> bytes:
         decryptor = Cipher(algorithm, modes.ECB()).decryptor()
         return decryptor.update(ciphertext) + decryptor.finalize()
     except ValueError as exc:
-        raise DecryptionError("Invalid encrypted object ciphertext") from exc
+        raise PdfDecryptionError("Invalid encrypted object ciphertext") from exc
 
 
 def aes_ecb_encrypt(key: bytes, plaintext: bytes) -> bytes:
@@ -88,14 +88,14 @@ def aes_gcm_decrypt(key: bytes, data: bytes) -> bytes:
     minimum_length = AES_GCM_IV_BYTES + AES_GCM_TAG_BYTES
     maximum_length = AES_GCM_MAX_PLAINTEXT_BYTES + minimum_length
     if not minimum_length <= len(data) <= maximum_length:
-        raise DecryptionError("Invalid encrypted object ciphertext")
+        raise PdfDecryptionError("Invalid encrypted object ciphertext")
 
     initialization_vector = data[:AES_GCM_IV_BYTES]
     ciphertext_and_tag = data[AES_GCM_IV_BYTES:]
     try:
         return AESGCM(key).decrypt(initialization_vector, ciphertext_and_tag, None)
     except (InvalidTag, OverflowError, ValueError) as exc:
-        raise DecryptionError("Invalid encrypted object ciphertext") from exc
+        raise PdfDecryptionError("Invalid encrypted object ciphertext") from exc
 
 
 def rc4_crypt(key: bytes, data: bytes) -> bytes:

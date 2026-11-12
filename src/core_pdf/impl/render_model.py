@@ -352,11 +352,46 @@ def translated_data(
     return data
 
 
+class PayloadItem:
+    """A display item parsed from a payload dict by ``from_data``: equal by kind, seqno and
+    payload, translated by translating the payload and parsing it again.
+    """
+
+    __slots__ = ()
+
+    kind: str
+    seqno: int
+    payload: dict[str, Any]
+
+    @classmethod
+    def from_data(cls, seqno: int, data: dict[str, Any]) -> Self:
+        raise NotImplementedError
+
+    def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return (
+            self.kind == other.kind and self.seqno == other.seqno and self.payload == other.payload
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def translated(self, tx: float, ty: float, parent_blend_mode: str | None = None) -> Self:
+        return self.from_data(
+            self.seqno, translated_data(self.kind, self.payload, tx, ty, parent_blend_mode)
+        )
+
+    def to_data(self) -> dict[str, Any]:
+        return dict(self.payload)
+
+
 @final
-class GlyphBitmapItem(PaintItemBase, ReplaceFields, ReprFields):
+class GlyphBitmapItem(PaintItemBase, PayloadItem, ReplaceFields, ReprFields):
     __slots__ = ("visible", "bitmap", "bitmap_width", "bitmap_height", "payload")
 
-    kind: ClassVar[str] = "glyph"
+    kind = "glyph"
     visible: object
     bitmap: Any
     bitmap_width: Any
@@ -410,15 +445,6 @@ class GlyphBitmapItem(PaintItemBase, ReplaceFields, ReprFields):
         self.bitmap_height = bitmap_height
         self.payload = payload
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.seqno == other.seqno and self.payload == other.payload
-
-    __hash__ = None  # type: ignore[assignment]
-
     @classmethod
     def from_data(cls, seqno: int, data: dict[str, Any]) -> Self:
         return cls(
@@ -437,20 +463,12 @@ class GlyphBitmapItem(PaintItemBase, ReplaceFields, ReprFields):
             data,
         )
 
-    def translated(self, tx: float, ty: float, parent_blend_mode: str | None = None) -> Self:
-        return self.from_data(
-            self.seqno, translated_data(self.kind, self.payload, tx, ty, parent_blend_mode)
-        )
-
-    def to_data(self) -> dict[str, Any]:
-        return dict(self.payload)
-
 
 @final
-class ShadingItem(PaintItemBase, ReplaceFields, ReprFields):
+class ShadingItem(PaintItemBase, PayloadItem, ReplaceFields, ReprFields):
     __slots__ = ("rect", "dictionary", "color_rendering", "payload")
 
-    kind: ClassVar[str] = "shading"
+    kind = "shading"
     rect: Any
     dictionary: Any
     color_rendering: ColorRendering
@@ -500,15 +518,6 @@ class ShadingItem(PaintItemBase, ReplaceFields, ReprFields):
         self.color_rendering = color_rendering
         self.payload = payload
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.seqno == other.seqno and self.payload == other.payload
-
-    __hash__ = None  # type: ignore[assignment]
-
     @classmethod
     def from_data(cls, seqno: int, data: dict[str, Any]) -> Self:
         return cls(
@@ -529,34 +538,12 @@ class ShadingItem(PaintItemBase, ReplaceFields, ReprFields):
     def page_box(self, scale: float = 1.0) -> tuple[float, float, float, float] | None:  # noqa: ARG002
         return rect_tuple(self.bbox or self.rect)
 
-    def translated(self, tx: float, ty: float, parent_blend_mode: str | None = None) -> Self:
-        return self.from_data(
-            self.seqno, translated_data(self.kind, self.payload, tx, ty, parent_blend_mode)
-        )
 
-    def to_data(self) -> dict[str, Any]:
-        return dict(self.payload)
-
-
-class ControlItemBase(ReplaceFields, ReprFields):
+class ControlItemBase(PayloadItem, ReplaceFields, ReprFields):
     __slots__ = ()
-
-    kind: str
-    seqno: int
-    payload: dict[str, Any]
 
     def page_box(self, scale: float = 1.0) -> tuple[float, float, float, float] | None:  # noqa: ARG002
         return None
-
-    def translated(self, tx: float, ty: float, parent_blend_mode: str | None = None) -> DisplayItem:
-        return display_item(
-            self.kind,
-            self.seqno,
-            translated_data(self.kind, self.payload, tx, ty, parent_blend_mode),
-        )
-
-    def to_data(self) -> dict[str, Any]:
-        return dict(self.payload)
 
 
 @final
@@ -571,16 +558,13 @@ class ControlItem(ControlItemBase):
         self.seqno = seqno
         self.payload = payload
 
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return (
-            self.kind == other.kind and self.seqno == other.seqno and self.payload == other.payload
+    def translated(self, tx: float, ty: float, parent_blend_mode: str | None = None) -> Self:
+        # A control kind has no parser, so display_item would build this class again.
+        return type(self)(
+            self.kind,
+            self.seqno,
+            translated_data(self.kind, self.payload, tx, ty, parent_blend_mode),
         )
-
-    __hash__ = None  # type: ignore[assignment]
 
 
 @final
@@ -599,15 +583,6 @@ class ClipItem(ControlItemBase):
         self.path = path
         self.fill_rule = fill_rule
         self.payload = payload
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.seqno == other.seqno and self.payload == other.payload
-
-    __hash__ = None  # type: ignore[assignment]
 
     @classmethod
     def from_data(cls, seqno: int, data: dict[str, Any]) -> Self:
@@ -628,15 +603,6 @@ class ScopeBeginItem(ControlItemBase):
         self.seqno = seqno
         self.path = path
         self.payload = payload
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.seqno == other.seqno and self.payload == other.payload
-
-    __hash__ = None  # type: ignore[assignment]
 
     @classmethod
     def from_data(cls, seqno: int, data: dict[str, Any]) -> Self:
@@ -705,15 +671,6 @@ class GroupBeginItem(ControlItemBase):
         self.alpha_is_shape = alpha_is_shape
         self.graphics_soft_mask = graphics_soft_mask
         self.payload = payload
-
-    def __eq__(self, other: object) -> bool:
-        if self is other:
-            return True
-        if other.__class__ is not self.__class__:
-            return NotImplemented
-        return self.seqno == other.seqno and self.payload == other.payload
-
-    __hash__ = None  # type: ignore[assignment]
 
     @classmethod
     def from_data(cls, seqno: int, data: dict[str, Any]) -> Self:

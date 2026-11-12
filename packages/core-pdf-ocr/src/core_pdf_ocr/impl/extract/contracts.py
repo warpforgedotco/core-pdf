@@ -117,26 +117,23 @@ class PageEvidence(extract_contracts.PageEvidence, metaclass=RecordType):
         vector_text_trusted: bool = False,
         stroked_vector_text: StrokedVectorTextEvidence | None = None,
     ) -> None:
-        frozen_setattr(self, "page_area", page_area)
-        frozen_setattr(self, "native_characters", native_characters)
-        frozen_setattr(self, "visible_native_characters", visible_native_characters)
-        frozen_setattr(self, "suspicious_characters", suspicious_characters)
-        frozen_setattr(self, "image_count", image_count)
-        frozen_setattr(self, "image_area_ratio", image_area_ratio)
-        frozen_setattr(self, "image_boxes", image_boxes)
-        frozen_setattr(self, "text_coverage", text_coverage)
-        frozen_setattr(self, "full_page_image", full_page_image)
-        frozen_setattr(
-            self, "text_quality", TextQualityStats() if text_quality is None else text_quality
-        )
-        frozen_setattr(
+        extract_contracts.PageEvidence.__init__(
             self,
-            "all_text_quality",
-            TextQualityStats() if all_text_quality is None else all_text_quality,
+            page_area,
+            native_characters,
+            visible_native_characters,
+            suspicious_characters,
+            image_count,
+            image_area_ratio,
+            image_boxes,
+            text_coverage,
+            full_page_image,
+            text_quality,
+            all_text_quality,
+            glyphs,
+            painted_native_characters,
+            trusted_hidden_text,
         )
-        frozen_setattr(self, "glyphs", GlyphEvidence() if glyphs is None else glyphs)
-        frozen_setattr(self, "painted_native_characters", painted_native_characters)
-        frozen_setattr(self, "trusted_hidden_text", trusted_hidden_text)
         frozen_setattr(self, "vector_complexity", vector_complexity)
         frozen_setattr(self, "image_filters", image_filters)
         frozen_setattr(self, "uncovered_vector_area", uncovered_vector_area)

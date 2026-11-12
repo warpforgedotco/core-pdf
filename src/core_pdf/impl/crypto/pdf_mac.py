@@ -10,7 +10,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, hmac, keywrap
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from core_pdf.impl.crypto.errors import UnsupportedAlgorithmError
+from core_pdf.impl.spec.exceptions import PdfUnsupportedError
 
 AUTHENTICATED_DATA_OID = "1.2.840.113549.1.9.16.1.2"
 CONTENT_TYPE_ATTRIBUTE_OID = "1.2.840.113549.1.9.3"
@@ -252,7 +252,7 @@ def digest_algorithm(identifier: Any) -> hashes.HashAlgorithm:
     oid = require_algorithm(identifier, None, require_absent_parameters=False)
     algorithm_type = DIGEST_ALGORITHMS.get(oid)
     if algorithm_type is None:
-        raise UnsupportedAlgorithmError(f"Unsupported PDF MAC digest algorithm: {oid}")
+        raise PdfUnsupportedError(f"Unsupported PDF MAC digest algorithm: {oid}")
     algorithm = algorithm_type()
     parameters = identifier["parameters"]
     if oid in {SHA3_256_OID, SHA3_384_OID, SHA3_512_OID}:
