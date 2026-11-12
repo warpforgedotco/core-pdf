@@ -23,6 +23,12 @@ from cython.cimports.cpython.mem import PyMem_Free, PyMem_Malloc
 from cython.cimports.libc.math import ceil, fabs, floor, rint
 from cython.cimports.libc.string import memcpy, memset
 
+# UNIT_FROM_BYTE[b] is b / 255.0, the same double division, looked up instead of
+# recomputed for every byte channel of every pixel.
+UNIT_FROM_BYTE = cython.declare(cython.double[256])
+for _byte in range(256):
+    UNIT_FROM_BYTE[_byte] = cython.cast(cython.double, _byte) / 255.0
+
 cnp.import_array()
 
 
@@ -857,6 +863,7 @@ def _knockout_fill(
     shape_plane: FloatPlane,
     shape_scale: cython.double,
 ) -> cython.int:
+
     has_parent_shape: cython.bint = shape_plane.data != cython.NULL
     red: cython.float = cython.cast(cython.float, cython.cast(cython.int, rgba[0]))
     green: cython.float = cython.cast(cython.float, cython.cast(cython.int, rgba[1]))
@@ -952,7 +959,7 @@ def _knockout_fill(
                         for k in range(4):
                             rendered[k] = backdrop[k * base.channel]
                         element = cython.address(rendered[0])
-                    eff = cython.cast(cython.double, quantized) / 255.0
+                    eff = UNIT_FROM_BYTE[quantized]
                     sh = cython.cast(cython.double, source_shape)
                     if sh < 0.0:
                         sh = 0.0
@@ -961,22 +968,20 @@ def _knockout_fill(
                     if eff > sh:
                         sh = eff
                     if sh > 0.0:
-                        complete = (
-                            cython.cast(cython.double, destination[3 * target.channel]) / 255.0
-                        )
-                        initial = cython.cast(cython.double, backdrop[3 * base.channel]) / 255.0
-                        ec = cython.cast(cython.double, element[3]) / 255.0
+                        complete = UNIT_FROM_BYTE[destination[3 * target.channel]]
+                        initial = UNIT_FROM_BYTE[backdrop[3 * base.channel]]
+                        ec = UNIT_FROM_BYTE[element[3]]
                         remaining = 1.0 - sh
                         rga = eff + remaining * cython.cast(cython.double, group_alpha[0])
                         ra = initial + (1.0 - initial) * rga
                         for k in range(3):
                             colour[k] = knockout_component(
-                                cython.cast(cython.double, element[k]) / 255.0,
+                                UNIT_FROM_BYTE[element[k]],
                                 ec,
                                 remaining,
-                                cython.cast(cython.double, destination[k * target.channel]) / 255.0,
+                                UNIT_FROM_BYTE[destination[k * target.channel]],
                                 complete,
-                                cython.cast(cython.double, backdrop[k * base.channel]) / 255.0,
+                                UNIT_FROM_BYTE[backdrop[k * base.channel]],
                                 initial,
                                 ra,
                             )
