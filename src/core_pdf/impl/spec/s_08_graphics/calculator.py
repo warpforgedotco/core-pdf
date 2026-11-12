@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from core_pdf.impl.postscript.calculator import compile_calculator
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import require_pdf_number_pairs
-from core_postscript.calculator import compile_calculator
 
 
 def bounds(value: object, kind: str) -> tuple[tuple[float, float], ...]:

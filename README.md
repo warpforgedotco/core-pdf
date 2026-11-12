@@ -13,12 +13,11 @@ High-Performance PDF Engine
 
 | Package | Purpose |
 | ------- | ------- |
-| `core-pdf` | Document API, extraction, rendering, CLI; also the strict PDF algorithms (`core_pdf.impl.spec`), JBIG2, ciphers and PDF MAC, and Adobe font formats with CMaps |
+| `core-pdf` | Document API, extraction, rendering, CLI; also the strict PDF algorithms (`core_pdf.impl.spec`), JBIG2, the PostScript calculator, ciphers and PDF MAC, and Adobe font formats with CMaps |
 | [`core-pdf-compat`](packages/core-pdf-compat/README.md) | Facades for third-party PDF library interfaces |
 | [`core-pdf-ocr`](packages/core-pdf-ocr/README.md) | OCR for scanned and hybrid documents |
 | [`core-pdf-validate`](packages/core-pdf-validate/README.md) | PDF/A, PDF/UA, and WTPDF validation through a local veraPDF |
 | [`core-pdf-cythonized`](packages/core-pdf-cythonized/README.md) | Compiled kernels for core's hot paths |
-| [`core-postscript`](packages/core-postscript/README.md) | PostScript calculator subset |
 | [`core-records`](packages/core-records/README.md) | Shared value-class mixins |
 
 ## Development

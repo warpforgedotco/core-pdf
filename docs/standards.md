@@ -2,8 +2,7 @@
 
 `core_pdf.impl.spec` shares its chapter algorithms across PDF versions; the external-standard
 kernels it wraps (JBIG2, predictors, the PostScript calculator, CMS and PDF MAC ciphers, and
-the Adobe font formats) are modules beside it in `core_pdf.impl`, except the PostScript
-calculator, which is the `core-postscript` distribution. A document's format
+the Adobe font formats) are modules beside it in `core_pdf.impl`. A document's format
 version, specification edition, developer extensions, and conformance claims are
 separate identities. Recognizing one does not mean every feature is implemented or
 that the document conforms.

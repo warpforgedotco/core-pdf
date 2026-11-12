@@ -18,7 +18,6 @@ dependencies = [
     "defusedxml>=0.7.1",
     "core-pdf-cythonized>=0.1.0,<0.2.0",
     "core-records>=0.2.0,<0.3.0",
-    "core-postscript>=0.1.0,<0.2.0",
     "asn1crypto>=1.5.1",
     "cryptography>=50.0.0",
 ]
@@ -34,7 +33,6 @@ members = [
     "packages/core-pdf-ocr",
     "packages/core-pdf-compat",
     "packages/core-pdf-validate",
-    "packages/core-postscript",
     "packages/core-records",
     "packages/core-pdf-cythonized",
 ]
@@ -42,7 +40,6 @@ members = [
 [tool.uv.sources]
 core-pdf-cythonized = { workspace = true }
 core-records = { workspace = true }
-core-postscript = { workspace = true }
 
 [project.urls]
 Repository = "https://github.com/warpforgedotco/core-pdf"
@@ -72,7 +69,7 @@ benchmark = [
 ]
 
 [tool.ruff]
-src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-records/src", "packages/core-pdf-cythonized/src", "."]
+src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-records/src", "packages/core-pdf-cythonized/src", "."]
 extend-exclude = [
     ".claude/worktrees",
     "src/core_pdf/_vendor/fontTools",
@@ -193,8 +190,8 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.14"
-files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-postscript/src/core_postscript", "packages/core-records/src/core_records", "packages/core-pdf-cythonized/src/core_pdf_cythonized"]
-mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
+files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-records/src/core_records", "packages/core-pdf-cythonized/src/core_pdf_cythonized"]
+mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
 exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
 ignore_missing_imports = true
@@ -204,7 +201,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [tool.ty.environment]
-root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-postscript/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
+root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
 
 [tool.ty.src]
 exclude = [

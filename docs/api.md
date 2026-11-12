@@ -162,11 +162,11 @@ not a complete conformance validator.
 
 Core requires `core-pdf-cythonized>=0.1.0,<0.2.0`, which carries compiled kernels with
 no pure-Python fallback, so core needs a wheel for the target platform or a C compiler at
-install time. The referenced-standard kernels for JBIG2, ciphers and PDF MAC, and the
-Adobe font formats with their CMap data ship inside `core-pdf` as `core_pdf.impl.jbig2`,
-`core_pdf.impl.crypto`, and `core_pdf.impl.adobe_fonts`; the PostScript calculator is the
-separately versioned floor package `core-postscript`, with `core-records`, the
-value-class mixins every workspace package's records share, beneath it. The JBIG2 MQ
+install time. The referenced-standard kernels for the PostScript calculator, JBIG2,
+ciphers and PDF MAC, and the Adobe font formats with their CMap data ship inside
+`core-pdf` as `core_pdf.impl.postscript`, `core_pdf.impl.jbig2`, `core_pdf.impl.crypto`,
+and `core_pdf.impl.adobe_fonts`, with `core-records`, the value-class mixins every
+workspace package's records share, beneath them. The JBIG2 MQ
 arithmetic decoder lives in `core-pdf-cythonized`. The PNG and TIFF predictor kernels are
 small enough that they live in spec itself, as
 `core_pdf.impl.spec.s_07_filters.predictors`. Core's public exceptions keep their names

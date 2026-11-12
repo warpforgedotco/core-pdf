@@ -9,7 +9,7 @@ cd "${PROJECT_ROOT}"
 
 # Standards packages and the compiled kernels core imports; every one ships
 # Python or extension modules, so include both code and package data.
-STANDARDS_PACKAGES=(core_records core_postscript core_pdf_cythonized)
+STANDARDS_PACKAGES=(core_records core_pdf_cythonized)
 INCLUDE_ARGS=()
 for package in "${STANDARDS_PACKAGES[@]}"; do
     INCLUDE_ARGS+=("--include-package=${package}" "--include-package-data=${package}")

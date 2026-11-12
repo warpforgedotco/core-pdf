@@ -26,7 +26,7 @@ fi
 # Standards packages and the compiled kernels core imports: source roots for
 # PYTHONPATH and include flags for Nuitka (core_pdf carries the CMap package data). The kernels' extension modules sit in
 # their source root after the editable build `uv sync` performs.
-STANDARDS_DISTRIBUTIONS=(core-records core-postscript core-pdf-cythonized)
+STANDARDS_DISTRIBUTIONS=(core-records core-pdf-cythonized)
 SOURCE_PATH="${PROJECT_ROOT}/src"
 INCLUDE_ARGS=(
     --include-package=core_pdf

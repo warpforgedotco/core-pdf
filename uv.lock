@@ -13,7 +13,6 @@ members = [
     "core-pdf-cythonized",
     "core-pdf-ocr",
     "core-pdf-validate",
-    "core-postscript",
     "core-records",
 ]
 
@@ -378,7 +377,6 @@ source = { editable = "." }
 dependencies = [
     { name = "asn1crypto" },
     { name = "core-pdf-cythonized" },
-    { name = "core-postscript" },
     { name = "core-records" },
     { name = "cryptography" },
     { name = "defusedxml" },
@@ -416,7 +414,6 @@ test = [
 requires-dist = [
     { name = "asn1crypto", specifier = ">=1.5.1" },
     { name = "core-pdf-cythonized", editable = "packages/core-pdf-cythonized" },
-    { name = "core-postscript", editable = "packages/core-postscript" },
     { name = "core-records", editable = "packages/core-records" },
     { name = "cryptography", specifier = ">=50.0.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
@@ -524,17 +521,6 @@ requires-dist = [
     { name = "core-records", editable = "packages/core-records" },
     { name = "defusedxml", specifier = ">=0.7.1" },
 ]
-
-[[package]]
-name = "core-postscript"
-version = "0.1.1"
-source = { editable = "packages/core-postscript" }
-dependencies = [
-    { name = "core-records" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "core-records", editable = "packages/core-records" }]
 
 [[package]]
 name = "core-records"
