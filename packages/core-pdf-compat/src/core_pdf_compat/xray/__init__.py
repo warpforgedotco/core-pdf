@@ -19,7 +19,6 @@ from typing import Any
 lazy import numpy
 
 from core_pdf import PdfDocument
-from core_pdf._vendor.fontTools.ttLib import TTLibError
 from core_pdf.impl.base.collector import pauses_collector
 from core_pdf.impl.base.exceptions import PdfPasswordError, PdfUnsupportedError
 from core_pdf.impl.base.geometry import (
@@ -545,8 +544,8 @@ def _trailer_keyword_ends(raw_data: bytes) -> Iterator[int]:
 def _has_rectangles(page: Any, crop_box: tuple[float, ...], user_unit: float) -> bool:
     """Whether the page may paint a rectangle that could be a redaction, found without
     capturing its text. A wrong yes costs only time, as _page_redactions finds the rectangles
-    again; a wrong no would lose redactions. A page with a Highlight annotation always counts:
-    a font fontTools rejects while the text is captured sends it to _raw_highlight_redactions."""
+    again; a wrong no would lose redactions. A page with a Highlight annotation always
+    counts."""
     if any(annotation.subtype == "Highlight" for annotation in page.get_annotations()):
         return True
     state = _DrawingsProbe(page, crop_box, user_unit)
@@ -771,95 +770,6 @@ def _skip_whitespace(raw_data: bytes, position: int) -> int:
     return position
 
 
-def _raw_highlight_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, object]]:
-    highlights = [
-        tuple(annotation.rect)
-        for annotation in page.get_annotations()
-        if annotation.subtype == "Highlight"
-    ]
-    if not highlights:
-        return []
-    raw_data = bytes(page.document.raw_data)
-    resources = page.resources
-    resource_fonts = resources.get("Font")
-    font_names = (
-        {str(name) for name in resource_fonts} if isinstance(resource_fonts, dict) else set()
-    )
-    font_match = next(
-        (
-            match
-            for match in re.finditer(rb"/([A-Za-z0-9_.-]+)\s+[-+.\d]+\s+Tf\b", raw_data)
-            if match.group(1).decode("latin-1") in font_names
-        ),
-        None,
-    )
-    if font_match is None:
-        return []
-    font_name = font_match.group(1).decode("latin-1")
-    recovered_font = recovery.font(page, font_name)
-    if recovered_font is None:
-        return []
-    begin = raw_data.rfind(b"BT", 0, font_match.start())
-    end = raw_data.find(b"ET", font_match.end())
-    if begin < 0 or end < 0:
-        return []
-    stream = raw_data[begin:end]
-    token_pattern = re.compile(
-        rb"([-+.\d]+)\s+([-+.\d]+)\s+Td\b|"
-        rb"/([A-Za-z0-9_.-]+)\s+([-+.\d]+)\s+Tf\b|"
-        rb"((?:<[0-9A-Fa-f]+>)+)\s*Tj\b"
-    )
-    x = y = line_x = line_y = 0.0
-    font_size = 0.0
-    font_active = False
-    recovered: list[_Character] = []
-    for token in token_pattern.finditer(stream):
-        if token.group(1) is not None:
-            line_x += float(token.group(1))
-            line_y += float(token.group(2))
-            x, y = line_x, line_y
-            continue
-        if token.group(3) is not None:
-            font_active = token.group(3).decode("latin-1") == font_name
-            font_size = float(token.group(4))
-            continue
-        if not font_active or token.group(5) is None:
-            continue
-        operands = re.findall(rb"<([0-9A-Fa-f]+)>", token.group(5))
-        if not operands:
-            continue
-        codes = bytes.fromhex(operands[-1].decode())
-        for code in codes:
-            width_index = code - recovered_font.first_char
-            if not 0 <= width_index < len(recovered_font.widths):
-                continue
-            x1 = x + recovered_font.widths[width_index] * font_size * 0.001
-            recovered.append(
-                _Character(
-                    (x, y - font_size * 0.2, x1, y + font_size * 0.8),
-                    recovered_font.cmap.decode(bytes((code,))),
-                    0,
-                    None,
-                )
-            )
-            x = x1
-    crop_box = tuple(float(value) for value in (page.crop_box or page.media_box))
-    output: list[dict[str, object]] = []
-    for highlight in highlights:
-        text = "".join(
-            character.text for character in recovered if bbox_intersects(character.bbox, highlight)
-        )
-        if text.strip():
-            fitz_box = _fitz_box(highlight, crop_box, page.user_unit)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            output.append(
-                {
-                    "bbox": (*fitz_box[:2], _next_float32(fitz_box[2]), fitz_box[3]),
-                    "text": text,
-                }
-            )
-    return output
-
-
 def _source_bytes(source: object) -> bytes | None:
     if isinstance(source, bytes):
         return source
@@ -1044,13 +954,11 @@ def _inspect(source: Any) -> dict[int, list[dict[str, object]]]:
             for page in document.pages:
                 try:
                     redactions = _page_redactions(page, recovery)
-                except TTLibError:
-                    redactions = _raw_highlight_redactions(page, recovery)
                 except KeyError, TypeError, ValueError:
                     redactions = []
                 if redactions:
                     output[page.page_number] = redactions
-        except RecursionError, TTLibError:
+        except RecursionError:
             return {}
     if output and all(
         not _DATE.sub("", str(item["text"])) for findings in output.values() for item in findings

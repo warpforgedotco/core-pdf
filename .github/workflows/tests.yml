@@ -343,6 +343,8 @@ jobs:
           $run/check_plumber_chars.py
           $run/check_pdfminer_chars.py
           uv run --locked --all-packages --group test --with "pypdf[full]==7.0.0" python scripts/check_encrypt_readers.py
+          # core reads font programs itself, matching fontTools 4.63.0, which it replaced.
+          uv run --locked --all-packages --group test --with "fonttools==4.63.0" python scripts/check_font_programs.py
 
       - name: PdfWriter output, and bytes and reads against the real pypdf
         if: matrix.shard == 'pypdf output'

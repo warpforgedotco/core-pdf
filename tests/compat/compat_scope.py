@@ -6,7 +6,6 @@ see uses_strategy. CORE_PDF_COMPAT_STRATEGY_AGNOSTIC lists the tests exempt from
 """
 
 import ast
-import contextlib
 import importlib
 import inspect
 import os
@@ -16,11 +15,6 @@ import textwrap
 from typing import Any
 
 import pytest
-
-# core-pdf's vendored copy claims the name fontTools when nothing has it, which hides the
-# full package from fpdf, a test dependency of pypdf's suite.
-with contextlib.suppress(ImportError):
-    importlib.import_module("fontTools")
 
 
 def env_list(name: str) -> list[str]:

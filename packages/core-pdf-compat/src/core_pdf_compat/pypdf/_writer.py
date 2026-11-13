@@ -53,7 +53,6 @@ from ._text import (
     extract_form_text,
     extract_layout_text,
     extract_legacy_text,
-    font_programs_quiet,
     irregular_contents,
     irregular_dictionaries_reported,
 )
@@ -401,7 +400,7 @@ class PageObject(DictionaryObject):
         layout: dict[str, Any] | None,
         damaged: bool,
     ) -> str:
-        with irregular_dictionaries_reported(pdf), font_programs_quiet():
+        with irregular_dictionaries_reported(pdf):
             data = (
                 self._get_contents_as_bytes()
                 if damaged or irregular_contents(self, pdf, source)

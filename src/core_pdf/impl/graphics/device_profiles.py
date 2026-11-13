@@ -23,7 +23,7 @@ INTERNAL_DEFAULT_CMYK_PROFILE = "SWOP2006_Coated5v2.icc"
 def default_cmyk_transform() -> IccTransform | None:
     try:
         profile = (
-            resources.files("core_pdf._vendor.icc")
+            resources.files("core_pdf.impl.data.icc")
             .joinpath(INTERNAL_DEFAULT_CMYK_PROFILE)
             .read_bytes()
         )

@@ -170,7 +170,7 @@ workspace package's records share, beneath them. The JBIG2 MQ
 arithmetic decoder lives in `core-pdf-cythonized`. The PNG and TIFF predictor kernels are
 small enough that they live in spec itself, as
 `core_pdf.impl.spec.s_07_filters.predictors`. Core's public exceptions keep their names
-and share spec's error identities. Reader recovery, fontTools backends, Unicode guesses,
+and share spec's error identities. Reader recovery, font program readers, Unicode guesses,
 device color conversion, capture, extraction, and rendering stay in core.
 
 ## PDF versions and conformance claims

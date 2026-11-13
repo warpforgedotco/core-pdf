@@ -24,7 +24,7 @@ PACKAGES = ("core_pdf", "core_pdf_compat", "core_pdf_ocr")
 # extras) cannot import; it is skipped, and checked wherever the dependency is.
 OPTIONAL = {"core_pdf_compat.unstructured": "en_core_web_sm"}
 # Vendored code is imported as upstream ships it.
-SKIP_PREFIXES = ("core_pdf._vendor.", "core_pdf.impl.adobe_fonts._vendor.")
+SKIP_PREFIXES = ("core_pdf.impl.adobe_fonts._vendor.",)
 
 
 def module_names(package_name: str) -> list[str]:

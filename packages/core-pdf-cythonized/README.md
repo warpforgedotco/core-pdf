@@ -146,7 +146,9 @@ hint-replacement handling, their cubic extrema and their min/max tie order -- so
 the bounds are the same doubles. `seac`, a malformed operand count, a subr index
 Python would resolve differently (negative, fractional, out of range), division
 by zero and truncated numbers return None, and
-`core_pdf.impl.fonts.program_type1` draws the same glyph through fontTools.
+`core_pdf.impl.fonts.program_type1` draws the same glyph with core's Python Type 1
+interpreter (`core_pdf.impl.fonts.outline_pens`), which follows fontTools to the same
+doubles.
 
 ## What belongs here
 
@@ -220,7 +222,7 @@ Nothing checks the result on the platforms that build wheels.
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf.impl.spec.s_11_transparency.groups` and `core_pdf.impl.render.target` (both deleted) | 7.06x on the fused wrapper |
 | `decode_arithmetic_generic_template0` | `core_pdf.impl.jbig2.codec` (deleted, with `JBIG2MQDecoder` and the `MQ_*` tables) | 69x over the 18 generic regions the JBIG2 fixtures decode (168 to 2.4 ns/px); render of no_bad_redactions.4.1 1424 to 77 ms, the two SCORE-Bench JBIG2 scans -31% and -40% |
 | `merge_collinear_rows` | the sequential merge loop over `tolist()` rows in `core_pdf.impl.extract.grids.merge_collinear_segments` (deleted); the same comparisons, `min`/`max` and averaging in double precision, pinned to that loop by a randomized test | table detection on issue-301 (18,560 ruled segments) 11.2 to 4.8 ms per first-page extract |
-| `type1_glyph_bounds` | nothing deleted: mirrors fontTools' `T1CharString.draw` into a `BoundsPen`, which `core_pdf.impl.fonts.program_type1.Type1FontProgram.glyph_bbox_for_gid` keeps for what it declines | about 500 us per glyph in Python, 99% of 10,222 corpus Type 1 glyphs taking the compiled path with bit-identical bounds; 3-page extract of layout-parser-paper 72 to 44 ms, Type1-Font-Format 92 to 64 ms, 2201.00069 143 to 119 ms |
+| `type1_glyph_bounds` | nothing deleted: mirrors fontTools' `T1CharString.draw` into a `BoundsPen`, which `core_pdf.impl.fonts.program_type1.Type1FontProgram.glyph_bbox_for_gid` keeps, in core's own interpreter, for what it declines | about 500 us per glyph in Python, 99% of 10,222 corpus Type 1 glyphs taking the compiled path with bit-identical bounds; 3-page extract of layout-parser-paper 72 to 44 ms, Type1-Font-Format 92 to 64 ms, 2201.00069 143 to 119 ms |
 | `glyph_feature_cells` | the numpy cell measurement of `core_pdf.impl.fonts.cff_repair.feature_from_contours` (deleted), which keeps `feature_from_points` for the non-finite inputs the kernel declines | 57 to 18 us per glyph feature over the NASA CMap sample's CFF repair glyphs (about 200 points each), where some twenty array operations ran on arrays too small to amortize them |
 | `outline_coordinate_arrays` | the list build and two `numpy.asarray` calls of `core_pdf.impl.fonts.glyph_geometry.outline_arrays` (deleted) | 16.8 to 3.0 us per glyph outline over 919 corpus render outlines (median 202 points) |
 

@@ -5,7 +5,8 @@ from collections import OrderedDict
 from functools import lru_cache
 from typing import Any
 
-from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
+from core_pdf.impl.adobe_fonts.agl.glyph_list import GLYPH_DATA
+from core_pdf.impl.adobe_fonts.agl.mapping import glyph_name_to_unicode
 from core_pdf.impl.base.exceptions import PdfError
 from core_pdf.impl.base.geometry import bbox_union
 from core_pdf.impl.base.types import PdfName, PdfString, RecordType, ReplaceFields, ReprFields
@@ -78,10 +79,9 @@ def decoder_to_unicode(decoder: object) -> Any:
 
 @lru_cache(maxsize=4096)
 def legacy_glyph_name_text(name: str) -> str:
-    codepoints = LEGACY_AGL2UV.get(name)
-    if codepoints is not None:
-        return chr(codepoints[0]) if len(codepoints) == 1 else "".join(map(chr, codepoints))
-    return toUnicode(name)
+    # The full Adobe Glyph List, then its rules for uniXXXX, uXXXXX and ligature names.
+    text = GLYPH_DATA.get(name)
+    return text if text is not None else glyph_name_to_unicode(name)
 
 
 def _mapping_value(mapping: object, name: str) -> object | None:
