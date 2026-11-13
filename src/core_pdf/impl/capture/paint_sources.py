@@ -10,24 +10,12 @@ from __future__ import annotations
 from contextlib import suppress
 from typing import TYPE_CHECKING
 
-from core_pdf.impl.base.types import (
-    MISSING,
-    MissingObject,
-)
-from core_pdf.impl.capture.records import (
-    PatternPaint,
-    ShadingPattern,
-)
+from core_pdf.impl.base.types import MISSING, MissingObject
+from core_pdf.impl.capture.records import PatternPaint, ShadingPattern
 from core_pdf.impl.graphics.color import color_operands_to_srgb
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
-from core_pdf.impl.spec.s_08_graphics.color_rendering import (
-    override_color_rendering,
-)
-
-if TYPE_CHECKING:
-    pass
-
+from core_pdf.impl.spec.s_08_graphics.color_rendering import override_color_rendering
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.recording import TextState

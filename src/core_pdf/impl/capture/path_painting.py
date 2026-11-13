@@ -12,22 +12,6 @@ from math import hypot
 from typing import TYPE_CHECKING
 
 from core_pdf.impl.base.geometry import intersect_bbox
-from core_pdf.impl.capture.records import (
-    EMPTY_DRAWING_ITEMS,
-    CapturedDrawing,
-    CapturedPath,
-    PaintedDrawingKind,
-    marker_drawing,
-)
-from core_pdf.impl.spec.s_07_content.model import PdfPath
-from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
-from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
-lazy from core_pdf_cythonized import flatten_path_commands
-
-if TYPE_CHECKING:
-    pass
-
-
 from core_pdf.impl.capture.recording_support import (
     DRAWING_BBOX,
     DRAWING_COLOR_RENDERING,
@@ -42,6 +26,17 @@ from core_pdf.impl.capture.recording_support import (
     SPACES_THAT_MAY_NOT_PAINT,
     flatten_path,
 )
+from core_pdf.impl.capture.records import (
+    EMPTY_DRAWING_ITEMS,
+    CapturedDrawing,
+    CapturedPath,
+    PaintedDrawingKind,
+    marker_drawing,
+)
+from core_pdf.impl.spec.s_07_content.model import PdfPath
+from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
+lazy from core_pdf_cythonized import flatten_path_commands
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.recording import TextState

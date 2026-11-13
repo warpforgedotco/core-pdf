@@ -10,20 +10,12 @@ from __future__ import annotations
 
 import mmap
 from collections.abc import Sequence
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING, Any
 
-from core_pdf.impl.base.exceptions import (
-    PdfUnsupportedError,
-)
-from core_pdf.impl.base.types import (
-    PdfName,
-    PdfReference,
-    PdfString,
-)
+from core_pdf.impl.base.exceptions import PdfUnsupportedError
+from core_pdf.impl.base.types import PdfName, PdfReference, PdfString
 from core_pdf.impl.base.values import recover_pdf_name
+from core_pdf.impl.document.navigation import legacy_name_context
 from core_pdf.impl.document.standards import (
     bootstrap_security_context,
     discover_document_standards,
@@ -37,24 +29,10 @@ from core_pdf.impl.spec.s_07_security.standard import (
     StandardSecurityHandler,
     create_standard_security_handler,
 )
-from core_pdf.impl.spec.s_07_syntax.types import (
-    PdfDict,
-)
-from core_pdf.impl.spec.s_07_syntax.xref import (
-    key_for,
-)
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_07_syntax.xref import key_for
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
-lazy from core_pdf_cythonized import (
-    security_marker_present,
-)
-
-if TYPE_CHECKING:
-    pass
-
-
-from core_pdf.impl.document.navigation import (
-    legacy_name_context,
-)
+lazy from core_pdf_cythonized import security_marker_present
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.pdf_document import PdfDocument

@@ -14,23 +14,12 @@ lazy import numpy
 
 from core_pdf.impl.base.arrays import UInt8Array, uint8_image_view
 from core_pdf.impl.base.geometry import clamp01, normalize_rect, rect_tuple
-from core_pdf.impl.capture.records import (
-    CapturedPath,
-    ShadingPattern,
-    TilingPattern,
-)
+from core_pdf.impl.capture.records import CapturedPath, ShadingPattern, TilingPattern
 from core_pdf.impl.graphics.shading import PreparedShading
-from core_pdf.impl.render.blend import (
-    kernel_blend_code,
-)
+from core_pdf.impl.render.blend import kernel_blend_code
 from core_pdf.impl.render.clipping import ClipState
-from core_pdf.impl.render.model import (
-    PathPaintItem,
-    ShadingItem,
-)
-from core_pdf.impl.render.paths import (
-    intersect_box,
-)
+from core_pdf.impl.render.model import PathPaintItem, ShadingItem
+from core_pdf.impl.render.paths import intersect_box
 from core_pdf.impl.render.raster_support import (
     cell_paints_nothing,
     shading_rgba,
@@ -40,10 +29,7 @@ from core_pdf.impl.render.raster_support import (
 from core_pdf.impl.render.raster_support import prepared_shading as cached_shading
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
-lazy from core_pdf_cythonized import (
-    shading_blend,
-    shading_values,
-)
+lazy from core_pdf_cythonized import shading_blend, shading_values
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget

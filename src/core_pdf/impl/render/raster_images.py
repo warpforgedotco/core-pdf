@@ -14,22 +14,15 @@ lazy import numpy
 
 from core_pdf.impl.base.arrays import ByteBuffer, UInt8Array, uint8_view
 from core_pdf.impl.base.geometry import points_bbox, rect_tuple
-from core_pdf.impl.graphics.images import (
-    PreparedImage,
-    image_color_key_mask_is_shape,
-)
+from core_pdf.impl.graphics.images import PreparedImage, image_color_key_mask_is_shape
 from core_pdf.impl.render.blend import (
     blend_visible_pixels,
     color_rgba,
     declared_blend,
     resolve_constant_alpha,
 )
-from core_pdf.impl.render.model import (
-    ImagePaintItem,
-)
-from core_pdf.impl.render.paths import (
-    intersect_box,
-)
+from core_pdf.impl.render.model import ImagePaintItem
+from core_pdf.impl.render.paths import intersect_box
 from core_pdf.impl.render.raster_support import (
     AFFINE_BLIT_SCRATCH_BYTES,
     box_downsample,
@@ -38,9 +31,7 @@ from core_pdf.impl.render.raster_support import (
     sample_image_plane,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
-lazy from core_pdf_cythonized import (
-    sample_opaque_pixels,
-)
+lazy from core_pdf_cythonized import sample_opaque_pixels
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget

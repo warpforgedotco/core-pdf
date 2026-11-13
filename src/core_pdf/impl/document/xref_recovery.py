@@ -12,31 +12,30 @@ from __future__ import annotations
 import struct
 from collections.abc import Callable, Iterator, Sequence
 from functools import partial
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING, Any
 
-from core_pdf.impl.base.exceptions import (
-    PdfParseError,
-    PdfUnsupportedError,
-)
-from core_pdf.impl.base.types import (
-    MISSING,
-    PdfReference,
-)
+from core_pdf.impl.base.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.base.types import MISSING, PdfReference
 from core_pdf.impl.base.values import recover_pdf_name
-from core_pdf.impl.document.standards import (
-    find_pdf_header,
+from core_pdf.impl.document.page_tree import (
+    MAX_PAGE_TREE_DEPTH,
+    infer_page_tree_node_type,
+    page_tree_extent,
+    resolve_page_tree_node_type,
 )
+from core_pdf.impl.document.security import SECURITY_TRAILER_KEYS, has_security_metadata_marker
+from core_pdf.impl.document.source import (
+    TRAILER_METADATA_KEYS,
+    is_xref_stream_dictionary,
+    object_headers_present,
+    xref_stream_candidates,
+)
+from core_pdf.impl.document.standards import find_pdf_header
 from core_pdf.impl.recovery.lexer import PdfLexer, reader_rules_for
 from core_pdf.impl.recovery.resolver import ObjectResolver
 from core_pdf.impl.recovery.xref import StrictXRefScanner, XRefScanner, iter_indirect_object_headers
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import (
-    PdfDict,
-    ResolvedObjectCache,
-)
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, ResolvedObjectCache
 from core_pdf.impl.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefRevision,
@@ -44,30 +43,7 @@ from core_pdf.impl.spec.s_07_syntax.xref import (
     iter_xref_revisions,
     merge_xref_sections,
 )
-lazy from core_pdf_cythonized import (
-    markers_present,
-)
-
-if TYPE_CHECKING:
-    pass
-
-
-from core_pdf.impl.document.page_tree import (
-    MAX_PAGE_TREE_DEPTH,
-    infer_page_tree_node_type,
-    page_tree_extent,
-    resolve_page_tree_node_type,
-)
-from core_pdf.impl.document.security import (
-    SECURITY_TRAILER_KEYS,
-    has_security_metadata_marker,
-)
-from core_pdf.impl.document.source import (
-    TRAILER_METADATA_KEYS,
-    is_xref_stream_dictionary,
-    object_headers_present,
-    xref_stream_candidates,
-)
+lazy from core_pdf_cythonized import markers_present
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.pdf_document import PdfDocument

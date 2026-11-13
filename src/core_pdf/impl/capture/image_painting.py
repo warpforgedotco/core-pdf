@@ -9,14 +9,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from core_pdf.impl.base.types import (
-    PdfName,
-)
+from core_pdf.impl.base.types import PdfName
 from core_pdf.impl.base.values import recover_pdf_name
-from core_pdf.impl.capture.records import (
-    CapturedDrawing,
-    CapturedInlineImage,
-)
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedInlineImage
 from core_pdf.impl.graphics.color_spec import raw_color_space_paints
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
@@ -29,10 +24,7 @@ if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.inline_images import InlineImage
 
 
-from core_pdf.impl.capture.recording_support import (
-    CachedImageSource,
-    image_source_from_stream,
-)
+from core_pdf.impl.capture.recording_support import CachedImageSource, image_source_from_stream
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.recording import TextState

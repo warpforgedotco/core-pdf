@@ -11,13 +11,8 @@ from typing import TYPE_CHECKING
 
 lazy import numpy
 
-from core_pdf.impl.capture.records import (
-    CapturedPath,
-)
-from core_pdf.impl.render.model import (
-    LineCap,
-    LineJoin,
-)
+from core_pdf.impl.capture.records import CapturedPath
+from core_pdf.impl.render.model import LineCap, LineJoin
 from core_pdf.impl.render.paths import (
     RASTER_KERNEL_MIN_PIXEL_AREA,
     circle_path,
@@ -26,13 +21,8 @@ from core_pdf.impl.render.paths import (
     rasterize_unclipped_line_normal,
     stroke_half_width,
 )
-from core_pdf.impl.render.raster_support import (
-    subpath_columns,
-)
-lazy from core_pdf_cythonized import (
-    stroke_polylines,
-    stroke_segment_samples,
-)
+from core_pdf.impl.render.raster_support import subpath_columns
+lazy from core_pdf_cythonized import stroke_polylines, stroke_segment_samples
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget

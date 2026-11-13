@@ -14,25 +14,11 @@ lazy import numpy
 
 from core_pdf.impl.base.arrays import UInt8Array, uint8_image_view
 from core_pdf.impl.base.geometry import clamp01
-from core_pdf.impl.capture.records import (
-    CapturedPath,
-)
-from core_pdf.impl.render.blend import (
-    declared_blend,
-)
-from core_pdf.impl.render.model import (
-    DisplayItem,
-    PathPaintItem,
-    PathPaintKind,
-)
-from core_pdf.impl.render.raster_support import (
-    EMPTY_PIXEL_BOX,
-    PixelBox,
-)
-lazy from core_pdf_cythonized import (
-    accumulate_source_plane,
-    fill_glyph_knockout_at,
-)
+from core_pdf.impl.capture.records import CapturedPath
+from core_pdf.impl.render.blend import declared_blend
+from core_pdf.impl.render.model import DisplayItem, PathPaintItem, PathPaintKind
+from core_pdf.impl.render.raster_support import EMPTY_PIXEL_BOX, PixelBox
+lazy from core_pdf_cythonized import accumulate_source_plane, fill_glyph_knockout_at
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget

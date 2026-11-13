@@ -11,9 +11,7 @@ from collections.abc import Callable, Iterable
 from copy import replace
 from typing import TYPE_CHECKING, Any
 
-from core_pdf.impl.capture.records import (
-    CapturedPath,
-)
+from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.blend import (
     color_rgba,
     declared_blend,
