@@ -56,14 +56,18 @@ from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontProvider
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
 lazy from core_pdf.impl.spec.s_08_graphics.geometry import transform_bbox
-lazy from core_pdf.impl.spec.s_09_fonts.metrics import text_adjustment_vector
 lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
+lazy from core_pdf_cythonized._text_array import show_decoded, show_string, show_text_array
 
 NUMERIC_TYPES = frozenset((int, float))
 
 
 def moved_to(matrix: Matrix, e: float, f: float) -> Matrix:
     return tuple.__new__(Matrix, (matrix[0], matrix[1], matrix[2], matrix[3], e, f))
+
+
+# What core-pdf-cythonized's text showing needs from spec: the string type, and moved_to.
+TEXT_SPEC_CONTEXT = (PdfString, moved_to)
 
 
 def parse_error_from(error: Exception) -> PdfParseError:
@@ -378,12 +382,11 @@ class ContentInterpreter:
         return frame
 
     def append_text(self, data: bytes | memoryview, *, decoder: FontService | None = None) -> None:
+        """Show a string's glyphs at the text matrix, and move it past them."""
         decoder = decoder if decoder is not None else self.get_decoder()
-        glyphs = decoder.decode_glyphs(data if isinstance(data, bytes) else bytes(data))
-        text = (
-            glyphs[0].unicode if len(glyphs) == 1 else "".join([glyph.unicode for glyph in glyphs])
+        show_string(
+            self, data if isinstance(data, bytes) else bytes(data), decoder, TEXT_SPEC_CONTEXT
         )
-        self.append_decoded_text(text, data, glyphs, decoder)
 
     def append_decoded_text(
         self,
@@ -392,31 +395,10 @@ class ContentInterpreter:
         glyphs: tuple[DecodedFontGlyph, ...],
         decoder: FontService,
     ) -> None:
-        if decoder.is_type3 and data:
-            text_matrix = self.text_matrix
-            line_matrix = self.line_matrix
-            self.render_type3_glyphs(data, decoder)
-            self.text_matrix = text_matrix
-            self.line_matrix = line_matrix
-        if not text and not data:
-            return
-
-        graphics = self.graphics
-        adv_x, adv_y = decoder.text_advance_vector(
-            data,
-            font_size=graphics.font_size,
-            char_space=graphics.char_space,
-            word_space=graphics.word_space,
-            horizontal_scale=graphics.horizontal_scale,
-            glyphs=glyphs,
-        )
-        ta, tb, tc, td, te, tf = self.text_matrix
-        if text:
-            self.sink.show_text(self, text, data, glyphs, decoder, adv_x, adv_y)
-        self.text_matrix = moved_to(
-            self.text_matrix, te + adv_x * ta + adv_y * tc, tf + adv_x * tb + adv_y * td
-        )
-        self.sink.text_boundary(self, "shown")
+        """append_text for a string whose glyphs are already decoded: a Type 3 font's glyph
+        procedures run, the sink shows the text, the text matrix moves past it by the
+        font's advance, and the sink gets the "shown" boundary."""
+        show_decoded(self, text, data, glyphs, decoder, TEXT_SPEC_CONTEXT)
 
     def render_type3_glyphs(self, data: bytes | memoryview, decoder: FontService) -> None:
         if self.graphics.render_mode in NON_PAINTING_RENDER_MODES:
@@ -476,46 +458,14 @@ class ContentInterpreter:
         raise PdfParseError("TJ array entries must be strings or numbers")
 
     def append_tj_array(self, array: Any) -> None:
+        """TJ: each run of strings shown as append_text shows it, each number moving the text
+        matrix back by its thousandths of the font size."""
         if not isinstance(array, (list, tuple)):
             self.reject(PdfParseError("TJ requires an array"), "text-array", None)
             return
         if not array:
             return
-        pending_bytes = bytearray()
-
-        decoder = self.get_decoder()
-        is_vert = decoder.is_vertical
-
-        ta, tb, tc, td, te, tf = self.text_matrix
-        for item in array:
-            t = type(item)
-            if t is PdfString:
-                pending_bytes.extend(item.data)
-            elif t is bytes:
-                pending_bytes.extend(item)
-            elif t is int or t is float:
-                if pending_bytes:
-                    self.text_matrix = moved_to(self.text_matrix, te, tf)
-                    self.append_text(data=bytes(pending_bytes), decoder=decoder)
-                    te, tf = self.text_matrix.e, self.text_matrix.f
-                    pending_bytes.clear()
-                advance_x, advance_y = text_adjustment_vector(
-                    item,
-                    vertical=is_vert,
-                    font_size=self.graphics.font_size,
-                    horizontal_scale=self.graphics.horizontal_scale,
-                )
-                te += advance_x * ta + advance_y * tc
-                tf += advance_x * tb + advance_y * td
-            else:
-                pending_bytes.extend(self.tj_array_extra_bytes(item))
-
-        if pending_bytes:
-            self.text_matrix = moved_to(self.text_matrix, te, tf)
-            self.append_text(data=bytes(pending_bytes), decoder=decoder)
-            te, tf = self.text_matrix.e, self.text_matrix.f
-
-        self.text_matrix = moved_to(self.text_matrix, te, tf)
+        show_text_array(self, array, self.get_decoder(), TEXT_SPEC_CONTEXT)
 
     def current_actual_text_span(self) -> MarkedContentEntry | None:
         for entry in reversed(self.marked_content_stack):

@@ -1,39 +1,39 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""TJ arrays shown in one loop, and the accumulator that merges the runs they show.
+"""Text showing: the content interpreter's Tj and TJ, a capture state's show_text, and
+the accumulator that merges the runs they show.
 
-show_text_array does what the content interpreter's append_tj_array does for a capture
-state, with append_text, append_decoded_text and the state's show_text and text_boundary
-inlined, so the strings of an array kerned between every pair of characters do not each
-cost a chain of Python calls. It computes what they compute in the same order, so each
-string gets the same glyphs, run and sequence number. A string it cannot show exactly
-goes to the state's own methods, and an array it cannot walk is declined untouched.
+These are the only implementations. The interpreter's append_tj_array, append_text and
+append_decoded_text call show_text_array, show_string and show_decoded, and a capture
+state's show_text calls show_text, so the strings of an array kerned between every pair
+of characters do not each cost a chain of Python calls. A capture state hands its
+collaborators over as its text_capture_context; one whose show_text, text_boundary,
+current_text_layout and update_pending_run are the stock ones, and which is its own sink,
+has its strings shown inline, and any other interpreter has its sink's methods called.
+
+Numbers are read as doubles, which is what Python's arithmetic makes of them once they
+meet the floats every position is computed with; where Python would keep an int, such as
+the text matrix times the ctm, the value is computed on the objects.
 
 RunAccumulator is core's only run accumulator: a capture state appends each shown run to
-it, and it merges a run into the pending one when it continues it. show_text_array tries
-that merge with a string's values first, and makes a TextRun only for a string that
-starts a run.
+it, and it merges a run into the pending one when it continues it. Shown inline, a string
+is merged with its values before a TextRun is made, which only a string starting a run
+needs.
 """
 
 import cython
 
 from core_pdf_cythonized._glyphs import capture_horizontal_glyphs
 
-MAX_EXACT_INT = cython.declare(object, 2**53)
-
 
 @cython.cfunc
-@cython.exceptval(-1, check=False)
-def exact_operand(value: object, out: cython.p_double) -> cython.int:
-    # A float, or an int a double holds exactly: what Python's arithmetic gives for them
-    # once they meet a float, which every value computed here does.
+@cython.inline
+@cython.exceptval(-1.0, check=True)
+def as_double(value: object) -> cython.double:
+    # What Python's float arithmetic reads a number as: an int is rounded to a double first.
     if type(value) is float:
-        out[0] = cython.cast(cython.double, value)
-        return 1
-    if type(value) is int and -MAX_EXACT_INT <= value <= MAX_EXACT_INT:
-        out[0] = cython.cast(cython.double, value)
-        return 1
-    return 0
+        return cython.cast(cython.double, value)
+    return cython.cast(cython.double, value)
 
 
 @cython.cfunc
@@ -46,12 +46,63 @@ def garbage(code: cython.Py_UCS4) -> cython.bint:
 @cython.cfunc
 @cython.exceptval(-1, check=False)
 def visible_text(text: str) -> cython.int:
-    # is_visible_text for non-empty text: some character is neither a control nor private use.
+    # Some character is neither a control nor private use.
     char: cython.Py_UCS4
     for char in text:
         if not garbage(char):
             return 1
     return 0
+
+
+def is_visible_text(text: str) -> bool:
+    """Whether text holds a character other than controls and private use."""
+    return visible_text(text) == 1
+
+
+@cython.cfunc
+@cython.exceptval(-1.0, check=True)
+def horizontal_advance(
+    widths: object,
+    default_width: object,
+    glyphs: object,
+    font_size: cython.double,
+    char_space: cython.double,
+    word_space: cython.double,
+    horizontal_scale: cython.double,
+) -> cython.double:
+    total: cython.double = 0.0
+    glyph: object
+    for glyph in glyphs:
+        spacing: cython.double = char_space + (word_space if glyph.code_bytes == b" " else 0.0)
+        total += (
+            (as_double(widths.get(glyph.width_code, default_width)) * font_size / 1000.0 + spacing)
+            * horizontal_scale
+            / 100.0
+        )
+    return total
+
+
+def text_advance(
+    widths: object,
+    default_width: object,
+    glyphs: object,
+    font_size: object,
+    char_space: object,
+    word_space: object,
+    horizontal_scale: object,
+) -> float:
+    """A horizontal font's advance across glyphs: each width (widths.get(width_code,
+    default_width)) times the font size over 1000, plus the character spacing and, after a
+    single-byte space, the word spacing, scaled horizontally."""
+    return horizontal_advance(
+        widths,
+        default_width,
+        glyphs,
+        as_double(font_size),
+        as_double(char_space),
+        as_double(word_space),
+        as_double(horizontal_scale),
+    )
 
 
 @cython.cfunc
@@ -332,13 +383,25 @@ class RunAccumulator:
 
 
 @cython.cclass
-class ArrayWalk:
-    """What one TJ array's strings share: the state, its font and text state, the
-    matrices, and the text layout once a string has fetched it."""
+class TextShow:
+    """What showing a string shares with the strings around it: the state, its font and
+    text state, the text matrix and ctm, and, for a capture state, what it captures with.
+
+    piece, decoded and show are the interpreter's append_text and append_decoded_text and
+    a capture state's show_text, each computing what the Python did, in the same order.
+    """
 
     state: object
+    sink: object
     decoder: object
+    string_type: object
     moved_to: object
+    # The state's text_capture_context, and whether it shows strings inline.
+    capture: cython.bint
+    inline: cython.bint
+    stock_layout: cython.bint
+    stock_pending: cython.bint
+    stock_advance: object
     text_run: object
     normalize: object
     glyph_layout: object
@@ -346,204 +409,459 @@ class ArrayWalk:
     confidence: object
     suspicious: object
     labels: object
-    widths: dict
+    capture_glyphs: object
+    # The font.
+    is_type3: cython.bint
+    vertical: cython.bint
+    vertical_value: object
+    inline_advance: cython.bint
+    widths: object
     default_width: object
-    width_source: object
-    glyph_bbox: object
     font_name: object
-    current_font: object
-    is_vertical: object
-    char_space: object
-    word_space: object
-    horizontal_scale: object
+    # The text state.
     font_size_value: object
+    horizontal_scale_value: object
+    char_space_value: object
+    word_space_value: object
     font_size: cython.double
-    horizontal_scale_value: cython.double
-    char_space_value: cython.double
-    word_space_value: cython.double
-    default_width_value: cython.double
-    render_details: cython.bint
-    keep_glyphs: cython.bint
-    out_glyphs: object
+    horizontal_scale: cython.double
+    char_space: cython.double
+    word_space: cython.double
+    current_font: object
+    # The text matrix (its linear part, which showing never changes) and the ctm.
+    matrix: object
     ta: cython.double
     tb: cython.double
     tc: cython.double
     td: cython.double
     linear_identity: cython.bint
     ctm_identity: cython.bint
-    ca_value: object
-    cb_value: object
-    cc_value: object
-    cd_value: object
-    ce_value: object
-    cf_value: object
+    ca: object
+    cb: object
+    cc: object
+    cd: object
+    ce: object
+    cf: object
+    # The linear part of the text matrix times the ctm, for a text matrix not the identity.
     A: object
     B: object
     C: object
     D: object
-    Ad: cython.double
-    Bd: cython.double
-    Cd: cython.double
-    Dd: cython.double
-    matrix: object
+    # What the capture state captures with.
+    options: object
+    want_glyphs: cython.bint
+    want_runs: cython.bint
+    render_details: cython.bint
+    out_glyphs: object
+    glyph_bbox: object
     capture_source: object
     stream_order: object
     xobject_depth: object
     clip_bbox: object
     page_clip: object
-    pending_line_break: object
     accumulator: RunAccumulator
+    pending_line_break: object
+    # The text matrix origin the Python last assigned to state.text_matrix.
+    committed: cython.bint
+    commit_e: object
+    commit_f: object
 
     @cython.cfunc
-    @cython.exceptval(-1, check=False)
-    def advance(self, glyphs: tuple, data: bytes, out: cython.p_double) -> cython.int:
-        # The font's text_advance_vector for horizontal text, from its widths.
-        total: cython.double = 0.0
-        width = cython.declare(cython.double)
-        spacing: cython.double
-        glyph: object
-        for glyph in glyphs:
-            if not exact_operand(
-                self.widths.get(glyph.width_code, self.default_width), cython.address(width)
-            ):
-                # A width that is neither float nor int: the font computes it.
-                total = self.decoder.text_advance_vector(
-                    data,
-                    font_size=self.font_size_value,
-                    char_space=self.char_space,
-                    word_space=self.word_space,
-                    horizontal_scale=self.horizontal_scale,
-                    glyphs=glyphs,
-                )[0]
-                out[0] = total
-                return 1
-            spacing = self.char_space_value + (
-                self.word_space_value if glyph.code_bytes == b" " else 0.0
-            )
-            total += (
-                (width * self.font_size / 1000.0 + spacing) * self.horizontal_scale_value / 100.0
-            )
-        out[0] = total
-        return 1
+    def setup(self, state: object, decoder: object, spec_context: object) -> cython.void:
+        self.state = state
+        self.sink = state.sink
+        self.decoder = decoder
+        if spec_context is not None:
+            self.string_type, self.moved_to = spec_context
+        context = getattr(state, "text_capture_context", None)
+        self.capture = context is not None
+        if self.capture:
+            (
+                stock,
+                stock_layout,
+                stock_pending,
+                self.stock_advance,
+                self.text_run,
+                self.normalize,
+                self.glyph_layout,
+                self.observation_layout,
+                self.confidence,
+                self.suspicious,
+                self.labels,
+                self.capture_glyphs,
+            ) = context
+            kind = type(state)
+            self.inline = self.sink is state and bool(stock(kind))
+            self.stock_layout = getattr(kind, "current_text_layout", None) is stock_layout
+            self.stock_pending = getattr(kind, "update_pending_run", None) is stock_pending
+        self.is_type3 = bool(decoder.is_type3)
+        self.vertical_value = decoder.is_vertical
+        self.vertical = bool(self.vertical_value)
+        self.inline_advance = False
+        if self.capture and type(decoder).text_advance_vector is self.stock_advance:
+            metrics = decoder.metrics
+            if not metrics.is_vertical:
+                self.inline_advance = True
+                self.widths = metrics.widths
+                self.default_width = metrics.default_width
+        self.load_text_state()
+        self.load_matrices()
+        if self.capture:
+            self.load_capture()
+            self.pending_line_break = state.pending_line_break
 
     @cython.cfunc
-    @cython.exceptval(-1, check=False)
-    def show(
-        self, text: str, glyphs: tuple, te_value: object, tf_value: object, adv_x: cython.double
-    ) -> cython.int:
-        """show_text for one string at the text matrix's origin (te, tf). Returns 0,
-        having changed nothing the state's show_text would not redo the same way,
-        when the state must show it."""
+    def load_text_state(self) -> cython.void:
+        graphics = self.state.graphics
+        self.font_size_value = graphics.font_size
+        self.horizontal_scale_value = graphics.horizontal_scale
+        self.char_space_value = graphics.char_space
+        self.word_space_value = graphics.word_space
+        self.font_size = as_double(self.font_size_value)
+        self.horizontal_scale = as_double(self.horizontal_scale_value)
+        self.char_space = as_double(self.char_space_value)
+        self.word_space = as_double(self.word_space_value)
+        self.current_font = graphics.current_font
+        ctm = graphics.ctm
+        self.ca, self.cb, self.cc, self.cd, self.ce, self.cf = ctm
+        # Matrix.multiply returns the text matrix itself when the ctm is the identity.
+        self.ctm_identity = (
+            self.ca == 1.0
+            and self.cb == 0.0
+            and self.cc == 0.0
+            and self.cd == 1.0
+            and self.ce == 0.0
+            and self.cf == 0.0
+        )
+
+    @cython.cfunc
+    def load_matrices(self) -> cython.void:
+        matrix = self.state.text_matrix
+        self.matrix = matrix
+        a, b, c, d = matrix[0], matrix[1], matrix[2], matrix[3]
+        self.ta = as_double(a)
+        self.tb = as_double(b)
+        self.tc = as_double(c)
+        self.td = as_double(d)
+        self.linear_identity = a == 1.0 and b == 0.0 and c == 0.0 and d == 1.0
+        if self.ctm_identity:
+            self.A, self.B, self.C, self.D = a, b, c, d
+        else:
+            # multiply_affine's linear part, on the objects as Python multiplies them.
+            self.A = a * self.ca + b * self.cc
+            self.B = a * self.cb + b * self.cd
+            self.C = c * self.ca + d * self.cc
+            self.D = c * self.cb + d * self.cd
+
+    @cython.cfunc
+    def load_capture(self) -> cython.void:
         state = self.state
+        options = state.options
+        self.options = options
+        self.want_glyphs = bool(options.glyphs)
+        self.want_runs = bool(options.text_runs)
+        self.render_details = bool(options.render_details)
+        self.out_glyphs = state.glyphs
+        self.glyph_bbox = self.decoder.glyph_bbox if options.ink_bounds else None
+        self.font_name = self.decoder.font_name or self.current_font
+        self.capture_source = state.capture_source
+        self.stream_order = state.stream_order
+        self.xobject_depth = state.xobject_depth
+        self.clip_bbox = state.clip_bbox
+        self.page_clip = state.page_clip
+        accumulator = state.run_accumulator
+        self.accumulator = (
+            accumulator if type(accumulator) is RunAccumulator and self.stock_pending else None
+        )
+
+    @cython.cfunc
+    def commit(self, e: object, f: object) -> cython.void:
+        # The text matrix origin the Python assigns to state.text_matrix here; a state shown
+        # through its sink's methods gets it at once, for them to read.
+        self.committed = True
+        self.commit_e = e
+        self.commit_f = f
+        if not self.inline:
+            self.state.text_matrix = self.moved_to(self.matrix, e, f)
+
+    @cython.cfunc
+    def hand_over(self) -> cython.void:
+        # Give the state the text matrix and line-break flag its own methods read.
+        if self.committed:
+            self.state.text_matrix = self.moved_to(self.matrix, self.commit_e, self.commit_f)
+        if self.inline:
+            self.state.pending_line_break = self.pending_line_break
+
+    @cython.cfunc
+    def piece(self, data: bytes, te_value: object, tf_value: object) -> tuple:
+        """append_text at (te_value, tf_value). Returns the text matrix origin after it."""
+        glyphs = self.decoder.decode_glyphs(data)
+        text: str
+        if len(glyphs) == 1:
+            text = glyphs[0].unicode
+        else:
+            text = "".join([glyph.unicode for glyph in glyphs])
+        return self.decoded(text, data, glyphs, te_value, tf_value)
+
+    @cython.cfunc
+    def decoded(
+        self, text: str, data: object, glyphs: object, te_value: object, tf_value: object
+    ) -> tuple:
+        """append_decoded_text at (te_value, tf_value): a Type 3 font's glyph procedures run,
+        the string shown, the text matrix moved past it and the "shown" boundary sent.
+        Returns the text matrix origin after it."""
+        state = self.state
+        if self.is_type3 and data:
+            self.hand_over()
+            text_matrix = self.moved_to(self.matrix, te_value, tf_value)
+            line_matrix = state.line_matrix
+            state.text_matrix = text_matrix
+            state.render_type3_glyphs(data, self.decoder)
+            state.text_matrix = text_matrix
+            state.line_matrix = line_matrix
+            if self.inline:
+                self.pending_line_break = state.pending_line_break
+            self.load_text_state()
+            if self.capture:
+                self.load_capture()
+        if not text and not data:
+            return (te_value, tf_value)
+        adv_x: cython.double
+        adv_y: cython.double
+        if self.inline_advance:
+            adv_x = horizontal_advance(
+                self.widths,
+                self.default_width,
+                glyphs,
+                self.font_size,
+                self.char_space,
+                self.word_space,
+                self.horizontal_scale,
+            )
+            adv_y = 0.0
+        else:
+            advance = self.decoder.text_advance_vector(
+                data,
+                font_size=self.font_size_value,
+                char_space=self.char_space_value,
+                word_space=self.word_space_value,
+                horizontal_scale=self.horizontal_scale_value,
+                glyphs=glyphs,
+            )
+            adv_x = as_double(advance[0])
+            adv_y = as_double(advance[1])
+        te: cython.double = as_double(te_value)
+        tf: cython.double = as_double(tf_value)
+        if text:
+            if self.inline:
+                self.show(text, glyphs, te_value, tf_value, adv_x, adv_y, None)
+            else:
+                self.sink.show_text(state, text, data, glyphs, self.decoder, adv_x, adv_y)
+        moved_e = te + adv_x * self.ta + adv_y * self.tc
+        moved_f = tf + adv_x * self.tb + adv_y * self.td
+        self.commit(moved_e, moved_f)
+        if self.inline:
+            self.pending_line_break = False
+        else:
+            self.sink.text_boundary(state, "shown")
+        return (self.commit_e, self.commit_f)
+
+    @cython.cfunc
+    def show(
+        self,
+        text: str,
+        glyphs: object,
+        te_value: object,
+        tf_value: object,
+        adv_x: cython.double,
+        adv_y: cython.double,
+        glyph_paint: object,
+    ) -> cython.void:
+        """A capture state's show_text at the text matrix origin (te_value, tf_value)."""
+        state = self.state
+        decoder = self.decoder
+        identity: cython.bint = (
+            self.linear_identity and as_double(te_value) == 0.0 and as_double(tf_value) == 0.0
+        )
+        # Matrix.multiply: the text matrix when the ctm is the identity, the ctm when the
+        # text matrix is, multiply_affine's product otherwise.
+        A: object
+        B: object
+        C: object
+        D: object
         E: object
         F: object
         if self.ctm_identity:
-            E = te_value
-            F = tf_value
+            A, B, C, D, E, F = self.A, self.B, self.C, self.D, te_value, tf_value
+        elif identity:
+            A, B, C, D, E, F = self.ca, self.cb, self.cc, self.cd, self.ce, self.cf
         else:
-            E = te_value * self.ca_value + tf_value * self.cc_value + self.ce_value
-            F = te_value * self.cb_value + tf_value * self.cd_value + self.cf_value
-        Ed = cython.declare(cython.double)
-        Fd = cython.declare(cython.double)
-        if not exact_operand(E, cython.address(Ed)) or not exact_operand(F, cython.address(Fd)):
-            return 0
-        layout = state.text_layout
+            A, B, C, D = self.A, self.B, self.C, self.D
+            E = te_value * self.ca + tf_value * self.cc + self.ce
+            F = te_value * self.cb + tf_value * self.cd + self.cf
+        identity_value = True if identity else False
+        layout = state.text_layout if self.stock_layout else None
         if (
             layout is None
-            or layout.given_paint is not None
-            or layout.decoder is not self.decoder
-            or layout.identity_text_matrix is not False
+            or layout.given_paint is not glyph_paint
+            or layout.decoder is not decoder
+            or layout.identity_text_matrix is not identity_value
         ):
-            layout = state.current_text_layout(
-                self.decoder, None, self.A, self.B, self.C, self.D, False
-            )
-        if layout.pushes_clip_scope or layout.actual_text_span is not None:
-            return 0
-        ascent = cython.declare(cython.double)
-        descent = cython.declare(cython.double)
-        rise = cython.declare(cython.double)
-        scale_factor = cython.declare(cython.double)
-        space_width = cython.declare(cython.double)
-        if not (
-            exact_operand(layout.ascent, cython.address(ascent))
-            and exact_operand(layout.descent, cython.address(descent))
-            and exact_operand(layout.rise, cython.address(rise))
-            and exact_operand(layout.scale_factor, cython.address(scale_factor))
-            and exact_operand(layout.space_width, cython.address(space_width))
-        ):
-            return 0
-        # bool(text) and layout.paints_text and is_visible_text(text), text being non-empty.
-        visible = layout.paints_text
-        if visible:
-            visible = visible_text(text) == 1
+            layout = state.current_text_layout(decoder, glyph_paint, A, B, C, D, identity_value)
+        visible = False
+        if text:
+            visible = layout.paints_text
+            if visible:
+                visible = visible_text(text) == 1
+        if layout.pushes_clip_scope:
+            state.emit_clip_scope_push()
         seqno = state.sequence
-        style = layout.style
-        if style is None:
-            style = state.new_layout_style(layout, self.A, self.B, self.C, self.D)
-        clusters: list = []
-        captured = capture_horizontal_glyphs(
-            text,
-            glyphs,
-            self.glyph_layout,
-            self.observation_layout,
-            layout.width_source,
-            self.glyph_bbox,
-            layout.font_size,
-            self.char_space,
-            self.word_space,
-            self.horizontal_scale,
-            self.render_details,
-            True,
-            (E, F, self.A, self.B, self.C, self.D),
-            layout.ascent,
-            layout.descent,
-            layout.rise,
-            layout.font_scale,
-            layout.advance_scale,
-            self.clip_bbox,
-            self.page_clip,
-            visible,
-            style,
-            seqno,
-            self.font_name,
-            state.glyph_cluster_count,
-            self.confidence,
-            self.suspicious,
-            self.labels,
-            self.out_glyphs if self.keep_glyphs else [],
-            clusters,
-        )
-        if captured is None:
-            return 0
-        kept_count, kept_advance, kept_ink, kept_confidence = captured
-        state.glyph_cluster_count += kept_count
+        span = layout.actual_text_span
+        clusters: object = ()
+        has_geometry: cython.bint = False
+        kept_advance: object = None
+        kept_ink: object = None
+        kept_confidence: object = None
+        if span is None:
+            if not self.want_glyphs and not self.want_runs:
+                state.sequence = seqno + 1
+                return
+            style = layout.style
+            if style is None:
+                style = state.new_layout_style(layout, A, B, C, D)
+            out_glyphs = self.out_glyphs if self.want_glyphs else []
+            basis = (E, F, A, B, C, D)
+            kept_count: object = 0
+            captured: object = None
+            if glyphs and not self.vertical and type(glyphs) is tuple:
+                clusters = []
+                captured = capture_horizontal_glyphs(
+                    text,
+                    glyphs,
+                    self.glyph_layout,
+                    self.observation_layout,
+                    layout.width_source,
+                    self.glyph_bbox,
+                    layout.font_size,
+                    self.char_space_value,
+                    self.word_space_value,
+                    self.horizontal_scale_value,
+                    self.render_details,
+                    self.want_runs,
+                    basis,
+                    layout.ascent,
+                    layout.descent,
+                    layout.rise,
+                    layout.font_scale,
+                    layout.advance_scale,
+                    self.clip_bbox,
+                    self.page_clip,
+                    visible,
+                    style,
+                    seqno,
+                    self.font_name,
+                    state.glyph_cluster_count,
+                    self.confidence,
+                    self.suspicious,
+                    self.labels,
+                    out_glyphs,
+                    clusters,
+                )
+                if captured is not None:
+                    kept_count, kept_advance, kept_ink, kept_confidence = captured
+                    has_geometry = (
+                        self.want_runs and kept_advance is not None and kept_ink is not None
+                    )
+            if captured is None and glyphs:
+                # Vertical text, or a glyph whose text splits: capture_glyphs' own loop.
+                result = self.capture_glyphs(
+                    text,
+                    glyphs,
+                    decoder,
+                    basis,
+                    layout.font_size,
+                    layout.font_scale,
+                    layout.ascent,
+                    layout.descent,
+                    layout.advance_scale,
+                    self.char_space_value,
+                    self.word_space_value,
+                    self.horizontal_scale_value,
+                    layout.rise,
+                    style,
+                    self.clip_bbox,
+                    self.page_clip,
+                    visible,
+                    self.current_font,
+                    seqno,
+                    state.glyph_cluster_count,
+                    self.options,
+                    layout.width_source,
+                    out_glyphs,
+                )
+                kept_count = result.cluster_count
+                clusters = result.clusters
+                geometry = result.geometry
+                if geometry.started:
+                    has_geometry = True
+                    kept_advance = geometry.advance
+                    kept_ink = geometry.ink
+                    kept_confidence = geometry.confidence
+            state.glyph_cluster_count += kept_count
+            if not self.want_runs:
+                state.sequence = seqno + 1
+                return
 
-        A: cython.double = self.Ad
-        B: cython.double = self.Bd
-        C: cython.double = self.Cd
-        D: cython.double = self.Dd
-        ar: cython.double = ascent + rise
-        dr: cython.double = descent + rise
-        c0_x: cython.double = dr * C + Ed
-        c0_y: cython.double = dr * D + Fd
-        c1_x: cython.double = ar * C + Ed
-        c1_y: cython.double = ar * D + Fd
-        adv_A: cython.double = adv_x * A
-        adv_B: cython.double = adv_x * B
-        c2_x: cython.double = adv_A + c0_x
-        c2_y: cython.double = adv_B + c0_y
-        c3_x: cython.double = adv_A + c1_x
-        c3_y: cython.double = adv_B + c1_y
-        x0: cython.double = min4(c0_x, c1_x, c2_x, c3_x)
-        y0: cython.double = min4(c0_y, c1_y, c2_y, c3_y)
-        x1: cython.double = max4(c0_x, c1_x, c2_x, c3_x)
-        y1: cython.double = max4(c0_y, c1_y, c2_y, c3_y)
-        adv_y: cython.double = 0.0
-        advance_bbox = (x0, y0, x1, y1)
+        Ad: cython.double = as_double(A)
+        Bd: cython.double = as_double(B)
+        Cd: cython.double = as_double(C)
+        Dd: cython.double = as_double(D)
+        Ed: cython.double = as_double(E)
+        Fd: cython.double = as_double(F)
+        ascent: cython.double = as_double(layout.ascent)
+        descent: cython.double = as_double(layout.descent)
+        rise: cython.double = as_double(layout.rise)
+        c0_x: cython.double
+        c0_y: cython.double
+        c1_x: cython.double
+        c1_y: cython.double
+        c2_x: cython.double
+        c2_y: cython.double
+        c3_x: cython.double
+        c3_y: cython.double
+        if self.vertical:
+            c0_x = descent * Ad + rise * Cd + Ed
+            c0_y = descent * Bd + rise * Dd + Fd
+            c1_x = ascent * Ad + rise * Cd + Ed
+            c1_y = ascent * Bd + rise * Dd + Fd
+            adv_C: cython.double = adv_y * Cd
+            adv_D: cython.double = adv_y * Dd
+            c2_x = adv_C + c0_x
+            c2_y = adv_D + c0_y
+            c3_x = adv_C + c1_x
+            c3_y = adv_D + c1_y
+        else:
+            ar: cython.double = ascent + rise
+            dr: cython.double = descent + rise
+            c0_x = dr * Cd + Ed
+            c0_y = dr * Dd + Fd
+            c1_x = ar * Cd + Ed
+            c1_y = ar * Dd + Fd
+            adv_A: cython.double = adv_x * Ad
+            adv_B: cython.double = adv_x * Bd
+            c2_x = adv_A + c0_x
+            c2_y = adv_B + c0_y
+            c3_x = adv_A + c1_x
+            c3_y = adv_B + c1_y
+        advance_bbox = (
+            min4(c0_x, c1_x, c2_x, c3_x),
+            min4(c0_y, c1_y, c2_y, c3_y),
+            max4(c0_x, c1_x, c2_x, c3_x),
+            max4(c0_y, c1_y, c2_y, c3_y),
+        )
         run_text: str = text if text.isascii() else self.normalize(text)
         cluster_tuple = tuple(clusters)
-        has_geometry: cython.bint = kept_advance is not None and kept_ink is not None
-        accumulator: RunAccumulator = self.accumulator
+        accumulator: RunAccumulator = self.accumulator if span is None else None
         if accumulator is not None:
             # update_pending_run: a run clipped away is dropped, and one that continues the
             # pending run is merged into it, so it needs no TextRun of its own.
@@ -551,7 +869,7 @@ class ArrayWalk:
                 advance_bbox[0], advance_bbox[1], advance_bbox[2], advance_bbox[3]
             ):
                 state.sequence = seqno + 1
-                return 1
+                return
             if accumulator.run is not None and accumulator.try_merge(
                 run_text,
                 advance_bbox[0],
@@ -568,8 +886,8 @@ class ArrayWalk:
                 cluster_tuple,
             ):
                 state.sequence = seqno + 1
-                return 1
-        baseline = (E, F, Ed + adv_x * A + adv_y * C, Fd + adv_x * B + adv_y * D)
+                return
+        baseline = (E, F, Ed + adv_x * Ad + adv_y * Cd, Fd + adv_x * Bd + adv_y * Dd)
         provenance = (("source", self.capture_source), ("seqno", seqno), *layout.run_provenance)
         new_run = self.text_run(
             run_text,
@@ -580,12 +898,12 @@ class ArrayWalk:
             te_value,
             tf_value,
             layout.effective_font_size,
-            space_width * scale_factor,
+            as_double(layout.space_width) * as_double(layout.scale_factor),
             seqno,
             self.stream_order,
             self.xobject_depth,
             self.current_font,
-            self.is_vertical,
+            self.vertical_value,
             layout.rotation,
             visible,
             True,
@@ -598,245 +916,122 @@ class ArrayWalk:
             provenance,
             None,
         )
-        new_run.glyph_clusters = cluster_tuple
-        if has_geometry:
-            new_run.advance_bbox = kept_advance
-            new_run.ink_bbox = kept_ink
-            new_run.confidence = kept_confidence
-        if accumulator is not None:
-            accumulator.start(new_run)
+        if span is not None:
+            new_run.confidence = 1.0
+            span.add_run(
+                new_run, font_decoder=decoder, effective_font_height=layout.effective_font_height
+            )
         else:
-            state.update_pending_run(new_run)
+            new_run.glyph_clusters = cluster_tuple
+            if has_geometry:
+                new_run.advance_bbox = kept_advance
+                new_run.ink_bbox = kept_ink
+                new_run.confidence = kept_confidence
+            if accumulator is not None:
+                accumulator.start(new_run)
+            else:
+                state.update_pending_run(new_run)
         state.sequence = seqno + 1
-        return 1
-
-    @cython.cfunc
-    def piece(self, data: bytes, te_value: object, tf_value: object) -> tuple:
-        """append_text for one string at (te_value, tf_value), then the text matrix's
-        move past it and the "shown" boundary. Returns the text matrix's new origin."""
-        te = cython.declare(cython.double)
-        tf = cython.declare(cython.double)
-        if (
-            not exact_operand(te_value, cython.address(te))
-            or not exact_operand(tf_value, cython.address(tf))
-            or (self.linear_identity and te == 0.0 and tf == 0.0)
-        ):
-            # At the identity text matrix Matrix.multiply returns the ctm itself, and the
-            # layout is made for it: the state's own methods show the string.
-            self.fall_back(te_value, tf_value)
-            self.state.append_text(data, decoder=self.decoder)
-            self.resume()
-            return (self.matrix[4], self.matrix[5])
-        glyphs = self.decoder.decode_glyphs(data)
-        if type(glyphs) is not tuple:
-            self.fall_back(te_value, tf_value)
-            self.state.append_text(data, decoder=self.decoder)
-            self.resume()
-            return (self.matrix[4], self.matrix[5])
-        glyph_tuple: tuple = glyphs
-        text: str
-        if len(glyph_tuple) == 1:
-            text = glyph_tuple[0].unicode
-        else:
-            text = "".join([glyph.unicode for glyph in glyph_tuple])
-        adv_x = cython.declare(cython.double)
-        self.advance(glyph_tuple, data, cython.address(adv_x))
-        if text and not self.show(text, glyph_tuple, te_value, tf_value, adv_x):
-            self.fall_back(te_value, tf_value)
-            self.state.show_text(self.state, text, data, glyph_tuple, self.decoder, adv_x, 0.0)
-            self.resume()
-        adv_y: cython.double = 0.0
-        self.pending_line_break = False
-        return (te + adv_x * self.ta + adv_y * self.tc, tf + adv_x * self.tb + adv_y * self.td)
-
-    @cython.cfunc
-    def fall_back(self, te_value: object, tf_value: object) -> cython.void:
-        # Hand the state the text matrix and line-break flag a string's own methods read.
-        self.state.text_matrix = self.moved_to(self.matrix, te_value, tf_value)
-        self.state.pending_line_break = self.pending_line_break
-
-    @cython.cfunc
-    def resume(self) -> cython.void:
-        # Take back the state's text matrix and line-break flag after its methods ran.
-        self.matrix = self.state.text_matrix
-        self.pending_line_break = self.state.pending_line_break
 
 
-def show_text_array(state, array, decoder, context) -> bool:
-    """append_tj_array for a capture state whose text methods are the stock ones.
+def show_text_array(state, array, decoder, spec_context) -> None:
+    """The interpreter's append_tj_array for a non-empty list or tuple: each run of strings
+    shown as append_text shows it, each number moving the text matrix back by its
+    thousandths of the font size, and anything else read with state.tj_array_extra_bytes.
 
-    context is (string type, moved_to, TextRun, normalize_extracted_text, the decoded
-    glyph and observation slot layouts, the confidence cache and function, the
-    suspicious multi-glyph test, the bitmap labels). Returns False, having done
-    nothing, for an array the interpreter's loop must walk: not a non-empty list or
-    tuple of strings and numbers, vertical or Type 3 text, values other than floats
-    and exact ints.
+    spec_context is (the string type, moved_to).
     """
-    (
-        string_type,
-        moved_to,
-        text_run,
-        normalize,
-        glyph_layout,
-        observation_layout,
-        confidence,
-        suspicious,
-        labels,
-    ) = context
-    if type(array) is not list and type(array) is not tuple:
-        return False
-    if not array:
-        return False
-    number = cython.declare(cython.double)
+    show = TextShow()
+    show.setup(state, decoder, spec_context)
+    string_type = show.string_type
+    te_value: object = show.matrix[4]
+    tf_value: object = show.matrix[5]
+    te: cython.double
+    tf: cython.double
+    pending = bytearray()
     item: object
     kind: object
-    for item in array:
-        kind = type(item)
-        if kind is string_type or kind is bytes:
-            continue
-        if (kind is int or kind is float) and exact_operand(item, cython.address(number)):
-            continue
-        return False
-    if decoder.is_type3 or decoder.is_vertical:
-        return False
-    metrics = decoder.metrics
-    if metrics.is_vertical or type(metrics.widths) is not dict:
-        return False
-
-    walk = ArrayWalk()
-    walk.state = state
-    walk.decoder = decoder
-    walk.moved_to = moved_to
-    walk.text_run = text_run
-    walk.normalize = normalize
-    walk.glyph_layout = glyph_layout
-    walk.observation_layout = observation_layout
-    walk.confidence = confidence
-    walk.suspicious = suspicious
-    walk.labels = labels
-    walk.widths = metrics.widths
-    walk.default_width = metrics.default_width
-    graphics = state.graphics
-    walk.font_size_value = graphics.font_size
-    walk.horizontal_scale = graphics.horizontal_scale
-    walk.char_space = graphics.char_space
-    walk.word_space = graphics.word_space
-    if not (
-        exact_operand(walk.default_width, cython.address(walk.default_width_value))
-        and exact_operand(walk.font_size_value, cython.address(walk.font_size))
-        and exact_operand(walk.horizontal_scale, cython.address(walk.horizontal_scale_value))
-        and exact_operand(walk.char_space, cython.address(walk.char_space_value))
-        and exact_operand(walk.word_space, cython.address(walk.word_space_value))
-    ):
-        return False
-    matrix = state.text_matrix
-    ctm = graphics.ctm
-    if not (isinstance(matrix, tuple) and len(matrix) == 6):
-        return False
-    if not (isinstance(ctm, tuple) and len(ctm) == 6):
-        return False
-    te = cython.declare(cython.double)
-    tf = cython.declare(cython.double)
-    ca = cython.declare(cython.double)
-    cb = cython.declare(cython.double)
-    cc = cython.declare(cython.double)
-    cd = cython.declare(cython.double)
-    ce = cython.declare(cython.double)
-    cf = cython.declare(cython.double)
-    m = cython.cast(tuple, matrix)
-    c = cython.cast(tuple, ctm)
-    if not (
-        exact_operand(m[0], cython.address(walk.ta))
-        and exact_operand(m[1], cython.address(walk.tb))
-        and exact_operand(m[2], cython.address(walk.tc))
-        and exact_operand(m[3], cython.address(walk.td))
-        and exact_operand(m[4], cython.address(te))
-        and exact_operand(m[5], cython.address(tf))
-        and exact_operand(c[0], cython.address(ca))
-        and exact_operand(c[1], cython.address(cb))
-        and exact_operand(c[2], cython.address(cc))
-        and exact_operand(c[3], cython.address(cd))
-        and exact_operand(c[4], cython.address(ce))
-        and exact_operand(c[5], cython.address(cf))
-    ):
-        return False
-
-    options = state.options
-    walk.render_details = bool(options.render_details)
-    walk.keep_glyphs = bool(options.glyphs)
-    walk.out_glyphs = state.glyphs
-    walk.glyph_bbox = decoder.glyph_bbox if options.ink_bounds else None
-    walk.current_font = graphics.current_font
-    walk.font_name = decoder.font_name or walk.current_font
-    walk.is_vertical = decoder.is_vertical
-    walk.capture_source = state.capture_source
-    walk.stream_order = state.stream_order
-    walk.xobject_depth = state.xobject_depth
-    walk.clip_bbox = state.clip_bbox
-    walk.page_clip = state.page_clip
-    walk.matrix = matrix
-    walk.pending_line_break = state.pending_line_break
-    accumulator = state.run_accumulator
-    walk.accumulator = accumulator if type(accumulator) is RunAccumulator else None
-    walk.linear_identity = walk.ta == 1.0 and walk.tb == 0.0 and walk.tc == 0.0 and walk.td == 1.0
-    # Matrix.multiply returns the text matrix itself when the ctm is the identity, and
-    # multiply_affine's products otherwise; their linear part is the same for every string.
-    walk.ctm_identity = (
-        ca == 1.0 and cb == 0.0 and cc == 0.0 and cd == 1.0 and ce == 0.0 and cf == 0.0
-    )
-    walk.ca_value, walk.cb_value, walk.cc_value = c[0], c[1], c[2]
-    walk.cd_value, walk.ce_value, walk.cf_value = c[3], c[4], c[5]
-    if walk.ctm_identity:
-        walk.A, walk.B, walk.C, walk.D = m[0], m[1], m[2], m[3]
-    else:
-        walk.A = m[0] * c[0] + m[1] * c[2]
-        walk.B = m[0] * c[1] + m[1] * c[3]
-        walk.C = m[2] * c[0] + m[3] * c[2]
-        walk.D = m[2] * c[1] + m[3] * c[3]
-    if not (
-        exact_operand(walk.A, cython.address(walk.Ad))
-        and exact_operand(walk.B, cython.address(walk.Bd))
-        and exact_operand(walk.C, cython.address(walk.Cd))
-        and exact_operand(walk.D, cython.address(walk.Dd))
-    ):
-        return False
-
-    te_value: object = m[4]
-    tf_value: object = m[5]
-    pending = bytearray()
+    number: cython.double
     try:
         for item in array:
             kind = type(item)
             if kind is string_type:
                 pending.extend(item.data)
-                continue
-            if kind is bytes:
+            elif kind is bytes:
                 pending.extend(item)
-                continue
-            if pending:
-                te_value, tf_value = walk.piece(bytes(pending), te_value, tf_value)
-                pending.clear()
-                exact_operand(te_value, cython.address(te))
-                exact_operand(tf_value, cython.address(tf))
-            # text_adjustment_vector, then te += advance_x * ta + advance_y * tc. An int
-            # is negated as an int, so 0 gives 0.0 rather than -0.0.
-            if kind is int:
-                number = cython.cast(cython.double, -item)
+            elif kind is int or kind is float:
+                if pending:
+                    show.commit(te_value, tf_value)
+                    te_value, tf_value = show.piece(bytes(pending), te_value, tf_value)
+                    pending.clear()
+                # text_adjustment_vector: an int is negated as an int, so 0 gives 0.0.
+                if kind is int:
+                    number = as_double(-item)
+                else:
+                    number = -as_double(item)
+                displacement: cython.double = number * show.font_size / 1000.0
+                advance_x: cython.double = 0.0
+                advance_y: cython.double = 0.0
+                if show.vertical:
+                    advance_y = displacement
+                else:
+                    advance_x = displacement * show.horizontal_scale / 100.0
+                te = as_double(te_value)
+                tf = as_double(tf_value)
+                te += advance_x * show.ta + advance_y * show.tc
+                tf += advance_x * show.tb + advance_y * show.td
+                te_value = te
+                tf_value = tf
             else:
-                number = -cython.cast(cython.double, item)
-            advance_x: cython.double = (
-                number * walk.font_size / 1000.0 * walk.horizontal_scale_value / 100.0
-            )
-            advance_y: cython.double = 0.0
-            te += advance_x * walk.ta + advance_y * walk.tc
-            tf += advance_x * walk.tb + advance_y * walk.td
-            te_value = te
-            tf_value = tf
+                pending.extend(state.tj_array_extra_bytes(item))
         if pending:
-            te_value, tf_value = walk.piece(bytes(pending), te_value, tf_value)
+            show.commit(te_value, tf_value)
+            te_value, tf_value = show.piece(bytes(pending), te_value, tf_value)
     except BaseException:
-        walk.fall_back(te_value, tf_value)
+        show.hand_over()
         raise
-    state.text_matrix = moved_to(walk.matrix, te_value, tf_value)
-    state.pending_line_break = walk.pending_line_break
-    return True
+    show.committed = True
+    show.commit_e = te_value
+    show.commit_f = tf_value
+    show.hand_over()
+
+
+def show_string(state, data: bytes, decoder, spec_context) -> None:
+    """The interpreter's append_text: data's glyphs shown at the text matrix, which moves
+    past them."""
+    show = TextShow()
+    show.setup(state, decoder, spec_context)
+    try:
+        show.piece(data, show.matrix[4], show.matrix[5])
+    except BaseException:
+        show.hand_over()
+        raise
+    show.hand_over()
+
+
+def show_decoded(state, text: str, data, glyphs, decoder, spec_context) -> None:
+    """The interpreter's append_decoded_text, for glyphs already decoded."""
+    show = TextShow()
+    show.setup(state, decoder, spec_context)
+    try:
+        show.decoded(text, data, glyphs, show.matrix[4], show.matrix[5])
+    except BaseException:
+        show.hand_over()
+        raise
+    show.hand_over()
+
+
+def show_text(state, text: str, glyphs, decoder, adv_x, adv_y, glyph_paint) -> None:
+    """A capture state's show_text: the string's glyphs captured and its run merged or
+    added, at the text matrix, whose position it leaves."""
+    show = TextShow()
+    show.setup(state, decoder, None)
+    show.show(
+        text,
+        glyphs,
+        show.matrix[4],
+        show.matrix[5],
+        as_double(adv_x),
+        as_double(adv_y),
+        glyph_paint,
+    )
