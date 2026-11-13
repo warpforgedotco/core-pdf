@@ -10,8 +10,7 @@ from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from core_pdf.impl.base.exceptions import ExtractionScope
 from core_pdf.impl.base.types import GeneratedRecord, Record
-from core_pdf.impl.base.values import resolve_destination_references
-from core_pdf.impl.document.metadata import plain_pdf_value
+from core_pdf.impl.base.values import plain_pdf_value, resolve_destination_references
 from core_pdf.impl.extract.block_layout import (
     NATIVE_LAYOUT_HOOKS,
     LayoutHooks,
