@@ -253,11 +253,11 @@ def composite_nonisolated_blend(
 ):
     """Composite a non-isolated group over its parent, removing the backdrop.
 
-    The general branch of core_pdf.impl.render_target.composite_nonisolated_group:
+    The general branch of core_pdf.impl.render.target.composite_nonisolated_group:
     the effective alpha rint(source_alpha * opacity * 255 [* mask]) cast to
     uint8, then for each visible pixel the group backdrop removed as
     backdrop_removed computes it, clipped to [0, 1], and blended
-    over the destination as render_blend.blend_visible_pixels does. mode is a
+    over the destination as core_pdf.impl.render.blend.blend_visible_pixels does. mode is a
     kernel blend code (0 normal, 1 multiply, 2 screen, 3 color dodge, 4 color
     burn); revised selects the PDF 2.0 dodge and burn endpoints. With
     copy_unmasked, a visible pixel whose mask is exactly 1 takes the rendered

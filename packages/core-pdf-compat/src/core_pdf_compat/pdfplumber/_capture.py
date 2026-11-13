@@ -17,11 +17,12 @@ from collections.abc import Iterable
 from typing import Any, NamedTuple, cast
 
 from core_pdf import PdfPage
-from core_pdf.impl.capture_glyphs import GlyphPaint, untrack_tuple
-from core_pdf.impl.capture_program import CapturedProgram
-from core_pdf.impl.collector import pauses_collector
-from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.fonts_metrics import FONT_DATA
+from core_pdf.impl.base.collector import pauses_collector
+from core_pdf.impl.base.exceptions import PdfParseError
+from core_pdf.impl.base.types import PdfName, PdfReference, PdfString
+from core_pdf.impl.capture.glyphs import GlyphPaint, untrack_tuple
+from core_pdf.impl.capture.program import CapturedProgram
+from core_pdf.impl.fonts.metrics import FONT_DATA
 from core_pdf.impl.spec.s_07_content.inline_images import (
     InlineImage,
     normalize_inline_image_dictionary,
@@ -31,7 +32,6 @@ from core_pdf.impl.spec.s_07_content.model import PdfPath
 from core_pdf.impl.spec.s_07_content.operations import ContentOperands
 from core_pdf.impl.spec.s_07_content.streams import ContentStreamFrame
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
 
 from ..pdfminer._capture import (
     PdfminerContentLexer,

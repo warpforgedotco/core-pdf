@@ -15,25 +15,25 @@ from types import SimpleNamespace
 from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.capture_glyphs import plumber_char_dicts
-from core_pdf.impl.capture_program import CapturedProgram, CaptureOptions
-from core_pdf.impl.collector import pauses_collector
-from core_pdf.impl.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
-from core_pdf.impl.fonts_helpers import LIGATURE_TEXT_OVERRIDES
-from core_pdf.impl.geometry import (
+from core_pdf.impl.base.collector import pauses_collector
+from core_pdf.impl.base.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
+from core_pdf.impl.base.geometry import (
     bbox_contains,
     bbox_union,
     flip_rect_vertical,
 )
-from core_pdf.impl.graphics_stream_decoding import PNG_SIGNATURE, png_chunk
-from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf.impl.types import (
+from core_pdf.impl.base.types import (
     GeneratedRecord,
     PdfName,
     PdfReference,
     PdfString,
 )
-lazy from core_pdf.impl.raw_media import ImageRecord
+from core_pdf.impl.base.values import recover_pdf_name
+from core_pdf.impl.capture.glyphs import plumber_char_dicts
+from core_pdf.impl.capture.program import CapturedProgram, CaptureOptions
+from core_pdf.impl.fonts.helpers import LIGATURE_TEXT_OVERRIDES
+from core_pdf.impl.graphics.stream_decoding import PNG_SIGNATURE, png_chunk
+lazy from core_pdf.impl.output.media import ImageRecord
 
 from .._shared import BBox, ClosingMixin, PdfInput
 from ..pdfminer._parsing import pdfminer_open_error

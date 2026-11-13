@@ -8,8 +8,8 @@ import logging
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf.impl.types import PdfName, PdfString
+from core_pdf.impl.base.types import PdfName, PdfString
+from core_pdf.impl.base.values import recover_pdf_name
 from core_pdf_compat._text_state import legacy_base_table, predefined_encoding_codec
 lazy from core_pdf_compat.pypdf.errors import LimitReachedError
 

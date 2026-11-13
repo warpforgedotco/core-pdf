@@ -3,7 +3,7 @@
 """Check that core's compiled serializer writes exactly what the spec's serializer writes,
 and that its compiled reference walk finds what the Python walk found.
 
-core_pdf.impl.object_serialize writes PDF objects with core-pdf-cythonized's ObjectWriter,
+core_pdf.impl.document.object_writer writes PDF objects with core-pdf-cythonized's ObjectWriter,
 which must give the bytes core_pdf.impl.spec.s_07_syntax.serialize gives, in both layouts. This
 serializes every object of the upstream test PDFs both ways, then deep and cyclic values,
 then values generated around what the writer handles itself and what it hands back (names
@@ -30,9 +30,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core_pdf import PdfDocument
-from core_pdf.impl import object_serialize
-from core_pdf.impl.document_editing import references_in
-from core_pdf.impl.recovery_lexer import BareKeyword
+from core_pdf.impl.document import object_writer
+from core_pdf.impl.document.editing import references_in
+from core_pdf.impl.recovery.lexer import BareKeyword
 from core_pdf.impl.spec.s_07_syntax import serialize as spec
 from core_pdf.impl.spec.s_07_syntax.serialize import ObjectLayout
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -121,10 +121,10 @@ def main(argv: list[str]) -> int:
     paths = sorted({path for pattern in CORPUS for path in glob.glob(pattern, recursive=True)})
     reference = PdfReference(5, 0)
     pairs = (
-        (spec.serialize_object, object_serialize.serialize_object),
+        (spec.serialize_object, object_writer.serialize_object),
         (
             partial(spec.serialize_indirect_object, reference),
-            partial(object_serialize.serialize_indirect_object, reference),
+            partial(object_writer.serialize_indirect_object, reference),
         ),
     )
     for path in paths:
@@ -147,7 +147,7 @@ def main(argv: list[str]) -> int:
                 f"{path} {number} {layout.name}"
                 for layout in ObjectLayout
                 if outcome(spec.serialize_object, value, layout)
-                != outcome(object_serialize.serialize_object, value, layout)
+                != outcome(object_writer.serialize_object, value, layout)
             )
     # Containers nested past the writer's depth, deep enough to recurse past Python's limit,
     # and cyclic: the writer hands them to the spec's serializer, which raises.

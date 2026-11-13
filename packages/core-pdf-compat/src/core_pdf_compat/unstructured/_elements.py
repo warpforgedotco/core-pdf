@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, NamedTuple
 
-from core_pdf.impl.types import Record, frozen_setattr
+from core_pdf.impl.base.types import Record, frozen_setattr
 
 
 class CoordinatesMetadata(NamedTuple):

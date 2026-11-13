@@ -33,10 +33,10 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.keywrap import aes_key_wrap
 
 from core_pdf import EditableDocument, PdfDocument
+from core_pdf.impl.base.exceptions import PdfError, PdfUnsupportedError
+from core_pdf.impl.base.types import PdfName, PdfString
 from core_pdf.impl.crypto.pdf_mac import PdfMacIntegrityInfo
-from core_pdf.impl.exceptions import PdfError, PdfUnsupportedError
 from core_pdf.impl.spec.s_07_syntax.serialize import serialize_object
-from core_pdf.impl.types import PdfName, PdfString
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

@@ -11,18 +11,7 @@ from typing import Any, Literal, cast
 
 from core_pdf.impl.adobe_fonts.agl.glyph_list import GLYPH_DATA
 from core_pdf.impl.adobe_fonts.cff.font import CFF_STANDARD_STRINGS, CFFFont
-from core_pdf.impl.capture_recovery import ContentFallback, content_scanner
-from core_pdf.impl.fonts_cmap import ToUnicodeCMap
-from core_pdf.impl.fonts_decoder import FontDecoder
-from core_pdf.impl.fonts_metrics import LIGATURE_TEXT_TO_CHAR
-from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.spec.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_content.operations import ContentOperation, parse_content_token
-from core_pdf.impl.spec.s_07_filters.errors import FilterError
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
-from core_pdf.impl.types import (
+from core_pdf.impl.base.types import (
     PdfName,
     PdfReference,
     PdfString,
@@ -30,6 +19,17 @@ from core_pdf.impl.types import (
     ReplaceFields,
     ReprFields,
 )
+from core_pdf.impl.base.values import recover_pdf_name
+from core_pdf.impl.capture.recovery import ContentFallback, content_scanner
+from core_pdf.impl.fonts.cmap import ToUnicodeCMap
+from core_pdf.impl.fonts.decoder import FontDecoder
+from core_pdf.impl.fonts.metrics import LIGATURE_TEXT_TO_CHAR
+from core_pdf.impl.recovery.lexer import PdfLexer
+from core_pdf.impl.spec.exceptions import PdfParseError
+from core_pdf.impl.spec.s_07_content.operations import ContentOperation, parse_content_token
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf_compat._text_state import (
     IDENTITY_MATRIX,
     TextMachine,

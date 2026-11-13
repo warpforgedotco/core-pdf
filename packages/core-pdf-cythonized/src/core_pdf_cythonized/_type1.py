@@ -25,7 +25,7 @@ def decrypt_type1(data: cython.const[cython.uchar][::1], key: cython.int):
 
 
 # type1_glyph_bounds mirrors fontTools' T1CharString.draw into a BoundsPen behind
-# a TransformPen, which core_pdf.impl.fonts_program_type1 keeps for every input
+# a TransformPen, which core_pdf.impl.fonts.program_type1 keeps for every input
 # declined here: the arithmetic below is theirs, operation for operation, so the
 # bounds are the same doubles.
 

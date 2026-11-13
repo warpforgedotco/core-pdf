@@ -3,7 +3,7 @@
 """Check that ContentScanner's native state operators capture exactly as the spec handlers do.
 
 The scanner applies colour, line-state, text-position, q/Q/cm and path operators to the
-capture state itself when core_pdf.impl.capture_recording.native_state_operators finds the
+capture state itself when core_pdf.impl.capture.recording.native_state_operators finds the
 spec handlers unoverridden; the handlers stay the reference. Every capture here runs twice,
 once as shipped and once with native_state_operators reporting nothing, so that every
 operator goes through its handler, and the two must agree bit for bit: the captured program,
@@ -35,8 +35,8 @@ from pathlib import Path
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.impl import capture_recording
-from core_pdf.impl.capture_recording import (
+from core_pdf.impl.capture import recording as capture_recording
+from core_pdf.impl.capture.recording import (
     NATIVE_PATH_HANDLERS,
     NATIVE_STATE_HANDLERS,
     TextState,

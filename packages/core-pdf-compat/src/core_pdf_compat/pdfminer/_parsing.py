@@ -32,7 +32,7 @@ import zlib
 from collections.abc import Callable, Iterator
 from typing import Any
 
-from core_pdf.impl.types import PdfByteBuffer
+from core_pdf.impl.base.types import PdfByteBuffer
 
 from .casting import safe_int
 from .pdfdocument import PDFNoValidXRef

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from core_pdf.impl.geometry import bbox_area
-from core_pdf.impl.render_model import RasterImage
-from core_pdf.impl.types import GeneratedRecord
+from core_pdf.impl.base.geometry import bbox_area
+from core_pdf.impl.base.types import GeneratedRecord
+from core_pdf.impl.render.model import RasterImage
 
 
 class Raster(GeneratedRecord):

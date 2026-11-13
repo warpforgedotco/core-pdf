@@ -7,7 +7,7 @@ from typing import Any
 
 lazy import numpy
 
-from core_pdf.impl.array_views import nearest_indices, readonly
+from core_pdf.impl.base.arrays import nearest_indices, readonly
 
 
 def validate_resampling_shape(samples: numpy.ndarray[Any, Any], height: int, width: int) -> None:

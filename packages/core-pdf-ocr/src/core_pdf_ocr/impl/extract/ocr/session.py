@@ -6,12 +6,12 @@ import math
 from copy import replace
 from typing import Any
 
-from core_pdf.impl.exceptions import ExtractionScope
-from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf.impl.geometry import rect_tuple
-from core_pdf.impl.render_model import RenderOptions
-from core_pdf.impl.render_page import compose_page
-from core_pdf.impl.types import GeneratedRecord
+from core_pdf.impl.base.exceptions import ExtractionScope
+from core_pdf.impl.base.geometry import rect_tuple
+from core_pdf.impl.base.types import GeneratedRecord
+from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.render.model import RenderOptions
+from core_pdf.impl.render.page import compose_page
 from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     OCR_PREFLIGHT_PIXELS,

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from core_pdf.impl.geometry import overlap_ratio_of
-from core_pdf.impl.output_model import Table
-from core_pdf.impl.text import complete_text_covered, content_tokens
+from core_pdf.impl.base.geometry import overlap_ratio_of
+from core_pdf.impl.base.text import complete_text_covered, content_tokens
+from core_pdf.impl.output.model import Table
 
 
 def is_synthetic_chart(table: Table) -> bool:

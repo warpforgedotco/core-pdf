@@ -50,7 +50,7 @@ def path_of(name: str) -> str:
 
 def edited(editor: Any) -> Any:
     """The edit scripts/check_document_rewrite.py makes: a new Info dictionary."""
-    from core_pdf.impl.types import PdfString  # noqa: PLC0415
+    from core_pdf.impl.base.types import PdfString  # noqa: PLC0415
 
     editor.trailer["Info"] = editor.add_object({"Title": PdfString(b"Rewritten")})
     return editor

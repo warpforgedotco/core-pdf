@@ -46,7 +46,7 @@ def blend_visible_rgba(
     red, green and blue are each a float or one value per visible pixel, in the
     row-major order of the mask; alpha is one value per visible pixel. mode is
     0 (normal), 1 (multiply) or 2 (screen). The arithmetic is float64 in the
-    order render_blend.blend_channels_f64 computes it.
+    order core_pdf.impl.render.blend.blend_channels_f64 computes it.
     """
     height: cython.Py_ssize_t = visible.shape[0]
     width: cython.Py_ssize_t = visible.shape[1]

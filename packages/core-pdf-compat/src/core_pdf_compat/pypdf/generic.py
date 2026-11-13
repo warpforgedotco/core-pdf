@@ -14,11 +14,11 @@ import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, ClassVar, Self, cast
 
-from core_pdf.impl.object_serialize import serialize_object
-from core_pdf.impl.recovery_lexer import BareKeyword
+from core_pdf.impl.base.types import PdfName, PdfReference, PdfString
+from core_pdf.impl.document.object_writer import serialize_object
+from core_pdf.impl.recovery.lexer import BareKeyword
 from core_pdf.impl.spec.s_07_filters.codecs import encode_flate
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_records import RecordType, ReplaceFields, ReprFields
 lazy from core_pdf.impl.spec.s_07_syntax.serialize import (
     ObjectLayout,

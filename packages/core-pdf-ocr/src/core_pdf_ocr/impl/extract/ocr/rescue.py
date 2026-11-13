@@ -7,8 +7,8 @@ from typing import Any
 
 lazy import numpy
 
-from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf.impl.types import GeneratedRecord
+from core_pdf.impl.base.types import GeneratedRecord
+from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.contracts import (
     OCR_RESCUE_DENSE_MIN_CHARACTERS,
     OCR_RESCUE_DENSE_MIN_CONFIDENCE,

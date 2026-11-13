@@ -6,8 +6,8 @@ import unicodedata
 
 lazy import numpy
 
-from core_pdf.impl.extract_block_layout import LayoutHooks
-from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource, PageFrame
+from core_pdf.impl.extract.block_layout import LayoutHooks
+from core_pdf.impl.extract.contracts import ObservationBatch, ObservationSource, PageFrame
 
 SOURCE_LABELS = {
     int(ObservationSource.NATIVE): "native",

@@ -5,9 +5,9 @@ from math import ceil
 from typing import Any, ClassVar
 lazy import heapq
 
-from core_pdf.impl.geometry import bbox_union
-from core_pdf.impl.spatial import AreaGapQueue
-from core_pdf.impl.types import RecordType, ReplaceFields, ReprFields
+from core_pdf.impl.base.geometry import bbox_union
+from core_pdf.impl.base.spatial import AreaGapQueue
+from core_pdf.impl.base.types import RecordType, ReplaceFields, ReprFields
 
 
 class LAParams(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):

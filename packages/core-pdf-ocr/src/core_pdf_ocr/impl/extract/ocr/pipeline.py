@@ -6,9 +6,9 @@ from copy import replace
 
 lazy import numpy
 
-from core_pdf.impl.exceptions import ExtractionScope
-from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf.impl.types import GeneratedRecord
+from core_pdf.impl.base.exceptions import ExtractionScope
+from core_pdf.impl.base.types import GeneratedRecord
+from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.capture import promoted_hidden_observations
 from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,

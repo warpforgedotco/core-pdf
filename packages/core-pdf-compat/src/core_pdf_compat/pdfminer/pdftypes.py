@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
+from core_pdf.impl.base.types import PdfName, PdfReference, PdfString
 
 from .psparser import PSLiteral
 

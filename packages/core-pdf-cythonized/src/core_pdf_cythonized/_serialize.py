@@ -329,7 +329,7 @@ class ObjectWriter:
 
 def collect_references(value, reference_type, stream_type) -> list:
     """Every reference in value, depth first, in the order
-    core_pdf.impl.document_editing.references_in has always given them.
+    core_pdf.impl.document.editing.references_in has always given them.
 
     It pops the last pending value: a reference is found, a stream's dictionary values,
     a dict's values, and a list's or tuple's items are pushed, in their order; anything

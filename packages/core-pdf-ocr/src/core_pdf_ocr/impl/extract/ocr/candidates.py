@@ -8,10 +8,10 @@ from collections import defaultdict
 
 lazy import numpy
 
-from core_pdf.impl.array_views import finite_median
-from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf.impl.geometry import bbox_tuple, overlap_ratio_min
-from core_pdf.impl.text import CONTENT_TOKEN_RE, search_key, text_tokens
+from core_pdf.impl.base.arrays import finite_median
+from core_pdf.impl.base.geometry import bbox_tuple, overlap_ratio_min
+from core_pdf.impl.base.text import CONTENT_TOKEN_RE, search_key, text_tokens
+from core_pdf.impl.extract.contracts import ObservationBatch
 from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_MATCHED_TOKENS,
     HIDDEN_TEXT_VERIFY_MIN_SPATIAL_OVERLAP,

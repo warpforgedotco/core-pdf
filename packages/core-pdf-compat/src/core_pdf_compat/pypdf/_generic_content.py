@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from io import BytesIO
 from typing import IO, Any, cast
 
+from core_pdf.impl.base.types import PdfString
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content.inline_images import InlineImage, parse_inline_image_dictionary
 from core_pdf.impl.spec.s_07_content.operations import (
@@ -18,7 +19,6 @@ from core_pdf.impl.spec.s_07_content.operations import (
     serialize_content_operation,
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.types import PdfString
 from core_pdf_compat.pypdf._configuration import get_configuration
 from core_pdf_compat.pypdf._image_inline import read_inline_image_data
 from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError

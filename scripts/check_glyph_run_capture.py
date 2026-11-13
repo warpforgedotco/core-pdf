@@ -23,7 +23,7 @@ import warnings
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.impl.capture_recording import TextState
+from core_pdf.impl.capture.recording import TextState
 from core_pdf_compat.pdfminer._capture import pdfminer_page_program
 from core_pdf_compat.pdfplumber._capture import plumber_page_capture
 

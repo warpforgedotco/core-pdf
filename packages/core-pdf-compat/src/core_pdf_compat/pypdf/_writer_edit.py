@@ -8,7 +8,7 @@ import logging
 from collections.abc import Iterable
 from typing import Any, NoReturn
 
-from core_pdf.impl.object_serialize import serialize_object
+from core_pdf.impl.document.object_writer import serialize_object
 
 from .annotations import border_array
 from .constants import ImageType, ObjectDeletionFlag, PageLabelStyle
