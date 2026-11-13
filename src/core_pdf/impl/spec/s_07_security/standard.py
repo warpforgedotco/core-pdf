@@ -150,28 +150,13 @@ class StandardSecurityHandler(GeneratedRecord):
                 return rc4_crypt(self.object_key(object_number, generation_number), data)
             case "AESV2":
                 key = self.object_key(object_number, generation_number, b"sAlT")
-                return aes_cbc_decrypt(
-                    key,
-                    data[:16],
-                    data[16:],
-                    use_padding=True,
-                )
+                return aes_cbc_decrypt(key, data[:16], data[16:], use_padding=True)
             case "AESV3":
-                return aes_cbc_decrypt(
-                    self.file_key,
-                    data[:16],
-                    data[16:],
-                    use_padding=True,
-                )
+                return aes_cbc_decrypt(self.file_key, data[:16], data[16:], use_padding=True)
             case "AESV4":
                 return aes_gcm_decrypt(self.file_key, data)
 
-    def object_key(
-        self,
-        object_number: int,
-        generation_number: int,
-        extra: bytes = b"",
-    ) -> bytes:
+    def object_key(self, object_number: int, generation_number: int, extra: bytes = b"") -> bytes:
         seed = (
             self.file_key
             + struct.pack("<L", object_number)[:3]
@@ -189,9 +174,7 @@ def encrypt_aes_cbc(key: bytes, data: bytes) -> bytes:
 
 
 def create_standard_security_handler(
-    document_id: Sequence[object],
-    params: PdfDict,
-    password: str | bytes = "",
+    document_id: Sequence[object], params: PdfDict, password: str | bytes = ""
 ) -> StandardSecurityHandler:
     filter_name = decoded_name(params.get("Filter"))
     if filter_name is None:
@@ -301,13 +284,9 @@ def parse_config(
     kdf_salt: bytes | None = None
 
     if version in (4, 5, 6):
-        (
-            encrypt_metadata,
-            stream_filter,
-            string_filter,
-            embedded_file_filter,
-            crypt_filters,
-        ) = parse_crypt_filters(params, version)
+        (encrypt_metadata, stream_filter, string_filter, embedded_file_filter, crypt_filters) = (
+            parse_crypt_filters(params, version)
+        )
     if version in (5, 6):
         owner_encrypted_key = required_bytes(params, "OE", 32)
         user_encrypted_key = required_bytes(params, "UE", 32)
@@ -343,8 +322,7 @@ def parse_config(
 
 
 def parse_crypt_filters(
-    params: PdfDict,
-    version: int,
+    params: PdfDict, version: int
 ) -> tuple[bool, str, str, str, Mapping[str, CryptMethod]]:
     raw_filters = params.get("CF", MISSING)
     if raw_filters is MISSING:
@@ -462,10 +440,7 @@ def stream_crypt_filter_name(attrs: PdfDict, default_filter: str) -> str:
     return filter_name
 
 
-def resolve_crypt_method(
-    name: str,
-    crypt_filters: Mapping[str, CryptMethod],
-) -> CryptMethod | None:
+def resolve_crypt_method(name: str, crypt_filters: Mapping[str, CryptMethod]) -> CryptMethod | None:
     if name == "Identity":
         return None
     method = crypt_filters.get(name)
@@ -475,8 +450,7 @@ def resolve_crypt_method(
 
 
 def authenticate(
-    config: StandardSecurityConfig,
-    password: str | bytes,
+    config: StandardSecurityConfig, password: str | bytes
 ) -> tuple[bytes, PasswordKind] | None:
     match config.revision:
         case 2 | 3 | 4:
@@ -488,8 +462,7 @@ def authenticate(
 
 
 def authenticate_legacy(
-    config: StandardSecurityConfig,
-    password: str | bytes,
+    config: StandardSecurityConfig, password: str | bytes
 ) -> tuple[bytes, PasswordKind] | None:
     password_bytes = legacy_password_bytes(password)
     # The owner password comes first, because a file may use one password for both.
@@ -497,11 +470,7 @@ def authenticate_legacy(
     if config.revision == 2:
         user_password = rc4_crypt(owner_key, config.owner_entry)
     else:
-        user_password = rc4_cascade(
-            owner_key,
-            config.owner_entry,
-            range(19, -1, -1),
-        )
+        user_password = rc4_cascade(owner_key, config.owner_entry, range(19, -1, -1))
     key = authenticate_legacy_user(config, user_password)
     if key is not None:
         return key, "owner"
@@ -527,10 +496,7 @@ def legacy_owner_key(password: bytes, revision: int, length_bits: int) -> bytes:
     return digest[:key_length]
 
 
-def authenticate_legacy_user(
-    config: StandardSecurityConfig,
-    password: bytes,
-) -> bytes | None:
+def authenticate_legacy_user(config: StandardSecurityConfig, password: bytes) -> bytes | None:
     key = legacy_file_key(config, password)
     expected = legacy_user_entry(config, key)
     if config.revision == 2:
@@ -540,10 +506,7 @@ def authenticate_legacy_user(
     return key if valid else None
 
 
-def legacy_file_key(
-    config: StandardSecurityConfig,
-    password: bytes,
-) -> bytes:
+def legacy_file_key(config: StandardSecurityConfig, password: bytes) -> bytes:
     digest = md5(pad_password(password))
     digest.update(config.owner_entry)
     digest.update(struct.pack("<L", config.permissions))
@@ -558,10 +521,7 @@ def legacy_file_key(
     return result[:key_length]
 
 
-def legacy_user_entry(
-    config: StandardSecurityConfig,
-    key: bytes,
-) -> bytes:
+def legacy_user_entry(config: StandardSecurityConfig, key: bytes) -> bytes:
     if config.revision == 2:
         return rc4_crypt(key, PASSWORD_PADDING)
     digest = md5(PASSWORD_PADDING)
@@ -588,8 +548,7 @@ def rc4_cascade(key: bytes, data: bytes, indexes: range) -> bytes:
 
 
 def authenticate_modern(
-    config: StandardSecurityConfig,
-    password: str | bytes,
+    config: StandardSecurityConfig, password: str | bytes
 ) -> tuple[bytes, PasswordKind] | None:
     password_bytes = normalize_password(password, config.revision)
     owner_hash = config.owner_entry[:32]
@@ -600,51 +559,28 @@ def authenticate_modern(
     user_key_salt = config.user_entry[40:]
 
     password_hash = compute_password_hash(
-        config.revision,
-        password_bytes,
-        owner_validation_salt,
-        config.user_entry,
+        config.revision, password_bytes, owner_validation_salt, config.user_entry
     )
     if compare_digest(password_hash, owner_hash):
         password_hash = compute_password_hash(
-            config.revision,
-            password_bytes,
-            owner_key_salt,
-            config.user_entry,
+            config.revision, password_bytes, owner_key_salt, config.user_entry
         )
         file_key = aes_cbc_decrypt(
-            password_hash,
-            bytes(16),
-            config.owner_encrypted_key,
-            use_padding=False,
+            password_hash, bytes(16), config.owner_encrypted_key, use_padding=False
         )
         return file_key, "owner"
 
-    password_hash = compute_password_hash(
-        config.revision,
-        password_bytes,
-        user_validation_salt,
-    )
+    password_hash = compute_password_hash(config.revision, password_bytes, user_validation_salt)
     if compare_digest(password_hash, user_hash):
-        password_hash = compute_password_hash(
-            config.revision,
-            password_bytes,
-            user_key_salt,
-        )
+        password_hash = compute_password_hash(config.revision, password_bytes, user_key_salt)
         file_key = aes_cbc_decrypt(
-            password_hash,
-            bytes(16),
-            config.user_encrypted_key,
-            use_padding=False,
+            password_hash, bytes(16), config.user_encrypted_key, use_padding=False
         )
         return file_key, "user"
     return None
 
 
-def validate_permissions(
-    config: StandardSecurityConfig,
-    file_key: bytes,
-) -> bool:
+def validate_permissions(config: StandardSecurityConfig, file_key: bytes) -> bool:
     decrypted = aes_ecb_decrypt(file_key, config.encrypted_permissions)
     metadata_flag = b"T" if config.encrypt_metadata else b"F"
     expected = struct.pack("<L", config.permissions) + (b"\xff" * 4) + metadata_flag + b"adb"
@@ -660,10 +596,7 @@ def normalize_password(password: str | bytes, revision: int) -> bytes:
 
 
 def compute_password_hash(
-    revision: int,
-    password: bytes,
-    salt: bytes,
-    vector: bytes | None = None,
+    revision: int, password: bytes, salt: bytes, vector: bytes | None = None
 ) -> bytes:
     if revision == 5:
         digest = sha256(password)
@@ -674,11 +607,7 @@ def compute_password_hash(
     return r6_password_hash(password, salt[:8], vector)
 
 
-def r6_password_hash(
-    password: bytes,
-    salt: bytes,
-    vector: bytes | None = None,
-) -> bytes:
+def r6_password_hash(password: bytes, salt: bytes, vector: bytes | None = None) -> bytes:
     initial_hash = sha256(password)
     initial_hash.update(salt)
     if vector is not None:
@@ -688,12 +617,7 @@ def r6_password_hash(
     round_number = last_byte = 0
     while round_number < 64 or last_byte > round_number - 32:
         repeated = (password + result + (vector or b"")) * 64
-        encrypted = aes_cbc_encrypt(
-            result[:16],
-            result[16:32],
-            repeated,
-            use_padding=False,
-        )
+        encrypted = aes_cbc_encrypt(result[:16], result[16:32], repeated, use_padding=False)
         next_hash = hashes[bytes_mod_3(encrypted[:16])]
         result = next_hash(encrypted).digest()
         last_byte = encrypted[-1]

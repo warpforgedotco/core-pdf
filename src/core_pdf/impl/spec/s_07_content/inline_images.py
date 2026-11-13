@@ -3,16 +3,11 @@
 from __future__ import annotations
 
 from core_pdf.impl.spec.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_filters.decode_spec import (
-    normalize_stream_decode_spec,
-)
+from core_pdf.impl.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
 from core_pdf.impl.spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
-    decoded_name,
-    is_pdf_null,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import decoded_name, is_pdf_null
 from core_pdf.impl.spec.types import PdfName
 from core_records import GeneratedRecord
 
@@ -118,11 +113,7 @@ def skip_inline_image_separator(lexer: PdfLexer) -> bool:
     return True
 
 
-def filtered_inline_image_data_end(
-    dictionary: PdfDict,
-    data: bytes,
-    start: int,
-) -> int | None:
+def filtered_inline_image_data_end(dictionary: PdfDict, data: bytes, start: int) -> int | None:
     filters = normalize_stream_decode_spec(dictionary).steps
     if not filters:
         return None

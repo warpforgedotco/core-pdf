@@ -46,11 +46,7 @@ def initialize_document_security(
     docid_list: Sequence[object] = docid
 
     security_handler = handler_factory(docid_list, encrypt_dict, password)
-    has_pdf_mac = validate_pdf_mac_if_present(
-        data,
-        trailer,
-        security_handler,
-    )
+    has_pdf_mac = validate_pdf_mac_if_present(data, trailer, security_handler)
     decipher = security_handler.decrypt
     if has_pdf_mac:
         resolver.decipher = decipher

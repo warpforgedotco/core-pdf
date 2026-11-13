@@ -8,15 +8,7 @@ import string
 from collections.abc import Callable, Generator, Iterable
 from operator import itemgetter
 from re import Match, Pattern
-from typing import (
-    Any,
-    Dict,
-    List,
-    Literal,
-    Optional,
-    Tuple,
-    Union,
-)
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from .. import merge_bboxes, obj_to_bbox, to_list
 from .clustering import cluster_objects
@@ -42,15 +34,7 @@ DEFAULT_Y_DENSITY = 13
 DEFAULT_LINE_DIR: T_dir = "ttb"
 DEFAULT_CHAR_DIR: T_dir = "ltr"
 
-LIGATURES = {
-    "ﬀ": "ff",
-    "ﬃ": "ffi",
-    "ﬄ": "ffl",
-    "ﬁ": "fi",
-    "ﬂ": "fl",
-    "ﬆ": "st",
-    "ﬅ": "st",
-}
+LIGATURES = {"ﬀ": "ff", "ﬃ": "ffi", "ﬄ": "ffl", "ﬁ": "fi", "ﬂ": "fl", "ﬆ": "st", "ﬅ": "st"}
 
 
 def get_line_cluster_key(line_dir: T_dir) -> Callable[[T_obj], T_num]:
@@ -151,13 +135,7 @@ class TextMap:
         chars = [c for (text, c) in subset if c is not None]
         x0, top, x1, bottom = objects_to_bbox(chars)
 
-        result = {
-            "text": m.group(main_group),
-            "x0": x0,
-            "top": top,
-            "x1": x1,
-            "bottom": bottom,
-        }
+        result = {"text": m.group(main_group), "x0": x0, "top": top, "x1": x1, "bottom": bottom}
 
         if return_groups:
             result["groups"] = m.groups()
@@ -197,10 +175,7 @@ class TextMap:
         filtered = filter(lambda m: bool(m.group(main_group).strip()), gen)
         return [
             self.match_to_dict(
-                m,
-                return_groups=return_groups,
-                return_chars=return_chars,
-                main_group=main_group,
+                m, return_groups=return_groups, return_chars=return_chars, main_group=main_group
             )
             for m in filtered
         ]
@@ -577,9 +552,7 @@ class WordExtractor:
         )
 
     def iter_chars_to_words(
-        self,
-        ordered_chars: T_obj_iter,
-        direction: T_dir,
+        self, ordered_chars: T_obj_iter, direction: T_dir
     ) -> Generator[T_obj_list, None, None]:
         current_word: T_obj_list = []
 
@@ -683,10 +656,7 @@ WORD_EXTRACTOR_KWARGS = inspect.signature(WordExtractor).parameters.keys()
 
 def chars_to_textmap(chars: T_obj_list, **kwargs: Any) -> TextMap:
     kwargs.update(
-        {
-            "presorted": True,
-            "layout_bbox": kwargs.get("layout_bbox") or objects_to_bbox(chars),
-        }
+        {"presorted": True, "layout_bbox": kwargs.get("layout_bbox") or objects_to_bbox(chars)}
     )
 
     extractor = WordExtractor(**{k: kwargs[k] for k in WORD_EXTRACTOR_KWARGS if k in kwargs})
@@ -723,9 +693,7 @@ def extract_text(
     y_tolerance = kwargs.get("y_tolerance", DEFAULT_Y_TOLERANCE)
 
     lines = cluster_objects(
-        words,
-        line_cluster_key,
-        y_tolerance if line_dir_render in ("ttb", "btt") else x_tolerance,
+        words, line_cluster_key, y_tolerance if line_dir_render in ("ttb", "btt") else x_tolerance
     )
 
     return TextMap(
@@ -738,10 +706,7 @@ def extract_text(
     ).as_string
 
 
-def collate_line(
-    line_chars: T_obj_list,
-    tolerance: T_num = DEFAULT_X_TOLERANCE,
-) -> str:
+def collate_line(line_chars: T_obj_list, tolerance: T_num = DEFAULT_X_TOLERANCE) -> str:
     coll = ""
     last_x1 = None
     for char in sorted(line_chars, key=itemgetter("x0")):

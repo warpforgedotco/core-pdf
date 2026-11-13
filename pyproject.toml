@@ -65,7 +65,7 @@ test = [
 ]
 benchmark = [
     "pytest>=9.2.0",
-    "pytest-codspeed>=5.0.3,<6",
+    "pytest-codspeed>=5.0.4,<6",
 ]
 
 [tool.ruff]
@@ -75,6 +75,15 @@ extend-exclude = [
     "tests/upstream",
 ]
 line-length = 100
+
+[tool.ruff.format]
+# A trailing comma does not keep a collection, call or import split one item per line:
+# what fits on a line goes on one line. The formatter still adds the comma when it
+# has to wrap.
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
 
 [tool.ruff.lint.per-file-ignores]
 # Scripts accept signatures they do not use.

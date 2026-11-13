@@ -8,9 +8,7 @@ lazy import numpy
 
 
 def unblend_matte_components(
-    values: numpy.ndarray[Any, Any],
-    alpha: numpy.ndarray[Any, Any],
-    matte: tuple[float, ...],
+    values: numpy.ndarray[Any, Any], alpha: numpy.ndarray[Any, Any], matte: tuple[float, ...]
 ) -> numpy.ndarray[Any, Any]:
     components = numpy.asarray(values, dtype=numpy.float64)
     opacity = numpy.asarray(alpha, dtype=numpy.float64)
@@ -27,10 +25,7 @@ def unblend_matte_components(
         raise ValueError("invalid image matte components")
     difference = numpy.zeros_like(components)
     numpy.divide(
-        components - background,
-        opacity[:, None],
-        out=difference,
-        where=opacity[:, None] != 0,
+        components - background, opacity[:, None], out=difference, where=opacity[:, None] != 0
     )
     return background + difference
 

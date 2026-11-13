@@ -16,17 +16,8 @@ from core_pdf_compat.pdfminer._extract import extract_document_pages
 from core_pdf_compat.pdfminer._layout import LAParams, LTFigure, LTTextBox
 from core_pdf_compat.pdfminer._projection import UNSTRUCTURED_POLICY
 
-from ._classification import (
-    BULLET,
-    classify_element,
-)
-from ._elements import (
-    CoordinatesMetadata,
-    Element,
-    ElementMetadata,
-    ListItem,
-    PageBreak,
-)
+from ._classification import BULLET, classify_element
+from ._elements import CoordinatesMetadata, Element, ElementMetadata, ListItem, PageBreak
 from ._languages import LanguageFallback, apply_languages, check_languages_argument
 from ._links import page_links
 from ._metadata import assign_element_ids, assign_parent_ids
@@ -347,12 +338,7 @@ def partition_pdf(
                 if field.rect is None or field.type not in {"Tx", "Ch"} or not field.value_text:
                     continue
                 left, bottom, right, top = (float(value) for value in field.rect)
-                field_regions.append(
-                    TextRegion(
-                        field.value_text,
-                        (left, bottom, right, top),
-                    )
-                )
+                field_regions.append(TextRegion(field.value_text, (left, bottom, right, top)))
             regions = combine_list_regions(regions, page.height)
             regions.extend(field_regions)
             for element_index in region_order(regions, page.height):
@@ -403,10 +389,7 @@ def partition_pdf(
         document.close()
     if include_metadata:
         apply_languages(
-            result,
-            languages,
-            per_element=detect_language_per_element,
-            fallback=language_fallback,
+            result, languages, per_element=detect_language_per_element, fallback=language_fallback
         )
     assign_element_ids(result, unique=unique_element_ids)
     assign_parent_ids(result)

@@ -14,15 +14,8 @@ from core_pdf.impl.spec.s_07_syntax.resolution import (
     resolve_reference_chain,
 )
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import (
-    Decipher,
-    ObjectCache,
-    PdfDict,
-    PdfObject,
-)
-from core_pdf.impl.spec.s_07_syntax.xref import (
-    PdfXRefEntry,
-)
+from core_pdf.impl.spec.s_07_syntax.types import Decipher, ObjectCache, PdfDict, PdfObject
+from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     decoded_name,
     parse_box,
@@ -34,16 +27,7 @@ from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import MISSING, PdfReference, PdfString
 lazy from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
 
-STREAM_DECODE_KEYS = frozenset(
-    {
-        "F",
-        "Filter",
-        "DecodeParms",
-        "DP",
-        "FFilter",
-        "FDecodeParms",
-    }
-)
+STREAM_DECODE_KEYS = frozenset({"F", "Filter", "DecodeParms", "DP", "FFilter", "FDecodeParms"})
 
 
 class _ResolverThreadState(threading.local):

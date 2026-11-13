@@ -22,8 +22,7 @@ def circle_path(cx: float, cy: float, radius: float) -> CapturedPath:
     return CapturedPath(
         [
             CapturedSubpath(
-                [(cx + radius * x, cy + radius * y) for x, y in CIRCLE_VERTICES],
-                closed=True,
+                [(cx + radius * x, cy + radius * y) for x, y in CIRCLE_VERTICES], closed=True
             )
         ]
     )
@@ -57,10 +56,7 @@ def dash_subpath(
             continue
         position = 0.0
         while position < distance or remaining <= 0.0:
-            point = (
-                start[0] + dx * (position / distance),
-                start[1] + dy * (position / distance),
-            )
+            point = (start[0] + dx * (position / distance), start[1] + dy * (position / distance))
             if remaining <= 0.0:
                 if index % 2 == 0 and lengths[index] == 0.0:
                     pieces.append(CapturedSubpath([point, point]))
@@ -215,8 +211,7 @@ def rasterize_unclipped_line_normal(
 
 
 def intersect_box(
-    a: tuple[float, float, float, float],
-    b: tuple[float, float, float, float],
+    a: tuple[float, float, float, float], b: tuple[float, float, float, float]
 ) -> tuple[float, float, float, float] | None:
     box = intersect_bbox(a, b)
     if box is None or box[2] <= box[0] or box[3] <= box[1]:
@@ -227,18 +222,12 @@ def intersect_box(
 def translate_rect(rect: Any, tx: float, ty: float) -> Any:
     rect_type = type(rect)
     if (rect_type is list or rect_type is tuple) and len(rect) == 4:
-        return (
-            float(rect[0]) + tx,
-            float(rect[1]) + ty,
-            float(rect[2]) + tx,
-            float(rect[3]) + ty,
-        )
+        return (float(rect[0]) + tx, float(rect[1]) + ty, float(rect[2]) + tx, float(rect[3]) + ty)
     return rect
 
 
 def fill_path_crossing_spans(
-    crossings: list[tuple[float, int]],
-    fill_rule: str,
+    crossings: list[tuple[float, int]], fill_rule: str
 ) -> list[tuple[float, float]]:
     count = len(crossings)
     if not count:

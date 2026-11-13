@@ -871,11 +871,7 @@ class GlyphOutlines:
         return recording
 
     def draw(
-        self,
-        name: str,
-        lsb: int | float,
-        recording: Recording,
-        transform: tuple[float, ...] | None,
+        self, name: str, lsb: int | float, recording: Recording, transform: tuple[float, ...] | None
     ) -> None:
         glyph = glyf_glyph(self.glyf, name)
         offset = lsb - glyph.xMin if glyph.has_bounds() else 0

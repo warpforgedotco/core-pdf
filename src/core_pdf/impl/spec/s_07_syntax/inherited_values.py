@@ -5,18 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from core_pdf.impl.spec.s_07_syntax.resolution import resolve_reference_chain
-from core_pdf.impl.spec.s_07_syntax.types import (
-    InheritedValueMap,
-    PdfDict,
-)
+from core_pdf.impl.spec.s_07_syntax.types import InheritedValueMap, PdfDict
 from core_pdf.impl.spec.types import PdfReference
 
 
 def inherited_dictionary_value(
-    node: PdfDict,
-    key: str,
-    parent_value: object,
-    resolve: Callable[[object], object],
+    node: PdfDict, key: str, parent_value: object, resolve: Callable[[object], object]
 ) -> object:
     value = node.get(key)
     resolved = resolve_reference_chain(value, resolve)
@@ -75,7 +69,4 @@ def collect_inherited_values(
     return values
 
 
-__all__ = (
-    "collect_inherited_values",
-    "inherited_dictionary_value",
-)
+__all__ = ("collect_inherited_values", "inherited_dictionary_value")

@@ -73,11 +73,7 @@ def require_pdf_number_array(
 
 
 def require_pdf_number_pairs(
-    value: object,
-    message: str,
-    *,
-    count: int | None = None,
-    length_message: str | None = None,
+    value: object, message: str, *, count: int | None = None, length_message: str | None = None
 ) -> tuple[tuple[float, float], ...]:
     values = require_pdf_number_array(value, message)
     if len(values) != 2 * count if count is not None else not values or len(values) % 2:

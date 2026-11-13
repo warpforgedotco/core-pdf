@@ -31,11 +31,7 @@ def revised_blending(context: SemanticContext | None) -> bool:
 
 
 def blend_component(
-    backdrop: float,
-    source: float,
-    mode: BlendMode,
-    *,
-    context: SemanticContext | None = None,
+    backdrop: float, source: float, mode: BlendMode, *, context: SemanticContext | None = None
 ) -> float:
     revised = revised_blending(context)
     if not 0.0 <= backdrop <= 1.0 or not 0.0 <= source <= 1.0:

@@ -98,9 +98,7 @@ def field_record(
 
 
 def collect_field_records(
-    resolver: FieldResolver,
-    node: object,
-    malformed: MalformedFn,
+    resolver: FieldResolver, node: object, malformed: MalformedFn
 ) -> list[RawFormField]:
     seen: set[int] = set()
     records: list[RawFormField] = []
@@ -120,12 +118,7 @@ def collect_field_records(
             continue
         seen.add(id(current_node))
         record = field_record(
-            resolver,
-            current_node,
-            parent_name,
-            parent_type,
-            parent_value,
-            malformed,
+            resolver, current_node, parent_name, parent_type, parent_value, malformed
         )
         records.append(record)
         for kid in reversed(record.kids):
@@ -174,8 +167,7 @@ def fields(self: PdfDocument[Any]) -> list[RawFormField]:
 
 
 def fields_by_page(
-    self: PdfDocument[PageT],
-    pages: Sequence[PageT] | None = None,
+    self: PdfDocument[PageT], pages: Sequence[PageT] | None = None
 ) -> dict[int, list[RawFormField]]:
     if pages is not None:
         return self.group_fields_by_page(tuple(pages))

@@ -124,11 +124,7 @@ def tiling_cell(
     if cached is not None:
         return cached
     cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
-    display = DisplayList(
-        width,
-        height,
-        preserve_object_boundaries=preserve_object_boundaries,
-    )
+    display = DisplayList(width, height, preserve_object_boundaries=preserve_object_boundaries)
     cell_clip = CapturedPath()
     cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
     append_captured_program(display, pattern.program, include_text=True)

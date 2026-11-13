@@ -11,9 +11,7 @@ def is_synthetic_chart(table: Table) -> bool:
     return table.metadata.get("source") == "chart-ocr" and bool(table.metadata.get("synthetic"))
 
 
-def remove_duplicate_tables(
-    tables: tuple[Table, ...],
-) -> tuple[Table, ...]:
+def remove_duplicate_tables(tables: tuple[Table, ...]) -> tuple[Table, ...]:
     text_tokens = tuple(
         content_tokens(" ".join(cell.text for row in table.rows for cell in row))
         for table in tables
@@ -21,12 +19,7 @@ def remove_duplicate_tables(
     synthetic = tuple(is_synthetic_chart(table) for table in tables)
     ranked = sorted(
         range(len(tables)),
-        key=lambda index: (
-            -len(text_tokens[index]),
-            synthetic[index],
-            tables[index].order,
-            index,
-        ),
+        key=lambda index: (-len(text_tokens[index]), synthetic[index], tables[index].order, index),
     )
     retained: list[int] = []
     for index in ranked:

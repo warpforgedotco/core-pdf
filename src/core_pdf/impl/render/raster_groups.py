@@ -105,11 +105,7 @@ def composite_group(self: RasterTarget, group: RasterGroup) -> None:
 
 
 def composite_group_into(
-    self: RasterTarget,
-    group: RasterGroup,
-    destination: UInt8Array,
-    rows: slice,
-    columns: slice,
+    self: RasterTarget, group: RasterGroup, destination: UInt8Array, rows: slice, columns: slice
 ) -> UInt8Array:
     child = group.view[rows, columns]
     group_alpha = group.composite_alpha

@@ -8,10 +8,7 @@ from typing import Any
 
 lazy import numpy
 
-from core_pdf.impl.base.arrays import (
-    contiguous_bytes,
-    uint8_image_view,
-)
+from core_pdf.impl.base.arrays import contiguous_bytes, uint8_image_view
 from core_pdf.impl.base.geometry import bbox_union
 from core_pdf.impl.base.types import GeneratedRecord
 from core_pdf.impl.capture.records import CapturedDrawing
@@ -52,8 +49,7 @@ def raster_ink_grid(raster: Raster, rows: int, columns: int) -> numpy.ndarray[An
     intensity = visible_intensity(sampled)
     ink = intensity < 245
     integral = numpy.pad(
-        ink.cumsum(axis=0, dtype=numpy.int32).cumsum(axis=1, dtype=numpy.int32),
-        ((1, 0), (1, 0)),
+        ink.cumsum(axis=0, dtype=numpy.int32).cumsum(axis=1, dtype=numpy.int32), ((1, 0), (1, 0))
     )
     y_bounds = numpy.arange(rows + 1, dtype=numpy.intp) * len(ink) // rows
     x_bounds = numpy.arange(columns + 1, dtype=numpy.intp) * ink.shape[1] // columns
@@ -117,9 +113,7 @@ def compact_ocr_image(image: RasterImage, *, grayscale: bool = False) -> RasterI
         if opaque:
             return RasterImage(contiguous_bytes(samples[:, :, 0]), image.width, image.height, 1)
         distance_from_white = numpy.multiply(
-            255 - samples[:, :, 0],
-            samples[:, :, 1],
-            dtype=numpy.uint16,
+            255 - samples[:, :, 0], samples[:, :, 1], dtype=numpy.uint16
         )
         distance_from_white += 127
         distance_from_white //= 255
@@ -158,8 +152,7 @@ class RasterTextSignal(GeneratedRecord):
 def raster_text_signal(image: RasterImage) -> RasterTextSignal:
     pixels = image.array()
     sample_step = max(
-        1,
-        math.ceil(math.sqrt(image.width * image.height / OCR_IMAGE_TEXT_SAMPLE_PIXELS)),
+        1, math.ceil(math.sqrt(image.width * image.height / OCR_IMAGE_TEXT_SAMPLE_PIXELS))
     )
     sampled = pixels[::sample_step, ::sample_step]
     gray = visible_intensity(sampled)
@@ -196,10 +189,7 @@ def raster_text_signal(image: RasterImage) -> RasterTextSignal:
             and not strongly_structured
         ):
             likely_text = False
-    return RasterTextSignal(
-        likely_text=likely_text,
-        horizontal_edge_ratio=horizontal_edges,
-    )
+    return RasterTextSignal(likely_text=likely_text, horizontal_edge_ratio=horizontal_edges)
 
 
 def adaptive_ocr_raster(raster: Raster) -> Raster:
@@ -223,8 +213,7 @@ def adaptive_ocr_raster(raster: Raster) -> Raster:
     threshold = local_sum / local_area - 9.0
     binary = numpy.where(gray <= threshold, numpy.uint8(0), numpy.uint8(255))
     return Raster(
-        RasterImage(contiguous_bytes(binary), raster.width, raster.height, 1),
-        raster.resolution,
+        RasterImage(contiguous_bytes(binary), raster.width, raster.height, 1), raster.resolution
     )
 
 
@@ -276,11 +265,7 @@ def decoded_image_raster(
     channels = decoded_channels
     if width * height > max_pixels:
         reduction = (
-            min(
-                math.sqrt(max_pixels / (width * height)),
-                max_pixels / width,
-                max_pixels / height,
-            )
+            min(math.sqrt(max_pixels / (width * height)), max_pixels / width, max_pixels / height)
             * 0.999
         )
         target_width = max(1, int(width * reduction))
@@ -345,9 +330,7 @@ DIRECT_IMAGE_ORIENTATIONS: dict[DirectImageOrientation, tuple[int, int, int, int
 
 
 def direct_image_orientation(
-    image: CapturedDrawing,
-    *,
-    maximum_axis_deviation: float = 1e-5,
+    image: CapturedDrawing, *, maximum_axis_deviation: float = 1e-5
 ) -> DirectImageOrientation | None:
     items = image.items
     quad = next(
@@ -398,10 +381,7 @@ def direct_image_orientation(
 
 
 def orient_direct_image_raster(
-    image: CapturedDrawing,
-    raster: Raster,
-    *,
-    orientation: DirectImageOrientation | None = None,
+    image: CapturedDrawing, raster: Raster, *, orientation: DirectImageOrientation | None = None
 ) -> Raster:
     orientation = orientation or direct_image_orientation(image)
     if orientation is None or orientation is DirectImageOrientation.IDENTITY:
@@ -455,17 +435,11 @@ def rendered_page_raster(
     scale = fit_raster_scale(rendered, scale, max_pixels, crop=crop)
     try:
         data = rendered.rasterize(
-            background=(255, 255, 255, 255),
-            scale=scale,
-            max_pixels=max_pixels,
-            crop=crop,
+            background=(255, 255, 255, 255), scale=scale, max_pixels=max_pixels, crop=crop
         )
     except IndexError:
         return None
-    return Raster(
-        data,
-        max(70, int(round(72.0 * scale))),
-    )
+    return Raster(data, max(70, int(round(72.0 * scale))))
 
 
 def safe_image_crop(capture: PageAnalysis) -> tuple[float, float, float, float] | None:

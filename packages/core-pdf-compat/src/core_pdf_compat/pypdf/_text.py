@@ -319,11 +319,7 @@ class LegacyFont(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
         if self.cmap is not None:
             mappings = self.cmap.mappings
             parts = tuple(
-                mappings.get(
-                    glyph.code_bytes,
-                    self.glyph_text(glyph),
-                )
-                for glyph in glyphs
+                mappings.get(glyph.code_bytes, self.glyph_text(glyph)) for glyph in glyphs
             )
             mapped_every_glyph = bool(glyphs) and all(
                 glyph.code_bytes in mappings for glyph in glyphs
@@ -1320,8 +1316,7 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
                                 is_visible = self.visible()
                             if is_visible:
                                 self.show(
-                                    data if type(data) is bytes else bytes(data),
-                                    known_visible=True,
+                                    data if type(data) is bytes else bytes(data), known_visible=True
                                 )
                             else:
                                 self.actual_height = self.font_size

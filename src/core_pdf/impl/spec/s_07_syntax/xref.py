@@ -15,10 +15,7 @@ from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
-    decoded_name,
-    parse_int_strict,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import decoded_name, parse_int_strict
 from core_pdf.impl.spec.s_07_syntax_primitives.numbers import parse_identifier_tokens
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import LexicalRules, lexical_rules
 from core_pdf.impl.spec.standards import SemanticContext

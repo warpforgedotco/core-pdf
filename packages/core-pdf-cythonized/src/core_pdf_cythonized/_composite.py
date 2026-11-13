@@ -11,10 +11,7 @@ from cython.cimports.core_pdf_cythonized._byte_clamp import (
 )
 from cython.cimports.libc.math import isfinite, rint, rintf
 
-Strides = cython.struct(
-    pixel=cython.Py_ssize_t,
-    channel=cython.Py_ssize_t,
-)
+Strides = cython.struct(pixel=cython.Py_ssize_t, channel=cython.Py_ssize_t)
 
 
 def composite_elementary_normal(destination, rendered, source_alpha):

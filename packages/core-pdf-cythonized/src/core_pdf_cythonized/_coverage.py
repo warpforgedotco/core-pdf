@@ -33,18 +33,11 @@ cnp.import_array()
 
 
 BytePlane = cython.struct(
-    data=cython.p_uchar,
-    row=cython.Py_ssize_t,
-    column=cython.Py_ssize_t,
-    channel=cython.Py_ssize_t,
+    data=cython.p_uchar, row=cython.Py_ssize_t, column=cython.Py_ssize_t, channel=cython.Py_ssize_t
 )
 
 
-FloatPlane = cython.struct(
-    data=cython.p_float,
-    row=cython.Py_ssize_t,
-    column=cython.Py_ssize_t,
-)
+FloatPlane = cython.struct(data=cython.p_float, row=cython.Py_ssize_t, column=cython.Py_ssize_t)
 
 
 @cython.cfunc
@@ -77,10 +70,7 @@ def _require_edge_matrix(_view: typing.Optional[cython.const[cython.double][:, :
 @cython.inline
 @cython.exceptval(check=False)
 def edge_data(rows: object) -> cython.p_const_double:
-    return cython.cast(
-        cython.p_const_double,
-        cnp.PyArray_DATA(cython.cast(cnp.ndarray, rows)),
-    )
+    return cython.cast(cython.p_const_double, cnp.PyArray_DATA(cython.cast(cnp.ndarray, rows)))
 
 
 @cython.cfunc
@@ -99,10 +89,7 @@ def edge_width(rows: object) -> cython.Py_ssize_t:
 
 @cython.cfunc
 def _coverage_from_device(
-    e: cython.p_const_double,
-    count: cython.Py_ssize_t,
-    width: cython.int,
-    height: cython.int,
+    e: cython.p_const_double, count: cython.Py_ssize_t, width: cython.int, height: cython.int
 ) -> object:
     stride: cython.Py_ssize_t = width + 2
     result = numpy.zeros((height, width), numpy.float64)

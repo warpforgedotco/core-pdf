@@ -130,12 +130,7 @@ def fallback_glyph_outline(
     if len(text) != 1:
         return ()
     request = PdfRasterFontRequest(
-        font_name,
-        text,
-        is_cid_font,
-        is_vertical,
-        cid_registry,
-        cid_ordering,
+        font_name, text, is_cid_font, is_vertical, cid_registry, cid_ordering
     )
     repository = (
         provider if isinstance(provider, RasterFontRepository) else RasterFontRepository(provider)

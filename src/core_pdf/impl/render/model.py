@@ -826,10 +826,7 @@ class RasterImage(GeneratedRecord):
         return memoryview(self.pixels).nbytes
 
     def array(self) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-        return uint8_image_view(
-            self.pixels,
-            (self.height, self.width, self.channels),
-        )
+        return uint8_image_view(self.pixels, (self.height, self.width, self.channels))
 
 
 __all__ = (

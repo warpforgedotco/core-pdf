@@ -134,11 +134,7 @@ def _get_image_mode(
 
 
 def bits2byte(
-    data: bytes,
-    size: tuple[int, int],
-    bits: int,
-    colors: int = 1,
-    scale: bool = False,
+    data: bytes, size: tuple[int, int], bits: int, colors: int = 1, scale: bool = False
 ) -> bytes:
 
     # Number of samples per row = pixels per row * components per pixel.
@@ -176,10 +172,7 @@ def bits2byte(
 
 
 def _expand_low_bit_samples(
-    mode: mode_str_type,
-    size: tuple[int, int],
-    data: bytes,
-    color_space: Union[str, ArrayObject],
+    mode: mode_str_type, size: tuple[int, int], data: bytes, color_space: Union[str, ArrayObject]
 ) -> tuple[mode_str_type, bytes]:
     """
     Expand 2- or 4-bit-per-component samples to one byte per component.
@@ -405,11 +398,7 @@ def _handle_flate(
 
 
 def _handle_jpx(
-    size: tuple[int, int],
-    data: bytes,
-    mode: mode_str_type,
-    color_space: str,
-    colors: int,
+    size: tuple[int, int], data: bytes, mode: mode_str_type, color_space: str, colors: int
 ) -> tuple[Image.Image, str, str, bool]:
     """
     Process image encoded as JPX/JPEG2000
@@ -635,12 +624,7 @@ def _xobj_to_image(
     extension = None
     if lfilters in (FT.FLATE_DECODE, FT.RUN_LENGTH_DECODE):
         img, image_format, extension, _ = _handle_flate(
-            size,
-            data,
-            mode,
-            color_space,
-            colors,
-            obj_as_text,
+            size, data, mode, color_space, colors, obj_as_text
         )
     elif lfilters in (FT.LZW_DECODE, FT.ASCII_85_DECODE):
         # The filter does not tell which image format the decoded data has, so Pillow

@@ -59,8 +59,4 @@ def resolve_cmap_decoder(name: str) -> CMapDecoder | None:
     return CMapDecoder(data, usecmap_resolver=resolve_cmap_resource) if data is not None else None
 
 
-__all__ = [
-    "RESOURCE_PACKAGE",
-    "resolve_cmap_resource",
-    "resolve_cmap_decoder",
-]
+__all__ = ["RESOURCE_PACKAGE", "resolve_cmap_resource", "resolve_cmap_decoder"]

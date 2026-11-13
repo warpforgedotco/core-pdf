@@ -36,9 +36,7 @@ if TYPE_CHECKING:
 
 
 def shading_box(
-    self: RasterTarget,
-    item: ShadingItem,
-    shading: PreparedShading,
+    self: RasterTarget, item: ShadingItem, shading: PreparedShading
 ) -> tuple[float, float, float, float]:
     box = shading.bbox
     if box is None:
@@ -138,10 +136,7 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
 
 
 def paint_tiling_pattern(
-    self: RasterTarget,
-    pattern: TilingPattern,
-    target_data: PathPaintItem,
-    blend_mode: str | None,
+    self: RasterTarget, pattern: TilingPattern, target_data: PathPaintItem, blend_mode: str | None
 ) -> bool:
     scale = self.scale
     cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox

@@ -71,7 +71,4 @@ def decode_stream_data(
     return result
 
 
-__all__ = (
-    "FilterFn",
-    "decode_stream_data",
-)
+__all__ = ("FilterFn", "decode_stream_data")

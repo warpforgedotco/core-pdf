@@ -306,9 +306,7 @@ def pdfplumber_operations(side: str) -> dict[str, Operation]:
 
 def unstructured_operations(side: str) -> dict[str, Operation]:
     if side == "real":
-        from unstructured.partition.pdf import (  # noqa: PLC0415  # ty: ignore[unresolved-import]
-            partition_pdf,
-        )
+        from unstructured.partition.pdf import partition_pdf  # noqa: PLC0415  # ty: ignore[unresolved-import]
     else:
         from core_pdf_compat.unstructured import partition_pdf  # noqa: PLC0415
 
@@ -326,9 +324,7 @@ def unstructured_operations(side: str) -> dict[str, Operation]:
 
 def llamaindex_operations(side: str) -> dict[str, Operation]:
     if side == "real":
-        from llama_index.readers.file import (  # noqa: PLC0415  # ty: ignore[unresolved-import]
-            PDFReader,
-        )
+        from llama_index.readers.file import PDFReader  # noqa: PLC0415  # ty: ignore[unresolved-import]
     else:
         from core_pdf_compat.llamaindex import PDFReader  # noqa: PLC0415
 

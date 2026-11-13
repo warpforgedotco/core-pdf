@@ -79,13 +79,7 @@ class ObjectWriter:
         self.depth = 0
 
     def __init__(
-        self,
-        spaced: cython.bint,
-        name_type,
-        string_type,
-        reference_type,
-        stream_type,
-        fallback,
+        self, spaced: cython.bint, name_type, string_type, reference_type, stream_type, fallback
     ):
         self.spaced = spaced
         self.name_type = name_type

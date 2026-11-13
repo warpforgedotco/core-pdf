@@ -50,18 +50,9 @@ EXPORTS = {
     "NewEncryption": ("core_pdf.impl.document.editing", "NewEncryption"),
     "SavedPdf": ("core_pdf.impl.document.editing", "SavedPdf"),
     "PdfDocument": ("core_pdf.impl.document.pdf_document", "PdfDocument"),
-    "PdfRasterFontFace": (
-        "core_pdf.impl.fonts.fallback",
-        "PdfRasterFontFace",
-    ),
-    "PdfRasterFontProvider": (
-        "core_pdf.impl.fonts.fallback",
-        "PdfRasterFontProvider",
-    ),
-    "PdfRasterFontRequest": (
-        "core_pdf.impl.fonts.fallback",
-        "PdfRasterFontRequest",
-    ),
+    "PdfRasterFontFace": ("core_pdf.impl.fonts.fallback", "PdfRasterFontFace"),
+    "PdfRasterFontProvider": ("core_pdf.impl.fonts.fallback", "PdfRasterFontProvider"),
+    "PdfRasterFontRequest": ("core_pdf.impl.fonts.fallback", "PdfRasterFontRequest"),
     "PdfError": ("core_pdf.impl.base.exceptions", "PdfError"),
     "PdfContractError": ("core_pdf.impl.base.exceptions", "PdfContractError"),
     "ContentNode": ("core_pdf.impl.output.model", "ContentNode"),

@@ -90,11 +90,7 @@ def extra(reader: Any, path: Path) -> list[Any]:
     return reader().load_data(path, dict(EXTRA_INFO))
 
 
-MODES: dict[str, Callable[[Any, Path], list[Any]]] = {
-    "pages": pages,
-    "full": full,
-    "extra": extra,
-}
+MODES: dict[str, Callable[[Any, Path], list[Any]]] = {"pages": pages, "full": full, "extra": extra}
 
 
 def summary(documents: list[Any], modes: Any) -> list[tuple[object, ...]]:

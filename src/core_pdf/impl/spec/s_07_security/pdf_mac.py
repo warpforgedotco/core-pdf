@@ -12,9 +12,7 @@ HEXADECIMAL_DIGITS = frozenset(b"0123456789ABCDEFabcdef")
 
 
 def validate_pdf_mac_if_present(
-    raw_data: PdfByteBuffer,
-    trailer: PdfDict,
-    handler: StandardSecurityHandler,
+    raw_data: PdfByteBuffer, trailer: PdfDict, handler: StandardSecurityHandler
 ) -> bool:
     raw_auth_code = trailer.get("AuthCode", MISSING)
     has_auth_code = raw_auth_code is not MISSING
@@ -29,10 +27,7 @@ def validate_pdf_mac_if_present(
 
     try:
         validate_standalone_pdf_mac(
-            raw_data,
-            raw_auth_code,
-            handler.file_key,
-            handler.config.kdf_salt,
+            raw_data, raw_auth_code, handler.file_key, handler.config.kdf_salt
         )
     except (ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
         raise PdfDecryptionError("Invalid PDF MAC") from exc
@@ -67,10 +62,7 @@ def validate_pdf_mac_extension(declarations: object) -> None:
 
 
 def validate_standalone_pdf_mac(
-    raw_data: PdfByteBuffer,
-    auth_code: PdfDict,
-    file_key: bytes,
-    kdf_salt: bytes,
+    raw_data: PdfByteBuffer, auth_code: PdfDict, file_key: bytes, kdf_salt: bytes
 ) -> None:
     raw_location = auth_code.get("MACLocation", MISSING)
     if not isinstance(raw_location, PdfName):
@@ -88,8 +80,7 @@ def validate_standalone_pdf_mac(
 
 
 def extract_standalone_token(
-    raw_data: PdfByteBuffer,
-    auth_code: PdfDict,
+    raw_data: PdfByteBuffer, auth_code: PdfDict
 ) -> tuple[tuple[int, int, int, int], bytes]:
     raw_byte_range = auth_code.get("ByteRange", MISSING)
     if not isinstance(raw_byte_range, list) or len(raw_byte_range) != 4:
@@ -122,15 +113,7 @@ def extract_standalone_token(
     ):
         raise ValueError("invalid serialized standalone PDF MAC")
 
-    return (
-        first_start,
-        first_length,
-        second_start,
-        second_length,
-    ), raw_mac.data
+    return (first_start, first_length, second_start, second_length), raw_mac.data
 
 
-__all__ = (
-    "validate_pdf_mac_if_present",
-    "validate_pdf_mac_extension",
-)
+__all__ = ("validate_pdf_mac_if_present", "validate_pdf_mac_extension")

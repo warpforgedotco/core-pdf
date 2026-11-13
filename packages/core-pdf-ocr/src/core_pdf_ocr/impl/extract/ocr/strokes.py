@@ -121,9 +121,7 @@ def path_records(
     return tuple(records)
 
 
-def group_overlapping_x(
-    records: Iterable[PathRecord],
-) -> tuple[Glyph, ...]:
+def group_overlapping_x(records: Iterable[PathRecord]) -> tuple[Glyph, ...]:
     groups: list[list[PathRecord]] = []
     bounds: list[list[float]] = []
     for record in records:
@@ -142,9 +140,7 @@ def group_overlapping_x(
     return tuple(tuple(group) for group in groups)
 
 
-def glyph_signature(
-    glyph: Glyph,
-) -> GlyphSignature | None:
+def glyph_signature(glyph: Glyph) -> GlyphSignature | None:
     points = tuple(
         point for record in glyph for subpath in record.path.subpaths for point in subpath.points
     )
@@ -184,10 +180,7 @@ def seed_text(seed: StrokedTextSeed) -> str | None:
     return text
 
 
-def seed_run_overlap(
-    seed_box: Rectangle,
-    run_box: Rectangle,
-) -> float:
+def seed_run_overlap(seed_box: Rectangle, run_box: Rectangle) -> float:
     intersection = bbox_intersection_area(seed_box, run_box)
     seed_area = max(0.01, bbox_area(seed_box))
     run_area = max(0.01, bbox_area(run_box))
@@ -195,8 +188,7 @@ def seed_run_overlap(
 
 
 def seed_samples(
-    profile: StrokedTextProfile,
-    seeds: tuple[StrokedTextSeed, ...],
+    profile: StrokedTextProfile, seeds: tuple[StrokedTextSeed, ...]
 ) -> tuple[SeedSample, ...]:
     samples: list[SeedSample] = []
     records = profile.records
@@ -248,17 +240,13 @@ def seed_samples(
             continue
         samples.append(
             SeedSample(
-                seed,
-                text,
-                tuple(signature for signature in signatures if signature is not None),
+                seed, text, tuple(signature for signature in signatures if signature is not None)
             )
         )
     return tuple(samples)
 
 
-def consensus_mapping(
-    samples: tuple[SeedSample, ...],
-) -> dict[GlyphSignature, str]:
+def consensus_mapping(samples: tuple[SeedSample, ...]) -> dict[GlyphSignature, str]:
     votes: dict[GlyphSignature, dict[str, set[int]]] = defaultdict(lambda: defaultdict(set))
     for sample in samples:
         for character, signature in zip(sample.text, sample.signatures, strict=True):
@@ -317,10 +305,7 @@ def glyph_bbox(glyph: Glyph) -> Rectangle:
     return required_bbox(record.bbox for record in glyph)
 
 
-def signature_distance(
-    left: GlyphSignature,
-    right: GlyphSignature,
-) -> tuple[int, float] | None:
+def signature_distance(left: GlyphSignature, right: GlyphSignature) -> tuple[int, float] | None:
     if len(left) != len(right):
         return None
     maximum = 0
@@ -330,9 +315,7 @@ def signature_distance(
         if len(left_drawing) != len(right_drawing):
             return None
         for (left_closed, left_points), (right_closed, right_points) in zip(
-            left_drawing,
-            right_drawing,
-            strict=True,
+            left_drawing, right_drawing, strict=True
         ):
             if left_closed != right_closed or len(left_points) != len(right_points):
                 return None
@@ -352,8 +335,7 @@ def signature_topology(signature: GlyphSignature) -> GlyphTopology:
 
 
 def expand_mapping(
-    runs: tuple[StrokedTextRunProfile, ...],
-    mapping: dict[GlyphSignature, str],
+    runs: tuple[StrokedTextRunProfile, ...], mapping: dict[GlyphSignature, str]
 ) -> None:
     learned_by_topology: dict[GlyphTopology, list[tuple[GlyphSignature, str]]] = defaultdict(list)
     for learned_signature, character in mapping.items():
@@ -378,9 +360,7 @@ def expand_mapping(
             mapping[signature] = candidates.pop()
 
 
-def path_runs(
-    records: tuple[PathRecord, ...],
-) -> tuple[tuple[Glyph, ...], ...]:
+def path_runs(records: tuple[PathRecord, ...]) -> tuple[tuple[Glyph, ...], ...]:
     runs: list[tuple[Glyph, ...]] = []
     run: list[Glyph] = []
     glyph: list[PathRecord] = []
@@ -474,17 +454,13 @@ def stroked_text_isolated_runs(profile: StrokedTextProfile) -> tuple[StrokedText
             continue
         isolated.append(
             StrokedTextRun(
-                bbox=box,
-                drawing_indexes=tuple(record.index for record in glyphs[0]),
-                glyph_count=1,
+                bbox=box, drawing_indexes=tuple(record.index for record in glyphs[0]), glyph_count=1
             )
         )
     return tuple(isolated)
 
 
-def stroked_text_seed_run(
-    glyphs: tuple[Glyph, ...],
-) -> StrokedTextRun | None:
+def stroked_text_seed_run(glyphs: tuple[Glyph, ...]) -> StrokedTextRun | None:
     if not 2 <= len(glyphs) <= STROKED_TEXT_MAX_TOKEN_CHARACTERS:
         return None
     bbox = required_bbox(glyph_bbox(glyph) for glyph in glyphs)
@@ -503,8 +479,7 @@ def stroked_text_seed_run(
 
 
 def profile_stroked_text(
-    drawings: tuple[CapturedDrawing, ...],
-    drawing_indexes: Iterable[int],
+    drawings: tuple[CapturedDrawing, ...], drawing_indexes: Iterable[int]
 ) -> StrokedTextProfile:
     records = path_records(drawings, drawing_indexes)
     if not records:
@@ -532,8 +507,7 @@ def profile_stroked_text(
 
 
 def decode_runs(
-    runs: tuple[StrokedTextRunProfile, ...],
-    mapping: dict[GlyphSignature, str],
+    runs: tuple[StrokedTextRunProfile, ...], mapping: dict[GlyphSignature, str]
 ) -> tuple[StrokedTextObservation, ...]:
     observations: list[StrokedTextObservation] = []
     for run in runs:
@@ -552,20 +526,14 @@ def decode_runs(
             continue
         observations.append(
             StrokedTextObservation(
-                text=text,
-                bbox=bbox,
-                first_drawing=run.first_drawing,
-                last_drawing=run.last_drawing,
+                text=text, bbox=bbox, first_drawing=run.first_drawing, last_drawing=run.last_drawing
             )
         )
     return tuple(observations)
 
 
 def decoded_profile(
-    profile: StrokedTextProfile,
-    mapping: dict[GlyphSignature, str],
-    *,
-    aligned_seeds: int = 0,
+    profile: StrokedTextProfile, mapping: dict[GlyphSignature, str], *, aligned_seeds: int = 0
 ) -> StrokedTextDecode:
     expand_mapping(profile.run_profiles, mapping)
     observations = decode_runs(profile.run_profiles, mapping)
@@ -606,8 +574,7 @@ def decode_from_samples(
 
 
 def decode_stroked_text_profile(
-    profile: StrokedTextProfile,
-    seeds: tuple[StrokedTextSeed, ...],
+    profile: StrokedTextProfile, seeds: tuple[StrokedTextSeed, ...]
 ) -> StrokedTextDecode:
     if not profile.records or not seeds:
         return StrokedTextDecode()
@@ -626,9 +593,7 @@ def decode_stroked_text_profile_with_supplemental_seeds(
     primary_samples = seed_samples(profile, primary_seeds)
     samples = (*primary_samples, *seed_samples(profile, supplemental_seeds))
     return decode_from_samples(
-        profile,
-        samples,
-        consensus_mapping(primary_samples) if primary_samples else None,
+        profile, samples, consensus_mapping(primary_samples) if primary_samples else None
     )
 
 

@@ -58,10 +58,7 @@ def resolve_metadata(
         xmp = resolve_metadata_stream(resolver, trailer)
     except PdfError, RecursionError, ValueError:
         xmp = {"parse_error": "invalid XMP metadata"}
-    return {
-        "info": resolve_info_metadata(resolver, trailer, recover=recover),
-        "xmp": xmp,
-    }
+    return {"info": resolve_info_metadata(resolver, trailer, recover=recover), "xmp": xmp}
 
 
 def resolve_info_metadata(

@@ -34,12 +34,7 @@ LayoutType: TypeAlias = Literal[
 ]
 
 PagemodeType: TypeAlias = Literal[
-    "/UseNone",
-    "/UseOutlines",
-    "/UseThumbs",
-    "/FullScreen",
-    "/UseOC",
-    "/UseAttachments",
+    "/UseNone", "/UseOutlines", "/UseThumbs", "/FullScreen", "/UseOC", "/UseAttachments"
 ]
 
 AnnotationSubtype: TypeAlias = Literal[

@@ -20,10 +20,7 @@ __all__ = ("shading_blend", "shading_t", "shading_values")
 @cython.nogil
 @cython.exceptval(check=False)
 def axial_t(
-    c: cython.p_const_double,
-    px: cython.double,
-    py: cython.double,
-    t: cython.p_double,
+    c: cython.p_const_double, px: cython.double, py: cython.double, t: cython.p_double
 ) -> cython.bint:
     dx: cython.double = c[2] - c[0]
     dy: cython.double = c[3] - c[1]

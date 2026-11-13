@@ -17,7 +17,4 @@ def field_children(value: object) -> list[PdfObject]:
     return value
 
 
-__all__ = (
-    "field_children",
-    "qualified_field_name",
-)
+__all__ = ("field_children", "qualified_field_name")

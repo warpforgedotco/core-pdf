@@ -122,14 +122,8 @@ CID_COLLECTION_UNICODE_SOURCES: dict[tuple[str, str], dict[bool, tuple[CMapUnico
         ),
     },
     ("Adobe", "Japan2"): {
-        False: (
-            ("Hojo-EUC-H", "euc_jp", 3),
-            ("UniHojo-UTF32-H", "utf-32-be", 1),
-        ),
-        True: (
-            ("Hojo-EUC-V", "euc_jp", 3),
-            ("UniHojo-UTF32-V", "utf-32-be", 1),
-        ),
+        False: (("Hojo-EUC-H", "euc_jp", 3), ("UniHojo-UTF32-H", "utf-32-be", 1)),
+        True: (("Hojo-EUC-V", "euc_jp", 3), ("UniHojo-UTF32-V", "utf-32-be", 1)),
     },
     ("Adobe", "Manga1"): {
         False: (("UniManga-UTF32-H", "utf-32-be", 1),),
@@ -153,10 +147,7 @@ CID_COLLECTION_UNICODE_SOURCES: dict[tuple[str, str], dict[bool, tuple[CMapUnico
             ("KSC-V", "euc_kr_7bit", 0),
         ),
     },
-    ("Adobe", "KR"): {
-        False: (("UniAKR-UTF32-H", "utf-32-be", 3),),
-        True: (),
-    },
+    ("Adobe", "KR"): {False: (("UniAKR-UTF32-H", "utf-32-be", 3),), True: ()},
 }
 
 
@@ -191,10 +182,7 @@ CID_COLLECTION_UNICODE_OVERRIDES: dict[tuple[str, str], dict[int, str]] = {
         22088: "\u2ebb",
         22098: "\u2eca",
     },
-    ("Adobe", "CNS1"): {
-        148: "\u3008",
-        149: "\u3009",
-    },
+    ("Adobe", "CNS1"): {148: "\u3008", 149: "\u3009"},
     ("Adobe", "Japan1"): {
         114: "\u2012",
         127: "\u0301",

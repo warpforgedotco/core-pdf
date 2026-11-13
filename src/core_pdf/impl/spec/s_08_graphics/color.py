@@ -54,8 +54,4 @@ def indexed_color_index(value: float, hival: int) -> int:
     return max(0, min(hival, int(value + 0.5)))
 
 
-__all__ = (
-    "color_space_paints",
-    "normalize_color_components",
-    "initial_color_components",
-)
+__all__ = ("color_space_paints", "normalize_color_components", "initial_color_components")

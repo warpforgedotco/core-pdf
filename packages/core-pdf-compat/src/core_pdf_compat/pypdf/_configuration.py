@@ -187,8 +187,7 @@ DEFAULT_CONFIGURATION = Configuration()
 
 # The current configuration.
 CURRENT_CONFIGURATION: ContextVar[Configuration] = ContextVar(
-    "pypdf_configuration",
-    default=DEFAULT_CONFIGURATION,
+    "pypdf_configuration", default=DEFAULT_CONFIGURATION
 )
 
 
@@ -203,8 +202,7 @@ def get_configuration() -> Configuration:
 
 
 def _build_configuration(
-    configuration: Configuration | None,
-    overwrites: dict[str, Any],
+    configuration: Configuration | None, overwrites: dict[str, Any]
 ) -> Configuration:
     """
     Utility function to build a new configuration from the given values.
@@ -222,8 +220,7 @@ def _build_configuration(
 
 
 def overwrite_configuration(
-    configuration: Configuration | None = None,
-    **overwrites: Any,
+    configuration: Configuration | None = None, **overwrites: Any
 ) -> Configuration:
     """
     Overwrite the configuration for the current execution context.
@@ -242,8 +239,7 @@ def overwrite_configuration(
 
 @contextmanager
 def apply_configuration(
-    configuration: Configuration | None = None,
-    **overwrites: Any,
+    configuration: Configuration | None = None, **overwrites: Any
 ) -> Generator[Configuration]:
     """
     Temporarily overwrite the configuration.

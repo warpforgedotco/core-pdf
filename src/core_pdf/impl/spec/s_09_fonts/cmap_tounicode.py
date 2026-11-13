@@ -5,10 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import ClassVar
 
-from core_pdf.impl.adobe_fonts.cmap.ranges import (
-    CodeSpaceRanges,
-    validate_effective_codespace,
-)
+from core_pdf.impl.adobe_fonts.cmap.ranges import CodeSpaceRanges, validate_effective_codespace
 from core_pdf.impl.adobe_fonts.cmap.tokenizer import (
     CMapProgram,
     cmap_metadata,

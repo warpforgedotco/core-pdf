@@ -37,11 +37,7 @@ class PdfMacIntegrityInfo(core.Sequence):
     _fields = [
         ("version", core.Integer),
         ("data_digest", core.OctetString),
-        (
-            "signature_digest",
-            core.OctetString,
-            {"implicit": 0, "optional": True},
-        ),
+        ("signature_digest", core.OctetString, {"implicit": 0, "optional": True}),
     ]
 
 
@@ -80,11 +76,7 @@ def validate_authenticated_data(
     encapsulated_content = encapsulated_content_bytes(auth_data)
     integrity_info = parse_der(encapsulated_content, PdfMacIntegrityInfo)
 
-    mac_key = unwrap_mac_key(
-        auth_data["recipient_infos"],
-        file_key,
-        kdf_salt,
-    )
+    mac_key = unwrap_mac_key(auth_data["recipient_infos"], file_key, kdf_salt)
     auth_attrs = auth_data["auth_attrs"]
     if not isinstance(auth_attrs, cms.CMSAttributes):
         raise ValueError("PDF MAC authenticated attributes are missing")
@@ -99,23 +91,11 @@ def validate_authenticated_data(
     except InvalidSignature as exc:
         raise ValueError("PDF MAC verification failed") from exc
 
-    validate_authenticated_attributes(
-        auth_attrs,
-        auth_data,
-        encapsulated_content,
-        hash_algorithm,
-    )
-    validate_integrity_info(
-        integrity_info,
-        digest_byte_range(raw_data, byte_range, hash_algorithm),
-    )
+    validate_authenticated_attributes(auth_attrs, auth_data, encapsulated_content, hash_algorithm)
+    validate_integrity_info(integrity_info, digest_byte_range(raw_data, byte_range, hash_algorithm))
 
 
-def unwrap_mac_key(
-    recipient_infos: cms.RecipientInfos,
-    file_key: bytes,
-    kdf_salt: bytes,
-) -> bytes:
+def unwrap_mac_key(recipient_infos: cms.RecipientInfos, file_key: bytes, kdf_salt: bytes) -> bytes:
     if len(recipient_infos) != 1 or recipient_infos[0].name != "pwri":
         raise ValueError("PDF MAC requires one PasswordRecipientInfo")
     password_info = recipient_infos[0].chosen
@@ -127,11 +107,7 @@ def unwrap_mac_key(
     kdf = password_info["key_derivation_algorithm"]
     if isinstance(kdf, core.Void):
         raise ValueError("PDF MAC key derivation algorithm is missing")
-    require_algorithm(
-        kdf,
-        PDF_MAC_WRAP_KDF_OID,
-        require_absent_parameters=True,
-    )
+    require_algorithm(kdf, PDF_MAC_WRAP_KDF_OID, require_absent_parameters=True)
     require_algorithm(
         password_info["key_encryption_algorithm"],
         AES_256_KEY_WRAP_OID,
@@ -145,10 +121,7 @@ def unwrap_mac_key(
         raise ValueError("invalid PDF MAC KDFSalt")
 
     key_encryption_key = HKDF(
-        algorithm=hashes.SHA256(),
-        length=PDF_MAC_KEK_BYTES,
-        salt=kdf_salt,
-        info=PDF_MAC_HKDF_INFO,
+        algorithm=hashes.SHA256(), length=PDF_MAC_KEK_BYTES, salt=kdf_salt, info=PDF_MAC_HKDF_INFO
     ).derive(file_key)
     try:
         mac_key = keywrap.aes_key_unwrap(key_encryption_key, encrypted_key)
@@ -178,9 +151,7 @@ def validate_authenticated_attributes(
         raise ValueError("incorrect PDF MAC message-digest attribute")
 
     algorithm_protection = unique_attribute(
-        attributes,
-        CMS_ALGORITHM_PROTECTION_ATTRIBUTE_OID,
-        required=False,
+        attributes, CMS_ALGORITHM_PROTECTION_ATTRIBUTE_OID, required=False
     )
     if algorithm_protection is None:
         return
@@ -191,21 +162,16 @@ def validate_authenticated_attributes(
     if isinstance(algorithm_protection["mac_algorithm"], core.Void):
         raise ValueError("PDF MAC algorithm protection is missing its MAC algorithm")
     if not algorithm_identifiers_match(
-        algorithm_protection["digest_algorithm"],
-        auth_data["digest_algorithm"],
+        algorithm_protection["digest_algorithm"], auth_data["digest_algorithm"]
     ):
         raise ValueError("PDF MAC digest algorithm is not protected")
     if not algorithm_identifiers_match(
-        algorithm_protection["mac_algorithm"],
-        auth_data["mac_algorithm"],
+        algorithm_protection["mac_algorithm"], auth_data["mac_algorithm"]
     ):
         raise ValueError("PDF MAC algorithm is not protected")
 
 
-def validate_integrity_info(
-    integrity_info: PdfMacIntegrityInfo,
-    document_digest: bytes,
-) -> None:
+def validate_integrity_info(integrity_info: PdfMacIntegrityInfo, document_digest: bytes) -> None:
     if integrity_info["version"].native != 0:
         raise ValueError("invalid PdfMacIntegrityInfo version")
     if not isinstance(integrity_info["signature_digest"], core.Void):
@@ -225,10 +191,7 @@ def encapsulated_content_bytes(auth_data: cms.AuthenticatedData) -> bytes:
 
 
 def unique_attribute(
-    attributes: cms.CMSAttributes,
-    oid: str,
-    *,
-    required: bool = True,
+    attributes: cms.CMSAttributes, oid: str, *, required: bool = True
 ) -> core.Asn1Value | None:
     matches = [attribute for attribute in attributes if attribute["type"].dotted == oid]
     if not matches and not required:
@@ -265,11 +228,7 @@ def digest_algorithm(identifier: Any) -> hashes.HashAlgorithm:
 
 
 def validate_mac_algorithm(identifier: Any) -> None:
-    require_algorithm(
-        identifier,
-        HMAC_SHA256_OID,
-        require_absent_parameters=False,
-    )
+    require_algorithm(identifier, HMAC_SHA256_OID, require_absent_parameters=False)
     parameters = identifier["parameters"]
     parameters_are_null = isinstance(parameters, core.Null) or (
         isinstance(parameters, core.Any) and isinstance(parameters.parsed, core.Null)
@@ -279,10 +238,7 @@ def validate_mac_algorithm(identifier: Any) -> None:
 
 
 def require_algorithm(
-    identifier: Any,
-    expected_oid: str | None,
-    *,
-    require_absent_parameters: bool,
+    identifier: Any, expected_oid: str | None, *, require_absent_parameters: bool
 ) -> str:
     algorithm = identifier["algorithm"]
     oid = algorithm.dotted
@@ -310,9 +266,7 @@ def digest(data: bytes, algorithm: hashes.HashAlgorithm) -> bytes:
 
 
 def digest_byte_range(
-    raw_data: Buffer,
-    byte_range: tuple[int, int, int, int],
-    algorithm: hashes.HashAlgorithm,
+    raw_data: Buffer, byte_range: tuple[int, int, int, int], algorithm: hashes.HashAlgorithm
 ) -> bytes:
     first_start, first_length, second_start, second_length = byte_range
     digest = hashes.Hash(algorithm)

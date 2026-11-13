@@ -13,12 +13,7 @@ lazy import numpy
 from core_pdf.impl.base.arrays import finite_median
 from core_pdf.impl.base.geometry import array_bbox, bbox_tuple, interval_overlap
 from core_pdf.impl.base.runs import TextRun
-from core_pdf.impl.base.text import (
-    TextWord,
-    collapse_ws,
-    reconcile_text_words,
-    text_word_tokens,
-)
+from core_pdf.impl.base.text import TextWord, collapse_ws, reconcile_text_words, text_word_tokens
 from core_pdf.impl.base.types import GeneratedRecord, frozen_setattr
 from core_pdf.impl.extract.block_order import (
     REORDER_PASSES,
@@ -59,9 +54,7 @@ class LayoutHooks(GeneratedRecord):
     group_order: GroupOrder | None
 
     def __init__(
-        self,
-        source_labels: Mapping[int, str] | None = None,
-        group_order: GroupOrder | None = None,
+        self, source_labels: Mapping[int, str] | None = None, group_order: GroupOrder | None = None
     ) -> None:
         frozen_setattr(
             self,
@@ -105,9 +98,7 @@ def line_group_indexes(observations: ObservationBatch) -> LineGroupPlan:
     heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
     spans = numpy.where(vertical, widths, heights)
     centers = numpy.where(
-        vertical,
-        (boxes[:, 0] + boxes[:, 2]) * 0.5,
-        (boxes[:, 1] + boxes[:, 3]) * 0.5,
+        vertical, (boxes[:, 0] + boxes[:, 2]) * 0.5, (boxes[:, 1] + boxes[:, 3]) * 0.5
     )
     explicit = observations.line_break_before[indexes]
     breaks = numpy.zeros(len(indexes), dtype=numpy.bool_)
@@ -132,9 +123,7 @@ def style_enabled(reference: object, name: str) -> bool:
 
 
 def group_text_and_words(
-    observations: ObservationBatch,
-    indexes: numpy.ndarray | list[int],
-    source: str,
+    observations: ObservationBatch, indexes: numpy.ndarray | list[int], source: str
 ) -> tuple[str, tuple[TextWord, ...]]:
     """A line's text and its words, labelled with source."""
     all_references = observations.references
@@ -177,10 +166,7 @@ def color_is_emphasis(color: object) -> bool:
 
 
 def group_font_size_medians(
-    font_sizes: numpy.ndarray,
-    starts: numpy.ndarray,
-    stops: numpy.ndarray,
-    group_count: int,
+    font_sizes: numpy.ndarray, starts: numpy.ndarray, stops: numpy.ndarray, group_count: int
 ) -> list[float | None]:
     """Each contiguous group's median positive finite font size, as finite_median
     would give it, or None when the group has none."""
@@ -204,10 +190,7 @@ def group_font_size_medians(
     return medians
 
 
-def build_lines(
-    observations: ObservationBatch,
-    hooks: LayoutHooks | None = None,
-) -> BuiltLines:
+def build_lines(observations: ObservationBatch, hooks: LayoutHooks | None = None) -> BuiltLines:
     hooks = NATIVE_LAYOUT_HOOKS if hooks is None else hooks
     labels = hooks.source_labels
     group_order = hooks.group_order
@@ -403,9 +386,7 @@ def assign_columns(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
 
 
 def classify_blocks(
-    blocks: list[ParsedBlock],
-    *,
-    body_font_size: float | None,
+    blocks: list[ParsedBlock], *, body_font_size: float | None
 ) -> list[ParsedBlock]:
     rules = LAYOUT_RULES.classification
     classified: list[ParsedBlock] = []
@@ -473,10 +454,7 @@ def layout_blocks_with_evidence(
             )
         blocks = xy_cut_blocks(built_lines, boxes, obstacles)
     else:
-        indexes = row_order_indexes(
-            numpy.arange(len(lines), dtype=numpy.int64),
-            boxes,
-        )
+        indexes = row_order_indexes(numpy.arange(len(lines), dtype=numpy.int64), boxes)
         blocks = [
             ParsedBlock(lines=(lines[int(index)],), bbox=line_bbox(lines[int(index)]))
             for index in indexes
@@ -496,10 +474,7 @@ def xy_cut_blocks(
     heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
     median_height = max(1.0, finite_median(heights))
     regions = xy_cut_regions(
-        numpy.arange(len(lines), dtype=numpy.int64),
-        boxes,
-        obstacles,
-        median_height,
+        numpy.arange(len(lines), dtype=numpy.int64), boxes, obstacles, median_height
     )
     blocks = [
         ParsedBlock(
@@ -514,8 +489,7 @@ def xy_cut_blocks(
 
 
 def layout_element_order(
-    boxes: tuple[tuple[float, float, float, float], ...],
-    frame: PageFrame,
+    boxes: tuple[tuple[float, float, float, float], ...], frame: PageFrame
 ) -> tuple[int, ...]:
     if len(boxes) < 2:
         return tuple(range(len(boxes)))

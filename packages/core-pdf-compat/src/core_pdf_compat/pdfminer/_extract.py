@@ -13,23 +13,10 @@ from core_pdf.impl.base.exceptions import PdfEmptySourceError, PdfError, PdfPass
 from core_pdf.impl.base.types import PdfName
 
 from .._shared import PdfInput
-from ._layout import (
-    LAParams,
-    LTComponent,
-    LTFigure,
-    LTPage,
-    LTText,
-    LTTextBox,
-)
-from ._pages import (
-    pdfminer_resolvable_pages,
-)
+from ._layout import LAParams, LTComponent, LTFigure, LTPage, LTText, LTTextBox
+from ._pages import pdfminer_resolvable_pages
 from ._parsing import pdfminer_open_error
-from ._projection import (
-    PDFMINER_POLICY,
-    ProjectionPolicy,
-    project_page,
-)
+from ._projection import PDFMINER_POLICY, ProjectionPolicy, project_page
 from .pdfdocument import PDFPasswordIncorrect
 from .pdfparser import PDFSyntaxError
 
@@ -56,11 +43,7 @@ def analyzed_pages(
     """The pages, laid out with params; with None, pdfminer runs no layout analysis."""
     selected = set(page_numbers) if page_numbers is not None else None
     try:
-        document = PdfDocument.open(
-            pdf_file,
-            password=password,
-            recovery_scan_all_revisions=False,
-        )
+        document = PdfDocument.open(pdf_file, password=password, recovery_scan_all_revisions=False)
     except PdfPasswordError as error:
         raise PDFPasswordIncorrect from error
     except PdfEmptySourceError as error:
@@ -198,11 +181,7 @@ def image_filters(image: Any) -> list[str]:
 
 def image_extension(image: Any) -> str:
     filters = image_filters(image)
-    for name, extension in (
-        ("DCTDecode", ".jpg"),
-        ("JPXDecode", ".jp2"),
-        ("JBIG2Decode", ".jb2"),
-    ):
+    for name, extension in (("DCTDecode", ".jpg"), ("JPXDecode", ".jp2"), ("JBIG2Decode", ".jb2")):
         if name in filters:
             return extension
     return ".bmp"

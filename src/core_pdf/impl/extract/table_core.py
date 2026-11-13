@@ -11,18 +11,12 @@ lazy import numpy
 from core_pdf.impl.base.arrays import finite_median
 from core_pdf.impl.base.spatial import cluster_1d
 from core_pdf.impl.base.text import collapse_ws
-from core_pdf.impl.base.types import (
-    GeneratedRecord,
-    frozen_setattr,
-)
+from core_pdf.impl.base.types import GeneratedRecord, frozen_setattr
 from core_pdf.impl.extract.contracts import ObservationBatch, PageAnalysis
 from core_pdf.impl.output.model import Table, TableCell
 
 
-def cell_text(
-    observations: ObservationBatch,
-    indexes: list[int],
-) -> str:
+def cell_text(observations: ObservationBatch, indexes: list[int]) -> str:
     count = len(indexes)
     if count == 0:
         return ""
@@ -214,11 +208,7 @@ class TableAnalysis(GeneratedRecord):
             text_rows,
             compute_row_centers(text_rows, coordinates),
             aligned_column_clusters(
-                observations,
-                text_rows,
-                page_width,
-                coordinates,
-                minimum_rows=2,
+                observations, text_rows, page_width, coordinates, minimum_rows=2
             ),
         )
 
@@ -227,8 +217,7 @@ COLUMN_TOLERANCE = 14.0
 
 
 def group_text_rows(
-    observations: ObservationBatch,
-    coordinates: ObservationCoordinates,
+    observations: ObservationBatch, coordinates: ObservationCoordinates
 ) -> list[list[int]]:
     visible_flags = observations.visible.tolist()
     rotations = observations.rotation.tolist()
@@ -244,8 +233,7 @@ def group_text_rows(
     all_heights = coordinates.heights
     sequences = coordinates.sequences
     ordered = sorted(
-        visible,
-        key=lambda index: (-all_centers[index], all_lefts[index], sequences[index]),
+        visible, key=lambda index: (-all_centers[index], all_lefts[index], sequences[index])
     )
     rows: list[list[int]] = []
     centers: list[float] = []
@@ -265,10 +253,7 @@ def group_text_rows(
     return [sorted(row, key=lambda index: (all_lefts[index], sequences[index])) for row in rows]
 
 
-def compute_row_centers(
-    rows: list[list[int]],
-    coordinates: ObservationCoordinates,
-) -> list[float]:
+def compute_row_centers(rows: list[list[int]], coordinates: ObservationCoordinates) -> list[float]:
     centers = coordinates.y_centers
     return [sum(centers[index] for index in row) / len(row) for row in rows]
 

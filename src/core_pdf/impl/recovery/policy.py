@@ -52,11 +52,4 @@ def recovery_policy(recover: bool | Recovery) -> Recovery:
     return LENIENT if recover else STRICT
 
 
-__all__ = (
-    "LENIENT",
-    "STRICT",
-    "MalformedFn",
-    "Recovery",
-    "RecoveryMode",
-    "recovery_policy",
-)
+__all__ = ("LENIENT", "STRICT", "MalformedFn", "Recovery", "RecoveryMode", "recovery_policy")

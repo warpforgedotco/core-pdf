@@ -130,10 +130,7 @@ class ProgramLowering:
         if not subpaths:
             return
         self.display_list.append(
-            "clip",
-            seqno,
-            path=CapturedPath(list(subpaths)),
-            fill_rule="nonzero",
+            "clip", seqno, path=CapturedPath(list(subpaths)), fill_rule="nonzero"
         )
         subpaths.clear()
 
@@ -232,10 +229,7 @@ class ProgramLowering:
             self.begin_text_group(glyph.seqno, knockout=False)
         try:
             if append_glyph_paint(
-                self.display_list,
-                glyph,
-                text.clipping_subpaths,
-                include_paint=include_text,
+                self.display_list, glyph, text.clipping_subpaths, include_paint=include_text
             ):
                 return
             if not include_text or glyph.text_render_mode in NON_PAINTING_RENDER_MODES:

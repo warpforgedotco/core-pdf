@@ -31,12 +31,7 @@ def _bound(points: Iterable[Point]) -> tuple[float, float, float, float]:
         n = len(points)
         if n == 2:
             (x0, y0), (x1, y1) = points
-            return (
-                min(x0, x1),
-                min(y0, y1),
-                max(x1, x0),
-                max(y1, y0),
-            )
+            return (min(x0, x1), min(y0, y1), max(x1, x0), max(y1, y0))
         if n == 4:
             (x0, y0), (x1, y1), (x2, y2), (x3, y3) = points
             return (

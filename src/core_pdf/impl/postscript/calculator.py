@@ -321,9 +321,7 @@ def bounds(value: Sequence[tuple[float, float]], kind: str) -> tuple[tuple[float
 
 
 def compile_calculator(
-    source: bytes,
-    domains: Sequence[tuple[float, float]],
-    ranges: Sequence[tuple[float, float]],
+    source: bytes, domains: Sequence[tuple[float, float]], ranges: Sequence[tuple[float, float]]
 ) -> Callable[..., tuple[float, ...]]:
     domains = bounds(domains, "domain")
     ranges = bounds(ranges, "range")

@@ -20,10 +20,7 @@ from core_pdf.impl.spec.s_08_graphics.color_spec import (
     DeviceNProcess,
     parse_device_n_attributes,
 )
-lazy from core_pdf.impl.graphics.icc_profiles import (
-    IccProfileError,
-    parse_icc_transform,
-)
+lazy from core_pdf.impl.graphics.icc_profiles import IccProfileError, parse_icc_transform
 
 GRAY_RGB_KINDS = frozenset({"DeviceGray", "DeviceRGB"})
 DEVICE_KINDS = frozenset({*GRAY_RGB_KINDS, "DeviceCMYK"})
@@ -224,21 +221,14 @@ def parse_color_space(value: object, active: set[int] | None = None) -> ColorSpa
                     else:
                         calibrated_params[str(key)] = raw
                 ranges = (
-                    (
-                        (0.0, 100.0),
-                        *recovery_ranges(source.get("Range"), 2, (-100.0, 100.0) * 2),
-                    )
+                    ((0.0, 100.0), *recovery_ranges(source.get("Range"), 2, (-100.0, 100.0) * 2))
                     if kind == "Lab"
                     else ((0.0, 1.0),) * (1 if kind == "CalGray" else 3)
                 )
                 return ColorSpace(kind, ranges, MappingProxyType(calibrated_params))
             if kind == "Pattern" and len(value) == 2:
                 pattern_base = parse_color_space(value[1], active)
-                return ColorSpace(
-                    kind,
-                    pattern_base.component_ranges,
-                    base=pattern_base,
-                )
+                return ColorSpace(kind, pattern_base.component_ranges, base=pattern_base)
             if kind in TINT_KINDS and len(value) >= 4:
                 raw_names = value[1] if kind == "DeviceN" else [value[1]]
                 if not isinstance(raw_names, (list, tuple)):

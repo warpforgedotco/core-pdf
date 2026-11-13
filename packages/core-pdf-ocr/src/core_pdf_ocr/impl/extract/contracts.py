@@ -7,9 +7,7 @@ from typing import Any
 
 from core_pdf.impl.base.types import GeneratedRecord, RecordType, field
 from core_pdf.impl.extract import contracts as extract_contracts
-from core_pdf.impl.extract.contracts import (
-    ObservationBatch,
-)
+from core_pdf.impl.extract.contracts import ObservationBatch
 
 PSM_AUTO = 3
 PSM_SPARSE_TEXT = 11

@@ -29,13 +29,7 @@ lazy from core_pdf.impl.spec.s_07_syntax.serialize import ObjectLayout
 from ._doc_common import DocumentInformation, PdfDocCommon, _VirtualList, highest_header
 from ._encryption import EncryptAlgorithm, Encryption
 from ._generic_trees import EmbeddedFile, NamedReferenceLink, ReferenceLink, extract_links
-from ._images import (
-    ImageFile,
-    VirtualListImages,
-    content_stream_images,
-    image_ids,
-    page_image,
-)
+from ._images import ImageFile, VirtualListImages, content_stream_images, image_ids, page_image
 from ._page_merge import (
     Transformation,
     add_cm,
@@ -103,14 +97,7 @@ LAYOUTS = (
     "/TwoPageLeft",
     "/TwoPageRight",
 )
-MODES = (
-    "/UseNone",
-    "/UseOutlines",
-    "/UseThumbs",
-    "/FullScreen",
-    "/UseOC",
-    "/UseAttachments",
-)
+MODES = ("/UseNone", "/UseOutlines", "/UseThumbs", "/FullScreen", "/UseOC", "/UseAttachments")
 
 
 ALL_DOCUMENT_PERMISSIONS = UserAccessPermissions.all()
@@ -1206,12 +1193,7 @@ class PdfWriter(OutlineWriter, MergeWriter, EditWriter, FormWriter, PdfDocCommon
         return True
 
     def _fill_copy(
-        self,
-        duplicate: Any,
-        value: Any,
-        owner: Any,
-        pending: list[Any],
-        fields: Sequence[Any] = (),
+        self, duplicate: Any, value: Any, owner: Any, pending: list[Any], fields: Sequence[Any] = ()
     ) -> Iterator[None]:
         if isinstance(value, DictionaryObject):
             # As pypdf's DictionaryObject._clone: each level counts down the limited keys.

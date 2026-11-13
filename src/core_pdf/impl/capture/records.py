@@ -153,10 +153,7 @@ class CapturedSubpath:
     __slots__ = ("points", "closed")
 
     def __init__(
-        self,
-        points: list[tuple[float, float]] | None = None,
-        *,
-        closed: bool = False,
+        self, points: list[tuple[float, float]] | None = None, *, closed: bool = False
     ) -> None:
         self.points = points if points is not None else []
         self.closed = closed
@@ -164,15 +161,11 @@ class CapturedSubpath:
     def transformed(self, matrix: Matrix | Sequence[float]) -> CapturedSubpath:
         a, b, c, d, e, f = matrix
         return CapturedSubpath(
-            [(x * a + y * c + e, x * b + y * d + f) for x, y in self.points],
-            closed=self.closed,
+            [(x * a + y * c + e, x * b + y * d + f) for x, y in self.points], closed=self.closed
         )
 
     def translated(self, tx: float, ty: float) -> CapturedSubpath:
-        return CapturedSubpath(
-            [(x + tx, y + ty) for x, y in self.points],
-            closed=self.closed,
-        )
+        return CapturedSubpath([(x + tx, y + ty) for x, y in self.points], closed=self.closed)
 
     def close(self) -> None:
         if len(self.points) > 1:
@@ -225,10 +218,7 @@ class CapturedPath:
 
     @classmethod
     def deferred_outline(
-        cls,
-        column_x: Any,
-        column_y: Any,
-        spans: list[tuple[int, int, bool]],
+        cls, column_x: Any, column_y: Any, spans: list[tuple[int, int, bool]]
     ) -> CapturedPath:
         path = cls.__new__(cls)
         path._deferred = (column_x, column_y, spans, True)
@@ -290,8 +280,7 @@ class CapturedPath:
                 ys = column_y.tolist()
                 subpaths = [
                     CapturedSubpath(
-                        list(zip(xs[start:end], ys[start:end], strict=True)),
-                        closed=outline or flag,
+                        list(zip(xs[start:end], ys[start:end], strict=True)), closed=outline or flag
                     )
                     for start, end, flag in spans
                 ]
@@ -342,10 +331,7 @@ class CapturedPath:
 
     def rect(self, x: float, y: float, w: float, h: float) -> None:
         self.subpaths.append(
-            CapturedSubpath(
-                [(x, y), (x + w, y), (x + w, y + h), (x, y + h)],
-                closed=True,
-            )
+            CapturedSubpath([(x, y), (x + w, y), (x + w, y + h), (x, y + h)], closed=True)
         )
 
     def has_segments(self) -> bool:
@@ -406,20 +392,9 @@ DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
 EMPTY_DRAWING_ITEMS: tuple[DrawingItem, ...] = ()
 
 
-PaintedDrawingKind: TypeAlias = Literal[
-    "fill",
-    "stroke",
-    "fillstroke",
-    "clip",
-    "image",
-    "shading",
-]
+PaintedDrawingKind: TypeAlias = Literal["fill", "stroke", "fillstroke", "clip", "image", "shading"]
 MarkerDrawingKind: TypeAlias = Literal[
-    "state-push",
-    "state-pop",
-    "group-begin",
-    "group-end",
-    "scope-end",
+    "state-push", "state-pop", "group-begin", "group-end", "scope-end"
 ]
 DrawingKind: TypeAlias = PaintedDrawingKind | MarkerDrawingKind | Literal["scope-begin"]
 

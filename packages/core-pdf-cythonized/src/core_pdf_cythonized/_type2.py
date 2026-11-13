@@ -891,20 +891,16 @@ def type2_glyph_geometry(
     c.lbias = subr_bias(c.nl)
     c.gbias = subr_bias(c.ng)
     c.lsub = cython.cast(
-        cython.pp_const_uchar,
-        malloc((c.nl if c.nl else 1) * cython.sizeof(cython.p_void)),
+        cython.pp_const_uchar, malloc((c.nl if c.nl else 1) * cython.sizeof(cython.p_void))
     )
     c.llen = cython.cast(
-        cython.p_Py_ssize_t,
-        malloc((c.nl if c.nl else 1) * cython.sizeof(cython.Py_ssize_t)),
+        cython.p_Py_ssize_t, malloc((c.nl if c.nl else 1) * cython.sizeof(cython.Py_ssize_t))
     )
     c.gsub = cython.cast(
-        cython.pp_const_uchar,
-        malloc((c.ng if c.ng else 1) * cython.sizeof(cython.p_void)),
+        cython.pp_const_uchar, malloc((c.ng if c.ng else 1) * cython.sizeof(cython.p_void))
     )
     c.glen = cython.cast(
-        cython.p_Py_ssize_t,
-        malloc((c.ng if c.ng else 1) * cython.sizeof(cython.Py_ssize_t)),
+        cython.p_Py_ssize_t, malloc((c.ng if c.ng else 1) * cython.sizeof(cython.Py_ssize_t))
     )
     if (
         c.lsub == cython.NULL
@@ -928,10 +924,7 @@ def type2_glyph_geometry(
             c.glen[i] = len(item)
 
         status = execute(
-            cython.address(c),
-            cython.cast(cython.p_const_uchar, charstring),
-            len(charstring),
-            0,
+            cython.address(c), cython.cast(cython.p_const_uchar, charstring), len(charstring), 0
         )
         if status == 1:
             flush_contour(cython.address(c))

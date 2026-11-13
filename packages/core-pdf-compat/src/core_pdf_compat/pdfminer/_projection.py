@@ -16,11 +16,7 @@ from core_pdf.impl.spec.s_07_content.model import (
     PATH_RECT,
 )
 
-from ._capture import (
-    pdfminer_media_box,
-    pdfminer_page_program,
-    pdfminer_validate_page_resources,
-)
+from ._capture import pdfminer_media_box, pdfminer_page_program, pdfminer_validate_page_resources
 from ._fonts import (
     EMPTY_GLYPH_TEXT,
     _font_value,
@@ -107,12 +103,7 @@ def _pdfminer_layout_figure_box(
     if rotation == 90:
         return (y0, page_width - x1, y1, page_width - x0)
     if rotation == 180:
-        return (
-            page_width - x1,
-            page_height - y1,
-            page_width - x0,
-            page_height - y0,
-        )
+        return (page_width - x1, page_height - y1, page_width - x0, page_height - y0)
     if rotation == 270:
         return (page_height - y1, x0, page_height - y0, x1)
     return (x0, y0, x1, y1)
@@ -447,20 +438,15 @@ def project_page(
                 media_left, media_bottom, _media_right, _media_top = page_media_box
                 layout_origin_x = origin_x - media_left
                 layout_origin_y = origin_y - media_bottom
-                (
-                    layout_origin_x,
-                    layout_origin_y,
-                    matrix_a,
-                    matrix_b,
-                    matrix_c,
-                    matrix_d,
-                ) = _pdfminer_rotated_text_matrix(
-                    layout_origin_x,
-                    layout_origin_y,
-                    (matrix_a, matrix_b, matrix_c, matrix_d),
-                    page_rotation,
-                    page_width,
-                    page_height,
+                (layout_origin_x, layout_origin_y, matrix_a, matrix_b, matrix_c, matrix_d) = (
+                    _pdfminer_rotated_text_matrix(
+                        layout_origin_x,
+                        layout_origin_y,
+                        (matrix_a, matrix_b, matrix_c, matrix_d),
+                        page_rotation,
+                        page_width,
+                        page_height,
+                    )
                 )
                 bottom_left_x = 0.0 * matrix_a + descent * matrix_c + layout_origin_x
                 bottom_left_y = 0.0 * matrix_b + descent * matrix_d + layout_origin_y
@@ -494,11 +480,7 @@ def project_page(
                 y0 = y1 - normalized_width * effective_font_size
         if not coordinates_in_layout_space:
             x0, y0, x1, y1 = _pdfminer_layout_figure_box(
-                (x0, y0, x1, y1),
-                page_media_box,
-                page_rotation,
-                page_width,
-                page_height,
+                (x0, y0, x1, y1), page_media_box, page_rotation, page_width, page_height
             )
         named = font_names.get(id(font_decoder))
         if named is None or named[0] is not font_decoder:
@@ -536,9 +518,7 @@ def project_page(
             return page_height - y, x
         return x, y
 
-    def layout_box(
-        points: list[tuple[float, float]],
-    ) -> tuple[float, float, float, float]:
+    def layout_box(points: list[tuple[float, float]]) -> tuple[float, float, float, float]:
         placed = [layout_point(x, y) for x, y in points]
         return (
             min(point[0] for point in placed),

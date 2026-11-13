@@ -168,9 +168,7 @@ def glyphs_covered_by_extended_run(run: TextRun, extended: TextRun) -> bool:
 
 
 def discard_duplicate_layer_runs(
-    runs: tuple[TextRun, ...],
-    primary_indices: list[int],
-    candidate_groups: Iterable[list[int]],
+    runs: tuple[TextRun, ...], primary_indices: list[int], candidate_groups: Iterable[list[int]]
 ) -> tuple[TextRun, ...]:
     # Only groups with enough tokens are compared, and often there are none.
     qualifying: list[dict[int, tuple[str, ...]]] = []
@@ -234,8 +232,7 @@ def discard_duplicate_nested_layers(runs: tuple[TextRun, ...]) -> tuple[TextRun,
             page_indices.append(index)
         else:
             form_id = next(
-                (value for key, value in reversed(run.provenance) if key == "layout_form_id"),
-                None,
+                (value for key, value in reversed(run.provenance) if key == "layout_form_id"), None
             )
             group = form_id if isinstance(form_id, tuple) else run.stream_order
             by_form.setdefault((run.xobject_depth, group), []).append(index)
@@ -299,9 +296,7 @@ def structure_actual_text_owner(element: Any) -> tuple[int, str] | None:
 
 
 def apply_structure_actual_text(
-    page: Any,
-    runs: tuple[TextRun, ...],
-    structure: Any = STRUCTURE_UNSET,
+    page: Any, runs: tuple[TextRun, ...], structure: Any = STRUCTURE_UNSET
 ) -> tuple[TextRun, ...]:
     if not any(run_mcid(run) is not None for run in runs):
         return runs
@@ -356,8 +351,7 @@ def apply_structure_actual_text(
 
 
 def glyph_evidence_fields(
-    glyph_fields: Iterable[tuple[str, str, float | None]],
-    runs: tuple[TextRun, ...],
+    glyph_fields: Iterable[tuple[str, str, float | None]], runs: tuple[TextRun, ...]
 ) -> GlyphEvidence:
     authoritative = 0
     heuristic = 0
@@ -512,9 +506,7 @@ def promoted_hidden_runs(runs: tuple[TextRun, ...]) -> tuple[TextRun, ...]:
 
 
 def capture_runs(
-    page: Any,
-    program: PageProgram,
-    structure: Any = STRUCTURE_UNSET,
+    page: Any, program: PageProgram, structure: Any = STRUCTURE_UNSET
 ) -> tuple[TextRun, ...]:
     program_runs = program.runs
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
@@ -557,14 +549,10 @@ def capture_runs(
 
 
 def select_runs(
-    raw_runs: tuple[TextRun, ...],
-    program: PageProgram,
-    glyph_evidence: GlyphEvidence | None = None,
+    raw_runs: tuple[TextRun, ...], program: PageProgram, glyph_evidence: GlyphEvidence | None = None
 ) -> RunSelection:
     painted_mask = numpy.fromiter(
-        (run.visible for run in raw_runs),
-        dtype=numpy.bool_,
-        count=len(raw_runs),
+        (run.visible for run in raw_runs), dtype=numpy.bool_, count=len(raw_runs)
     )
     raw_text = "".join(run.text for run in raw_runs)
     painted_text = (
@@ -584,8 +572,7 @@ def select_runs(
         painted_text_quality = painted_analysis.quality
         painted_native_characters = painted_analysis.characters
     glyph_evidence = glyph_evidence or glyph_evidence_fields(
-        ((glyph.text, glyph.unicode_source, glyph.confidence) for glyph in program.glyphs),
-        raw_runs,
+        ((glyph.text, glyph.unicode_source, glyph.confidence) for glyph in program.glyphs), raw_runs
     )
     trusted_hidden_text = hidden_text_is_trusted(
         native_characters=native_characters,
@@ -666,9 +653,5 @@ def capture_page(
         capture_options["annotations"] = annotations
     program = page.get_page_program(**capture_options)
     return capture_from_program(
-        page,
-        program,
-        structure=structure,
-        fields=fields,
-        annotations=annotations,
+        page, program, structure=structure, fields=fields, annotations=annotations
     )

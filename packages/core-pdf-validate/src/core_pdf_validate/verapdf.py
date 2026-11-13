@@ -15,12 +15,7 @@ from xml.etree import ElementTree
 import defusedxml.ElementTree
 from defusedxml.common import DefusedXmlException
 
-from core_pdf_validate.models import (
-    ExecutionStatus,
-    ProfileResult,
-    ProfileSupport,
-    RuleResult,
-)
+from core_pdf_validate.models import ExecutionStatus, ProfileResult, ProfileSupport, RuleResult
 from core_records import GeneratedRecord
 
 __all__ = ["VeraPdfBackend"]
@@ -103,13 +98,7 @@ def parse_rules(details: ElementTree.Element) -> tuple[tuple[RuleResult, ...], b
     return tuple(rules), truncated
 
 
-def parse_report(
-    raw: bytes,
-    *,
-    profile: str,
-    returncode: int,
-    stderr: bytes,
-) -> ProfileResult:
+def parse_report(raw: bytes, *, profile: str, returncode: int, stderr: bytes) -> ProfileResult:
     version: str | None = None
 
     def failed(status: ExecutionStatus, diagnostic: str) -> ProfileResult:
@@ -167,12 +156,7 @@ def parse_report(
             raise ValueError("Report is not for one source document")
         if any(
             element_int(summary, field) != 0
-            for field in (
-                "failedToParse",
-                "encrypted",
-                "outOfMemory",
-                "veraExceptions",
-            )
+            for field in ("failedToParse", "encrypted", "outOfMemory", "veraExceptions")
         ):
             return failed("incomplete", "Batch summary reports incomplete processing")
         validation_summary = one(summary, "validationReports")
@@ -275,10 +259,7 @@ class VeraPdfBackend(GeneratedRecord):
                     )
                 return replace(
                     parse_report(
-                        stdout,
-                        profile=profile,
-                        returncode=process.returncode,
-                        stderr=stderr,
+                        stdout, profile=profile, returncode=process.returncode, stderr=stderr
                     ),
                     profile_edition=edition,
                 )

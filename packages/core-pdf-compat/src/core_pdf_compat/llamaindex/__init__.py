@@ -135,10 +135,7 @@ class PDFReader:
         self.return_full_document = return_full_document
 
     def load_data(
-        self,
-        file: object,
-        extra_info: Mapping[str, Any] | None = None,
-        fs: Any = None,
+        self, file: object, extra_info: Mapping[str, Any] | None = None, fs: Any = None
     ) -> list[Document]:
         if not isinstance(file, (Path, PurePosixPath)):
             file = (Path if fs is None else PurePosixPath)(file)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]

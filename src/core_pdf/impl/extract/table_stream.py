@@ -91,10 +91,7 @@ def stream_text_outweighs_numbers(
 
 
 def split_support_rows(
-    analysis: TableAnalysis,
-    indexes: list[int],
-    *,
-    minimum_rows: int = 3,
+    analysis: TableAnalysis, indexes: list[int], *, minimum_rows: int = 3
 ) -> list[list[int]]:
     if not indexes:
         return []
@@ -140,10 +137,7 @@ def stream_table(
     column_centers = numpy.asarray(
         [
             finite_median(
-                numpy.asarray(
-                    [all_x0[index] for _, index in column],
-                    dtype=numpy.float32,
-                )
+                numpy.asarray([all_x0[index] for _, index in column], dtype=numpy.float32)
             )
             for column in columns
         ],
@@ -265,9 +259,7 @@ def stream_table(
 
 
 def compact_stream_table(
-    order: int,
-    analysis: TableAnalysis,
-    page_width: float,
+    order: int, analysis: TableAnalysis, page_width: float
 ) -> TableCandidate | None:
     observations = analysis.observations
     coordinates = analysis.coordinates
@@ -290,8 +282,7 @@ def compact_stream_table(
         return None
     anchors = numpy.median(
         numpy.asarray(
-            [[all_x0[index] for index in row] for row in anchor_rows],
-            dtype=numpy.float32,
+            [[all_x0[index] for index in row] for row in anchor_rows], dtype=numpy.float32
         ),
         axis=0,
     )

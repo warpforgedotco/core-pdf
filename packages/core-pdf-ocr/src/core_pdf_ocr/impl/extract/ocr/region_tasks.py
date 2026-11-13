@@ -44,9 +44,7 @@ OCR_BATCH_MAX_TASKS = 16
 OCR_BATCH_MAX_PIXELS = 8_000_000
 
 
-def ocr_task_groups(
-    tasks: tuple[OcrTask, ...],
-) -> tuple[tuple[OcrTask, ...], ...]:
+def ocr_task_groups(tasks: tuple[OcrTask, ...]) -> tuple[tuple[OcrTask, ...], ...]:
     groups: list[tuple[OcrTask, ...]] = []
     current: list[OcrTask] = []
     current_pixels = 0
@@ -179,14 +177,10 @@ def observation_utility_grid(
     centers_x = centers_x[inside]
     centers_y = centers_y[inside]
     columns_by_observation = numpy.clip(
-        ((centers_x - x0) * columns / width).astype(numpy.int64),
-        0,
-        columns - 1,
+        ((centers_x - x0) * columns / width).astype(numpy.int64), 0, columns - 1
     )
     rows_by_observation = numpy.clip(
-        ((y1 - centers_y) * rows / height).astype(numpy.int64),
-        0,
-        rows - 1,
+        ((y1 - centers_y) * rows / height).astype(numpy.int64), 0, rows - 1
     )
     utility = numpy.fromiter(
         (
@@ -212,9 +206,7 @@ def observation_utility_grid(
 
 
 def weak_region_grid_shape(
-    raster: Raster,
-    ocr_pass: OcrPass,
-    primary: ObservationBatch,
+    raster: Raster, ocr_pass: OcrPass, primary: ObservationBatch
 ) -> tuple[int, int]:
     rows = max(1, min(ocr_pass.tiles, raster.height))
     columns = max(1, min(ocr_pass.region_columns, raster.width))
@@ -245,12 +237,10 @@ def weak_region_rectangles(
         region_limit = min(region_limit, 8)
     ranked = eligible[numpy.argsort(priority)[::-1][:region_limit]]
     overlap_x = min(
-        max(48, int(round(raster.resolution * 0.20))),
-        max(0, (raster.width // columns - 1) // 2),
+        max(48, int(round(raster.resolution * 0.20))), max(0, (raster.width // columns - 1) // 2)
     )
     overlap_y = min(
-        max(48, int(round(raster.resolution * 0.20))),
-        max(0, (raster.height // rows - 1) // 2),
+        max(48, int(round(raster.resolution * 0.20))), max(0, (raster.height // rows - 1) // 2)
     )
     rectangles: list[tuple[int, int, int, int]] = []
     for raw_cell in ranked:
@@ -265,12 +255,7 @@ def weak_region_rectangles(
         rectangle_y0 = max(0, cell_y0 - overlap_y)
         rectangle_y1 = min(raster.height, cell_y1 + overlap_y)
         rectangles.append(
-            (
-                rectangle_x0,
-                rectangle_y0,
-                rectangle_x1 - rectangle_x0,
-                rectangle_y1 - rectangle_y0,
-            )
+            (rectangle_x0, rectangle_y0, rectangle_x1 - rectangle_x0, rectangle_y1 - rectangle_y0)
         )
     return tuple(rectangles)
 
@@ -310,15 +295,10 @@ def candidate_region_tasks(
     compact_image: bool | str,
 ) -> tuple[OcrTask, ...]:
     direct_regions = page_image_regions(
-        capture,
-        minimum_area_ratio=0.02,
-        max_pixels=ocr_pass.pixel_budget,
+        capture, minimum_area_ratio=0.02, max_pixels=ocr_pass.pixel_budget
     )
     if not direct_regions:
-        dominant = dominant_image_region(
-            capture,
-            max_pixels=ocr_pass.pixel_budget,
-        )
+        dominant = dominant_image_region(capture, max_pixels=ocr_pass.pixel_budget)
         if dominant is not None:
             direct_regions = (dominant,)
     tasks: list[OcrTask] = []
@@ -363,32 +343,17 @@ def candidate_region_tasks(
             ocr_pass.scope is OcrPassScope.PAGE
             and len(regions) == 1
             and region.area >= capture.evidence.page_area * 0.75
-            and overlap_ratio_of(
-                region.page_box,
-                (0.0, 0.0, capture.width, capture.height),
-            )
-            >= 0.90
+            and overlap_ratio_of(region.page_box, (0.0, 0.0, capture.width, capture.height)) >= 0.90
             and capture.evidence.vector_complexity >= OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY
             and 4_000_000 <= raster.width * raster.height <= PRIMARY_OCR_PIXELS
         )
         tile_count = ocr_pass.parallel_tiles if full_page_region else 1
         task_pass = (
-            replace(
-                region_pass,
-                tiles=max(1, tile_count),
-                recognize_words=True,
-            )
+            replace(region_pass, tiles=max(1, tile_count), recognize_words=True)
             if layered_scan
             else replace(region_pass, tiles=max(1, tile_count))
         )
-        tasks.extend(
-            tile_tasks(
-                raster,
-                raster_box,
-                task_pass,
-                compact_image=compact_image,
-            )
-        )
+        tasks.extend(tile_tasks(raster, raster_box, task_pass, compact_image=compact_image))
     return tuple(tasks)
 
 
@@ -404,8 +369,7 @@ def high_resolution_weak_region_tasks(
     source_rasters: dict[tuple[int, tuple[float, float, float, float], int], Raster] = {}
     for task in source_tasks:
         source_rasters.setdefault(
-            (id(task.image), task.page_box, task.resolution),
-            Raster(task.image, task.resolution),
+            (id(task.image), task.page_box, task.resolution), Raster(task.image, task.resolution)
         )
     weak_regions: list[OcrRegion] = []
     for (_, page_box, _), source_raster in source_rasters.items():
@@ -415,12 +379,7 @@ def high_resolution_weak_region_tasks(
                 1.0,
                 ("adaptive-weak-region",),
             )
-            for rectangle in weak_region_rectangles(
-                source_raster,
-                page_box,
-                ocr_pass,
-                primary,
-            )
+            for rectangle in weak_region_rectangles(source_raster, page_box, ocr_pass, primary)
         )
     regions = merge_ocr_regions(weak_regions)
     if not regions:
@@ -437,12 +396,5 @@ def high_resolution_weak_region_tasks(
         )
         if raster is None:
             continue
-        tasks.extend(
-            tile_tasks(
-                raster,
-                region.page_box,
-                region_pass,
-                compact_image=compact_image,
-            )
-        )
+        tasks.extend(tile_tasks(raster, region.page_box, region_pass, compact_image=compact_image))
     return tuple(tasks)

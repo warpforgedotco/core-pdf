@@ -12,9 +12,7 @@ ANNOTATION_FLAG_NO_VIEW = 1 << 5
 
 
 def appearance_matrix(
-    rect: tuple[float, float, float, float],
-    bbox: tuple[float, float, float, float],
-    matrix: Matrix,
+    rect: tuple[float, float, float, float], bbox: tuple[float, float, float, float], matrix: Matrix
 ) -> Matrix:
     tx0, ty0, tx1, ty1 = transform_bbox(bbox, matrix)
     width = tx1 - tx0

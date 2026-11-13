@@ -177,9 +177,7 @@ def base_encoding_table(base_encoding: object) -> tuple[str, ...]:
 
 
 def _pdfminer_base_encoding_text(
-    decoder: Any,
-    char_code: int,
-    base_encoding: str | None = None,
+    decoder: Any, char_code: int, base_encoding: str | None = None
 ) -> str:
     if base_encoding is None:
         base_encoding = decoder_base_encoding(decoder)
@@ -353,22 +351,12 @@ def pdfminer_ligature_overrides(
     glyphs: tuple[Any, ...],
 ) -> tuple[
     dict[
-        int,
-        tuple[
-            str,
-            tuple[float, float, float, float],
-            tuple[float, float, float, float] | None,
-        ],
+        int, tuple[str, tuple[float, float, float, float], tuple[float, float, float, float] | None]
     ],
     set[int],
 ]:
     overrides: dict[
-        int,
-        tuple[
-            str,
-            tuple[float, float, float, float],
-            tuple[float, float, float, float] | None,
-        ],
+        int, tuple[str, tuple[float, float, float, float], tuple[float, float, float, float] | None]
     ] = {}
     skipped: set[int] = set()
     # What a glyph can start depends only on its decoder and codes, which a page repeats.
@@ -453,12 +441,7 @@ def pdfminer_ligature_overrides(
         first_baseline = ligature_cluster[0].baseline
         last_baseline = ligature_cluster[-1].baseline
         baseline = (
-            (
-                first_baseline[0],
-                first_baseline[1],
-                last_baseline[2],
-                last_baseline[3],
-            )
+            (first_baseline[0], first_baseline[1], last_baseline[2], last_baseline[3])
             if first_baseline is not None and last_baseline is not None
             else None
         )

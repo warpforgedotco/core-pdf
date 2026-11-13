@@ -131,10 +131,7 @@ def resolve_named_destination(self: PdfDocument[Any], name: str) -> RawNamedDest
 
 
 def destination_from_list(
-    self: PdfDocument[PageT],
-    resolved_list: PdfArray,
-    *,
-    page_lookup: PageLookup[PageT],
+    self: PdfDocument[PageT], resolved_list: PdfArray, *, page_lookup: PageLookup[PageT]
 ) -> RawNamedDestination:
     if not resolved_list:
         raise ValueError("invalid destination array")
@@ -156,10 +153,7 @@ def destination_from_list(
 
 
 def normalize_destination_value(
-    self: PdfDocument[PageT],
-    val: object,
-    *,
-    page_lookup: PageLookup[PageT] | None = None,
+    self: PdfDocument[PageT], val: object, *, page_lookup: PageLookup[PageT] | None = None
 ) -> RawNamedDestination:
     lookup = self.page_lookup if page_lookup is None else page_lookup
     return self.normalize_destination_entry(val, lookup.resolve_named_destination, lookup)

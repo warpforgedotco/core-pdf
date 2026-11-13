@@ -18,11 +18,7 @@ class PageLabelStyle(StrEnum):
     DECIMAL = "D"
 
 
-def format_page_label(
-    spec: Mapping[str, object],
-    page_offset: int,
-    resolve: ResolveFn,
-) -> str:
+def format_page_label(spec: Mapping[str, object], page_offset: int, resolve: ResolveFn) -> str:
     style = normalize_page_label_style(resolve(spec.get("S")))
     raw_prefix = resolve(spec.get("P"))
     prefix = parse_text_string(raw_prefix)

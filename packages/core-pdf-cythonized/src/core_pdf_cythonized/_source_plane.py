@@ -7,9 +7,7 @@ __all__ = ("accumulate_source_plane",)
 
 
 def accumulate_source_plane(
-    plane: cython.float[:, :],
-    coverage: cython.const[cython.uchar][:, :],
-    scale: cython.double,
+    plane: cython.float[:, :], coverage: cython.const[cython.uchar][:, :], scale: cython.double
 ) -> None:
     rows: cython.Py_ssize_t = plane.shape[0]
     cols: cython.Py_ssize_t = plane.shape[1]

@@ -21,10 +21,7 @@ INF = cython.declare(cython.double, float("inf"))
 
 
 Points = cython.struct(
-    x=cython.p_double,
-    y=cython.p_double,
-    count=cython.Py_ssize_t,
-    capacity=cython.Py_ssize_t,
+    x=cython.p_double, y=cython.p_double, count=cython.Py_ssize_t, capacity=cython.Py_ssize_t
 )
 
 
@@ -239,12 +236,7 @@ def add_curve(path: PathBuilder, values: cython.p_const_double, hypot) -> cython
 
 
 def flatten_path_commands(
-    ops,
-    coords,
-    matrix,
-    hypot,
-    line_rows: typing.Optional[array.array],
-    line_width: cython.double,
+    ops, coords, matrix, hypot, line_rows: typing.Optional[array.array], line_width: cython.double
 ):
     op_data: cython.p_const_uchar
     op_count: cython.Py_ssize_t

@@ -118,12 +118,7 @@ class PdfString:
     data: bytes
     is_literal: bool | None
 
-    def __init__(
-        self,
-        data: bytes,
-        *,
-        is_literal: bool | None = None,
-    ) -> None:
+    def __init__(self, data: bytes, *, is_literal: bool | None = None) -> None:
         if not isinstance(data, bytes):
             raise ValueError("invalid PDF string")
         self.data = data

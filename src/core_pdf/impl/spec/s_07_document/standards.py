@@ -25,10 +25,7 @@ def parse_catalog_version(value: object) -> PdfVersion:
 
 
 def effective_pdf_version(
-    header: PdfVersion | None,
-    catalog: PdfVersion | None,
-    *,
-    previous: PdfVersion | None = None,
+    header: PdfVersion | None, catalog: PdfVersion | None, *, previous: PdfVersion | None = None
 ) -> PdfVersion | None:
     return max(
         (version for version in (header, catalog, previous) if version is not None), default=None

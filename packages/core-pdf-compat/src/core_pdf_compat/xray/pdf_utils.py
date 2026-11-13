@@ -4,11 +4,7 @@ from typing import Any
 Rect = Any
 
 
-def intersects(
-    text_rect: Rect,
-    rectangles: list[Rect],
-    occlusion_threshold: float = 0.0,
-) -> bool:
+def intersects(text_rect: Rect, rectangles: list[Rect], occlusion_threshold: float = 0.0) -> bool:
     """Determine if a rectangle intersects is occluded by a list of others
 
     This uses Rect objects, but note that they must have extra attributes of

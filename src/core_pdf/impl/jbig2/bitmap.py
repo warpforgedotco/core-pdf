@@ -20,9 +20,7 @@ def uint8_view(
 
 
 def uint8_matrix_view(
-    buffer: bytes | bytearray | memoryview | numpy.ndarray[Any, Any],
-    rows: int,
-    columns: int,
+    buffer: bytes | bytearray | memoryview | numpy.ndarray[Any, Any], rows: int, columns: int
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
     return uint8_view(buffer, count=rows * columns).reshape(rows, columns)
 
@@ -112,10 +110,7 @@ def compose_packed_bitmap_numpy(
     start_byte = destination_x >> 3
     end_byte = (destination_x + source_bits.shape[1] + 7) >> 3
     target = uint8_matrix_view(image_data, image_height, image_stride)
-    destination = target[
-        region_y + first_row : region_y + last_row,
-        start_byte:end_byte,
-    ]
+    destination = target[region_y + first_row : region_y + last_row, start_byte:end_byte]
     destination_bits = numpy.unpackbits(destination, axis=1, bitorder="big")
     bit_offset = destination_x & 7
     target_bits = destination_bits[:, bit_offset : bit_offset + source_bits.shape[1]]

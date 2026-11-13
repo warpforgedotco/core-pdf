@@ -49,8 +49,4 @@ def unit_square_placement(
     return bbox, quad
 
 
-__all__ = (
-    "points_bbox",
-    "transform_bbox",
-    "unit_square_placement",
-)
+__all__ = ("points_bbox", "transform_bbox", "unit_square_placement")

@@ -8,13 +8,9 @@ from core_pdf.impl.base.exceptions import PdfParseError
 from core_pdf.impl.base.values import recover_pdf_name
 from core_pdf.impl.recovery.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax import objects
-from core_pdf.impl.spec.s_07_syntax.objects import (
-    parse_object_stream_pair,
-)
+from core_pdf.impl.spec.s_07_syntax.objects import parse_object_stream_pair
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
-    parse_int_strict,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int_strict
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WHITESPACE
 
 if typing.TYPE_CHECKING:
@@ -159,9 +155,7 @@ def recover_object_stream_first(data: bytes | memoryview, n: int) -> int | None:
 
 
 def parse_object_stream_header(
-    data: bytes | memoryview,
-    first: int,
-    n: int,
+    data: bytes | memoryview, first: int, n: int
 ) -> list[tuple[int, int]]:
     return scan_object_stream_pairs(data[:first], n)[0]
 

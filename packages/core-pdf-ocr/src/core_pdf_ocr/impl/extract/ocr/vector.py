@@ -14,10 +14,7 @@ from core_pdf.impl.base.geometry import bbox_tuple, rect_tuple
 from core_pdf.impl.base.spatial import BoxIndex
 from core_pdf.impl.extract.contracts import ObservationBatch, ObservationSource
 from core_pdf.impl.render.display import DisplayList
-from core_pdf.impl.render.model import (
-    PathPaintItem,
-    PathPaintKind,
-)
+from core_pdf.impl.render.model import PathPaintItem, PathPaintKind
 from core_pdf.impl.render.page import RenderedPage
 from core_pdf_ocr.impl.extract.contracts import MAX_OCR_PIXELS, PageAnalysis
 from core_pdf_ocr.impl.extract.ocr.atlas import rasterize_packed_stroked_paths
@@ -106,9 +103,7 @@ def pack_stroked_text_runs(
         )
         cells.append(
             StrokedTextCell(
-                source_box=source,
-                packed_box=packed,
-                drawing_indexes=run.drawing_indexes,
+                source_box=source, packed_box=packed, drawing_indexes=run.drawing_indexes
             )
         )
         x += cell_width
@@ -139,9 +134,7 @@ def stroked_vector_text_raster(
             else STROKED_VECTOR_PACK_VERTICAL_PADDING
         )
     cells, packed_height = pack_stroked_text_runs(
-        runs,
-        horizontal_padding=horizontal_padding,
-        vertical_padding=vertical_padding,
+        runs, horizontal_padding=horizontal_padding, vertical_padding=vertical_padding
     )
     if not cells or packed_height <= 0.0:
         return None
@@ -170,14 +163,7 @@ def stroked_vector_text_raster(
             if cell_width > cell_height * 1.2:
                 center_x = (cell.source_box[0] + cell.source_box[2]) * 0.5
                 center_y = (cell.source_box[1] + cell.source_box[3]) * 0.5
-                rotation_matrix = (
-                    0.0,
-                    -1.0,
-                    1.0,
-                    0.0,
-                    center_x - center_y,
-                    center_y + center_x,
-                )
+                rotation_matrix = (0.0, -1.0, 1.0, 0.0, center_x - center_y, center_y + center_x)
         for index in cell.drawing_indexes:
             drawing = capture.program.drawings[index]
             drawing_box = rect_tuple(getattr(drawing, "rect", None))
@@ -223,33 +209,20 @@ def stroked_vector_text_raster(
     )
     if fast_path:
         data = rasterize_packed_stroked_paths(
-            tuple(display_list.items),
-            packed_width,
-            packed_height,
-            scale,
+            tuple(display_list.items), packed_width, packed_height, scale
         )
     else:
         data = rendered.rasterize(
-            background=(255, 255, 255, 255),
-            scale=scale,
-            max_pixels=max_pixels,
+            background=(255, 255, 255, 255), scale=scale, max_pixels=max_pixels
         )
-    raster = Raster(
-        data,
-        max(70, int(round(72.0 * scale))),
-    )
+    raster = Raster(data, max(70, int(round(72.0 * scale))))
     return PackedStrokedTextRaster(
-        raster=raster,
-        packed_box=(0.0, 0.0, packed_width, packed_height),
-        cells=cells,
+        raster=raster, packed_box=(0.0, 0.0, packed_width, packed_height), cells=cells
     )
 
 
 def full_stroked_vector_text_raster(
-    capture: PageAnalysis,
-    requested_scale: float,
-    *,
-    max_pixels: int = MAX_OCR_PIXELS,
+    capture: PageAnalysis, requested_scale: float, *, max_pixels: int = MAX_OCR_PIXELS
 ) -> RasterRegion | None:
     evidence = capture.evidence.stroked_vector_text
     if not evidence.trusted or evidence.bbox is None or not evidence.drawing_indexes:
@@ -297,21 +270,14 @@ def full_stroked_vector_text_raster(
     )
     scale = fit_raster_scale(rendered, scale, max_pixels, crop=crop)
     data = rendered.rasterize(
-        background=(255, 255, 255, 255),
-        scale=scale,
-        max_pixels=max_pixels,
-        crop=crop,
+        background=(255, 255, 255, 255), scale=scale, max_pixels=max_pixels, crop=crop
     )
-    raster = Raster(
-        data,
-        max(70, int(round(72.0 * scale))),
-    )
+    raster = Raster(data, max(70, int(round(72.0 * scale))))
     return RasterRegion(raster, crop)
 
 
 def remap_stroked_vector_observations(
-    observations: ObservationBatch,
-    packed: PackedStrokedTextRaster,
+    observations: ObservationBatch, packed: PackedStrokedTextRaster
 ) -> tuple[ObservationBatch, int]:
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
@@ -365,22 +331,15 @@ def isolated_pin_label(text: str) -> bool:
 
 
 def remap_stroked_vector_candidate(
-    candidate: Candidate,
-    packed: PackedStrokedTextRaster,
-    *,
-    digit_bearing_only: bool = False,
+    candidate: Candidate, packed: PackedStrokedTextRaster, *, digit_bearing_only: bool = False
 ) -> tuple[Candidate, int]:
-    remapped, unmapped = remap_stroked_vector_observations(
-        candidate.observations,
-        packed,
-    )
+    remapped, unmapped = remap_stroked_vector_observations(candidate.observations, packed)
     if digit_bearing_only:
         remapped = remapped.take(
             tuple(index for index, text in enumerate(remapped.text) if isolated_pin_label(text))
         )
     remapped_symbols, _unmapped_symbols = remap_stroked_vector_observations(
-        candidate.symbols,
-        packed,
+        candidate.symbols, packed
     )
     return (
         make_candidate(
@@ -444,11 +403,7 @@ def bounded_edit_distance(left: str, right: str, maximum: int) -> int:
 
 
 def stroked_vector_substitution(
-    recognized: str,
-    decoded: str,
-    *,
-    confidence: float,
-    overlap: float,
+    recognized: str, decoded: str, *, confidence: float, overlap: float
 ) -> bool:
     if single_character_substitution(recognized, decoded):
         return True
@@ -468,22 +423,14 @@ def stroked_vector_substitution(
 
 
 def stroked_vector_symbol_seeds(
-    profile: StrokedTextProfile,
-    symbols: ObservationBatch,
+    profile: StrokedTextProfile, symbols: ObservationBatch
 ) -> tuple[StrokedTextSeed, ...]:
     if not len(symbols):
         return ()
     runs_by_sequence = {run.drawing_indexes[0]: run for run in profile.seed_runs}
-    grouped: dict[
-        int,
-        list[tuple[float, str, float]],
-    ] = defaultdict(list)
+    grouped: dict[int, list[tuple[float, str, float]]] = defaultdict(list)
     for text, raw_box, confidence, raw_sequence in zip(
-        symbols.text,
-        symbols.bbox,
-        symbols.confidence,
-        symbols.sequence,
-        strict=True,
+        symbols.text, symbols.bbox, symbols.confidence, symbols.sequence, strict=True
     ):
         character = text.strip()
         sequence = int(raw_sequence)
@@ -517,48 +464,24 @@ def decode_stroked_vector_text(
         return StrokedTextDecode()
     word_seeds = tuple(
         StrokedTextSeed(
-            text=text,
-            bbox=bbox_tuple(box),
-            confidence=float(confidence),
-            sequence=int(sequence),
+            text=text, bbox=bbox_tuple(box), confidence=float(confidence), sequence=int(sequence)
         )
         for text, box, confidence, sequence in zip(
-            ocr.text,
-            ocr.bbox,
-            ocr.confidence,
-            ocr.sequence,
-            strict=True,
+            ocr.text, ocr.bbox, ocr.confidence, ocr.sequence, strict=True
         )
     )
     symbol_seeds = stroked_vector_symbol_seeds(
-        profile,
-        symbols if symbols is not None else ObservationBatch.empty(),
+        profile, symbols if symbols is not None else ObservationBatch.empty()
     )
     if not symbol_seeds:
         return decode_stroked_text_profile(profile, word_seeds)
-    return decode_stroked_text_profile_with_supplemental_seeds(
-        profile,
-        word_seeds,
-        symbol_seeds,
-    )
+    return decode_stroked_text_profile_with_supplemental_seeds(profile, word_seeds, symbol_seeds)
 
 
-def packed_stroked_vector_decode_gate(
-    decoded: StrokedTextDecode,
-    cell_count: int,
-) -> bool:
-    aligned_required = min(
-        STROKED_VECTOR_PACK_MIN_ALIGNED_SEEDS,
-        max(4, cell_count // 4),
-    )
-    learned_required = min(
-        STROKED_VECTOR_PACK_MIN_LEARNED_SIGNATURES,
-        max(8, cell_count // 3),
-    )
-    decoded_required = min(
-        STROKED_VECTOR_PACK_MIN_DECODED_RUNS,
-        max(8, cell_count // 3),
-    )
+def packed_stroked_vector_decode_gate(decoded: StrokedTextDecode, cell_count: int) -> bool:
+    aligned_required = min(STROKED_VECTOR_PACK_MIN_ALIGNED_SEEDS, max(4, cell_count // 4))
+    learned_required = min(STROKED_VECTOR_PACK_MIN_LEARNED_SIGNATURES, max(8, cell_count // 3))
+    decoded_required = min(STROKED_VECTOR_PACK_MIN_DECODED_RUNS, max(8, cell_count // 3))
     return bool(
         decoded.aligned_seeds >= aligned_required
         and decoded.learned_signatures >= learned_required
@@ -567,8 +490,7 @@ def packed_stroked_vector_decode_gate(
 
 
 def recover_stroked_vector_text(
-    profile: StrokedTextProfile | None,
-    ocr: ObservationBatch,
+    profile: StrokedTextProfile | None, ocr: ObservationBatch
 ) -> tuple[ObservationBatch, tuple[tuple[Any, str], ...]]:
     if profile is None or not len(ocr):
         return ocr, ()
@@ -576,8 +498,7 @@ def recover_stroked_vector_text(
     ocr_boxes = ocr.bbox
     ocr_index = BoxIndex.from_array(ocr_boxes)
     ocr_areas = numpy.maximum(
-        0.01,
-        (ocr_boxes[:, 2] - ocr_boxes[:, 0]) * (ocr_boxes[:, 3] - ocr_boxes[:, 1]),
+        0.01, (ocr_boxes[:, 2] - ocr_boxes[:, 0]) * (ocr_boxes[:, 3] - ocr_boxes[:, 1])
     )
     replacements: set[int] = set()
     accepted: list[StrokedTextObservation] = []
@@ -612,9 +533,6 @@ def recover_stroked_vector_text(
         return ocr, alphabet
     retained = ocr.take(tuple(index for index in range(len(ocr)) if index not in replacements))
     return (
-        ObservationBatch.concatenate(
-            retained,
-            stroked_vector_decoded_batch(tuple(accepted)),
-        ),
+        ObservationBatch.concatenate(retained, stroked_vector_decoded_batch(tuple(accepted))),
         alphabet,
     )

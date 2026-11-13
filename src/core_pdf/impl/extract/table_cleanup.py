@@ -353,10 +353,7 @@ def merge_wrapped_cell_rows(table: Table) -> Table:
     median_height = finite_median(numpy.asarray(heights, dtype=numpy.float32))
     if max(heights) < median_height * LOGICAL_ROW_MIN_TALL_RATIO:
         return table
-    tolerance = max(
-        LOGICAL_ROW_MIN_GAP,
-        median_height * LOGICAL_ROW_GAP_RATIO,
-    )
+    tolerance = max(LOGICAL_ROW_MIN_GAP, median_height * LOGICAL_ROW_GAP_RATIO)
     groups: list[list[int]] = []
     running_bottom = 0.0
     for index, (top, bottom) in enumerate(extents):
@@ -397,9 +394,7 @@ def merge_wrapped_cell_rows(table: Table) -> Table:
             )
         merged_rows.append(tuple(cells))
     return replace(
-        table,
-        rows=tuple(merged_rows),
-        metadata={**table.metadata, "logical_rows": True},
+        table, rows=tuple(merged_rows), metadata={**table.metadata, "logical_rows": True}
     )
 
 
@@ -438,9 +433,7 @@ def merge_wrapped_stream_rows(table: Table) -> Table:
 
 
 def annotate_table_associations(
-    table: Table,
-    observations: ObservationBatch,
-    text_rows: list[list[int]],
+    table: Table, observations: ObservationBatch, text_rows: list[list[int]]
 ) -> Table:
     title = table.title
     caption = table.caption
@@ -506,8 +499,7 @@ def table_with_bands(table: Table) -> Table:
         row_bands.append(TableRowBand(index=index, bbox=bbox_union(boxes), kind=kind))
 
     column_count = max(
-        (cell.column + cell.column_span for row in table.rows for cell in row),
-        default=0,
+        (cell.column + cell.column_span for row in table.rows for cell in row), default=0
     )
     column_boxes: list[list[tuple[float, float, float, float]]] = [[] for _ in range(column_count)]
     for row in table.rows:
@@ -515,8 +507,7 @@ def table_with_bands(table: Table) -> Table:
             if cell.bbox is None:
                 continue
             for index in range(
-                max(cell.column, 0),
-                min(cell.column + cell.column_span, column_count),
+                max(cell.column, 0), min(cell.column + cell.column_span, column_count)
             ):
                 column_boxes[index].append(cell.bbox)
     column_bands = tuple(

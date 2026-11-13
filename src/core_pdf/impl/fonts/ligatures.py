@@ -14,10 +14,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float_strict,
     parse_int_strict,
 )
-lazy from core_pdf.impl.fonts.program_truetype import (
-    TrueTypeFontProgram,
-    cached_truetype_program,
-)
+lazy from core_pdf.impl.fonts.program_truetype import TrueTypeFontProgram, cached_truetype_program
 
 MAC_ROMAN_CHARS: tuple[str, ...] = tuple(bytes([code]).decode("mac_roman") for code in range(256))
 MAC_ROMAN_CODEPOINTS: tuple[int, ...] = tuple(ord(ch) for ch in MAC_ROMAN_CHARS)
@@ -121,9 +118,7 @@ def find_companion_font(
 
 
 def detect_ligature_overrides(
-    document: ReferenceResolver,
-    resources: object,
-    font_obj: object,
+    document: ReferenceResolver, resources: object, font_obj: object
 ) -> dict[int, str]:
     if not isinstance(font_obj, dict):
         return {}

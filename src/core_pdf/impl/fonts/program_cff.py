@@ -26,10 +26,7 @@ lazy from core_pdf.impl.fonts.cff_repair import (
     CFFGlyphFeature,
     feature_from_contours,
 )
-lazy from core_pdf.impl.fonts.raster_kernel import (
-    Contours,
-    transform_contours,
-)
+lazy from core_pdf.impl.fonts.raster_kernel import Contours, transform_contours
 lazy from core_pdf_cythonized import type2_glyph_geometry
 
 MALFORMED_CFF_TABLE = (IndexError, OverflowError, TypeError, ValueError)
@@ -45,9 +42,7 @@ def with_recovery[T](strict: Callable[..., T], repair: Callable[..., T], /, *arg
 assert len(STANDARD_GLYPH_SIDS) == CFF_STANDARD_STRING_COUNT
 
 
-def cff_font_matrix(
-    font_dict: dict[int | tuple[int, int], list[float]],
-) -> CffFontMatrix | None:
+def cff_font_matrix(font_dict: dict[int | tuple[int, int], list[float]]) -> CffFontMatrix | None:
     try:
         return font.cff_font_matrix(font_dict)
     except TypeError, ValueError:
@@ -218,9 +213,7 @@ class CFFFont(font.CFFFont, GlyphProgram):
             return {
                 code: name
                 for code, name in zip(
-                    CFF_EXPERT_ENCODING_CODES,
-                    CFF_EXPERT_STRINGS[1:],
-                    strict=True,
+                    CFF_EXPERT_ENCODING_CODES, CFF_EXPERT_STRINGS[1:], strict=True
                 )
                 if STANDARD_GLYPH_SIDS[name] in sid_to_gid
             }
@@ -286,14 +279,10 @@ class CFFFont(font.CFFFont, GlyphProgram):
                     fd_select[gid] = fd
         return tuple(fd_select)
 
-    def read_font_dicts(
-        self,
-    ) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
+    def read_font_dicts(self) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
         return with_recovery(super().read_font_dicts, self.recover_read_font_dicts)
 
-    def recover_read_font_dicts(
-        self,
-    ) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
+    def recover_read_font_dicts(self) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
         if not self.is_cid_keyed:
             return ()
         fdarray_off = self.top_dict.get((12, 36), [None])[0]
@@ -371,11 +360,7 @@ class CFFFont(font.CFFFont, GlyphProgram):
         return font_dict_matrix.multiply(top_matrix)
 
     def seac_contours(
-        self,
-        base_code: int,
-        accent_code: int,
-        accent_dx: float,
-        accent_dy: float,
+        self, base_code: int, accent_code: int, accent_dx: float, accent_dy: float
     ) -> tuple[tuple[tuple[float, float], ...], ...]:
         if self.is_cid_keyed:
             return ()
@@ -404,8 +389,7 @@ class CFFFont(font.CFFFont, GlyphProgram):
     def glyph_geometry_for_gid(
         self, glyph_id: int, *, bounds_only: bool = False
     ) -> tuple[
-        tuple[tuple[tuple[float, float], ...], ...],
-        tuple[float, float, float, float] | None,
+        tuple[tuple[tuple[float, float], ...], ...], tuple[float, float, float, float] | None
     ]:
         try:
             charstring = self.charstrings[glyph_id]
@@ -463,11 +447,7 @@ def type2_glyph_geometry_impl(
     local_subrs: tuple[bytes, ...],
     global_subrs: tuple[bytes, ...],
     seac_resolver: (
-        Callable[
-            [int, int, float, float],
-            tuple[tuple[tuple[float, float], ...], ...],
-        ]
-        | None
+        Callable[[int, int, float, float], tuple[tuple[tuple[float, float], ...], ...]] | None
     ) = None,
     flatten: bool = True,
     retain_contours: bool = True,

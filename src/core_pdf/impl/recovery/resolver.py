@@ -23,10 +23,7 @@ from core_pdf.impl.spec.s_07_syntax import resources
 from core_pdf.impl.spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject, PdfValueResolver
-from core_pdf.impl.spec.s_07_syntax.xref import (
-    PdfXRefEntry,
-    key_for,
-)
+from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry, key_for
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import LexicalRules
 lazy import core_pdf.impl.spec.s_07_syntax.objects
 lazy from core_pdf.impl.recovery.objects import PdfObjectStream

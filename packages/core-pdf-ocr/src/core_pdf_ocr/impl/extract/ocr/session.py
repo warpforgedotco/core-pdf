@@ -68,11 +68,7 @@ OCR_IMAGE_REGIONS_MAX_AXIS_DEVIATION = 0.01
 
 
 def raster_tasks(
-    raster: Raster | None,
-    page_box: PageBox,
-    ocr_pass: OcrPass,
-    *,
-    compact_image: bool | str,
+    raster: Raster | None, page_box: PageBox, ocr_pass: OcrPass, *, compact_image: bool | str
 ) -> tuple[OcrTask, ...]:
     if raster is None:
         return ()
@@ -80,19 +76,11 @@ def raster_tasks(
 
 
 def region_tasks(
-    region: RasterRegion | None,
-    ocr_pass: OcrPass,
-    *,
-    compact_image: bool | str,
+    region: RasterRegion | None, ocr_pass: OcrPass, *, compact_image: bool | str
 ) -> tuple[OcrTask, ...]:
     if region is None:
         return ()
-    return raster_tasks(
-        region.raster,
-        region.page_box,
-        ocr_pass,
-        compact_image=compact_image,
-    )
+    return raster_tasks(region.raster, region.page_box, ocr_pass, compact_image=compact_image)
 
 
 class OcrPassTasks(GeneratedRecord):
@@ -197,10 +185,7 @@ class OcrSession:
             float(page.height),
         )
 
-    def adapt_pass(
-        self,
-        ocr_pass: OcrPass,
-    ) -> OcrPass:
+    def adapt_pass(self, ocr_pass: OcrPass) -> OcrPass:
         vector_preview = bool(
             self.capture.evidence.image_count == 0
             and self.capture.evidence.vector_complexity >= 100_000
@@ -217,9 +202,7 @@ class OcrSession:
         preview_raster: Raster | None = None
         if self.capture.evidence.full_page_image:
             preview_region = dominant_image_region(
-                self.capture,
-                max_pixels=OCR_PREFLIGHT_PIXELS,
-                upscale=False,
+                self.capture, max_pixels=OCR_PREFLIGHT_PIXELS, upscale=False
             )
             preview_raster = preview_region.raster if preview_region is not None else None
         else:
@@ -242,22 +225,12 @@ class OcrSession:
         original_scale = ocr_pass.scale
         return replace(
             ocr_pass,
-            scale=min(
-                8.0,
-                max(
-                    original_scale + 0.5,
-                    original_scale * 32.0 / projected_height,
-                ),
-            ),
+            scale=min(8.0, max(original_scale + 0.5, original_scale * 32.0 / projected_height)),
             pixel_budget=MAX_OCR_PIXELS,
         )
 
     def materialize(
-        self,
-        ocr_pass: OcrPass,
-        *,
-        selected: Candidate | None,
-        selected_tasks: tuple[OcrTask, ...],
+        self, ocr_pass: OcrPass, *, selected: Candidate | None, selected_tasks: tuple[OcrTask, ...]
     ) -> OcrPassTasks | None:
         ocr_pass = self.adapt_pass(ocr_pass)
         if (
@@ -288,21 +261,12 @@ class OcrSession:
             ocr_pass.scope is OcrPassScope.PAGE and has_distributed_outline_text(self.capture)
         )
         region_batch = (
-            (
-                OcrRegion(
-                    self.page_box,
-                    float("inf"),
-                    ("distributed-outline-text",),
-                ),
-            )
+            (OcrRegion(self.page_box, float("inf"), ("distributed-outline-text",)),)
             if distributed_outline_text
             else ocr_region_batch(
                 candidate_regions,
                 ocr_pass,
-                page_area=max(
-                    1.0,
-                    self.capture.width * self.capture.height,
-                ),
+                page_area=max(1.0, self.capture.width * self.capture.height),
             )
         )
         tasks = candidate_region_tasks(
@@ -312,32 +276,18 @@ class OcrSession:
             rendered=self.rendered_page(ocr_pass.include_native_text),
             compact_image=self.compact_image,
         )
-        return OcrPassTasks(
-            ocr_pass,
-            tasks=tasks,
-        )
+        return OcrPassTasks(ocr_pass, tasks=tasks)
 
     def weak_region_tasks(
-        self,
-        ocr_pass: OcrPass,
-        selected: Candidate | None,
-        selected_tasks: tuple[OcrTask, ...],
+        self, ocr_pass: OcrPass, selected: Candidate | None, selected_tasks: tuple[OcrTask, ...]
     ) -> OcrPassTasks:
         if selected is not None and selected_tasks:
             tasks = self.high_resolution_weak_region_tasks(
-                selected_tasks,
-                ocr_pass,
-                selected.observations,
+                selected_tasks, ocr_pass, selected.observations
             )
-            return OcrPassTasks(
-                ocr_pass,
-                tasks=tasks,
-            )
+            return OcrPassTasks(ocr_pass, tasks=tasks)
 
-        direct_region = dominant_image_region(
-            self.capture,
-            max_pixels=ocr_pass.pixel_budget,
-        )
+        direct_region = dominant_image_region(self.capture, max_pixels=ocr_pass.pixel_budget)
         raster: Raster | None
         if direct_region is not None and direct_region.raster is not None:
             raster = direct_region.raster
@@ -363,10 +313,7 @@ class OcrSession:
         return OcrPassTasks(ocr_pass, tasks=tasks)
 
     def high_resolution_weak_region_tasks(
-        self,
-        source_tasks: tuple[OcrTask, ...],
-        ocr_pass: OcrPass,
-        primary: ObservationBatch,
+        self, source_tasks: tuple[OcrTask, ...], ocr_pass: OcrPass, primary: ObservationBatch
     ) -> tuple[OcrTask, ...]:
         return high_resolution_weak_region_tasks(
             self.capture,
@@ -391,26 +338,13 @@ class OcrSession:
                 replace(ocr_pass, recognize_words=True, collect_symbols=True),
                 compact_image=self.compact_image,
             )
-            return OcrPassTasks(
-                ocr_pass,
-                tasks=tasks,
-                packed_stroked=packed_stroked,
-            )
+            return OcrPassTasks(ocr_pass, tasks=tasks, packed_stroked=packed_stroked)
 
         fallback_region = full_stroked_vector_text_raster(
-            self.capture,
-            ocr_pass.scale,
-            max_pixels=ocr_pass.pixel_budget,
+            self.capture, ocr_pass.scale, max_pixels=ocr_pass.pixel_budget
         )
-        tasks = region_tasks(
-            fallback_region,
-            ocr_pass,
-            compact_image=self.compact_image,
-        )
-        return OcrPassTasks(
-            ocr_pass,
-            tasks=tasks,
-        )
+        tasks = region_tasks(fallback_region, ocr_pass, compact_image=self.compact_image)
+        return OcrPassTasks(ocr_pass, tasks=tasks)
 
     def image_region_tasks(self, ocr_pass: OcrPass) -> OcrPassTasks:
         regions = page_image_regions(
@@ -429,15 +363,9 @@ class OcrSession:
                 include_native_text=ocr_pass.include_native_text,
             )
             tasks = raster_tasks(
-                raster,
-                image_crop or self.page_box,
-                ocr_pass,
-                compact_image=self.compact_image,
+                raster, image_crop or self.page_box, ocr_pass, compact_image=self.compact_image
             )
-            return OcrPassTasks(
-                ocr_pass,
-                tasks=tasks,
-            )
+            return OcrPassTasks(ocr_pass, tasks=tasks)
 
         region_signals = tuple(
             (region, raster_text_signal(region.raster.image)) for region in regions
@@ -455,23 +383,14 @@ class OcrSession:
             task
             for region in eligible_regions
             for task in tile_tasks(
-                region.raster,
-                region.page_box,
-                ocr_pass,
-                compact_image=self.compact_image,
+                region.raster, region.page_box, ocr_pass, compact_image=self.compact_image
             )
         )
-        return OcrPassTasks(
-            ocr_pass,
-            tasks=tasks,
-        )
+        return OcrPassTasks(ocr_pass, tasks=tasks)
 
     def page_tasks(self, ocr_pass: OcrPass) -> OcrPassTasks:
         direct_region = (
-            dominant_image_region(
-                self.capture,
-                max_pixels=ocr_pass.pixel_budget,
-            )
+            dominant_image_region(self.capture, max_pixels=ocr_pass.pixel_budget)
             if direct_scan_allowed(self.capture, self.plan)
             else None
         )
@@ -492,12 +411,6 @@ class OcrSession:
             else raster
         )
         tasks = raster_tasks(
-            task_raster,
-            raster_page_box,
-            ocr_pass,
-            compact_image=self.compact_image,
+            task_raster, raster_page_box, ocr_pass, compact_image=self.compact_image
         )
-        return OcrPassTasks(
-            ocr_pass,
-            tasks=tasks,
-        )
+        return OcrPassTasks(ocr_pass, tasks=tasks)

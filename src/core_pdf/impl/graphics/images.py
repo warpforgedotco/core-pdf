@@ -251,14 +251,8 @@ def decode_matte(
 
 def apply_soft_mask(raster: ImageRaster, mask: ImageRaster) -> ImageRaster:
     mask_array = mask.array[:, :, 0]
-    y = numpy.minimum(
-        mask.height - 1,
-        (numpy.arange(raster.height) * mask.height) // raster.height,
-    )
-    x = numpy.minimum(
-        mask.width - 1,
-        (numpy.arange(raster.width) * mask.width) // raster.width,
-    )
+    y = numpy.minimum(mask.height - 1, (numpy.arange(raster.height) * mask.height) // raster.height)
+    x = numpy.minimum(mask.width - 1, (numpy.arange(raster.width) * mask.width) // raster.width)
     channels = raster.channels - int(raster.has_alpha)
     array = interleave_soft_mask(
         raster.array,
@@ -565,10 +559,7 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
     soft_mask = decode_soft_mask(source, soft_mask_source)
     if soft_mask is None:
         return PreparedImage(raster)
-    return PreparedImage(
-        apply_soft_mask(raster, soft_mask),
-        soft_mask=soft_mask,
-    )
+    return PreparedImage(apply_soft_mask(raster, soft_mask), soft_mask=soft_mask)
 
 
 def decode_image(source: ImageSource) -> ImageRaster | None:
@@ -657,9 +648,7 @@ def prepare_native_image(
 
 
 def decode_stream_image_data(
-    data: bytes | memoryview,
-    dictionary: object,
-    chain: FilterChainOutput,
+    data: bytes | memoryview, dictionary: object, chain: FilterChainOutput
 ) -> DecodedImage | None:
     stream_spec = chain.spec
     steps = stream_spec.steps

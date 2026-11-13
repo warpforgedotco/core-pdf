@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 # Importing a submodule runs this file first, and layout analysis is not needed to read objects.
-lazy from ._extract import (
-    extract_pages,
-    extract_text,
-    extract_text_to_fp,
-)
+lazy from ._extract import extract_pages, extract_text, extract_text_to_fp
 lazy from ._layout import (
     LAParams,
     LTAnno,
@@ -23,9 +19,7 @@ lazy from ._layout import (
     LTTextLineHorizontal,
     LTTextLineVertical,
 )
-lazy from ._layout import (
-    LTComponent as LTComponent,
-)
+lazy from ._layout import LTComponent as LTComponent
 
 __version__ = "20260107"
 

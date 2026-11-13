@@ -101,11 +101,7 @@ def raise_codec_error(
 
 
 def normalize_imagecodecs_array(
-    decoded: object,
-    *,
-    name: str,
-    allow_float: bool = False,
-    preserve_uint16: bool = False,
+    decoded: object, *, name: str, allow_float: bool = False, preserve_uint16: bool = False
 ) -> numpy.ndarray:
     array = numpy.asarray(decoded)
     if array.ndim not in {2, 3}:
@@ -140,17 +136,10 @@ def decode_jpeg_image(
 
 
 def decode_jpx_image(
-    data: bytes | memoryview,
-    *,
-    out: numpy.ndarray | None = None,
-    preserve_precision: bool = False,
+    data: bytes | memoryview, *, out: numpy.ndarray | None = None, preserve_precision: bool = False
 ) -> numpy.ndarray:
     try:
-        decoded = imagecodecs.jpeg2k_decode(
-            data,
-            out=out,
-            numthreads=jpx_thread_count(),
-        )
+        decoded = imagecodecs.jpeg2k_decode(data, out=out, numthreads=jpx_thread_count())
     except Exception as exc:  # pragma: no cover
         raise_codec_error(data, exc, check=imagecodecs.jpeg2k_check, name="JPX")
     return normalize_imagecodecs_array(
@@ -174,19 +163,10 @@ def decode_ccitt_fax_array(
     decoder_check = imagecodecs.ccittfax4_check if group4 else imagecodecs.ccittfax3_check
     try:
         if group4:
-            decoded = imagecodecs.ccittfax4_decode(
-                data,
-                height=height,
-                width=width,
-                out=out,
-            )
+            decoded = imagecodecs.ccittfax4_decode(data, height=height, width=width, out=out)
         else:
             decoded = imagecodecs.ccittfax3_decode(
-                data,
-                height=height,
-                width=width,
-                t4options=t4options,
-                out=out,
+                data, height=height, width=width, t4options=t4options, out=out
             )
     except Exception as exc:  # pragma: no cover
         raise_codec_error(data, exc, check=decoder_check, name="CCITT")
@@ -215,11 +195,7 @@ def png_chunk(tag: bytes, payload: bytes) -> bytes:
 
 
 def png_predict_codec(
-    data: bytes | memoryview,
-    *,
-    columns: int,
-    colors: int,
-    bits_per_component: int,
+    data: bytes | memoryview, *, columns: int, colors: int, bits_per_component: int
 ) -> bytes | None:
     try:
         color_type = PNG_COLOR_TYPES.get(colors)
@@ -417,10 +393,7 @@ class RecoveryJBIG2PageDecoder(JBIG2PageDecoder):
         if header.mmr:
             if self.image is not None:
                 compose_packed_bitmap_region(
-                    region,
-                    region.raw[header.bitmap_start :],
-                    self.image,
-                    self.page_info,
+                    region, region.raw[header.bitmap_start :], self.image, self.page_info
                 )
             return
         if (

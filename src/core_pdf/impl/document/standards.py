@@ -49,10 +49,7 @@ IDENTIFICATION_NAMESPACES = {
     "http://www.npes.org/pdfvt/ns/id/": "PDF/VT",
     "http://www.aiim.org/pdfe/ns/id/": "PDF/E",
 }
-DECLARATIONS_NAMESPACES = (
-    "http://pdfa.org/declarations/",
-    "https://pdfa.org/declarations/",
-)
+DECLARATIONS_NAMESPACES = ("http://pdfa.org/declarations/", "https://pdfa.org/declarations/")
 WTPDF_PROFILES = {
     "http://pdfa.org/declarations/wtpdf#reuse1.0": "wtpdf-1.0-reuse",
     "http://pdfa.org/declarations/wtpdf#reuse1.0-validated": "wtpdf-1.0-reuse",
@@ -182,10 +179,7 @@ class VersionProbeResolver(ObjectResolver):
 
 
 def bootstrap_security_context(
-    header: DocumentStandards,
-    data: PdfByteBuffer,
-    xref: dict[int, PdfXRefEntry],
-    trailer: PdfDict,
+    header: DocumentStandards, data: PdfByteBuffer, xref: dict[int, PdfXRefEntry], trailer: PdfDict
 ) -> SemanticContext | None:
     resolver = VersionProbeResolver(data, xref)
     try:
@@ -215,9 +209,7 @@ def bootstrap_security_context(
 
 
 def discover_extensions(
-    value: object,
-    resolve: Callable[[object], object],
-    diagnostics: list[StandardsDiagnostic],
+    value: object, resolve: Callable[[object], object], diagnostics: list[StandardsDiagnostic]
 ) -> tuple[PdfExtension, ...]:
     try:
         value = resolve(value)

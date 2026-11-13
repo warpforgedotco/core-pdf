@@ -17,14 +17,7 @@ from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_GRAY, ColorSpace
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontService
 from core_pdf.impl.spec.types import Rectangle
-from core_records import (
-    FrozenFields,
-    PickleFields,
-    RecordType,
-    ReplaceFields,
-    ReprFields,
-    field,
-)
+from core_records import FrozenFields, PickleFields, RecordType, ReplaceFields, ReprFields, field
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.inline_images import InlineImage

@@ -13,12 +13,7 @@ from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable
 from typing import Any, NamedTuple
 
-from .generic import (
-    ArrayObject,
-    DictionaryObject,
-    NullObject,
-    is_null_or_none,
-)
+from .generic import ArrayObject, DictionaryObject, NullObject, is_null_or_none
 
 logger = logging.getLogger(__name__)
 

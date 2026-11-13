@@ -200,10 +200,7 @@ class ObservationBatch(GeneratedRecord):
 
     @classmethod
     def concatenate_selected(
-        cls,
-        primary: ObservationBatch,
-        secondary: ObservationBatch,
-        secondary_mask: BoolArray,
+        cls, primary: ObservationBatch, secondary: ObservationBatch, secondary_mask: BoolArray
     ) -> ObservationBatch:
         validate_selection_mask(secondary_mask, len(secondary))
         if not len(primary) and bool(numpy.all(secondary_mask)):
@@ -217,8 +214,7 @@ class ObservationBatch(GeneratedRecord):
         split = len(primary)
 
         def combine(
-            primary_column: numpy.ndarray[Any, Any],
-            secondary_column: numpy.ndarray[Any, Any],
+            primary_column: numpy.ndarray[Any, Any], secondary_column: numpy.ndarray[Any, Any]
         ) -> numpy.ndarray[Any, Any]:
             shape = (size, *secondary_column.shape[1:])
             result = numpy.empty(shape, dtype=secondary_column.dtype)
@@ -342,10 +338,7 @@ class PageEvidence(GeneratedRecord):
         box_heights = numpy.maximum(0.0, boxes[:, 3] - boxes[:, 1])
         numpy.multiply(box_areas, box_heights, out=box_areas)
         coverage_areas = numpy.multiply(box_areas, visible)
-        text_coverage = min(
-            1.0,
-            float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area,
-        )
+        text_coverage = min(1.0, float(numpy.sum(coverage_areas, dtype=numpy.float64)) / page_area)
         visible_image_areas: list[float] = []
         visible_image_boxes: list[tuple[float, float, float, float]] = []
         for drawing in drawings:
@@ -373,10 +366,7 @@ class PageEvidence(GeneratedRecord):
             width >= page_width * FULL_PAGE_IMAGE_COVERAGE
             and height >= page_height * FULL_PAGE_IMAGE_COVERAGE
             for width, height in (
-                (
-                    max(0.0, box[2] - box[0]),
-                    max(0.0, box[3] - box[1]),
-                )
+                (max(0.0, box[2] - box[0]), max(0.0, box[3] - box[1]))
                 for box in visible_image_boxes
             )
         )
@@ -389,11 +379,7 @@ class PageEvidence(GeneratedRecord):
             image_area_ratio=min(1.0, sum(visible_image_areas) / page_area),
             image_boxes=tuple(
                 box
-                for box, area in zip(
-                    visible_image_boxes,
-                    visible_image_areas,
-                    strict=True,
-                )
+                for box, area in zip(visible_image_boxes, visible_image_areas, strict=True)
                 if area >= page_area * 0.001
             ),
             text_coverage=text_coverage,

@@ -9,12 +9,7 @@ lazy import numpy
 from core_pdf.impl.base.arrays import finite_median
 from core_pdf.impl.base.geometry import array_bbox
 from core_pdf.impl.base.spatial import band_rows
-from core_pdf.impl.base.types import (
-    GeneratedRecord,
-    RecordType,
-    ReplaceFields,
-    ReprFields,
-)
+from core_pdf.impl.base.types import GeneratedRecord, RecordType, ReplaceFields, ReprFields
 from core_pdf.impl.extract.layout_rules import LAYOUT_RULES
 
 XY_CUT = LAYOUT_RULES.xy_cut
@@ -70,10 +65,7 @@ class LayoutGeometry(ReplaceFields, ReprFields, metaclass=RecordType, frozen=Fal
 
 
 def projection_gap_from_sorted(
-    sorted_starts: numpy.ndarray,
-    sorted_ends: numpy.ndarray,
-    axis: int,
-    minimum_gap: float,
+    sorted_starts: numpy.ndarray, sorted_ends: numpy.ndarray, axis: int, minimum_gap: float
 ) -> tuple[float, float] | None:
     previous_ends = numpy.maximum.accumulate(sorted_ends)[:-1]
     gaps = sorted_starts[1:] - previous_ends
@@ -88,9 +80,7 @@ def projection_gap_from_sorted(
 
 
 def best_projection_gap(
-    boxes: numpy.ndarray,
-    axis: int,
-    minimum_gap: float,
+    boxes: numpy.ndarray, axis: int, minimum_gap: float
 ) -> tuple[float, float] | None:
     starts = boxes[:, axis]
     ends = boxes[:, axis + 2]
@@ -99,17 +89,11 @@ def best_projection_gap(
 
 
 def best_region_projection_gap(
-    geometry: LayoutGeometry,
-    region: LayoutRegion,
-    axis: int,
-    minimum_gap: float,
+    geometry: LayoutGeometry, region: LayoutRegion, axis: int, minimum_gap: float
 ) -> tuple[float, float] | None:
     order = region.x_start_order if axis == 0 else region.y_start_order
     return projection_gap_from_sorted(
-        geometry.boxes[order, axis],
-        geometry.boxes[order, axis + 2],
-        axis,
-        minimum_gap,
+        geometry.boxes[order, axis], geometry.boxes[order, axis + 2], axis, minimum_gap
     )
 
 
@@ -255,11 +239,7 @@ def narrow_projection_gap(
 
 
 def peel_spanning_band(
-    indexes: numpy.ndarray,
-    boxes: numpy.ndarray,
-    median_height: float,
-    *,
-    from_bottom: bool = False,
+    indexes: numpy.ndarray, boxes: numpy.ndarray, median_height: float, *, from_bottom: bool = False
 ) -> tuple[numpy.ndarray, numpy.ndarray] | None:
     rules = XY_CUT
     if len(indexes) < rules.peel_min_boxes:
@@ -307,10 +287,7 @@ def peel_spanning_band(
 
 
 def assign_row_bands(
-    order: numpy.ndarray,
-    centers: numpy.ndarray,
-    tolerance: float,
-    row_ids: numpy.ndarray,
+    order: numpy.ndarray, centers: numpy.ndarray, tolerance: float, row_ids: numpy.ndarray
 ) -> None:
     bands = band_rows(centers[order].tolist(), tolerance, range(len(order)), linkage="anchor")
     for row, band in enumerate(bands):
@@ -332,12 +309,7 @@ def row_order_region(geometry: LayoutGeometry, region: LayoutRegion) -> numpy.nd
     )
     if not math.isfinite(tolerance):
         tolerance = rules.row_band_floor
-    assign_row_bands(
-        region.y_center_order,
-        geometry.y_centers,
-        tolerance,
-        geometry.row_ids,
-    )
+    assign_row_bands(region.y_center_order, geometry.y_centers, tolerance, geometry.row_ids)
     return indexes[numpy.lexsort((geometry.boxes[indexes, 0], geometry.row_ids[indexes]))]
 
 
@@ -400,10 +372,7 @@ def xy_cut_regions(
     if len(indexes) <= 2 or depth >= rules.max_depth:
         return [row_order_region(geometry, current_region)]
 
-    def recurse(
-        group: numpy.ndarray,
-        used: frozenset[int] = used_obstacles,
-    ) -> list[numpy.ndarray]:
+    def recurse(group: numpy.ndarray, used: frozenset[int] = used_obstacles) -> list[numpy.ndarray]:
         return xy_cut_regions(
             group,
             boxes,
@@ -415,12 +384,7 @@ def xy_cut_regions(
             parent_region=current_region,
         )
 
-    obstacle_partition = partition_by_obstacles(
-        indexes,
-        boxes,
-        obstacles,
-        used_obstacles,
-    )
+    obstacle_partition = partition_by_obstacles(indexes, boxes, obstacles, used_obstacles)
     if obstacle_partition is not None:
         groups, used_obstacle = obstacle_partition
         next_used_obstacles = used_obstacles | {used_obstacle}

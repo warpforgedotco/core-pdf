@@ -111,12 +111,7 @@ RELEASES = {
 
 
 def pytest_command(
-    suite: Suite,
-    *,
-    reference: bool,
-    junit: Path,
-    extra: list[str],
-    excluded_files: tuple[str, ...],
+    suite: Suite, *, reference: bool, junit: Path, extra: list[str], excluded_files: tuple[str, ...]
 ) -> list[str]:
     return [
         *environment_command(suite, reference=reference),

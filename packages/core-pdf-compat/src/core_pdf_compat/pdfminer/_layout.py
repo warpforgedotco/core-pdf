@@ -242,10 +242,7 @@ class LTImage(LTComponent):
     __match_args__ = ("bbox", "name", "stream")
 
     def __init__(
-        self,
-        bbox: tuple[float, float, float, float],
-        name: str = "",
-        stream: object | None = None,
+        self, bbox: tuple[float, float, float, float], name: str = "", stream: object | None = None
     ) -> None:
         self.bbox = bbox
         self.name = name

@@ -78,17 +78,13 @@ from ._elements import (  # noqa: E402
 
 
 @lru_cache(maxsize=4096)
-def nlp_features(
-    text: str,
-) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
+def nlp_features(text: str) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
     nlp = NLP
     document = nlp(text[: nlp.max_length])
     return document_features(document)
 
 
-def document_features(
-    document: Any,
-) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
+def document_features(document: Any) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
     tokens = tuple((token.text, "_SP" if token.is_space else token.tag_) for token in document)
     sentences = tuple(sentence.text for sentence in document.sents)
     return tokens, sentences
@@ -116,9 +112,7 @@ def sentence_count(sentences: tuple[str, ...], minimum_words: int) -> int:
 
 
 def classify_element(
-    text: str,
-    bbox: tuple[float, float, float, float],
-    page_height: float,
+    text: str, bbox: tuple[float, float, float, float], page_height: float
 ) -> type[Element]:
     simple_class = simple_element_class(text, bbox, page_height)
     if simple_class is not None:
@@ -127,8 +121,7 @@ def classify_element(
 
 
 def classify_elements(
-    regions: Iterable[tuple[str, tuple[float, float, float, float]]],
-    page_height: float,
+    regions: Iterable[tuple[str, tuple[float, float, float, float]]], page_height: float
 ) -> Iterator[type[Element]]:
     classified = [(text, simple_element_class(text, bbox, page_height)) for text, bbox in regions]
     nlp = NLP
@@ -144,9 +137,7 @@ def classify_elements(
 
 
 def simple_element_class(
-    text: str,
-    bbox: tuple[float, float, float, float],
-    page_height: float,
+    text: str, bbox: tuple[float, float, float, float], page_height: float
 ) -> type[Element] | None:
     height_percentage = 1.0 - (bbox[1] + bbox[3]) / (2.0 * page_height) if page_height else 0.5
     if height_percentage < 0.07:
@@ -175,9 +166,7 @@ def has_classifiable_text(text: str) -> bool:
 
 
 def text_element_class(
-    text: str,
-    tagged_tokens: tuple[tuple[str, str], ...],
-    sentences: tuple[str, ...],
+    text: str, tagged_tokens: tuple[tuple[str, str], ...], sentences: tuple[str, ...]
 ) -> type[Element]:
     if not has_classifiable_text(text):
         return Text

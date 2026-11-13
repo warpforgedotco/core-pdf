@@ -9,14 +9,8 @@ from core_pdf.impl.base.geometry import flip_rect_vertical
 from core_pdf.impl.base.types import GeneratedRecord
 from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTText, LTTextBox
 
-from ._classification import (
-    BULLET,
-    classify_elements,
-)
-from ._elements import (
-    Element,
-    ListItem,
-)
+from ._classification import BULLET, classify_elements
+from ._elements import Element, ListItem
 from ._links import ElementLink, PageLink, box_links, duplicate_character
 
 
@@ -29,19 +23,12 @@ class TextRegion(GeneratedRecord):
 
 
 def clean_text(text: str) -> str:
-    cleaned = text.translate(
-        {
-            ord("\n"): ord(" "),
-            ord("\xa0"): ord(" "),
-        }
-    )
+    cleaned = text.translate({ord("\n"): ord(" "), ord("\xa0"): ord(" ")})
     return re.sub(r" {2,}", " ", cleaned).strip()
 
 
 def layout_regions(
-    items: list[LTTextBox],
-    links: list[PageLink],
-    page_height: float,
+    items: list[LTTextBox], links: list[PageLink], page_height: float
 ) -> list[TextRegion]:
     regions: list[TextRegion] = []
     for item in items:
@@ -106,9 +93,7 @@ def projection_segments(boxes: numpy.ndarray[Any, Any], axis: int) -> list[tuple
 
 
 def recursive_xy_cut(
-    boxes: numpy.ndarray[Any, Any],
-    indices: numpy.ndarray[Any, Any],
-    result: list[int],
+    boxes: numpy.ndarray[Any, Any], indices: numpy.ndarray[Any, Any], result: list[int]
 ) -> None:
     x_order = boxes[:, 0].argsort()
     x_boxes = boxes[x_order]
@@ -128,10 +113,7 @@ def recursive_xy_cut(
             recursive_xy_cut(y_boxes[start:end], y_indices[start:end], result)
 
 
-def region_order(
-    regions: list[TextRegion],
-    page_height: float,
-) -> list[int]:
+def region_order(regions: list[TextRegion], page_height: float) -> list[int]:
     basic_order = sorted(
         range(len(regions)),
         key=lambda index: (page_height - regions[index].bbox[3], regions[index].bbox[0]),
@@ -168,10 +150,7 @@ def region_order(
     return result
 
 
-def combine_list_regions(
-    regions: list[TextRegion],
-    page_height: float,
-) -> list[TextRegion]:
+def combine_list_regions(regions: list[TextRegion], page_height: float) -> list[TextRegion]:
     combined: list[TextRegion] = []
     anchor_text: str | None = None
     anchor_bbox: tuple[float, float, float, float] | None = None

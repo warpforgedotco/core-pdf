@@ -22,10 +22,7 @@ class ExtractionCancelled(RuntimeError):
 class ExtractionScope:
     __slots__ = ("_cancelled",)
 
-    def __init__(
-        self,
-        cancelled: Callable[[], bool] | None = None,
-    ) -> None:
+    def __init__(self, cancelled: Callable[[], bool] | None = None) -> None:
         self._cancelled = cancelled
 
     def raise_if_cancelled(self) -> None:

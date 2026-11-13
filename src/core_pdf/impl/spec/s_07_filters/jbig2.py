@@ -10,10 +10,7 @@ lazy from core_pdf.impl.jbig2.bitmap import invert_packed_bitmap
 
 
 def decode_jbig2(
-    data: bytes,
-    parms: object,
-    *,
-    decoder_type: type[JBIG2PageDecoder] = JBIG2PageDecoder,
+    data: bytes, parms: object, *, decoder_type: type[JBIG2PageDecoder] = JBIG2PageDecoder
 ) -> bytes:
     if isinstance(parms, FilterParams):
         params = parms

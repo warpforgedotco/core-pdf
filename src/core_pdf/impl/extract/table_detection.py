@@ -52,9 +52,7 @@ class RuledTableSource:
         for component in grid_components(horizontal, vertical):
             for component_part in split_grid_component(*component):
                 table = table_from_component(
-                    start_order + len(found),
-                    *component_part,
-                    observations,
+                    start_order + len(found), *component_part, observations
                 )
                 if table is not None:
                     found.append(TableCandidate(table))
@@ -130,10 +128,7 @@ class TableDetector(GeneratedRecord):
 NATIVE_TABLES = TableDetector.native()
 
 
-def finalize_tables(
-    tables: tuple[Table, ...],
-    analysis: TableAnalysis,
-) -> tuple[Table, ...]:
+def finalize_tables(tables: tuple[Table, ...], analysis: TableAnalysis) -> tuple[Table, ...]:
     observations = analysis.observations
     tables = tuple(sorted(tables, key=table_vertical_sort_key))
     return tuple(

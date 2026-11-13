@@ -28,16 +28,9 @@ from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     read_literal_string,
     skip_pdf_ignored,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
-    LexicalRules,
-    lexical_rules,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import LexicalRules, lexical_rules
 from core_pdf.impl.spec.standards import SemanticContext
-from core_pdf.impl.spec.types import (
-    PdfName,
-    PdfReference,
-    PdfString,
-)
+from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
 
 PdfName_of = PdfName.of
 HEX_STRING_END_RE = re.compile(b">")
@@ -610,8 +603,7 @@ class PdfLexer:
             raw_contents = values.get("Contents")
             if not is_signature_dictionary and type(raw_contents) is PdfString:
                 values["Contents"] = PdfString(
-                    self.apply_decipher(raw_contents.data),
-                    is_literal=raw_contents.is_literal,
+                    self.apply_decipher(raw_contents.data), is_literal=raw_contents.is_literal
                 )
         return values
 

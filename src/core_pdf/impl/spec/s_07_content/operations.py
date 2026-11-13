@@ -13,9 +13,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     require_pdf_integer,
     require_pdf_number,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
-    CONTENT_OPERATOR_SIGNATURES,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_SIGNATURES
 from core_pdf.impl.spec.s_07_syntax_primitives.numbers import is_number_token
 from core_pdf.impl.spec.types import PdfName, PdfString
 lazy from core_pdf.impl.spec.s_07_syntax.serialize import serialize_object

@@ -11,10 +11,7 @@ from core_pdf.impl.base.runs import TextRun
 from core_pdf.impl.base.text import TextWord
 
 if TYPE_CHECKING:
-    from core_pdf.impl.base.runs import (
-        LayoutLineText,
-        LayoutLineTextSegment,
-    )
+    from core_pdf.impl.base.runs import LayoutLineText, LayoutLineTextSegment
 
 
 class LayoutLine:
@@ -167,9 +164,7 @@ def even_char_steps(
 
 
 def layout_line_segment_char_bbox(
-    segment: LayoutLineTextSegment,
-    index: int,
-    text_length: int,
+    segment: LayoutLineTextSegment, index: int, text_length: int
 ) -> tuple[float, float, float, float]:
     if text_length <= 1:
         return segment.advance_bbox

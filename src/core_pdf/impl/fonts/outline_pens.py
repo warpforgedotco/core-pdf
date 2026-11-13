@@ -134,10 +134,7 @@ def cubic_bounds(p1: Point, p2: Point, p3: Point, p4: Point) -> tuple[float, flo
     roots = [t for t in solve_quadratic(ax * 3.0, bx * 2.0, cx) if 0 <= t < 1]
     roots += [t for t in solve_quadratic(ay * 3.0, by * 2.0, cy) if 0 <= t < 1]
     points = [
-        (
-            ax * t * t * t + bx * t * t + cx * t + dx,
-            ay * t * t * t + by * t * t + cy * t + dy,
-        )
+        (ax * t * t * t + bx * t * t + cx * t + dx, ay * t * t * t + by * t * t + cy * t + dy)
         for t in roots
     ]
     return points_bounds([*points, p1, p4])
@@ -588,10 +585,7 @@ class Type2Outline:
         self.recording.append(("lineTo", (self.next_point(delta),)))
 
     def curve(
-        self,
-        d1: Sequence[int | float],
-        d2: Sequence[int | float],
-        d3: Sequence[int | float],
+        self, d1: Sequence[int | float], d2: Sequence[int | float], d3: Sequence[int | float]
     ) -> None:
         if not self.saw_move:
             self.move((0, 0))

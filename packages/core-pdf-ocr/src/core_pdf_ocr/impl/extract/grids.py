@@ -52,8 +52,7 @@ def longest_true_runs(mask: numpy.ndarray) -> numpy.ndarray:
 
 
 def cluster_line_positions(
-    positions: numpy.ndarray,
-    tolerance: int = GRID_LINE_CLUSTER_PX,
+    positions: numpy.ndarray, tolerance: int = GRID_LINE_CLUSTER_PX
 ) -> list[int]:
     values = positions.tolist()
     return [
@@ -207,9 +206,7 @@ def grid_cell_tasks(
 
 
 def grid_region_page_box(
-    task: OcrTask,
-    x_lines: list[int],
-    y_lines: list[int],
+    task: OcrTask, x_lines: list[int], y_lines: list[int]
 ) -> tuple[float, float, float, float]:
     return pixel_box_to_page_box(
         (x_lines[0], y_lines[0], x_lines[-1], y_lines[-1]),
@@ -226,9 +223,7 @@ GRID_MAX_STRADDLE_RATIO = 0.25
 
 
 def grid_is_regular_table(
-    grid: tuple[list[int], list[int], numpy.ndarray, float],
-    prior: ObservationBatch,
-    task: OcrTask,
+    grid: tuple[list[int], list[int], numpy.ndarray, float], prior: ObservationBatch, task: OcrTask
 ) -> bool:
     x_lines, y_lines, _source_samples, slope = grid
     if len(y_lines) - 1 < GRID_MIN_ROWS or len(x_lines) - 1 < GRID_MIN_COLUMNS:
@@ -266,9 +261,7 @@ def grid_is_regular_table(
     return straddling <= inside * GRID_MAX_STRADDLE_RATIO
 
 
-def grid_row_observations(
-    observations: ObservationBatch,
-) -> ObservationBatch:
+def grid_row_observations(observations: ObservationBatch) -> ObservationBatch:
     if not len(observations):
         return observations
     heights = observations.bbox[:, 3] - observations.bbox[:, 1]

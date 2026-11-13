@@ -43,9 +43,7 @@ class ChartTableSource:
 
 
 OCR_TABLES = replace(
-    TableDetector.native(),
-    gate=vector_text_untrusted,
-    supplements=(ChartTableSource(),),
+    TableDetector.native(), gate=vector_text_untrusted, supplements=(ChartTableSource(),)
 )
 
 
@@ -101,10 +99,7 @@ def extract_chart_table(capture: PageAnalysis, observations: ObservationBatch) -
     if len(cells) < 3:
         return None
     row_tolerance = max(6.0, capture.height * 0.008)
-    ordered_cells = sorted(
-        cells,
-        key=lambda item: (-chart_cell_center_y(item), item.column),
-    )
+    ordered_cells = sorted(cells, key=lambda item: (-chart_cell_center_y(item), item.column))
     row_groups = band_rows(
         [chart_cell_center_y(cell) for cell in ordered_cells],
         row_tolerance,

@@ -193,13 +193,7 @@ def serialize_xref_stream(
     data = b"".join(
         b"".join(field.to_bytes(width, "big") for field, width in zip(row, widths)) for row in rows
     )
-    dictionary = {
-        **trailer,
-        "Type": PdfName.of("XRef"),
-        "Size": total,
-        "W": widths,
-        "Index": index,
-    }
+    dictionary = {**trailer, "Type": PdfName.of("XRef"), "Size": total, "W": widths, "Index": index}
     return serialize_indirect_object(PdfReference(number, 0), PdfStream(dictionary, data))
 
 

@@ -494,18 +494,7 @@ class FieldDictionaryAttributes:
             A tuple containing all the attribute constants.
 
         """
-        return (
-            cls.TM,
-            cls.T,
-            cls.FT,
-            cls.Parent,
-            cls.TU,
-            cls.Ff,
-            cls.V,
-            cls.DV,
-            cls.Kids,
-            cls.AA,
-        )
+        return (cls.TM, cls.T, cls.FT, cls.Parent, cls.TU, cls.Ff, cls.V, cls.DV, cls.Kids, cls.AA)
 
     @classmethod
     def attributes_dict(cls) -> dict[str, str]:
@@ -570,9 +559,7 @@ class CheckboxRadioButtonAttributes:
             A dictionary containing attribute keys and their names.
 
         """
-        return {
-            cls.Opt: "Options",
-        }
+        return {cls.Opt: "Options"}
 
 
 class FieldFlag(IntFlag):

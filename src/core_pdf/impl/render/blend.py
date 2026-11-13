@@ -61,8 +61,7 @@ def blend_context(context: SemanticContext | None) -> SemanticContext:
 
 
 def blend_normal_solid_array_numpy(
-    target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
-    rgba: tuple[int, int, int, int],
+    target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]], rgba: tuple[int, int, int, int]
 ) -> None:
     sr, sg, sb, sa = rgba
     if sa <= 0 or target.size == 0:
@@ -339,12 +338,6 @@ def convert_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
 
 
 def scale_rgba_alpha(
-    rgba: tuple[int, int, int, int],
-    alpha_scale: Any,
+    rgba: tuple[int, int, int, int], alpha_scale: Any
 ) -> tuple[int, int, int, int]:
-    return (
-        rgba[0],
-        rgba[1],
-        rgba[2],
-        max(0, min(255, int(round(rgba[3] * float(alpha_scale))))),
-    )
+    return (rgba[0], rgba[1], rgba[2], max(0, min(255, int(round(rgba[3] * float(alpha_scale))))))

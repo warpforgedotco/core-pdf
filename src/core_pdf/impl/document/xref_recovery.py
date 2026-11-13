@@ -61,9 +61,7 @@ def read_strict_xref_error(self: PdfDocument[Any]) -> str | None:
         return None
     try:
         read_section = partial(
-            StrictXRefScanner.recover_section_at,
-            self.raw_data,
-            semantic_context=self.xref_context,
+            StrictXRefScanner.recover_section_at, self.raw_data, semantic_context=self.xref_context
         )
         for _revision in iter_xref_revisions(start, read_section):
             pass
@@ -125,9 +123,7 @@ def scan_xref_sections(self: PdfDocument[Any]) -> None:
     if start is not None:
         try:
             read_section = partial(
-                XRefScanner.recover_section_at,
-                data,
-                semantic_context=self.xref_context,
+                XRefScanner.recover_section_at, data, semantic_context=self.xref_context
             )
             revisions = self.read_xref_revisions(start, read_section, brute_force)
             self.xref = merge_xref_sections(revision.entries for revision in revisions)
@@ -208,10 +204,7 @@ def repair_stale_xref_offsets(
                 self.xref[key] = shifted
                 repaired = True
                 continue
-            shifted_offset = self.find_xref_entry_header(
-                key,
-                entry.offset + header_offset,
-            )
+            shifted_offset = self.find_xref_entry_header(key, entry.offset + header_offset)
             if shifted_offset is not None:
                 self.xref[key] = entry._replace(offset=shifted_offset)
                 repaired = True
@@ -240,10 +233,7 @@ def find_xref_entry_header(self: PdfDocument[Any], key: int, offset: int) -> int
     search_start = max(0, offset - 1024)
     search_end = min(len(data), offset + 1024)
     for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
-        data,
-        search_start,
-        search_end,
-        allow_prefix_before_start=True,
+        data, search_start, search_end, allow_prefix_before_start=True
     ):
         if (
             object_number == expected_object_number
@@ -267,10 +257,7 @@ def xref_entry_header_nearby(self: PdfDocument[Any], key: int, entry: PdfXRefEnt
         return False
     search_end = min(data_len, offset + 64)
     for parsed_offset, object_number, generation_number in iter_indirect_object_headers(
-        data,
-        offset,
-        search_end,
-        allow_prefix_before_start=True,
+        data, offset, search_end, allow_prefix_before_start=True
     ):
         return (
             parsed_offset == offset
@@ -288,11 +275,7 @@ def is_valid_catalog_root(self: PdfDocument[Any], root_ref: object) -> bool:
         resolver = self.resolver
         resolver.xref = self.xref
     else:
-        resolver = ObjectResolver(
-            self.raw_data,
-            self.xref,
-            semantic_context=self.xref_context,
-        )
+        resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=self.xref_context)
     valid = False
     try:
         root = resolver.as_dict(root_ref)
@@ -322,11 +305,7 @@ def is_valid_catalog_root(self: PdfDocument[Any], root_ref: object) -> bool:
 def infer_catalog_root(self: PdfDocument[Any]) -> PdfReference | None:
     data = self.raw_data
     object_cache: ResolvedObjectCache = {}
-    resolver = ObjectResolver(
-        self.raw_data,
-        self.xref,
-        semantic_context=self.xref_context,
-    )
+    resolver = ObjectResolver(self.raw_data, self.xref, semantic_context=self.xref_context)
     lexer = PdfLexer(data, semantic_context=self.xref_context)
     entries_by_ref = {
         (k >> 16, k & 0xFFFF): entry for k, entry in self.xref.items() if entry.in_use

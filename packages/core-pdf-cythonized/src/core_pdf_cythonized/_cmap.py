@@ -121,10 +121,7 @@ def literal_end(
 @cython.nogil
 @cython.exceptval(check=False)
 def find_byte(
-    data: cython.p_const_uchar,
-    n: cython.Py_ssize_t,
-    pos: cython.Py_ssize_t,
-    byte: cython.uchar,
+    data: cython.p_const_uchar, n: cython.Py_ssize_t, pos: cython.Py_ssize_t, byte: cython.uchar
 ) -> cython.Py_ssize_t:
     found: cython.pointer[cython.const[cython.void]]
     if pos >= n:
@@ -185,9 +182,7 @@ def composite_end(
 @cython.cfunc
 @cython.exceptval(check=False)
 def tokenize(
-    data: cython.p_const_uchar,
-    n: cython.Py_ssize_t,
-    tokens: cython.pointer[Tokens],
+    data: cython.p_const_uchar, n: cython.Py_ssize_t, tokens: cython.pointer[Tokens]
 ) -> cython.bint:
     pos: cython.Py_ssize_t = 0
     end: cython.Py_ssize_t
@@ -265,9 +260,7 @@ def is_word(
 @cython.nogil
 @cython.exceptval(check=False)
 def clean_hex_length(
-    data: cython.p_const_uchar,
-    start: cython.Py_ssize_t,
-    end: cython.Py_ssize_t,
+    data: cython.p_const_uchar, start: cython.Py_ssize_t, end: cython.Py_ssize_t
 ) -> cython.Py_ssize_t:
     # The digits between < and >, when every one is a hex digit and they pair up;
     # -1 otherwise, which declines the whole CMap to the Python parser.
@@ -328,18 +321,12 @@ def utf16be_decode(buffer: cython.p_uchar, size: cython.Py_ssize_t) -> object:
     byteorder: cython.int = 1
     try:
         return PyUnicode_DecodeUTF16(
-            cython.cast(cython.p_const_char, buffer),
-            size,
-            "strict",
-            cython.address(byteorder),
+            cython.cast(cython.p_const_char, buffer), size, "strict", cython.address(byteorder)
         )
     except UnicodeDecodeError:
         byteorder = 1
         return PyUnicode_DecodeUTF16(
-            cython.cast(cython.p_const_char, buffer),
-            size,
-            "replace",
-            cython.address(byteorder),
+            cython.cast(cython.p_const_char, buffer), size, "replace", cython.address(byteorder)
         )
 
 
@@ -406,8 +393,7 @@ class Scan:
             if source_size:
                 unhex(data, tokens.start[pending], source_size, self.scratch)
                 source = PyBytes_FromStringAndSize(
-                    cython.cast(cython.p_const_char, self.scratch),
-                    source_size,
+                    cython.cast(cython.p_const_char, self.scratch), source_size
                 )
                 self.mappings[source] = hex_text(
                     data, tokens.start[index], target_size, self.scratch

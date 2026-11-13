@@ -10,8 +10,7 @@ type ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 
 
 def lab_components_to_xyz(
-    values: ColorSamples,
-    white_point: tuple[float, float, float],
+    values: ColorSamples, white_point: tuple[float, float, float]
 ) -> ColorSamples:
     l_star = values[:, 0]
     a_star = values[:, 1]
@@ -25,8 +24,7 @@ def lab_components_to_xyz(
     yr = numpy.where(l_star > kappa * eps, fy**3, l_star / kappa)
     zr = numpy.where(fz**3 > eps, fz**3, (116.0 * fz - 16.0) / kappa)
     return numpy.column_stack((xr, yr, zr)).astype(numpy.float32) * numpy.asarray(
-        white_point,
-        dtype=numpy.float32,
+        white_point, dtype=numpy.float32
     )
 
 

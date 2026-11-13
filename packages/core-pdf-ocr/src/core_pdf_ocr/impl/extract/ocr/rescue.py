@@ -92,9 +92,7 @@ class RescueCoverage(GeneratedRecord):
 
 
 def adaptive_rescue_coverage(
-    source_tasks: tuple[OcrTask, ...],
-    ocr_pass: OcrPass,
-    primary: ObservationBatch,
+    source_tasks: tuple[OcrTask, ...], ocr_pass: OcrPass, primary: ObservationBatch
 ) -> RescueCoverage:
     raster_count = 0
     cell_count = 0
@@ -118,10 +116,7 @@ def adaptive_rescue_coverage(
         total_ink += float(numpy.sum(ink, dtype=numpy.float64))
         weak_ink += float(numpy.sum(ink[weak], dtype=numpy.float64))
     return RescueCoverage(
-        raster_count=raster_count,
-        cell_count=cell_count,
-        ink=total_ink,
-        weak_ink=weak_ink,
+        raster_count=raster_count, cell_count=cell_count, ink=total_ink, weak_ink=weak_ink
     )
 
 
@@ -135,9 +130,7 @@ def primary_text_is_sufficient(candidate: Candidate) -> bool:
 
 
 def adaptive_rescue_decision(
-    candidate: Candidate,
-    source_tasks: tuple[OcrTask, ...],
-    ocr_pass: OcrPass,
+    candidate: Candidate, source_tasks: tuple[OcrTask, ...], ocr_pass: OcrPass
 ) -> bool:
     metrics = candidate.metrics
     coverage_pass = replace(
@@ -147,11 +140,7 @@ def adaptive_rescue_decision(
         region_columns=max(3, ocr_pass.region_columns),
         max_regions=max(8, ocr_pass.max_regions),
     )
-    coverage = adaptive_rescue_coverage(
-        source_tasks,
-        coverage_pass,
-        candidate.observations,
-    )
+    coverage = adaptive_rescue_coverage(source_tasks, coverage_pass, candidate.observations)
     if primary_text_is_sufficient(candidate):
         return False
     if coverage.mean_ink >= OCR_RESCUE_SATURATED_MEAN_INK and (

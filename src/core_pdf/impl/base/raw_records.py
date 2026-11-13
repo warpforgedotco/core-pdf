@@ -61,16 +61,7 @@ class RawLink:
 
 
 class RawFormField:
-    __slots__ = (
-        "name",
-        "type",
-        "value",
-        "value_text",
-        "rect",
-        "dict",
-        "kids",
-        "widget",
-    )
+    __slots__ = ("name", "type", "value", "value_text", "rect", "dict", "kids", "widget")
 
     def __init__(
         self,
@@ -126,10 +117,4 @@ class RawFormField:
         return tuple(result)
 
 
-__all__ = (
-    "RawAnnotation",
-    "RawFormField",
-    "RawLink",
-    "RawNamedDestination",
-    "RawOutlineItem",
-)
+__all__ = ("RawAnnotation", "RawFormField", "RawLink", "RawNamedDestination", "RawOutlineItem")

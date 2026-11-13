@@ -7,16 +7,7 @@ from typing import Literal, TypeAlias
 from core_records import GeneratedRecord
 
 FilterDecoder: TypeAlias = Literal[
-    "ascii85",
-    "ascii_hex",
-    "ccitt",
-    "crypt",
-    "flate",
-    "jbig2",
-    "jpeg",
-    "jpx",
-    "lzw",
-    "run_length",
+    "ascii85", "ascii_hex", "ccitt", "crypt", "flate", "jbig2", "jpeg", "jpx", "lzw", "run_length"
 ]
 
 
@@ -29,11 +20,7 @@ class FilterDescriptor(GeneratedRecord):
 
 
 FILTER_DESCRIPTORS = (
-    FilterDescriptor(
-        "FlateDecode",
-        "flate",
-        predictor=True,
-    ),
+    FilterDescriptor("FlateDecode", "flate", predictor=True),
     FilterDescriptor("Fl", "flate", predictor=True),
     FilterDescriptor("ASCIIHexDecode", "ascii_hex"),
     FilterDescriptor("AHx", "ascii_hex"),
@@ -41,26 +28,14 @@ FILTER_DESCRIPTORS = (
     FilterDescriptor("A85", "ascii85"),
     FilterDescriptor("RunLengthDecode", "run_length"),
     FilterDescriptor("RL", "run_length"),
-    FilterDescriptor(
-        "LZWDecode",
-        "lzw",
-        predictor=True,
-    ),
+    FilterDescriptor("LZWDecode", "lzw", predictor=True),
     FilterDescriptor("LZW", "lzw", predictor=True),
     FilterDescriptor("DCT", "jpeg"),
     FilterDescriptor("DCTDecode", "jpeg"),
-    FilterDescriptor(
-        "CCITTFaxDecode",
-        "ccitt",
-        ccitt=True,
-    ),
+    FilterDescriptor("CCITTFaxDecode", "ccitt", ccitt=True),
     FilterDescriptor("CCF", "ccitt", ccitt=True),
     FilterDescriptor("Crypt", "crypt"),
-    FilterDescriptor(
-        "JPXDecode",
-        "jpx",
-        wants_image_dictionary=True,
-    ),
+    FilterDescriptor("JPXDecode", "jpx", wants_image_dictionary=True),
     FilterDescriptor("JBIG2Decode", "jbig2"),
 )
 

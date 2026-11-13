@@ -7,13 +7,9 @@ from typing import TYPE_CHECKING, Any
 lazy import numpy
 
 from core_pdf.impl.base.geometry import points_bbox
-from core_pdf.impl.base.types import (
-    GeneratedRecord,
-)
+from core_pdf.impl.base.types import GeneratedRecord
 from core_pdf.impl.fonts.helpers import LEGITIMATE_MULTI_CHAR_GLYPHS
-from core_pdf.impl.fonts.raster_kernel import (
-    rasterize_contours,
-)
+from core_pdf.impl.fonts.raster_kernel import rasterize_contours
 lazy from core_pdf_cythonized import cell_distance_map, glyph_feature_cells
 
 if TYPE_CHECKING:
@@ -150,11 +146,7 @@ class CFFUnicodeRepairIndex:
         "decisions",
     )
 
-    def __init__(
-        self,
-        font: CFFFont,
-        mapping_items: tuple[tuple[bytes, int, str], ...],
-    ) -> None:
+    def __init__(self, font: CFFFont, mapping_items: tuple[tuple[bytes, int, str], ...]) -> None:
         glyph_count = len(font.charstrings)
         labels: dict[int, str] = {}
         code_to_gid: dict[bytes, int] = {}
@@ -266,11 +258,7 @@ class CFFUnicodeRepairIndex:
         for glyph_id in target_gids:
             label = self.label_names[glyph_id]
             replacement = repair_candidate(
-                glyph_id,
-                label,
-                features,
-                self.label_names,
-                distance_lookups.get(glyph_id),
+                glyph_id, label, features, self.label_names, distance_lookups.get(glyph_id)
             )
             if replacement is not None and replacement != label:
                 repairs[glyph_id] = replacement
@@ -434,13 +422,11 @@ def feature_distance_matrix(
         bitmap_width = max(left_bitmap_rows.shape[1], right_bitmap_rows.shape[1])
         if left_bitmap_rows.shape[1] != bitmap_width:
             left_bitmap_rows = numpy.pad(
-                left_bitmap_rows,
-                ((0, 0), (0, bitmap_width - left_bitmap_rows.shape[1])),
+                left_bitmap_rows, ((0, 0), (0, bitmap_width - left_bitmap_rows.shape[1]))
             )
         if right_bitmap_rows.shape[1] != bitmap_width:
             right_bitmap_rows = numpy.pad(
-                right_bitmap_rows,
-                ((0, 0), (0, bitmap_width - right_bitmap_rows.shape[1])),
+                right_bitmap_rows, ((0, 0), (0, bitmap_width - right_bitmap_rows.shape[1]))
             )
         intersection = numpy.bitwise_count(
             left_bitmap_rows[:, None, :] & right_bitmap_rows[None, :, :]
@@ -458,11 +444,7 @@ def feature_distance_matrix(
             out=numpy.zeros_like(intersection, dtype=numpy.float64),
             where=union != 0,
         )
-        bitmap_distance = numpy.where(
-            same_bitmap_shape & (union != 0),
-            1.0 - bitmap_ratio,
-            0.0,
-        )
+        bitmap_distance = numpy.where(same_bitmap_shape & (union != 0), 1.0 - bitmap_ratio, 0.0)
 
     combined = (
         left_to_right

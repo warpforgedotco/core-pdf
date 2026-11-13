@@ -77,9 +77,7 @@ StructureAttributes: TypeAlias = dict[str, Any]
 ParentTree: TypeAlias = dict[int, Any]
 
 
-def make_match_func(
-    matcher: str | MatchFunc | None = None,
-) -> MatchFunc:
+def make_match_func(matcher: str | MatchFunc | None = None) -> MatchFunc:
     if matcher is None:
         return lambda ignored: True
     if isinstance(matcher, str):
@@ -88,8 +86,7 @@ def make_match_func(
 
 
 def find_all(
-    elements: list[StructureElement],
-    matcher: str | MatchFunc | None = None,
+    elements: list[StructureElement], matcher: str | MatchFunc | None = None
 ) -> Iterator[StructureElement]:
     match_func = make_match_func(matcher)
     stack = list(elements)
@@ -426,11 +423,7 @@ class PageStructure(Sequence[StructureElement | None]):
     elements: dict[int, StructureElement]
 
     def __init__(
-        self,
-        page: PdfPage,
-        parents: Any,
-        *,
-        page_lookup: PageLookup[Any] | None = None,
+        self, page: PdfPage, parents: Any, *, page_lookup: PageLookup[Any] | None = None
     ) -> None:
         self.page = page
         self.page_lookup = page_lookup
@@ -463,10 +456,7 @@ class PageStructure(Sequence[StructureElement | None]):
         marker = id(obj)
         if marker not in self.elements:
             self.elements[marker] = StructureElement(
-                self.page.document,
-                obj,
-                page_lookup=self.page_lookup,
-                element_cache=self.elements,
+                self.page.document, obj, page_lookup=self.page_lookup, element_cache=self.elements
             )
         return self.elements[marker]
 
@@ -538,8 +528,7 @@ def make_kids(
                 malformed("invalid structure content mcid")
                 continue
             yield StructureContentItem(
-                page_index=page.page_number - 1 if page is not None else None,
-                mcid=current,
+                page_index=page.page_number - 1 if page is not None else None, mcid=current
             )
             continue
         if isinstance(current, PdfReference):
@@ -565,8 +554,7 @@ def make_kids(
                     malformed("invalid structure object reference")
                     continue
                 yield StructureContentObject(
-                    page_index=get_kid_page_index(document, page, current, page_lookup),
-                    props=obj,
+                    page_index=get_kid_page_index(document, page, current, page_lookup), props=obj
                 )
                 continue
             yield StructureElement(document, current, page_lookup=page_lookup)

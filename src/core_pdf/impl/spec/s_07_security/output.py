@@ -99,9 +99,7 @@ def output_permissions(value: int, version: int, revision: int) -> int:
 
 
 def legacy_handler(
-    config: StandardSecurityConfig,
-    user_password: str | bytes,
-    owner_password: str | bytes,
+    config: StandardSecurityConfig, user_password: str | bytes, owner_password: str | bytes
 ) -> StandardSecurityHandler:
     user_bytes = legacy_password_bytes(user_password)
     owner_key = legacy_owner_key(
@@ -120,9 +118,7 @@ def legacy_handler(
 
 
 def modern_handler(
-    config: StandardSecurityConfig,
-    user_password: str | bytes,
-    owner_password: str | bytes,
+    config: StandardSecurityConfig, user_password: str | bytes, owner_password: str | bytes
 ) -> StandardSecurityHandler:
     file_key = secrets.token_bytes(32)
     values = modern_values(

@@ -139,8 +139,7 @@ def interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
     boxes = numpy.asarray(tuple(line_bbox(line) for line in merged_lines), dtype=numpy.float32)
     ordered = row_order_indexes(numpy.arange(len(merged_lines)), boxes)
     merged = ParsedBlock(
-        lines=tuple(merged_lines[int(index)] for index in ordered),
-        bbox=block_bbox(merged_lines),
+        lines=tuple(merged_lines[int(index)] for index in ordered), bbox=block_bbox(merged_lines)
     )
     candidate_ids = {id(block) for block in candidates}
     return [merged, *(block for block in blocks if id(block) not in candidate_ids)]

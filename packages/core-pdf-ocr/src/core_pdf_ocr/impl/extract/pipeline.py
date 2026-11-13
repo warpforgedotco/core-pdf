@@ -10,12 +10,7 @@ from core_pdf.impl.base.exceptions import ExtractionScope
 from core_pdf.impl.extract import pipeline as extract_pipeline
 from core_pdf.impl.extract.capture import STRUCTURE_UNSET
 from core_pdf.impl.extract.contracts import ObservationBatch, PageState
-from core_pdf.impl.extract.pipeline import (
-    NATIVE_PIPELINE,
-    DetectTables,
-    LayoutBlocks,
-    PagePipeline,
-)
+from core_pdf.impl.extract.pipeline import NATIVE_PIPELINE, DetectTables, LayoutBlocks, PagePipeline
 from core_pdf.impl.output.model import Page
 from core_pdf_ocr.impl.extract.block_layout import OCR_LAYOUT_HOOKS
 from core_pdf_ocr.impl.extract.capture import capture_page
@@ -99,11 +94,7 @@ class PageExtraction(extract_pipeline.PageExtraction):
         stroked_profile: StrokedTextProfile | None = None,
     ) -> None:
         super().__init__(
-            page,
-            capture=capture,
-            fields=fields,
-            structure=structure,
-            hidden_layers=hidden_layers,
+            page, capture=capture, fields=fields, structure=structure, hidden_layers=hidden_layers
         )
         self.plan = plan if plan is not None else plan_page(self.capture)
         self.recognition_result = recognition

@@ -68,10 +68,7 @@ class LazyInheritedValues(Mapping[str, object]):
     __slots__ = ("nodes", "resolver", "inherited_keys", "resolved_values")
 
     def __init__(
-        self,
-        nodes: tuple[PdfDict, ...],
-        resolve: Callable[[object], object],
-        keys: tuple[str, ...],
+        self, nodes: tuple[PdfDict, ...], resolve: Callable[[object], object], keys: tuple[str, ...]
     ) -> None:
         self.nodes = nodes
         self.resolver = resolve

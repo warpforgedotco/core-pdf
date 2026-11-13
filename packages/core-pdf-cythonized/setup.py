@@ -12,11 +12,7 @@ CONTRACTION_FLAGS = {
     "msvc": ["/fp:precise"],
 }
 
-OPTIMIZATION_FLAGS = {
-    "unix": ["-O3"],
-    "mingw32": ["-O3"],
-    "msvc": ["/O2"],
-}
+OPTIMIZATION_FLAGS = {"unix": ["-O3"], "mingw32": ["-O3"], "msvc": ["/O2"]}
 
 # Pure Python mode sources: every module but a package's __init__ is a kernel.
 # Remaining .pyx files (if any) compile alongside them.
@@ -70,11 +66,7 @@ def extensions() -> list:
         ],
         language_level="3",
         nthreads=JOBS,
-        compiler_directives={
-            "boundscheck": False,
-            "wraparound": False,
-            "cdivision": True,
-        },
+        compiler_directives={"boundscheck": False, "wraparound": False, "cdivision": True},
         quiet=True,
     )
 

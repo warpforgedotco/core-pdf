@@ -103,11 +103,7 @@ def resolve_tessdata_path() -> tuple[str | None, str]:
     if executable is not None:
         try:
             completed = subprocess.run(
-                [executable, "--list-langs"],
-                capture_output=True,
-                check=False,
-                text=True,
-                timeout=5,
+                [executable, "--list-langs"], capture_output=True, check=False, text=True, timeout=5
             )
         except OSError, subprocess.TimeoutExpired:
             completed = None
@@ -128,11 +124,7 @@ def resolve_tessdata_path() -> tuple[str | None, str]:
 
 def open_tesseract_api(mode: int) -> Any:
     tesserocr = import_tesserocr()
-    api = tesserocr.PyTessBaseAPI(
-        path=tessdata_path(),
-        psm=mode,
-        oem=tesserocr.OEM.LSTM_ONLY,
-    )
+    api = tesserocr.PyTessBaseAPI(path=tessdata_path(), psm=mode, oem=tesserocr.OEM.LSTM_ONLY)
     api.SetVariable("preserve_interword_spaces", "0")
     api.SetVariable("textord_tablefind_recognize_tables", "0")
     api.SetVariable("textord_tabfind_find_tables", "0")
@@ -254,10 +246,7 @@ def acceptable_text(text: str, confidence: float, minimum_confidence: float = 20
     return not (length >= 8 and same_char_count == length)
 
 
-def select_character_filtered_candidate(
-    raw: Candidate,
-    filtered: Candidate,
-) -> Candidate:
+def select_character_filtered_candidate(raw: Candidate, filtered: Candidate) -> Candidate:
     raw_metrics = raw.metrics
     filtered_metrics = filtered.metrics
     if not len(filtered.observations):
@@ -367,10 +356,7 @@ class SharedEngine:
 
 
 def recognize(
-    task: OcrTask,
-    *,
-    api_override: Any | None = None,
-    image_prepared: bool = False,
+    task: OcrTask, *, api_override: Any | None = None, image_prepared: bool = False
 ) -> Candidate:
     if api_override is None:
         with owned_api(task.mode) as api:
@@ -442,11 +428,7 @@ def recognize(
                 confidence = 0.0
                 bbox = None
             text = collapse_ws(text)
-            if bbox is not None and acceptable_text(
-                text,
-                confidence,
-                task.minimum_confidence,
-            ):
+            if bbox is not None and acceptable_text(text, confidence, task.minimum_confidence):
                 x0, y0, x1, y1 = bbox
                 bbox_key = (int(x0), int(y0), int(x1), int(y1))
                 filtered = filtered_lines.get(bbox_key)
@@ -457,11 +439,7 @@ def recognize(
                 confidences.append(confidence)
                 line_breaks.append(pending_line_break)
                 pending_line_break = False
-                if acceptable_text(
-                    filtered_text,
-                    confidence,
-                    task.minimum_confidence,
-                ):
+                if acceptable_text(filtered_text, confidence, task.minimum_confidence):
                     filtered_texts.append(filtered_text)
                     filtered_boxes.append(mapped_box)
                     filtered_confidences.append(confidence)
@@ -533,9 +511,7 @@ def recognize_group(
 
 
 def recognize_on(
-    api: Any,
-    tasks: tuple[OcrTask, ...],
-    raise_if_cancelled: Callable[[], None] | None,
+    api: Any, tasks: tuple[OcrTask, ...], raise_if_cancelled: Callable[[], None] | None
 ) -> tuple[Candidate, ...]:
     candidates = [recognize(tasks[0], api_override=api)]
     for task in tasks[1:]:
@@ -561,16 +537,9 @@ def timeout_recovery_task(task: OcrTask) -> OcrTask | None:
     if source.shape[0] < 1 or source.shape[1] < 1:
         return None
     reduced = resample_smooth(source, target_height, target_width)
-    image = RasterImage(
-        contiguous_bytes(reduced),
-        target_width,
-        target_height,
-        task.image.channels,
-    )
+    image = RasterImage(contiguous_bytes(reduced), target_width, target_height, task.image.channels)
     page_box = raster_rectangle_page_box(
-        Raster(task.image, task.resolution),
-        task.page_box,
-        task.rectangle,
+        Raster(task.image, task.resolution), task.page_box, task.rectangle
     )
     return replace(
         task,
