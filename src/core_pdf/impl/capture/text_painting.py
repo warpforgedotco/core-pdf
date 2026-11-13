@@ -530,6 +530,7 @@ def has_stock_text_methods(kind: type) -> bool:
             getattr(kind, "show_text", None) is show_text
             and getattr(kind, "text_boundary", None) is text_boundary
             and getattr(kind, "current_text_layout", None) is current_text_layout
+            and getattr(kind, "update_pending_run", None) is update_pending_run
             and getattr(kind, "append_text", None) is ContentInterpreter.append_text
             and getattr(kind, "append_decoded_text", None) is ContentInterpreter.append_decoded_text
         )
