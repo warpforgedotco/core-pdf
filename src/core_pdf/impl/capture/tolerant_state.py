@@ -33,7 +33,7 @@ lazy from core_pdf.impl.graphics.functions import compile_pdf_function
 lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 
 if TYPE_CHECKING:
-    from core_pdf.impl.capture.recording import CachedImageSource
+    from core_pdf.impl.capture.recording_support import CachedImageSource
 
 FontCompanions = dict[str, tuple[tuple[int, int], ...]]
 FontCompanionsCache = IdentityCache[FontCompanions]
