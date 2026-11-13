@@ -20,7 +20,8 @@ from core_pdf.impl.spec.standards import recognized_version
 
 if TYPE_CHECKING:
     from core_pdf.impl.base.values import ReferenceResolver
-    from core_pdf.impl.document.pdf_document import PageLookup, PdfDocument
+    from core_pdf.impl.document.page_tree import PageLookup
+    from core_pdf.impl.document.pdf_document import PdfDocument
     from core_pdf.impl.document.pdf_page import PdfPage
 
 
