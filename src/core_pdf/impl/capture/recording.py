@@ -671,6 +671,7 @@ class TextState(RecoveringTextState):
     new_layout_style = text_painting.new_layout_style
     show_glyph_run = text_painting.show_glyph_run
     show_text = text_painting.show_text
+    append_tj_array = text_painting.append_tj_array
     text_boundary = text_painting.text_boundary
     current_capture_actual_text_span = text_painting.current_capture_actual_text_span
     text_paint_mode = text_painting.text_paint_mode

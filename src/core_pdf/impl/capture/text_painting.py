@@ -8,18 +8,27 @@ Each function takes the state as self; TextState lists them as its methods.
 from __future__ import annotations
 
 from math import hypot
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from core_pdf.impl.base.glyphs import GlyphObservation, GlyphStyle
+from core_pdf.impl.base.glyphs import (
+    CONFIDENCE_CACHE,
+    GlyphObservation,
+    GlyphStyle,
+    glyph_unicode_confidence,
+)
 from core_pdf.impl.base.runs import TextRun
 from core_pdf.impl.base.text import normalize_extracted_text
 from core_pdf.impl.capture.glyphs import (
+    DECODED_GLYPH_LAYOUT,
+    GLYPH_BITMAP_LABELS,
+    OBSERVATION_LAYOUT,
     GlyphCapture,
     GlyphPaint,
     capture_glyph_run,
     capture_glyphs,
     glyph_style,
     glyph_width_source,
+    should_capture_suspicious_multi_glyph_bitmap,
 )
 from core_pdf.impl.capture.recording_support import (
     MarkedContentEntry,
@@ -30,10 +39,13 @@ from core_pdf.impl.capture.recording_support import (
 from core_pdf.impl.capture.records import CapturedTextBoundary
 from core_pdf.impl.capture.text_runs import is_visible_text
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
+from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter, moved_to
 from core_pdf.impl.spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontService
+from core_pdf.impl.spec.types import PdfString
+lazy from core_pdf_cythonized._text_array import show_text_array
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.recording import TextState
@@ -493,6 +505,54 @@ def show_text(
         self.update_pending_run(new_run)
 
     self.sequence = seqno + 1
+
+
+# What show_text_array needs from core, in the order it takes them.
+TEXT_ARRAY_CONTEXT = (
+    PdfString,
+    moved_to,
+    TextRun,
+    normalize_extracted_text,
+    DECODED_GLYPH_LAYOUT,
+    OBSERVATION_LAYOUT,
+    (CONFIDENCE_CACHE, glyph_unicode_confidence),
+    should_capture_suspicious_multi_glyph_bitmap,
+    GLYPH_BITMAP_LABELS,
+)
+STOCK_TEXT_METHODS: dict[type, bool] = {}
+
+
+def has_stock_text_methods(kind: type) -> bool:
+    """Whether a state class shows text with the methods show_text_array inlines."""
+    known = STOCK_TEXT_METHODS.get(kind)
+    if known is None:
+        known = STOCK_TEXT_METHODS[kind] = (
+            getattr(kind, "show_text", None) is show_text
+            and getattr(kind, "text_boundary", None) is text_boundary
+            and getattr(kind, "current_text_layout", None) is current_text_layout
+            and getattr(kind, "append_text", None) is ContentInterpreter.append_text
+            and getattr(kind, "append_decoded_text", None) is ContentInterpreter.append_decoded_text
+        )
+    return known
+
+
+def append_tj_array(self: TextState, array: Any) -> None:
+    """TJ: its strings shown in one compiled loop, when this state and its font use the
+    methods the loop inlines and the capture records runs, else the interpreter's loop.
+
+    Tables exported from word processors kern every pair of characters, so a cell's array
+    shows one or two characters at a time; the loop shows each as append_text would.
+    """
+    decoder = self.graphics.current_decoder
+    if (
+        decoder is None
+        or not self.options.text_runs
+        or self.sink is not self
+        or not has_stock_text_methods(type(self))
+        or type(decoder).text_advance_vector is not FontDecoder.text_advance_vector
+        or not show_text_array(self, array, decoder, TEXT_ARRAY_CONTEXT)
+    ):
+        ContentInterpreter.append_tj_array(self, array)
 
 
 def text_boundary(self: TextState, state: object, kind: str) -> None:
