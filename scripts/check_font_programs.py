@@ -10,7 +10,9 @@ the upstream corpora, and on OpenType CFF and CFF2 fonts built from the corpora'
 - TrueType: the glyph names, the Unicode and code cmaps, the metrics and loca table, each
   composite's components, and the drawing of sampled glyphs, pen operation for operation;
 - OpenType: the glyph names, and each sampled glyph's decomposed drawing and bounds;
-- Type 1: each sampled glyph's drawing, and its bounds where they are drawn in Python.
+- Type 1: each sampled glyph's drawing, and its bounds drawn in Python; and the bounds
+  core-pdf-cythonized's type1_glyph_bounds gives, where it does not decline, against the
+  Python bounds. It fails if the kernel took no glyph.
 
 Drawings and bounds must be equal to the last bit; a read that fails must fail on both
 sides. Needs fontTools and the upstream submodules:
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import struct
 import sys
 from collections import Counter
 from collections.abc import Callable, Iterator
@@ -44,6 +47,7 @@ from core_pdf.impl.fonts.program_truetype import OpenTypeFontProgram, TrueTypeFo
 from core_pdf.impl.fonts.program_type1 import Type1FontProgram
 from core_pdf.impl.fonts.sfnt import GlyphOutlines, placeholder_glyph_id, placeholder_glyph_order
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf_cythonized import type1_glyph_bounds
 
 ROOT = Path(__file__).resolve().parent.parent
 CORPORA = ROOT / "tests/upstream"
@@ -525,6 +529,19 @@ def check_program_contours(data: bytes) -> list[str]:
 
 # Type 1.
 
+TYPE1_KERNEL: Counter[str] = Counter()
+
+
+def float_bits(bounds: Any) -> Any:
+    """Bounds as Type1FontProgram.glyph_bbox_for_gid compares them, each value by its type
+    and bits: none drawn (the kernel's (), the Python None) are the same."""
+    if not bounds:
+        return None
+    return tuple(
+        (type(value), struct.pack(">d", value) if type(value) is float else value)
+        for value in bounds
+    )
+
 
 def check_type1(data: bytes, length1: int | None) -> list[str]:
     core = outcome(lambda: Type1FontProgram(data, length1=length1))
@@ -565,8 +582,22 @@ def check_type1(data: bytes, length1: int | None) -> list[str]:
         )
         if not same(outcome(reference_recording), ours):
             problems.append(f"drawing of {name}")
-        if not same(outcome(reference_bounds), outcome(core_bounds)):
+        python_bounds = outcome(core_bounds)
+        if not same(outcome(reference_bounds), python_bounds):
             problems.append(f"bounds of {name}")
+        compiled = outcome(
+            lambda name=name: type1_glyph_bounds(
+                program.charstring_data[name], program.subr_data, normalizing
+            )
+        )
+        if failed(compiled):
+            problems.append(f"kernel bounds of {name}: {compiled[1]}")
+        elif compiled[1] is None:
+            TYPE1_KERNEL["declined"] += 1
+        else:
+            TYPE1_KERNEL["taken"] += 1
+            if failed(python_bounds) or float_bits(compiled[1]) != float_bits(python_bounds[1]):
+                problems.append(f"kernel bounds of {name}")
     return problems
 
 
@@ -605,6 +636,13 @@ def main() -> int:
     record("cubic glyf", "built", check_truetype(cubic) + check_program_contours(cubic))
     print("; ".join(f"{count} {kind}" for kind, count in results.items()), end="")
     print(f"; {built['not built']} CFF programs fontTools could not wrap" if built else "")
+    print(
+        f"Type 1 glyph bounds: {TYPE1_KERNEL['taken']} taken by the kernel,",
+        f"{TYPE1_KERNEL['declined']} declined",
+    )
+    if not TYPE1_KERNEL["taken"]:
+        print("the Type 1 bounds kernel took no glyph")
+        return 1
     if failures:
         print(f"{len(failures)} fonts differ:")
         print("\n".join(failures[:40]))

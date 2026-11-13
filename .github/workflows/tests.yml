@@ -339,6 +339,7 @@ jobs:
           $run/check_native_state_operators.py
           $run/check_indirect_object_scanner.py
           $run/check_object_writer.py
+          $run/check_to_unicode_cmaps.py
           $run/check_glyph_run_capture.py
           $run/check_plumber_chars.py
           $run/check_pdfminer_chars.py
