@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Check that TJ arrays shown by the compiled loop capture exactly what the interpreter's do.
+"""Check that text shown by the compiled TJ loop captures exactly what the interpreter's does.
 
-A capture state shows a TJ array with core-pdf-cythonized's show_text_array, which inlines
-the content interpreter's append_tj_array, append_text and append_decoded_text and the
-state's show_text and text_boundary, and hands the state's own methods any string it
-cannot show exactly. This captures every page of the upstream test PDFs both ways, the
-second with the interpreter's loop, and compares the captured runs, glyphs, drawings and
+A capture state shows a TJ array, and a Tj string as an array of it, with
+core-pdf-cythonized's show_text_array, which inlines the content interpreter's
+append_tj_array, append_text and append_decoded_text and the state's show_text and
+text_boundary, and hands the state's own methods any string it cannot show exactly. This
+captures every page of the upstream test PDFs both ways, the second with the interpreter's
+methods, and compares the captured runs, glyphs, drawings and
 text boundaries by repr, which writes each float's shortest round-tripping digits and an
 int as an int, object addresses left out. It fails on the first page that differs, or if
-no array took the loop.
+nothing took the loop.
 
 uv run --all-packages python scripts/check_text_arrays.py [pages per file]
 """
@@ -29,7 +30,6 @@ from typing import Any
 from core_pdf import PdfDocument
 from core_pdf.impl.capture import text_painting
 from core_pdf.impl.capture.recording import TextState
-from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter
 
 CORPUS = (
     "tests/upstream/pdfplumber/tests/pdfs/*.pdf",
@@ -43,13 +43,17 @@ ADDRESS = re.compile(r" at 0x[0-9a-f]+")
 
 @contextlib.contextmanager
 def interpreter_loop() -> Generator[None]:
-    """Show every TJ array with the content interpreter's loop."""
-    compiled = TextState.append_tj_array
-    TextState.append_tj_array = ContentInterpreter.append_tj_array  # type: ignore[method-assign]
+    """Show every TJ array and Tj string with the content interpreter's methods."""
+    compiled = TextState.show_compiled_text_array
+    TextState.show_compiled_text_array = declined  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
     try:
         yield
     finally:
-        TextState.append_tj_array = compiled  # type: ignore[method-assign]
+        TextState.show_compiled_text_array = compiled  # type: ignore[method-assign]
+
+
+def declined(state: TextState, array: Any) -> bool:
+    return False
 
 
 def captured(path: str, page_count: int) -> list[str]:
@@ -106,9 +110,9 @@ def main() -> int:
                 return 1
         pages += len(loop)
     if not taken:
-        print("no TJ array took the compiled loop")
+        print("no text took the compiled loop")
         return 1
-    print(f"{pages} pages of {len(paths)} files, {taken} TJ arrays shown by the loop: 0 differ")
+    print(f"{pages} pages of {len(paths)} files, {taken} shown by the loop: 0 differ")
     return 0
 
 
