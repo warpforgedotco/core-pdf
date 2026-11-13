@@ -28,6 +28,7 @@ from core_pdf.impl.fonts.widths import effective_descriptor, recover_descendant
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph
 from core_pdf.impl.spec.standards import SemanticContext
+lazy from core_pdf_cythonized._text_array import text_advance
 
 if typing.TYPE_CHECKING:
     from core_pdf.impl.fonts.fallback import RasterFontProviderLike
@@ -395,12 +396,15 @@ class FontDecoder:
                 total_y += vertical_glyph_metric(glyph.width_code)[0] * font_size / 1000.0 + spacing
             return (0.0, total_y)
 
-        total_x = 0.0
-        default_width = metrics.default_width
-        width_for = metrics.widths.get
-        for glyph in glyphs:
-            width = width_for(glyph.width_code, default_width)
-            spacing = char_space + (word_space if glyph.code_bytes == b" " else 0.0)
-            displacement_x = width * font_size / 1000.0 + spacing
-            total_x += displacement_x * horizontal_scale / 100.0
-        return (total_x, 0.0)
+        return (
+            text_advance(
+                metrics.widths,
+                metrics.default_width,
+                glyphs,
+                font_size,
+                char_space,
+                word_space,
+                horizontal_scale,
+            ),
+            0.0,
+        )

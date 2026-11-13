@@ -37,7 +37,7 @@ from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf.impl.spec.s_07_content.model import GraphicsState
-from core_pdf.impl.spec.s_07_content.operations import ContentOperands, OperationHandler
+from core_pdf.impl.spec.s_07_content.operations import OperationHandler
 from core_pdf.impl.spec.s_07_content.streams import ContentStreamExecutor, ContentStreamFrame
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
@@ -45,7 +45,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.spec.types import PdfString
 lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask
 lazy from core_pdf_cythonized import NativeOperators, RunAccumulator
 
@@ -394,18 +393,6 @@ class TextState(RecoveringTextState):
             options=self.options,
         )
 
-    def op_Tj(self, operands: ContentOperands, depth: int) -> None:
-        # A non-empty string, shown as an array of just it would be (the same matrix moves),
-        # by the compiled loop when it takes it.
-        if operands:
-            operand = operands[-1]
-            if (
-                (type(operand) is PdfString and operand.data)
-                or (type(operand) is bytes and operand)
-            ) and self.show_compiled_text_array((operand,)):
-                return
-        super().op_Tj(operands, depth)
-
     def release(self) -> None:
         del self.sink
         del self.stream_executor
@@ -684,8 +671,7 @@ class TextState(RecoveringTextState):
     new_layout_style = text_painting.new_layout_style
     show_glyph_run = text_painting.show_glyph_run
     show_text = text_painting.show_text
-    append_tj_array = text_painting.append_tj_array
-    show_compiled_text_array = text_painting.show_compiled_text_array
+    text_capture_context = text_painting.TEXT_CAPTURE_CONTEXT
     text_boundary = text_painting.text_boundary
     current_capture_actual_text_span = text_painting.current_capture_actual_text_span
     text_paint_mode = text_painting.text_paint_mode

@@ -8,7 +8,7 @@ Each function takes the state as self; TextState lists them as its methods.
 from __future__ import annotations
 
 from math import hypot
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from core_pdf.impl.base.glyphs import (
     CONFIDENCE_CACHE,
@@ -22,7 +22,6 @@ from core_pdf.impl.capture.glyphs import (
     DECODED_GLYPH_LAYOUT,
     GLYPH_BITMAP_LABELS,
     OBSERVATION_LAYOUT,
-    GlyphCapture,
     GlyphPaint,
     capture_glyph_run,
     capture_glyphs,
@@ -37,15 +36,13 @@ from core_pdf.impl.capture.recording_support import (
     same_floats,
 )
 from core_pdf.impl.capture.records import CapturedTextBoundary
-from core_pdf.impl.capture.text_runs import is_visible_text
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
-from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter, moved_to
 from core_pdf.impl.spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontService
-from core_pdf.impl.spec.types import PdfString
-lazy from core_pdf_cythonized._text_array import show_text_array
+lazy from core_pdf_cythonized._text_array import is_visible_text
+lazy from core_pdf_cythonized._text_array import show_text as compiled_show_text
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.recording import TextState
@@ -359,171 +356,16 @@ def show_text(
     *,
     glyph_paint: GlyphPaint | None = None,
 ) -> None:
-    font_decoder: FontDecoder = decoder  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-    decoded_glyphs: tuple[DecodedGlyph, ...] = glyphs  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-    text_matrix = self.text_matrix
-    ctm = self.graphics.ctm
-    combined = text_matrix.multiply(ctm)
-    A, B, C, D, E, F = combined
-    te, tf = text_matrix.e, text_matrix.f
-    layout = self.current_text_layout(
-        font_decoder, glyph_paint, A, B, C, D, text_matrix == IDENTITY_MATRIX
-    )
-
-    visible = bool(text) and layout.paints_text and is_visible_text(text)
-    if layout.pushes_clip_scope:
-        self.emit_clip_scope_push()
-
-    fs = layout.font_size
-    rise = layout.rise
-    ascent = layout.ascent
-    descent = layout.descent
-    rot = layout.rotation
-    scale_factor = layout.scale_factor
-    effective_font_size = layout.effective_font_size
-    effective_font_height = layout.effective_font_height
-    fill_color = layout.fill_color
-    seqno = self.sequence
-    actual_text_span = layout.actual_text_span
-    captured: GlyphCapture | None = None
-    options = self.options
-    if actual_text_span is None:
-        if not options.glyphs and not options.text_runs:
-            # Neither glyphs nor runs are wanted: only the sequence advances.
-            self.sequence = seqno + 1
-            return
-        style = layout.style
-        if style is None:
-            style = self.new_layout_style(layout, A, B, C, D)
-        graphics = self.graphics
-        captured = capture_glyphs(
-            text,
-            decoded_glyphs,
-            font_decoder,
-            (E, F, A, B, C, D),
-            fs,
-            layout.font_scale,
-            ascent,
-            descent,
-            layout.advance_scale,
-            graphics.char_space,
-            graphics.word_space,
-            graphics.horizontal_scale,
-            rise,
-            style,
-            self.clip_bbox,
-            self.page_clip,
-            visible,
-            graphics.current_font,
-            seqno,
-            self.glyph_cluster_count,
-            options,
-            layout.width_source,
-            # The observations go straight into the program's list, when it keeps them.
-            self.glyphs if options.glyphs else [],
-        )
-        self.glyph_cluster_count += captured.cluster_count
-        if not options.text_runs:
-            self.sequence = seqno + 1
-            return
-
-    if font_decoder.is_vertical:
-        c0_x = descent * A + rise * C + E
-        c0_y = descent * B + rise * D + F
-        c1_x = ascent * A + rise * C + E
-        c1_y = ascent * B + rise * D + F
-        adv_C = adv_y * C
-        adv_D = adv_y * D
-        c2_x = adv_C + c0_x
-        c2_y = adv_D + c0_y
-        c3_x = adv_C + c1_x
-        c3_y = adv_D + c1_y
-    else:
-        ar = ascent + rise
-        dr = descent + rise
-        c0_x = dr * C + E
-        c0_y = dr * D + F
-        c1_x = ar * C + E
-        c1_y = ar * D + F
-        adv_A = adv_x * A
-        adv_B = adv_x * B
-        c2_x = adv_A + c0_x
-        c2_y = adv_B + c0_y
-        c3_x = adv_A + c1_x
-        c3_y = adv_B + c1_y
-
-    x0 = min(c0_x, c1_x, c2_x, c3_x)
-    y0 = min(c0_y, c1_y, c2_y, c3_y)
-    x1 = max(c0_x, c1_x, c2_x, c3_x)
-    y1 = max(c0_y, c1_y, c2_y, c3_y)
-
-    effective_space_width = layout.space_width * scale_factor
-    baseline = (E, F, E + adv_x * A + adv_y * C, F + adv_x * B + adv_y * D)
-    provenance = (("source", self.capture_source), ("seqno", seqno), *layout.run_provenance)
-    advance_bbox = (x0, y0, x1, y1)
-
-    new_run = TextRun(
-        normalize_extracted_text(text),
-        x0,
-        y0,
-        x1,
-        y1,
-        te,
-        tf,
-        effective_font_size,
-        effective_space_width,
-        seqno,
-        self.stream_order,
-        self.xobject_depth,
-        self.graphics.current_font,
-        font_decoder.is_vertical,
-        rot,
-        visible,
-        True,
-        self.pending_line_break,
-        seqno,
-        fill_color,
-        advance_bbox,
-        advance_bbox,
-        baseline,
-        provenance,
-        None,
-    )
-    if actual_text_span is not None:
-        new_run.confidence = 1.0
-        actual_text_span.add_run(
-            new_run, font_decoder=font_decoder, effective_font_height=effective_font_height
-        )
-    else:
-        assert captured is not None
-        new_run.glyph_clusters = tuple(captured.clusters)
-        geometry = captured.geometry
-        if geometry.started:
-            new_run.advance_bbox = geometry.advance
-            new_run.ink_bbox = geometry.ink
-            new_run.confidence = geometry.confidence
-        self.update_pending_run(new_run)
-
-    self.sequence = seqno + 1
+    """The sink's show_text: core-pdf-cythonized's, which captures the string's glyphs and
+    merges its run into the pending one or starts one, at the text matrix."""
+    compiled_show_text(self, text, glyphs, decoder, adv_x, adv_y, glyph_paint)
 
 
-# What show_text_array needs from core, in the order it takes them.
-TEXT_ARRAY_CONTEXT = (
-    PdfString,
-    moved_to,
-    TextRun,
-    normalize_extracted_text,
-    DECODED_GLYPH_LAYOUT,
-    OBSERVATION_LAYOUT,
-    (CONFIDENCE_CACHE, glyph_unicode_confidence),
-    should_capture_suspicious_multi_glyph_bitmap,
-    GLYPH_BITMAP_LABELS,
-)
 STOCK_TEXT_METHODS: dict[type, bool] = {}
 
 
 def has_stock_text_methods(kind: type) -> bool:
-    """Whether a state class shows text with the methods show_text_array inlines."""
+    """Whether a state class shows text with the methods core-pdf-cythonized inlines."""
     known = STOCK_TEXT_METHODS.get(kind)
     if known is None:
         known = STOCK_TEXT_METHODS[kind] = (
@@ -531,34 +373,8 @@ def has_stock_text_methods(kind: type) -> bool:
             and getattr(kind, "text_boundary", None) is text_boundary
             and getattr(kind, "current_text_layout", None) is current_text_layout
             and getattr(kind, "update_pending_run", None) is update_pending_run
-            and getattr(kind, "append_text", None) is ContentInterpreter.append_text
-            and getattr(kind, "append_decoded_text", None) is ContentInterpreter.append_decoded_text
         )
     return known
-
-
-def show_compiled_text_array(self: TextState, array: Any) -> bool:
-    """Show a TJ array's strings with the compiled loop, which shows each as append_text
-    would, when this state and its font use the methods the loop inlines and the capture
-    records runs. Returns False, having shown nothing, when the interpreter must.
-
-    Tables exported from word processors kern every pair of characters, so a cell's array
-    shows one or two characters at a time, and most text is shown one Tj string at a time.
-    """
-    decoder = self.graphics.current_decoder
-    return (
-        decoder is not None
-        and self.options.text_runs
-        and self.sink is self
-        and has_stock_text_methods(type(self))
-        and type(decoder).text_advance_vector is FontDecoder.text_advance_vector
-        and show_text_array(self, array, decoder, TEXT_ARRAY_CONTEXT)
-    )
-
-
-def append_tj_array(self: TextState, array: Any) -> None:
-    if not self.show_compiled_text_array(array):
-        ContentInterpreter.append_tj_array(self, array)
 
 
 def text_boundary(self: TextState, state: object, kind: str) -> None:
@@ -617,3 +433,21 @@ def text_paint_mode(self: TextState, *, check_colorants: bool = True) -> int:
         strokes = strokes and color_space_paints(self.graphics.stroke_space)
     paint = 2 if fills and strokes else 0 if fills else 1 if strokes else 3
     return paint + (4 if mode >= 4 else 0)
+
+
+# What core-pdf-cythonized's text showing needs from a capture state, in the order it takes
+# them; TextState hands it over as its text_capture_context.
+TEXT_CAPTURE_CONTEXT = (
+    has_stock_text_methods,
+    current_text_layout,
+    update_pending_run,
+    FontDecoder.text_advance_vector,
+    TextRun,
+    normalize_extracted_text,
+    DECODED_GLYPH_LAYOUT,
+    OBSERVATION_LAYOUT,
+    (CONFIDENCE_CACHE, glyph_unicode_confidence),
+    should_capture_suspicious_multi_glyph_bitmap,
+    GLYPH_BITMAP_LABELS,
+    capture_glyphs,
+)
