@@ -4,7 +4,7 @@ Compiled kernels for `core-pdf` hot paths.
 
 `core-pdf` depends on this distribution and imports from it directly. There is
 no pure-Python fallback: when a kernel lands here, the Python it replaced is
-deleted -- with eight exceptions, `ObjectScanner`, `ObjectWriter`, `plumber_char_dicts`, `pdfminer_chars`, `show_text_array`, `AreaGapQueue`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
+deleted -- with seven exceptions, `ObjectScanner`, `ObjectWriter`, `plumber_char_dicts`, `pdfminer_chars`, `show_text_array`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
 ## Source form
@@ -52,9 +52,10 @@ setuptools available.
 
 `composite_knockout_element` is the exception to everything below. It is not
 a mirror of code owned elsewhere — it *is* the ISO 32000-2 11.4.x knockout
-algorithm, moved out of `core-pdf-spec` rather than copied. That was a
-deliberate trade: spec dropped a declared `__all__` export, and in exchange
-spec stays pure Python instead of becoming a compiled distribution.
+algorithm, moved out of what was then the separate `core-pdf-spec` distribution
+rather than copied, so that distribution would not become a compiled one. Spec has
+since been folded into `core_pdf.impl.spec`, which may import kernels like any other
+module of core.
 
 It came here because 60% of the cost sat in core's wrapper — a mask, three
 boolean fancy-index copies and a scatter, all of it marshalling to hand
@@ -75,8 +76,9 @@ header and calls the kernel.
 
 `ObjectScanner` is the other exception, in the opposite direction: it mirrors
 code that is not deleted. The Python it mirrors is `core_pdf.impl.spec`'s object
-lexer, which stays the parser for everyone using spec without core, and core's
-reader subclass of it still parses everything the scanner declines. So the
+lexer, which other lexers subclass and override (spec's object-stream lexer, the
+pdfminer and pypdf facades' lexers), and core's reader subclass of it still parses
+everything the scanner declines. So the
 scanner owns a subset of the grammar exactly -- well-formed dictionaries and
 arrays under the reader's rules -- and returns None for the rest, after which
 the reader parses the same bytes in Python from the same position.
@@ -99,6 +101,12 @@ object, a glued or missing `endobj` -- and lexer subclasses keep their own code.
 upstream test files, deciphered and not, and objects generated around those cases,
 with each lexer and with a subclass keeping the lexer's code, and fails on any
 difference.
+
+It also looks like it breaks the object-churn rule below, and does not: it
+builds dicts, lists, ints and floats, which cost the same from C as from the
+interpreter, and a repeated name is a dict hit. Rebuilding the object graphs
+of the benchmark corpus in Python costs 12% of parsing them; the other 88% was
+per-token dispatch, which is what compiling removes.
 
 `ObjectWriter` mirrors `core_pdf.impl.spec`'s `serialize_object` the same way: core's
 `core_pdf.impl.document.object_writer`, which core's saves and the pypdf facade write through,
@@ -127,20 +135,6 @@ identity text matrix, in an ActualText span, under a clipping render mode, or wi
 whose text splits). `scripts/check_text_arrays.py` captures every page both ways and
 compares the runs, glyphs, drawings and text boundaries.
 
-`AreaGapQueue` keeps its Python too: the reading order of
-`core_pdf_compat.pdfminer._layout` takes it when every box coordinate is a float
-and `_PairQueue` otherwise, and `scripts/check_area_gap_queue.py` drives both
-through the same random runs.
-
-That makes divergence possible where elsewhere it is not, so a change to either
-side has to be made in both.
-
-It also looks like it breaks the object-churn rule below, and does not: it
-builds dicts, lists, ints and floats, which cost the same from C as from the
-interpreter, and a repeated name is a dict hit. Rebuilding the object graphs
-of the benchmark corpus in Python costs 12% of parsing them; the other 88% was
-per-token dispatch, which is what compiling removes.
-
 `scan_to_unicode_cmap` keeps its Python on the same terms. It parses a
 ToUnicode CMap straight from bytes to the mapping dict, for the well-formed
 subset: `bfchar` and `bfrange` blocks whose operands are clean hex strings,
@@ -160,6 +154,9 @@ by zero and truncated numbers return None, and
 `core_pdf.impl.fonts.program_type1` draws the same glyph with core's Python Type 1
 interpreter (`core_pdf.impl.fonts.outline_pens`), which follows fontTools to the same
 doubles.
+
+Each of these makes divergence possible where elsewhere it is not, so a change to either
+side has to be made in both.
 
 ## What belongs here
 
@@ -211,7 +208,7 @@ Nothing checks the result on the platforms that build wheels.
 | `interleave_soft_mask` | the gather and two strided copies of `core_pdf.impl.graphics.images.apply_soft_mask` (deleted) | 10x on a 12-megapixel image with a half-size mask (128 to 13 ms) |
 | `supersampled_coverage_plane` | the 4x4 supersampling deltas loop of `core_pdf.impl.render.raster_fills.fill_path` (deleted), which is what even-odd fills took | 15,426 corpus fills in 0.2 s against about 4.7 s; -31% on test_3806 rasterize (5.55 to 3.85 s), the slowest page in the corpus |
 | `flatten_path_commands` | `flatten_path`, `CapturedPath.derived_lines` and the CTM transform in the `core_pdf.impl.capture_*` modules, and `line_coordinate_columns` in `core_pdf.impl.extract.grids` (all deleted) | one pass instead of four walks and a `CapturedLine` per segment (733,122 on one page); -39% / -34% on the two stroke-heavy extraction pages, nothing elsewhere. It writes the lines into the page's one line table rather than an array per path, which `StrokeLineRows` then copied into a chunk of its own (deleted): -11% on circuit-schematic extraction |
-| `ContentScanner` | the regular-expression fast path in `core_pdf.impl.capture.recovery.iter_content_operations` (deleted) | 1.1x to 2.1x on the tokenizer, by document; -16% on a vector-heavy page render, nothing on text pages. It also builds each operation's name and operand tuple, which the Python loop did (deleted): -2% on circuit-schematic extraction With a capture state it also applies m, l, c, v, y, re and h itself -- numbers held as doubles, no operand objects or handler calls -- where the Python handlers (in spec, which stays pure Python) remain for every other interpreter and for operands it declines: test_3806 extraction 0.96 to 0.50 s. Given a `NativeOperators` it applies G, g, RG, rg, K, k, w, d, J, j, M, Td, TD, Tm, T*, TL, q, Q and cm the same way, when `core_pdf.impl.capture.recording.native_state_operators` finds the spec handlers and helpers unoverridden; the handlers keep what it declines -- an operand count other than the handler's own, a non-number operand, a real J or j, a dash array with a non-number or an out-of-range integer, colour in a d1 glyph, a Q below the stack floor, a cm or text move on a matrix holding a non-float -- and `scripts/check_native_state_operators.py` compares the two over corpus pages, edge cases and random operands, state at every handler call included: extraction of issue-301 198 to 178 ms (-10%), test_2885 110 to 95 ms (-14%), fhhd0346 -3.5%, lyft_2021 -3% |
+| `ContentScanner` | the regular-expression fast path in `core_pdf.impl.capture.recovery.iter_content_operations` (deleted) | 1.1x to 2.1x on the tokenizer, by document; -16% on a vector-heavy page render, nothing on text pages. It also builds each operation's name and operand tuple, which the Python loop did (deleted): -2% on circuit-schematic extraction With a capture state it also applies m, l, c, v, y, re and h itself -- numbers held as doubles, no operand objects or handler calls -- where the Python handlers in spec remain for every other interpreter and for operands it declines: test_3806 extraction 0.96 to 0.50 s. Given a `NativeOperators` it applies G, g, RG, rg, K, k, w, d, J, j, M, Td, TD, Tm, T*, TL, q, Q and cm the same way, when `core_pdf.impl.capture.recording.native_state_operators` finds the spec handlers and helpers unoverridden; the handlers keep what it declines -- an operand count other than the handler's own, a non-number operand, a real J or j, a dash array with a non-number or an out-of-range integer, colour in a d1 glyph, a Q below the stack floor, a cm or text move on a matrix holding a non-float -- and `scripts/check_native_state_operators.py` compares the two over corpus pages, edge cases and random operands, state at every handler call included: extraction of issue-301 198 to 178 ms (-10%), test_2885 110 to 95 ms (-14%), fhhd0346 -3.5%, lyft_2021 -3% |
 | `composite_elementary_normal` | the opaque-normal branch of `core_pdf.impl.render.raster_support.composite_nonisolated_group` (deleted) | nine numpy passes over an 8-to-32-pixel plane removed; -4.2 to -4.8% on text-page render |
 | `composite_elementary_knockout` | `core_pdf.impl.render.raster_groups.composite_group`'s element copy, its two kernel calls and the numpy shape update for an opaque normal elementary group in a knockout parent (deleted for that case) | one pass instead of three kernels and three array operations per glyph in a text knockout group; -8% on lyft text-page render |
 | `fill_glyph_knockout` | the backdrop copy, the two zeroed float32 planes and the `fill_glyph_coverage` + `composite_elementary_knockout` pair in `core_pdf.impl.render.raster_coverage.knockout_glyph_fill` (deleted); both kernels stay, and the composition of them is the reference it is tested against | three scratch arrays and two passes per glyph of a text knockout group become one pass; -4% on lyft text-page render |
@@ -227,7 +224,7 @@ Nothing checks the result on the platforms that build wheels.
 | `plumber_char_dicts` | nothing deleted: mirrors the char loop of `core_pdf_compat.pdfplumber`'s `char_objects`, which writes what it declines | 341 of 356 corpus pages compiled; pdfplumber chars of federal-register 423 to 365 ms (-14%), the pr-138 checks -5 to -7% |
 | `ObjectWriter` | nothing deleted: mirrors `serialize_object` of `core_pdf.impl.spec.s_07_syntax.serialize`, which writes what it hands back | -8 to -21% on the pypdf reads, clones, appends and incremental writes and core rewrites of the benchmarks (pypdf reads of issue-598 236 to 197 ms, core rewrite of issue-914-xmp 16.6 to 13.1 ms) |
 | `ObjectScanner` | nothing deleted: mirrors `parse_dictionary`, `parse_array` and `parse_indirect_object` of `core_pdf.impl.recovery.lexer.PdfLexer`, which falls back to them, and in strict mode those of the spec's `PdfLexer`, for `StrictPdfLexer` | 5.5x on parsing the indirect objects of the benchmark corpus (201 to 37 ms), 99% of calls taking the compiled path; -30 to -46% on document open, -3 to -55% on first-page extraction. Whole indirect objects (40,762 of 40,775 corpus objects): core rewrite of issue-598 141 to 80 ms, pypdf reads 246 to 193 ms and clone 286 to 234 ms of it, pdfminer text of DA-1p 84 to 65 ms |
-| `AreaGapQueue` | nothing deleted: the pair queue of `_reading_order` in `core_pdf_compat.pdfminer._layout`, whose `_PairQueue` takes boxes with non-float coordinates | layout analysis of 256 test pages 1.46 to 0.73 s (2.18 s before the distances were inlined) |
+| `AreaGapQueue` | `_PairQueue` of `core_pdf_compat.pdfminer._layout` (deleted), which took boxes with non-float coordinates: the kernel takes ints as doubles, and every distance it compares is exact for coordinates up to 2^24, so the order is the same | layout analysis of 256 test pages 1.46 to 0.73 s (2.18 s before the distances were inlined) |
 | `fill_edge_rows` | the edge-index lists and ten numpy calls of `core_pdf.impl.capture.records.CapturedPath.fill_edge_array` (deleted) | 9.9x over 22,830 corpus render calls (447 to 45 ms, median 31 points); rasterize of test_3362 352 to 218 ms, test_3806 1530 to 1316 ms |
 | `glyph_bitmap_rows` | the per-row numpy scanline loop of `core_pdf.impl.fonts.raster_kernel.rasterize_contours`, which keeps it only for the inputs the kernel declines (a non-finite coordinate, a width past 62) | 42x over corpus glyph bitmaps; cold first-page extract of the NASA JBIG2 scan 538 to 412 ms |
 | `blend_visible_rgba` | the gather, float64 blend and scatter of `core_pdf.impl.render.blend.blend_visible_pixels` for normal, multiply and screen (deleted for those modes; color dodge and burn keep numpy) | 10.9x over 2,287 corpus render calls (561 to 52 ms); rasterize of test_3806, 408 multiply image blits, 1324 to 1062 ms |
