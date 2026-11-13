@@ -6,6 +6,8 @@ CI runs them under CodSpeed's CPU simulation (.github/workflows/codspeed.yml), w
 instructions, so a result moves only when the code does. The calls are the ones
 scripts/benchmark_facades.py times against the real libraries, on files picked from its run:
 each takes tens of milliseconds, and most are where a facade was slowest next to its library.
+Core's own extraction and rendering run on files picked for what they exercise: CJK text,
+columns, dense tables, images.
 Reading a file's bytes happens outside the timed call.
 """
 
@@ -32,6 +34,16 @@ FILES = {
     "whitespace-redactions": "x-ray/tests/assets/whitespace_redactions.pdf",
     # Stale xref offsets: opening it falls back to a scan of the whole file.
     "da-1p": "unstructured/example-docs/pdf/DA-1p.pdf",
+    # CJK text in CID fonts, with ruled tables.
+    "korean-tables": "unstructured/example-docs/pdf/korean-text-with-tables.pdf",
+    # A two-column paper with figures and a table.
+    "layout-parser": "unstructured/example-docs/pdf/layout-parser-paper.pdf",
+    # One dense ruled table, rotated text in its header.
+    "nics": f"{PLUMBER}/nics-background-checks-2015-11.pdf",
+    # Pages of small-print tables, the slowest file per page core extracts in pdfplumber's tests.
+    "warn-report": f"{PLUMBER}/WARN-Report-for-7-1-2015-to-03-25-2016.pdf",
+    # Mostly embedded images.
+    "embedded-images": "unstructured/example-docs/pdf/embedded-images.pdf",
 }
 PAGES = 5
 
@@ -78,6 +90,42 @@ def test_core_incremental(benchmark: Any, name: str) -> None:
     def run() -> None:
         with PdfDocument.open(source) as document:
             edited(EditableDocument(document)).save_incremental()
+
+    benchmark(run)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "federal-register",
+        "korean-tables",
+        "layout-parser",
+        "nics",
+        "warn-report",
+        "embedded-images",
+    ],
+)
+def test_core_extract(benchmark: Any, name: str) -> None:
+    from core_pdf import PdfDocument  # noqa: PLC0415
+
+    source = data(name)
+
+    def run() -> None:
+        with PdfDocument.open(source) as document:
+            document.extract(pages=range(1, min(PAGES, len(document.pages)) + 1))
+
+    benchmark(run)
+
+
+@pytest.mark.parametrize("name", ["pr-138", "nics", "layout-parser"])
+def test_core_render(benchmark: Any, name: str) -> None:
+    from core_pdf import PdfDocument  # noqa: PLC0415
+
+    source = data(name)
+
+    def run() -> None:
+        with PdfDocument.open(source) as document:
+            document.pages[0].render()
 
     benchmark(run)
 
@@ -196,7 +244,11 @@ PLUMBER_CHECKS: dict[str, Callable[[Any], object]] = {
 # Every check on one file; on the larger file only chars, as each check parses the pages first.
 @pytest.mark.parametrize(
     ("name", "check"),
-    [*(("pr-138", check) for check in PLUMBER_CHECKS), ("federal-register", "chars")],
+    [
+        *(("pr-138", check) for check in PLUMBER_CHECKS),
+        ("federal-register", "chars"),
+        ("nics", "tables"),
+    ],
 )
 def test_pdfplumber(benchmark: Any, check: str, name: str) -> None:
     from core_pdf_compat import pdfplumber  # noqa: PLC0415
