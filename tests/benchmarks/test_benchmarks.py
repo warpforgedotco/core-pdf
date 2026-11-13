@@ -7,7 +7,8 @@ instructions, so a result moves only when the code does. The calls are the ones
 scripts/benchmark_facades.py times against the real libraries, on files picked from its run:
 each takes tens of milliseconds, and most are where a facade was slowest next to its library.
 Core's own extraction and rendering run on files picked for what they exercise: CJK text,
-columns, dense tables, images.
+columns, dense tables, images. test_core_render builds a page's display list;
+test_core_rasterize also draws its pixels.
 Reading a file's bytes happens outside the timed call.
 """
 
@@ -126,6 +127,19 @@ def test_core_render(benchmark: Any, name: str) -> None:
     def run() -> None:
         with PdfDocument.open(source) as document:
             document.pages[0].render()
+
+    benchmark(run)
+
+
+@pytest.mark.parametrize("name", ["pr-138", "nics", "layout-parser", "embedded-images"])
+def test_core_rasterize(benchmark: Any, name: str) -> None:
+    from core_pdf import PdfDocument  # noqa: PLC0415
+
+    source = data(name)
+
+    def run() -> None:
+        with PdfDocument.open(source) as document:
+            document.pages[0].render().rasterize()
 
     benchmark(run)
 
