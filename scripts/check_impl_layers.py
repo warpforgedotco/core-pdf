@@ -43,10 +43,24 @@ def package_of(module: str) -> str:
     return parts[2] if len(parts) > 2 else "impl"
 
 
+def is_type_checking(test: ast.expr) -> bool:
+    """Exactly ``TYPE_CHECKING`` or ``typing.TYPE_CHECKING``: a condition that only
+    mentions it (``not TYPE_CHECKING``, ``TYPE_CHECKING or x``) can be true at runtime."""
+    if isinstance(test, ast.Name):
+        return test.id == "TYPE_CHECKING"
+    return (
+        isinstance(test, ast.Attribute)
+        and test.attr == "TYPE_CHECKING"
+        and isinstance(test.value, ast.Name)
+        and test.value.id == "typing"
+    )
+
+
 def type_checking_nodes(tree: ast.AST) -> set[int]:
+    """Nodes in the body of an ``if TYPE_CHECKING:`` block; its ``else`` runs."""
     nodes: set[int] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.If) and "TYPE_CHECKING" in ast.unparse(node.test):
+        if isinstance(node, ast.If) and is_type_checking(node.test):
             nodes.update(id(child) for statement in node.body for child in ast.walk(statement))
     return nodes
 
