@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import suppress
-from io import BytesIO
 from typing import Any
 
 from core_pdf.impl.base.values import recover_pdf_name
@@ -16,13 +14,13 @@ from core_pdf.impl.spec.s_09_fonts.dictionaries import (
     FontProgramInputs,
     prepare_font_program_inputs,
 )
-lazy from core_pdf._vendor.fontTools.ttLib import TTFont
 lazy from core_pdf.impl.fonts.program_truetype import (
     OpenTypeFontProgram,
     TrueTypeFontProgram,
     cached_truetype_program,
 )
 lazy from core_pdf.impl.fonts.program_type1 import Type1FontProgram
+lazy from core_pdf.impl.fonts.sfnt import SfntFont
 
 
 def tt_font(inputs: FontProgramInputs) -> TrueTypeFontProgram | None:
@@ -69,20 +67,11 @@ def cff_font(inputs: FontProgramInputs) -> CFFFont | None:
 
 
 def extract_cff_table(data: bytes) -> bytes | None:
-    font: TTFont | None = None
     try:
-        font = TTFont(BytesIO(data), lazy=True, recalcBBoxes=False, recalcTimestamp=False)
-        reader = font.reader
-        if reader is None:
-            return None
-        table = reader.tables.get("CFF ")
-        return table.loadData(reader.file) if table is not None else None
+        font = SfntFont(data)
+        return font.table_data("CFF ") if "CFF " in font.entries else None
     except Exception:
         return None
-    finally:
-        if font is not None:
-            with suppress(AttributeError):
-                font.close()
 
 
 def type1_font(inputs: FontProgramInputs) -> Type1FontProgram | None:

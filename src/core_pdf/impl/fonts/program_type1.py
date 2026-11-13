@@ -2,15 +2,10 @@ from __future__ import annotations
 
 import re
 
-from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
-from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
-from core_pdf._vendor.fontTools.pens.recordingPen import (
-    RecordingPen,
-)
-from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf.impl.adobe_fonts.type1 import program
 from core_pdf.impl.adobe_fonts.type1.program import binary_entries, eexec_ciphertext
 from core_pdf.impl.base.types import Rectangle
+from core_pdf.impl.fonts.outline_pens import BoundsSink, Recording, Type1Outline, draw_decomposed
 from core_pdf.impl.fonts.program_base import GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts.program_truetype import recording_to_contours
 from core_pdf.impl.fonts.raster_kernel import (
@@ -47,12 +42,10 @@ class Type1FontProgram(GlyphProgram):
     __slots__ = (
         "builtin_encoding",
         "charstring_data",
-        "charstrings",
         "font_matrix",
         "glyph_names",
         "glyph_name_to_id",
         "subr_data",
-        "subrs",
     )
 
     def __init__(self, data: bytes, *, length1: int | None = None) -> None:
@@ -69,30 +62,19 @@ class Type1FontProgram(GlyphProgram):
         subr_count = max(subr_data, default=-1) + 1
         if subr_count > MAX_SUBROUTINES:
             raise ValueError("Type 1 subroutine index exceeds decoder limit")
-        # fontTools drops a charstring's bytes once it has drawn it, so the
-        # compiled bounds kernel reads these copies.
+        # A subroutine the font does not define returns at once.
         decrypted_subrs = [b"\x0b"] * subr_count
         for index, encrypted in subr_data.items():
             decrypted_subrs[index] = type1_charstring_data(encrypted, len_iv)
         self.subr_data = tuple(decrypted_subrs)
-        empty = T1CharString(b"\x0b", subrs=[])
-        subrs = [empty for _ in range(subr_count)]
-        for index in subr_data:
-            subrs[index] = T1CharString(decrypted_subrs[index], subrs=subrs)
-        for subr in subrs:
-            subr.subrs = subrs
-        self.subrs = subrs
 
         self.charstring_data = {
             name.decode("latin-1"): type1_charstring_data(payload, len_iv)
             for name, payload in binary_entries(private, CHARSTRING_RE, skip_truncated=True)
         }
-        self.charstrings = {
-            name: T1CharString(data, subrs=subrs) for name, data in self.charstring_data.items()
-        }
-        if not self.charstrings:
+        if not self.charstring_data:
             raise ValueError("Type 1 CharStrings are missing")
-        self.glyph_names = tuple(self.charstrings)
+        self.glyph_names = tuple(self.charstring_data)
         self.glyph_name_to_id = {name: gid for gid, name in enumerate(self.glyph_names)}
 
         matrix_match = FONT_MATRIX_RE.search(data)
@@ -124,8 +106,9 @@ class Type1FontProgram(GlyphProgram):
             if not self.has_glyph_id(glyph_id):
                 return None
             glyph_name = self.glyph_names[glyph_id]
-            charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")
-            if charstring is None:
+            if glyph_name not in self.charstring_data:
+                glyph_name = ".notdef"
+            if glyph_name not in self.charstring_data:
                 return None
             a, b, c, d, e, f = self.font_matrix
             normalizing = (a * 1000.0, b * 1000.0, c * 1000.0, d * 1000.0, e * 1000.0, f * 1000.0)
@@ -134,10 +117,11 @@ class Type1FontProgram(GlyphProgram):
             )
             if compiled is not None:
                 return compiled or None
-            bounds_pen = BoundsPen(self.charstrings)
-            normalized_pen = TransformPen(bounds_pen, normalizing)
-            charstring.draw(normalized_pen)
-            bounds = bounds_pen.bounds
+            sink = BoundsSink()
+            draw_decomposed(
+                self.record, glyph_name, normalizing, sink, self.charstring_data.__contains__
+            )
+            bounds = sink.bounds
             if bounds is None:
                 return None
             x_min, y_min, x_max, y_max = bounds
@@ -150,14 +134,17 @@ class Type1FontProgram(GlyphProgram):
             return ()
         return self.glyph_contours(self.glyph_names[glyph_id])
 
+    def record(self, glyph_name: str) -> Recording:
+        return Type1Outline(self.subr_data).record(self.charstring_data[glyph_name])
+
     def glyph_contours(self, glyph_name: str) -> tuple[tuple[Point, ...], ...]:
-        charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")
-        if charstring is None:
+        # seac components are recorded but not drawn: a seac glyph's contours are its own.
+        if glyph_name not in self.charstring_data:
+            glyph_name = ".notdef"
+        if glyph_name not in self.charstring_data:
             return ()
         try:
-            pen = RecordingPen()
-            charstring.draw(pen)
-            contours = recording_to_contours(pen.value)
+            contours = recording_to_contours(self.record(glyph_name))
             return transform_contours(contours, self.font_matrix)
         except Exception:
             return ()

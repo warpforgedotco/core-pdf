@@ -1,24 +1,24 @@
 from __future__ import annotations
 
-import logging
 import struct
 import threading
 from collections.abc import Callable
-from io import BytesIO
 from typing import Any
 
 lazy import numpy
 
-from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
-from core_pdf._vendor.fontTools.pens.recordingPen import (
-    DecomposingRecordingPen,
-)
-from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf.impl.adobe_fonts.cff.charstrings import cubic_point
 from core_pdf.impl.base.caches import BoundedDict
 from core_pdf.impl.base.geometry import transform_bbox
 from core_pdf.impl.base.types import Rectangle
 from core_pdf.impl.fonts.helpers import glyph_name_to_unicode
+from core_pdf.impl.fonts.opentype_cff import (
+    CffGlyphs,
+    cff2_glyphs,
+    cff_glyphs,
+    opentype_glyph_order,
+)
+from core_pdf.impl.fonts.outline_pens import BoundsSink, draw_decomposed
 from core_pdf.impl.fonts.program_base import GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts.raster_kernel import (
     Contours,
@@ -38,7 +38,6 @@ from core_pdf.impl.spec.s_09_fonts.helpers import (
     is_unicode_scalar,
     symbol_character_code,
 )
-lazy from core_pdf._vendor.fontTools.ttLib import TTFont
 lazy from core_pdf_cythonized import truetype_contours
 
 
@@ -47,32 +46,6 @@ def parse_truetype_program(data: bytes) -> SfntFont:
     if not {"maxp", "glyf", "loca", "head"} <= font.keys():
         raise ValueError("invalid TrueType glyph tables")
     return font
-
-
-def glyph_set_of(font: Any) -> Any:
-    sets = font.__dict__.get("_core_pdf_glyph_sets")
-    if sets is None:
-        sets = font.__dict__["_core_pdf_glyph_sets"] = {}
-    thread = threading.get_ident()
-    glyph_set = sets.get(thread)
-    if glyph_set is None:
-        glyph_set = sets[thread] = font.getGlyphSet()
-    return glyph_set
-
-
-def fonttools_bbox(
-    font: Any,
-    glyph_id: int,
-    scale: float,
-) -> tuple[float, float, float, float] | None:
-    glyph_name = font.getGlyphName(glyph_id)
-    glyph_set = glyph_set_of(font)
-    bounds_pen = BoundsPen(glyph_set)
-    glyph_set[glyph_name].draw(TransformPen(bounds_pen, (scale, 0.0, 0.0, scale, 0.0, 0.0)))
-    if bounds_pen.bounds is None:
-        return None
-    x_min, y_min, x_max, y_max = bounds_pen.bounds
-    return float(x_min), float(y_min), float(x_max), float(y_max)
 
 
 def glyph_bbox(glyf: Table, glyph_name: str) -> tuple[float, float, float, float] | None:
@@ -112,14 +85,6 @@ def glyph_header_bbox(
     if contours == 0:
         return None
     return (float(x_min), float(y_min), float(x_max), float(y_max))
-
-
-def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
-    glyph_name = font.getGlyphName(glyph_id)
-    glyph_set = glyph_set_of(font)
-    pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
-    glyph_set[glyph_name].draw(pen)
-    return tuple(tuple(contour) for contour in recording_to_contours(pen.value))
 
 
 type TrueTypeTables = tuple[bytes, numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], int]
@@ -210,96 +175,6 @@ class SfntOutlineAccess:
             return contours if self.scale == 1.0 else scale_contours(contours, self.scale)
         except Exception:
             return ()
-
-
-class FontToolsOutlineAccess:
-    __slots__ = (
-        "font",
-        "glyph_count",
-        "glyph_data",
-        "scale",
-        "truetype",
-        "truetype_read",
-    )
-
-    def __init__(self, font: TTFont, glyph_data: bytes | None = None) -> None:
-        self.font = font
-        self.glyph_data = glyph_data
-        self.glyph_count = len(font.getGlyphOrder())
-        units_per_em = float(getattr(font["head"], "unitsPerEm", 1000) or 1000)
-        self.scale = 1000.0 / units_per_em if units_per_em else 1.0
-        self.truetype: TrueTypeTables | None = None
-        self.truetype_read = False
-
-    def glyph_id_for_name(self, glyph_name: str) -> int | None:
-        return self.font.getReverseGlyphMap().get(glyph_name)
-
-    def has_glyph_id(self, glyph_id: int) -> bool:
-        return 0 <= glyph_id < self.glyph_count
-
-    def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
-        if not self.truetype_read:
-            self.truetype = truetype_tables(self.font, self.glyph_data)
-            self.truetype_read = True
-        tables = self.truetype
-        if tables is not None:
-            glyf, loca, lsb, glyph_count = tables
-            drawn = truetype_contours(glyf, loca, lsb, glyph_count, glyph_id, self.scale)
-            if drawn is not None:
-                return drawn
-        try:
-            contours = fonttools_contours(self.font, glyph_id)
-            return contours if self.scale == 1.0 else scale_contours(contours, self.scale)
-        except Exception:
-            return ()
-
-    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
-        try:
-            return fonttools_bbox(self.font, glyph_id, self.scale)
-        except Exception:
-            return None
-
-
-class RecoverableFontTableWarningFilter(logging.Filter):
-    def filter(self, record: logging.LogRecord) -> bool:
-        message = record.getMessage()
-        return not (
-            message.endswith(
-                (
-                    "extra bytes in post.stringData array",
-                    " timestamp seems very low; regarding as unix timestamp",
-                )
-            )
-        )
-
-
-FONT_TABLE_WARNING_FILTER = RecoverableFontTableWarningFilter()
-for logger_name in (
-    "fontTools.ttLib.tables._p_o_s_t",
-    "fontTools.ttLib.tables._h_e_a_d",
-    "core_pdf._vendor.fontTools.ttLib.tables._p_o_s_t",
-    "core_pdf._vendor.fontTools.ttLib.tables._h_e_a_d",
-):
-    logging.getLogger(logger_name).addFilter(FONT_TABLE_WARNING_FILTER)
-
-
-class FontToolsProgram(GlyphProgram):
-    __slots__ = ("font", "outlines")
-
-    font: TTFont
-    outlines: FontToolsOutlineAccess
-
-    def glyph_id_for_name(self, glyph_name: str) -> int | None:
-        return self.outlines.glyph_id_for_name(glyph_name)
-
-    def has_glyph_id(self, glyph_id: int) -> bool:
-        return self.outlines.has_glyph_id(glyph_id)
-
-    def normalized_glyph_contours(self, glyph_id: int) -> Contours:
-        return self.outlines.normalized_glyph_contours(glyph_id)
-
-    def glyph_bbox_for_gid(self, glyph_id: int) -> Rectangle | None:
-        return self.outlines.glyph_bbox_for_gid(glyph_id)
 
 
 class UnicodeGlyphMaps:
@@ -708,24 +583,93 @@ def flatten_cubic(p0: Point, p1: Point, p2: Point, p3: Point, segments: int = 8)
     return [cubic_point(p0, p1, p2, p3, i / segments) for i in range(1, segments + 1)]
 
 
-def parse_opentype_program(data: bytes) -> TTFont:
-    font = TTFont(BytesIO(data), lazy=True, recalcBBoxes=False, recalcTimestamp=False)
-    if not ({"CFF ", "CFF2"} & set(font.keys())):
+def parse_opentype_program(data: bytes) -> SfntFont:
+    font = SfntFont(data)
+    if not ({"CFF ", "CFF2"} & font.keys()):
         raise ValueError("OpenType font has no CFF outline table")
     return font
 
 
-class OpenTypeFontProgram(FontToolsProgram):
-    __slots__ = ()
+class OpenTypeFontProgram(GlyphProgram):
+    """An OpenType font program with CFF or CFF2 outlines. A CFF2 table is read on
+    first draw, and a draw fails while it cannot be read."""
+
+    __slots__ = ("font", "glyph_count", "scale", "cff")
 
     def __init__(self, data: bytes) -> None:
         try:
-            self.font = parse_opentype_program(data)
-            self.outlines = FontToolsOutlineAccess(self.font)
-            if "CFF2" in self.font and "fvar" in self.font:
-                del self.font["fvar"]
+            font = self.font = parse_opentype_program(data)
+            self.cff: CffGlyphs | None = None
+            if "CFF " in font:
+                self.cff = cff_glyphs(font.table_data("CFF "))
+                font.glyph_order = self.cff.names
+            else:
+                font.glyph_order = opentype_glyph_order(font)
+            self.glyph_count = len(font.glyph_order)
+            units_per_em = float(getattr(font.table("head"), "unitsPerEm", 1000) or 1000)
+            self.scale = 1000.0 / units_per_em if units_per_em else 1.0
         except Exception as exc:
             raise ValueError("invalid OpenType CFF font program") from exc
+
+    def glyphs(self) -> CffGlyphs:
+        cff = self.cff
+        if cff is None:
+            cff = self.cff = cff2_glyphs(self.font.table_data("CFF2"), self.font.glyph_order)
+        return cff
+
+    def draw(
+        self,
+        glyph_id: int,
+        transform: tuple[float, ...] | None,
+        emit: Callable[[tuple[str, tuple[Any, ...]]], None],
+    ) -> None:
+        cff = self.glyphs()
+        font = self.font
+        metrics = font.table("hmtx").metrics
+        vertical_table = font.optional_table("vmtx")
+        vertical = getattr(vertical_table, "metrics", None) if vertical_table is not None else None
+
+        def check_metrics(name: str) -> None:
+            metrics[name]  # noqa: B018 - a glyph without metrics fails
+            if vertical is not None:
+                vertical[name]  # noqa: B018
+
+        def has_glyph(name: str) -> bool:
+            try:
+                check_metrics(name)
+            except KeyError:
+                return False
+            return True
+
+        name = font.glyph_name(glyph_id)
+        check_metrics(name)
+        draw_decomposed(cff.record, name, transform, emit, has_glyph)
+
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        return self.font.glyph_id_for_name(glyph_name)
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return 0 <= glyph_id < self.glyph_count
+
+    def normalized_glyph_contours(self, glyph_id: int) -> Contours:
+        try:
+            recording: list[tuple[str, tuple[Any, ...]]] = []
+            self.draw(glyph_id, None, recording.append)
+            contours = tuple(tuple(contour) for contour in recording_to_contours(recording))
+            return contours if self.scale == 1.0 else scale_contours(contours, self.scale)
+        except Exception:
+            return ()
+
+    def glyph_bbox_for_gid(self, glyph_id: int) -> Rectangle | None:
+        try:
+            sink = BoundsSink()
+            self.draw(glyph_id, (self.scale, 0.0, 0.0, self.scale, 0.0, 0.0), sink)
+        except Exception:
+            return None
+        if sink.bounds is None:
+            return None
+        x_min, y_min, x_max, y_max = sink.bounds
+        return float(x_min), float(y_min), float(x_max), float(y_max)
 
     def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:
         if naming.is_cid_font:
