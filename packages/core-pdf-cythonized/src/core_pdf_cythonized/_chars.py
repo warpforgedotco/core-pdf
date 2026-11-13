@@ -29,6 +29,27 @@ def exact_operand(value: object, out: cython.p_double) -> cython.bint:
 
 
 @cython.cfunc
+@cython.inline
+def item(sequence: object, index: cython.Py_ssize_t) -> object:
+    # sequence[index] for an index known not to be negative: a tuple's slot read directly,
+    # its length checked (the package compiles without bounds checks), anything else by
+    # Python's indexing.
+    if type(sequence) is tuple and index < len(cython.cast(tuple, sequence)):
+        return cython.cast(tuple, sequence)[index]
+    return sequence[index]
+
+
+@cython.cfunc
+@cython.inline
+def field(record: object, index: cython.Py_ssize_t) -> object:
+    # The same for a record that is a tuple subclass (a NamedTuple such as PlumberMark), whose
+    # fields live in the tuple's slots.
+    if isinstance(record, tuple) and index < len(cython.cast(tuple, record)):
+        return cython.cast(tuple, record)[index]
+    return record[index]
+
+
+@cython.cfunc
 def cached_by_identity(cache: dict, key: object, compute: object, argument: object) -> object:
     # compute(argument), kept under id(key) beside key so a reused id is not taken for it.
     known = cache.get(id(key))
@@ -107,10 +128,12 @@ def plumber_char_dicts(
     font_names: dict = {}
     unusable: dict = {}
     provenances: dict = {}
-    mark_count: cython.Py_ssize_t = len(marks)
+    glyph_items: tuple = glyphs if type(glyphs) is tuple else tuple(glyphs)
+    mark_items: tuple = marks if type(marks) is tuple else tuple(marks)
+    mark_count: cython.Py_ssize_t = len(mark_items)
     mark_position: cython.Py_ssize_t = -1
     glyph_index: cython.Py_ssize_t
-    count: cython.Py_ssize_t = len(glyphs)
+    count: cython.Py_ssize_t = len(glyph_items)
     mark: object
     matrix_value: object
     ma: cython.double
@@ -134,7 +157,7 @@ def plumber_char_dicts(
     char_x1: cython.double
     char_bottom: cython.double
     for glyph_index in range(count):
-        glyph = glyphs[glyph_index]
+        glyph = glyph_items[glyph_index]
         decoder = glyph.font_decoder
         if cached_by_identity(unusable, decoder, embedded_unusable, glyph):
             continue
@@ -151,7 +174,7 @@ def plumber_char_dicts(
             glyph.alternates,
         )
         if ligature is not None:
-            text = ligature[0]
+            text = item(ligature, 0)
         else:
             text = glyph_texts.get(key)
             if text is None:
@@ -164,30 +187,34 @@ def plumber_char_dicts(
             continue
         if not mark_count:
             continue
-        while mark_position + 1 < mark_count and marks[mark_position + 1][0] <= glyph_index:
+        while (
+            mark_position + 1 < mark_count
+            and field(mark_items[mark_position + 1], 0) <= glyph_index
+        ):
             mark_position += 1
-        mark = marks[mark_position]
+        # Before the first mark's glyph, Python's marks[-1]: the last mark.
+        mark = mark_items[mark_position if mark_position >= 0 else mark_count - 1]
         if decoder.is_vertical:
             return None
-        matrix_value = mark[6]
+        matrix_value = field(mark, 6)
         if not (
             len(matrix_value) == 6
-            and exact_float(matrix_value[0], cython.address(a))
-            and exact_float(matrix_value[1], cython.address(b))
-            and exact_float(matrix_value[2], cython.address(c))
-            and exact_float(matrix_value[3], cython.address(d))
-            and exact_float(matrix_value[4], cython.address(e))
-            and exact_float(matrix_value[5], cython.address(f))
+            and exact_float(item(matrix_value, 0), cython.address(a))
+            and exact_float(item(matrix_value, 1), cython.address(b))
+            and exact_float(item(matrix_value, 2), cython.address(c))
+            and exact_float(item(matrix_value, 3), cython.address(d))
+            and exact_float(item(matrix_value, 4), cython.address(e))
+            and exact_float(item(matrix_value, 5), cython.address(f))
             and exact_float(glyph.font_size, cython.address(font_size))
-            and exact_float(mark[7], cython.address(rise))
-            and exact_float(mark[8], cython.address(scaling))
+            and exact_float(field(mark, 7), cython.address(rise))
+            and exact_float(field(mark, 8), cython.address(scaling))
         ):
             return None
-        baseline = ligature[2] if ligature is not None else glyph.baseline
-        if glyph_index != mark[0] and baseline is not None:
+        baseline = item(ligature, 2) if ligature is not None else glyph.baseline
+        if glyph_index != field(mark, 0) and baseline is not None:
             if not (
-                exact_float(baseline[0], cython.address(base_x))
-                and exact_float(baseline[1], cython.address(base_y))
+                exact_float(item(baseline, 0), cython.address(base_x))
+                and exact_float(item(baseline, 1), cython.address(base_y))
             ):
                 return None
             e = base_x - rise * c
@@ -258,15 +285,15 @@ def plumber_char_dicts(
                 "y1": y1,
                 "fontname": cached_by_identity(font_names, decoder, font_name, decoder),
                 "size": y1 - y0,
-                "stroking_color": mark[4],
-                "non_stroking_color": mark[5],
+                "stroking_color": field(mark, 4),
+                "non_stroking_color": field(mark, 5),
                 "upright": ma * md * scaling > 0 and mb * mc <= 0,
                 "adv": advance,
                 "seqno": glyph.seqno,
                 "matrix": (ma, mb, mc, md, me, mf),
-                "ncs": mark[3],
-                "mcid": mark[1],
-                "tag": mark[2],
+                "ncs": field(mark, 3),
+                "mcid": field(mark, 1),
+                "tag": field(mark, 2),
             }
         )
     return objects
@@ -335,7 +362,8 @@ def pdfminer_chars(
     that does not convert, or a number that is not a float. The arithmetic is the loop's,
     in its order.
     """
-    count: cython.Py_ssize_t = len(glyphs)
+    glyph_items: tuple = glyphs if type(glyphs) is tuple else tuple(glyphs)
+    count: cython.Py_ssize_t = len(glyph_items)
     results: list = [LEFT] * count
     glyph_index: cython.Py_ssize_t
     glyph_texts: dict = {}
@@ -368,7 +396,7 @@ def pdfminer_chars(
     x1: cython.double
     y1: cython.double
     for glyph_index in range(count):
-        glyph = glyphs[glyph_index]
+        glyph = glyph_items[glyph_index]
         decoder = glyph.font_decoder
         if strict_resources and cached_by_identity(unusable, decoder, embedded_unusable, glyph):
             results[glyph_index] = NO_CHAR
@@ -389,10 +417,10 @@ def pdfminer_chars(
             results[glyph_index] = NO_CHAR
             continue
         ligature = ligatures.get(id(glyph))
-        box = ligature[1] if ligature is not None else glyph.advance_bbox
+        box = item(ligature, 1) if ligature is not None else glyph.advance_bbox
         if len(box) != 4:
             continue
-        baseline = ligature[2] if ligature is not None else glyph.baseline
+        baseline = item(ligature, 2) if ligature is not None else glyph.baseline
         key = (
             decoder,
             glyph.char_code,
@@ -407,7 +435,7 @@ def pdfminer_chars(
             text_of_glyph = glyph_texts.get(key)
             if text_of_glyph is None:
                 text_of_glyph = glyph_texts[key] = glyph_text(glyph)
-        text = (ligature[0] if ligature is not None else text_of_glyph) or ""
+        text = (item(ligature, 0) if ligature is not None else text_of_glyph) or ""
         if not text and glyph.text != empty_glyph_text:
             results[glyph_index] = NO_CHAR
             continue
@@ -416,7 +444,7 @@ def pdfminer_chars(
         floats = cython.cast(tuple, entry)[1]
         if floats is None:
             continue
-        if glyph_index and glyphs[glyph_index - 1].font_decoder.is_vertical:
+        if glyph_index and glyph_items[glyph_index - 1].font_decoder.is_vertical:
             continue
         if not exact_float(glyph.font_size, cython.address(font_size)):
             continue
@@ -425,31 +453,31 @@ def pdfminer_chars(
             glyph.baseline is not None
             and font_size > 0
             and not glyph.effective_font_size
-            and exact_float(box[0], cython.address(box_x0))
-            and exact_float(box[1], cython.address(box_y0))
-            and exact_float(box[2], cython.address(box_x1))
-            and exact_float(box[3], cython.address(box_y1))
+            and exact_float(item(box, 0), cython.address(box_x0))
+            and exact_float(item(box, 1), cython.address(box_y0))
+            and exact_float(item(box, 2), cython.address(box_x1))
+            and exact_float(item(box, 3), cython.address(box_y1))
             and box_x1 - box_x0 >= font_size * 0.8
             and box_y1 - box_y0 <= font_size * 0.1
         ):
             continue
         if not (
-            exact_float(box[0], cython.address(box_x0))
-            and exact_float(box[1], cython.address(box_y0))
-            and exact_float(box[2], cython.address(box_x1))
-            and exact_float(box[3], cython.address(box_y1))
+            exact_float(item(box, 0), cython.address(box_x0))
+            and exact_float(item(box, 1), cython.address(box_y0))
+            and exact_float(item(box, 2), cython.address(box_x1))
+            and exact_float(item(box, 3), cython.address(box_y1))
         ):
             continue
         exact_matrix = glyph_matrices.get(glyph_index)
         if exact_matrix is None or len(exact_matrix) != 6:
             continue
         if not (
-            exact_float(exact_matrix[0], cython.address(char_a))
-            and exact_float(exact_matrix[1], cython.address(char_b))
-            and exact_float(exact_matrix[2], cython.address(char_c))
-            and exact_float(exact_matrix[3], cython.address(char_d))
-            and exact_float(exact_matrix[4], cython.address(char_e))
-            and exact_float(exact_matrix[5], cython.address(char_f))
+            exact_float(item(exact_matrix, 0), cython.address(char_a))
+            and exact_float(item(exact_matrix, 1), cython.address(char_b))
+            and exact_float(item(exact_matrix, 2), cython.address(char_c))
+            and exact_float(item(exact_matrix, 3), cython.address(char_d))
+            and exact_float(item(exact_matrix, 4), cython.address(char_e))
+            and exact_float(item(exact_matrix, 5), cython.address(char_f))
         ):
             continue
         width_code = (
@@ -463,7 +491,7 @@ def pdfminer_chars(
         known_widths = widths.get(widths_key)
         if known_widths is None:
             known_widths = widths[widths_key] = projected_widths(glyph, width_code, text_of_glyph)
-        if not exact_float(known_widths[1], cython.address(width)):
+        if not exact_float(item(known_widths, 1), cython.address(width)):
             continue
         if not exact_float(
             cached_by_identity(descents, decoder, descent_of, glyph), cython.address(descent_unit)
