@@ -158,7 +158,9 @@ def plumber_char_dicts(
     char_bottom: cython.double
     for glyph_index in range(count):
         glyph = glyph_items[glyph_index]
-        decoder = glyph.font_decoder
+        # The style fields are properties reading glyph.style; read the style once.
+        style = glyph.style
+        decoder = style.font_decoder
         if cached_by_identity(unusable, decoder, embedded_unusable, glyph):
             continue
         if id(glyph) in skipped:
@@ -179,7 +181,7 @@ def plumber_char_dicts(
             text = glyph_texts.get(key)
             if text is None:
                 text = glyph_texts[key] = glyph_text(glyph)
-        provenance = glyph.provenance
+        provenance = style.provenance
         known = provenances.get(id(provenance))
         if known is None or cython.cast(tuple, known)[0] is not provenance:
             known = provenances[id(provenance)] = (provenance, ANNOTATION in provenance)
@@ -205,7 +207,7 @@ def plumber_char_dicts(
             and exact_float(item(matrix_value, 3), cython.address(d))
             and exact_float(item(matrix_value, 4), cython.address(e))
             and exact_float(item(matrix_value, 5), cython.address(f))
-            and exact_float(glyph.font_size, cython.address(font_size))
+            and exact_float(style.font_size, cython.address(font_size))
             and exact_float(field(mark, 7), cython.address(rise))
             and exact_float(field(mark, 8), cython.address(scaling))
         ):
@@ -397,11 +399,13 @@ def pdfminer_chars(
     y1: cython.double
     for glyph_index in range(count):
         glyph = glyph_items[glyph_index]
-        decoder = glyph.font_decoder
+        # The style fields are properties reading glyph.style; read the style once.
+        style = glyph.style
+        decoder = style.font_decoder
         if strict_resources and cached_by_identity(unusable, decoder, embedded_unusable, glyph):
             results[glyph_index] = NO_CHAR
             continue
-        provenance = glyph.provenance
+        provenance = style.provenance
         if not provenance:
             continue
         entry = provenance_entry(provenances, provenance, is_clipped)
@@ -444,15 +448,15 @@ def pdfminer_chars(
         floats = cython.cast(tuple, entry)[1]
         if floats is None:
             continue
-        if glyph_index and glyph_items[glyph_index - 1].font_decoder.is_vertical:
+        if glyph_index and glyph_items[glyph_index - 1].style.font_decoder.is_vertical:
             continue
-        if not exact_float(glyph.font_size, cython.address(font_size)):
+        if not exact_float(style.font_size, cython.address(font_size)):
             continue
         # The centring rule for a lone wide flat glyph keeps a count the loop must update.
         if (
             glyph.baseline is not None
             and font_size > 0
-            and not glyph.effective_font_size
+            and not style.effective_font_size
             and exact_float(item(box, 0), cython.address(box_x0))
             and exact_float(item(box, 1), cython.address(box_y0))
             and exact_float(item(box, 2), cython.address(box_x1))
